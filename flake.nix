@@ -174,7 +174,7 @@
 
             meta = {
               description = "A free, open source, and extensible speech-to-text application that works completely offline";
-              homepage = "https://github.com/cjpais/s2b2s";
+              homepage = "https://github.com/NairoDorian/S2B2S";
               license = lib.licenses.mit;
               mainProgram = "s2b2s";
               platforms = supportedSystems;
