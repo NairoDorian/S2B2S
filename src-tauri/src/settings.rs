@@ -106,6 +106,343 @@ pub struct PostProcessProvider {
     pub supports_structured_output: bool,
 }
 
+// ===== S2B2S: Text-to-Speech (CopySpeak "Read Anywhere") + Brain configuration =====
+
+/// Pagination config: split long text into sentence-bounded fragments before synthesis.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct PaginationConfig {
+    pub enabled: bool,
+    /// Target maximum characters per fragment.
+    pub fragment_size: u32,
+}
+
+impl Default for PaginationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            fragment_size: 600,
+        }
+    }
+}
+
+/// Pre-TTS text sanitization toggles (markdown stripping + speech normalization).
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct SanitizationConfig {
+    pub enabled: bool,
+    /// Strip markdown syntax (code blocks, links, headers, lists, quotes).
+    pub markdown: bool,
+    /// Expand abbreviations/symbols/units for speech (e.g. "$50" -> "50 dollars").
+    pub tts_normalization: bool,
+}
+
+impl Default for SanitizationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            markdown: true,
+            tts_normalization: true,
+        }
+    }
+}
+
+/// Which TTS engine synthesizes speech.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsEngine {
+    #[default]
+    Piper,
+    Openai,
+    Elevenlabs,
+    Cartesia,
+}
+
+/// Piper (persistent local HTTP server) configuration.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct PiperConfig {
+    /// Path to the python executable that hosts `piper.http_server`.
+    pub python_path: String,
+    /// Directory containing Piper `.onnx` voices (defaults to ~/piper-voices when empty).
+    pub data_dir: String,
+    /// Use the CUDA execution provider when starting the server.
+    pub cuda: bool,
+}
+
+impl Default for PiperConfig {
+    fn default() -> Self {
+        Self {
+            python_path: "python".to_string(),
+            data_dir: String::new(),
+            cuda: false,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct OpenAIConfig {
+    pub api_key: String,
+    pub model: String,
+    pub voice: String,
+}
+
+impl Default for OpenAIConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model: "tts-1".to_string(),
+            voice: "alloy".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Type)]
+pub enum ElevenLabsOutputFormat {
+    #[serde(rename = "mp3_44100_128")]
+    #[default]
+    Mp344100_128,
+    #[serde(rename = "mp3_44100_192")]
+    Mp344100_192,
+    #[serde(rename = "mp3_44100_32")]
+    Mp344100_32,
+    #[serde(rename = "mp3_22050_32")]
+    Mp322050_32,
+    #[serde(rename = "pcm_44100")]
+    Pcm44100,
+    #[serde(rename = "pcm_22050")]
+    Pcm22050,
+    #[serde(rename = "pcm_16000")]
+    Pcm16000,
+    #[serde(rename = "ogg_vorbis_44100")]
+    OggVorbis44100,
+    #[serde(rename = "ogg_vorbis_22050")]
+    OggVorbis22050,
+    #[serde(rename = "flac_44100")]
+    Flac44100,
+    #[serde(rename = "mulaw_8000")]
+    Mulaw8000,
+}
+
+impl ElevenLabsOutputFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ElevenLabsOutputFormat::Mp344100_128 => "mp3_44100_128",
+            ElevenLabsOutputFormat::Mp344100_192 => "mp3_44100_192",
+            ElevenLabsOutputFormat::Mp344100_32 => "mp3_44100_32",
+            ElevenLabsOutputFormat::Mp322050_32 => "mp3_22050_32",
+            ElevenLabsOutputFormat::Pcm44100 => "pcm_44100",
+            ElevenLabsOutputFormat::Pcm22050 => "pcm_22050",
+            ElevenLabsOutputFormat::Pcm16000 => "pcm_16000",
+            ElevenLabsOutputFormat::OggVorbis44100 => "ogg_vorbis_44100",
+            ElevenLabsOutputFormat::OggVorbis22050 => "ogg_vorbis_22050",
+            ElevenLabsOutputFormat::Flac44100 => "flac_44100",
+            ElevenLabsOutputFormat::Mulaw8000 => "mulaw_8000",
+        }
+    }
+
+    pub fn mime_type(self) -> &'static str {
+        match self {
+            ElevenLabsOutputFormat::Mp344100_128
+            | ElevenLabsOutputFormat::Mp344100_192
+            | ElevenLabsOutputFormat::Mp344100_32
+            | ElevenLabsOutputFormat::Mp322050_32 => "audio/mpeg",
+            ElevenLabsOutputFormat::Pcm44100
+            | ElevenLabsOutputFormat::Pcm22050
+            | ElevenLabsOutputFormat::Pcm16000 => "audio/pcm",
+            ElevenLabsOutputFormat::OggVorbis44100 | ElevenLabsOutputFormat::OggVorbis22050 => {
+                "audio/ogg"
+            }
+            ElevenLabsOutputFormat::Flac44100 => "audio/flac",
+            ElevenLabsOutputFormat::Mulaw8000 => "audio/mulaw",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct ElevenLabsConfig {
+    pub api_key: String,
+    pub voice_id: String,
+    pub voice_name: Option<String>,
+    pub model_id: String,
+    pub output_format: ElevenLabsOutputFormat,
+    #[serde(default = "default_elevenlabs_stability")]
+    pub voice_stability: f32,
+    #[serde(default = "default_elevenlabs_similarity")]
+    pub voice_similarity_boost: f32,
+    pub voice_style: Option<f32>,
+    pub use_speaker_boost: Option<bool>,
+    pub use_manual_voice_id: bool,
+}
+
+fn default_elevenlabs_stability() -> f32 {
+    0.5
+}
+
+fn default_elevenlabs_similarity() -> f32 {
+    0.75
+}
+
+impl Default for ElevenLabsConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            voice_id: "21m00Tcm4TlvDq8ikWAM".to_string(), // Rachel
+            voice_name: Some("Rachel".to_string()),
+            model_id: "eleven_turbo_v2_5".to_string(),
+            output_format: ElevenLabsOutputFormat::default(),
+            voice_stability: default_elevenlabs_stability(),
+            voice_similarity_boost: default_elevenlabs_similarity(),
+            voice_style: None,
+            use_speaker_boost: None,
+            use_manual_voice_id: false,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+pub struct CartesiaConfig {
+    pub api_key: String,
+    pub model_id: String,
+    pub voice_id: String,
+    pub voice_name: Option<String>,
+    pub output_format: String,
+    pub use_manual_voice_id: bool,
+}
+
+impl Default for CartesiaConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            model_id: "sonic-3.5".to_string(),
+            voice_id: "f786b574-daa5-4673-aa0c-cbe3e8534c02".to_string(),
+            voice_name: Some("Katie".to_string()),
+            output_format: "wav".to_string(),
+            use_manual_voice_id: false,
+        }
+    }
+}
+
+/// Text-to-speech ("Read Anywhere" / CopySpeak) configuration.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct TtsConfig {
+    pub enabled: bool,
+    pub engine: TtsEngine,
+    /// Engine-specific voice id (e.g. a Piper voice filename without extension).
+    pub voice: String,
+    /// Playback rate; one owner — passed to the engine, never applied twice (CopySpeak C1).
+    pub speed: f32,
+    /// Playback volume 0-100.
+    pub volume: u8,
+    pub pagination: PaginationConfig,
+    #[serde(default)]
+    pub sanitization: SanitizationConfig,
+    pub piper: PiperConfig,
+    /// CopySpeak double-copy trigger: copy the same text twice within the
+    /// window to speak it automatically (currently Windows-only detection).
+    #[serde(default)]
+    pub double_copy_enabled: bool,
+    #[serde(default = "default_double_copy_window_ms")]
+    pub double_copy_window_ms: u32,
+    #[serde(default)]
+    pub openai: OpenAIConfig,
+    #[serde(default)]
+    pub elevenlabs: ElevenLabsConfig,
+    #[serde(default)]
+    pub cartesia: CartesiaConfig,
+    #[serde(default = "default_warmup_speak_out_loud")]
+    pub warmup_speak_out_loud: bool,
+}
+
+fn default_double_copy_window_ms() -> u32 {
+    1500
+}
+
+fn default_warmup_speak_out_loud() -> bool {
+    true
+}
+
+impl Default for TtsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            engine: TtsEngine::default(),
+            voice: String::new(),
+            speed: 1.0,
+            volume: 100,
+            pagination: PaginationConfig::default(),
+            sanitization: SanitizationConfig::default(),
+            piper: PiperConfig::default(),
+            double_copy_enabled: false,
+            double_copy_window_ms: default_double_copy_window_ms(),
+            openai: OpenAIConfig::default(),
+            elevenlabs: ElevenLabsConfig::default(),
+            cartesia: CartesiaConfig::default(),
+            warmup_speak_out_loud: true,
+        }
+    }
+}
+
+/// The "Brain": a streaming LLM subsystem, independent of dictation post-processing.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct BrainConfig {
+    pub enabled: bool,
+    pub provider_id: String,
+    pub providers: Vec<PostProcessProvider>,
+    pub api_keys: SecretMap,
+    pub models: HashMap<String, String>,
+    pub system_prompt: String,
+    /// How many prior turns to keep in the context window (0 = stateless).
+    pub context_turns: u32,
+    /// Speak the Brain's reply aloud via the TTS subsystem.
+    pub read_aloud: bool,
+}
+
+impl BrainConfig {
+    pub fn active_provider(&self) -> Option<&PostProcessProvider> {
+        self.providers
+            .iter()
+            .find(|p| p.id == self.provider_id)
+    }
+
+    pub fn active_model(&self) -> String {
+        self.models.get(&self.provider_id).cloned().unwrap_or_default()
+    }
+
+    pub fn active_api_key(&self) -> String {
+        self.api_keys.get(&self.provider_id).cloned().unwrap_or_default()
+    }
+
+    pub fn active_base_url(&self) -> String {
+        self.active_provider()
+            .map(|p| p.base_url.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn provider_mut(&mut self, id: &str) -> Option<&mut PostProcessProvider> {
+        self.providers.iter_mut().find(|p| p.id == id)
+    }
+}
+
+impl Default for BrainConfig {
+    fn default() -> Self {
+        let providers = default_post_process_providers();
+        let mut api_keys = HashMap::new();
+        let mut models = HashMap::new();
+        for provider in &providers {
+            api_keys.insert(provider.id.clone(), String::new());
+            models.insert(provider.id.clone(), String::new());
+        }
+        Self {
+            enabled: false,
+            provider_id: "custom".to_string(), // Default to custom (which points to local Ollama)
+            providers,
+            api_keys: SecretMap(api_keys),
+            models,
+            system_prompt: "You are a helpful, concise voice assistant. Answer conversationally in short sentences suitable for being read aloud. Avoid markdown tables, bullet lists, and emoji unless asked.".to_string(),
+            context_turns: 0,
+            read_aloud: true,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayPosition {
@@ -376,6 +713,9 @@ pub struct AppSettings {
     #[serde(default = "default_word_correction_threshold")]
     pub word_correction_threshold: f64,
     #[serde(default = "default_history_limit")]
+    // specta-typescript 0.0.12 forbids exporting 64-bit ints by default; these
+    // values are small, so exporting as TS `number` is lossless in practice.
+    #[specta(type = specta_typescript::Number)]
     pub history_limit: usize,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
@@ -416,6 +756,7 @@ pub struct AppSettings {
     #[serde(default = "default_show_tray_icon")]
     pub show_tray_icon: bool,
     #[serde(default = "default_paste_delay_ms")]
+    #[specta(type = specta_typescript::Number)]
     pub paste_delay_ms: u64,
     #[serde(default = "default_typing_tool")]
     pub typing_tool: TypingTool,
@@ -429,7 +770,14 @@ pub struct AppSettings {
     #[serde(default = "default_whisper_gpu_device")]
     pub whisper_gpu_device: i32,
     #[serde(default)]
+    #[specta(type = specta_typescript::Number)]
     pub extra_recording_buffer_ms: u64,
+    /// Text-to-speech ("Read Anywhere" / CopySpeak) settings.
+    #[serde(default)]
+    pub tts: TtsConfig,
+    /// Streaming LLM "Brain" subsystem settings (separate from post-processing).
+    #[serde(default)]
+    pub brain: BrainConfig,
 }
 
 fn default_model() -> String {
@@ -538,6 +886,14 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
+        },
+        PostProcessProvider {
+            id: "google_ai_studio".to_string(),
+            label: "Google AI Studio".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai/".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/models".to_string()),
+            supports_structured_output: false,
         },
         PostProcessProvider {
             id: "openrouter".to_string(),
@@ -656,28 +1012,28 @@ fn default_typing_tool() -> TypingTool {
 
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
-    for provider in default_post_process_providers() {
-        // Use match to do a single lookup - either sync existing or add new
+    let default_providers = default_post_process_providers();
+
+    // 1. Post Process Sync
+    for provider in &default_providers {
         match settings
             .post_process_providers
             .iter_mut()
             .find(|p| p.id == provider.id)
         {
             Some(existing) => {
-                // Sync supports_structured_output field for existing providers (migration)
                 if existing.supports_structured_output != provider.supports_structured_output {
-                    debug!(
-                        "Updating supports_structured_output for provider '{}' from {} to {}",
-                        provider.id,
-                        existing.supports_structured_output,
-                        provider.supports_structured_output
-                    );
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
+                if existing.base_url != provider.base_url {
+                    if existing.id != "custom" {
+                        existing.base_url = provider.base_url.clone();
+                        changed = true;
+                    }
+                }
             }
             None => {
-                // Provider doesn't exist, add it
                 settings.post_process_providers.push(provider.clone());
                 changed = true;
             }
@@ -701,6 +1057,58 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
             None => {
                 settings
                     .post_process_models
+                    .insert(provider.id.clone(), default_model);
+                changed = true;
+            }
+        }
+    }
+
+    // 2. Brain Providers Sync
+    for provider in &default_providers {
+        match settings
+            .brain
+            .providers
+            .iter_mut()
+            .find(|p| p.id == provider.id)
+        {
+            Some(existing) => {
+                if existing.supports_structured_output != provider.supports_structured_output {
+                    existing.supports_structured_output = provider.supports_structured_output;
+                    changed = true;
+                }
+                if existing.base_url != provider.base_url {
+                    if existing.id != "custom" {
+                        existing.base_url = provider.base_url.clone();
+                        changed = true;
+                    }
+                }
+            }
+            None => {
+                settings.brain.providers.push(provider.clone());
+                changed = true;
+            }
+        }
+
+        if !settings.brain.api_keys.contains_key(&provider.id) {
+            settings
+                .brain
+                .api_keys
+                .insert(provider.id.clone(), String::new());
+            changed = true;
+        }
+
+        let default_model = default_model_for_provider(&provider.id);
+        match settings.brain.models.get_mut(&provider.id) {
+            Some(existing) => {
+                if existing.is_empty() && !default_model.is_empty() {
+                    *existing = default_model.clone();
+                    changed = true;
+                }
+            }
+            None => {
+                settings
+                    .brain
+                    .models
                     .insert(provider.id.clone(), default_model);
                 changed = true;
             }
@@ -764,6 +1172,42 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    #[cfg(target_os = "macos")]
+    let default_speak_selection_shortcut = "option+shift+r";
+    #[cfg(not(target_os = "macos"))]
+    let default_speak_selection_shortcut = "alt+shift+r";
+
+    bindings.insert(
+        "speak_selection".to_string(),
+        ShortcutBinding {
+            id: "speak_selection".to_string(),
+            name: "Speak Selection".to_string(),
+            description: "Reads the selected text (or clipboard) aloud; press again to stop."
+                .to_string(),
+            default_binding: default_speak_selection_shortcut.to_string(),
+            current_binding: default_speak_selection_shortcut.to_string(),
+        },
+    );
+
+    // "B" for Brain — Space variants collide with the transcribe bindings.
+    #[cfg(target_os = "macos")]
+    let default_converse_shortcut = "option+shift+b";
+    #[cfg(not(target_os = "macos"))]
+    let default_converse_shortcut = "alt+shift+b";
+
+    bindings.insert(
+        "converse".to_string(),
+        ShortcutBinding {
+            id: "converse".to_string(),
+            name: "Talk to the Brain".to_string(),
+            description:
+                "Records your speech, sends it to the Brain, and streams (and speaks) the reply."
+                    .to_string(),
+            default_binding: default_converse_shortcut.to_string(),
+            current_binding: default_converse_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         bindings,
         push_to_talk: true,
@@ -814,6 +1258,8 @@ pub fn get_default_settings() -> AppSettings {
         ort_accelerator: OrtAcceleratorSetting::default(),
         whisper_gpu_device: default_whisper_gpu_device(),
         extra_recording_buffer_ms: 0,
+        tts: TtsConfig::default(),
+        brain: BrainConfig::default(),
     }
 }
 

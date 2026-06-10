@@ -15,7 +15,10 @@
     "postProcessing": "後處理",
     "history": "歷史紀錄",
     "debug": "偵錯",
-    "about": "關於"
+    "about": "關於",
+    "speech": "Speech",
+    "brain": "Brain",
+    "conversation": "Conversation"
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -537,6 +540,121 @@
           "details": "S2B2S 使用 Whisper.cpp 進行快速的本機語音轉文字處理。感謝 Georgi Gerganov 和貢獻者們的傑出工作"
         }
       }
+    },
+    "speech": {
+      "outputGroup": "Speech Output",
+      "enabled": {
+        "label": "Enable speech output",
+        "description": "Allow S2B2S to read text aloud (CopySpeak read-anywhere and spoken Brain replies)."
+      },
+      "engine": {
+        "label": "Engine",
+        "description": "Which text-to-speech engine synthesizes audio.",
+        "options": {
+          "piper": "Piper (local)",
+          "openai": "OpenAI (cloud)",
+          "elevenlabs": "ElevenLabs (cloud)",
+          "cartesia": "Cartesia (cloud)"
+        }
+      },
+      "voice": {
+        "label": "Voice",
+        "description": "Voice model used for synthesis.",
+        "placeholder": "No voices found"
+      },
+      "speed": {
+        "label": "Speed",
+        "description": "Playback rate, applied once at the engine level."
+      },
+      "volume": {
+        "label": "Volume",
+        "description": "Speech output volume."
+      },
+      "test": {
+        "label": "Test",
+        "description": "Speak a short sample with the current settings.",
+        "speak": "Speak sample",
+        "stop": "Stop"
+      },
+      "sampleText": "Hello! This is S2B2S speaking with the current voice settings.",
+      "piperGroup": "Piper Engine",
+      "piperPython": {
+        "label": "Python path",
+        "description": "Python executable with the piper-tts package installed."
+      },
+      "piperDataDir": {
+        "label": "Voices folder",
+        "description": "Folder containing Piper .onnx voice models.",
+        "placeholder": "~/piper-voices"
+      },
+      "piperCuda": {
+        "label": "Use CUDA",
+        "description": "Run the Piper server with GPU acceleration (NVIDIA only)."
+      },
+      "unload": {
+        "label": "Unload engine",
+        "description": "Stop the warm TTS server and free its memory.",
+        "button": "Unload now"
+      },
+      "sanitizeGroup": "Text Cleanup",
+      "sanitizeEnabled": {
+        "label": "Clean text before speaking",
+        "description": "Apply cleanup passes to text before synthesis."
+      },
+      "sanitizeMarkdown": {
+        "label": "Strip markdown",
+        "description": "Remove code blocks, links, headers, lists and quotes."
+      },
+      "sanitizeNormalize": {
+        "label": "Normalize for speech",
+        "description": "Expand abbreviations, symbols, units and currencies (e.g. $50 becomes 50 dollars)."
+      },
+      "doubleCopy": {
+        "label": "Double-copy to speak",
+        "description": "Copy the same text twice within 1.5 seconds to read it aloud automatically (Windows only for now)."
+      }
+    },
+    "brain": {
+      "group": "Brain Connection",
+      "enabled": {
+        "label": "Enable the Brain",
+        "description": "Connect speech to a language model: ask by voice, stream the reply, optionally hear it spoken."
+      },
+      "baseUrl": {
+        "label": "Endpoint",
+        "description": "OpenAI-compatible base URL. Default is local Ollama; LM Studio uses http://localhost:1234/v1."
+      },
+      "model": {
+        "label": "Model",
+        "description": "Model served by the endpoint.",
+        "placeholder": "Select or refresh models"
+      },
+      "apiKey": {
+        "label": "API key",
+        "description": "Only needed for cloud endpoints; leave empty for local servers."
+      },
+      "behaviorGroup": "Behavior",
+      "systemPrompt": {
+        "label": "System prompt",
+        "description": "Personality and instructions for the Brain's replies."
+      },
+      "contextTurns": {
+        "label": "Memory (turns)",
+        "description": "How many previous exchanges the Brain remembers. 0 means each question is independent."
+      },
+      "readAloud": {
+        "label": "Read replies aloud",
+        "description": "Speak each reply sentence-by-sentence while it streams (requires speech output)."
+      },
+      "testGroup": "Test",
+      "test": {
+        "label": "Test the Brain",
+        "description": "Send a test question to the configured endpoint.",
+        "button": "Ask test question",
+        "running": "Thinking…",
+        "abort": "Abort",
+        "prompt": "In one short sentence, confirm that you can hear me."
+      }
     }
   },
   "footer": {
@@ -607,6 +725,18 @@
   },
   "overlay": {
     "transcribing": "正在轉錄...",
-    "processing": "處理中..."
+    "processing": "處理中...",
+    "speaking": "Speaking…",
+    "stopSpeaking": "Stop speaking"
+  },
+  "conversation": {
+    "disabledHint": "The Brain is disabled. Enable it in the Brain settings to start a conversation.",
+    "hotkeyHint": "Hold {{hotkey}} and speak to ask by voice — the reply streams here and is read aloud.",
+    "empty": "Ask something by voice or type below. This is the Speech → Brain → Speech loop.",
+    "thinking": "Thinking…",
+    "inputPlaceholder": "Type a message (Enter to send, Shift+Enter for a new line)",
+    "send": "Send",
+    "stop": "Stop",
+    "clear": "Clear"
   }
 }

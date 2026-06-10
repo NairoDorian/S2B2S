@@ -11,11 +11,12 @@ use tauri::{AppHandle, State};
 pub async fn get_history_entries(
     _app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
-    cursor: Option<i64>,
-    limit: Option<usize>,
+    cursor: Option<i32>,
+    limit: Option<u32>,
 ) -> Result<PaginatedHistory, String> {
+    // 32-bit over the IPC boundary: specta forbids 64-bit ints in TS bindings.
     history_manager
-        .get_history_entries(cursor, limit)
+        .get_history_entries(cursor.map(i64::from), limit.map(|l| l as usize))
         .await
         .map_err(|e| e.to_string())
 }
@@ -25,10 +26,10 @@ pub async fn get_history_entries(
 pub async fn toggle_history_entry_saved(
     _app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
-    id: i64,
+    id: i32,
 ) -> Result<(), String> {
     history_manager
-        .toggle_saved_status(id)
+        .toggle_saved_status(i64::from(id))
         .await
         .map_err(|e| e.to_string())
 }
@@ -51,10 +52,10 @@ pub async fn get_audio_file_path(
 pub async fn delete_history_entry(
     _app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
-    id: i64,
+    id: i32,
 ) -> Result<(), String> {
     history_manager
-        .delete_entry(id)
+        .delete_entry(i64::from(id))
         .await
         .map_err(|e| e.to_string())
 }
@@ -65,8 +66,9 @@ pub async fn retry_history_entry_transcription(
     app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
-    id: i64,
+    id: i32,
 ) -> Result<(), String> {
+    let id = i64::from(id);
     let entry = history_manager
         .get_entry_by_id(id)
         .await
@@ -111,10 +113,10 @@ pub async fn retry_history_entry_transcription(
 pub async fn update_history_limit(
     app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
-    limit: usize,
+    limit: u32,
 ) -> Result<(), String> {
     let mut settings = crate::settings::get_settings(&app);
-    settings.history_limit = limit;
+    settings.history_limit = limit as usize;
     crate::settings::write_settings(&app, settings);
 
     history_manager

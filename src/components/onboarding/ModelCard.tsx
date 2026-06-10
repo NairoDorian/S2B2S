@@ -161,7 +161,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             {displayDescription}
           </p>
         </div>
-        {(model.accuracy_score > 0 || model.speed_score > 0) && (
+        {((model.accuracy_score ?? 0) > 0 || (model.speed_score ?? 0) > 0) && (
           <div className="hidden sm:flex items-center ms-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -171,7 +171,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                 <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-logo-primary rounded-full"
-                    style={{ width: `${model.accuracy_score * 100}%` }}
+                    style={{ width: `${(model.accuracy_score ?? 0) * 100}%` }}
                   />
                 </div>
               </div>
@@ -182,7 +182,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                 <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-logo-primary rounded-full"
-                    style={{ width: `${model.speed_score * 100}%` }}
+                    style={{ width: `${(model.speed_score ?? 0) * 100}%` }}
                   />
                 </div>
               </div>

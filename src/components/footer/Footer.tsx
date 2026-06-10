@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 
 import ModelSelector from "../model-selector";
+import BrainSelector from "./BrainSelector";
+import TtsSelector from "./TtsSelector";
 import UpdateChecker from "../update-checker";
 
 const Footer: React.FC = () => {
@@ -26,6 +28,10 @@ const Footer: React.FC = () => {
       <div className="flex justify-between items-center text-xs px-4 pb-3 text-text/60">
         <div className="flex items-center gap-4">
           <ModelSelector />
+          <span className="text-mid-gray/30">|</span>
+          <BrainSelector />
+          <span className="text-mid-gray/30">|</span>
+          <TtsSelector />
         </div>
 
         {/* Update Status */}

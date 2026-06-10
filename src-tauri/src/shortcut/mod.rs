@@ -399,6 +399,16 @@ fn register_all_shortcuts_for_implementation(
             continue;
         }
 
+        // Skip the speak-selection shortcut when speech output is disabled
+        if id == "speak_selection" && !current_settings.tts.enabled {
+            continue;
+        }
+
+        // Skip the converse shortcut when the Brain is disabled
+        if id == "converse" && !current_settings.brain.enabled {
+            continue;
+        }
+
         let mut binding = current_settings
             .bindings
             .get(id)
@@ -662,18 +672,20 @@ pub fn change_word_correction_threshold_setting(
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_extra_recording_buffer_setting(app: AppHandle, ms: u64) -> Result<(), String> {
+pub fn change_extra_recording_buffer_setting(app: AppHandle, ms: u32) -> Result<(), String> {
+    // u32 over the IPC boundary: specta forbids 64-bit ints in TS bindings.
     let mut settings = settings::get_settings(&app);
-    settings.extra_recording_buffer_ms = ms;
+    settings.extra_recording_buffer_ms = ms as u64;
     settings::write_settings(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_paste_delay_ms_setting(app: AppHandle, ms: u64) -> Result<(), String> {
+pub fn change_paste_delay_ms_setting(app: AppHandle, ms: u32) -> Result<(), String> {
+    // u32 over the IPC boundary: specta forbids 64-bit ints in TS bindings.
     let mut settings = settings::get_settings(&app);
-    settings.paste_delay_ms = ms;
+    settings.paste_delay_ms = ms as u64;
     settings::write_settings(&app, settings);
     Ok(())
 }

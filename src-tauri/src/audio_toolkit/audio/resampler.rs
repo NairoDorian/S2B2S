@@ -1,11 +1,13 @@
-use rubato::{FftFixedIn, Resampler};
+use audioadapter::Adapter;
+use audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Fft, FixedSync, Resampler};
 use std::time::Duration;
 
 // Make this a constant you can tweak
 const RESAMPLER_CHUNK_SIZE: usize = 1024;
 
 pub struct FrameResampler {
-    resampler: Option<FftFixedIn<f32>>,
+    resampler: Option<Fft<f32>>,
     chunk_in: usize,
     in_buf: Vec<f32>,
     frame_samples: usize,
@@ -17,13 +19,19 @@ impl FrameResampler {
         let frame_samples = ((out_hz as f64 * frame_dur.as_secs_f64()).round()) as usize;
         assert!(frame_samples > 0, "frame duration too short");
 
-        // Use fixed chunk size instead of GCD-based
-        let chunk_in = RESAMPLER_CHUNK_SIZE;
-
         let resampler = (in_hz != out_hz).then(|| {
-            FftFixedIn::<f32>::new(in_hz, out_hz, chunk_in, 1, 1)
+            // rubato 3.0: FftFixedIn -> Fft with an explicit fixed-size mode.
+            // FixedSync::Input keeps the input chunk size fixed (the old FftFixedIn behavior).
+            Fft::<f32>::new(in_hz, out_hz, RESAMPLER_CHUNK_SIZE, 1, 1, FixedSync::Input)
                 .expect("Failed to create resampler")
         });
+
+        // The FFT resampler rounds the fixed input size up to a multiple of the
+        // rate-ratio GCD block, so feed exactly what it asks for on each call.
+        let chunk_in = resampler
+            .as_ref()
+            .map(|r| r.input_frames_next())
+            .unwrap_or(RESAMPLER_CHUNK_SIZE);
 
         Self {
             resampler,
@@ -47,16 +55,8 @@ impl FrameResampler {
             src = &src[take..];
 
             if self.in_buf.len() == self.chunk_in {
-                // let start = std::time::Instant::now();
-                if let Ok(out) = self
-                    .resampler
-                    .as_mut()
-                    .unwrap()
-                    .process(&[&self.in_buf[..]], None)
-                {
-                    // let duration = start.elapsed();
-                    // log::debug!("Resampler took: {:?}", duration);
-                    self.emit_frames(&out[0], &mut emit);
+                if let Some(out) = self.process_chunk() {
+                    self.emit_frames(&out, &mut emit);
                 }
                 self.in_buf.clear();
             }
@@ -64,15 +64,13 @@ impl FrameResampler {
     }
 
     pub fn finish(&mut self, mut emit: impl FnMut(&[f32])) {
-        // Process any remaining input samples
-        if let Some(ref mut resampler) = self.resampler {
-            if !self.in_buf.is_empty() {
-                // Pad with zeros to reach chunk size
-                self.in_buf.resize(self.chunk_in, 0.0);
-                if let Ok(out) = resampler.process(&[&self.in_buf[..]], None) {
-                    self.emit_frames(&out[0], &mut emit);
-                }
+        // Process any remaining input samples, padded with zeros to a full chunk.
+        if self.resampler.is_some() && !self.in_buf.is_empty() {
+            self.in_buf.resize(self.chunk_in, 0.0);
+            if let Some(out) = self.process_chunk() {
+                self.emit_frames(&out, &mut emit);
             }
+            self.in_buf.clear();
         }
 
         // Emit any remaining pending frame (padded with zeros)
@@ -80,6 +78,31 @@ impl FrameResampler {
             self.pending.resize(self.frame_samples, 0.0);
             emit(&self.pending);
             self.pending.clear();
+        }
+    }
+
+    /// Resample the full `chunk_in` frames currently buffered in `in_buf`.
+    /// rubato 3.0 takes an input `Adapter` and returns an interleaved output buffer.
+    fn process_chunk(&mut self) -> Option<Vec<f32>> {
+        let frames = self.in_buf.len();
+        // Clone the chunk so the input adapter borrows a local, not `self` (which is
+        // also mutably borrowed via the resampler).
+        let input_data = self.in_buf.clone();
+        let resampler = self.resampler.as_mut()?;
+        let input = InterleavedSlice::new(&input_data, 1, frames).ok()?;
+        match resampler.process(&input, 0, None) {
+            Ok(out) => {
+                let n = out.frames();
+                let mut samples = Vec::with_capacity(n);
+                for f in 0..n {
+                    samples.push(out.read_sample(0, f).unwrap_or(0.0));
+                }
+                Some(samples)
+            }
+            Err(e) => {
+                log::warn!("[Resampler] process failed: {e}");
+                None
+            }
         }
     }
 

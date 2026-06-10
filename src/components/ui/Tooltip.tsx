@@ -11,7 +11,8 @@ interface TooltipCoords {
 }
 
 interface TooltipProps {
-  targetRef: React.RefObject<HTMLElement>;
+  // React 19: useRef<T>(null) yields RefObject<T | null>, so accept a nullable ref.
+  targetRef: React.RefObject<HTMLElement | null>;
   position?: TooltipPosition;
   children: React.ReactNode;
 }

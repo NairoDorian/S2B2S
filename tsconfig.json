@@ -15,8 +15,8 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path Aliases */
-    "baseUrl": ".",
+    /* Path Aliases (baseUrl removed: deprecated in TS 6; bundler resolution
+       resolves these relative paths against the tsconfig location) */
     "paths": {
       "@/*": ["./src/*"],
       "@/bindings": ["./src/bindings.ts"]

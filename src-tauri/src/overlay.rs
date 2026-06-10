@@ -113,6 +113,7 @@ fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool 
 /// This is more reliable than Tauri's set_always_on_top which can be overridden
 #[cfg(target_os = "windows")]
 fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
     };
@@ -122,7 +123,11 @@ fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
 
     // Make sure the Win32 call happens on the UI thread
     let _ = overlay_clone.clone().run_on_main_thread(move || {
-        if let Ok(hwnd) = overlay_clone.hwnd() {
+        if let Ok(raw_hwnd) = overlay_clone.hwnd() {
+            // Tauri/tao expose `hwnd()` from an older `windows` crate version than our
+            // (latest) direct dependency. `HWND` is a newtype over `*mut c_void`, so we
+            // bridge the raw handle pointer into our `windows` version's HWND.
+            let hwnd = HWND(raw_hwnd.0);
             unsafe {
                 // Force Z-order: make this window topmost without changing size/pos or stealing focus
                 let _ = SetWindowPos(
@@ -320,23 +325,27 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 }
 
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
-    // Check if overlay should be shown based on position setting
-    let settings = settings::get_settings(app_handle);
-    if settings.overlay_position == OverlayPosition::None {
-        return;
-    }
+    let app = app_handle.clone();
+    let state_str = state.to_string();
+    let _ = app_handle.run_on_main_thread(move || {
+        // Check if overlay should be shown based on position setting
+        let settings = settings::get_settings(&app);
+        if settings.overlay_position == OverlayPosition::None {
+            return;
+        }
 
-    update_overlay_position(app_handle);
+        update_overlay_position_sync(&app);
 
-    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
-        let _ = overlay_window.show();
+        if let Some(overlay_window) = app.get_webview_window("recording_overlay") {
+            let _ = overlay_window.show();
 
-        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
-        #[cfg(target_os = "windows")]
-        force_overlay_topmost(&overlay_window);
+            // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+            #[cfg(target_os = "windows")]
+            force_overlay_topmost(&overlay_window);
 
-        let _ = overlay_window.emit("show-overlay", state);
-    }
+            let _ = overlay_window.emit("show-overlay", state_str);
+        }
+    });
 }
 
 /// Shows the recording overlay window with fade-in animation
@@ -354,8 +363,20 @@ pub fn show_processing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "processing");
 }
 
+/// Shows the speaking overlay window (TTS playback HUD)
+pub fn show_speaking_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "speaking");
+}
+
 /// Updates the overlay window position based on current settings
 pub fn update_overlay_position(app_handle: &AppHandle) {
+    let app = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        update_overlay_position_sync(&app);
+    });
+}
+
+fn update_overlay_position_sync(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         #[cfg(target_os = "linux")]
         {
@@ -373,16 +394,22 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
-    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
-        // Emit event to trigger fade-out animation
-        let _ = overlay_window.emit("hide-overlay", ());
-        // Hide the window after a short delay to allow animation to complete
-        let window_clone = overlay_window.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            let _ = window_clone.hide();
-        });
-    }
+    let app = app_handle.clone();
+    let _ = app_handle.run_on_main_thread(move || {
+        if let Some(overlay_window) = app.get_webview_window("recording_overlay") {
+            // Emit event to trigger fade-out animation
+            let _ = overlay_window.emit("hide-overlay", ());
+            // Hide the window after a short delay to allow animation to complete
+            let window_clone = overlay_window.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let window_inner = window_clone.clone();
+                let _ = window_clone.run_on_main_thread(move || {
+                    let _ = window_inner.hide();
+                });
+            });
+        }
+    });
 }
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {

@@ -47,15 +47,24 @@ pub enum HistoryUpdatePayload {
     #[serde(rename = "updated")]
     Updated { entry: HistoryEntry },
     #[serde(rename = "deleted")]
-    Deleted { id: i64 },
+    Deleted {
+        #[specta(type = specta_typescript::Number)]
+        id: i64,
+    },
     #[serde(rename = "toggled")]
-    Toggled { id: i64 },
+    Toggled {
+        #[specta(type = specta_typescript::Number)]
+        id: i64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct HistoryEntry {
+    // SQLite rowids / unix timestamps fit safely in a TS `number` (< 2^53).
+    #[specta(type = specta_typescript::Number)]
     pub id: i64,
     pub file_name: String,
+    #[specta(type = specta_typescript::Number)]
     pub timestamp: i64,
     pub saved: bool,
     pub title: String,

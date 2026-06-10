@@ -2,9 +2,61 @@ fn main() {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     build_apple_intelligence_bridge();
 
+    #[cfg(target_os = "windows")]
+    embed_test_manifest();
+
     generate_tray_translations();
 
     tauri_build::build()
+}
+
+/// Embed a Common-Controls v6 manifest into TEST executables on Windows.
+///
+/// tauri-build embeds an app manifest into the real binary, but plain test
+/// exes get none — so the loader binds the legacy comctl32 5.82, which lacks
+/// `TaskDialogIndirect` (imported via tauri-plugin-dialog/rfd), and every test
+/// dies at load with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139).
+#[cfg(target_os = "windows")]
+fn embed_test_manifest() {
+    use std::env;
+    use std::fs;
+    use std::path::PathBuf;
+
+    const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+</assembly>
+"#;
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let manifest_path = out_dir.join("test-manifest.xml");
+    fs::write(&manifest_path, MANIFEST).expect("failed to write test manifest");
+
+    // Only embed the test manifest when running `cargo test`. The main binary
+    // already gets a manifest from tauri-build's resource compilation. Applying
+    // /MANIFEST:EMBED globally causes CVTRES error CVT1100 (duplicate resource)
+    // because both tauri-build's .rc and our /MANIFESTINPUT try to embed a
+    // manifest with id 1. Checking PROFILE alone isn't enough (both use "debug"),
+    // but the Tauri CLI sets TAURI_ENV when invoking cargo — its absence during
+    // `cargo test` is the discriminator.
+    let is_tauri_build = env::var("TAURI_ENV").is_ok()
+        || env::var("TAURI_CONFIG").is_ok()
+        || env::var("CARGO_CFG_TAURI").is_ok();
+    if !is_tauri_build {
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg=/MANIFESTINPUT:{}",
+            manifest_path.display()
+        );
+        // Disable manifest embedding on binary targets because Tauri's build
+        // already embeds the application manifest in the binary. This prevents
+        // CVTRES duplicate resource error CVT1100.
+        println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
+    }
 }
 
 /// Generate tray menu translations from frontend locale files.

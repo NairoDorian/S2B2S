@@ -11,6 +11,7 @@ interface UseSettingsReturn {
   outputDevices: AudioDevice[];
   audioFeedbackEnabled: boolean;
   postProcessModelOptions: Record<string, string[]>;
+  brainModelOptions: Record<string, string[]>;
 
   // Actions
   updateSetting: <K extends keyof Settings>(
@@ -41,6 +42,19 @@ interface UseSettingsReturn {
   ) => Promise<void>;
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
+
+  // Brain helpers
+  setBrainProvider: (providerId: string) => Promise<void>;
+  updateBrainBaseUrl: (
+    providerId: string,
+    baseUrl: string,
+  ) => Promise<void>;
+  updateBrainApiKey: (
+    providerId: string,
+    apiKey: string,
+  ) => Promise<void>;
+  updateBrainModel: (providerId: string, model: string) => Promise<void>;
+  fetchBrainModels: (providerId: string) => Promise<string[]>;
 }
 
 export const useSettings = (): UseSettingsReturn => {
@@ -61,6 +75,7 @@ export const useSettings = (): UseSettingsReturn => {
     outputDevices: store.outputDevices,
     audioFeedbackEnabled: store.settings?.audio_feedback || false,
     postProcessModelOptions: store.postProcessModelOptions,
+    brainModelOptions: store.brainModelOptions,
     updateSetting: store.updateSetting,
     resetSetting: store.resetSetting,
     refreshSettings: store.refreshSettings,
@@ -74,5 +89,10 @@ export const useSettings = (): UseSettingsReturn => {
     updatePostProcessApiKey: store.updatePostProcessApiKey,
     updatePostProcessModel: store.updatePostProcessModel,
     fetchPostProcessModels: store.fetchPostProcessModels,
+    setBrainProvider: store.setBrainProvider,
+    updateBrainBaseUrl: store.updateBrainBaseUrl,
+    updateBrainApiKey: store.updateBrainApiKey,
+    updateBrainModel: store.updateBrainModel,
+    fetchBrainModels: store.fetchBrainModels,
   };
 };

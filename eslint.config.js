@@ -35,4 +35,11 @@ export default [
       ],
     },
   },
+  {
+    // Brand marks (logo SVGs render the literal product name) — exempt from i18n.
+    files: ["src/components/icons/**/*.{ts,tsx}"],
+    rules: {
+      "i18next/no-literal-string": "off",
+    },
+  },
 ];

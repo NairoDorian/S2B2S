@@ -6,6 +6,8 @@ import type {
   AudioDevice,
   WhisperAcceleratorSetting,
   OrtAcceleratorSetting,
+  TtsConfig,
+  BrainConfig,
 } from "@/bindings";
 import { commands } from "@/bindings";
 
@@ -18,6 +20,7 @@ interface SettingsStore {
   outputDevices: AudioDevice[];
   customSounds: { start: boolean; stop: boolean };
   postProcessModelOptions: Record<string, string[]>;
+  brainModelOptions: Record<string, string[]>;
 
   // Actions
   initialize: () => Promise<void>;
@@ -53,6 +56,23 @@ interface SettingsStore {
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
   setPostProcessModelOptions: (providerId: string, models: string[]) => void;
+  setBrainProvider: (providerId: string) => Promise<void>;
+  updateBrainSetting: (
+    settingType: "base_url" | "api_key" | "model",
+    providerId: string,
+    value: string,
+  ) => Promise<void>;
+  updateBrainBaseUrl: (
+    providerId: string,
+    baseUrl: string,
+  ) => Promise<void>;
+  updateBrainApiKey: (
+    providerId: string,
+    apiKey: string,
+  ) => Promise<void>;
+  updateBrainModel: (providerId: string, model: string) => Promise<void>;
+  fetchBrainModels: (providerId: string) => Promise<string[]>;
+  setBrainModelOptions: (providerId: string, models: string[]) => void;
 
   // Internal state setters
   setSettings: (settings: Settings | null) => void;
@@ -155,6 +175,8 @@ const settingUpdaters: {
     commands.changeWhisperGpuDevice(value as number),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  tts: (value) => commands.changeTtsConfig(value as TtsConfig),
+  brain: (value) => commands.changeBrainConfig(value as BrainConfig),
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -167,6 +189,7 @@ export const useSettingsStore = create<SettingsStore>()(
     outputDevices: [],
     customSounds: { start: false, stop: false },
     postProcessModelOptions: {},
+    brainModelOptions: {},
 
     // Internal setters
     setSettings: (settings) => set({ settings }),
@@ -554,6 +577,171 @@ export const useSettingsStore = create<SettingsStore>()(
       set((state) => ({
         postProcessModelOptions: {
           ...state.postProcessModelOptions,
+          [providerId]: models,
+        },
+      })),
+
+    setBrainProvider: async (providerId) => {
+      const {
+        settings,
+        setUpdating,
+        refreshSettings,
+        setBrainModelOptions,
+      } = get();
+      const updateKey = "brain_provider_id";
+      const previousId = settings?.brain?.provider_id ?? null;
+
+      setUpdating(updateKey, true);
+
+      if (settings && settings.brain) {
+        set((state) => ({
+          settings: state.settings
+            ? {
+                ...state.settings,
+                brain: {
+                  ...state.settings.brain!,
+                  provider_id: providerId,
+                },
+              }
+            : null,
+        }));
+      }
+
+      setBrainModelOptions(providerId, []);
+
+      try {
+        await commands.setBrainProvider(providerId);
+        await refreshSettings();
+      } catch (error) {
+        console.error("Failed to set brain provider:", error);
+        if (previousId !== null && settings && settings.brain) {
+          set((state) => ({
+            settings: state.settings
+              ? {
+                  ...state.settings,
+                  brain: {
+                    ...state.settings.brain!,
+                    provider_id: previousId,
+                  },
+                }
+              : null,
+          }));
+        }
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    updateBrainSetting: async (
+      settingType: "base_url" | "api_key" | "model",
+      providerId: string,
+      value: string,
+    ) => {
+      const { setUpdating, refreshSettings } = get();
+      const updateKey = `brain_${settingType}:${providerId}`;
+
+      setUpdating(updateKey, true);
+
+      try {
+        if (settingType === "base_url") {
+          await commands.changeBrainBaseUrlSetting(providerId, value);
+        } else if (settingType === "api_key") {
+          await commands.changeBrainApiKeySetting(providerId, value);
+        } else if (settingType === "model") {
+          await commands.changeBrainModelSetting(providerId, value);
+        }
+        await refreshSettings();
+      } catch (error) {
+        console.error(
+          `Failed to update brain ${settingType.replace("_", " ")}:`,
+          error,
+        );
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    updateBrainBaseUrl: async (providerId, baseUrl) => {
+      const { setUpdating, refreshSettings } = get();
+      const updateKey = `brain_base_url:${providerId}`;
+
+      setUpdating(updateKey, true);
+
+      try {
+        const urlResult = await commands.changeBrainBaseUrlSetting(
+          providerId,
+          baseUrl,
+        );
+        if (urlResult.status === "error") {
+          console.error("Failed to persist base URL:", urlResult.error);
+          return;
+        }
+
+        const modelResult = await commands.changeBrainModelSetting(
+          providerId,
+          "",
+        );
+        if (modelResult.status === "error") {
+          console.error("Failed to reset model setting:", modelResult.error);
+          return;
+        }
+
+        set((state) => ({
+          brainModelOptions: {
+            ...state.brainModelOptions,
+            [providerId]: [],
+          },
+        }));
+
+        await refreshSettings();
+      } catch (error) {
+        console.error("Failed to update brain base URL:", error);
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    updateBrainApiKey: async (providerId, apiKey) => {
+      set((state) => ({
+        brainModelOptions: {
+          ...state.brainModelOptions,
+          [providerId]: [],
+        },
+      }));
+      return get().updateBrainSetting("api_key", providerId, apiKey);
+    },
+
+    updateBrainModel: async (providerId, model) => {
+      return get().updateBrainSetting("model", providerId, model);
+    },
+
+    fetchBrainModels: async (providerId) => {
+      const updateKey = `brain_models_fetch:${providerId}`;
+      const { setUpdating, setBrainModelOptions } = get();
+
+      setUpdating(updateKey, true);
+
+      try {
+        const result = await commands.fetchBrainModels();
+        if (result.status === "ok") {
+          setBrainModelOptions(providerId, result.data);
+          return result.data;
+        } else {
+          console.error("Failed to fetch brain models:", result.error);
+          return [];
+        }
+      } catch (error) {
+        console.error("Failed to fetch brain models:", error);
+        return [];
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    setBrainModelOptions: (providerId, models) =>
+      set((state) => ({
+        brainModelOptions: {
+          ...state.brainModelOptions,
           [providerId]: models,
         },
       })),

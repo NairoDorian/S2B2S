@@ -11,7 +11,7 @@ import { commands } from "@/bindings";
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
-type OverlayState = "recording" | "transcribing" | "processing";
+type OverlayState = "recording" | "transcribing" | "processing" | "speaking";
 
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
@@ -99,6 +99,9 @@ const RecordingOverlay: React.FC = () => {
         {state === "processing" && (
           <div className="transcribing-text">{t("overlay.processing")}</div>
         )}
+        {state === "speaking" && (
+          <div className="transcribing-text">{t("overlay.speaking")}</div>
+        )}
       </div>
 
       <div className="overlay-right">
@@ -107,6 +110,17 @@ const RecordingOverlay: React.FC = () => {
             className="cancel-button"
             onClick={() => {
               commands.cancelOperation();
+            }}
+          >
+            <CancelIcon />
+          </div>
+        )}
+        {state === "speaking" && (
+          <div
+            className="cancel-button"
+            title={t("overlay.stopSpeaking")}
+            onClick={() => {
+              commands.ttsStop();
             }}
           >
             <CancelIcon />

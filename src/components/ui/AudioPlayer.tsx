@@ -25,7 +25,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const src = loadedSrc;
-  const animationRef = useRef<number>();
+  // React 19 types require an explicit initial value for useRef.
+  const animationRef = useRef<number | undefined>(undefined);
   const dragTimeRef = useRef<number>(0);
 
   // Use refs to avoid stale closures in animation loop
