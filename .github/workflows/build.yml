@@ -19,7 +19,7 @@ on:
       asset-prefix:
         required: false
         type: string
-        default: "handy"
+        default: "s2b2s"
       asset-name-pattern:
         required: false
         type: string
@@ -303,7 +303,7 @@ jobs:
         shell: bash
         run: |
           ORT_VERSION="1.24.2"
-          curl -L -o ort.tgz "https://blob.handy.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
+          curl -L -o ort.tgz "https://blob.s2b2s.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
           tar xzf ort.tgz
           ORT_DIR="$(pwd)/onnxruntime-osx-x86_64-${ORT_VERSION}"
           echo "ORT_LIB_LOCATION=$ORT_DIR/lib" >> $GITHUB_ENV
@@ -318,7 +318,7 @@ jobs:
         shell: bash
         run: |
           ORT_VERSION="1.24.2"
-          curl -L -o ort.tgz "https://blob.handy.computer/onnxruntime-linux-x86_64-${ORT_VERSION}.tgz"
+          curl -L -o ort.tgz "https://blob.s2b2s.computer/onnxruntime-linux-x86_64-${ORT_VERSION}.tgz"
           tar xzf ort.tgz
           ORT_DIR="$(pwd)/onnxruntime-linux-x86_64-${ORT_VERSION}"
           echo "ORT_LIB_LOCATION=$ORT_DIR/lib" >> $GITHUB_ENV
@@ -377,10 +377,10 @@ jobs:
           echo "=== Frameworks contents ==="
           ls -la "$APP/Contents/Frameworks/" | grep onnx || true
           echo "=== Binary linked libs ==="
-          otool -L "$APP/Contents/MacOS/handy" | grep onnx || true
+          otool -L "$APP/Contents/MacOS/s2b2s" | grep onnx || true
           echo "=== Checking all @rpath deps are satisfied ==="
           # Extract every @rpath lib the binary needs
-          otool -L "$APP/Contents/MacOS/handy" | grep '@rpath/' | awk '{print $1}' | while read dep; do
+          otool -L "$APP/Contents/MacOS/s2b2s" | grep '@rpath/' | awk '{print $1}' | while read dep; do
             libname=$(basename "$dep")
             if [ ! -f "$APP/Contents/Frameworks/$libname" ]; then
               echo "MISSING: $libname not found in Frameworks/"

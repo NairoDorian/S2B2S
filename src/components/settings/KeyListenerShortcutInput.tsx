@@ -9,21 +9,21 @@ import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
 
-interface HandyKeysShortcutInputProps {
+interface KeyListenerShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
 }
 
-interface HandyKeysEvent {
+interface KeyListenerEvent {
   modifiers: string[];
   key: string | null;
   is_key_down: boolean;
   hotkey_string: string;
 }
 
-export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
+export const KeyListenerShortcutInput: React.FC<KeyListenerShortcutInputProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
   shortcutId,
@@ -54,7 +54,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     }
 
     // Stop backend recording
-    await commands.stopHandyKeysRecording().catch(console.error);
+    await commands.stopKeyListenerRecording().catch(console.error);
 
     // Restore original binding
     if (originalBinding) {
@@ -72,7 +72,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     setOriginalBinding("");
   }, [isRecording, originalBinding, shortcutId, updateBinding, t]);
 
-  // Set up event listener for handy-keys events
+  // Set up event listener for key-listener events
   useEffect(() => {
     if (!isRecording) return;
 
@@ -80,8 +80,8 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
 
     const setupListener = async () => {
       // Listen for key events from backend
-      const unlisten = await listen<HandyKeysEvent>(
-        "handy-keys-event",
+      const unlisten = await listen<KeyListenerEvent>(
+        "key-listener-event",
         async (event) => {
           if (cleanup) return;
 
@@ -120,7 +120,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
               unlistenRef.current();
               unlistenRef.current = null;
             }
-            await commands.stopHandyKeysRecording().catch(console.error);
+            await commands.stopKeyListenerRecording().catch(console.error);
             setIsRecording(false);
             setCurrentKeys("");
             currentKeysRef.current = "";
@@ -141,7 +141,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         unlistenRef.current = null;
       }
       // Stop backend recording on unmount to prevent orphaned recording loops
-      commands.stopHandyKeysRecording().catch(console.error);
+      commands.stopKeyListenerRecording().catch(console.error);
     };
   }, [
     isRecording,
@@ -178,7 +178,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
 
     // Start backend recording
     try {
-      await commands.startHandyKeysRecording(shortcutId);
+      await commands.startKeyListenerRecording(shortcutId);
       setIsRecording(true);
       setCurrentKeys("");
       currentKeysRef.current = "";
