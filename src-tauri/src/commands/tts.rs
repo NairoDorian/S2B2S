@@ -86,15 +86,6 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
     let was_enabled = settings.tts.enabled;
     let volume = config.volume;
     let now_enabled = config.enabled;
-    
-    let old_cuda = settings.tts.piper.cuda;
-    let old_voice = settings.tts.voice.clone();
-    let old_engine = settings.tts.engine;
-
-    let new_cuda = config.piper.cuda;
-    let new_voice = config.voice.clone();
-    let new_engine = config.engine;
-
     settings.tts = config;
     write_settings(&app, settings.clone());
 
@@ -113,28 +104,5 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
             }
         }
     }
-
-    // If the engine is Piper, and either the voice or CUDA setting changed, reload in background.
-    if new_engine == crate::settings::TtsEngine::Piper && now_enabled {
-        if old_cuda != new_cuda || old_voice != new_voice || old_engine != new_engine || was_enabled != now_enabled {
-            log::info!("[TTS] Piper config changed (voice or CUDA). Reloading server in background...");
-            let voice_to_load = if new_voice.is_empty() {
-                "en_US-joe-medium".to_string()
-            } else {
-                new_voice
-            };
-            std::thread::spawn(move || {
-                match crate::tts::backends::piper_server::ensure_running(voice_to_load, new_cuda) {
-                    Ok(_) => log::info!("[TTS] Piper server reloaded successfully with new configuration."),
-                    Err(e) => log::error!("[TTS] Failed to reload Piper server: {}", e),
-                }
-            });
-        }
-    } else if old_engine == crate::settings::TtsEngine::Piper && (new_engine != crate::settings::TtsEngine::Piper || !now_enabled) {
-        // Unload Piper if engine switched or disabled
-        log::info!("[TTS] Piper engine disabled or switched. Unloading model...");
-        crate::tts::backends::piper_server::unload_piper_model();
-    }
-
     Ok(())
 }

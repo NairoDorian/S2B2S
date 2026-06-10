@@ -325,27 +325,23 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 }
 
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
-    let app = app_handle.clone();
-    let state_str = state.to_string();
-    let _ = app_handle.run_on_main_thread(move || {
-        // Check if overlay should be shown based on position setting
-        let settings = settings::get_settings(&app);
-        if settings.overlay_position == OverlayPosition::None {
-            return;
-        }
+    // Check if overlay should be shown based on position setting
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        return;
+    }
 
-        update_overlay_position_sync(&app);
+    update_overlay_position(app_handle);
 
-        if let Some(overlay_window) = app.get_webview_window("recording_overlay") {
-            let _ = overlay_window.show();
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.show();
 
-            // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
-            #[cfg(target_os = "windows")]
-            force_overlay_topmost(&overlay_window);
+        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
 
-            let _ = overlay_window.emit("show-overlay", state_str);
-        }
-    });
+        let _ = overlay_window.emit("show-overlay", state);
+    }
 }
 
 /// Shows the recording overlay window with fade-in animation
@@ -370,13 +366,6 @@ pub fn show_speaking_overlay(app_handle: &AppHandle) {
 
 /// Updates the overlay window position based on current settings
 pub fn update_overlay_position(app_handle: &AppHandle) {
-    let app = app_handle.clone();
-    let _ = app_handle.run_on_main_thread(move || {
-        update_overlay_position_sync(&app);
-    });
-}
-
-fn update_overlay_position_sync(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         #[cfg(target_os = "linux")]
         {
@@ -394,22 +383,16 @@ fn update_overlay_position_sync(app_handle: &AppHandle) {
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
-    let app = app_handle.clone();
-    let _ = app_handle.run_on_main_thread(move || {
-        if let Some(overlay_window) = app.get_webview_window("recording_overlay") {
-            // Emit event to trigger fade-out animation
-            let _ = overlay_window.emit("hide-overlay", ());
-            // Hide the window after a short delay to allow animation to complete
-            let window_clone = overlay_window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(300));
-                let window_inner = window_clone.clone();
-                let _ = window_clone.run_on_main_thread(move || {
-                    let _ = window_inner.hide();
-                });
-            });
-        }
-    });
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Emit event to trigger fade-out animation
+        let _ = overlay_window.emit("hide-overlay", ());
+        // Hide the window after a short delay to allow animation to complete
+        let window_clone = overlay_window.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let _ = window_clone.hide();
+        });
+    }
 }
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {

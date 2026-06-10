@@ -226,13 +226,8 @@ impl TtsManager {
         self.player.stop();
     }
 
-    /// Play pre-synthesized warm-up audio bytes out loud.
-    pub fn speak_warmup_bytes(&self, bytes: Vec<u8>) {
-        if bytes.is_empty() {
-            return;
-        }
-        let cfg = get_settings(&self.app).tts;
-        self.player.set_volume(cfg.volume);
+    /// Play raw audio bytes directly through the player.
+    pub fn play_raw(&self, bytes: Vec<u8>) {
         self.player.append(bytes);
     }
 }

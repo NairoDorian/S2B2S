@@ -41,14 +41,6 @@ impl TtsPlayer {
         let is_paused_t = is_paused.clone();
 
         thread::spawn(move || {
-            #[cfg(target_os = "windows")]
-            {
-                use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
-                unsafe {
-                    let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-                }
-            }
-
             // The device sink must stay alive for the duration of playback.
             let mut stream: Option<MixerDeviceSink> = None;
             let mut sink: Option<Player> = None;

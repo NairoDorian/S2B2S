@@ -9,9 +9,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Startup welcome greeting & settings live reload**:
-  - Welcoming greeting option (`warmup_speak_out_loud` setting) to play the first warm-up sentence out loud through the speakers immediately after model loading finishes.
-  - Live reload of CPU/GPU execution provider and voice configurations in `change_tts_config` command, dynamically restarting the persistent Piper HTTP server in the background without locking RAM residency.
 - **Speech output (TTS) subsystem** — the "Read Anywhere" / CopySpeak pillar:
   - `TtsBackend` engine abstraction with a warm, persistent **Piper** local
     HTTP-server backend (model stays resident in RAM; child stdio drained so
@@ -54,12 +51,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
   - React 19, Vite 8, TypeScript 6, zod 4, ESLint 10, i18next 26.
   - `cpal` is pinned to 0.17 (rodio 0.22's supported range; one cpal version
     is required because recording devices are shared with playback).
+- **Overlay threading simplified** — removed `run_on_main_thread` wrapping
+  from overlay show/hide/reposition operations; overlay now executes directly
+  on the calling thread without a main-thread hop.
+- **Removed COM initialization from TTS audio player** — the `CoInitializeEx`
+  call on the background playback thread was dropped.
+- **Removed dynamic Piper server reload** — `change_tts_config` no longer
+  restarts the persistent Piper HTTP server in the background when voice or
+  CUDA settings change.
+- Renamed `warmup_speak_out_loud` setting to `play_startup_greeting` and
+  `speak_warmup_bytes` method to `play_raw`.
 
 ### Fixed
 
-- **Windows 11 TTS Playback Freezes**: Resolved severe application freezes/hangs during audio playback by:
-  - Decoupling the background audio player thread from the GUI thread: wrapping all overlay window show/hide/reposition operations, settings store queries, and monitor display device queries in Tauri's `run_on_main_thread` block.
-  - Initializing COM libraries (`CoInitializeEx` with `COINIT_MULTITHREADED`) on the audio player background thread to prevent WASAPI driver acquisition locks.
 - Windows test executables failed to load (`STATUS_ENTRYPOINT_NOT_FOUND`)
   because they lacked a Common-Controls v6 manifest after the dependency
   upgrade; `build.rs` now embeds one into test binaries.

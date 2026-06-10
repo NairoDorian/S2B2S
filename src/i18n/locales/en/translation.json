@@ -591,10 +591,6 @@
         "label": "Use CUDA",
         "description": "Run the Piper server with GPU acceleration (NVIDIA only)."
       },
-      "warmupSpeakOutLoud": {
-        "label": "Play warm-up out loud",
-        "description": "Play the welcome and JIT warm-up sentence through the speakers when the voice engine loads."
-      },
       "unload": {
         "label": "Unload engine",
         "description": "Stop the warm TTS server and free its memory.",

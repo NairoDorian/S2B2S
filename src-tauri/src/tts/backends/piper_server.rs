@@ -508,13 +508,9 @@ fn spawn_start_thread(
 
         log::info!("[Piper] Server ready on port {} (generation {})", port, generation);
 
-        // Substantial CUDA warmup sentence to compile JIT kernels, welcoming the user.
+        // Substantial CUDA warmup sentence to compile JIT kernels
         emit_model_status("warming_up", Some(&voice), cuda, None);
-        let warmup_text = if cuda {
-            "Hello! This is a warm-up sentence to compile the CUDA kernels and initialize the models."
-        } else {
-            "Hello!"
-        };
+        let warmup_text = "Hello! S2B2S is ready.";
 
         let warmup_client = get_piper_client();
         let warmup_url = format!("http://127.0.0.1:{}/", port);
@@ -526,14 +522,13 @@ fn spawn_start_thread(
                     log::info!("[Piper] Warmup completed in {:.1}s", warmup_start.elapsed().as_secs_f64());
                     if let Some(app) = APP_HANDLE.get() {
                         let settings = crate::settings::get_settings(app);
-                        if settings.tts.warmup_speak_out_loud {
+                        if settings.tts.play_startup_greeting {
                             if let Some(tts) = app.try_state::<Arc<crate::tts::manager::TtsManager>>().map(|s| s.inner().clone()) {
-                                tts.speak_warmup_bytes(bytes.to_vec());
+                                log::info!("[Piper] Playing startup greeting audio out loud...");
+                                tts.play_raw(bytes.to_vec());
                             }
                         }
                     }
-                } else {
-                    log::warn!("[Piper] Warmup completed but failed to read response bytes.");
                 }
             }
             Err(e) => {
