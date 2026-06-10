@@ -47,6 +47,9 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    /// Route the transcription to the Brain (S2B2S conversation loop) instead
+    /// of pasting it into the focused application.
+    route_to_brain: bool,
 }
 
 /// Field name for structured output JSON schema
@@ -512,6 +515,7 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
+        let route_to_brain = self.route_to_brain;
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone());
@@ -578,6 +582,62 @@ impl ShortcutAction for TranscribeAction {
                                 transcription_time.elapsed(),
                                 transcription
                             );
+
+                            if route_to_brain {
+                                // S2B2S conversation loop: persist the raw transcript,
+                                // then hand it to the Brain, which streams the reply
+                                // (and speaks it when read-aloud is on). No paste.
+                                let settings = get_settings(&ah);
+                                let use_post_process = settings.post_process_enabled;
+                                
+                                let processed = if use_post_process {
+                                    show_processing_overlay(&ah);
+                                    process_transcription_output(&ah, &transcription, true).await
+                                } else {
+                                    let mut final_text = transcription.to_string();
+                                    if let Some(converted_text) = maybe_convert_chinese_variant(&settings, &transcription).await {
+                                        final_text = converted_text;
+                                    }
+                                    ProcessedTranscription {
+                                        final_text,
+                                        post_processed_text: None,
+                                        post_process_prompt: None,
+                                    }
+                                };
+
+                                if wav_saved {
+                                    if let Err(err) = hm.save_entry(
+                                        file_name,
+                                        transcription.clone(),
+                                        use_post_process,
+                                        processed.post_processed_text.clone(),
+                                        processed.post_process_prompt.clone(),
+                                    ) {
+                                        error!("Failed to save history entry: {}", err);
+                                    }
+                                }
+                                utils::hide_recording_overlay(&ah);
+                                change_tray_icon(&ah, TrayIconState::Idle);
+
+                                if !processed.final_text.trim().is_empty() {
+                                    // Surface the spoken question in the Conversation view
+                                    let _ = ah.emit("brain:asked", &processed.final_text);
+                                    if let Some(bm) =
+                                        ah.try_state::<Arc<crate::brain::manager::BrainManager>>()
+                                    {
+                                        let bm = bm.inner().clone();
+                                        let text_to_ask = processed.final_text.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            if let Err(e) = bm.ask(text_to_ask).await {
+                                                error!("Brain ask failed: {e}");
+                                            }
+                                        });
+                                    } else {
+                                        error!("BrainManager not initialized");
+                                    }
+                                }
+                                return;
+                            }
 
                             if post_process {
                                 show_processing_overlay(&ah);
@@ -660,6 +720,40 @@ impl ShortcutAction for TranscribeAction {
     }
 }
 
+// Speak Selection Action — CopySpeak "Read Anywhere": capture the selected
+// text (falling back to the clipboard) and read it aloud. Pressing the
+// shortcut while speech is playing stops playback instead (toggle).
+struct SpeakSelectionAction;
+
+impl ShortcutAction for SpeakSelectionAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let app = app.clone();
+        // Selection capture simulates a copy keystroke and sleeps; keep it off
+        // the shortcut-dispatch thread.
+        std::thread::spawn(move || {
+            let Some(tts) = app.try_state::<Arc<crate::tts::manager::TtsManager>>() else {
+                error!("TtsManager not initialized");
+                return;
+            };
+            if tts.is_playing() {
+                tts.stop();
+                return;
+            }
+            match crate::clipboard::capture_selection_text(&app) {
+                Ok(text) => tts.speak(text),
+                Err(e) => {
+                    warn!("Speak selection failed: {e}");
+                    let _ = app.emit("tts:error", e);
+                }
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on release.
+    }
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -703,11 +797,26 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
+            route_to_brain: false,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            post_process: true,
+            route_to_brain: false,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "converse".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: false,
+            route_to_brain: true,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "speak_selection".to_string(),
+        Arc::new(SpeakSelectionAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

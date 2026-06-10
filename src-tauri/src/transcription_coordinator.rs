@@ -38,7 +38,9 @@ pub struct TranscriptionCoordinator {
 }
 
 pub fn is_transcribe_binding(id: &str) -> bool {
-    id == "transcribe" || id == "transcribe_with_post_process"
+    // "converse" records through the same pipeline; only its output routing
+    // differs (Brain instead of paste).
+    id == "transcribe" || id == "transcribe_with_post_process" || id == "converse"
 }
 
 impl TranscriptionCoordinator {

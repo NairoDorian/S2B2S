@@ -37,9 +37,12 @@ pub struct ModelInfo {
     pub filename: String,
     pub url: Option<String>,
     pub sha256: Option<String>,
+    // Byte/MB counts fit safely in a TS `number` (< 2^53).
+    #[specta(type = specta_typescript::Number)]
     pub size_mb: u64,
     pub is_downloaded: bool,
     pub is_downloading: bool,
+    #[specta(type = specta_typescript::Number)]
     pub partial_size: u64,
     pub is_directory: bool,
     pub engine_type: EngineType,
@@ -55,7 +58,9 @@ pub struct ModelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct DownloadProgress {
     pub model_id: String,
+    #[specta(type = specta_typescript::Number)]
     pub downloaded: u64,
+    #[specta(type = specta_typescript::Number)]
     pub total: u64,
     pub percentage: f64,
 }
@@ -981,7 +986,10 @@ impl ModelManager {
             }
             hasher.update(&buffer[..n]);
         }
-        Ok(format!("{:x}", hasher.finalize()))
+        // sha2 0.11: finalize() returns a hybrid_array::Array (no LowerHex impl),
+        // so encode the digest to a lowercase hex string explicitly.
+        let digest = hasher.finalize();
+        Ok(digest.iter().map(|b| format!("{:02x}", b)).collect())
     }
 
     pub async fn download_model(&self, model_id: &str) -> Result<()> {

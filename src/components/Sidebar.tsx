@@ -1,6 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
+import {
+  Brain,
+  Cog,
+  FlaskConical,
+  History,
+  Info,
+  MessagesSquare,
+  Sparkles,
+  Cpu,
+  Volume2,
+} from "lucide-react";
 import S2B2STextLogo from "./icons/S2B2STextLogo";
 import S2B2SIcon from "./icons/S2B2SIcon";
 import { useSettings } from "../hooks/useSettings";
@@ -12,7 +22,10 @@ import {
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
+  SpeechSettings,
+  BrainSettings,
 } from "./settings";
+import { ConversationView } from "./conversation/ConversationView";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -56,11 +69,29 @@ export const SECTIONS_CONFIG = {
     component: HistorySettings,
     enabled: () => true,
   },
+  conversation: {
+    labelKey: "sidebar.conversation",
+    icon: MessagesSquare,
+    component: ConversationView,
+    enabled: () => true,
+  },
+  speech: {
+    labelKey: "sidebar.speech",
+    icon: Volume2,
+    component: SpeechSettings,
+    enabled: () => true,
+  },
+  brain: {
+    labelKey: "sidebar.brain",
+    icon: Brain,
+    component: BrainSettings,
+    enabled: () => true,
+  },
   postprocessing: {
     labelKey: "sidebar.postProcessing",
     icon: Sparkles,
     component: PostProcessingSettings,
-    enabled: (settings) => settings?.post_process_enabled ?? false,
+    enabled: () => true,
   },
   debug: {
     labelKey: "sidebar.debug",

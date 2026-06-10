@@ -772,6 +772,7 @@ pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
 pub struct GpuDeviceOption {
     pub id: i32,
     pub name: String,
+    #[specta(type = specta_typescript::Number)]
     pub total_vram_mb: usize,
 }
 

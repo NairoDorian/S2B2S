@@ -2,6 +2,24 @@
 
 This file provides guidance to AI coding assistants working with code in this repository.
 
+## ⚠️ Cross-Platform Mandate (READ FIRST — applies to EVERY change)
+
+**S2B2S must stay cross-platform.** Priority order:
+
+1. **Windows 11 — top priority.** Primary launch + test platform. Everything must work great here.
+2. **macOS — first-class.** Keep it building and functional.
+3. **Linux — first-class.** Keep it building and functional.
+
+Rules for all code (Rust **and** TypeScript):
+
+- **Never** introduce a Windows-only (or any single-OS) code path without an equivalent or graceful fallback for macOS and Linux. Platform-specific code MUST be gated with `#[cfg(target_os = "...")]` (Rust) or runtime platform checks (TS), and every gated branch needs a counterpart (or a documented, non-crashing degradation) for the other two OSes.
+- Prefer cross-platform crates/APIs (cpal, rodio, tauri, enigo, etc.) over OS-native calls. Reach for `windows`/`objc`/`gtk` only when unavoidable, always behind a `cfg`.
+- Examples already in the tree to follow: `overlay.rs` (per-OS overlay impls), `audio_toolkit` (cpal), clipboard/paste, shortcuts. New features (TTS playback/output-device, double-copy clipboard watcher, conversation hotkeys, HUD) must provide Windows + macOS + Linux paths from the start.
+- Don't let macOS/Linux silently rot: if a feature can't be fully implemented on one OS yet, `cfg` it off there with a clear `// TODO(cross-platform):` note and a no-op/fallback — never a compile error or panic.
+- CI is expected to build on all three OSes (Windows required to pass; macOS/Linux kept compiling).
+
+When in doubt, choose the portable solution. A Windows-only shortcut that breaks the macOS/Linux build is **not acceptable**.
+
 ## Development Commands
 
 **Prerequisites:**
@@ -55,20 +73,32 @@ S2B2S is a cross-platform desktop speech-to-text application built with Tauri 2.
 
 ### Backend Structure (src-tauri/src/)
 
-- `lib.rs` - Main entry point, Tauri setup, manager initialization
+- `lib.rs` - Main entry point, Tauri setup, manager initialization, `specta_builder()` (typed IPC; regenerate `src/bindings.ts` with `cargo test export_bindings`)
 - `managers/` - Core business logic:
   - `audio.rs` - Audio recording and device management
   - `model.rs` - Model downloading and management
   - `transcription.rs` - Speech-to-text processing pipeline
   - `history.rs` - Transcription history storage
+- `tts/` - Text-to-speech subsystem (the "Read Anywhere" / CopySpeak pillar):
+  - `mod.rs` - `TtsBackend` trait + `Voice`
+  - `backends/piper.rs` - warm persistent Piper HTTP server (drained stdio)
+  - `player.rs` - streaming gapless playback (rodio), drives the speaking HUD
+  - `manager.rs` - sanitize → paginate → synthesize-ahead orchestration
+  - `sanitize/` - markdown stripping + speech normalization + cleanup
+  - `pagination.rs` / `fragment_queue.rs` - UTF-8-safe text chunking
+  - `clipboard_watch.rs` - double-copy trigger (Windows detection for now)
+- `brain/` - Streaming LLM subsystem (the "Brain" of Speech → Brain → Speech):
+  - `client.rs` - SSE streaming chat client + sentence splitter
+  - `manager.rs` - turn history, abort (barge-in), sentence → TTS bridge
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling
   - `vad/` - Voice Activity Detection (Silero VAD)
-- `commands/` - Tauri command handlers for frontend communication
+- `commands/` - Tauri command handlers (incl. `tts.rs`, `brain.rs`)
+- `actions.rs` - Shortcut actions: transcribe, converse (→ Brain), speak selection
 - `cli.rs` - CLI argument definitions (clap derive)
 - `shortcut.rs` - Global keyboard shortcut handling
-- `settings.rs` - Application settings management
-- `overlay.rs` - Recording overlay window (platform-specific)
+- `settings.rs` - Application settings management (incl. `TtsConfig`, `BrainConfig`)
+- `overlay.rs` - Recording/speaking overlay window (platform-specific)
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `utils.rs` - Platform detection helpers
 

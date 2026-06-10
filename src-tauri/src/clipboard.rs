@@ -662,6 +662,41 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Captures the currently selected text by simulating Ctrl+C / Cmd+C, then
+/// restores the previous clipboard contents. When nothing is selected the
+/// clipboard is unchanged, so the existing clipboard text is returned —
+/// CopySpeak semantics: speak the selection, falling back to the clipboard.
+pub fn capture_selection_text(app_handle: &AppHandle) -> Result<String, String> {
+    let clipboard = app_handle.clipboard();
+    let previous = clipboard.read_text().unwrap_or_default();
+
+    {
+        let enigo_state = app_handle
+            .try_state::<EnigoState>()
+            .ok_or("Enigo state not initialized")?;
+        let mut enigo = enigo_state
+            .0
+            .lock()
+            .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
+        input::send_copy_ctrl_c(&mut enigo)?;
+    }
+
+    // Give the focused app time to write the selection to the clipboard.
+    std::thread::sleep(Duration::from_millis(150));
+
+    let captured = clipboard.read_text().unwrap_or_default();
+
+    // Restore the user's clipboard when we replaced it with the selection.
+    if captured != previous {
+        let _ = clipboard.write_text(&previous);
+    }
+
+    if captured.trim().is_empty() {
+        return Err("Nothing selected and the clipboard is empty".into());
+    }
+    Ok(captured)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

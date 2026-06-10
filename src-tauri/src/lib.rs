@@ -3,8 +3,10 @@ mod actions;
 mod apple_intelligence;
 mod audio_feedback;
 pub mod audio_toolkit;
+mod brain;
 pub mod cli;
 mod clipboard;
+mod control_server;
 mod commands;
 mod helpers;
 mod input;
@@ -18,11 +20,12 @@ mod signal_handle;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
+mod tts;
 mod utils;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
-use specta_typescript::{BigIntExportBehavior, Typescript};
+use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 use env_filter::Builder as EnvFilterBuilder;
@@ -155,6 +158,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    let tts_manager = Arc::new(crate::tts::manager::TtsManager::new(app_handle.clone()));
+    let brain_manager = Arc::new(crate::brain::manager::BrainManager::new(app_handle.clone()));
 
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
@@ -164,6 +169,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(tts_manager.clone());
+    app_handle.manage(brain_manager.clone());
+
+    // CopySpeak double-copy trigger (idles cheaply while disabled).
+    crate::tts::clipboard_watch::start(app_handle.clone());
+
+    // Set AppHandle for persistent Piper server status emissions.
+    crate::tts::backends::piper_server::set_app_handle(app_handle.clone());
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -292,6 +305,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // Start control TCP server
+    control_server::start(app_handle.clone());
 }
 
 #[tauri::command]
@@ -313,16 +329,11 @@ fn show_main_window_command(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
+/// Typed IPC surface (commands + events), shared by `run()` and the
+/// `export_bindings` test so ../src/bindings.ts can be regenerated headlessly
+/// via `cargo test export_bindings` (no GUI launch needed).
+fn specta_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
@@ -425,16 +436,59 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::tts::tts_speak,
+            commands::tts::tts_speak_clipboard,
+            commands::tts::tts_stop,
+            commands::tts::tts_pause,
+            commands::tts::tts_resume,
+            commands::tts::tts_is_playing,
+            commands::tts::tts_get_voices,
+            commands::tts::tts_unload_engine,
+            commands::tts::get_piper_server_status,
+            commands::tts::change_tts_config,
+            commands::brain::brain_ask,
+            commands::brain::brain_abort,
+            commands::brain::brain_clear_history,
+            commands::brain::fetch_brain_models,
+            commands::brain::change_brain_config,
+            commands::brain::set_brain_provider,
+            commands::brain::change_brain_base_url_setting,
+            commands::brain::change_brain_api_key_setting,
+            commands::brain::change_brain_model_setting,
             helpers::clamshell::is_laptop,
         ])
-        .events(collect_events![managers::history::HistoryUpdatePayload,]);
+        .events(collect_events![managers::history::HistoryUpdatePayload,])
+}
+
+#[cfg(test)]
+mod bindings_export_tests {
+    /// Regenerates ../src/bindings.ts from the typed IPC surface.
+    /// Run with: `cargo test export_bindings`
+    #[test]
+    fn export_bindings() {
+        super::specta_builder()
+            .export(
+                specta_typescript::Typescript::default(),
+                "../src/bindings.ts",
+            )
+            .expect("Failed to export typescript bindings");
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run(cli_args: CliArgs) {
+    // Detect portable mode before anything else
+    portable::init();
+
+    // Parse console logging directives from RUST_LOG, falling back to info-level logging
+    // when the variable is unset
+    let console_filter = build_console_filter();
+
+    let specta_builder = specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     specta_builder
-        .export(
-            Typescript::default().bigint(BigIntExportBehavior::Number),
-            "../src/bindings.ts",
-        )
+        .export(Typescript::default(), "../src/bindings.ts")
         .expect("Failed to export typescript bindings");
 
     let invoke_handler = specta_builder.invoke_handler();
@@ -551,6 +605,59 @@ pub fn run(cli_args: CliArgs) {
             // Result is cached in a OnceLock inside the transcription manager.
             std::thread::spawn(|| {
                 let _ = crate::managers::transcription::get_available_accelerators();
+            });
+
+            // Auto-load STT and Piper TTS in parallel, then warm up the Brain.
+            let startup_app_handle = app_handle.clone();
+            std::thread::spawn(move || {
+                let app_tts = startup_app_handle.clone();
+                let tts_thread = std::thread::spawn(move || {
+                    log::info!("[Startup] Auto-loading Piper TTS persistent server in parallel...");
+                    let settings = crate::settings::get_settings(&app_tts);
+                    let voice = if settings.tts.voice.is_empty() {
+                        "en_US-joe-medium".to_string()
+                    } else {
+                        settings.tts.voice.clone()
+                    };
+                    
+                    match crate::tts::backends::piper_server::ensure_running(voice, settings.tts.piper.cuda) {
+                        Ok(_) => {
+                            log::info!("[Startup] Piper TTS persistent server loaded successfully.");
+                        }
+                        Err(e) => {
+                            log::error!("[Startup] Failed to auto-load Piper server: {}", e);
+                        }
+                    }
+                });
+
+                let app_stt = startup_app_handle.clone();
+                let stt_thread = std::thread::spawn(move || {
+                    log::info!("[Startup] Auto-loading STT model in parallel...");
+                    if let Some(transcription_manager) = app_stt.try_state::<Arc<crate::managers::transcription::TranscriptionManager>>().map(|s| s.inner().clone()) {
+                        transcription_manager.initiate_model_load();
+                    }
+                });
+
+                // Wait for both threads to finish loading
+                let _ = tts_thread.join();
+                let _ = stt_thread.join();
+
+                log::info!("[Startup] Both models finished loading. Running warm up...");
+
+                // Speak warm up text directly to Piper TTS (moved to actual warm-up sentence playback in piper_server.rs)
+
+                // Send a simple silent prompt to warm up the AI Brain (e.g. asking it to say hello)
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if let Some(brain) = startup_app_handle.try_state::<Arc<crate::brain::manager::BrainManager>>().map(|s| s.inner().clone()) {
+                    log::info!("[Startup] Warming up AI Brain with a simple prompt...");
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = brain.ask("Hi, say hello only.".to_string()).await {
+                            log::error!("[Startup] Brain warm up request failed: {}", e);
+                        } else {
+                            log::info!("[Startup] Brain warm up request completed successfully.");
+                        }
+                    });
+                }
             });
 
             // Hide tray icon if --no-tray was passed
