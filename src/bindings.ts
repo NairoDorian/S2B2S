@@ -486,10 +486,10 @@ export type TtsConfig = {
 	 */
 	double_copy_enabled?: boolean,
 	double_copy_window_ms?: number,
+	play_startup_greeting?: boolean,
 	openai?: OpenAIConfig,
 	elevenlabs?: ElevenLabsConfig,
 	cartesia?: CartesiaConfig,
-	warmup_speak_out_loud?: boolean,
 };
 
 /**  Which TTS engine synthesizes speech. */

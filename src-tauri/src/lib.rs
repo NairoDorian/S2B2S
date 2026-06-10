@@ -644,8 +644,6 @@ pub fn run(cli_args: CliArgs) {
 
                 log::info!("[Startup] Both models finished loading. Running warm up...");
 
-                // Speak warm up text directly to Piper TTS (moved to actual warm-up sentence playback in piper_server.rs)
-
                 // Send a simple silent prompt to warm up the AI Brain (e.g. asking it to say hello)
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 if let Some(brain) = startup_app_handle.try_state::<Arc<crate::brain::manager::BrainManager>>().map(|s| s.inner().clone()) {

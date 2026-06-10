@@ -341,21 +341,21 @@ pub struct TtsConfig {
     pub double_copy_enabled: bool,
     #[serde(default = "default_double_copy_window_ms")]
     pub double_copy_window_ms: u32,
+    #[serde(default = "default_play_startup_greeting")]
+    pub play_startup_greeting: bool,
     #[serde(default)]
     pub openai: OpenAIConfig,
     #[serde(default)]
     pub elevenlabs: ElevenLabsConfig,
     #[serde(default)]
     pub cartesia: CartesiaConfig,
-    #[serde(default = "default_warmup_speak_out_loud")]
-    pub warmup_speak_out_loud: bool,
 }
 
 fn default_double_copy_window_ms() -> u32 {
     1500
 }
 
-fn default_warmup_speak_out_loud() -> bool {
+fn default_play_startup_greeting() -> bool {
     true
 }
 
@@ -372,10 +372,10 @@ impl Default for TtsConfig {
             piper: PiperConfig::default(),
             double_copy_enabled: false,
             double_copy_window_ms: default_double_copy_window_ms(),
+            play_startup_greeting: true,
             openai: OpenAIConfig::default(),
             elevenlabs: ElevenLabsConfig::default(),
             cartesia: CartesiaConfig::default(),
-            warmup_speak_out_loud: true,
         }
     }
 }

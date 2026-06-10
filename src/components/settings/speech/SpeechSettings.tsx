@@ -130,6 +130,13 @@ export const SpeechSettings: React.FC = () => {
           description={t("settings.speech.doubleCopy.description")}
           grouped
         />
+        <ToggleSwitch
+          checked={tts.play_startup_greeting ?? true}
+          onChange={(play_startup_greeting) => update({ play_startup_greeting })}
+          label="Play Startup Greeting Audio"
+          description="Speak the warmup sentence aloud when the voice model finishes loading"
+          grouped
+        />
         <SettingContainer
           title={t("settings.speech.test.label")}
           description={t("settings.speech.test.description")}
@@ -161,13 +168,6 @@ export const SpeechSettings: React.FC = () => {
           onChange={(cuda) => update({ piper: { ...tts.piper, cuda } })}
           label={t("settings.speech.piperCuda.label")}
           description={t("settings.speech.piperCuda.description")}
-          grouped
-        />
-        <ToggleSwitch
-          checked={tts.warmup_speak_out_loud ?? true}
-          onChange={(warmup_speak_out_loud) => update({ warmup_speak_out_loud })}
-          label={t("settings.speech.warmupSpeakOutLoud.label")}
-          description={t("settings.speech.warmupSpeakOutLoud.description")}
           grouped
         />
         <SettingContainer
