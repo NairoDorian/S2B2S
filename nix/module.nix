@@ -7,7 +7,7 @@
 #
 # Usage in your flake:
 #
-#   inputs.s2b2s.url = "github:cjpais/s2b2s";
+#   inputs.s2b2s.url = "github:NairoDorian/S2B2S";
 #
 #   nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
 #     modules = [
