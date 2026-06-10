@@ -1,5 +1,5 @@
 {
-  description = "Handy - A free, open source, and extensible speech-to-text application that works completely offline";
+  description = "s2b2s - A free, open source, and extensible speech-to-text application that works completely offline";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -86,8 +86,8 @@
           };
         in
         {
-          handy = pkgs.rustPlatform.buildRustPackage {
-            pname = "handy";
+          s2b2s = pkgs.rustPlatform.buildRustPackage {
+            pname = "s2b2s";
             inherit version;
             src = self;
 
@@ -174,14 +174,14 @@
 
             meta = {
               description = "A free, open source, and extensible speech-to-text application that works completely offline";
-              homepage = "https://github.com/cjpais/Handy";
+              homepage = "https://github.com/cjpais/s2b2s";
               license = lib.licenses.mit;
-              mainProgram = "handy";
+              mainProgram = "s2b2s";
               platforms = supportedSystems;
             };
           };
 
-          default = self.packages.${system}.handy;
+          default = self.packages.${system}.s2b2s;
         }
       );
 
@@ -190,7 +190,7 @@
         { lib, pkgs, ... }:
         {
           imports = [ ./nix/module.nix ];
-          programs.handy.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.handy;
+          programs.s2b2s.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.s2b2s;
         };
 
       # Home-manager module for per-user service
@@ -198,7 +198,7 @@
         { lib, pkgs, ... }:
         {
           imports = [ ./nix/hm-module.nix ];
-          services.handy.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.handy;
+          services.s2b2s.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.s2b2s;
         };
 
       # Development shell for building from source
@@ -238,7 +238,7 @@
             XDG_DATA_DIRS = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share";
 
             shellHook = ''
-              echo "Handy development environment"
+              echo "s2b2s development environment"
               bun install
               echo "Run 'bun run tauri dev' to start"
             '';

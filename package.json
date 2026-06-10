@@ -1,7 +1,7 @@
 {
-  "name": "handy-app",
+  "name": "s2b2s-app",
   "private": true,
-  "version": "0.8.3",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
