@@ -6,7 +6,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(target_os = "windows")]
 use winreg::{
@@ -309,4 +309,67 @@ pub fn get_clamshell_microphone(app: AppHandle) -> Result<String, String> {
 pub fn is_recording(app: AppHandle) -> bool {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.is_recording()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn toggle_recording_pause(app: AppHandle) -> bool {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let new_state = audio_manager.toggle_pause();
+    let _ = app.emit("recording_pause_changed", new_state);
+    new_state
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn is_recording_paused(app: AppHandle) -> bool {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.is_recording_paused()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_noise_suppression_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.noise_suppression_enabled = enabled;
+    write_settings(&app, settings);
+
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.set_noise_suppression_enabled(enabled);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_vad_mode(app: AppHandle, mode: String) -> Result<(), String> {
+    if mode != "silero" && mode != "triple" {
+        return Err("Invalid VAD mode".to_string());
+    }
+
+    let mut settings = get_settings(&app);
+    settings.vad_mode = mode.clone();
+    write_settings(&app, settings);
+
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.update_vad_mode(&mode)
+        .map_err(|e| format!("Failed to update VAD mode: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn start_continuous_voice_mode(app: AppHandle) -> Result<(), String> {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.set_continuous_mode(true)
+        .map_err(|e| format!("Failed to start continuous voice mode: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn stop_continuous_voice_mode(app: AppHandle) -> Result<(), String> {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.set_continuous_mode(false)
+        .map_err(|e| format!("Failed to stop continuous voice mode: {e}"))?;
+    Ok(())
 }

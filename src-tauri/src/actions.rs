@@ -97,7 +97,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         }
     };
 
-    let prompt = match settings
+    let prompt_raw = match settings
         .post_process_prompts
         .iter()
         .find(|prompt| prompt.id == selected_prompt_id)
@@ -111,6 +111,8 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             return None;
         }
     };
+
+    let prompt = substitute_context_variables(&prompt_raw);
 
     if prompt.trim().is_empty() {
         debug!("Post-processing skipped because the selected prompt is empty");
@@ -361,6 +363,13 @@ pub(crate) async fn process_transcription_output(
 
     if let Some(converted_text) = maybe_convert_chinese_variant(&settings, transcription).await {
         final_text = converted_text;
+    }
+
+    // ITN: spoken → written normalization (e.g., "two hundred" → "200")
+    // Uses text-processing-rs — runs before Brain to improve LLM comprehension.
+    let itn_text = crate::tts::sanitize::post_stt_normalize(&final_text);
+    if itn_text != final_text {
+        final_text = itn_text;
     }
 
     if post_process {
@@ -807,6 +816,46 @@ impl ShortcutAction for TestAction {
     }
 }
 
+struct TogglePauseAction;
+
+impl ShortcutAction for TogglePauseAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        if audio_manager.is_recording() {
+            let is_paused = audio_manager.toggle_pause();
+            let _ = app.emit("recording_pause_changed", is_paused);
+            if is_paused {
+                utils::show_paused_overlay(app);
+            } else {
+                utils::show_recording_overlay(app);
+            }
+        }
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on release
+    }
+}
+
+fn substitute_context_variables(prompt: &str) -> String {
+    let mut substituted = prompt.to_string();
+    
+    // 1. ${current_app}
+    if substituted.contains("${current_app}") {
+        let app_name = crate::active_app::get_frontmost_app_name()
+            .unwrap_or_else(|| "Unknown Application".to_string());
+        substituted = substituted.replace("${current_app}", &app_name);
+    }
+    
+    // 2. ${time_local}
+    if substituted.contains("${time_local}") {
+        let local_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        substituted = substituted.replace("${time_local}", &local_time);
+    }
+    
+    substituted
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -838,6 +887,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "toggle_pause".to_string(),
+        Arc::new(TogglePauseAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),

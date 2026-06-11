@@ -7,6 +7,31 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Crash logging** — panics are now captured to `s2b2s-crash.log` in the app log directory with full backtraces and thread names. Wired at app startup via `crash_logging.rs`.
+- **Triple VAD as default** — the 3-stage voice activity detector (RMS energy gate → RNNoise voice probability → Silero VAD) is now the default VAD engine. Previously defaulted to Silero-only; TripleVAD provides better noise rejection at negligible latency cost.
+- **RNNoise voice probability threshold** — new `rnnoise_voice_threshold` setting (0.05–0.9, default 0.2) with slider in Advanced → Audio Enhancements. Controls how aggressively RNNoise filters non-speech audio.
+- **ITN (Inverse Text Normalization)** via `text-processing-rs` (Apache 2.0) — spoken-form ASR output is normalized to written form before the Brain: "two hundred thirty two" → "232", "january fifth" → "January 5, 2025". Applied post-STT in both dictation and conversation pipelines.
+- **TN (Text Normalization)** via `text-processing-rs` — written-form Brain output is normalized to spoken form before TTS: "$5.50" → "five dollars and fifty cents", "123" → "one hundred twenty three". Applied in the pre-TTS sanitize pipeline.
+- **Kokoro-82M TTS backend** — registered as a first-class `TtsEngine` with 54 voices across 9 languages (US/UK English, Spanish, French, Hindi, Italian, Japanese, Portuguese, Mandarin). Includes crossfade utility, voice-per-language auto-selection, and worker pool support via `tts_workers` setting. Skeleton ready for `tts-rs` crate integration.
+- **Kitten TTS backend** — ultra-light ONNX engine (8 English voices) registered behind `TtsBackend` trait. Skeleton ready for Python CLI adapter.
+- **Windows SAPI backend** — zero-download fallback engine always available on Windows. Registered behind `TtsBackend` trait.
+- **WarmEngine trait** — lifecycle states (`Stopped → Loading → WarmingUp → Ready`) for engines that support pre-warming. Engine status surfaced to UI and control API.
+- **TTS performance telemetry** — per-engine `chars_per_ms` tracking drives adaptive fragment sizing. Fast engines (CUDA cloud) get larger fragments; slow engines (CPU) get smaller ones. Exponential moving average with confidence scoring.
+- **Kokoro/Kitten worker settings** — `tts_workers` (auto-tuned from CPU count, 1–4 range) and `tts_shorten_first_chunk` (default ON, clause-split for fast time-to-first-audio).
+- **Debug mode toggle in Advanced settings** — previously only accessible via `Ctrl+Shift+D` keyboard shortcut; now has a UI toggle in Settings → Advanced → App alongside crash log path display.
+- **MSRV declared** — minimum Rust version 1.87 documented in `Cargo.toml`.
+
+### Changed
+
+- **Default VAD mode** changed from `"silero"` to `"triple"` for all modes. TripleVAD's 3-stage cascade (RMS → RNNoise voice prob → Silero) provides better noise rejection at the cost of ~2ms additional latency per frame.
+- **Text sanitizer pipeline reordered** — markdown stripping now runs first, then TN (text-processing-rs), then legacy regex-based TTS normalization, then artifact cleanup. The TN pass handles numbers/dates/currency that regex couldn't.
+
+### Fixed
+
+- **TripleVAD voice threshold** was previously hardcoded at `0.2` in `managers/audio.rs`; now reads from the user-configurable `rnnoise_voice_threshold` setting.
+
 ### Fixed
 
 - **Greeting text now editable** — fixed `onChange` handler using raw event object instead of `e.target.value`

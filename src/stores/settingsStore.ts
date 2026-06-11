@@ -177,6 +177,13 @@ const settingUpdaters: {
     commands.changeExtraRecordingBufferSetting(value as number),
   tts: (value) => commands.changeTtsConfig(value as TtsConfig),
   brain: (value) => commands.changeBrainConfig(value as BrainConfig),
+  noise_suppression_enabled: (value) =>
+    commands.setNoiseSuppressionEnabled(value as boolean),
+  vad_mode: (value) => commands.setVadMode(value as string),
+  long_audio_model: (value) =>
+    commands.setLongAudioModel(value as string | null),
+  long_audio_threshold_seconds: (value) =>
+    commands.setLongAudioThreshold(value as number),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

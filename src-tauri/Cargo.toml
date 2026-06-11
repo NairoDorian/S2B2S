@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "S2B2S - SpeechToBrainToSpeech"
 authors = ["NairoDorian"]
 edition = "2021"
+rust-version = "1.87"
 license = "MIT"
 default-run = "s2b2s"
 
@@ -71,6 +72,7 @@ natural = "0.5.0"
 regex = "1"
 chrono = "0.4"
 rusqlite = { version = "0.40", features = ["bundled"] }
+nnnoiseless = { version = "0.5.2", default-features = false }
 tar = "0.4.46"
 flate2 = "1.1"
 sha2 = "0.11"
@@ -82,6 +84,8 @@ specta = "=2.0.0-rc.25"
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "2.7"
+text-processing-rs = "0.2.2"
+pulldown-cmark = "0.13"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"
@@ -101,6 +105,9 @@ windows = { version = "0.62.2", features = [
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Wdk_Graphics_Direct3D",
 ] }
 winreg = "0.56"
 

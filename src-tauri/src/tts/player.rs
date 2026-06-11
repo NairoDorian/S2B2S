@@ -42,36 +42,54 @@ impl TtsPlayer {
 
         thread::spawn(move || {
             // The device sink must stay alive for the duration of playback.
-            let mut stream: Option<MixerDeviceSink> = None;
+            let mut _stream: Option<MixerDeviceSink> = None;
             let mut sink: Option<Player> = None;
             let mut volume: f32 = 1.0;
             let mut prev_playing = false;
+            let mut just_appended = false;
+            let mut empty_ticks = 0usize;
             // Whether WE showed the speaking HUD (so we only hide what we showed).
             let mut overlay_shown = false;
 
             loop {
                 let now_playing = sink.as_ref().is_some_and(|s| !s.empty());
                 let now_paused = sink.as_ref().is_some_and(|s| s.is_paused());
-                is_playing_t.store(now_playing, Ordering::Relaxed);
                 is_paused_t.store(now_paused, Ordering::Relaxed);
 
-                if now_playing != prev_playing {
-                    let _ = app.emit("tts:playing-changed", now_playing);
-                    if prev_playing && !now_playing {
-                        // Queue drained naturally: release the device.
-                        let _ = app.emit("tts:finished", ());
-                        if overlay_shown {
-                            crate::overlay::hide_recording_overlay(&app);
-                            overlay_shown = false;
-                        }
-                        sink = None;
-                        stream = None;
+                if now_playing {
+                    empty_ticks = 0;
+                    just_appended = false;
+                } else if sink.is_some() {
+                    empty_ticks += 1;
+                }
+
+                // Debounced transition from playing to finished
+                let should_stop = sink.is_some() && !just_appended && empty_ticks >= 6; // 6 ticks * 50ms = 300ms
+                let reported_playing = sink.is_some() && !should_stop;
+                is_playing_t.store(reported_playing, Ordering::Relaxed);
+
+                if should_stop {
+                    // Queue drained naturally: release the device.
+                    let _ = app.emit("tts:finished", ());
+                    let _ = app.emit("tts:playing-changed", false);
+                    if overlay_shown {
+                        crate::overlay::hide_recording_overlay(&app);
+                        overlay_shown = false;
+                    }
+                    sink = None;
+                    _stream = None;
+                    empty_ticks = 0;
+                    prev_playing = false;
+                } else {
+                    if reported_playing != prev_playing {
+                        let _ = app.emit("tts:playing-changed", reported_playing);
+                        prev_playing = reported_playing;
                     }
                 }
-                prev_playing = now_playing;
 
                 match rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(Cmd::Append(bytes)) => {
+                        just_appended = true;
                         if bytes.len() < 16 {
                             log::warn!("[TtsPlayer] ignoring tiny audio ({} bytes)", bytes.len());
                             continue;
@@ -84,7 +102,7 @@ impl TtsPlayer {
                                     let sk = Player::connect_new(s.mixer());
                                     sk.set_volume(volume);
                                     sink = Some(sk);
-                                    stream = Some(s);
+                                    _stream = Some(s);
                                 }
                                 Err(e) => {
                                     log::error!("[TtsPlayer] no output device: {e}");
@@ -114,7 +132,7 @@ impl TtsPlayer {
                         if let Some(sk) = sink.take() {
                             sk.stop();
                         }
-                        stream = None;
+                        _stream = None;
                         prev_playing = false;
                         is_playing_t.store(false, Ordering::Relaxed);
                         is_paused_t.store(false, Ordering::Relaxed);

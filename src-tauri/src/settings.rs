@@ -151,6 +151,9 @@ impl Default for SanitizationConfig {
 pub enum TtsEngine {
     #[default]
     Piper,
+    Kokoro,
+    Kitten,
+    Sapi,
     Openai,
     Elevenlabs,
     Cartesia,
@@ -406,6 +409,12 @@ pub struct TtsConfig {
     pub elevenlabs: ElevenLabsConfig,
     #[serde(default)]
     pub cartesia: CartesiaConfig,
+    /// Number of parallel Kokoro synthesis workers (auto-tuned from CPU count, min 1, max 8).
+    #[serde(default = "default_tts_workers")]
+    pub tts_workers: u32,
+    /// Shorten the first chunk to reduce time-to-first-audio (Parrot pattern).
+    #[serde(default = "default_tts_shorten_first_chunk")]
+    pub tts_shorten_first_chunk: bool,
 }
 
 fn default_double_copy_window_ms() -> u32 {
@@ -413,6 +422,18 @@ fn default_double_copy_window_ms() -> u32 {
 }
 
 fn default_play_startup_greeting() -> bool {
+    true
+}
+
+fn default_tts_workers() -> u32 {
+    // Default to half the logical cores, capped between 1 and 4.
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(4);
+    (cpus / 2).clamp(1, 4)
+}
+
+fn default_tts_shorten_first_chunk() -> bool {
     true
 }
 
@@ -434,6 +455,8 @@ impl Default for TtsConfig {
             openai: OpenAIConfig::default(),
             elevenlabs: ElevenLabsConfig::default(),
             cartesia: CartesiaConfig::default(),
+            tts_workers: default_tts_workers(),
+            tts_shorten_first_chunk: default_tts_shorten_first_chunk(),
         }
     }
 }
@@ -844,6 +867,8 @@ pub struct AppSettings {
     pub noise_suppression_enabled: bool,
     #[serde(default = "default_vad_mode")]
     pub vad_mode: String,
+    #[serde(default = "default_rnnoise_voice_threshold")]
+    pub rnnoise_voice_threshold: f64,
 }
 
 fn default_long_audio_threshold_seconds() -> f64 {
@@ -855,7 +880,11 @@ fn default_noise_suppression_enabled() -> bool {
 }
 
 fn default_vad_mode() -> String {
-    "silero".to_string()
+    "triple".to_string()
+}
+
+fn default_rnnoise_voice_threshold() -> f64 {
+    0.2
 }
 
 fn default_model() -> String {
@@ -1352,6 +1381,7 @@ pub fn get_default_settings() -> AppSettings {
         long_audio_threshold_seconds: default_long_audio_threshold_seconds(),
         noise_suppression_enabled: default_noise_suppression_enabled(),
         vad_mode: default_vad_mode(),
+        rnnoise_voice_threshold: default_rnnoise_voice_threshold(),
     }
 }
 

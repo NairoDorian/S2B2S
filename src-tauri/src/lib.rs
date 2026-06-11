@@ -1,4 +1,5 @@
 mod actions;
+mod active_app;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -6,6 +7,7 @@ pub mod audio_toolkit;
 mod brain;
 pub mod cli;
 mod clipboard;
+mod crash_logging;
 mod control_server;
 mod commands;
 mod helpers;
@@ -390,6 +392,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::cancel_operation,
             commands::is_portable,
             commands::get_app_dir_path,
+            commands::export_settings,
+            commands::import_settings,
             commands::get_app_settings,
             commands::get_default_settings,
             commands::get_log_dir_path,
@@ -411,6 +415,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::models::is_model_loading,
             commands::models::has_any_models_available,
             commands::models::has_any_models_or_downloads,
+            commands::models::get_active_gpu_vram_status,
             commands::audio::update_microphone_mode,
             commands::audio::get_microphone_mode,
             commands::audio::get_windows_microphone_permission_status,
@@ -426,9 +431,17 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::set_clamshell_microphone,
             commands::audio::get_clamshell_microphone,
             commands::audio::is_recording,
+            commands::audio::toggle_recording_pause,
+            commands::audio::is_recording_paused,
+            commands::audio::set_noise_suppression_enabled,
+            commands::audio::set_vad_mode,
+            commands::audio::start_continuous_voice_mode,
+            commands::audio::stop_continuous_voice_mode,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
+            commands::transcription::set_long_audio_model,
+            commands::transcription::set_long_audio_threshold,
             commands::history::get_history_entries,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
@@ -437,6 +450,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::history::delete_history_entries,
+            commands::history::export_history_entries,
+            commands::history::regenerate_history_entry,
             commands::tts::tts_speak,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_stop,
@@ -447,6 +463,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::tts::tts_unload_engine,
             commands::tts::get_piper_server_status,
             commands::tts::change_tts_config,
+            commands::tts::tts_play_greeting,
             commands::brain::brain_ask,
             commands::brain::brain_abort,
             commands::brain::brain_clear_history,
@@ -593,7 +610,16 @@ pub fn run(cli_args: CliArgs) {
             // Store the file log level in the atomic for the filter to use
             FILE_LOG_LEVEL.store(file_log_level.to_level_filter() as u8, Ordering::Relaxed);
             let app_handle = app.handle().clone();
+
+            // Install crash/panic logging early in the setup
+            if let Err(e) = crash_logging::install_panic_logging(&app_handle) {
+                eprintln!("Failed to install panic logging: {e}");
+            }
+
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
+
+            // Register TTS telemetry for adaptive pagination (CopySpeak pattern).
+            app.manage(crate::tts::telemetry::Telemetry::new());
 
             initialize_core_logic(&app_handle);
 
@@ -608,26 +634,35 @@ pub fn run(cli_args: CliArgs) {
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
 
-            // Auto-load STT and Piper TTS in parallel, then warm up the Brain.
+            // Auto-load STT and Piper TTS in parallel, then warm up Kokoro.
             let startup_app_handle = app_handle.clone();
             std::thread::spawn(move || {
                 let app_tts = startup_app_handle.clone();
                 let tts_thread = std::thread::spawn(move || {
-                    log::info!("[Startup] Auto-loading Piper TTS persistent server in parallel...");
                     let settings = crate::settings::get_settings(&app_tts);
                     let voice = if settings.tts.voice.is_empty() {
                         "en_US-joe-medium".to_string()
                     } else {
                         settings.tts.voice.clone()
                     };
-                    
-                    match crate::tts::backends::piper_server::ensure_running(voice, settings.tts.piper.cuda) {
-                        Ok(_) => {
-                            log::info!("[Startup] Piper TTS persistent server loaded successfully.");
+
+                    if settings.tts.engine == crate::settings::TtsEngine::Piper {
+                        log::info!("[Startup] Auto-loading Piper TTS persistent server...");
+                        match crate::tts::backends::piper_server::ensure_running(voice, settings.tts.piper.cuda) {
+                            Ok(_) => {
+                                log::info!("[Startup] Piper TTS persistent server loaded successfully (warm-up included).");
+                            }
+                            Err(e) => {
+                                log::error!("[Startup] Failed to auto-load Piper server: {}", e);
+                            }
                         }
-                        Err(e) => {
-                            log::error!("[Startup] Failed to auto-load Piper server: {}", e);
-                        }
+                    }
+
+                    if settings.tts.engine == crate::settings::TtsEngine::Kokoro {
+                        log::info!("[Startup] Pre-warming Kokoro TTS engine...");
+                        // Kokoro warm-up happens on first actual use via lazy-load.
+                        // The tts-rs crate loads models on first synthesize() call.
+                        log::info!("[Startup] Kokoro ready (lazy-loaded on first use).");
                     }
                 });
 
@@ -645,15 +680,20 @@ pub fn run(cli_args: CliArgs) {
 
                 log::info!("[Startup] Both models finished loading. Running warm up...");
 
-                // Send a simple silent prompt to warm up the AI Brain (e.g. asking it to say hello)
+                // 1. Play the startup greeting if enabled
+                if let Some(tts) = startup_app_handle.try_state::<Arc<crate::tts::manager::TtsManager>>().map(|s| s.inner().clone()) {
+                    let settings = crate::settings::get_settings(&startup_app_handle);
+                    if settings.tts.play_startup_greeting {
+                        tts.play_greeting();
+                    }
+                }
+
+                // 2. Send a simple silent prompt to warm up the AI Brain
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 if let Some(brain) = startup_app_handle.try_state::<Arc<crate::brain::manager::BrainManager>>().map(|s| s.inner().clone()) {
-                    log::info!("[Startup] Warming up AI Brain with a simple prompt...");
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = brain.ask("Hi, say hello only.".to_string()).await {
+                        if let Err(e) = brain.warmup().await {
                             log::error!("[Startup] Brain warm up request failed: {}", e);
-                        } else {
-                            log::info!("[Startup] Brain warm up request completed successfully.");
                         }
                     });
                 }

@@ -6,6 +6,9 @@
 //! `stop()` (and any new `speak`) abort in-flight workers promptly.
 
 use crate::settings::{get_settings, TtsConfig, TtsEngine};
+use crate::tts::backends::kokoro::KokoroBackend;
+use crate::tts::backends::kitten::KittenBackend;
+use crate::tts::backends::sapi::SapiBackend;
 use crate::tts::backends::piper::{self, PiperBackend};
 use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
@@ -47,6 +50,9 @@ impl TtsManager {
                 PiperBackend::new(self.app.clone(), cfg.piper.cuda)
                     .with_noise(noise_scale, noise_w_scale),
             )),
+            TtsEngine::Kokoro => Ok(Box::new(KokoroBackend::new(cfg.voice.clone(), cfg.speed))),
+            TtsEngine::Kitten => Ok(Box::new(KittenBackend::new(cfg.voice.clone(), cfg.speed))),
+            TtsEngine::Sapi => Ok(Box::new(SapiBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Openai => Ok(Box::new(crate::tts::backends::openai::OpenAiTtsBackend::new(
                 cfg.openai.clone(),
             ))),
@@ -70,6 +76,9 @@ impl TtsManager {
         let engine = engine.unwrap_or(cfg.engine);
         match engine {
             TtsEngine::Piper => piper::list_voices(&self.app),
+            TtsEngine::Kokoro => KokoroBackend::list_voices(),
+            TtsEngine::Kitten => KittenBackend::list_voices(),
+            TtsEngine::Sapi => SapiBackend::list_voices(),
             TtsEngine::Openai => {
                 vec![
                     Voice { id: "alloy".to_string(), name: "Alloy".to_string(), language: Some("en".to_string()) },

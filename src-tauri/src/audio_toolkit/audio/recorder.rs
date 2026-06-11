@@ -13,11 +13,12 @@ use cpal::{
 };
 
 use crate::audio_toolkit::{
-    audio::{AudioVisualiser, FrameResampler},
+    audio::{AudioVisualiser, FrameResampler, NoiseSuppressor},
     constants,
     vad::{self, VadFrame},
     VoiceActivityDetector,
 };
+use tauri::Emitter;
 
 enum Cmd {
     Start,
@@ -36,6 +37,12 @@ pub struct AudioRecorder {
     worker_handle: Option<std::thread::JoinHandle<()>>,
     vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    pause_flag: Option<Arc<AtomicBool>>,
+    noise_suppression_enabled: Option<Arc<AtomicBool>>,
+    use_standalone_ns: bool,
+    app_handle: Option<tauri::AppHandle>,
+    continuous_mode: Option<Arc<AtomicBool>>,
+    continuous_mode_paused: Option<Arc<AtomicBool>>,
 }
 
 impl AudioRecorder {
@@ -46,6 +53,12 @@ impl AudioRecorder {
             worker_handle: None,
             vad: None,
             level_cb: None,
+            pause_flag: None,
+            noise_suppression_enabled: None,
+            use_standalone_ns: false,
+            app_handle: None,
+            continuous_mode: None,
+            continuous_mode_paused: None,
         })
     }
 
@@ -59,6 +72,28 @@ impl AudioRecorder {
         F: Fn(Vec<f32>) + Send + Sync + 'static,
     {
         self.level_cb = Some(Arc::new(cb));
+        self
+    }
+
+    pub fn with_pause_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.pause_flag = Some(flag);
+        self
+    }
+
+    pub fn with_noise_suppression(mut self, flag: Arc<AtomicBool>, use_standalone: bool) -> Self {
+        self.noise_suppression_enabled = Some(flag);
+        self.use_standalone_ns = use_standalone;
+        self
+    }
+
+    pub fn with_app_handle(mut self, app: tauri::AppHandle) -> Self {
+        self.app_handle = Some(app);
+        self
+    }
+
+    pub fn with_continuous_mode(mut self, enabled: Arc<AtomicBool>, paused: Arc<AtomicBool>) -> Self {
+        self.continuous_mode = Some(enabled);
+        self.continuous_mode_paused = Some(paused);
         self
     }
 
@@ -83,6 +118,12 @@ impl AudioRecorder {
         let vad = self.vad.clone();
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
+        let pause_flag = self.pause_flag.clone();
+        let noise_suppression_enabled = self.noise_suppression_enabled.clone();
+        let use_standalone_ns = self.use_standalone_ns;
+        let app_handle = self.app_handle.clone();
+        let continuous_mode = self.continuous_mode.clone();
+        let continuous_mode_paused = self.continuous_mode_paused.clone();
 
         let worker = std::thread::spawn(move || {
             let stop_flag = Arc::new(AtomicBool::new(false));
@@ -160,7 +201,20 @@ impl AudioRecorder {
                 Ok((stream, sample_rate)) => {
                     let _ = init_tx.send(Ok(()));
                     // Keep the stream alive while we process samples.
-                    run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb, stop_flag);
+                    run_consumer(
+                        sample_rate,
+                        vad,
+                        sample_rx,
+                        cmd_rx,
+                        level_cb,
+                        stop_flag,
+                        pause_flag,
+                        noise_suppression_enabled,
+                        use_standalone_ns,
+                        app_handle,
+                        continuous_mode,
+                        continuous_mode_paused,
+                    );
                     drop(stream);
                 }
                 Err(error_message) => {
@@ -400,7 +454,18 @@ fn run_consumer(
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     stop_flag: Arc<AtomicBool>,
+    pause_flag: Option<Arc<AtomicBool>>,
+    noise_suppression_enabled: Option<Arc<AtomicBool>>,
+    use_standalone_ns: bool,
+    app_handle: Option<tauri::AppHandle>,
+    continuous_mode: Option<Arc<AtomicBool>>,
+    continuous_mode_paused: Option<Arc<AtomicBool>>,
 ) {
+    let mut standalone_ns = if use_standalone_ns {
+        NoiseSuppressor::new_16khz().ok()
+    } else {
+        None
+    };
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
         constants::WHISPER_SAMPLE_RATE as usize,
@@ -409,6 +474,7 @@ fn run_consumer(
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
+    let mut silence_frames = 0;
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -463,17 +529,96 @@ fn run_consumer(
             AudioChunk::EndOfStream => continue,
         };
 
+        let is_paused = pause_flag.as_ref().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false);
+
         // ---------- spectrum processing ---------------------------------- //
-        if let Some(buckets) = visualizer.feed(&raw) {
+        let visualizer_input = if is_paused {
+            vec![0.0f32; raw.len()]
+        } else {
+            raw.clone()
+        };
+        if let Some(buckets) = visualizer.feed(&visualizer_input) {
             if let Some(cb) = &level_cb {
                 cb(buckets);
             }
         }
 
         // ---------- existing pipeline ------------------------------------ //
-        frame_resampler.push(&raw, &mut |frame: &[f32]| {
-            handle_frame(frame, recording, &vad, &mut processed_samples)
-        });
+        if !is_paused {
+            let is_continuous = continuous_mode.as_ref().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false);
+            let is_continuous_paused = continuous_mode_paused.as_ref().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false);
+
+            if is_continuous && is_continuous_paused {
+                processed_samples.clear();
+                recording = false;
+                silence_frames = 0;
+                if let Some(v) = &vad {
+                    let mut det = v.lock().unwrap();
+                    det.reset();
+                }
+            }
+
+            frame_resampler.push(&raw, &mut |frame: &[f32]| {
+                let mut processed = frame.to_vec();
+                let ns_on = noise_suppression_enabled.as_ref()
+                    .map(|f| f.load(Ordering::Relaxed))
+                    .unwrap_or(false);
+                if ns_on {
+                    if let Some(ns) = &mut standalone_ns {
+                        let (denoised, _) = ns.process_16khz_frame(frame);
+                        processed = denoised;
+                    }
+                }
+
+                if is_continuous {
+                    if !is_continuous_paused {
+                        if let Some(v) = &vad {
+                            let mut det = v.lock().unwrap();
+                            match det.push_frame(&processed).unwrap_or(VadFrame::Speech(&processed)) {
+                                VadFrame::Speech(buf) => {
+                                    if !recording {
+                                        recording = true;
+                                        processed_samples.clear();
+                                        processed_samples.extend_from_slice(buf);
+                                        if let Some(app) = &app_handle {
+                                            let _ = app.emit("continuous-voice:speech-started", ());
+                                        }
+                                    } else {
+                                        processed_samples.extend_from_slice(buf);
+                                    }
+                                    silence_frames = 0;
+                                }
+                                VadFrame::Noise => {
+                                    if recording {
+                                        silence_frames += 1;
+                                        if silence_frames >= 40 {
+                                            recording = false;
+                                            if let Some(app) = &app_handle {
+                                                let _ = app.emit("continuous-voice:speech-ended", ());
+                                            }
+                                            let samples = std::mem::take(&mut processed_samples);
+                                            if let Some(app) = &app_handle {
+                                                let app_clone = app.clone();
+                                                std::thread::spawn(move || {
+                                                    if let Err(e) = crate::managers::continuous_voice::process_continuous_samples(&app_clone, samples) {
+                                                        log::error!("Error in continuous voice pipeline: {}", e);
+                                                    }
+                                                });
+                                            }
+                                            silence_frames = 0;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            processed_samples.extend_from_slice(&processed);
+                        }
+                    }
+                } else {
+                    handle_frame(&processed, recording, &vad, &mut processed_samples);
+                }
+            });
+        }
 
         // non-blocking check for a command
         while let Ok(cmd) = cmd_rx.try_recv() {

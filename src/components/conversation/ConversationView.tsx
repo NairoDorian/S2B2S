@@ -5,6 +5,7 @@ import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
+import { Mic } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -26,10 +27,40 @@ export const ConversationView: React.FC = () => {
   const [streaming, setStreaming] = useState("");
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<"idle" | "listening" | "speech_started" | "speech_ended" | "thinking" | "speaking">("idle");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const brainEnabled = settings?.brain?.enabled ?? false;
   const converseBinding = settings?.bindings?.converse?.current_binding;
+
+  // Toggle voice mode
+  const toggleVoiceMode = useCallback(async () => {
+    if (voiceMode) {
+      const res = await commands.stopContinuousVoiceMode();
+      if (res.status === "ok") {
+        setVoiceMode(false);
+        setVoiceStatus("idle");
+      } else {
+        setError(String(res.error));
+      }
+    } else {
+      const res = await commands.startContinuousVoiceMode();
+      if (res.status === "ok") {
+        setVoiceMode(true);
+        setVoiceStatus("listening");
+      } else {
+        setError(String(res.error));
+      }
+    }
+  }, [voiceMode]);
+
+  // Clean up continuous voice mode on unmount
+  useEffect(() => {
+    return () => {
+      void commands.stopContinuousVoiceMode();
+    };
+  }, []);
 
   useEffect(() => {
     const setup = async () => {
@@ -37,6 +68,7 @@ export const ConversationView: React.FC = () => {
         setThinking(true);
         setStreaming("");
         setError(null);
+        setVoiceStatus((prev) => (prev !== "idle" ? "thinking" : "idle"));
       });
       const unlistenToken = await listen<string>("brain:token", (event) => {
         setThinking(false);
@@ -49,11 +81,18 @@ export const ConversationView: React.FC = () => {
           ...prev,
           { role: "assistant", content: event.payload },
         ]);
+        setVoiceStatus((prev) => {
+          if (prev === "thinking" || prev === "speech_ended") {
+            return "listening";
+          }
+          return prev;
+        });
       });
       const unlistenError = await listen<string>("brain:error", (event) => {
         setThinking(false);
         setStreaming("");
         setError(event.payload);
+        setVoiceStatus((prev) => (prev !== "idle" ? "listening" : "idle"));
       });
       // Speech turns: surface the transcribed question in the transcript.
       const unlistenAsked = await listen<string>("brain:asked", (event) => {
@@ -62,12 +101,31 @@ export const ConversationView: React.FC = () => {
           { role: "user", content: event.payload },
         ]);
       });
+
+      // Continuous Voice Mode Events
+      const unlistenSpeechStarted = await listen("continuous-voice:speech-started", () => {
+        setVoiceStatus("speech_started");
+      });
+      const unlistenSpeechEnded = await listen("continuous-voice:speech-ended", () => {
+        setVoiceStatus("speech_ended");
+      });
+      const unlistenTtsPlaying = await listen<boolean>("tts:playing-changed", (event) => {
+        if (event.payload) {
+          setVoiceStatus("speaking");
+        } else {
+          setVoiceStatus((prev) => (prev === "speaking" ? "listening" : prev));
+        }
+      });
+
       return () => {
         unlistenThinking();
         unlistenToken();
         unlistenDone();
         unlistenError();
         unlistenAsked();
+        unlistenSpeechStarted();
+        unlistenSpeechEnded();
+        unlistenTtsPlaying();
       };
     };
     const cleanup = setup();
@@ -107,9 +165,61 @@ export const ConversationView: React.FC = () => {
           {t("conversation.disabledHint")}
         </div>
       )}
-      {brainEnabled && converseBinding && (
+      {brainEnabled && converseBinding && !voiceMode && (
         <div className="px-4 py-2 rounded-lg border border-mid-gray/20 text-xs text-mid-gray">
           {t("conversation.hotkeyHint", { hotkey: converseBinding })}
+        </div>
+      )}
+
+      {voiceMode && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-logo-primary/30 bg-logo-primary/5 shadow-sm transition-all duration-300">
+          <div className="flex items-center space-x-3">
+            <div className="relative flex h-3 w-3">
+              {voiceStatus === "listening" && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </>
+              )}
+              {voiceStatus === "speech_started" && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </>
+              )}
+              {voiceStatus === "speech_ended" && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                </>
+              )}
+              {voiceStatus === "thinking" && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                </>
+              )}
+              {voiceStatus === "speaking" && (
+                <>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                </>
+              )}
+            </div>
+            <span className="text-sm font-medium text-logo-primary">
+              {voiceStatus === "listening" && "Voice Mode: Listening..."}
+              {voiceStatus === "speech_started" && "Voice Mode: Capturing Speech..."}
+              {voiceStatus === "speech_ended" && "Voice Mode: Processing speech..."}
+              {voiceStatus === "thinking" && "Voice Mode: Brain is thinking..."}
+              {voiceStatus === "speaking" && "Voice Mode: Assistant is speaking..."}
+            </span>
+          </div>
+          <button
+            onClick={toggleVoiceMode}
+            className="text-xs font-semibold px-2.5 py-1 rounded-md bg-logo-primary/10 text-logo-primary hover:bg-logo-primary/20 transition-colors"
+          >
+            {t("conversation.stopVoiceMode", "Exit Voice Mode")}
+          </button>
         </div>
       )}
 
@@ -182,6 +292,16 @@ export const ConversationView: React.FC = () => {
           </Button>
           <Button variant="ghost" size="sm" onClick={() => void clear()}>
             {t("conversation.clear")}
+          </Button>
+          <Button
+            variant={voiceMode ? "primary" : "secondary"}
+            size="sm"
+            disabled={!brainEnabled}
+            onClick={toggleVoiceMode}
+            className="ml-auto flex items-center gap-1.5"
+          >
+            <Mic size={14} className={voiceStatus !== "idle" && voiceStatus !== "listening" ? "animate-pulse" : ""} />
+            {voiceMode ? "Voice Mode ON" : "Voice Mode"}
           </Button>
         </div>
       </div>

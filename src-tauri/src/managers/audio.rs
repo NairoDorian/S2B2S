@@ -1,9 +1,9 @@
-use crate::audio_toolkit::{list_input_devices, vad::SmoothedVad, AudioRecorder, SileroVad};
+use crate::audio_toolkit::{list_input_devices, vad::SmoothedVad, vad::TripleVad, AudioRecorder, SileroVad};
 use crate::helpers::clamshell;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -120,16 +120,36 @@ pub enum MicrophoneMode {
 fn create_audio_recorder(
     vad_path: &str,
     app_handle: &tauri::AppHandle,
+    is_paused: Arc<AtomicBool>,
+    noise_suppression_enabled: Arc<AtomicBool>,
+    continuous_mode: Arc<AtomicBool>,
+    continuous_mode_paused: Arc<AtomicBool>,
 ) -> Result<AudioRecorder, anyhow::Error> {
+    let settings = get_settings(app_handle);
     let silero = SileroVad::new(vad_path, 0.3)
         .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {}", e))?;
-    let smoothed_vad = SmoothedVad::new(Box::new(silero), 15, 15, 2);
+    
+    let base_vad: Box<dyn crate::audio_toolkit::VoiceActivityDetector> = if settings.vad_mode == "triple" {
+        Box::new(TripleVad::new(
+            Box::new(silero),
+            noise_suppression_enabled,
+            settings.rnnoise_voice_threshold as f32,
+            0.002,
+        ))
+    } else {
+        Box::new(silero)
+    };
+    
+    let smoothed_vad = SmoothedVad::new(base_vad, 15, 15, 2);
 
     // Recorder with VAD plus a spectrum-level callback that forwards updates to
     // the frontend.
     let recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
         .with_vad(Box::new(smoothed_vad))
+        .with_pause_flag(is_paused)
+        .with_app_handle(app_handle.clone())
+        .with_continuous_mode(continuous_mode, continuous_mode_paused)
         .with_level_callback({
             let app_handle = app_handle.clone();
             move |levels| {
@@ -153,6 +173,10 @@ pub struct AudioRecordingManager {
     is_recording: Arc<Mutex<bool>>,
     did_mute: Arc<Mutex<bool>>,
     close_generation: Arc<AtomicU64>,
+    is_paused: Arc<AtomicBool>,
+    noise_suppression_enabled: Arc<AtomicBool>,
+    continuous_mode: Arc<AtomicBool>,
+    continuous_mode_paused: Arc<AtomicBool>,
 }
 
 impl AudioRecordingManager {
@@ -166,6 +190,11 @@ impl AudioRecordingManager {
             MicrophoneMode::OnDemand
         };
 
+        let is_paused = Arc::new(AtomicBool::new(false));
+        let noise_suppression_enabled = Arc::new(AtomicBool::new(settings.noise_suppression_enabled));
+        let continuous_mode = Arc::new(AtomicBool::new(false));
+        let continuous_mode_paused = Arc::new(AtomicBool::new(false));
+
         let manager = Self {
             state: Arc::new(Mutex::new(RecordingState::Idle)),
             mode: Arc::new(Mutex::new(mode.clone())),
@@ -176,6 +205,10 @@ impl AudioRecordingManager {
             is_recording: Arc::new(Mutex::new(false)),
             did_mute: Arc::new(Mutex::new(false)),
             close_generation: Arc::new(AtomicU64::new(0)),
+            is_paused,
+            noise_suppression_enabled,
+            continuous_mode,
+            continuous_mode_paused,
         };
 
         // Always-on?  Open immediately.
@@ -277,6 +310,10 @@ impl AudioRecordingManager {
             *recorder_opt = Some(create_audio_recorder(
                 vad_path.to_str().unwrap(),
                 &self.app_handle,
+                self.is_paused.clone(),
+                self.noise_suppression_enabled.clone(),
+                self.continuous_mode.clone(),
+                self.continuous_mode_paused.clone(),
             )?);
         }
         Ok(())
@@ -387,6 +424,7 @@ impl AudioRecordingManager {
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {
+            self.is_paused.store(false, Ordering::Relaxed);
             // Ensure microphone is open in on-demand mode
             if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
                 // Cancel any pending lazy close
@@ -431,6 +469,7 @@ impl AudioRecordingManager {
             RecordingState::Recording {
                 binding_id: ref active,
             } if active == binding_id => {
+                self.is_paused.store(false, Ordering::Relaxed);
                 *state = RecordingState::Idle;
                 drop(state);
 
@@ -494,6 +533,7 @@ impl AudioRecordingManager {
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Recording { .. } = *state {
+            self.is_paused.store(false, Ordering::Relaxed);
             *state = RecordingState::Idle;
             drop(state);
 
@@ -512,5 +552,57 @@ impl AudioRecordingManager {
                 }
             }
         }
+    }
+
+    pub fn toggle_pause(&self) -> bool {
+        let val = !self.is_paused.load(Ordering::Relaxed);
+        self.is_paused.store(val, Ordering::Relaxed);
+        val
+    }
+
+    pub fn is_recording_paused(&self) -> bool {
+        self.is_paused.load(Ordering::Relaxed)
+    }
+
+    pub fn set_noise_suppression_enabled(&self, enabled: bool) {
+        self.noise_suppression_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_continuous_mode(&self, enabled: bool) -> Result<(), anyhow::Error> {
+        self.continuous_mode.store(enabled, Ordering::SeqCst);
+        self.continuous_mode_paused.store(false, Ordering::SeqCst);
+        
+        if enabled {
+            self.update_mode(MicrophoneMode::AlwaysOn)?;
+        } else {
+            let settings = get_settings(&self.app_handle);
+            let original_mode = if settings.always_on_microphone {
+                MicrophoneMode::AlwaysOn
+            } else {
+                MicrophoneMode::OnDemand
+            };
+            self.update_mode(original_mode)?;
+        }
+        
+        Ok(())
+    }
+
+    pub fn set_continuous_mode_paused(&self, paused: bool) {
+        self.continuous_mode_paused.store(paused, Ordering::SeqCst);
+    }
+
+    pub fn update_vad_mode(&self, _mode: &str) -> Result<(), anyhow::Error> {
+        // Clear the recorder so it gets re-created with the new VAD mode
+        let mut recorder_opt = self.recorder.lock().unwrap();
+        *recorder_opt = None;
+        drop(recorder_opt);
+        
+        // If it was open, restart the stream to recreate the recorder
+        if *self.is_open.lock().unwrap() {
+            self.close_generation.fetch_add(1, Ordering::SeqCst);
+            self.stop_microphone_stream();
+            self.start_microphone_stream()?;
+        }
+        Ok(())
     }
 }

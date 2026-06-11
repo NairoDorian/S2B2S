@@ -12,6 +12,8 @@ pub mod manager;
 pub mod pagination;
 pub mod player;
 pub mod sanitize;
+pub mod status;
+pub mod telemetry;
 
 /// Metadata for a voice option exposed in the settings UI.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]

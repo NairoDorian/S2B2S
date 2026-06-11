@@ -219,3 +219,69 @@ pub async fn cancel_download(
         .cancel_download(&model_id)
         .map_err(|e| e.to_string())
 }
+
+#[derive(serde::Serialize, specta::Type)]
+pub struct GpuVramStatus {
+    pub is_supported: bool,
+    pub total_vram_mb: u32,
+    pub used_vram_mb: u32,
+    pub free_vram_mb: u32,
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_vram_status() -> Option<GpuVramStatus> {
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory, IDXGIFactory, IDXGIAdapter3,
+        DXGI_QUERY_VIDEO_MEMORY_INFO, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+    };
+    use windows::core::Interface;
+
+    unsafe {
+        let factory: IDXGIFactory = CreateDXGIFactory().ok()?;
+        let mut i = 0;
+        while let Ok(adapter) = factory.EnumAdapters(i) {
+            i += 1;
+            if let Ok(adapter3) = adapter.cast::<IDXGIAdapter3>() {
+                if let Ok(desc) = adapter.GetDesc() {
+                    // Skip software rasterizer / Microsoft Basic Render Driver
+                    if desc.VendorId == 0x1414 && desc.DeviceId == 0x8c {
+                        continue;
+                    }
+                    
+                    let mut mem_info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+                    if adapter3.QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut mem_info).is_ok() {
+                        let total = mem_info.Budget;
+                        let used = mem_info.CurrentUsage;
+                        let free = total.saturating_sub(used);
+                        
+                        return Some(GpuVramStatus {
+                            is_supported: true,
+                            total_vram_mb: (total / (1024 * 1024)) as u32,
+                            used_vram_mb: (used / (1024 * 1024)) as u32,
+                            free_vram_mb: (free / (1024 * 1024)) as u32,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_active_gpu_vram_status() -> Result<GpuVramStatus, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(status) = get_windows_vram_status() {
+            return Ok(status);
+        }
+    }
+    
+    Ok(GpuVramStatus {
+        is_supported: false,
+        total_vram_mb: 0,
+        used_vram_mb: 0,
+        free_vram_mb: 0,
+    })
+}

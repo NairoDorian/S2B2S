@@ -17,14 +17,18 @@ import { HistoryLimit } from "../HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
 import { ExperimentalToggle } from "../ExperimentalToggle";
 import { useSettings } from "../../../hooks/useSettings";
+import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
+import { AudioEnhancements } from "./AudioEnhancements";
+import { LongAudioRouting } from "./LongAudioRouting";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
-  const { getSetting } = useSettings();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
+  const debugMode = getSetting("debug_mode") || false;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -35,6 +39,15 @@ export const AdvancedSettings: React.FC = () => {
         <ShowOverlay descriptionMode="tooltip" grouped={true} />
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
         <ExperimentalToggle descriptionMode="tooltip" grouped={true} />
+        <ToggleSwitch
+          checked={debugMode}
+          onChange={(checked) => updateSetting("debug_mode", checked)}
+          isUpdating={isUpdating("debug_mode")}
+          label={t("settings.advanced.debugMode.label", { defaultValue: "Debug Mode" })}
+          description={t("settings.advanced.debugMode.description", { defaultValue: "Enable verbose logging and additional developer tools. Can also be toggled with Ctrl+Shift+D (Cmd+Shift+D on macOS)." })}
+          descriptionMode="tooltip"
+          grouped={true}
+        />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.output")}>
@@ -47,6 +60,8 @@ export const AdvancedSettings: React.FC = () => {
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <CustomWords descriptionMode="tooltip" grouped />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
+        <AudioEnhancements grouped={true} />
+        <LongAudioRouting grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.history")}>

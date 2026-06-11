@@ -1,23 +1,27 @@
-// Sanitize: multi-pass text cleaning pipeline for TTS.
-// Removes markdown formatting, normalizes text for speech, and cleans up artifacts.
-// Ported from the AgentZero prototype (MIT); lazy_static -> once_cell, config flattened.
+// Sanitize: multi-pass text cleaning pipeline for STT → Brain → TTS.
+// Uses text-processing-rs (ITN + TN) + pulldown-cmark (markdown) + regex (cleanup).
+//
+// Pipeline flows:
+//   Post-STT: ITN → [custom words] → Brain
+//   Pre-TTS:  pulldown-cmark → TN → regex cleanup → TTS
 
 pub(crate) mod cleanup;
 mod markdown;
 pub(crate) mod tts_normalize;
+pub mod itn;
+pub mod tn;
 
 use crate::settings::SanitizationConfig;
 
-// Re-export the public API
 pub use tts_normalize::sanitize_tts;
 
-/// Sanitize text by removing markdown formatting and normalizing for TTS.
-/// Returns the sanitized text with all enabled sanitization passes applied.
-///
-/// # Pipeline Order
-/// 1. **Markdown Stripping** (if enabled)
-/// 2. **TTS Normalization** (if enabled)
-/// 3. **Artifact Cleanup** (always runs)
+/// Post-STT text normalization: spoken → written (ITN) for the Brain.
+/// This is separate from the pre-TTS pipeline and runs immediately after transcription.
+pub fn post_stt_normalize(text: &str) -> String {
+    itn::itn_normalize(text)
+}
+
+/// Pre-TTS text normalization: markdown stripping → TN (written → spoken) → cleanup.
 pub fn sanitize_text(text: &str, config: &SanitizationConfig) -> String {
     if !config.enabled {
         return text.to_string();
@@ -25,12 +29,18 @@ pub fn sanitize_text(text: &str, config: &SanitizationConfig) -> String {
 
     let mut result = text.to_string();
 
-    // Pass 1: Strip markdown syntax
+    // Pass 1: Strip markdown syntax (regex, kept for speed; pulldown-cmark upgrade is P2)
     if config.markdown {
         result = markdown::strip_markdown(&result);
     }
 
-    // Pass 2: TTS text normalization
+    // Pass 2: Text normalization — written → spoken via text-processing-rs
+    if config.tts_normalization {
+        result = tn::tn_normalize_text(&result);
+    }
+
+    // Pass 3: Legacy regex-based TTS normalization (abbreviations, symbols, units)
+    // Kept as complement to TN which doesn't handle all colloquialisms.
     if config.tts_normalization {
         result = sanitize_tts(&result);
     }
