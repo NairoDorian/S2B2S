@@ -14,6 +14,7 @@ interface SliderProps {
   grouped?: boolean;
   showValue?: boolean;
   formatValue?: (value: number) => string;
+  onReset?: () => void;
 }
 
 export const Slider: React.FC<SliderProps> = ({
@@ -29,6 +30,7 @@ export const Slider: React.FC<SliderProps> = ({
   grouped = false,
   showValue = true,
   formatValue = (v) => v.toFixed(2),
+  onReset,
 }) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange(parseFloat(e.target.value));
@@ -63,8 +65,18 @@ export const Slider: React.FC<SliderProps> = ({
             }}
           />
           {showValue && (
-            <span className="text-sm font-medium text-text/90 w-12 text-end">
+            <span className="text-sm font-medium text-text/90 w-12 text-end flex items-center gap-1">
               {formatValue(value)}
+              {onReset && (
+                <button
+                  type="button"
+                  onClick={onReset}
+                  className="text-text/50 hover:text-text/90 transition-colors text-xs leading-none"
+                  title="Reset to default"
+                >
+                  ↺
+                </button>
+              )}
             </span>
           )}
         </div>

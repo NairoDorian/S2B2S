@@ -29,16 +29,38 @@ export const SpeechSettings: React.FC = () => {
     [tts, updateSetting],
   );
 
+  const [greetingVoices, setGreetingVoices] = useState<Voice[]>([]);
+
   const refreshVoices = useCallback(async () => {
-    const result = await commands.ttsGetVoices();
+    const result = await commands.ttsGetVoices(null);
     if (result.status === "ok") {
       setVoices(result.data);
     }
   }, []);
 
+  const refreshGreetingVoices = useCallback(async () => {
+    if (!tts) return;
+    const greeting = tts.greeting ?? {
+      text: "Hello, how can I help?",
+      speed: 1.0,
+      voice: "",
+      engine: "piper" as TtsEngine,
+      noise_scale: 0.667,
+      noise_w_scale: 0.8,
+    };
+    const result = await commands.ttsGetVoices(greeting.engine);
+    if (result.status === "ok") {
+      setGreetingVoices(result.data);
+    }
+  }, [tts?.greeting?.engine]);
+
   useEffect(() => {
     void refreshVoices();
   }, [refreshVoices, tts?.engine, tts?.piper.data_dir]);
+
+  useEffect(() => {
+    void refreshGreetingVoices();
+  }, [refreshGreetingVoices, tts?.greeting?.engine, tts?.piper.data_dir]);
 
   if (!tts) return null;
 
@@ -49,14 +71,14 @@ export const SpeechSettings: React.FC = () => {
     tts_normalization: true,
   };
 
-  const speakSample = async () => {
-    setSpeaking(true);
-    try {
-      await commands.ttsSpeak(t("settings.speech.sampleText"));
-    } finally {
-      setSpeaking(false);
-    }
-  };
+    const greeting = tts.greeting ?? {
+      text: "Hello, how can I help?",
+      speed: 1.0,
+      voice: "",
+      engine: "piper" as TtsEngine,
+      noise_scale: 0.667,
+      noise_w_scale: 0.8,
+    };
 
   return (
     <div className="space-y-6">
@@ -130,6 +152,9 @@ export const SpeechSettings: React.FC = () => {
           description={t("settings.speech.doubleCopy.description")}
           grouped
         />
+      </SettingsGroup>
+
+      <SettingsGroup title="Startup Greeting Settings">
         <ToggleSwitch
           checked={tts.play_startup_greeting ?? true}
           onChange={(play_startup_greeting) => update({ play_startup_greeting })}
@@ -137,26 +162,112 @@ export const SpeechSettings: React.FC = () => {
           description="Speak the warmup sentence aloud when the voice model finishes loading"
           grouped
         />
+        {tts.play_startup_greeting && (
+          <>
+            <SettingContainer
+              title="Greeting Text"
+              description="The greeting text spoken at startup"
+              grouped
+            >
+              <Input
+                value={greeting.text}
+                onChange={(e) => update({ greeting: { ...greeting, text: e.target.value } })}
+                placeholder="Enter greeting message..."
+              />
+            </SettingContainer>
+            <SettingContainer
+              title="Greeting Engine"
+              description="The TTS engine used for the startup greeting"
+              grouped
+            >
+              <Dropdown
+                options={ENGINES.map((engine) => ({
+                  value: engine,
+                  label: t(`settings.speech.engine.options.${engine}`),
+                }))}
+                selectedValue={greeting.engine}
+                onSelect={(value) => {
+                  const newEngine = value as TtsEngine;
+                  update({ greeting: { ...greeting, engine: newEngine, voice: "" } });
+                }}
+              />
+            </SettingContainer>
+            <SettingContainer
+              title="Greeting Voice"
+              description="The voice used for the startup greeting"
+              grouped
+            >
+              <Dropdown
+                options={greetingVoices.map((voice) => ({
+                  value: voice.id,
+                  label: voice.name,
+                }))}
+                selectedValue={greeting.voice || null}
+                onSelect={(voice) => update({ greeting: { ...greeting, voice } })}
+                placeholder={t("settings.speech.voice.placeholder")}
+                onRefresh={() => void refreshGreetingVoices()}
+              />
+            </SettingContainer>
+            <Slider
+              value={greeting.speed ?? 1}
+              onChange={(speed) => update({ greeting: { ...greeting, speed } })}
+              min={0.5}
+              max={2}
+              step={0.05}
+              label="Greeting Speed"
+              description="Playback rate for the startup greeting"
+              grouped
+              showValue
+              formatValue={(value) => `${value.toFixed(2)}x`}
+            />
+            <Slider
+              value={greeting.noise_scale ?? 0.667}
+              onChange={(noise_scale) => update({ greeting: { ...greeting, noise_scale } })}
+              min={0}
+              max={1.5}
+              step={0.01}
+              label="Noise Scale"
+              description="Speaking variability (Piper HTTP noise_scale). 0=monotone, 0.667=Piper default."
+              grouped
+              showValue
+              formatValue={(value) => `${value.toFixed(3)}`}
+              onReset={() => update({ greeting: { ...greeting, noise_scale: 0.667 } })}
+            />
+            <Slider
+              value={greeting.noise_w_scale ?? 0.8}
+              onChange={(noise_w_scale) => update({ greeting: { ...greeting, noise_w_scale } })}
+              min={0}
+              max={1.5}
+              step={0.01}
+              label="Noise W Scale"
+              description="Phoneme width variability (Piper HTTP noise_w_scale). 0=precise, 0.8=Piper default."
+              grouped
+              showValue
+              formatValue={(value) => `${value.toFixed(3)}`}
+              onReset={() => update({ greeting: { ...greeting, noise_w_scale: 0.8 } })}
+            />
+          </>
+        )}
         <SettingContainer
-          title={t("settings.speech.test.label")}
-          description={t("settings.speech.test.description")}
+          title="Repeat Startup Greeting"
+          description="Play the startup greeting message out loud"
           grouped
         >
           <div className="flex gap-2">
             <Button
-              variant="primary-soft"
-              size="sm"
-              disabled={speaking || !tts.enabled}
-              onClick={() => void speakSample()}
-            >
-              {t("settings.speech.test.speak")}
-            </Button>
-            <Button
               variant="secondary"
               size="sm"
-              onClick={() => void commands.ttsStop()}
+              disabled={!tts.enabled || speaking}
+              onClick={async () => {
+                setSpeaking(true);
+                try {
+                  await commands.ttsPlayGreeting();
+                } finally {
+                  setSpeaking(false);
+                }
+              }}
             >
-              {t("settings.speech.test.stop")}
+              Play Greeting
             </Button>
           </div>
         </SettingContainer>

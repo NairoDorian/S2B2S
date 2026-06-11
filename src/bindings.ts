@@ -82,6 +82,8 @@ export const commands = {
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
 	isPortable: () => __TAURI_INVOKE<boolean>("is_portable"),
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
+	exportSettings: (path: string) => typedError<null, string>(__TAURI_INVOKE("export_settings", { path })),
+	importSettings: (path: string) => typedError<null, string>(__TAURI_INVOKE("import_settings", { path })),
 	getAppSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_app_settings")),
 	getDefaultSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_default_settings")),
 	getLogDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_log_dir_path")),
@@ -136,6 +138,7 @@ export const commands = {
 	isModelLoading: () => typedError<boolean, string>(__TAURI_INVOKE("is_model_loading")),
 	hasAnyModelsAvailable: () => typedError<boolean, string>(__TAURI_INVOKE("has_any_models_available")),
 	hasAnyModelsOrDownloads: () => typedError<boolean, string>(__TAURI_INVOKE("has_any_models_or_downloads")),
+	getActiveGpuVramStatus: () => typedError<GpuVramStatus, string>(__TAURI_INVOKE("get_active_gpu_vram_status")),
 	updateMicrophoneMode: (alwaysOn: boolean) => typedError<null, string>(__TAURI_INVOKE("update_microphone_mode", { alwaysOn })),
 	getMicrophoneMode: () => typedError<boolean, string>(__TAURI_INVOKE("get_microphone_mode")),
 	getWindowsMicrophonePermissionStatus: () => __TAURI_INVOKE<WindowsMicrophonePermissionStatus>("get_windows_microphone_permission_status"),
@@ -151,9 +154,17 @@ export const commands = {
 	setClamshellMicrophone: (deviceName: string) => typedError<null, string>(__TAURI_INVOKE("set_clamshell_microphone", { deviceName })),
 	getClamshellMicrophone: () => typedError<string, string>(__TAURI_INVOKE("get_clamshell_microphone")),
 	isRecording: () => __TAURI_INVOKE<boolean>("is_recording"),
+	toggleRecordingPause: () => __TAURI_INVOKE<boolean>("toggle_recording_pause"),
+	isRecordingPaused: () => __TAURI_INVOKE<boolean>("is_recording_paused"),
+	setNoiseSuppressionEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_noise_suppression_enabled", { enabled })),
+	setVadMode: (mode: string) => typedError<null, string>(__TAURI_INVOKE("set_vad_mode", { mode })),
+	startContinuousVoiceMode: () => typedError<null, string>(__TAURI_INVOKE("start_continuous_voice_mode")),
+	stopContinuousVoiceMode: () => typedError<null, string>(__TAURI_INVOKE("stop_continuous_voice_mode")),
 	setModelUnloadTimeout: (timeout: ModelUnloadTimeout) => __TAURI_INVOKE<void>("set_model_unload_timeout", { timeout }),
 	getModelLoadStatus: () => typedError<ModelLoadStatus, string>(__TAURI_INVOKE("get_model_load_status")),
 	unloadModelManually: () => typedError<null, string>(__TAURI_INVOKE("unload_model_manually")),
+	setLongAudioModel: (model: string | null) => __TAURI_INVOKE<void>("set_long_audio_model", { model }),
+	setLongAudioThreshold: (threshold: number | null) => __TAURI_INVOKE<void>("set_long_audio_threshold", { threshold }),
 	getHistoryEntries: (cursor: number | null, limit: number | null) => typedError<PaginatedHistory, string>(__TAURI_INVOKE("get_history_entries", { cursor, limit })),
 	toggleHistoryEntrySaved: (id: number) => typedError<null, string>(__TAURI_INVOKE("toggle_history_entry_saved", { id })),
 	getAudioFilePath: (fileName: string) => typedError<string, string>(__TAURI_INVOKE("get_audio_file_path", { fileName })),
@@ -162,6 +173,9 @@ export const commands = {
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
+	deleteHistoryEntries: (ids: number[]) => typedError<null, string>(__TAURI_INVOKE("delete_history_entries", { ids })),
+	exportHistoryEntries: (ids: number[], filePath: string) => typedError<null, string>(__TAURI_INVOKE("export_history_entries", { ids, filePath })),
+	regenerateHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("regenerate_history_entry", { id })),
 	/**  Speak arbitrary text aloud (sanitize → paginate → streaming synthesis). */
 	ttsSpeak: (text: string) => typedError<null, string>(__TAURI_INVOKE("tts_speak", { text })),
 	/**  Speak the current clipboard text. */
@@ -170,13 +184,15 @@ export const commands = {
 	ttsPause: () => typedError<null, string>(__TAURI_INVOKE("tts_pause")),
 	ttsResume: () => typedError<null, string>(__TAURI_INVOKE("tts_resume")),
 	ttsIsPlaying: () => typedError<boolean, string>(__TAURI_INVOKE("tts_is_playing")),
-	/**  Enumerate available voices for the configured engine. */
-	ttsGetVoices: () => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices")),
+	/**  Enumerate available voices for a specific engine, or defaults to the configured engine. */
+	ttsGetVoices: (engine: "piper" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
 	/**  Unload the warm TTS model/server (tray "Unload model" parity). */
 	ttsUnloadEngine: () => typedError<boolean, string>(__TAURI_INVOKE("tts_unload_engine")),
 	getPiperServerStatus: () => typedError<PiperServerStatus, string>(__TAURI_INVOKE("get_piper_server_status")),
 	/**  Replace the whole TTS configuration (engine, voice, speed, volume, toggles). */
 	changeTtsConfig: (config: TtsConfig) => typedError<null, string>(__TAURI_INVOKE("change_tts_config", { config })),
+	/**  Play the startup greeting audio using customized greeting settings. */
+	ttsPlayGreeting: () => typedError<null, string>(__TAURI_INVOKE("tts_play_greeting")),
 	/**  Ask the Brain; streams `brain:token` / `brain:sentence` events and returns the full reply. */
 	brainAsk: (text: string) => typedError<string, string>(__TAURI_INVOKE("brain_ask", { text })),
 	/**  Abort the in-flight Brain stream and stop any speech it queued (barge-in). */
@@ -257,6 +273,10 @@ export type AppSettings = {
 	tts?: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
 	brain?: BrainConfig,
+	long_audio_model?: string | null,
+	long_audio_threshold_seconds?: number | null,
+	noise_suppression_enabled?: boolean,
+	vad_mode?: string,
 };
 
 export type AudioDevice = {
@@ -330,6 +350,13 @@ export type GpuDeviceOption = {
 	id: number,
 	name: string,
 	total_vram_mb: number,
+};
+
+export type GpuVramStatus = {
+	is_supported: boolean,
+	total_vram_mb: number,
+	used_vram_mb: number,
+	free_vram_mb: number,
 };
 
 export type HistoryEntry = {
@@ -492,6 +519,7 @@ export type TtsConfig = {
 	double_copy_enabled?: boolean,
 	double_copy_window_ms?: number,
 	play_startup_greeting?: boolean,
+	greeting?: TtsGreetingConfig,
 	openai?: OpenAIConfig,
 	elevenlabs?: ElevenLabsConfig,
 	cartesia?: CartesiaConfig,
@@ -499,6 +527,17 @@ export type TtsConfig = {
 
 /**  Which TTS engine synthesizes speech. */
 export type TtsEngine = "piper" | "openai" | "elevenlabs" | "cartesia";
+
+export type TtsGreetingConfig = {
+	text?: string,
+	speed?: number | null,
+	voice?: string,
+	engine?: TtsEngine,
+	/**  Speaking variability (Piper HTTP: noise_scale). 0=monotone, 0.667=Piper default. */
+	noise_scale?: number | null,
+	/**  Phoneme width variability (Piper HTTP: noise_w_scale). 0=precise, 0.8=Piper default. */
+	noise_w_scale?: number | null,
+};
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
 

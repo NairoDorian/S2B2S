@@ -320,6 +320,61 @@ impl Default for CartesiaConfig {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct TtsGreetingConfig {
+    #[serde(default = "default_greeting_text")]
+    pub text: String,
+    #[serde(default = "default_greeting_speed")]
+    pub speed: f32,
+    #[serde(default = "default_greeting_voice")]
+    pub voice: String,
+    #[serde(default = "default_greeting_engine")]
+    pub engine: TtsEngine,
+    /// Speaking variability (Piper HTTP: noise_scale). 0=monotone, 0.667=Piper default.
+    #[serde(default = "default_noise_scale")]
+    pub noise_scale: f32,
+    /// Phoneme width variability (Piper HTTP: noise_w_scale). 0=precise, 0.8=Piper default.
+    #[serde(default = "default_noise_w_scale")]
+    pub noise_w_scale: f32,
+}
+
+fn default_greeting_text() -> String {
+    "Hello, how can I help?".to_string()
+}
+
+fn default_greeting_speed() -> f32 {
+    1.0
+}
+
+fn default_greeting_voice() -> String {
+    String::new()
+}
+
+fn default_greeting_engine() -> TtsEngine {
+    TtsEngine::Piper
+}
+
+fn default_noise_scale() -> f32 {
+    0.667
+}
+
+fn default_noise_w_scale() -> f32 {
+    0.8
+}
+
+impl Default for TtsGreetingConfig {
+    fn default() -> Self {
+        Self {
+            text: default_greeting_text(),
+            speed: default_greeting_speed(),
+            voice: default_greeting_voice(),
+            engine: default_greeting_engine(),
+            noise_scale: default_noise_scale(),
+            noise_w_scale: default_noise_w_scale(),
+        }
+    }
+}
+
 /// Text-to-speech ("Read Anywhere" / CopySpeak) configuration.
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct TtsConfig {
@@ -343,6 +398,8 @@ pub struct TtsConfig {
     pub double_copy_window_ms: u32,
     #[serde(default = "default_play_startup_greeting")]
     pub play_startup_greeting: bool,
+    #[serde(default)]
+    pub greeting: TtsGreetingConfig,
     #[serde(default)]
     pub openai: OpenAIConfig,
     #[serde(default)]
@@ -373,6 +430,7 @@ impl Default for TtsConfig {
             double_copy_enabled: false,
             double_copy_window_ms: default_double_copy_window_ms(),
             play_startup_greeting: true,
+            greeting: TtsGreetingConfig::default(),
             openai: OpenAIConfig::default(),
             elevenlabs: ElevenLabsConfig::default(),
             cartesia: CartesiaConfig::default(),
@@ -778,6 +836,26 @@ pub struct AppSettings {
     /// Streaming LLM "Brain" subsystem settings (separate from post-processing).
     #[serde(default)]
     pub brain: BrainConfig,
+    #[serde(default)]
+    pub long_audio_model: Option<String>,
+    #[serde(default = "default_long_audio_threshold_seconds")]
+    pub long_audio_threshold_seconds: f64,
+    #[serde(default = "default_noise_suppression_enabled")]
+    pub noise_suppression_enabled: bool,
+    #[serde(default = "default_vad_mode")]
+    pub vad_mode: String,
+}
+
+fn default_long_audio_threshold_seconds() -> f64 {
+    10.0
+}
+
+fn default_noise_suppression_enabled() -> bool {
+    false
+}
+
+fn default_vad_mode() -> String {
+    "silero".to_string()
 }
 
 fn default_model() -> String {
@@ -1207,6 +1285,16 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_converse_shortcut.to_string(),
         },
     );
+    bindings.insert(
+        "toggle_pause".to_string(),
+        ShortcutBinding {
+            id: "toggle_pause".to_string(),
+            name: "Pause/Resume Recording".to_string(),
+            description: "Pauses or resumes the current recording session.".to_string(),
+            default_binding: "F6".to_string(),
+            current_binding: "F6".to_string(),
+        },
+    );
 
     AppSettings {
         bindings,
@@ -1260,6 +1348,10 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         tts: TtsConfig::default(),
         brain: BrainConfig::default(),
+        long_audio_model: None,
+        long_audio_threshold_seconds: default_long_audio_threshold_seconds(),
+        noise_suppression_enabled: default_noise_suppression_enabled(),
+        vad_mode: default_vad_mode(),
     }
 }
 

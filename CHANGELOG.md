@@ -7,6 +7,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Greeting text now editable** — fixed `onChange` handler using raw event object instead of `e.target.value`
+- **Removed pitch from greeting settings** — Piper HTTP API doesn't support pitch; replaced with proper Piper noise params
+- **Removed redundant test speak sample section** — the "Play Greeting" button already serves this purpose
+
+### Added
+
+- **Noise Scale / Noise W Scale sliders** — Piper HTTP `noise_scale` and `noise_w_scale` parameters now controllable in greeting settings (0–1.5 range, defaults 0.667 / 0.8)
+- **Reset-to-default button (↺)** on each noise slider to restore Piper defaults
+- **Piper HTTP API reference** — full API doc pasted as module comments in `piper.rs`
+
 ### Added
 
 - **Her-style 3D loading animation** — Three.js animated tube geometry (lissajous
