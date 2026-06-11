@@ -118,7 +118,6 @@ S2B2S/
 ├── CONTRIBUTING.md         # Contributor guidelines
 ├── CONTRIBUTING_TRANSLATIONS.md  # Translation guide
 ├── CRUSH.md                # This file — commands + style
-├── IMPROVEMENT_PLAN.md     # Detailed roadmap and ADRs
 ├── CLAUDE.md               # AI assistant entry point
 ├── LICENSE                 # MIT License
 ├── package.json            # JS dependencies

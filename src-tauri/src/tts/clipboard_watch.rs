@@ -66,17 +66,15 @@ fn get_clipboard_change_id() -> u64 {
     }
 }
 
+#[cfg(not(any(target_os = "macos", windows)))]
 fn get_clipboard_text() -> String {
-    #[cfg(not(any(target_os = "macos", windows)))]
-    {
-        // Try xclip first, then wl-paste
-        use std::process::Command;
-        for cmd in &[("xclip", &["-selection", "clipboard", "-o"] as &[&str]),
-                      ("wl-paste", &[] as &[&str])] {
-            if let Ok(out) = Command::new(cmd.0).args(cmd.1).output() {
-                if out.status.success() {
-                    return String::from_utf8_lossy(&out.stdout).trim().to_string();
-                }
+    // Try xclip first, then wl-paste
+    use std::process::Command;
+    for cmd in &[("xclip", &["-selection", "clipboard", "-o"] as &[&str]),
+                  ("wl-paste", &[] as &[&str])] {
+        if let Ok(out) = Command::new(cmd.0).args(cmd.1).output() {
+            if out.status.success() {
+                return String::from_utf8_lossy(&out.stdout).trim().to_string();
             }
         }
     }

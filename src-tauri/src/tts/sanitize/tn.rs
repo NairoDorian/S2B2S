@@ -14,6 +14,7 @@ pub fn tn_normalize_text(text: &str) -> String {
 }
 
 /// Normalize a single token — for targeted use.
+#[allow(dead_code)]
 pub fn tn_normalize_token(text: &str) -> String {
     tn_normalize(text)
 }

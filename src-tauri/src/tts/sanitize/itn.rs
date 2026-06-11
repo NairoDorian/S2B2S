@@ -16,6 +16,7 @@ pub fn itn_normalize(text: &str) -> String {
 }
 
 /// Normalize a single token (e.g., "two hundred") — for short phrases.
+#[allow(dead_code)]
 pub fn itn_normalize_token(text: &str) -> String {
     normalize(text)
 }

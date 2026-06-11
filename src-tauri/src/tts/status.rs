@@ -10,6 +10,7 @@
 use std::fmt;
 
 /// Engine lifecycle status, surfaced to the UI footer and control API.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineStatus {
@@ -27,6 +28,7 @@ pub enum EngineStatus {
     Unloaded,
 }
 
+#[allow(dead_code)]
 impl EngineStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -52,6 +54,7 @@ impl fmt::Display for EngineStatus {
 /// Engines implementing this trait are loaded at app startup so the first user
 /// request pays zero cold-start tax. Engines that don't implement it (cloud
 /// backends, SAPI) are always "ready" by definition.
+#[allow(dead_code)]
 pub trait WarmEngine {
     /// Load the model and run a warm-up inference sentence.
     /// `warm()` must be safe to call multiple times (idempotent).

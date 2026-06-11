@@ -226,3 +226,52 @@ pub fn import_settings(app: AppHandle, path: String) -> Result<(), String> {
     
     Ok(())
 }
+
+#[specta::specta]
+#[tauri::command]
+pub fn get_recent_logs(app: AppHandle, max_lines: u32) -> Result<String, String> {
+    let log_dir = crate::portable::app_log_dir(&app)
+        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+
+    let log_file_path = log_dir.join("s2b2s.log");
+    if !log_file_path.exists() {
+        return Ok("No log entries found yet.".to_string());
+    }
+
+    let file = std::fs::File::open(&log_file_path)
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+
+    use std::io::{BufRead, BufReader};
+    let reader = BufReader::new(file);
+    let lines: Vec<String> = reader.lines()
+        .map(|line| line.unwrap_or_default())
+        .collect();
+
+    let len = lines.len();
+    let start = if len > max_lines as usize {
+        len - max_lines as usize
+    } else {
+        0
+    };
+
+    Ok(lines[start..].join("\n"))
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn clear_logs(app: AppHandle) -> Result<(), String> {
+    let log_dir = crate::portable::app_log_dir(&app)
+        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+
+    let log_file_path = log_dir.join("s2b2s.log");
+    if log_file_path.exists() {
+        let _ = std::fs::write(&log_file_path, "");
+    }
+
+    let crash_file_path = log_dir.join("s2b2s-crash.log");
+    if crash_file_path.exists() {
+        let _ = std::fs::write(&crash_file_path, "");
+    }
+
+    Ok(())
+}

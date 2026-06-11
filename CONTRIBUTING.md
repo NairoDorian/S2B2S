@@ -4,7 +4,7 @@ Thank you for your interest in contributing to S2B2S! This guide will help you g
 
 ## Feature Policy
 
-**S2B2S prioritizes stability and bug fixes.** The core STT → Brain → TTS pipeline is feature-complete. New features should gather community support first via [Discussions](https://github.com/NairoDorian/S2B2S/discussions) before a PR is opened. See [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) for the current roadmap and what's already in progress.
+**S2B2S prioritizes stability and bug fixes.** The core STT → Brain → TTS pipeline is feature-complete. New features should gather community support first via [Discussions](https://github.com/NairoDorian/S2B2S/discussions) before a PR is opened. See the roadmap in [README.md](README.md) for features and what's in progress.
 
 **Bug fixes, performance improvements, and cross-platform compatibility are always welcome.**
 

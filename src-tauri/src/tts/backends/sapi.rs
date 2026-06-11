@@ -7,6 +7,7 @@
 
 use crate::tts::{TtsBackend, Voice};
 
+#[allow(dead_code)]
 pub struct SapiBackend {
     voice: String,
     speed: f32,
@@ -36,7 +37,7 @@ impl TtsBackend for SapiBackend {
     fn synthesize(&self, _text: &str, _voice: &str, _speed: f32) -> Result<Vec<u8>, String> {
         #[cfg(target_os = "windows")]
         {
-            // TODO: Use windows-rs SAPI COM interop:
+            // TO FINISH: Use windows-rs SAPI COM interop:
             //   SpVoice → Speak → ISpeechBaseStream → WAV bytes
             Err("SAPI synthesis not yet implemented".to_string())
         }

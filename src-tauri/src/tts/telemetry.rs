@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// Running average for a single engine + voice combination.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct RunningStats {
     samples: u64,
@@ -20,6 +21,7 @@ struct RunningStats {
     chars_per_ms: f64,
 }
 
+#[allow(dead_code)]
 impl RunningStats {
     fn record(&mut self, chars: u64, ms: u64) {
         self.samples += 1;
@@ -36,10 +38,12 @@ impl RunningStats {
 }
 
 /// Global telemetry store.
+#[allow(dead_code)]
 pub struct Telemetry {
     stats: RwLock<HashMap<String, RunningStats>>,
 }
 
+#[allow(dead_code)]
 impl Telemetry {
     pub fn new() -> Self {
         Self {

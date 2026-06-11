@@ -18,7 +18,6 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 - [Platform Support](#platform-support)
 - [System Requirements](#system-requirements)
 - [Roadmap & Active Development](#roadmap--active-development)
-- [Sponsors](#sponsors)
 - [Related Projects](#related-projects)
 - [License & Attribution](#license--attribution)
 
@@ -290,12 +289,11 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Piper persistent HTTP server with CUDA auto-discovery | ✅ Complete |
 | Cargo test export_bindings (headless typed bindings) | ✅ Complete |
 | Kokoro worker pool + crossfade | 🚧 In progress |
-| RAM-persistent warm model lifecycle (unload timeout) | 🚧 In progress |
+| RAM-persistent warm model lifecycle (unload timeout) | ✅ Complete |
 | Streaming STT (WebSocket-based) | 📋 Planned |
 | Pocket TTS backend (voice cloning) | 📋 Planned |
 | Multi-OS polish, mobile companion | 📋 Later |
 
-See the full planning document in [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md).
 
 ---
 
@@ -372,25 +370,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines and 
 
 ---
 
-## Sponsors
 
-<div align="center">
-  We're grateful for the support of our sponsors who help make S2B2S possible:
-  <br><br>
-  <a href="https://wordcab.com">
-    <img src="sponsor-images/wordcab.png" alt="Wordcab" width="120" height="120">
-  </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/epicenter-so/epicenter">
-    <img src="sponsor-images/epicenter.png" alt="Epicenter" width="120" height="120">
-  </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://boltai.com?utm_source=s2b2s">
-    <img src="sponsor-images/boltai.jpg" alt="Bolt AI" width="120" height="120">
-  </a>
-</div>
-
----
 
 ## Related Projects
 

@@ -3,7 +3,7 @@
 <!--
 s2b2s prioritizes stability and bug fixes. The core STT → Brain → TTS pipeline is feature-complete.
 New features should gather community support first via Discussions. Bug fixes, performance improvements, and cross-platform compatibility fixes are always welcome.
-See CONTRIBUTING.md and IMPROVEMENT_PLAN.md for current priorities.
+See CONTRIBUTING.md for current priorities.
 -->
 
 **Please confirm you have done the following:**

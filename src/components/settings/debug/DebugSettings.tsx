@@ -9,6 +9,7 @@ import { AlwaysOnMicrophone } from "../AlwaysOnMicrophone";
 import { SoundPicker } from "../SoundPicker";
 import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
+import { LogViewer } from "./LogViewer";
 
 export const DebugSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -28,6 +29,8 @@ export const DebugSettings: React.FC = () => {
         <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
         <ClamshellMicrophoneSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
+
+      <LogViewer />
     </div>
   );
 };

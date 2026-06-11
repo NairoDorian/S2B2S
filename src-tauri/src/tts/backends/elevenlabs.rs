@@ -236,25 +236,6 @@ impl ElevenLabsTtsBackend {
             },
         ]
     }
-
-    pub fn resolve_voice_name_static(voice_id: &str) -> String {
-        let name = Self::default_voices()
-            .iter()
-            .find(|v| v.voice_id == voice_id)
-            .and_then(|v| v.name.clone())
-            .unwrap_or_else(|| {
-                voice_id
-                    .chars()
-                    .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
-                    .collect::<String>()
-            });
-
-        let mut chars = name.chars();
-        match chars.next() {
-            None => name,
-            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        }
-    }
 }
 
 impl TtsBackend for ElevenLabsTtsBackend {

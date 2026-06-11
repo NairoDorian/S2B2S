@@ -31,6 +31,7 @@ pub struct Voice {
 /// blocking context (e.g. `tauri::async_runtime::spawn_blocking`).
 pub trait TtsBackend: Send + Sync {
     /// Human-readable name for settings UI / logs.
+    #[allow(dead_code)]
     fn name(&self) -> &str;
 
     /// Synthesize `text` with `voice` at `speed` into audio bytes.
@@ -40,9 +41,11 @@ pub trait TtsBackend: Send + Sync {
     fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String>;
 
     /// Check that the engine/server is reachable.
+    #[allow(dead_code)]
     fn health_check(&self) -> Result<(), String>;
 
     /// File extension for the bytes returned by [`Self::synthesize`].
+    #[allow(dead_code)]
     fn file_extension(&self) -> &str {
         "wav"
     }

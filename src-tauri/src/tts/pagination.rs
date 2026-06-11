@@ -306,13 +306,7 @@ fn force_split(text: &str, max_size: usize) -> Vec<TextFragment> {
     fragments
 }
 
-/// Check if text should be paginated based on length and configuration.
-pub fn should_paginate(text: &str, config: &PaginationConfig) -> bool {
-    if !config.enabled {
-        return false;
-    }
-    text.chars().count() > config.fragment_size as usize
-}
+
 
 /// Get the number of fragments that would be created for the given text.
 #[allow(dead_code)]
@@ -485,22 +479,7 @@ mod tests {
         assert_eq!(combined.replace(' ', ""), text.replace(' ', ""));
     }
 
-    #[test]
-    fn test_should_paginate() {
-        let config = PaginationConfig {
-            enabled: true,
-            fragment_size: 100,
-        };
 
-        assert!(!should_paginate("Short text.", &config));
-        assert!(should_paginate("A".repeat(200).as_str(), &config));
-
-        let disabled_config = PaginationConfig {
-            enabled: false,
-            ..default_config()
-        };
-        assert!(!should_paginate(&"A".repeat(200), &disabled_config));
-    }
 
     #[test]
     fn test_force_split_no_sentence_boundaries() {

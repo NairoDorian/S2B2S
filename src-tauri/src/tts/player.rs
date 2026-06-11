@@ -29,6 +29,7 @@ enum Cmd {
 pub struct TtsPlayer {
     tx: Sender<Cmd>,
     is_playing: Arc<AtomicBool>,
+    #[allow(dead_code)]
     is_paused: Arc<AtomicBool>,
 }
 
@@ -197,6 +198,7 @@ impl TtsPlayer {
         self.is_playing.load(Ordering::Relaxed)
     }
 
+    #[allow(dead_code)]
     pub fn is_paused(&self) -> bool {
         self.is_paused.load(Ordering::Relaxed)
     }

@@ -399,6 +399,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::get_default_settings,
             commands::get_log_dir_path,
             commands::set_log_level,
+            commands::get_recent_logs,
+            commands::clear_logs,
             commands::open_recordings_folder,
             commands::open_log_dir,
             commands::open_app_data_dir,
