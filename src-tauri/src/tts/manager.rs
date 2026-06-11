@@ -13,7 +13,7 @@ use crate::tts::sanitize::sanitize_text;
 use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub struct TtsManager {
     app: AppHandle,
@@ -137,17 +137,18 @@ impl TtsManager {
         self.player.stop();
         self.player.set_volume(cfg.volume);
 
-        let text = sanitize_text(&text, &cfg.sanitization);
-        if text.trim().is_empty() {
+        let sanitized = sanitize_text(&text, &cfg.sanitization);
+        if sanitized.trim().is_empty() {
             log::debug!("[TTS] nothing left to speak after sanitization");
             return;
         }
-        let fragments = paginate_text(&text, &cfg.pagination);
+        let fragments = paginate_text(&sanitized, &cfg.pagination);
         let app = self.app.clone();
         let player = self.player.clone();
         let gen_counter = self.generation.clone();
         let voice = cfg.voice.clone();
         let speed = cfg.speed;
+        let engine_name = format!("{:?}", cfg.engine).to_lowercase();
 
         std::thread::spawn(move || {
             let total = fragments.len();
@@ -175,6 +176,21 @@ impl TtsManager {
                 }
             }
             let _ = app.emit("tts:synth-done", ());
+
+            // Save TTS entry to history
+            if let Some(hm) = app.try_state::<std::sync::Arc<crate::managers::history::HistoryManager>>() {
+                let _ = hm.save_entry(
+                    String::new(),
+                    text,
+                    false,
+                    None,
+                    None,
+                    "tts".to_string(),
+                    Some(engine_name),
+                    None,
+                    None,
+                );
+            }
         });
     }
 
