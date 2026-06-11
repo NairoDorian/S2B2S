@@ -1,7 +1,7 @@
 //! Tauri commands for the Brain (streaming LLM) subsystem.
 
 use crate::brain::manager::BrainManager;
-use crate::settings::{get_settings, write_settings, BrainConfig, PostProcessProvider};
+use crate::settings::{get_settings, write_settings, BrainConfig};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 

@@ -49,6 +49,19 @@ pub async fn get_audio_file_path(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn delete_all_history_entries(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> Result<u32, String> {
+    history_manager
+        .delete_all_entries()
+        .await
+        .map(|c| c as u32)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn delete_history_entry(
     _app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,

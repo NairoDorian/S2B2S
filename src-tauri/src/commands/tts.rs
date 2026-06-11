@@ -1,7 +1,6 @@
 //! Tauri commands for the TTS ("Read Anywhere") subsystem.
 
 use crate::settings::{get_settings, write_settings, TtsConfig};
-use crate::tts::backends::piper;
 use crate::tts::manager::TtsManager;
 use crate::tts::Voice;
 use std::sync::Arc;

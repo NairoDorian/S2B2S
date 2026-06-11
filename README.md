@@ -1,4 +1,4 @@
-# <img src="logo.png" alt="S2B2S" width="48" height="48" style="vertical-align: middle" /> S2B2S — SpeechToBrainToSpeech
+# <img src="src/assets/logo.png" alt="S2B2S" width="48" height="48" style="vertical-align: middle" /> S2B2S — SpeechToBrainToSpeech
 
 **Local-first STT → Brain → TTS desktop app for Windows 11. Dictate anywhere, read anything aloud, and talk naturally with a local AI — almost keyboard-free.**
 
