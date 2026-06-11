@@ -38,3 +38,12 @@ S2B2S = Tauri 2 (Rust + React/TS)
 - Frontend: `src/` — components/, hooks/, stores/, i18n/ (20 languages)
 - IPC: tauri-specta typed bindings (`src/bindings.ts`)
 - State: Zustand → Tauri Command → Rust → SQLite/Store
+
+## Code Cleanup Notes (June 2026)
+
+This project has been reviewed and cleaned up:
+- All module doc comments added to top-level Rust modules
+- `Cargo.toml` cleaned of commented-out sections
+- Documentation (README, CHANGELOG, AGENTS, CLAUDE, BUILD, CRUSH) synced and updated
+- Roadmap in README reflects all completed features
+- See CHANGELOG.md for the full cleanup entry

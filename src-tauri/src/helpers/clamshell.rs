@@ -1,3 +1,7 @@
+//! Clamshell mode detection for macOS. Used to auto-select an external
+//! microphone when a laptop lid is closed. Stub implementations for
+//! non-macOS platforms always return false.
+
 #[cfg(target_os = "macos")]
 use std::process::Command;
 

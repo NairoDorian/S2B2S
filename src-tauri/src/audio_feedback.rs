@@ -1,3 +1,6 @@
+//! Audio feedback sounds (start/stop recording beeps).
+//! Supports built-in themes and custom WAV files.
+
 use crate::settings::SoundTheme;
 use crate::settings::{self, AppSettings};
 use cpal::traits::{DeviceTrait, HostTrait};

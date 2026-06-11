@@ -1,3 +1,6 @@
+//! Tauri command handlers — the typed IPC surface between frontend and backend.
+//! Each module groups related commands (audio, brain, discovery, history, etc.).
+
 pub mod audio;
 pub mod brain;
 pub mod discovery;

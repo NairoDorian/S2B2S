@@ -1,3 +1,7 @@
+//! Keyboard input simulation via Enigo.
+//! Provides layout-independent paste (Ctrl+V/Cmd+V), copy (Ctrl+C/Cmd+C),
+//! and direct text entry functions used by the dictation pipeline.
+
 use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};

@@ -154,7 +154,10 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
 
         // Handle Apple Intelligence separately since it uses native Swift APIs
         if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+//! Shortcut actions: transcribe, converse, speak selection, AI replace.
+//! Each action implements the `ShortcutAction` trait for start/stop lifecycle.
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             {
                 if !apple_intelligence::check_apple_intelligence_availability() {
                     debug!(
