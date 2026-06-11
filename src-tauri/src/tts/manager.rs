@@ -33,11 +33,20 @@ impl TtsManager {
     }
 
     fn build_backend(&self, cfg: &TtsConfig) -> Result<Box<dyn TtsBackend>, String> {
+        self.build_backend_with_noise(cfg, 0.667, 0.8)
+    }
+
+    fn build_backend_with_noise(
+        &self,
+        cfg: &TtsConfig,
+        noise_scale: f32,
+        noise_w_scale: f32,
+    ) -> Result<Box<dyn TtsBackend>, String> {
         match cfg.engine {
-            TtsEngine::Piper => Ok(Box::new(PiperBackend::new(
-                self.app.clone(),
-                cfg.piper.cuda,
-            ))),
+            TtsEngine::Piper => Ok(Box::new(
+                PiperBackend::new(self.app.clone(), cfg.piper.cuda)
+                    .with_noise(noise_scale, noise_w_scale),
+            )),
             TtsEngine::Openai => Ok(Box::new(crate::tts::backends::openai::OpenAiTtsBackend::new(
                 cfg.openai.clone(),
             ))),
@@ -52,8 +61,14 @@ impl TtsManager {
 
     /// Enumerate available voices for the configured engine.
     pub fn list_voices(&self) -> Vec<Voice> {
+        self.list_voices_for_engine(None)
+    }
+
+    /// Enumerate available voices for a specific engine, or defaults to the configured engine.
+    pub fn list_voices_for_engine(&self, engine: Option<TtsEngine>) -> Vec<Voice> {
         let cfg = get_settings(&self.app).tts;
-        match cfg.engine {
+        let engine = engine.unwrap_or(cfg.engine);
+        match engine {
             TtsEngine::Piper => piper::list_voices(&self.app),
             TtsEngine::Openai => {
                 vec![
@@ -153,6 +168,8 @@ impl TtsManager {
         std::thread::spawn(move || {
             let total = fragments.len();
             let _ = app.emit("tts:started", total);
+            let mut all_chunks = Vec::new();
+            
             for frag in fragments {
                 if gen_counter.load(Ordering::SeqCst) != generation {
                     log::debug!("[TTS] speak aborted (superseded)");
@@ -167,6 +184,7 @@ impl TtsManager {
                             "tts:fragment",
                             serde_json::json!({ "index": frag.index, "total": frag.total }),
                         );
+                        all_chunks.push(bytes.clone());
                         player.append(bytes);
                     }
                     Err(e) => {
@@ -177,19 +195,40 @@ impl TtsManager {
             }
             let _ = app.emit("tts:synth-done", ());
 
-            // Save TTS entry to history
-            if let Some(hm) = app.try_state::<std::sync::Arc<crate::managers::history::HistoryManager>>() {
-                let _ = hm.save_entry(
-                    String::new(),
-                    text,
-                    false,
-                    None,
-                    None,
-                    "tts".to_string(),
-                    Some(engine_name),
-                    None,
-                    None,
-                );
+            // Save TTS entry to history with cached audio file
+            if !all_chunks.is_empty() {
+                if let Some(hm) = app.try_state::<std::sync::Arc<crate::managers::history::HistoryManager>>() {
+                    let is_wav = all_chunks[0].len() >= 4 && &all_chunks[0][0..4] == b"RIFF";
+                    let combined_bytes = if is_wav {
+                        concatenate_wavs(&all_chunks)
+                    } else {
+                        let mut direct = Vec::new();
+                        for c in &all_chunks {
+                            direct.extend_from_slice(c);
+                        }
+                        direct
+                    };
+
+                    let ext = if is_wav { "wav" } else { "mp3" };
+                    let file_name = format!("tts-{}.{}", chrono::Utc::now().timestamp(), ext);
+                    let cache_path = hm.recordings_dir().join(&file_name);
+                    
+                    if let Err(e) = std::fs::write(&cache_path, &combined_bytes) {
+                        log::error!("[TTS] failed to write cached TTS audio: {e}");
+                    } else {
+                        let _ = hm.save_entry(
+                            file_name,
+                            text,
+                            false,
+                            None,
+                            None,
+                            "tts".to_string(),
+                            Some(engine_name),
+                            None,
+                            None,
+                        );
+                    }
+                }
             }
         });
     }
@@ -242,8 +281,118 @@ impl TtsManager {
         self.player.stop();
     }
 
+    /// Play the customized startup greeting message.
+    pub fn play_greeting(&self) {
+        let settings = get_settings(&self.app);
+        let greeting_cfg = settings.tts.greeting.clone();
+        if greeting_cfg.text.trim().is_empty() {
+            return;
+        }
+
+        // Build temporary TtsConfig to build the backend
+        let mut temp_tts_cfg = settings.tts.clone();
+        temp_tts_cfg.engine = greeting_cfg.engine;
+        temp_tts_cfg.voice = greeting_cfg.voice.clone();
+        temp_tts_cfg.speed = greeting_cfg.speed;
+
+        let backend = match self.build_backend_with_noise(
+            &temp_tts_cfg,
+            greeting_cfg.noise_scale,
+            greeting_cfg.noise_w_scale,
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("[Greeting] Failed to build backend for greeting: {e}");
+                return;
+            }
+        };
+
+        let player = self.player.clone();
+        let text = greeting_cfg.text.clone();
+        let voice = greeting_cfg.voice.clone();
+        let speed = greeting_cfg.speed;
+        let volume = settings.tts.volume;
+
+        std::thread::spawn(move || {
+            log::info!("[Greeting] Synthesizing custom greeting...");
+            player.set_volume(volume);
+            match backend.synthesize(&text, &voice, speed) {
+                Ok(bytes) => {
+                    log::info!("[Greeting] Playing custom greeting audio out loud...");
+                    player.append(bytes);
+                }
+                Err(e) => {
+                    log::error!("[Greeting] Synthesis failed for custom greeting: {e}");
+                }
+            }
+        });
+    }
+
     /// Play raw audio bytes directly through the player.
     pub fn play_raw(&self, bytes: Vec<u8>) {
+        let cfg = get_settings(&self.app).tts;
+        self.player.set_volume(cfg.volume);
         self.player.append(bytes);
     }
+}
+
+fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+    if chunks.len() == 1 {
+        return chunks[0].clone();
+    }
+    
+    // Find the first valid WAV chunk to serve as our base
+    let mut base_chunk = None;
+    let mut start_idx = 0;
+    for (i, chunk) in chunks.iter().enumerate() {
+        if chunk.len() >= 44 && &chunk[0..4] == b"RIFF" {
+            base_chunk = Some(chunk.clone());
+            start_idx = i + 1;
+            break;
+        }
+    }
+    
+    let mut base = match base_chunk {
+        Some(b) => b,
+        None => {
+            // None of the chunks are WAV, fallback to direct concatenation
+            let mut all = Vec::new();
+            for c in chunks {
+                all.extend_from_slice(c);
+            }
+            return all;
+        }
+    };
+    
+    let mut total_data_bytes = if base.len() >= 44 {
+        u32::from_le_bytes(base[40..44].try_into().unwrap_or([0; 4])) as usize
+    } else {
+        base.len().saturating_sub(44)
+    };
+    
+    for chunk in &chunks[start_idx..] {
+        if chunk.len() >= 44 && &chunk[0..4] == b"RIFF" {
+            let data_part = &chunk[44..];
+            base.extend_from_slice(data_part);
+            total_data_bytes += data_part.len();
+        } else {
+            base.extend_from_slice(chunk);
+            total_data_bytes += chunk.len();
+        }
+    }
+    
+    if base.len() >= 8 {
+        let riff_size = (base.len() as u32).saturating_sub(8);
+        base[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    }
+    
+    if base.len() >= 44 {
+        let data_size = total_data_bytes as u32;
+        base[40..44].copy_from_slice(&data_size.to_le_bytes());
+    }
+    
+    base
 }

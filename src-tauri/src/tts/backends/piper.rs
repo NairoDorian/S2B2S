@@ -3,6 +3,40 @@
 //! Spawns Python's `piper.http_server` once, keeps the model resident in RAM,
 //! and synthesizes via HTTP POST — the CopySpeak performance win. Faithful to
 //! the AgentZero prototype's proven lifecycle.
+//!
+//! ─── Piper HTTP API Reference ────────────────────────────────────────────
+//!
+//! Install:
+//!   python3 -m pip install piper-tts[http]
+//!   python3 -m piper.download_voices en_US-lessac-medium
+//!
+//! Run server:
+//!   python3 -m piper.http_server -m <VOICE> [--host HOST] [--port PORT] [--data-dir DIR]
+//!
+//! Synthesize (POST /synthesize):
+//!   Fields:
+//!     text         (required) - text to synthesize
+//!     voice        (optional) - name of voice to use; defaults to -m <VOICE>
+//!     speaker      (optional) - name of speaker for multi-speaker voices
+//!     speaker_id   (optional) - id of speaker; overrides speaker
+//!     length_scale (optional) - speaking speed; defaults to 1
+//!     noise_scale  (optional) - speaking variability
+//!     noise_w_scale(optional) - phoneme width variability
+//!
+//!   Example:
+//!     curl -X POST -H 'Content-Type: application/json' \
+//!       -d '{ "text": "Hello." }' -o test.wav localhost:5000/synthesize
+//!
+//! Voices (GET /voices):
+//!   curl localhost:5000/voices
+//!
+//! Info (GET /info):
+//!   curl localhost:5000/info
+//!
+//! Web interface:
+//!   Open http://localhost:5000 in a browser.
+//!
+//! ──────────────────────────────────────────────────────────────────────────
 
 use crate::tts::{TtsBackend, Voice};
 use tauri::AppHandle;
@@ -33,6 +67,8 @@ pub fn list_voices(app: &AppHandle) -> Vec<Voice> {
 pub struct PiperBackend {
     app: AppHandle,
     cuda: bool,
+    noise_scale: f32,
+    noise_w_scale: f32,
 }
 
 impl PiperBackend {
@@ -40,7 +76,15 @@ impl PiperBackend {
         Self {
             app,
             cuda,
+            noise_scale: 0.667,
+            noise_w_scale: 0.8,
         }
+    }
+
+    pub fn with_noise(mut self, noise_scale: f32, noise_w_scale: f32) -> Self {
+        self.noise_scale = noise_scale;
+        self.noise_w_scale = noise_w_scale;
+        self
     }
 }
 
@@ -81,7 +125,11 @@ impl TtsBackend for PiperBackend {
         let url = format!("http://127.0.0.1:{}/", handle.port);
 
         // R1: Map speed correctly: length_scale = 1.0 / speed
-        let mut body = serde_json::json!({ "text": text });
+        let mut body = serde_json::json!({
+            "text": text,
+            "noise_scale": self.noise_scale,
+            "noise_w_scale": self.noise_w_scale,
+        });
         if speed > 0.0 && (speed - 1.0).abs() > f32::EPSILON {
             body["length_scale"] = serde_json::json!(1.0 / speed);
         }
