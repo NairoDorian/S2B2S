@@ -44,7 +44,11 @@ const TtsSelector: React.FC = () => {
         if (result.status === "ok") {
           const status = result.data;
           setPiperStatus({
-            phase: status.running ? (status.ready ? "ready" : "loading") : "stopped",
+            phase: status.running
+              ? status.ready
+                ? "ready"
+                : "loading"
+              : "stopped",
             model: status.model,
             cuda: status.cuda,
             error: null,
@@ -57,9 +61,12 @@ const TtsSelector: React.FC = () => {
     fetchStatus();
 
     // Listen to backend status events
-    const unlisten = listen<PiperStatusPayload>("piper-status-changed", (event) => {
-      setPiperStatus(event.payload);
-    });
+    const unlisten = listen<PiperStatusPayload>(
+      "piper-status-changed",
+      (event) => {
+        setPiperStatus(event.payload);
+      },
+    );
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
@@ -168,7 +175,9 @@ const TtsSelector: React.FC = () => {
           <span>🗣️</span>
           <span className="font-medium">{t("footer.tts")}</span>
         </span>
-        <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${getTtsStatusColor()}`} />
+        <div
+          className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${getTtsStatusColor()}`}
+        />
         <svg
           className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
           fill="none"
@@ -188,10 +197,12 @@ const TtsSelector: React.FC = () => {
         <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2.5 px-3 z-50 text-xs">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-mid-gray/10">
             <div className="flex flex-col">
-              <span className="font-semibold text-text/80">{t("footer.ttsTitle")}</span>
+              <span className="font-semibold text-text/80">
+                {t("footer.ttsTitle")}
+              </span>
               {tts.enabled && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
-                  {tts.engine === "piper" 
+                  {tts.engine === "piper"
                     ? `Piper: ${getActiveVoiceName() || "Default"}${piperStatus.cuda ? " (CUDA)" : ""}`
                     : `${tts.engine.toUpperCase()}: ${getActiveVoiceName() || "Default"}`}
                 </span>

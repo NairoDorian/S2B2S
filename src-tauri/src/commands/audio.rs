@@ -1,3 +1,5 @@
+//! Tauri commands for audio device management and microphone control.
+
 use crate::audio_feedback;
 use crate::audio_toolkit::audio::{list_input_devices, list_output_devices};
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};

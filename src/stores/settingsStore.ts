@@ -1,3 +1,7 @@
+// Zustand store for all application settings: audio, shortcuts, TTS, Brain,
+// post-processing, VAD, and UI preferences. Syncs bidirectionally with the
+// Rust backend via Tauri commands and events.
+
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
@@ -62,14 +66,8 @@ interface SettingsStore {
     providerId: string,
     value: string,
   ) => Promise<void>;
-  updateBrainBaseUrl: (
-    providerId: string,
-    baseUrl: string,
-  ) => Promise<void>;
-  updateBrainApiKey: (
-    providerId: string,
-    apiKey: string,
-  ) => Promise<void>;
+  updateBrainBaseUrl: (providerId: string, baseUrl: string) => Promise<void>;
+  updateBrainApiKey: (providerId: string, apiKey: string) => Promise<void>;
   updateBrainModel: (providerId: string, model: string) => Promise<void>;
   fetchBrainModels: (providerId: string) => Promise<string[]>;
   setBrainModelOptions: (providerId: string, models: string[]) => void;
@@ -589,12 +587,8 @@ export const useSettingsStore = create<SettingsStore>()(
       })),
 
     setBrainProvider: async (providerId) => {
-      const {
-        settings,
-        setUpdating,
-        refreshSettings,
-        setBrainModelOptions,
-      } = get();
+      const { settings, setUpdating, refreshSettings, setBrainModelOptions } =
+        get();
       const updateKey = "brain_provider_id";
       const previousId = settings?.brain?.provider_id ?? null;
 

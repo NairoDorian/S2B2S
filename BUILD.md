@@ -98,6 +98,7 @@ bun run tauri build
 ```
 
 This compiles a release binary and generates platform-specific bundles:
+
 - **Windows**: NSIS installer (`.exe`), MSI
 - **macOS**: DMG
 - **Linux**: deb, rpm, AppImage
@@ -161,6 +162,7 @@ bun run check:translations
 `linuxdeploy` bundles an old `strip` binary that can't process libraries built with newer toolchains.
 
 **Workaround:** Build with deb/rpm only:
+
 ```bash
 bun run tauri build -- --bundles deb
 ```
@@ -182,6 +184,7 @@ The `build.rs` now embeds Common-Controls v6 manifest into test binaries. If you
 The raw binary at `src-tauri/target/release/s2b2s` cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) co-located.
 
 **Install from the deb bundle:**
+
 ```bash
 cd /tmp
 ar x /path/to/S2B2S/src-tauri/target/release/bundle/deb/s2b2s_*_amd64.deb data.tar.gz
@@ -193,6 +196,7 @@ sudo cp usr/share/applications/s2b2s.desktop /usr/share/applications/
 ```
 
 After rebuilding, only the binary needs re-copying:
+
 ```bash
 sudo cp src-tauri/target/release/s2b2s /usr/bin/
 ```
@@ -201,14 +205,14 @@ sudo cp src-tauri/target/release/s2b2s /usr/bin/
 
 ## Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `ORT_LIB_LOCATION` | Path to ONNX Runtime library (Intel Mac only) |
-| `ORT_PREFER_DYNAMIC_LINK=1` | Use dynamic linking for ONNX Runtime (Intel Mac only) |
-| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake errors on macOS |
-| `S2B2S_NO_GTK_LAYER_SHELL=1` | Disable GTK layer shell on Linux (Wayland workaround) |
-| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos |
-| `RUST_LOG` | Set Rust log level (e.g., `debug`, `trace`) |
+| Variable                           | Purpose                                               |
+| ---------------------------------- | ----------------------------------------------------- |
+| `ORT_LIB_LOCATION`                 | Path to ONNX Runtime library (Intel Mac only)         |
+| `ORT_PREFER_DYNAMIC_LINK=1`        | Use dynamic linking for ONNX Runtime (Intel Mac only) |
+| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake errors on macOS                             |
+| `S2B2S_NO_GTK_LAYER_SHELL=1`       | Disable GTK layer shell on Linux (Wayland workaround) |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos        |
+| `RUST_LOG`                         | Set Rust log level (e.g., `debug`, `trace`)           |
 
 ---
 
@@ -216,17 +220,17 @@ sudo cp src-tauri/target/release/s2b2s /usr/bin/
 
 CI is configured via GitHub Actions in `.github/workflows/`:
 
-| Workflow | Triggers | Purpose |
-|----------|----------|---------|
-| `test.yml` | Push/PR | Unit tests + lint |
-| `build.yml` | Push/PR | Build on Windows, macOS, Linux |
-| `build-test.yml` | Push/PR | Build + test |
-| `release.yml` | Manual | Create draft release + build platform bundles |
-| `playwright.yml` | Push/PR | E2E tests |
-| `code-quality.yml` | Push/PR | ESLint, Prettier, Clippy |
-| `pr-test-build.yml` | PR | PR build verification |
-| `nix-check.yml` | Push/PR | Nix flake check |
-| `main-build.yml` | Push to main | Main branch build |
+| Workflow            | Triggers     | Purpose                                       |
+| ------------------- | ------------ | --------------------------------------------- |
+| `test.yml`          | Push/PR      | Unit tests + lint                             |
+| `build.yml`         | Push/PR      | Build on Windows, macOS, Linux                |
+| `build-test.yml`    | Push/PR      | Build + test                                  |
+| `release.yml`       | Manual       | Create draft release + build platform bundles |
+| `playwright.yml`    | Push/PR      | E2E tests                                     |
+| `code-quality.yml`  | Push/PR      | ESLint, Prettier, Clippy                      |
+| `pr-test-build.yml` | PR           | PR build verification                         |
+| `nix-check.yml`     | Push/PR      | Nix flake check                               |
+| `main-build.yml`    | Push to main | Main branch build                             |
 
 ---
 

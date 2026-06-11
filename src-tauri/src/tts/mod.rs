@@ -1,9 +1,8 @@
 //! Text-to-Speech subsystem — the "Read Anywhere" / CopySpeak pillar of S2B2S.
 //!
-//! Ported and adapted from the AgentZero prototype (MIT). The app does not care
-//! how speech is synthesized — only that it gets audio bytes back from a
-//! [`TtsBackend`]. Engines are warm and resident where possible (CopySpeak's key
-//! perf win); long-lived child processes must have their stdio drained (C4).
+//! The app does not care how speech is synthesized — only that it gets audio
+//! bytes back from a [`TtsBackend`]. Engines are warm and resident where
+//! possible; long-lived child processes must have their stdio drained.
 
 pub mod audio_format;
 pub mod backends;

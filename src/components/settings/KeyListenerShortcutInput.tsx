@@ -23,7 +23,9 @@ interface KeyListenerEvent {
   hotkey_string: string;
 }
 
-export const KeyListenerShortcutInput: React.FC<KeyListenerShortcutInputProps> = ({
+export const KeyListenerShortcutInput: React.FC<
+  KeyListenerShortcutInputProps
+> = ({
   descriptionMode = "tooltip",
   grouped = false,
   shortcutId,

@@ -43,8 +43,13 @@ export const AdvancedSettings: React.FC = () => {
           checked={debugMode}
           onChange={(checked) => updateSetting("debug_mode", checked)}
           isUpdating={isUpdating("debug_mode")}
-          label={t("settings.advanced.debugMode.label", { defaultValue: "Debug Mode" })}
-          description={t("settings.advanced.debugMode.description", { defaultValue: "Enable verbose logging and additional developer tools. Can also be toggled with Ctrl+Shift+D (Cmd+Shift+D on macOS)." })}
+          label={t("settings.advanced.debugMode.label", {
+            defaultValue: "Debug Mode",
+          })}
+          description={t("settings.advanced.debugMode.description", {
+            defaultValue:
+              "Enable verbose logging and additional developer tools. Can also be toggled with Ctrl+Shift+D (Cmd+Shift+D on macOS).",
+          })}
           descriptionMode="tooltip"
           grouped={true}
         />

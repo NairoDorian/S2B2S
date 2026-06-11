@@ -78,7 +78,10 @@ Translate only the **values** (right side), not the keys (left side):
 Edit `src/i18n/languages.ts` and add your language metadata:
 
 ```typescript
-export const LANGUAGE_METADATA: Record<string, { name: string; nativeName: string }> = {
+export const LANGUAGE_METADATA: Record<
+  string,
+  { name: string; nativeName: string }
+> = {
   en: { name: "English", nativeName: "English" },
   es: { name: "Spanish", nativeName: "Español" },
   fr: { name: "French", nativeName: "Français" },
@@ -104,6 +107,7 @@ export const LANGUAGE_METADATA: Record<string, { name: string; nativeName: strin
 ## Improving Existing Translations
 
 Found a typo or better translation?
+
 1. Edit the relevant `translation.json` file
 2. Submit a PR with a brief description of the change
 3. Run `bun run check:translations` to verify format
@@ -113,6 +117,7 @@ Found a typo or better translation?
 ## Translation Guidelines
 
 ### Do:
+
 - Use natural, native-sounding language
 - Keep translations concise (UI space is limited)
 - Match the tone of the English text (friendly, clear)
@@ -120,6 +125,7 @@ Found a typo or better translation?
 - Ensure RTL languages (Arabic, Hebrew) render correctly
 
 ### Don't:
+
 - Translate brand names (S2B2S, Whisper, Parakeet, OpenAI, Piper, Kokoro)
 - Change or remove `{{variables}}` (e.g., `{{error}}`, `{{model}}`)
 - Modify JSON keys or structure
@@ -146,28 +152,28 @@ Use a general form that works for all cases. Proper plural support may be added 
 
 ## Currently Supported Languages
 
-| Language | Code | Status |
-|----------|------|--------|
-| Arabic | `ar` | Complete |
-| Bulgarian | `bg` | Complete |
-| Czech | `cs` | Complete |
-| German | `de` | Complete |
-| English | `en` | Complete (source) |
-| Spanish | `es` | Complete |
-| French | `fr` | Complete |
-| Hebrew | `he` | Complete |
-| Italian | `it` | Complete |
-| Japanese | `ja` | Complete |
-| Korean | `ko` | Complete |
-| Polish | `pl` | Complete |
-| Portuguese | `pt` | Complete |
-| Russian | `ru` | Complete |
-| Swedish | `sv` | Complete |
-| Turkish | `tr` | Complete |
-| Ukrainian | `uk` | Complete |
-| Vietnamese | `vi` | Complete |
-| Chinese (Simplified) | `zh` | Complete |
-| Chinese (Traditional) | `zh-TW` | Complete |
+| Language              | Code    | Status            |
+| --------------------- | ------- | ----------------- |
+| Arabic                | `ar`    | Complete          |
+| Bulgarian             | `bg`    | Complete          |
+| Czech                 | `cs`    | Complete          |
+| German                | `de`    | Complete          |
+| English               | `en`    | Complete (source) |
+| Spanish               | `es`    | Complete          |
+| French                | `fr`    | Complete          |
+| Hebrew                | `he`    | Complete          |
+| Italian               | `it`    | Complete          |
+| Japanese              | `ja`    | Complete          |
+| Korean                | `ko`    | Complete          |
+| Polish                | `pl`    | Complete          |
+| Portuguese            | `pt`    | Complete          |
+| Russian               | `ru`    | Complete          |
+| Swedish               | `sv`    | Complete          |
+| Turkish               | `tr`    | Complete          |
+| Ukrainian             | `uk`    | Complete          |
+| Vietnamese            | `vi`    | Complete          |
+| Chinese (Simplified)  | `zh`    | Complete          |
+| Chinese (Traditional) | `zh-TW` | Complete          |
 
 **Total: 20 languages**
 

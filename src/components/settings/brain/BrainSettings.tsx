@@ -23,9 +23,9 @@ export const BrainSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
   const state = useBrainProviderState();
-  const [testState, setTestState] = useState<"idle" | "running" | "ok" | "error">(
-    "idle",
-  );
+  const [testState, setTestState] = useState<
+    "idle" | "running" | "ok" | "error"
+  >("idle");
   const [testReply, setTestReply] = useState("");
 
   const brain = settings?.brain;
@@ -92,7 +92,9 @@ export const BrainSettings: React.FC = () => {
             {state.isCustomProvider && (
               <SettingContainer
                 title={t("settings.postProcessing.api.baseUrl.title")}
-                description={t("settings.postProcessing.api.baseUrl.description")}
+                description={t(
+                  "settings.postProcessing.api.baseUrl.description",
+                )}
                 descriptionMode="tooltip"
                 layout="horizontal"
                 grouped={true}
@@ -156,7 +158,9 @@ export const BrainSettings: React.FC = () => {
                     ? t(
                         "settings.postProcessing.api.model.placeholderWithOptions",
                       )
-                    : t("settings.postProcessing.api.model.placeholderNoOptions")
+                    : t(
+                        "settings.postProcessing.api.model.placeholderNoOptions",
+                      )
                 }
                 onSelect={state.handleModelSelect}
                 onCreate={state.handleModelCreate}

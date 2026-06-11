@@ -1,3 +1,7 @@
+//! Platform-specific recording/speaking overlay windows.
+//! macOS uses NSPanel via tauri-nspanel, Windows uses HWND_TOPMOST,
+//! Linux uses GTK Layer Shell.
+
 use crate::input;
 use crate::settings;
 use crate::settings::OverlayPosition;

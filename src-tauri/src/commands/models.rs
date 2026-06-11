@@ -1,3 +1,5 @@
+//! Tauri commands for STT model management (list, download, delete, VRAM).
+
 use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};

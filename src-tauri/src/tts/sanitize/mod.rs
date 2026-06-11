@@ -1,9 +1,9 @@
 // Sanitize: multi-pass text cleaning pipeline for STT → Brain → TTS.
-// Uses text-processing-rs (ITN + TN) + pulldown-cmark (markdown) + regex (cleanup).
+// Uses text-processing-rs (ITN + TN) + regex-based markdown stripping + regex cleanup.
 //
 // Pipeline flows:
 //   Post-STT: ITN → [custom words] → Brain
-//   Pre-TTS:  pulldown-cmark → TN → regex cleanup → TTS
+//   Pre-TTS:  markdown strip → TN → regex cleanup → TTS
 
 pub(crate) mod cleanup;
 pub mod itn;
@@ -29,7 +29,7 @@ pub fn sanitize_text(text: &str, config: &SanitizationConfig) -> String {
 
     let mut result = text.to_string();
 
-    // Pass 1: Strip markdown syntax (regex, kept for speed; pulldown-cmark upgrade is P2)
+    // Pass 1: Strip markdown syntax via regex (fast, no parser dependency)
     if config.markdown {
         result = markdown::strip_markdown(&result);
     }

@@ -45,14 +45,8 @@ interface UseSettingsReturn {
 
   // Brain helpers
   setBrainProvider: (providerId: string) => Promise<void>;
-  updateBrainBaseUrl: (
-    providerId: string,
-    baseUrl: string,
-  ) => Promise<void>;
-  updateBrainApiKey: (
-    providerId: string,
-    apiKey: string,
-  ) => Promise<void>;
+  updateBrainBaseUrl: (providerId: string, baseUrl: string) => Promise<void>;
+  updateBrainApiKey: (providerId: string, apiKey: string) => Promise<void>;
   updateBrainModel: (providerId: string, model: string) => Promise<void>;
   fetchBrainModels: (providerId: string) => Promise<string[]>;
 }

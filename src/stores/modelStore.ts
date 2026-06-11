@@ -1,3 +1,6 @@
+// Zustand store for STT model lifecycle: listing available models,
+// downloading with progress tracking, verification, and extraction.
+
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { produce } from "immer";

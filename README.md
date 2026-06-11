@@ -142,21 +142,21 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 ### Core Libraries
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `transcribe-rs` | 0.3.11 | Local STT (Parakeet V3 + Whisper) with GPU acceleration |
-| `cpal` | 0.17 | Cross-platform audio I/O |
-| `nnnoiseless` | 0.5.2 | RNNoise-based noise suppression |
-| `vad-rs` | — | Silero VAD (ONNX) |
-| `rdev` | — | Global keyboard shortcuts |
-| `rubato` | 3.0 | Audio resampling |
-| `rodio` | 0.22 | Audio playback |
-| `tts-rs` | — | Kokoro-82M in-process ONNX TTS (54 voices, 9 languages) |
-| `text-processing-rs` | 0.2.2 | ITN + TN normalization |
-| `pulldown-cmark` | 0.13 | Markdown → speakable text |
-| `rusqlite` | 0.40 | SQLite persistence |
-| `reqwest` | 0.13 | HTTP client |
-| `tauri-specta` | — | Typed IPC bindings |
+| Crate                | Version | Purpose                                                 |
+| -------------------- | ------- | ------------------------------------------------------- |
+| `transcribe-rs`      | 0.3.11  | Local STT (Parakeet V3 + Whisper) with GPU acceleration |
+| `cpal`               | 0.17    | Cross-platform audio I/O                                |
+| `nnnoiseless`        | 0.5.2   | RNNoise-based noise suppression                         |
+| `vad-rs`             | —       | Silero VAD (ONNX)                                       |
+| `rdev`               | —       | Global keyboard shortcuts                               |
+| `rubato`             | 3.0     | Audio resampling                                        |
+| `rodio`              | 0.22    | Audio playback                                          |
+| `tts-rs`             | —       | Kokoro-82M in-process ONNX TTS (54 voices, 9 languages) |
+| `text-processing-rs` | 0.2.2   | ITN + TN normalization                                  |
+| `regex`              | 1.12    | Markdown stripping for TTS pipeline                     |
+| `rusqlite`           | 0.40    | SQLite persistence                                      |
+| `reqwest`            | 0.13    | HTTP client                                             |
+| `tauri-specta`       | —       | Typed IPC bindings                                      |
 
 ---
 
@@ -164,48 +164,52 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 S2B2S works fully offline with no configuration. The defaults are chosen for speed, privacy, and broad hardware compatibility:
 
-| Layer | Default | Alternatives |
-|-------|---------|-------------|
-| **STT** | **Parakeet TDT 0.6B V3** (auto language, 25 langs, CPU-fast) | Whisper (Small/Medium/Turbo/Large), Moonshine |
-| **VAD** | **TripleVAD** (RMS→RNNoise→Silero) | Silero only, Push-to-talk |
-| **Noise Suppression** | RNNoise (toggleable, triple mode default) | Off |
-| **TTS** | **Piper** persistent HTTP server (speed-first, warm) | Kokoro-82M (quality-first), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
-| **Brain** | **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | Any OpenAI-compatible API, Anthropic, Gemini |
-| **Storage** | SQLite (rusqlite + migrations) | — |
-| **Secrets** | OS keychain (Windows Credential Manager, macOS Keychain) | — |
+| Layer                 | Default                                                       | Alternatives                                                           |
+| --------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **STT**               | **Parakeet TDT 0.6B V3** (auto language, 25 langs, CPU-fast)  | Whisper (Small/Medium/Turbo/Large), Moonshine                          |
+| **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                            | Silero only, Push-to-talk                                              |
+| **Noise Suppression** | RNNoise (toggleable, triple mode default)                     | Off                                                                    |
+| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
+| **Brain**             | **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | Any OpenAI-compatible API, Anthropic, Gemini                           |
+| **Storage**           | SQLite (rusqlite + migrations)                                | —                                                                      |
+| **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)      | —                                                                      |
 
 ---
 
 ## The Three Pipelines
 
 ### Dictation Pipeline
+
 ```
 Microphone → TripleVAD (RMS→RNNoise→Silero) → Parakeet V3 STT → ITN Normalization → Clipboard/Paste
 ```
 
 ### Conversation Pipeline (Speech → Brain → Speech)
+
 ```
 Microphone → TripleVAD → Parakeet V3 STT → ITN Normalization → LLM (Brain) → Markdown Strip → TN Normalization → TTS (Piper/Kokoro) → Speaker
 ```
 
 ### Read Aloud Pipeline
+
 ```
 Selected Text (or double-copy clipboard) → Markdown Strip → TN Normalization → TTS → Speaker
 ```
 
 ### Text Normalization Pipeline (4-pass)
+
 ```
 Post-STT:  ITN (text-processing-rs) → Custom Words (fuzzy correction)
-Pre-TTS:   pulldown-cmark (markdown strip) → TN (text-processing-rs) → Regex Cleanup
+Pre-TTS:   Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 ```
 
-| Pass | Direction | Example Input | Example Output |
-|------|-----------|--------------|----------------|
-| ITN | Spoken → Written | `two hundred thirty two` | `232` |
-| ITN | Spoken → Written | `january fifth` | `January 5, 2025` |
-| pulldown-cmark | Markdown → Speech | `**bold**` | `bold` |
-| TN | Written → Spoken | `$5.50` | `five dollars and fifty cents` |
-| TN | Written → Spoken | `Dr. Smith` | `doctor Smith` |
+| Pass                   | Direction         | Example Input            | Example Output                 |
+| ---------------------- | ----------------- | ------------------------ | ------------------------------ |
+| ITN                    | Spoken → Written  | `two hundred thirty two` | `232`                          |
+| ITN                    | Spoken → Written  | `january fifth`          | `January 5, 2025`              |
+| Markdown strip (regex) | Markdown → Speech | `**bold**`               | `bold`                         |
+| TN                     | Written → Spoken  | `$5.50`                  | `five dollars and fifty cents` |
+| TN                     | Written → Spoken  | `Dr. Smith`              | `doctor Smith`                 |
 
 ---
 
@@ -230,12 +234,12 @@ Unix signals (Linux/macOS):
 
 ## Platform Support
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Windows 11** | ✅ Primary | Full support, NSIS/MSI installers |
-| **Windows 10** | ✅ Supported | Tested |
-| **macOS** (Intel + Apple Silicon) | ✅ First-class | Metal acceleration, accessibility permissions required |
-| **Linux** (x64) | ✅ First-class | Ubuntu 22.04/24.04, Arch, Fedora; Wayland with wtype/dotool |
+| Platform                          | Status         | Notes                                                       |
+| --------------------------------- | -------------- | ----------------------------------------------------------- |
+| **Windows 11**                    | ✅ Primary     | Full support, NSIS/MSI installers                           |
+| **Windows 10**                    | ✅ Supported   | Tested                                                      |
+| **macOS** (Intel + Apple Silicon) | ✅ First-class | Metal acceleration, accessibility permissions required      |
+| **Linux** (x64)                   | ✅ First-class | Ubuntu 22.04/24.04, Arch, Fedora; Wayland with wtype/dotool |
 
 ### Linux Notes
 
@@ -253,16 +257,19 @@ Unix signals (Linux/macOS):
 ## System Requirements
 
 **Parakeet V3 (default STT):**
+
 - CPU-only operation (no GPU required)
 - Minimum: Intel Skylake (6th gen) or equivalent AMD
 - Performance: ~5x real-time on mid-range hardware (tested on i5)
 - 25 languages with automatic detection
 
 **Whisper Models:**
+
 - macOS: M series or Intel Mac
 - Windows/Linux: Intel, AMD, or NVIDIA GPU recommended
 
 **TTS Backends:**
+
 - Piper: CPU-only, ~100-200 MB RAM per voice
 - Kokoro-82M: CPU-only, ~115 MB + 50 MB per worker
 - Cloud: Requires internet connection
@@ -273,33 +280,32 @@ Unix signals (Linux/macOS):
 
 S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Brain → TTS pipeline is feature-complete. Current work focuses on performance, stability, and polish.
 
-| Feature | Status |
-|---------|--------|
-| STT dictation (Parakeet V3, Whisper, Moonshine) | ✅ Complete |
-| TTS read-aloud (Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia) | ✅ Complete |
-| Conversation mode with streaming LLM (Ollama/LM Studio/OpenAI-compatible) | ✅ Complete |
-| Double-copy clipboard trigger for speak-selection | ✅ Complete |
-| Text normalization pipeline (ITN + TN + markdown stripping) | ✅ Complete |
-| TripleVAD (RMS → RNNoise → Silero) with tunable threshold | ✅ Complete |
-| Crash logging with full backtraces | ✅ Complete |
-| Her-style 3D loading animation | ✅ Complete |
-| 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW) | ✅ Complete |
-| WarmEngine trait lifecycle (Loading→WarmingUp→Ready→Error) | ✅ Complete |
-| TTS performance telemetry (chars_per_ms adaptive sizing) | ✅ Complete |
-| Piper persistent HTTP server with CUDA auto-discovery | ✅ Complete |
-| Headless typed bindings export (`cargo test export_bindings`) | ✅ Complete |
-| Kokoro worker pool + crossfade | 🚧 In progress |
-| RAM-persistent warm model lifecycle (unload timeout) | ✅ Complete |
-| AI Replace Selection | ✅ Complete |
-| Latency HUD (per-stage timestamps) | ✅ Complete |
-| Wake word detection (VAD-based) | ✅ Complete |
-| Save-to-file (MP3/OGG/FLAC) | ✅ Complete |
-| Waveform HUD | ✅ Complete |
-| Ollama/LM Studio/llama.cpp auto-discovery | ✅ Complete |
-| Streaming STT (WebSocket-based) | 📋 Planned |
-| Pocket TTS backend (voice cloning) | 📋 Planned |
-| Multi-OS polish, mobile companion | 📋 Later |
-
+| Feature                                                                                              | Status         |
+| ---------------------------------------------------------------------------------------------------- | -------------- |
+| STT dictation (Parakeet V3, Whisper, Moonshine)                                                      | ✅ Complete    |
+| TTS read-aloud (Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)                           | ✅ Complete    |
+| Conversation mode with streaming LLM (Ollama/LM Studio/OpenAI-compatible)                            | ✅ Complete    |
+| Double-copy clipboard trigger for speak-selection                                                    | ✅ Complete    |
+| Text normalization pipeline (ITN + TN + markdown stripping)                                          | ✅ Complete    |
+| TripleVAD (RMS → RNNoise → Silero) with tunable threshold                                            | ✅ Complete    |
+| Crash logging with full backtraces                                                                   | ✅ Complete    |
+| Her-style 3D loading animation                                                                       | ✅ Complete    |
+| 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW) | ✅ Complete    |
+| WarmEngine trait lifecycle (Loading→WarmingUp→Ready→Error)                                           | ✅ Complete    |
+| TTS performance telemetry (chars_per_ms adaptive sizing)                                             | ✅ Complete    |
+| Piper persistent HTTP server with CUDA auto-discovery                                                | ✅ Complete    |
+| Headless typed bindings export (`cargo test export_bindings`)                                        | ✅ Complete    |
+| Kokoro worker pool + crossfade                                                                       | 🚧 In progress |
+| RAM-persistent warm model lifecycle (unload timeout)                                                 | ✅ Complete    |
+| AI Replace Selection                                                                                 | ✅ Complete    |
+| Latency HUD (per-stage timestamps)                                                                   | ✅ Complete    |
+| Wake word detection (VAD-based)                                                                      | ✅ Complete    |
+| Save-to-file (MP3/OGG/FLAC)                                                                          | ✅ Complete    |
+| Waveform HUD                                                                                         | ✅ Complete    |
+| Ollama/LM Studio/llama.cpp auto-discovery                                                            | ✅ Complete    |
+| Streaming STT (WebSocket-based)                                                                      | 📋 Planned     |
+| Pocket TTS backend (voice cloning)                                                                   | 📋 Planned     |
+| Multi-OS polish, mobile companion                                                                    | 📋 Later       |
 
 ---
 
@@ -308,17 +314,20 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 ### Major Issues (Help Wanted)
 
 **Whisper Model Crashes:**
+
 - Whisper models crash on certain system configurations (Windows and Linux)
 - Does not affect all systems — configuration-dependent
 - Parakeet V3 is the default (not affected); switch to Parakeet if Whisper crashes
 - If you experience crashes, please provide debug logs (Ctrl+Shift+D)
 
 **Wayland Support (Linux):**
+
 - Limited support for Wayland display server
 - Requires wtype or dotool for text input (see Linux Notes above)
 - Overlay disabled by default on Linux to prevent focus-stealing issues
 
 **Known Workarounds:**
+
 - `S2B2S_NO_GTK_LAYER_SHELL=1` — skip GTK layer shell on Linux
 - `WEBKIT_DISABLE_DMABUF_RENDERER=1` — fix WebKit rendering on some GPUs
 
@@ -335,18 +344,20 @@ For proxy users or restricted networks, models can be downloaded manually:
 3. Restart S2B2S to detect them
 
 Typical paths:
+
 - **macOS**: `~/Library/Application Support/com.nairodorian.s2b2s/`
 - **Windows**: `C:\Users\{username}\AppData\Roaming\com.nairodorian.s2b2s\`
 - **Linux**: `~/.config/com.nairodorian.s2b2s/`
 
 Model download URLs:
+
 - Parakeet V3 (478 MB): `https://blob.handy.computer/parakeet-v3-int8.tar.gz`
 - Whisper Small (487 MB): `https://blob.handy.computer/ggml-small.bin`
 
 ### Verify Release Signatures
 
 ```bash
-ARTIFACT="S2B2S_0.9.0_amd64.AppImage"
+ARTIFACT="S2B2S_0.1.0_amd64.AppImage"
 python3 - "$ARTIFACT" <<'PY'
 import base64, pathlib, sys
 artifact = sys.argv[1]
@@ -375,8 +386,6 @@ Press `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) to toggle debug ov
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines and [AGENTS.md](AGENTS.md) for AI assistant guidance.
 
 ---
-
-
 
 ## Related Projects
 

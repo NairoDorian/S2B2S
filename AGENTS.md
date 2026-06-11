@@ -47,12 +47,14 @@ bun run preview    # Preview built frontend
 ```
 
 **Model Setup (Required for Development):**
+
 ```bash
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
 ```
 
 **Linting and Formatting:**
+
 ```bash
 bun run lint              # ESLint for frontend
 bun run lint:fix          # ESLint with auto-fix
@@ -63,6 +65,7 @@ bun run format:backend    # cargo fmt only
 ```
 
 **Type Check & Bindings:**
+
 ```bash
 bunx tsc --noEmit          # TypeScript type checking
 cargo test export_bindings # Regenerate src/bindings.ts (headless)
@@ -83,6 +86,8 @@ src-tauri/src/
 ├── lib.rs                  # Main entry, Tauri setup, manager init, specta_builder()
 ├── main.rs                 # Binary entry point
 ├── actions.rs              # Shortcut actions: transcribe, converse, speak selection
+├── active_app.rs           # Foreground application detection (Win32)
+├── apple_intelligence.rs   # macOS Apple Intelligence integration (aarch64 only)
 ├── cli.rs                  # CLI argument definitions (clap derive)
 ├── settings.rs             # Application settings (TtsConfig, BrainConfig, SanitizeConfig)
 ├── signal_handle.rs        # send_transcription_input() reusable function
@@ -97,6 +102,7 @@ src-tauri/src/
 ├── tray.rs                 # System tray
 ├── tray_i18n.rs            # Tray i18n labels
 ├── llm_client.rs           # Multi-provider LLM client
+├── wake_word.rs            # VAD-based wake word detection (KWS-ready)
 ├── transcription_coordinator.rs  # Record → VAD → transcribe → paste orchestrator
 │
 ├── managers/
@@ -110,7 +116,7 @@ src-tauri/src/
 │   ├── manager.rs          # Sanitize → Paginate → Synthesize orchestration
 │   ├── player.rs           # Streaming gapless playback (rodio)
 │   ├── pagination.rs       # UTF-8-safe text chunking
-│   ├── fragment_queue.rs   # Synthesize-ahead fragment scheduling
+│   ├── fragment_queue.rs   # Pre-synthesis queue (unused, kept for future use)
 │   ├── clipboard_watch.rs  # Double-copy trigger
 │   ├── backends/
 │   │   ├── piper.rs        # Warm persistent Piper HTTP server
@@ -124,7 +130,7 @@ src-tauri/src/
 │       ├── mod.rs          # Pipeline orchestrator
 │       ├── itn.rs          # Inverse Text Normalization (spoken→written)
 │       ├── tn.rs           # Text Normalization (written→spoken)
-│       ├── markdown.rs     # pulldown-cmark markdown stripping
+│       ├── markdown.rs     # Regex-based markdown stripping
 │       └── cleanup.rs      # Regex-based final scrub
 │
 ├── brain/
@@ -146,12 +152,24 @@ src-tauri/src/
 │
 ├── commands/
 │   ├── mod.rs              # Tauri command registration
+│   ├── audio.rs            # Audio-related commands
+│   ├── brain.rs            # Brain/LLM-related commands
+│   ├── discovery.rs        # Ollama/LM Studio auto-discovery
+│   ├── history.rs          # History-related commands
+│   ├── models.rs           # Model management commands
+│   ├── transcription.rs    # Transcription-related commands
 │   ├── tts.rs              # TTS-related commands
-│   └── brain.rs            # Brain/LLM-related commands
+│   └── wake_word.rs        # Wake word commands
+│
+├── helpers/
+│   ├── mod.rs              # Helper module
+│   └── clamshell.rs        # Laptop clamshell mode detection
 │
 └── shortcut/
     ├── mod.rs              # Shortcut manager
-    └── handy_keys.rs       # HandyKeys/rdev shortcuts
+    ├── handler.rs           # Shortcut event handler
+    ├── key_listener.rs      # Low-level key listener
+    └── tauri_impl.rs        # Tauri global-shortcut implementation
 ```
 
 ### Frontend Structure (`src/`)
@@ -179,10 +197,12 @@ src/
 │   └── AccessibilityPermissions.tsx
 │
 ├── hooks/
-│   └── useSettings.ts      # Settings state hook
+│   ├── useSettings.ts      # Settings state hook
+│   └── useOsType.ts        # OS type detection hook
 │
 ├── stores/
-│   └── settingsStore.ts    # Zustand store
+│   ├── settingsStore.ts    # Zustand store (settings state)
+│   └── modelStore.ts       # Model download/management state
 │
 ├── i18n/
 │   ├── index.ts            # i18n setup
@@ -207,6 +227,7 @@ src/
 **Command-Event Architecture:** Frontend → Backend via Tauri commands; Backend → Frontend via events (tauri-specta typed).
 
 **Pipeline Processing:**
+
 - **Dictation:** Audio → TripleVAD → Parakeet V3 STT → ITN normalization → Clipboard/Paste
 - **Conversation:** Audio → TripleVAD → STT → ITN → Brain (LLM streaming) → Markdown strip → TN → TTS → Speaker
 - **Read Aloud:** Selected text / double-copy → Markdown strip → TN → TTS → Speaker
@@ -214,30 +235,31 @@ src/
 **State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
 **Text Normalization (4-pass):**
+
 ```
 Post-STT: ITN (text-processing-rs) → Custom Words (fuzzy correction)
-Pre-TTS:  pulldown-cmark → TN (text-processing-rs) → Regex Cleanup
+Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 ```
 
 ### Technology Stack
 
-| Category | Libraries |
-|----------|-----------|
-| **Framework** | Tauri 2.x, React 19, TypeScript 6, Vite 8 |
-| **Styling** | Tailwind CSS 4 |
-| **State** | Zustand 5, Zod 4 |
-| **i18n** | i18next 26, react-i18next 17 |
-| **Animation** | Three.js 0.184, Lucide React |
-| **STT** | transcribe-rs (Parakeet V3 + Whisper + Moonshine) |
-| **TTS** | Piper (persistent HTTP), Kokoro (tts-rs in-process), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
-| **Audio I/O** | cpal 0.17, rodio 0.22, rubato 3.0 |
-| **VAD** | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise) |
-| **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), pulldown-cmark 0.13 |
-| **HTTP** | reqwest 0.13 |
-| **Storage** | rusqlite 0.40, tauri-plugin-store |
-| **IPC** | tauri-specta (typed bindings) |
-| **Shortcuts** | rdev + Tauri global-shortcut |
-| **Build** | Bun, Cargo (Rust nightly) |
+| Category            | Libraries                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| **Framework**       | Tauri 2.x, React 19, TypeScript 6, Vite 8                                                       |
+| **Styling**         | Tailwind CSS 4                                                                                  |
+| **State**           | Zustand 5, Zod 4                                                                                |
+| **i18n**            | i18next 26, react-i18next 17                                                                    |
+| **Animation**       | Three.js 0.184, Lucide React                                                                    |
+| **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
+| **TTS**             | Piper (persistent HTTP), Kokoro (tts-rs in-process), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
+| **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
+| **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
+| **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |
+| **HTTP**            | reqwest 0.13                                                                                    |
+| **Storage**         | rusqlite 0.40, tauri-plugin-store                                                               |
+| **IPC**             | tauri-specta (typed bindings)                                                                   |
+| **Shortcuts**       | rdev + Tauri global-shortcut                                                                    |
+| **Build**           | Bun, Cargo (Rust nightly)                                                                       |
 
 ### Application Flow
 
@@ -274,10 +296,12 @@ The app enforces single instance behavior via `tauri_plugin_single_instance`. La
 All user-facing strings must use i18next translations. ESLint enforces this (no hardcoded strings in JSX). **20 languages supported.**
 
 **Adding new text:**
+
 1. Add key to `src/i18n/locales/en/translation.json`
 2. Use in component: `const { t } = useTranslation(); t('key.path')`
 
 **File structure:**
+
 ```
 src/i18n/
 ├── index.ts           # i18n setup
@@ -334,16 +358,17 @@ s2b2s supports command-line parameters on all platforms for integration with scr
 
 **Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
 
-| Flag | Description |
-|------|-------------|
-| `--toggle-transcription` | Toggle recording on/off on a running instance |
-| `--toggle-post-process` | Toggle recording with post-processing |
-| `--cancel` | Cancel current operation |
-| `--start-hidden` | Launch without showing main window (tray icon visible) |
-| `--no-tray` | Launch without system tray (closing window quits the app) |
-| `--debug` | Enable debug mode with verbose (Trace) logging |
+| Flag                     | Description                                               |
+| ------------------------ | --------------------------------------------------------- |
+| `--toggle-transcription` | Toggle recording on/off on a running instance             |
+| `--toggle-post-process`  | Toggle recording with post-processing                     |
+| `--cancel`               | Cancel current operation                                  |
+| `--start-hidden`         | Launch without showing main window (tray icon visible)    |
+| `--no-tray`              | Launch without system tray (closing window quits the app) |
+| `--debug`                | Enable debug mode with verbose (Trace) logging            |
 
 **Key design decisions:**
+
 - CLI flags are runtime-only overrides — they do NOT modify persisted settings
 - Remote control flags work via `tauri_plugin_single_instance`: second instance sends args, then exits
 - `send_transcription_input()` in `signal_handle.rs` is shared between signal handlers and CLI
@@ -358,11 +383,11 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 
 ## Platform Notes
 
-| Platform | Notes |
-|----------|-------|
-| **macOS** | Metal acceleration, accessibility permissions required for keyboard shortcuts, Globe key support |
-| **Windows** | Vulkan acceleration, code signing, NSIS installer, Common-Controls v6 manifest |
-| **Linux** | OpenBLAS + Vulkan, Wayland limited (needs wtype/dotool), overlay GTK layer shell (disable with `S2B2S_NO_GTK_LAYER_SHELL=1`), Nix flake build |
+| Platform    | Notes                                                                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **macOS**   | Metal acceleration, accessibility permissions required for keyboard shortcuts, Globe key support                                              |
+| **Windows** | Vulkan acceleration, code signing, NSIS installer, Common-Controls v6 manifest                                                                |
+| **Linux**   | OpenBLAS + Vulkan, Wayland limited (needs wtype/dotool), overlay GTK layer shell (disable with `S2B2S_NO_GTK_LAYER_SHELL=1`), Nix flake build |
 
 ---
 
@@ -381,16 +406,16 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 
 ## Key Files Reference
 
-| File | Purpose |
-|------|---------|
-| [README.md](README.md) | Project overview, quick start, architecture |
-| [S2B2S_REVIEW.md](S2B2S_REVIEW.md) | Comprehensive project analysis (non-tech users, devs, AI agents) |
-| [BUILD.md](BUILD.md) | Platform-specific build instructions |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor guidelines |
-| [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
-| [CRUSH.md](CRUSH.md) | Dev commands quick reference |
-| [LICENSE](LICENSE) | MIT License |
+| File                                                         | Purpose                                                          |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| [README.md](README.md)                                       | Project overview, quick start, architecture                      |
+| [S2B2S_REVIEW.md](S2B2S_REVIEW.md)                           | Comprehensive project analysis (non-tech users, devs, AI agents) |
+| [BUILD.md](BUILD.md)                                         | Platform-specific build instructions                             |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor guidelines                                           |
+| [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide                                                |
+| [CHANGELOG.md](CHANGELOG.md)                                 | Version history                                                  |
+| [CRUSH.md](CRUSH.md)                                         | Dev commands quick reference                                     |
+| [LICENSE](LICENSE)                                           | MIT License                                                      |
 
 ---
 

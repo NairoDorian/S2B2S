@@ -71,14 +71,14 @@ export const SpeechSettings: React.FC = () => {
     tts_normalization: true,
   };
 
-    const greeting = tts.greeting ?? {
-      text: "Hello, how can I help?",
-      speed: 1.0,
-      voice: "",
-      engine: "piper" as TtsEngine,
-      noise_scale: 0.667,
-      noise_w_scale: 0.8,
-    };
+  const greeting = tts.greeting ?? {
+    text: "Hello, how can I help?",
+    speed: 1.0,
+    voice: "",
+    engine: "piper" as TtsEngine,
+    noise_scale: 0.667,
+    noise_w_scale: 0.8,
+  };
 
   return (
     <div className="space-y-6">
@@ -157,7 +157,9 @@ export const SpeechSettings: React.FC = () => {
       <SettingsGroup title="Startup Greeting Settings">
         <ToggleSwitch
           checked={tts.play_startup_greeting ?? true}
-          onChange={(play_startup_greeting) => update({ play_startup_greeting })}
+          onChange={(play_startup_greeting) =>
+            update({ play_startup_greeting })
+          }
           label="Play Startup Greeting Audio"
           description="Speak the warmup sentence aloud when the voice model finishes loading"
           grouped
@@ -171,7 +173,9 @@ export const SpeechSettings: React.FC = () => {
             >
               <Input
                 value={greeting.text}
-                onChange={(e) => update({ greeting: { ...greeting, text: e.target.value } })}
+                onChange={(e) =>
+                  update({ greeting: { ...greeting, text: e.target.value } })
+                }
                 placeholder="Enter greeting message..."
               />
             </SettingContainer>
@@ -188,7 +192,9 @@ export const SpeechSettings: React.FC = () => {
                 selectedValue={greeting.engine ?? null}
                 onSelect={(value) => {
                   const newEngine = value as TtsEngine;
-                  update({ greeting: { ...greeting, engine: newEngine, voice: "" } });
+                  update({
+                    greeting: { ...greeting, engine: newEngine, voice: "" },
+                  });
                 }}
               />
             </SettingContainer>
@@ -203,7 +209,9 @@ export const SpeechSettings: React.FC = () => {
                   label: voice.name,
                 }))}
                 selectedValue={greeting.voice || null}
-                onSelect={(voice) => update({ greeting: { ...greeting, voice } })}
+                onSelect={(voice) =>
+                  update({ greeting: { ...greeting, voice } })
+                }
                 placeholder={t("settings.speech.voice.placeholder")}
                 onRefresh={() => void refreshGreetingVoices()}
               />
@@ -222,7 +230,9 @@ export const SpeechSettings: React.FC = () => {
             />
             <Slider
               value={greeting.noise_scale ?? 0.667}
-              onChange={(noise_scale) => update({ greeting: { ...greeting, noise_scale } })}
+              onChange={(noise_scale) =>
+                update({ greeting: { ...greeting, noise_scale } })
+              }
               min={0}
               max={1.5}
               step={0.01}
@@ -231,11 +241,15 @@ export const SpeechSettings: React.FC = () => {
               grouped
               showValue
               formatValue={(value) => `${value.toFixed(3)}`}
-              onReset={() => update({ greeting: { ...greeting, noise_scale: 0.667 } })}
+              onReset={() =>
+                update({ greeting: { ...greeting, noise_scale: 0.667 } })
+              }
             />
             <Slider
               value={greeting.noise_w_scale ?? 0.8}
-              onChange={(noise_w_scale) => update({ greeting: { ...greeting, noise_w_scale } })}
+              onChange={(noise_w_scale) =>
+                update({ greeting: { ...greeting, noise_w_scale } })
+              }
               min={0}
               max={1.5}
               step={0.01}
@@ -244,7 +258,9 @@ export const SpeechSettings: React.FC = () => {
               grouped
               showValue
               formatValue={(value) => `${value.toFixed(3)}`}
-              onReset={() => update({ greeting: { ...greeting, noise_w_scale: 0.8 } })}
+              onReset={() =>
+                update({ greeting: { ...greeting, noise_w_scale: 0.8 } })
+              }
             />
           </>
         )}

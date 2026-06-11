@@ -1,3 +1,6 @@
+//! Foreground application detection.
+//! Uses Win32 GetForegroundWindow on Windows; returns None on other platforms.
+
 #[cfg(target_os = "windows")]
 pub fn get_frontmost_app_name() -> Option<String> {
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW};
