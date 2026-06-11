@@ -124,7 +124,7 @@ S2B2S/
 ├── vite.config.ts          # Frontend build config
 ├── tailwind.config.js      # Tailwind CSS config
 ├── tsconfig.json           # TypeScript config
-├── src/                    # Frontend source
+├── src/                    # Frontend source (React/TS)
 ├── src-tauri/              # Backend source (Rust)
 ├── models/                 # Model files (STT, TTS)
 ├── scripts/                # Utility scripts

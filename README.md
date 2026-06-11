@@ -278,7 +278,7 @@ Unix signals (Linux/macOS):
 
 ## Roadmap & Active Development
 
-S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Brain → TTS pipeline is feature-complete. Current work focuses on performance, stability, and polish.
+S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Brain → TTS pipeline is feature-complete. Current work focuses on performance, stability, code quality, and polish.
 
 | Feature                                                                                              | Status         |
 | ---------------------------------------------------------------------------------------------------- | -------------- |

@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  LogLevel,
   WhisperAcceleratorSetting,
   OrtAcceleratorSetting,
   TtsConfig,
@@ -80,6 +81,17 @@ interface SettingsStore {
   setAudioDevices: (devices: AudioDevice[]) => void;
   setOutputDevices: (devices: AudioDevice[]) => void;
   setCustomSounds: (sounds: { start: boolean; stop: boolean }) => void;
+
+  // Internal helpers to deduplicate brain/post-process provider logic
+  _setProvider: (prefix: "brain" | "post_process", providerId: string) => Promise<void>;
+  _updateProviderSetting: (
+    prefix: "brain" | "post_process",
+    settingType: "base_url" | "api_key" | "model",
+    providerId: string,
+    value: string,
+  ) => Promise<void>;
+  _updateProviderBaseUrl: (prefix: "brain" | "post_process", providerId: string, baseUrl: string) => Promise<void>;
+  _fetchProviderModels: (prefix: "brain" | "post_process", providerId: string) => Promise<string[]>;
 }
 
 // Note: Default settings are now fetched from Rust via commands.getDefaultSettings()
@@ -155,7 +167,7 @@ const settingUpdaters: {
     commands.changeMuteWhileRecordingSetting(value as boolean),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
-  log_level: (value) => commands.setLogLevel(value as any),
+  log_level: (value) => commands.setLogLevel(value as LogLevel),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
@@ -422,124 +434,22 @@ export const useSettingsStore = create<SettingsStore>()(
     },
 
     setPostProcessProvider: async (providerId) => {
-      const {
-        settings,
-        setUpdating,
-        refreshSettings,
-        setPostProcessModelOptions,
-      } = get();
-      const updateKey = "post_process_provider_id";
-      const previousId = settings?.post_process_provider_id ?? null;
-
-      setUpdating(updateKey, true);
-
-      if (settings) {
-        set((state) => ({
-          settings: state.settings
-            ? { ...state.settings, post_process_provider_id: providerId }
-            : null,
-        }));
-      }
-
-      // Clear cached model options for the new provider so the dropdown
-      // doesn't show stale models from a previous fetch or base_url.
-      setPostProcessModelOptions(providerId, []);
-
-      try {
-        await commands.setPostProcessProvider(providerId);
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to set post-process provider:", error);
-        if (previousId !== null) {
-          set((state) => ({
-            settings: state.settings
-              ? { ...state.settings, post_process_provider_id: previousId }
-              : null,
-          }));
-        }
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      await get()._setProvider("post_process", providerId);
     },
 
-    // Generic updater for post-processing provider settings
     updatePostProcessSetting: async (
       settingType: "base_url" | "api_key" | "model",
       providerId: string,
       value: string,
     ) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `post_process_${settingType}:${providerId}`;
-
-      setUpdating(updateKey, true);
-
-      try {
-        if (settingType === "base_url") {
-          await commands.changePostProcessBaseUrlSetting(providerId, value);
-        } else if (settingType === "api_key") {
-          await commands.changePostProcessApiKeySetting(providerId, value);
-        } else if (settingType === "model") {
-          await commands.changePostProcessModelSetting(providerId, value);
-        }
-        await refreshSettings();
-      } catch (error) {
-        console.error(
-          `Failed to update post-process ${settingType.replace("_", " ")}:`,
-          error,
-        );
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      await get()._updateProviderSetting("post_process", settingType, providerId, value);
     },
 
     updatePostProcessBaseUrl: async (providerId, baseUrl) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `post_process_base_url:${providerId}`;
-
-      setUpdating(updateKey, true);
-
-      try {
-        // Persist the new base URL first.
-        const urlResult = await commands.changePostProcessBaseUrlSetting(
-          providerId,
-          baseUrl,
-        );
-        if (urlResult.status === "error") {
-          console.error("Failed to persist base URL:", urlResult.error);
-          return;
-        }
-
-        // Reset the stored model since the previous value is almost certainly
-        // invalid for the new endpoint (e.g. switching Custom from Groq to
-        // Cerebras). Only proceed if the reset succeeds.
-        const modelResult = await commands.changePostProcessModelSetting(
-          providerId,
-          "",
-        );
-        if (modelResult.status === "error") {
-          console.error("Failed to reset model setting:", modelResult.error);
-          return;
-        }
-
-        // Clear cached model options only after both backend writes succeed.
-        set((state) => ({
-          postProcessModelOptions: {
-            ...state.postProcessModelOptions,
-            [providerId]: [],
-          },
-        }));
-
-        // Single refresh after both backend writes.
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to update post-process base URL:", error);
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      await get()._updateProviderBaseUrl("post_process", providerId, baseUrl);
     },
 
     updatePostProcessApiKey: async (providerId, apiKey) => {
-      // Clear cached models when API key changes - user should click refresh after
       set((state) => ({
         postProcessModelOptions: {
           ...state.postProcessModelOptions,
@@ -554,28 +464,7 @@ export const useSettingsStore = create<SettingsStore>()(
     },
 
     fetchPostProcessModels: async (providerId) => {
-      const updateKey = `post_process_models_fetch:${providerId}`;
-      const { setUpdating, setPostProcessModelOptions } = get();
-
-      setUpdating(updateKey, true);
-
-      try {
-        // Call Tauri backend command instead of fetch
-        const result = await commands.fetchPostProcessModels(providerId);
-        if (result.status === "ok") {
-          setPostProcessModelOptions(providerId, result.data);
-          return result.data;
-        } else {
-          console.error("Failed to fetch models:", result.error);
-          return [];
-        }
-      } catch (error) {
-        console.error("Failed to fetch models:", error);
-        // Don't cache empty array on error - let user retry
-        return [];
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      return get()._fetchProviderModels("post_process", providerId);
     },
 
     setPostProcessModelOptions: (providerId, models) =>
@@ -587,50 +476,7 @@ export const useSettingsStore = create<SettingsStore>()(
       })),
 
     setBrainProvider: async (providerId) => {
-      const { settings, setUpdating, refreshSettings, setBrainModelOptions } =
-        get();
-      const updateKey = "brain_provider_id";
-      const previousId = settings?.brain?.provider_id ?? null;
-
-      setUpdating(updateKey, true);
-
-      if (settings && settings.brain) {
-        set((state) => ({
-          settings: state.settings
-            ? {
-                ...state.settings,
-                brain: {
-                  ...state.settings.brain!,
-                  provider_id: providerId,
-                },
-              }
-            : null,
-        }));
-      }
-
-      setBrainModelOptions(providerId, []);
-
-      try {
-        await commands.setBrainProvider(providerId);
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to set brain provider:", error);
-        if (previousId !== null && settings && settings.brain) {
-          set((state) => ({
-            settings: state.settings
-              ? {
-                  ...state.settings,
-                  brain: {
-                    ...state.settings.brain!,
-                    provider_id: previousId,
-                  },
-                }
-              : null,
-          }));
-        }
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      await get()._setProvider("brain", providerId);
     },
 
     updateBrainSetting: async (
@@ -638,68 +484,11 @@ export const useSettingsStore = create<SettingsStore>()(
       providerId: string,
       value: string,
     ) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `brain_${settingType}:${providerId}`;
-
-      setUpdating(updateKey, true);
-
-      try {
-        if (settingType === "base_url") {
-          await commands.changeBrainBaseUrlSetting(providerId, value);
-        } else if (settingType === "api_key") {
-          await commands.changeBrainApiKeySetting(providerId, value);
-        } else if (settingType === "model") {
-          await commands.changeBrainModelSetting(providerId, value);
-        }
-        await refreshSettings();
-      } catch (error) {
-        console.error(
-          `Failed to update brain ${settingType.replace("_", " ")}:`,
-          error,
-        );
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      await get()._updateProviderSetting("brain", settingType, providerId, value);
     },
 
     updateBrainBaseUrl: async (providerId, baseUrl) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `brain_base_url:${providerId}`;
-
-      setUpdating(updateKey, true);
-
-      try {
-        const urlResult = await commands.changeBrainBaseUrlSetting(
-          providerId,
-          baseUrl,
-        );
-        if (urlResult.status === "error") {
-          console.error("Failed to persist base URL:", urlResult.error);
-          return;
-        }
-
-        const modelResult = await commands.changeBrainModelSetting(
-          providerId,
-          "",
-        );
-        if (modelResult.status === "error") {
-          console.error("Failed to reset model setting:", modelResult.error);
-          return;
-        }
-
-        set((state) => ({
-          brainModelOptions: {
-            ...state.brainModelOptions,
-            [providerId]: [],
-          },
-        }));
-
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to update brain base URL:", error);
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      await get()._updateProviderBaseUrl("brain", providerId, baseUrl);
     },
 
     updateBrainApiKey: async (providerId, apiKey) => {
@@ -717,26 +506,7 @@ export const useSettingsStore = create<SettingsStore>()(
     },
 
     fetchBrainModels: async (providerId) => {
-      const updateKey = `brain_models_fetch:${providerId}`;
-      const { setUpdating, setBrainModelOptions } = get();
-
-      setUpdating(updateKey, true);
-
-      try {
-        const result = await commands.fetchBrainModels();
-        if (result.status === "ok") {
-          setBrainModelOptions(providerId, result.data);
-          return result.data;
-        } else {
-          console.error("Failed to fetch brain models:", result.error);
-          return [];
-        }
-      } catch (error) {
-        console.error("Failed to fetch brain models:", error);
-        return [];
-      } finally {
-        setUpdating(updateKey, false);
-      }
+      return get()._fetchProviderModels("brain", providerId);
     },
 
     setBrainModelOptions: (providerId, models) =>
@@ -746,6 +516,190 @@ export const useSettingsStore = create<SettingsStore>()(
           [providerId]: models,
         },
       })),
+
+    _setProvider: async (prefix, providerId) => {
+      const { settings, setUpdating, refreshSettings } = get();
+      const updateKey = `${prefix}_provider_id`;
+      const previousId =
+        prefix === "brain"
+          ? settings?.brain?.provider_id ?? null
+          : settings?.post_process_provider_id ?? null;
+
+      setUpdating(updateKey, true);
+
+      if (settings) {
+        if (prefix === "brain" && settings.brain) {
+          set((state) => ({
+            settings: state.settings
+              ? {
+                  ...state.settings,
+                  brain: { ...state.settings.brain!, provider_id: providerId },
+                }
+              : null,
+          }));
+        } else {
+          set((state) => ({
+            settings: state.settings
+              ? { ...state.settings, post_process_provider_id: providerId }
+              : null,
+          }));
+        }
+      }
+
+      // Clear cached model options
+      const clearFn =
+        prefix === "brain"
+          ? get().setBrainModelOptions
+          : get().setPostProcessModelOptions;
+      clearFn(providerId, []);
+
+      try {
+        const cmd =
+          prefix === "brain"
+            ? commands.setBrainProvider(providerId)
+            : commands.setPostProcessProvider(providerId);
+        await cmd;
+        await refreshSettings();
+      } catch (error) {
+        console.error(`Failed to set ${prefix} provider:`, error);
+        if (previousId !== null) {
+          if (prefix === "brain" && settings?.brain) {
+            set((state) => ({
+              settings: state.settings
+                ? {
+                    ...state.settings,
+                    brain: {
+                      ...state.settings.brain!,
+                      provider_id: previousId,
+                    },
+                  }
+                : null,
+            }));
+          } else {
+            set((state) => ({
+              settings: state.settings
+                ? {
+                    ...state.settings,
+                    post_process_provider_id: previousId,
+                  }
+                : null,
+            }));
+          }
+        }
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    _updateProviderSetting: async (
+      prefix,
+      settingType,
+      providerId,
+      value,
+    ) => {
+      const { setUpdating, refreshSettings } = get();
+      const updateKey = `${prefix}_${settingType}:${providerId}`;
+
+      setUpdating(updateKey, true);
+
+      try {
+        const cmds = {
+          base_url:
+            prefix === "brain"
+              ? commands.changeBrainBaseUrlSetting(providerId, value)
+              : commands.changePostProcessBaseUrlSetting(providerId, value),
+          api_key:
+            prefix === "brain"
+              ? commands.changeBrainApiKeySetting(providerId, value)
+              : commands.changePostProcessApiKeySetting(providerId, value),
+          model:
+            prefix === "brain"
+              ? commands.changeBrainModelSetting(providerId, value)
+              : commands.changePostProcessModelSetting(providerId, value),
+        };
+        await cmds[settingType];
+        await refreshSettings();
+      } catch (error) {
+        console.error(
+          `Failed to update ${prefix} ${settingType.replace("_", " ")}:`,
+          error,
+        );
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    _updateProviderBaseUrl: async (prefix, providerId, baseUrl) => {
+      const { setUpdating, refreshSettings } = get();
+      const updateKey = `${prefix}_base_url:${providerId}`;
+
+      setUpdating(updateKey, true);
+
+      try {
+        const urlCmd =
+          prefix === "brain"
+            ? commands.changeBrainBaseUrlSetting(providerId, baseUrl)
+            : commands.changePostProcessBaseUrlSetting(providerId, baseUrl);
+        const urlResult = await urlCmd;
+        if (urlResult.status === "error") {
+          console.error("Failed to persist base URL:", urlResult.error);
+          return;
+        }
+
+        const modelCmd =
+          prefix === "brain"
+            ? commands.changeBrainModelSetting(providerId, "")
+            : commands.changePostProcessModelSetting(providerId, "");
+        const modelResult = await modelCmd;
+        if (modelResult.status === "error") {
+          console.error("Failed to reset model setting:", modelResult.error);
+          return;
+        }
+
+        const clearFn =
+          prefix === "brain"
+            ? get().setBrainModelOptions
+            : get().setPostProcessModelOptions;
+        clearFn(providerId, []);
+
+        await refreshSettings();
+      } catch (error) {
+        console.error(`Failed to update ${prefix} base URL:`, error);
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    _fetchProviderModels: async (prefix, providerId) => {
+      const updateKey = `${prefix}_models_fetch:${providerId}`;
+      const { setUpdating } = get();
+      const setFn =
+        prefix === "brain"
+          ? get().setBrainModelOptions
+          : get().setPostProcessModelOptions;
+
+      setUpdating(updateKey, true);
+
+      try {
+        const cmd =
+          prefix === "brain"
+            ? commands.fetchBrainModels()
+            : commands.fetchPostProcessModels(providerId);
+        const result = await cmd;
+        if (result.status === "ok") {
+          setFn(providerId, result.data);
+          return result.data;
+        } else {
+          console.error(`Failed to fetch ${prefix} models:`, result.error);
+          return [];
+        }
+      } catch (error) {
+        console.error(`Failed to fetch ${prefix} models:`, error);
+        return [];
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
 
     // Load default settings from Rust
     loadDefaultSettings: async () => {

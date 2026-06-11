@@ -82,7 +82,8 @@ const AccessibilityPermissions: React.FC = () => {
     granted: null,
   };
 
-  const config = buttonConfig[permissionState] as ButtonConfig;
+  const config = buttonConfig[permissionState];
+  if (!config) return null;
 
   return (
     <div className="p-4 w-full rounded-lg border border-mid-gray">

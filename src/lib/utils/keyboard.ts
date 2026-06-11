@@ -189,11 +189,6 @@ const formatKeyPart = (part: string): string => {
   return capitalizeKey(trimmed);
 };
 
-/**
- * Get display-friendly key combination string for the current OS
- * Formats raw hotkey strings like "option_left+shift+space" into
- * human-readable form like "Left Option + Shift + Space"
- */
 export const formatKeyCombination = (
   combination: string,
   _osType: OSType,
@@ -202,15 +197,10 @@ export const formatKeyCombination = (
   return combination.split("+").map(formatKeyPart).join(" + ");
 };
 
-/**
- * Normalize modifier keys to handle left/right variants
- */
 export const normalizeKey = (key: string): string => {
-  // Handle left/right variants of modifier keys
   if (key.startsWith("left ") || key.startsWith("right ")) {
     const parts = key.split(" ");
     if (parts.length === 2) {
-      // Return just the modifier name without left/right prefix
       return parts[1];
     }
   }

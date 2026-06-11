@@ -22,44 +22,41 @@ const RecordingOverlay: React.FC = () => {
   const direction = getLanguageDirection(i18n.language);
 
   useEffect(() => {
-    const setupEventListeners = async () => {
-      // Listen for show-overlay event from Rust
-      const unlistenShow = await listen("show-overlay", async (event) => {
-        // Sync language from settings each time overlay is shown
-        await syncLanguageFromSettings();
-        const overlayState = event.payload as OverlayState;
-        setState(overlayState);
-        setIsVisible(true);
-      });
+    const unlisteners: Array<() => void> = [];
+    let cancelled = false;
 
-      // Listen for hide-overlay event from Rust
-      const unlistenHide = await listen("hide-overlay", () => {
-        setIsVisible(false);
-      });
-
-      // Listen for mic-level updates
-      const unlistenLevel = await listen<number[]>("mic-level", (event) => {
-        const newLevels = event.payload as number[];
-
-        // Apply smoothing to reduce jitter
-        const smoothed = smoothedLevelsRef.current.map((prev, i) => {
-          const target = newLevels[i] || 0;
-          return prev * 0.7 + target * 0.3; // Smooth transition
-        });
-
-        smoothedLevelsRef.current = smoothed;
-        setLevels(smoothed.slice(0, 9));
-      });
-
-      // Cleanup function
-      return () => {
-        unlistenShow();
-        unlistenHide();
-        unlistenLevel();
-      };
+    const setup = async () => {
+      unlisteners.push(
+        await listen("show-overlay", async (event) => {
+          await syncLanguageFromSettings();
+          setState(event.payload as OverlayState);
+          setIsVisible(true);
+        }),
+      );
+      unlisteners.push(
+        await listen("hide-overlay", () => {
+          setIsVisible(false);
+        }),
+      );
+      unlisteners.push(
+        await listen<number[]>("mic-level", (event) => {
+          const newLevels = event.payload as number[];
+          const smoothed = smoothedLevelsRef.current.map((prev, i) => {
+            const target = newLevels[i] || 0;
+            return prev * 0.7 + target * 0.3;
+          });
+          smoothedLevelsRef.current = smoothed;
+          setLevels(smoothed.slice(0, 9));
+        }),
+      );
     };
 
-    setupEventListeners();
+    setup();
+
+    return () => {
+      cancelled = true;
+      unlisteners.forEach((fn) => fn());
+    };
   }, []);
 
   const getIcon = () => {
