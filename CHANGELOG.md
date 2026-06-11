@@ -7,7 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Project cleanup and documentation overhaul complete.
+> **Status (June 2026):** Documentation cleanup, formatting pass, archive old analysis files.
+
+### Code Cleanup
+
+- **Root-level archive** — moved 31 stale analysis files and `old mds/` into `archive/` for a clean project root.
+- **Prettier formatting** — applied project-wide formatting to all 176 frontend + docs files.
+- **ESLint verification** — confirmed zero lint errors after formatting pass.
+
+### Documentation Fixes
+
+- **S2B2S_REVIEW.md** — replaced remaining `pulldown-cmark` references with regex-based stripping across 6 locations; corrected pipeline heading from "4-Pass" to "5-Stage"; synced roadmap (section 19) with current state — moved 6 completed features from Planned/Later to Completed; updated architecture limitations.
+- **README.md** — fixed stale version number in verification example (`0.9.0`→`0.1.0`); removed extra blank lines.
+- **CHANGELOG.md** — fixed missing `### Added` header; merged orphaned entries; noted `clipboard_ax.rs` removal lifecycle.
+- **AGENTS.md** — updated backend and frontend architecture trees with missing files (`active_app.rs`, `apple_intelligence.rs`, `wake_word.rs`, commands detail, `helpers/`, `shortcut/` backends, `modelStore.ts`).
+- **Module doc comments** — added `//!` docs to `active_app.rs`.
 
 ### Code Cleanup
 
