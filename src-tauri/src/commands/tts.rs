@@ -67,6 +67,51 @@ pub fn tts_get_voices(
     Ok(tts.list_voices_for_engine(engine))
 }
 
+/// Save the most recent TTS audio to a user-chosen file path.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_save_to_file(
+    app: AppHandle,
+    target_path: String,
+) -> Result<(), String> {
+    use crate::tts::audio_format::{save_audio_file, AudioFormat};
+    use std::sync::Arc;
+
+    let settings = crate::settings::get_settings(&app);
+    let format = settings.tts.tts_save_format;
+    let path = std::path::PathBuf::from(&target_path);
+
+    // If no explicit extension, append the format extension
+    let path = if path.extension().is_none() {
+        let mut p = path;
+        p.set_extension(format.as_str());
+        p
+    } else {
+        path
+    };
+
+    // Retrieve the most recent TTS audio from history
+    if let Some(hm) = app.try_state::<Arc<crate::managers::history::HistoryManager>>() {
+        // Try last 10 TTS entries for audio — block on the current runtime
+        let entries = tauri::async_runtime::block_on(hm.get_history_entries(None, Some(10)))
+            .map_err(|e| format!("Failed to get history: {e}"))?;
+        for entry in entries.entries {
+            if entry.entry_type == "tts" {
+                let audio_path = hm.get_audio_file_path(&entry.file_name);
+                if audio_path.exists() {
+                    let bytes = std::fs::read(&audio_path)
+                        .map_err(|e| format!("Failed to read audio file: {e}"))?;
+                    save_audio_file(&bytes, &path, format)?;
+                    log::info!("[TTS] Saved audio to {}", path.display());
+                    return Ok(());
+                }
+            }
+        }
+        return Err("No recent TTS audio found in history".to_string());
+    }
+    Err("HistoryManager not available".to_string())
+}
+
 /// Play the startup greeting audio using customized greeting settings.
 #[tauri::command]
 #[specta::specta]

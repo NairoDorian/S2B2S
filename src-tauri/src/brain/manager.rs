@@ -10,6 +10,7 @@ use crate::settings::get_settings;
 use crate::tts::manager::TtsManager;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub struct BrainManager {
@@ -47,10 +48,14 @@ impl BrainManager {
         let _ = self.app.emit("brain:history-cleared", ());
     }
 
+    fn emit_latency(&self, stage: &str, ms: u64) {
+        let _ = self.app.emit("brain:latency", serde_json::json!({ "stage": stage, "ms": ms }));
+    }
+
     /// Ask the Brain. Streams the reply; returns the full assistant text.
     /// Any previous in-flight turn is aborted first (barge-in semantics).
     pub async fn ask(&self, text: String) -> Result<String, String> {
-        // Cancel the previous turn and install a fresh abort token for this one.
+        let turn_start = Instant::now();
         let abort = Arc::new(AtomicBool::new(false));
         {
             let mut current = self.current_abort.lock().unwrap();
@@ -70,12 +75,17 @@ impl BrainManager {
             return Err("No Brain model configured".into());
         }
 
-        // Build the context window: system + last N turns + the new user message.
+        // Build the context window: system + optional speakable-output prompt + last N turns + the new user message.
         let mut messages = Vec::new();
-        if !cfg.system_prompt.trim().is_empty() {
+        let system = if cfg.read_aloud && !cfg.speakable_output_prompt.trim().is_empty() {
+            format!("{}\n\n{}", cfg.system_prompt.trim(), cfg.speakable_output_prompt.trim())
+        } else {
+            cfg.system_prompt.clone()
+        };
+        if !system.trim().is_empty() {
             messages.push(ChatMessage {
                 role: "system".into(),
-                content: cfg.system_prompt.clone(),
+                content: system,
             });
         }
         if cfg.context_turns > 0 {
@@ -107,10 +117,15 @@ impl BrainManager {
             tts.begin_session();
         }
 
+        let turn_clone = turn_start;
         let app_tokens = self.app.clone();
         let app_sentences = self.app.clone();
         let tts_for_sentences = tts.clone();
         let _ = self.app.emit("brain:thinking", ());
+
+        // Latency: mark time from end of STT to first token
+        let ft = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let app_latency = self.app.clone();
 
         let result = self
             .client
@@ -121,6 +136,11 @@ impl BrainManager {
                 &messages,
                 abort,
                 move |token| {
+                    if !ft.load(std::sync::atomic::Ordering::SeqCst) {
+                        ft.store(true, std::sync::atomic::Ordering::SeqCst);
+                        let ms = turn_clone.elapsed().as_millis() as u64;
+                        let _ = app_latency.emit("brain:latency", serde_json::json!({ "stage": "first_token", "ms": ms }));
+                    }
                     let _ = app_tokens.emit("brain:token", token);
                 },
                 move |sentence| {

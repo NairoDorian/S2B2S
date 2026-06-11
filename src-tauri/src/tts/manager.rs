@@ -5,6 +5,7 @@
 //! synthesized while *i* is still playing. A monotonic generation counter makes
 //! `stop()` (and any new `speak`) abort in-flight workers promptly.
 
+use crate::audio_toolkit::extract_envelope;
 use crate::settings::{get_settings, TtsConfig, TtsEngine};
 use crate::tts::backends::kokoro::KokoroBackend;
 use crate::tts::backends::kitten::KittenBackend;
@@ -166,7 +167,33 @@ impl TtsManager {
             log::debug!("[TTS] nothing left to speak after sanitization");
             return;
         }
-        let fragments = paginate_text(&sanitized, &cfg.pagination);
+        let shorten_first = cfg.tts_shorten_first_chunk;
+        let fragments = if shorten_first {
+            // Split first chunk at a clause boundary near 60 chars for fast TTFA
+            let mut frags = Vec::new();
+            let mut remaining = sanitized.as_str();
+            if let Some(split) = crate::brain::client::split_at_clause_boundary(remaining, 60) {
+                let first = remaining[..split].trim().to_string();
+                if !first.is_empty() {
+                    frags.push(crate::tts::pagination::TextFragment { text: first, index: 0, total: 0 });
+                }
+                remaining = remaining[split..].trim();
+            }
+            if !remaining.is_empty() {
+                let rest = paginate_text(remaining, &cfg.pagination);
+                let offset = frags.len();
+                for (i, mut f) in rest.into_iter().enumerate() {
+                    f.index = offset + i;
+                    frags.push(f);
+                }
+            }
+            // Fix total count
+            let total = frags.len();
+            for f in &mut frags { f.total = total; }
+            frags
+        } else {
+            paginate_text(&sanitized, &cfg.pagination)
+        };
         let app = self.app.clone();
         let player = self.player.clone();
         let gen_counter = self.generation.clone();
@@ -193,6 +220,14 @@ impl TtsManager {
                             "tts:fragment",
                             serde_json::json!({ "index": frag.index, "total": frag.total }),
                         );
+                        // Emit waveform envelope for HUD visualization
+                        if let Some(envelope) = extract_envelope(&bytes, 32) {
+                            let _ = app.emit("tts:waveform", serde_json::json!({
+                                "fragment_index": frag.index,
+                                "values": envelope.values,
+                                "duration_ms": envelope.duration_ms,
+                            }));
+                        }
                         all_chunks.push(bytes.clone());
                         player.append(bytes);
                     }

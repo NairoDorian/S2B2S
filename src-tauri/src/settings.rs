@@ -415,6 +415,32 @@ pub struct TtsConfig {
     /// Shorten the first chunk to reduce time-to-first-audio (Parrot pattern).
     #[serde(default = "default_tts_shorten_first_chunk")]
     pub tts_shorten_first_chunk: bool,
+    /// Audio format for saved TTS output.
+    #[serde(default)]
+    pub tts_save_format: crate::tts::audio_format::AudioFormat,
+    /// Wake word / always-listening keyword detection.
+    #[serde(default)]
+    pub wake_word: WakeWordConfig,
+}
+
+/// User-facing configuration for wake word detection.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct WakeWordConfig {
+    pub enabled: bool,
+    pub keyword: String,
+    pub threshold: f32,
+    pub show_indicator: bool,
+}
+
+impl Default for WakeWordConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            keyword: "hey s2b2s".to_string(),
+            threshold: 0.6,
+            show_indicator: true,
+        }
+    }
 }
 
 fn default_double_copy_window_ms() -> u32 {
@@ -457,6 +483,8 @@ impl Default for TtsConfig {
             cartesia: CartesiaConfig::default(),
             tts_workers: default_tts_workers(),
             tts_shorten_first_chunk: default_tts_shorten_first_chunk(),
+            tts_save_format: crate::tts::audio_format::AudioFormat::default(),
+            wake_word: WakeWordConfig::default(),
         }
     }
 }
@@ -474,6 +502,34 @@ pub struct BrainConfig {
     pub context_turns: u32,
     /// Speak the Brain's reply aloud via the TTS subsystem.
     pub read_aloud: bool,
+    /// Separate system prompt appended when read-aloud is ON.
+    /// Instructs the model to answer conversationally for listening.
+    #[serde(default = "default_speakable_output_prompt")]
+    pub speakable_output_prompt: String,
+    /// Conversation mode: push_to_talk | toggle | hands_free
+    #[serde(default = "default_conversation_mode")]
+    pub conversation_mode: String,
+    /// Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms)
+    #[serde(default = "default_endpoint_preset")]
+    pub endpoint_preset: String,
+    /// Headphone mode — enables barge-in during TTS playback
+    #[serde(default)]
+    pub headphone_mode: bool,
+    /// Auto-rearm mic after reply in hands-free mode
+    #[serde(default)]
+    pub auto_listen: bool,
+}
+
+fn default_speakable_output_prompt() -> String {
+    "Answer conversationally in short sentences suitable for being read aloud. Avoid markdown tables, bullet lists, code blocks, and emoji unless asked. Expand abbreviations. Put any code in a short spoken summary.".to_string()
+}
+
+fn default_conversation_mode() -> String {
+    "push_to_talk".to_string()
+}
+
+fn default_endpoint_preset() -> String {
+    "balanced".to_string()
 }
 
 impl BrainConfig {
@@ -520,6 +576,11 @@ impl Default for BrainConfig {
             system_prompt: "You are a helpful, concise voice assistant. Answer conversationally in short sentences suitable for being read aloud. Avoid markdown tables, bullet lists, and emoji unless asked.".to_string(),
             context_turns: 0,
             read_aloud: true,
+            speakable_output_prompt: default_speakable_output_prompt(),
+            conversation_mode: default_conversation_mode(),
+            endpoint_preset: default_endpoint_preset(),
+            headphone_mode: false,
+            auto_listen: false,
         }
     }
 }
@@ -1322,6 +1383,22 @@ pub fn get_default_settings() -> AppSettings {
             description: "Pauses or resumes the current recording session.".to_string(),
             default_binding: "F6".to_string(),
             current_binding: "F6".to_string(),
+        },
+    );
+
+    #[cfg(target_os = "macos")]
+    let default_ai_replace_shortcut = "option+shift+r";
+    #[cfg(not(target_os = "macos"))]
+    let default_ai_replace_shortcut = "ctrl+alt+space";
+
+    bindings.insert(
+        "ai_replace".to_string(),
+        ShortcutBinding {
+            id: "ai_replace".to_string(),
+            name: "AI Replace Selection".to_string(),
+            description: "Select text, press this hotkey, speak an instruction — the Brain rewrites the selection in place.".to_string(),
+            default_binding: default_ai_replace_shortcut.to_string(),
+            current_binding: default_ai_replace_shortcut.to_string(),
         },
     );
 

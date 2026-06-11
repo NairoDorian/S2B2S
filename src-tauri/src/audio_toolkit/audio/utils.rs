@@ -2,6 +2,8 @@ use anyhow::Result;
 use hound::{WavReader, WavSpec, WavWriter};
 use log::debug;
 use std::path::Path;
+use serde::Serialize;
+use specta::Type;
 
 /// Read a WAV file and return normalised f32 samples.
 pub fn read_wav_samples<P: AsRef<Path>>(file_path: P) -> Result<Vec<f32>> {
@@ -47,4 +49,48 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
     writer.finalize()?;
     debug!("Saved WAV file: {:?}", file_path.as_ref());
     Ok(())
+}
+
+/// RMS amplitude envelope — used for the waveform HUD during TTS playback.
+/// Divides audio into `num_bars` segments and returns the RMS of each.
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct AmplitudeEnvelope {
+    pub values: Vec<f32>,
+    pub duration_ms: u64,
+}
+
+/// Extract an RMS amplitude envelope from WAV bytes for waveform visualization.
+pub fn extract_envelope(wav_bytes: &[u8], num_bars: usize) -> Option<AmplitudeEnvelope> {
+    use std::io::Cursor;
+    let reader = WavReader::new(Cursor::new(wav_bytes)).ok()?;
+    let spec = reader.spec();
+    let samples: Vec<f32> = reader
+        .into_samples::<i16>()
+        .filter_map(|s| s.ok())
+        .map(|s| s as f32 / i16::MAX as f32)
+        .collect();
+
+    if samples.is_empty() {
+        return None;
+    }
+
+    let total_samples = samples.len();
+    let sample_rate = spec.sample_rate as u64;
+    let duration_ms = (total_samples as u64 * 1000) / sample_rate;
+    let chunk_size = (total_samples / num_bars).max(1);
+
+    let values: Vec<f32> = (0..num_bars)
+        .map(|i| {
+            let start = i * chunk_size;
+            let end = ((i + 1) * chunk_size).min(total_samples);
+            let chunk = &samples[start..end];
+            if chunk.is_empty() {
+                return 0.0;
+            }
+            let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
+            (rms * 4.0).clamp(0.0, 1.0) // scale up for visibility
+        })
+        .collect();
+
+    Some(AmplitudeEnvelope { values, duration_ms })
 }

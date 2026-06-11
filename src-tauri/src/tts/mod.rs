@@ -5,6 +5,7 @@
 //! [`TtsBackend`]. Engines are warm and resident where possible (CopySpeak's key
 //! perf win); long-lived child processes must have their stdio drained (C4).
 
+pub mod audio_format;
 pub mod backends;
 pub mod clipboard_watch;
 pub mod fragment_queue;

@@ -663,12 +663,24 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
 }
 
 /// Captures the currently selected text by simulating Ctrl+C / Cmd+C, then
-/// restores the previous clipboard contents. When nothing is selected the
-/// clipboard is unchanged, so the existing clipboard text is returned —
-/// CopySpeak semantics: speak the selection, falling back to the clipboard.
+/// restores the previous clipboard contents.
+///
+/// Uses a sentinel approach: writes a unique string to clipboard BEFORE copying,
+/// so we can reliably detect "no selection" (clipboard is still the sentinel)
+/// vs "has selection" (clipboard contains the selection text).
 pub fn capture_selection_text(app_handle: &AppHandle) -> Result<String, String> {
     let clipboard = app_handle.clipboard();
     let previous = clipboard.read_text().unwrap_or_default();
+
+    // Write sentinel first, then copy — if clipboard hasn't changed after copy, no selection.
+    let sentinel = format!(
+        "__S2B2S_SEL_{}__",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    let _ = clipboard.write_text(sentinel.clone());
 
     {
         let enigo_state = app_handle
@@ -686,14 +698,16 @@ pub fn capture_selection_text(app_handle: &AppHandle) -> Result<String, String> 
 
     let captured = clipboard.read_text().unwrap_or_default();
 
-    // Restore the user's clipboard when we replaced it with the selection.
-    if captured != previous {
+    // If captured equals the sentinel, nothing was selected — restore and error
+    if captured == sentinel || captured.trim().is_empty() {
+        // Restore original clipboard
         let _ = clipboard.write_text(&previous);
+        return Err("No text selected — highlight text first, or copy it to speak from clipboard".into());
     }
 
-    if captured.trim().is_empty() {
-        return Err("Nothing selected and the clipboard is empty".into());
-    }
+    // Restore the user's clipboard
+    let _ = clipboard.write_text(&previous);
+
     Ok(captured)
 }
 

@@ -7,7 +7,7 @@
 
 use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Lifecycle state of the Kokoro engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +80,7 @@ pub struct KokoroBackend {
     voice: String,
     speed: f32,
     generation: Arc<AtomicU64>,
-    status: Arc<parking_lot::Mutex<KokoroStatus>>,
+    status: Arc<Mutex<KokoroStatus>>,
     loaded: Arc<AtomicBool>,
 }
 
@@ -90,13 +90,13 @@ impl KokoroBackend {
             voice,
             speed,
             generation: Arc::new(AtomicU64::new(1)),
-            status: Arc::new(parking_lot::Mutex::new(KokoroStatus::Stopped)),
+            status: Arc::new(Mutex::new(KokoroStatus::Stopped)),
             loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn status(&self) -> KokoroStatus {
-        *self.status.lock()
+        *self.status.lock().unwrap()
     }
 
     pub fn is_loaded(&self) -> bool {

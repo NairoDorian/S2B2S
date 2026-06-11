@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
-import { Mic } from "lucide-react";
+import { Mic, Volume2, VolumeX } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -33,6 +33,8 @@ export const ConversationView: React.FC = () => {
 
   const brainEnabled = settings?.brain?.enabled ?? false;
   const converseBinding = settings?.bindings?.converse?.current_binding;
+  const [readAloud, setReadAloud] = useState(settings?.brain?.read_aloud ?? true);
+  const [latencyHud, setLatencyHud] = useState<Record<string, number> | null>(null);
 
   // Toggle voice mode
   const toggleVoiceMode = useCallback(async () => {
@@ -117,6 +119,11 @@ export const ConversationView: React.FC = () => {
         }
       });
 
+      // Latency HUD events
+      const unlistenLatency = await listen<{ stage: string; ms: number }>("brain:latency", (event) => {
+        setLatencyHud((prev) => ({ ...prev, [event.payload.stage]: event.payload.ms }));
+      });
+
       return () => {
         unlistenThinking();
         unlistenToken();
@@ -126,6 +133,7 @@ export const ConversationView: React.FC = () => {
         unlistenSpeechStarted();
         unlistenSpeechEnded();
         unlistenTtsPlaying();
+        unlistenLatency();
       };
     };
     const cleanup = setup();
@@ -165,9 +173,29 @@ export const ConversationView: React.FC = () => {
           {t("conversation.disabledHint")}
         </div>
       )}
-      {brainEnabled && converseBinding && !voiceMode && (
-        <div className="px-4 py-2 rounded-lg border border-mid-gray/20 text-xs text-mid-gray">
-          {t("conversation.hotkeyHint", { hotkey: converseBinding })}
+      {brainEnabled && (
+        <div className="flex items-center justify-between px-2">
+          {converseBinding && !voiceMode && (
+            <div className="px-4 py-2 rounded-lg border border-mid-gray/20 text-xs text-mid-gray">
+              {t("conversation.hotkeyHint", { hotkey: converseBinding })}
+            </div>
+          )}
+          <div className="flex items-center gap-1 ms-auto">
+            <button
+              onClick={() => {
+                const newVal = !readAloud;
+                setReadAloud(newVal);
+                void commands.changeBrainConfig({
+                  ...settings.brain,
+                  read_aloud: newVal,
+                });
+              }}
+              className="p-1.5 rounded-md text-mid-gray hover:text-foreground hover:bg-mid-gray/10 transition-colors"
+              title={readAloud ? "Read replies aloud (ON)" : "Silent mode (OFF)"}
+            >
+              {readAloud ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+          </div>
         </div>
       )}
 
@@ -259,6 +287,31 @@ export const ConversationView: React.FC = () => {
         <div ref={bottomRef} />
       </div>
 
+      {/* Latency HUD — shown when at least one timing is available */}
+      {latencyHud && Object.keys(latencyHud).length > 0 && (
+        <div className="flex gap-2 px-1 text-[10px] font-mono text-mid-gray/60">
+          {latencyHud.endpoint != null && (
+            <span className={latencyHud.endpoint < 600 ? "text-green-500/70" : "text-yellow-500/70"}>
+              EP:{latencyHud.endpoint}ms
+            </span>
+          )}
+          {latencyHud.stt != null && (
+            <span className={latencyHud.stt < 400 ? "text-green-500/70" : "text-yellow-500/70"}>
+              STT:{latencyHud.stt}ms
+            </span>
+          )}
+          {latencyHud.first_token != null && (
+            <span className={latencyHud.first_token < 600 ? "text-green-500/70" : "text-yellow-500/70"}>
+              TTFT:{latencyHud.first_token}ms
+            </span>
+          )}
+          {latencyHud.first_audio != null && (
+            <span className={latencyHud.first_audio < 1500 ? "text-green-500/70" : latencyHud.first_audio < 2500 ? "text-yellow-500/70" : "text-red-500/70"}>
+              TTFA:{latencyHud.first_audio}ms
+            </span>
+          )}
+        </div>
+      )}
       <div className="space-y-2">
         <Textarea
           variant="compact"
