@@ -38,7 +38,10 @@
 //!
 //! ──────────────────────────────────────────────────────────────────────────
 
+use crate::settings::{get_settings, ModelUnloadTimeout};
 use crate::tts::{TtsBackend, Voice};
+use crate::tts::status::{EngineStatus, WarmEngine};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::AppHandle;
 use super::piper_server;
 
@@ -69,6 +72,8 @@ pub struct PiperBackend {
     cuda: bool,
     noise_scale: f32,
     noise_w_scale: f32,
+    /// Monotonic timestamp (ms since epoch) of the last synthesize() call.
+    last_used: AtomicU64,
 }
 
 impl PiperBackend {
@@ -78,6 +83,7 @@ impl PiperBackend {
             cuda,
             noise_scale: 0.667,
             noise_w_scale: 0.8,
+            last_used: AtomicU64::new(0),
         }
     }
 
@@ -85,6 +91,43 @@ impl PiperBackend {
         self.noise_scale = noise_scale;
         self.noise_w_scale = noise_w_scale;
         self
+    }
+
+    fn touch(&self) {
+        self.last_used.store(
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64).unwrap_or(0),
+            Ordering::Release,
+        );
+    }
+}
+
+impl WarmEngine for PiperBackend {
+    fn warm(&self) -> Result<(), String> {
+        // Pre-load the Piper server with voice
+        let voice = get_settings(&self.app).tts.voice.clone();
+        let voice = if voice.trim().is_empty() { "en_US-joe-medium" } else { &voice };
+        piper_server::ensure_running(voice.to_string(), self.cuda)?;
+        log::info!("[Piper] WarmEngine: server ready and warm");
+        Ok(())
+    }
+
+    fn unload(&self) -> Result<(), String> {
+        if piper_server::unload_piper_model() {
+            log::info!("[Piper] WarmEngine: model unloaded");
+        }
+        Ok(())
+    }
+
+    fn status(&self) -> EngineStatus {
+        let s = piper_server::get_piper_server_status();
+        if !s.ready {
+            if s.running {
+                // Server starting or warming up
+                return EngineStatus::Loading;
+            }
+            return EngineStatus::Stopped;
+        }
+        EngineStatus::Ready
     }
 }
 
@@ -94,6 +137,8 @@ impl TtsBackend for PiperBackend {
     }
 
     fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String> {
+        self.touch();
+        piper_server::mark_synth();
         let voice_to_use = if voice.trim().is_empty() {
             "en_US-joe-medium"
         } else {

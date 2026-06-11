@@ -188,8 +188,10 @@ fn is_abbrev_before(buffer: &str, dot_byte: usize) -> bool {
 }
 
 /// Find a clause boundary (`, ; : —`) within `max_chars`, else a hard char cut.
+/// Prefers strong boundaries (`.`) over weak (`,`) with a 10-char bonus window.
 fn force_clause_boundary(buffer: &str, max_chars: usize) -> usize {
     let mut last_clause = None;
+    let mut last_strong = None;
     let mut count = 0usize;
     let mut hard = buffer.len();
     for (idx, c) in buffer.char_indices() {
@@ -197,12 +199,52 @@ fn force_clause_boundary(buffer: &str, max_chars: usize) -> usize {
         if matches!(c, ',' | ';' | ':' | '—') {
             last_clause = Some(idx + c.len_utf8());
         }
+        if matches!(c, '.' | ')' | ']') {
+            last_strong = Some(idx + c.len_utf8());
+        }
         if count >= max_chars {
             hard = idx + c.len_utf8();
             break;
         }
     }
+    // Prefer strong boundary within max_chars+10, else clause boundary, else hard cut
+    if let Some(s) = last_strong {
+        if s <= hard + 10 { return s; }
+    }
     last_clause.unwrap_or(hard)
+}
+
+/// Split at the first clause boundary after `target_chars`, looking in [target/2 .. target*2].
+/// Used for shorten-first-chunk: emit a short first sentence to reduce TTFA.
+pub fn split_at_clause_boundary(text: &str, target_chars: usize) -> Option<usize> {
+    let half = target_chars / 2;
+    let double = target_chars * 2;
+    let mut best_clause = None;
+    let mut best_strong = None;
+    let mut count = 0usize;
+
+    for (idx, c) in text.char_indices() {
+        if count < half { count += 1; continue; }
+        count += 1;
+        if count > double { break; }
+
+        if matches!(c, ',' | ';' | ':' | '—') {
+            best_clause = Some(idx + c.len_utf8());
+        }
+        if matches!(c, '.' | ')' | ']') {
+            // Prefer terminal + ')' / ']' over clause with 10-char bonus
+            if best_strong.is_none() {
+                best_strong = Some(idx + c.len_utf8());
+            }
+        }
+    }
+
+    if let Some(s) = best_strong {
+        if best_clause.map_or(true, |c| s <= c + 10) {
+            return Some(s);
+        }
+    }
+    best_clause
 }
 
 impl SentenceSplitter {

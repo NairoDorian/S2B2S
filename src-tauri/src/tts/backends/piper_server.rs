@@ -644,6 +644,66 @@ pub fn ensure_running(
     }
 }
 
+/// Spawn a background thread that periodically checks the Piper server
+/// idle state and unloads it when the configured ModelUnloadTimeout has
+/// expired since the last synthesize request.
+pub fn start_idle_watcher(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(15));
+            let settings = crate::settings::get_settings(&app);
+            let timeout = settings.model_unload_timeout;
+            match timeout.to_seconds() {
+                Some(secs) if secs > 0 => {
+                    // Check if server is ready
+                    let status = get_piper_server_status();
+                    if !status.ready {
+                        continue;
+                    }
+                    // Check if Piper backend has been idle
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    if let Some(tts) = app.try_state::<std::sync::Arc<crate::tts::manager::TtsManager>>() {
+                        // Get the last_used from the idle atomic
+                        let idle_ms = crate::settings::ModelUnloadTimeout::Sec15.to_seconds()
+                            .map(|check_secs| check_secs * 1000)
+                            .unwrap_or(300_000);
+                        let since_last_build = crate::tts::backends::piper_server::get_last_synth_ms()
+                            .map(|last| now.saturating_sub(last))
+                            .unwrap_or(0);
+                        if since_last_build > idle_ms && since_last_build > secs * 1000 {
+                            log::info!("[Piper] Idle timeout ({secs}s) — unloading model");
+                            unload_piper_model();
+                        }
+                    }
+                }
+                _ => {} // Never or Immediately — don't idle-watch
+            }
+        }
+    });
+}
+
+static LAST_SYNTH_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Record the timestamp of a synthesis request (called from PiperBackend).
+pub fn mark_synth() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    LAST_SYNTH_MS.store(now, std::sync::atomic::Ordering::Release);
+}
+
+/// Get the last synthesis timestamp for idle checking.
+pub fn get_last_synth_ms() -> Option<u64> {
+    let val = LAST_SYNTH_MS.load(std::sync::atomic::Ordering::Acquire);
+    if val == 0 { None } else { Some(val) }
+}
+
 pub fn unload_piper_model() -> bool {
     let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
     match &*state {

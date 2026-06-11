@@ -5,6 +5,57 @@ use crate::settings::{get_settings, write_settings, BrainConfig};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
+/// AI Replace: speak an instruction to rewrite selected text via the Brain.
+/// Returns the rewritten text; caller pastes it at the cursor.
+#[tauri::command]
+#[specta::specta]
+pub async fn ai_replace_selection(
+    app: AppHandle,
+    instruction: String,
+    selected_text: String,
+) -> Result<String, String> {
+    let settings = crate::settings::get_settings(&app);
+    let brain_cfg = &settings.brain;
+    if !brain_cfg.enabled {
+        return Err("The Brain is disabled".to_string());
+    }
+    let api_key = brain_cfg.active_api_key();
+    let model = brain_cfg.active_model();
+    let provider = brain_cfg.active_provider().ok_or("No Brain provider")?;
+    let base_url = provider.base_url.clone();
+    let system_prompt = "You rewrite text according to the user's instruction. \
+        Output ONLY the rewritten text — no preamble, no explanation, no markdown formatting. \
+        Preserve the original meaning unless the instruction changes it.";
+
+    let prompt = format!(
+        "TEXT:\n{selected_text}\n\nINSTRUCTION:\n{instruction}\n\nREWRITTEN TEXT:"
+    );
+
+    let messages = vec![
+        crate::brain::client::ChatMessage { role: "system".to_string(), content: system_prompt.to_string() },
+        crate::brain::client::ChatMessage { role: "user".to_string(), content: prompt },
+    ];
+
+    let client = crate::brain::client::BrainClient::new();
+    let abort = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut result = String::new();
+
+    // Non-streaming request for simplicity
+    let full = client
+        .stream_chat(
+            &base_url,
+            &api_key,
+            &model,
+            &messages,
+            abort,
+            |token| { result.push_str(token); },
+            |_sentence| {},
+        )
+        .await?;
+
+    Ok(full.trim().to_string())
+}
+
 /// Ask the Brain; streams `brain:token` / `brain:sentence` events and returns the full reply.
 #[tauri::command]
 #[specta::specta]

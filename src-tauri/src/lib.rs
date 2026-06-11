@@ -24,6 +24,7 @@ mod tray;
 mod tray_i18n;
 mod tts;
 mod utils;
+mod wake_word;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -437,6 +438,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::audio::set_vad_mode,
             commands::audio::start_continuous_voice_mode,
             commands::audio::stop_continuous_voice_mode,
+            commands::audio::set_recording_auto_stop,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
@@ -464,7 +466,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::tts::get_piper_server_status,
             commands::tts::change_tts_config,
             commands::tts::tts_play_greeting,
+            commands::tts::tts_save_to_file,
             commands::brain::brain_ask,
+            commands::brain::ai_replace_selection,
             commands::brain::brain_abort,
             commands::brain::brain_clear_history,
             commands::brain::fetch_brain_models,
@@ -473,6 +477,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::brain::change_brain_base_url_setting,
             commands::brain::change_brain_api_key_setting,
             commands::brain::change_brain_model_setting,
+            commands::discovery::discover_local_brains,
+            commands::discovery::is_ollama_running,
+            commands::wake_word::wake_word_start,
+            commands::wake_word::wake_word_stop,
+            commands::wake_word::wake_word_set_config,
+            commands::wake_word::wake_word_status,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![managers::history::HistoryUpdatePayload,])
@@ -621,6 +631,9 @@ pub fn run(cli_args: CliArgs) {
             // Register TTS telemetry for adaptive pagination (CopySpeak pattern).
             app.manage(crate::tts::telemetry::Telemetry::new());
 
+            // Register the wake word detector (inactive by default).
+            app.manage(std::sync::Arc::new(crate::wake_word::WakeWordDetector::new()));
+
             initialize_core_logic(&app_handle);
 
             // Pre-warm GPU/accelerator enumeration on a background thread.
@@ -633,6 +646,9 @@ pub fn run(cli_args: CliArgs) {
             std::thread::spawn(|| {
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
+
+            // Start the Piper idle watcher (checks ModelUnloadTimeout every 15s)
+            crate::tts::backends::piper_server::start_idle_watcher(app_handle.clone());
 
             // Auto-load STT and Piper TTS in parallel, then warm up Kokoro.
             let startup_app_handle = app_handle.clone();

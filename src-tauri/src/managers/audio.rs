@@ -177,6 +177,9 @@ pub struct AudioRecordingManager {
     noise_suppression_enabled: Arc<AtomicBool>,
     continuous_mode: Arc<AtomicBool>,
     continuous_mode_paused: Arc<AtomicBool>,
+    /// Auto-stop: silence watchdog timer
+    auto_stop_enabled: Arc<AtomicBool>,
+    auto_stop_duration_secs: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl AudioRecordingManager {
@@ -194,6 +197,8 @@ impl AudioRecordingManager {
         let noise_suppression_enabled = Arc::new(AtomicBool::new(settings.noise_suppression_enabled));
         let continuous_mode = Arc::new(AtomicBool::new(false));
         let continuous_mode_paused = Arc::new(AtomicBool::new(false));
+        let auto_stop_enabled = Arc::new(AtomicBool::new(false));
+        let auto_stop_duration_secs = Arc::new(std::sync::atomic::AtomicU64::new(30));
 
         let manager = Self {
             state: Arc::new(Mutex::new(RecordingState::Idle)),
@@ -209,6 +214,8 @@ impl AudioRecordingManager {
             noise_suppression_enabled,
             continuous_mode,
             continuous_mode_paused,
+            auto_stop_enabled,
+            auto_stop_duration_secs,
         };
 
         // Always-on?  Open immediately.
@@ -589,6 +596,24 @@ impl AudioRecordingManager {
 
     pub fn set_continuous_mode_paused(&self, paused: bool) {
         self.continuous_mode_paused.store(paused, Ordering::SeqCst);
+    }
+
+    pub fn enable_wake_word(&self, enabled: bool) {
+        // Wake word detection uses the always-on microphone stream.
+        // If the stream is not already open, open it in AlwaysOn mode.
+        if enabled {
+            let mode = self.mode.lock().unwrap().clone();
+            if matches!(mode, MicrophoneMode::OnDemand) {
+                let _ = self.update_mode(MicrophoneMode::AlwaysOn);
+            }
+            log::info!("[WakeWord] Always-on mic enabled for wake word detection");
+        }
+    }
+
+    pub fn set_auto_stop(&self, enabled: bool, duration_secs: u64) {
+        self.auto_stop_enabled.store(enabled, Ordering::SeqCst);
+        self.auto_stop_duration_secs.store(duration_secs.max(5), Ordering::SeqCst);
+        log::info!("[AutoStop] {} ({}s silence)", if enabled { "enabled" } else { "disabled" }, duration_secs);
     }
 
     pub fn update_vad_mode(&self, _mode: &str) -> Result<(), anyhow::Error> {

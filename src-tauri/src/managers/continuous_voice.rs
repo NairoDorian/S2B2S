@@ -146,8 +146,21 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     });
 
     // 6. Resume continuous listening
-    rm.set_continuous_mode_paused(false);
-    log::info!("Continuous listening resumed.");
+    // Check if auto-listen is enabled; if not, automatically restart
+    let settings = get_settings(app);
+    if settings.brain.auto_listen {
+        rm.set_continuous_mode_paused(false);
+        log::info!("Continuous listening resumed (auto-listen ON).");
+    } else {
+        // Re-arm listening after a 250ms grace period to avoid capturing room reverb
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            let rm = app_clone.state::<Arc<AudioRecordingManager>>();
+            rm.set_continuous_mode_paused(false);
+            log::info!("Continuous listening resumed after 250ms grace.");
+        });
+    }
 
     Ok(())
 }
