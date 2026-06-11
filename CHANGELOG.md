@@ -32,8 +32,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Cross-platform double-copy trigger** — Windows: `GetClipboardSequenceNumber`. macOS: `NSPasteboard.changeCount` via AppKit FFI. Linux: content-based polling with xclip/wl-paste. Graceful degradation on unsupported platforms.
 
 **Wake Word Detection:**
-- **Hybrid KWS+VAD wake word** — `WakeWordDetector` with two backends: sherpa-onnx `KeywordSpotter` (accurate phrase detection, "hey s2b2s") or VAD energy fallback (RMS > 0.03, zero model files). Auto-selects KWS when encoder.onnx/decoder.onnx/joiner.onnx/tokens.txt exist in `models/wake_word/`.
-- **Privacy-first design** — feature defaults OFF, requires explicit consent. ~2s ring buffer auto-cleared. Audio processed entirely on-device, never saved. 👁 tray indicator when active.
+- **VAD-based activity detection** — `WakeWordDetector` uses RMS energy threshold (0.03) with 3-frame debounce (~150ms). Zero model files needed. ~2s ring buffer auto-cleared.
+- **sherpa-onnx KWS prepared** — integration code written (init_kws/feed_kws in git history). Blocked on Windows CRT linking: `sherpa-onnx-sys` uses `/MT` static CRT while `transcribe-rs`/`whisper` uses `/MD` dynamic CRT. To enable: add `sherpa-onnx = "1.13.2"` to `Cargo.toml` and download KWS model files to `models/wake_word/`.
+- **Privacy-first design** — feature defaults OFF, requires explicit consent. Audio processed entirely on-device, never saved. 👁 tray indicator when active.
 - **Wake word commands** — `wake_word_start`, `wake_word_stop`, `wake_word_set_config`, `wake_word_status` Tauri commands. `WakeWordConfig` in settings (enabled, keyword, threshold, show_indicator).
 
 **Recording & Audio:**

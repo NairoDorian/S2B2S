@@ -86,7 +86,7 @@ tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "2.7"
 text-processing-rs = "0.2.2"
 pulldown-cmark = "0.13"
-sherpa-onnx = "1.13.2"
+
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"
