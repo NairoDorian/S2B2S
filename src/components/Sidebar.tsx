@@ -11,8 +11,8 @@ import {
   Cpu,
   Volume2,
 } from "lucide-react";
-import S2B2STextLogo from "./icons/S2B2STextLogo";
 import S2B2SIcon from "./icons/S2B2SIcon";
+import appIcon from "../assets/icon.png";
 import { useSettings } from "../hooks/useSettings";
 import {
   GeneralSettings,
@@ -125,7 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
-        <S2B2STextLogo width={120} className="m-4" />
+        <img src={appIcon} alt="S2B2S" className="w-10 h-10 m-4" />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         {availableSections.map((section) => {
           const Icon = section.icon;

@@ -514,7 +514,7 @@ fn spawn_start_thread(
 
         let warmup_client = get_piper_client();
         let warmup_url = format!("http://127.0.0.1:{}/", port);
-        let warmup_body = serde_json::json!({ "text": warmup_text, "length_scale": 1.0 });
+        let warmup_body = serde_json::json!({ "text": warmup_text, "length_scale": 1.111111 });
         let warmup_start = std::time::Instant::now();
         match warmup_client.post(&warmup_url).json(&warmup_body).send() {
             Ok(resp) => {

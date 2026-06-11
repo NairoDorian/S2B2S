@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Her-style 3D loading animation** — Three.js animated tube geometry (lissajous
+  curve) with ring-reveal transition on load completion; replaces blank screen
+  during app startup.
+- **French Piper TTS voices** — downloaded all 7 fr_FR voices (gilles, mls,
+  mls_1840, siwis, tom, upmc) at available quality levels.
+- **New app icon and logo** — icon for taskbar/titlebar/tray, logo for README
+  and sidebar menu.
+
 - **Speech output (TTS) subsystem** — the "Read Anywhere" / CopySpeak pillar:
   - `TtsBackend` engine abstraction with a warm, persistent **Piper** local
     HTTP-server backend (model stays resident in RAM; child stdio drained so
@@ -61,6 +69,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   CUDA settings change.
 - Renamed `warmup_speak_out_loud` setting to `play_startup_greeting` and
   `speak_warmup_bytes` method to `play_raw`.
+- **Complete retheme** — switched from light/pink to pure black (#000000)
+  background with purple (#7c3aed) + gold (#f59e0b) accents across all UI
+  (icons, sliders, overlays, recording bars), removed dark mode media query.
+- **Loading animation timing** — minimum 3-second display before transition,
+  startup greeting plays at 0.9x speed.
+- **All platform icons regenerated** — taskbar, tray, and window icons from
+  new icon source; tray state icons updated to 64x64.
 
 ### Fixed
 
