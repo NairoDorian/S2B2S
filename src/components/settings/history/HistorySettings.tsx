@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2 } from "lucide-react";
+import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2, Mic, Volume2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -223,6 +223,18 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
+  const deleteAllEntries = async () => {
+    try {
+      const result = await commands.deleteAllHistoryEntries();
+      if (result.status === "ok") {
+        setEntries([]);
+        toast.success(`Deleted ${result.data} entries`);
+      }
+    } catch (error) {
+      console.error("Failed to delete all entries:", error);
+    }
+  };
+
   const openRecordingsFolder = async () => {
     try {
       const result = await commands.openRecordingsFolder();
@@ -279,10 +291,22 @@ export const HistorySettings: React.FC = () => {
               {t("settings.history.title")}
             </h2>
           </div>
-          <OpenRecordingsButton
-            onClick={openRecordingsFolder}
-            label={t("settings.history.openFolder")}
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={deleteAllEntries}
+              variant="secondary"
+              size="sm"
+              className="flex items-center gap-1 text-red-400 hover:text-red-300"
+              disabled={entries.length === 0}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="text-xs">{t("settings.history.deleteAll")}</span>
+            </Button>
+            <OpenRecordingsButton
+              onClick={openRecordingsFolder}
+              label={t("settings.history.openFolder")}
+            />
+          </div>
         </div>
         <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
           {content}
@@ -352,11 +376,17 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   };
 
   const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
+  const isTts = entry.entry_type === "tts";
 
   return (
     <div className="px-4 py-2 pb-5 flex flex-col gap-3">
       <div className="flex justify-between items-center">
-        <p className="text-sm font-medium">{formattedDate}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{formattedDate}</p>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isTts ? "bg-purple-500/20 text-purple-400" : "bg-logo-primary/20 text-logo-primary"}`}>
+            {isTts ? "TTS" : "STT"}
+          </span>
+        </div>
         <div className="flex items-center">
           <IconButton
             onClick={handleCopyText}
@@ -438,6 +468,25 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             ? entry.transcription_text
             : t("settings.history.transcriptionFailed")}
       </p>
+
+      {(entry.model_name || entry.duration_ms != null) && (
+        <div className="flex items-center gap-3 text-[10px] text-text/40">
+          {isTts ? (
+            <span className="flex items-center gap-1">
+              <Volume2 className="w-3 h-3" />
+              {entry.model_name || "TTS"}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <Mic className="w-3 h-3" />
+              {entry.model_name || "STT"}
+            </span>
+          )}
+          {entry.duration_ms != null && (
+            <span>{entry.duration_ms}ms</span>
+          )}
+        </div>
+      )}
 
       <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
     </div>

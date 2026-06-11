@@ -606,12 +606,18 @@ impl ShortcutAction for TranscribeAction {
                                 };
 
                                 if wav_saved {
+                                    let stt_model = tm.get_current_model();
+                                    let stt_duration = Some(transcription_time.elapsed().as_millis() as i64);
                                     if let Err(err) = hm.save_entry(
                                         file_name,
                                         transcription.clone(),
                                         use_post_process,
                                         processed.post_processed_text.clone(),
                                         processed.post_process_prompt.clone(),
+                                        "stt".to_string(),
+                                        stt_model,
+                                        None,
+                                        stt_duration,
                                     ) {
                                         error!("Failed to save history entry: {}", err);
                                     }
@@ -648,12 +654,18 @@ impl ShortcutAction for TranscribeAction {
 
                             // Save to history if WAV was saved
                             if wav_saved {
+                                let stt_model = tm.get_current_model();
+                                let stt_duration = Some(transcription_time.elapsed().as_millis() as i64);
                                 if let Err(err) = hm.save_entry(
                                     file_name,
                                     transcription,
                                     post_process,
                                     processed.post_processed_text.clone(),
                                     processed.post_process_prompt.clone(),
+                                    "stt".to_string(),
+                                    stt_model,
+                                    None,
+                                    stt_duration,
                                 ) {
                                     error!("Failed to save history entry: {}", err);
                                 }
@@ -691,10 +703,15 @@ impl ShortcutAction for TranscribeAction {
                             debug!("Global Shortcut Transcription error: {}", err);
                             // Save entry with empty text so user can retry
                             if wav_saved {
+                                let stt_model = tm.get_current_model();
                                 if let Err(save_err) = hm.save_entry(
                                     file_name,
                                     String::new(),
                                     post_process,
+                                    None,
+                                    None,
+                                    "stt".to_string(),
+                                    stt_model,
                                     None,
                                     None,
                                 ) {

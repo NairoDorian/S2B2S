@@ -16,6 +16,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   mls_1840, siwis, tom, upmc) at available quality levels.
 - **New app icon and logo** — icon for taskbar/titlebar/tray, logo for README
   and sidebar menu.
+- **History enhancements** — "Delete All" button for one-click history wipe;
+  STT/TTS type badges per entry; model name and transcription duration (ms)
+  displayed in each history entry. Database schema extended with `entry_type`,
+  `model_name`, `model_info`, and `duration_ms` columns.
 
 - **Speech output (TTS) subsystem** — the "Read Anywhere" / CopySpeak pillar:
   - `TtsBackend` engine abstraction with a warm, persistent **Piper** local
@@ -76,6 +80,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
   startup greeting plays at 0.9x speed.
 - **All platform icons regenerated** — taskbar, tray, and window icons from
   new icon source; tray state icons updated to 64x64.
+- **History entries now capture STT metadata** — model name and transcription
+  duration (ms) saved and displayed per entry.
 
 ### Fixed
 

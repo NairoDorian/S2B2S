@@ -157,6 +157,7 @@ export const commands = {
 	getHistoryEntries: (cursor: number | null, limit: number | null) => typedError<PaginatedHistory, string>(__TAURI_INVOKE("get_history_entries", { cursor, limit })),
 	toggleHistoryEntrySaved: (id: number) => typedError<null, string>(__TAURI_INVOKE("toggle_history_entry_saved", { id })),
 	getAudioFilePath: (fileName: string) => typedError<string, string>(__TAURI_INVOKE("get_audio_file_path", { fileName })),
+	deleteAllHistoryEntries: () => typedError<number, string>(__TAURI_INVOKE("delete_all_history_entries")),
 	deleteHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("delete_history_entry", { id })),
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
@@ -341,6 +342,10 @@ export type HistoryEntry = {
 	post_processed_text: string | null,
 	post_process_prompt: string | null,
 	post_process_requested: boolean,
+	entry_type: string,
+	model_name: string | null,
+	model_info: string | null,
+	duration_ms: number,
 };
 
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number };
