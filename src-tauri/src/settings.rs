@@ -573,7 +573,7 @@ impl Default for BrainConfig {
         }
         Self {
             enabled: false,
-            provider_id: "custom".to_string(), // Default to custom (which points to local Ollama)
+            provider_id: "llama_cpp".to_string(), // Default to Llama.cpp (Gemma-4 + MTP)
             providers,
             api_keys: SecretMap(api_keys),
             models,
@@ -1097,6 +1097,16 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         supports_structured_output: true,
     });
 
+    // Llama.cpp (Local) provider
+    providers.push(PostProcessProvider {
+        id: "llama_cpp".to_string(),
+        label: "Llama.cpp (Local)".to_string(),
+        base_url: "http://localhost:8001/v1".to_string(),
+        allow_base_url_edit: true,
+        models_endpoint: Some("/models".to_string()),
+        supports_structured_output: true,
+    });
+
     // Custom provider always comes last
     providers.push(PostProcessProvider {
         id: "custom".to_string(),
@@ -1121,6 +1131,9 @@ fn default_post_process_api_keys() -> SecretMap {
 fn default_model_for_provider(provider_id: &str) -> String {
     if provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string();
+    }
+    if provider_id == "llama_cpp" {
+        return "unsloth/gemma-4-e2b-it-qat-GGUF".to_string();
     }
     String::new()
 }
@@ -1168,7 +1181,7 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
-                if existing.base_url != provider.base_url && existing.id != "custom" {
+                if existing.base_url != provider.base_url && existing.id != "custom" && existing.id != "llama_cpp" {
                     existing.base_url = provider.base_url.clone();
                     changed = true;
                 }
@@ -1216,7 +1229,7 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
-                if existing.base_url != provider.base_url && existing.id != "custom" {
+                if existing.base_url != provider.base_url && existing.id != "custom" && existing.id != "llama_cpp" {
                     existing.base_url = provider.base_url.clone();
                     changed = true;
                 }

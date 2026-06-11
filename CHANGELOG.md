@@ -7,7 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Code quality pass — refactoring, type safety, i18n completion, and documentation sync.
+> **Status (June 2026):** Local llama.cpp integration completed, followed by code quality pass — refactoring, type safety, i18n completion, and documentation sync.
+
+### llama.cpp Server Integration (Local Gemma-4 UD-Q4_K_XL Engine)
+
+- **Local LLM Execution Engine** — Integrated the official `llama.cpp` server (`llama-server`) as the default local LLM Brain and post-processing provider, targeting the `unsloth/gemma-4-E2B-it-qat-GGUF` model suite.
+- **CMake Build Pipeline** — Configured `build.rs` to automatically clone, pull, and compile `llama-server` (and only `llama-server`) with CMake, with support for `-DGGML_CUDA=ON` and automatic fallback to CPU `-DGGML_CUDA=OFF`.
+- **Build Speed and Dev Watcher Optimization** — Optimized `build.rs` to skip `llama.cpp` compilation if `llama-server` is already present in the resources directory. Added `src-tauri/.taurignore` to ignore resources and `vite.config.ts` to ignore `llama.cpp/` to prevent Tauri dev rebuild loops.
+- **Tauri Subprocess Management** — Implemented background downloader in `llama_manager.rs` to fetch model files sequentially from Hugging Face into `models/llama_cpp/` with download speed and percentage reporting. Managed the background `llama-server` lifecycle, starting it with Multi-Token Prediction (MTP) and vision projector support, and terminating it gracefully on exit.
+- **Premium Setup & Download UI** — Designed and integrated premium download panels and status cards into `BrainSettings.tsx` and `PostProcessingSettings.tsx` to handle download progress, speeds, and server configurations smoothly.
+
 
 ### Refactoring & Code Quality
 

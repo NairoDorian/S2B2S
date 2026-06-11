@@ -18,11 +18,102 @@ import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
 import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { useBrainProviderState } from "./useBrainProviderState";
+import { useLlamaState } from "../../../hooks/useLlamaState";
+
+const LlamaDownloadPanel: React.FC<{
+  llamaState: ReturnType<typeof useLlamaState>;
+}> = ({ llamaState }) => {
+  return (
+    <div className="p-5 rounded-lg border border-logo-primary/20 bg-gradient-to-br from-logo-primary/5 via-logo-primary/[0.02] to-transparent backdrop-blur-sm space-y-4">
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold text-text flex items-center gap-2">
+            Local Gemma-4 Engine (Llama.cpp)
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              Setup Required
+            </span>
+          </h4>
+          <p className="text-xs text-mid-gray max-w-xl">
+            To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine.
+            We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).
+          </p>
+        </div>
+      </div>
+
+      {llamaState.error && (
+        <Alert variant="error" contained>
+          {llamaState.error}
+        </Alert>
+      )}
+
+      {llamaState.isDownloading ? (
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs font-medium text-mid-gray">
+            <span className="truncate max-w-[280px]">
+              {llamaState.currentFile ? `Downloading ${llamaState.currentFile}...` : "Downloading models..."}
+            </span>
+            <span className="flex gap-2">
+              <span>{llamaState.downloadSpeed.toFixed(1)} MB/s</span>
+              <span className="text-logo-primary font-semibold">{llamaState.downloadProgress.toFixed(1)}%</span>
+            </span>
+          </div>
+          <div className="w-full bg-black/40 rounded-full h-2 overflow-hidden border border-white/5 relative">
+            <div
+              className="bg-gradient-to-r from-logo-primary via-purple-500 to-indigo-500 h-full rounded-full transition-all duration-300 ease-out shadow-[0_0_8px_rgba(168,85,247,0.5)]"
+              style={{ width: `${llamaState.downloadProgress}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <Button
+          variant="primary"
+          onClick={() => void llamaState.startDownload()}
+          className="w-full justify-center py-2.5 font-medium shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_16px_rgba(168,85,247,0.25)] transition-all"
+        >
+          Download Gemma-4 Local Suite (~2.2 GB)
+        </Button>
+      )}
+    </div>
+  );
+};
+
+const LlamaStatusCard: React.FC = () => {
+  return (
+    <div className="p-4 rounded-lg border border-green-500/10 bg-green-500/[0.02] backdrop-blur-sm grid grid-cols-2 gap-3 text-xs">
+      <div className="col-span-2 border-b border-white/5 pb-2 mb-1 flex items-center justify-between">
+        <span className="font-semibold text-text flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          Local Gemma-4 Engine
+        </span>
+        <span className="text-[10px] px-2 py-0.5 bg-green-500/15 text-green-400 font-bold rounded">
+          ACTIVE
+        </span>
+      </div>
+      <div>
+        <span className="text-mid-gray block">Model</span>
+        <span className="font-medium text-text">Gemma-4-E2B-it-qat (UD-Q4_K_XL)</span>
+      </div>
+      <div>
+        <span className="text-mid-gray block">MTP Acceleration</span>
+        <span className="font-medium text-text">Enabled (2 tokens/step)</span>
+      </div>
+      <div>
+        <span className="text-mid-gray block">Vision Component</span>
+        <span className="font-medium text-text">Enabled (mmproj-F16)</span>
+      </div>
+      <div>
+        <span className="text-mid-gray block">Execution Engine</span>
+        <span className="font-medium text-text">llama-server (Flash Attention)</span>
+      </div>
+    </div>
+  );
+};
 
 export const BrainSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
   const state = useBrainProviderState();
+  const llamaState = useLlamaState();
   const [testState, setTestState] = useState<
     "idle" | "running" | "ok" | "error"
   >("idle");
@@ -81,7 +172,43 @@ export const BrainSettings: React.FC = () => {
           </div>
         </SettingContainer>
 
-        {state.isAppleProvider ? (
+        {state.selectedProviderId === "llama_cpp" ? (
+          <div className="space-y-4 pt-2">
+            {!llamaState.isDownloaded || llamaState.isDownloading ? (
+              <LlamaDownloadPanel llamaState={llamaState} />
+            ) : (
+              <>
+                <SettingContainer
+                  title={t("settings.postProcessing.api.baseUrl.title")}
+                  description={t("settings.postProcessing.api.baseUrl.description")}
+                  descriptionMode="tooltip"
+                  layout="horizontal"
+                  grouped={true}
+                >
+                  <div className="flex items-center gap-2">
+                    <BaseUrlField
+                      value={state.baseUrl}
+                      onBlur={state.handleBaseUrlChange}
+                      placeholder={t("settings.postProcessing.api.baseUrl.placeholder")}
+                      disabled={state.isBaseUrlUpdating}
+                      className="min-w-[380px]"
+                    />
+                  </div>
+                </SettingContainer>
+
+                <SettingContainer
+                  title="Engine Status"
+                  description="Status and properties of the active local llama.cpp server."
+                  descriptionMode="tooltip"
+                  layout="stacked"
+                  grouped={true}
+                >
+                  <LlamaStatusCard />
+                </SettingContainer>
+              </>
+            )}
+          </div>
+        ) : state.isAppleProvider ? (
           state.appleIntelligenceUnavailable ? (
             <Alert variant="error" contained>
               {t("settings.postProcessing.api.appleIntelligence.unavailable")}
@@ -132,53 +259,53 @@ export const BrainSettings: React.FC = () => {
                 />
               </div>
             </SettingContainer>
-          </>
-        )}
 
-        {!state.isAppleProvider && (
-          <SettingContainer
-            title={t("settings.postProcessing.api.model.title")}
-            description={
-              state.isCustomProvider
-                ? t("settings.postProcessing.api.model.descriptionCustom")
-                : t("settings.postProcessing.api.model.descriptionDefault")
-            }
-            descriptionMode="tooltip"
-            layout="stacked"
-            grouped={true}
-          >
-            <div className="flex items-center gap-2">
-              <ModelSelect
-                value={state.model}
-                options={state.modelOptions}
-                disabled={state.isModelUpdating}
-                isLoading={state.isFetchingModels}
-                placeholder={
-                  state.modelOptions.length > 0
-                    ? t(
-                        "settings.postProcessing.api.model.placeholderWithOptions",
-                      )
-                    : t(
-                        "settings.postProcessing.api.model.placeholderNoOptions",
-                      )
+            {!state.isAppleProvider && (
+              <SettingContainer
+                title={t("settings.postProcessing.api.model.title")}
+                description={
+                  state.isCustomProvider
+                    ? t("settings.postProcessing.api.model.descriptionCustom")
+                    : t("settings.postProcessing.api.model.descriptionDefault")
                 }
-                onSelect={state.handleModelSelect}
-                onCreate={state.handleModelCreate}
-                onBlur={() => {}}
-                className="flex-1 min-w-[380px]"
-              />
-              <ResetButton
-                onClick={state.handleRefreshModels}
-                disabled={state.isFetchingModels}
-                ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
-                className="flex h-10 w-10 items-center justify-center"
+                descriptionMode="tooltip"
+                layout="stacked"
+                grouped={true}
               >
-                <RefreshCcw
-                  className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
-                />
-              </ResetButton>
-            </div>
-          </SettingContainer>
+                <div className="flex items-center gap-2">
+                  <ModelSelect
+                    value={state.model}
+                    options={state.modelOptions}
+                    disabled={state.isModelUpdating}
+                    isLoading={state.isFetchingModels}
+                    placeholder={
+                      state.modelOptions.length > 0
+                        ? t(
+                            "settings.postProcessing.api.model.placeholderWithOptions",
+                          )
+                        : t(
+                            "settings.postProcessing.api.model.placeholderNoOptions",
+                          )
+                    }
+                    onSelect={state.handleModelSelect}
+                    onCreate={state.handleModelCreate}
+                    onBlur={() => {}}
+                    className="flex-1 min-w-[380px]"
+                  />
+                  <ResetButton
+                    onClick={state.handleRefreshModels}
+                    disabled={state.isFetchingModels}
+                    ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
+                    className="flex h-10 w-10 items-center justify-center"
+                  >
+                    <RefreshCcw
+                      className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
+                    />
+                  </ResetButton>
+                </div>
+              </SettingContainer>
+            )}
+          </>
         )}
       </SettingsGroup>
 

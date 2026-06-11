@@ -852,7 +852,7 @@ pub fn change_post_process_base_url_setting(
         .post_process_provider_mut(&provider_id)
         .expect("Provider looked up above must exist");
 
-    if provider.id != "custom" {
+    if !provider.allow_base_url_edit {
         return Err(format!(
             "Provider '{}' does not allow editing the base URL",
             label
@@ -1028,11 +1028,17 @@ pub async fn fetch_post_process_models(
         .unwrap_or_default();
 
     // Skip fetching if no API key for providers that typically need one
-    if api_key.trim().is_empty() && provider.id != "custom" {
+    if api_key.trim().is_empty() && provider.id != "custom" && provider.id != "llama_cpp" {
         return Err(format!(
             "API key is required for {}. Please add an API key to list available models.",
             provider.label
         ));
+    }
+
+    if provider_id == "llama_cpp" {
+        if let Some(llama_manager) = app.try_state::<std::sync::Arc<crate::brain::llama_manager::LlamaManager>>() {
+            llama_manager.ensure_server_running().await?;
+        }
     }
 
     crate::llm_client::fetch_models(provider, api_key).await
