@@ -167,14 +167,14 @@
 │  │  │  │ │ │ labs ││ │  │  └ manager.rs│  │  │  control_server.rs     │  │   │   │
 │  │  │  │ │ └ cart-││ │  └──────────────┘  │  │  crash_logging.rs      │  │   │   │
 │  │  │  │ │  esia  ││ │                     │  │  portable.rs           │  │   │   │
-│  │  │  │ ├ san-   ││ │  ┌──────────────┐  │  └───────────────────────┘  │   │   │
-│  │  │  │ │ itize/ ││ │  │  llm_client  │  │                             │   │   │
-│  │  │  │ │ ├ itn  ││ │  │  .rs         │  │  ┌───────────────────────┐  │   │   │
-│  │  │  │ │ ├ tn   ││ │  └──────────────┘  │  │  cli.rs               │  │   │   │
-│  │  │  │ │ ├ mark-││ │                     │  │  signal_handle.rs     │  │   │   │
-│  │  │  │ │ │ down ││ │  ┌──────────────┐  │  │  actions.rs           │  │   │   │
-│  │  │  │ │ └ clea-││ │  │transcription_│  │  │  utils.rs             │  │   │   │
-│  │  │  │ │  nup   ││ │  │coordinator.rs│  │  └───────────────────────┘  │   │   │
+ │  │  │  │ ├ san-   ││ │  ┌──────────────┐  │  │  active_app.rs        │  │   │   │
+│  │  │  │ │ itize/ ││ │  │  llm_client  │  │  │  apple_intelligence    │  │   │   │
+│  │  │  │ │ ├ itn  ││ │  │  .rs         │  │  │  .rs                  │  │   │   │
+│  │  │  │ │ ├ tn   ││ │  └──────────────┘  │  │  wake_word.rs          │  │   │   │
+│  │  │  │ │ ├ mark-││ │                     │  │  cli.rs               │  │   │   │
+│  │  │  │ │ │ down ││ │  ┌──────────────┐  │  │  signal_handle.rs     │  │   │   │
+│  │  │  │ │ └ clea-││ │  │transcription_│  │  │  actions.rs           │  │   │   │
+│  │  │  │ │  nup   ││ │  │coordinator.rs│  │  │  utils.rs             │  │   │   │
 │  │  │  │ ├ mana-  ││ │  └──────────────┘  │                             │   │   │
 │  │  │  │ │ ger.rs ││ │                     │                             │   │   │
 │  │  │  │ ├ player ││ │                     │                             │   │   │
@@ -842,31 +842,57 @@ The ModelManager handles:
 ### UI Components
 
 ```
-src/components/
-├── conversation/           # Conversation mode UI
-│   ├── ConversationView.tsx
-│   ├── MessageBubble.tsx
-│   └── ...
-├── settings/               # Settings panels
-│   ├── GeneralSettings.tsx
-│   ├── SoundSettings.tsx
-│   ├── ShortcutSettings.tsx
-│   ├── ModelSettings.tsx
-│   ├── TtsSettings.tsx
-│   ├── BrainSettings.tsx
-│   ├── AdvancedSettings.tsx
-│   └── AudioEnhancements.tsx
-├── model-selector/         # Model management UI
-├── onboarding/             # First-run experience
-├── overlay/                # Recording overlay UI
-├── update-checker/         # Update notifications
-├── shared/                 # Shared components
-├── ui/                     # UI primitives (buttons, sliders, etc.)
-├── icons/                  # SVG icon components
-├── footer/                 # Status footer
-├── Sidebar.tsx             # Navigation sidebar
-├── HerLoading.tsx          # 3D loading animation
-└── AccessibilityPermissions.tsx
+src/
+├── components/             # React UI components
+│   ├── conversation/       # Conversation mode UI
+│   │   └── ConversationView.tsx
+│   ├── settings/           # ~45 components across 10 subdirs
+│   │   ├── about/          # About page (version, credits)
+│   │   ├── advanced/       # Audio enhancements, long audio
+│   │   ├── brain/          # Brain/LLM settings
+│   │   ├── debug/          # Log viewer, path display
+│   │   ├── general/        # General settings
+│   │   ├── history/        # History panel (infinite scroll)
+│   │   ├── models/         # Model management
+│   │   ├── post-processing/# PP settings
+│   │   ├── PostProcessingSettingsApi/  # API config
+│   │   ├── speech/         # TTS settings
+│   │   └── *Settings.tsx   # ~30 individual setting components
+│   ├── model-selector/     # Model management UI
+│   ├── onboarding/         # First-run (Onboarding, ModelCard, Access)
+│   ├── update-checker/     # Update notifications
+│   ├── shared/             # Shared components (ProgressBar)
+│   ├── ui/                 # 17 UI primitives (Button, Input, Select, etc.)
+│   ├── icons/              # 6 SVG icon components
+│   ├── footer/             # Footer bar (Brain, TTS, STT, GPU VRAM)
+│   ├── Sidebar.tsx         # Navigation sidebar
+│   ├── HerLoading.tsx      # 3D loading animation
+│   └── AccessibilityPermissions.tsx
+├── overlay/                # Recording overlay window (separate entry)
+│   ├── main.tsx
+│   ├── RecordingOverlay.tsx
+│   └── RecordingOverlay.css
+│
+├── hooks/                  # React hooks
+│   ├── useSettings.ts      # Settings state hook
+│   ├── useOsType.ts        # OS detection hook
+│   └── useProviderState.ts # Shared provider state hook
+│
+├── stores/                 # Zustand state stores
+│   ├── settingsStore.ts    # Application settings
+│   └── modelStore.ts       # Model lifecycle state
+│
+├── i18n/                   # Internationalization (20 languages)
+│   ├── index.ts
+│   ├── languages.ts
+│   └── locales/{lang}/translation.json
+│
+├── lib/                    # Utilities and types
+│   ├── constants/languages.ts
+│   ├── types/events.ts
+│   └── utils/ (rtl, keyboard, format, modelTranslation)
+│
+└── utils/dateFormat.ts     # Date formatting utilities
 ```
 
 ### Theme
@@ -985,7 +1011,7 @@ A `flake.nix` provides reproducible builds on Linux (NixOS):
 | Tauri skeleton, managers, audio_toolkit          | Handy                      | Core architecture         |
 | Streaming STT, profiles, RNNoise, keyring        | AIVORelay                  | Infrastructure            |
 | Gemini STT, long-audio routing, crash logging    | Parler                     | Ported features           |
-| Kokoro TTS, crossfade, pulldown-cmark            | Parrot                     | Core TTS engine           |
+| Kokoro TTS, crossfade, markdown stripping (regex) | Parrot                     | Core TTS engine           |
 | TtsBackend trait, Piper server, double-copy, HUD | CopySpeak                  | TTS product patterns      |
 | ITN/TN (text-processing-rs)                      | FluidInference             | Text normalization        |
 | Provider matrix, transformations concept         | Whispering **AGPL**        | Concept only — no code    |
@@ -1005,58 +1031,82 @@ A `flake.nix` provides reproducible builds on Linux (NixOS):
 
 ### Rust Dependencies (Key Crates)
 
-| Crate                  | Version | Purpose             | License    |
-| ---------------------- | ------- | ------------------- | ---------- |
-| `tauri`                | 2.x     | Desktop framework   | MIT/Apache |
-| `tauri-specta`         | rc      | Typed IPC           | MIT        |
-| `transcribe-rs`        | 0.3.11  | STT inference       | MIT        |
-| `cpal`                 | 0.17    | Audio I/O           | MIT/Apache |
-| `rodio`                | 0.22    | Audio playback      | MIT        |
-| `rubato`               | 3.0     | Audio resampling    | MIT        |
-| `nnnoiseless`          | 0.5.2   | RNNoise             | MIT/Apache |
-| `vad-rs`               | —       | Silero VAD          | MIT        |
-| `rdev`                 | —       | Global shortcuts    | MIT        |
-| `reqwest`              | 0.13    | HTTP client         | MIT/Apache |
-| `rusqlite`             | 0.40    | SQLite              | MIT        |
-| `text-processing-rs`   | 0.2.2   | ITN/TN              | Apache 2.0 |
-| regex                  | 1.12    | Markdown stripping  | MIT/Apache |
-| `tts-rs`               | —       | Kokoro TTS          | MIT        |
-| `enigo`                | —       | Keyboard simulation | MIT        |
-| `serde` + `serde_json` | —       | Serialization       | MIT        |
-| `tokio`                | 1       | Async runtime       | MIT        |
-| `tower-http`           | —       | HTTP middleware     | MIT        |
-| `axum`                 | —       | HTTP server         | MIT        |
-| `windows`              | 0.62    | Win32 API           | MIT        |
-| `tray-icon`            | —       | System tray         | MIT        |
-| `image-png`            | —       | PNG icons           | MIT        |
-| `thiserror`            | —       | Error derive        | MIT        |
-| `anyhow`               | —       | Error handling      | MIT        |
-| `log` + `env_logger`   | —       | Logging             | MIT        |
-| `parking_lot`          | —       | Fast mutexes        | MIT/Apache |
-| `dashmap`              | —       | Concurrent map      | MIT        |
-| `strsim`               | —       | String similarity   | MIT        |
-| `natural`              | —       | NLP utilities       | MIT        |
+| Crate                         | Version | Purpose                   | License    |
+| ----------------------------- | ------- | ------------------------- | ---------- |
+| `tauri` (+ tray-icon, image)  | 2.11    | Desktop framework + tray  | MIT/Apache |
+| `tauri-specta` / `specta`     | rc.25   | Typed IPC                 | MIT        |
+| `transcribe-rs`               | 0.3.11  | STT inference (Parakeet)  | MIT        |
+| `cpal`                        | 0.17    | Audio I/O                 | MIT/Apache |
+| `rodio`                       | 0.22    | Audio playback            | MIT        |
+| `rubato`                      | 3.0     | Audio resampling          | MIT        |
+| `nnnoiseless`                 | 0.5.2   | RNNoise noise suppression | MIT/Apache |
+| `vad-rs`                      | —       | Silero VAD                | MIT        |
+| `rdev`                        | —       | Global shortcuts          | MIT        |
+| `reqwest`                     | 0.13    | HTTP client               | MIT/Apache |
+| `rusqlite` + `rusqlite_migration` | 0.40 | SQLite + migrations       | MIT        |
+| `text-processing-rs`          | 0.2.2   | ITN/TN normalization      | Apache 2.0 |
+| `regex`                       | 1.12    | Markdown stripping        | MIT/Apache |
+| `enigo`                       | 0.6     | Keyboard simulation       | MIT        |
+| `serde` + `serde_json`        | 1.0     | Serialization             | MIT        |
+| `tokio`                       | 1.52    | Async runtime             | MIT        |
+| `windows`                     | 0.62    | Win32 API (Win only)      | MIT        |
+| `anyhow`                      | 1.0     | Error handling            | MIT        |
+| `log` + `env_filter`          | 0.4/1.0 | Logging                   | MIT        |
+| `strsim`                      | 0.11    | String similarity         | MIT        |
+| `natural`                     | 0.5     | NLP utilities             | MIT        |
+| `chrono`                      | 0.4     | Date/time handling        | MIT/Apache |
+| `hound`                       | 3.5     | WAV audio I/O             | MIT        |
+| `flate2` + `tar`              | 1.1/0.4 | GZIP archive extraction   | MIT/Apache |
+| `sha2`                        | 0.11    | SHA-256 model verification | MIT        |
+| `rustfft`                     | 6.4     | FFT-based visualization   | MIT        |
+| `ferrous-opencc`              | 0.4     | Chinese text conversion   | MIT        |
+| `clap`                        | 4.6     | CLI argument parsing      | MIT/Apache |
+| `handy-keys`                  | 0.2     | Keyboard key maps         | MIT        |
+| `audioadapter` (+ buffers)    | 3.0     | Audio buffer utilities    | MIT        |
+| `once_cell`                   | 1.21    | Lazy statics              | MIT        |
+| `futures-util`                | 0.3     | Async stream utilities    | MIT/Apache |
+
+**Tauri Plugin Suite** (14 plugins, all MIT):
+
+| Plugin                        | Purpose                               |
+| ----------------------------- | ------------------------------------- |
+| `tauri-plugin-log`            | Rust log forwarding to frontend       |
+| `tauri-plugin-store`          | Settings persistence                  |
+| `tauri-plugin-opener`         | Open URLs/files                      |
+| `tauri-plugin-os`             | OS type detection                     |
+| `tauri-plugin-clipboard-manager` | Clipboard read/write              |
+| `tauri-plugin-dialog`         | Native file dialogs                   |
+| `tauri-plugin-fs`             | Filesystem access                     |
+| `tauri-plugin-process`        | Process management                    |
+| `tauri-plugin-global-shortcut`| Tauri-managed global shortcuts        |
+| `tauri-plugin-autostart`      | Launch on login (Unix)               |
+| `tauri-plugin-single-instance`| Single-instance enforcement           |
+| `tauri-plugin-updater`        | App update mechanism                  |
+| `tauri-plugin-macos-permissions` | macOS permission APIs (macOS only) |
+| `tauri-nspanel`               | macOS panel window support (macOS)    |
 
 ### JavaScript/TypeScript Dependencies (Key)
 
-| Package         | Version | Purpose              | License    |
-| --------------- | ------- | -------------------- | ---------- |
-| `react`         | 19      | UI framework         | MIT        |
-| `react-dom`     | 19      | DOM rendering        | MIT        |
-| `i18next`       | 26      | Internationalization | MIT        |
-| `react-i18next` | 17      | React i18n binding   | MIT        |
-| `zustand`       | 5       | State management     | MIT        |
-| `zod`           | 4       | Schema validation    | MIT        |
-| `three`         | 0.184   | 3D graphics          | MIT        |
-| `tailwindcss`   | 4       | CSS framework        | MIT        |
-| `lucide-react`  | 1       | Icons                | ISC        |
-| `sonner`        | 2       | Toasts               | MIT        |
-| `immer`         | 11      | Immutable state      | MIT        |
-| `vite`          | 8       | Build tool           | MIT        |
-| `typescript`    | 6       | TypeScript           | Apache 2.0 |
-| `eslint`        | 10      | Linting              | MIT        |
-| `prettier`      | 3       | Formatting           | MIT        |
-| `playwright`    | 1.60    | E2E testing          | Apache 2.0 |
+| Package                     | Version | Purpose              | License    |
+| --------------------------- | ------- | -------------------- | ---------- |
+| `@tauri-apps/api`           | 2.11    | Tauri frontend API   | MIT        |
+| `react` / `react-dom`       | 19      | UI framework         | MIT        |
+| `i18next` / `react-i18next` | 26/17   | Internationalization | MIT        |
+| `zustand`                   | 5       | State management     | MIT        |
+| `zod`                       | 4       | Schema validation    | MIT        |
+| `three`                     | 0.184   | 3D graphics          | MIT        |
+| `tailwindcss` / `@tailwindcss/vite` | 4 | CSS framework   | MIT        |
+| `lucide-react`              | 1       | Icons                | ISC        |
+| `sonner`                    | 2       | Toasts               | MIT        |
+| `immer`                     | 11      | Immutable state      | MIT        |
+| `react-select`              | 5       | Enhanced dropdowns   | MIT        |
+| `vite`                      | 8       | Build tool           | MIT        |
+| `typescript`                | 6       | TypeScript           | Apache 2.0 |
+| `eslint`                    | 10      | Linting              | MIT        |
+| `prettier`                  | 3       | Formatting           | MIT        |
+| `playwright`                | 1.60    | E2E testing          | Apache 2.0 |
+
+**Tauri Plugin JS Bindings:** `@tauri-apps/plugin-{autostart,clipboard-manager,dialog,fs,global-shortcut,opener,os,process,sql,store,updater}` plus `tauri-plugin-macos-permissions-api`.
 
 ---
 
@@ -1076,9 +1126,16 @@ S2B2S/
 ├── 📄 CLAUDE.md                  # AI entry point
 ├── 📄 LICENSE                    # MIT
 ├── 📄 package.json               # JS deps & scripts
+├── 📄 index.html                 # HTML entry point
 ├── 📄 vite.config.ts             # Vite configuration
 ├── 📄 tailwind.config.js         # Tailwind CSS
 ├── 📄 tsconfig.json              # TypeScript config
+├── 📄 tsconfig.node.json         # Node TypeScript config
+├── 📄 eslint.config.js           # ESLint flat config
+├── 📄 playwright.config.ts       # E2E test config
+├── 📄 .gitignore                 # Git ignore
+├── 📄 .prettierrc / .prettierignore  # Prettier config
+├── 📄 flake.nix / flake.lock     # Nix flake (Linux builds)
 │
 ├── 📁 src/                       # Frontend (React/TypeScript)
 │   ├── 📄 App.tsx                # Main app component
@@ -1102,10 +1159,13 @@ S2B2S/
 │   │   └── 📄 AccessibilityPermissions.tsx
 │   │
 │   ├── 📁 hooks/                 # React hooks
-│   │   └── 📄 useSettings.ts     # Settings hook
+│   │   ├── 📄 useSettings.ts     # Settings state hook
+│   │   ├── 📄 useOsType.ts       # OS detection hook
+│   │   └── 📄 useProviderState.ts # Shared provider state hook
 │   │
 │   ├── 📁 stores/                # Zustand stores
-│   │   └── 📄 settingsStore.ts   # Settings state
+│   │   ├── 📄 settingsStore.ts   # App settings (785 lines)
+│   │   └── 📄 modelStore.ts      # Model lifecycle state
 │   │
 │   ├── 📁 i18n/                  # Internationalization
 │   │   ├── 📄 index.ts           # i18n setup
@@ -1116,13 +1176,28 @@ S2B2S/
 │   │       └── ...
 │   │
 │   ├── 📁 lib/                   # Utilities & types
-│   │   ├── 📄 types.ts
+│   │   ├── 📁 constants/
+│   │   │   └── 📄 languages.ts  # STT language constants
 │   │   ├── 📁 types/
+│   │   │   └── 📄 events.ts     # Tauri event type defs
 │   │   └── 📁 utils/
+│   │       ├── 📄 rtl.ts        # RTL text direction
+│   │       ├── 📄 keyboard.ts   # Keyboard event normalization
+│   │       ├── 📄 format.ts     # Model size formatting
+│   │       └── 📄 modelTranslation.ts  # Model name i18n
 │   │
-│   ├── 📁 overlay/               # Overlay window entry
+│   ├── 📁 overlay/               # Overlay window (separate entry)
+│   │   ├── 📄 main.tsx           # Overlay entry point
+│   │   ├── 📄 index.html         # Overlay HTML
+│   │   ├── 📄 RecordingOverlay.tsx # Recording/speaking overlay
+│   │   └── 📄 RecordingOverlay.css # Overlay styles
+│   │
 │   ├── 📁 assets/                # Static assets
-│   └── 📁 utils/                 # Frontend utilities
+│   │   ├── 📄 logo.png           # App logo
+│   │   └── 📄 icon.png           # App icon
+│   │
+│   └── 📁 utils/
+│       └── 📄 dateFormat.ts     # Date formatting utilities
 │
 ├── 📁 src-tauri/                 # Backend (Rust)
 │   ├── 📁 src/                   # Rust source code
@@ -1148,65 +1223,97 @@ S2B2S/
 │   │   ├── 📄 apple_intelligence.rs  # macOS Apple Intel.
 │   │   │
 │   │   ├── 📁 managers/          # Core business logic
-│   │   │   ├── 📄 audio.rs       # Audio recording
-│   │   │   ├── 📄 model.rs       # Model management
-│   │   │   ├── 📄 transcription.rs  # STT pipeline
-│   │   │   └── 📄 history.rs     # SQLite history
+│   │   │   ├── 📄 mod.rs         # Module declarations
+│   │   │   ├── 📄 audio.rs       # Audio recording, device mgmt
+│   │   │   ├── 📄 model.rs       # Model download, verification
+│   │   │   ├── 📄 transcription.rs  # STT pipeline (886 lines)
+│   │   │   ├── 📄 transcription_mock.rs  # CI mock
+│   │   │   ├── 📄 history.rs     # SQLite persistence
+│   │   │   └── 📄 continuous_voice.rs  # Voice mode mgmt
 │   │   │
 │   │   ├── 📁 tts/               # TTS subsystem
-│   │   │   ├── 📄 mod.rs         # TtsBackend trait
-│   │   │   ├── 📄 manager.rs     # Orchestration
-│   │   │   ├── 📄 player.rs      # Audio playback
-│   │   │   ├── 📄 pagination.rs  # Text chunking
-│   │   │   ├── 📄 fragment_queue.rs  # Pre-synth queue
-│   │   │   ├── 📄 clipboard_watch.rs  # Double-copy
-│   │   │   ├── 📁 backends/      # Engine implementations
-│   │   │   │   ├── 📄 piper.rs
-│   │   │   │   ├── 📄 kokoro.rs
-│   │   │   │   ├── 📄 kitten.rs
-│   │   │   │   ├── 📄 sapi.rs
-│   │   │   │   ├── 📄 openai.rs
-│   │   │   │   ├── 📄 elevenlabs.rs
-│   │   │   │   └── 📄 cartesia.rs
-│   │   │   └── 📁 sanitize/      # Text normalization
+│   │   │   ├── 📄 mod.rs         # TtsBackend trait + Voice
+│   │   │   ├── 📄 manager.rs     # Sanitize→Paginate→Synthesize
+│   │   │   ├── 📄 player.rs      # Streaming gapless playback
+│   │   │   ├── 📄 pagination.rs  # UTF-8-safe text chunking
+│   │   │   ├── 📄 fragment_queue.rs  # Pre-synth queue (unused)
+│   │   │   ├── 📄 clipboard_watch.rs  # Double-copy trigger
+│   │   │   ├── 📄 audio_format.rs # WAV→MP3/OGG/FLAC conversion
+│   │   │   ├── 📄 telemetry.rs   # TTS perf (chars_per_ms)
+│   │   │   ├── 📄 status.rs      # Engine status reporting
+│   │   │   ├── 📁 backends/      # 7 engine implementations
+│   │   │   │   ├── 📄 piper.rs        # Piper HTTP client
+│   │   │   │   ├── 📄 piper_server.rs # Piper server lifecycle
+│   │   │   │   ├── 📄 kokoro.rs       # Kokoro-82M ONNX TTS
+│   │   │   │   ├── 📄 kitten.rs       # Kitten TTS (skeleton)
+│   │   │   │   ├── 📄 sapi.rs         # Windows SAPI
+│   │   │   │   ├── 📄 openai.rs       # OpenAI TTS cloud
+│   │   │   │   ├── 📄 elevenlabs.rs   # ElevenLabs TTS cloud
+│   │   │   │   └── 📄 cartesia.rs     # Cartesia Sonic cloud
+│   │   │   └── 📁 sanitize/      # 5-stage text normalization
 │   │   │       ├── 📄 mod.rs     # Pipeline orchestrator
-│   │   │       ├── 📄 itn.rs     # ITN wrapper
-│   │   │       ├── 📄 tn.rs      # TN wrapper
-│   │   │   ├── 📄 markdown.rs # regex stripping
-│   │   │       └── 📄 cleanup.rs # Regex scrub
+│   │   │       ├── 📄 itn.rs     # Inverse Text Normalization
+│   │   │       ├── 📄 tn.rs      # Text Normalization
+│   │   │       ├── 📄 markdown.rs # Regex markdown stripping
+│   │   │       ├── 📄 tts_normalize.rs  # Legacy rules
+│   │   │       └── 📄 cleanup.rs # Final regex scrub
 │   │   │
 │   │   ├── 📁 brain/             # LLM subsystem
-│   │   │   ├── 📄 client.rs      # SSE streaming
-│   │   │   └── 📄 manager.rs     # Turn history
+│   │   │   ├── 📄 mod.rs         # Module declarations
+│   │   │   ├── 📄 client.rs      # SSE streaming client
+│   │   │   └── 📄 manager.rs     # Turn history, barge-in
 │   │   │
 │   │   ├── 📁 audio_toolkit/     # Audio processing
+│   │   │   ├── 📄 mod.rs         # Module declarations
+│   │   │   ├── 📄 constants.rs   # Sample rates, frame sizes
+│   │   │   ├── 📄 text.rs        # Text processing utils
 │   │   │   ├── 📁 audio/
-│   │   │   │   ├── 📄 device.rs
-│   │   │   │   ├── 📄 recorder.rs
-│   │   │   │   ├── 📄 resampler.rs
-│   │   │   │   ├── 📄 visualizer.rs
-│   │   │   │   ├── 📄 noise_suppression.rs
-│   │   │   │   └── 📄 utils.rs
-│   │   │   └── 📁 vad/
-│   │   │       ├── 📄 silero.rs
-│   │   │       ├── 📄 smoothed.rs
-│   │   │       └── 📄 triple_vad.rs
+│   │   │   │   ├── 📄 device.rs  # Device enumeration (cpal)
+│   │   │   │   ├── 📄 recorder.rs # Audio recording
+│   │   │   │   ├── 📄 resampler.rs # rubato resampling
+│   │   │   │   ├── 📄 visualizer.rs # rustfft FFT
+│   │   │   │   ├── 📄 noise_suppression.rs  # RNNoise
+│   │   │   │   └── 📄 utils.rs   # Audio utility functions
+│   │   │   └── 📁 vad/           # Voice Activity Detection
+│   │   │       ├── 📄 silero.rs  # Silero ONNX VAD
+│   │   │       ├── 📄 smoothed.rs # Smoothed VAD output
+│   │   │       └── 📄 triple_vad.rs  # RMS→RNNoise→Silero
+│   │   │   └── 📁 bin/
+│   │   │       └── 📄 cli.rs     # Audio toolkit CLI test
 │   │   │
-│   │   ├── 📁 commands/          # Tauri commands
-│   │   │   ├── 📄 mod.rs
-│   │   │   ├── 📄 tts.rs
-│   │   │   └── 📄 brain.rs
+│   │   ├── 📁 commands/          # 8 Tauri command modules
+│   │   │   ├── 📄 mod.rs         # Module declarations
+│   │   │   ├── 📄 audio.rs       # Audio device/recording cmds
+│   │   │   ├── 📄 brain.rs       # Brain/LLM commands
+│   │   │   ├── 📄 discovery.rs   # Ollama/LM Studio discovery
+│   │   │   ├── 📄 history.rs     # History CRUD commands
+│   │   │   ├── 📄 models.rs      # Model management cmds
+│   │   │   ├── 📄 transcription.rs  # STT pipeline cmds
+│   │   │   ├── 📄 tts.rs         # TTS engine commands
+│   │   │   └── 📄 wake_word.rs   # Wake word commands
 │   │   │
-│   │   ├── 📁 shortcut/          # Global shortcuts
-│   │   │   ├── 📄 mod.rs
-│   │   │   └── 📄 handy_keys.rs
+│   │   ├── 📁 shortcut/          # 4 modules for shortcuts
+│   │   │   ├── 📄 mod.rs         # Shortcut manager
+│   │   │   ├── 📄 handler.rs     # Shortcut event handler
+│   │   │   ├── 📄 key_listener.rs # Low-level key listener
+│   │   │   └── 📄 tauri_impl.rs  # Tauri plugin wrapper
 │   │   │
-│   │   └── 📁 helpers/           # Helpers
+│   │   ├── 📁 helpers/           # Helper utilities
+│   │   │   ├── 📄 mod.rs         # Module declarations
+│   │   │   └── 📄 clamshell.rs  # Clamshell mode detection
 │   │
-│   ├── 📄 Cargo.toml             # Rust dependencies
-│   ├── 📄 tauri.conf.json        # Tauri configuration
+│   ├── 📄 Cargo.toml             # Rust dependencies (60+ crates)
+│   ├── 📄 Cargo.lock             # Locked dependency versions
+│   ├── 📄 tauri.conf.json        # Tauri application config
+│   ├── 📁 capabilities/          # Tauri capability permissions
 │   ├── 📁 resources/             # Static resources
-│   │   └── 📁 models/            # VAD model, etc.
+│   │   ├── 📄 default_settings.json  # Platform defaults
+│   │   ├── 📁 models/            # VAD + Kokoro models
+│   │   ├── *.wav / *.png         # Sound effects, tray icons
+│   │   └── 📁 ...                # Platform-specific resources
+│   ├── 📁 icons/                 # Platform icon set
+│   ├── 📁 nsis/                  # NSIS installer script
+│   ├── 📁 gen/                   # Auto-generated schemas
 │   └── 📁 target/                # Build output (gitignored)
 │
 ├── 📁 models/                    # STT/TTS model files

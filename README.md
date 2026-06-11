@@ -18,6 +18,8 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 - [Platform Support](#platform-support)
 - [System Requirements](#system-requirements)
 - [Roadmap & Active Development](#roadmap--active-development)
+- [Debug Mode](#debug-mode)
+- [How to Contribute](#how-to-contribute)
 - [Related Projects](#related-projects)
 - [License & Attribution](#license--attribution)
 
@@ -126,7 +128,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 ### Frontend (React)
 
-- **17+ components**: settings, model-selector, onboarding, conversation, overlay, footer, sidebar
+- **100+ components**: settings (10 subdirectories, ~45 files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
 - **20-language i18n** via i18next
 - **Zustand** state management with typed bindings
 - **Her-style 3D loading animation** (Three.js)
@@ -196,7 +198,7 @@ Microphone → TripleVAD → Parakeet V3 STT → ITN Normalization → LLM (Brai
 Selected Text (or double-copy clipboard) → Markdown Strip → TN Normalization → TTS → Speaker
 ```
 
-### Text Normalization Pipeline (4-pass)
+### Text Normalization Pipeline (5-Stage)
 
 ```
 Post-STT:  ITN (text-processing-rs) → Custom Words (fuzzy correction)
@@ -250,7 +252,14 @@ Unix signals (Linux/macOS):
 | Wayland | `wtype` | `sudo apt install wtype` |
 | Both | `dotool` | `sudo apt install dotool` (+ `input` group) |
 
-**Wayland Global Shortcuts** must be configured through your desktop environment (GNOME, KDE, Sway, Hyprland). See the [troubleshooting section](#linux-startup-crashes-or-instability) for config examples.
+---
+
+### Linux Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `S2B2S_NO_GTK_LAYER_SHELL=1` | Skip GTK layer shell on Linux |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos |
 
 ---
 
@@ -305,71 +314,18 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Ollama/LM Studio/llama.cpp auto-discovery                                                            | ✅ Complete    |
 | Streaming STT (WebSocket-based)                                                                      | 📋 Planned     |
 | Pocket TTS backend (voice cloning)                                                                   | 📋 Planned     |
+| Profiles (per-application settings)                                                                  | 📋 Planned     |
+| Local audio cache for TTS fragments                                                                  | 📋 Planned     |
+| Engine-switch cleanup (graceful unload/reload)                                                       | 📋 Planned     |
+| Full-duplex conversation with acoustic echo cancellation                                             | 📋 Later       |
 | Multi-OS polish, mobile companion                                                                    | 📋 Later       |
+| Local speaker diarization                                                                            | 📋 Later       |
+| MCP tool use for Brain                                                                               | 📋 Later       |
+| Plugin/API ecosystem                                                                                 | 📋 Later       |
 
 ---
 
-## Known Issues & Current Limitations
-
-### Major Issues (Help Wanted)
-
-**Whisper Model Crashes:**
-
-- Whisper models crash on certain system configurations (Windows and Linux)
-- Does not affect all systems — configuration-dependent
-- Parakeet V3 is the default (not affected); switch to Parakeet if Whisper crashes
-- If you experience crashes, please provide debug logs (Ctrl+Shift+D)
-
-**Wayland Support (Linux):**
-
-- Limited support for Wayland display server
-- Requires wtype or dotool for text input (see Linux Notes above)
-- Overlay disabled by default on Linux to prevent focus-stealing issues
-
-**Known Workarounds:**
-
-- `S2B2S_NO_GTK_LAYER_SHELL=1` — skip GTK layer shell on Linux
-- `WEBKIT_DISABLE_DMABUF_RENDERER=1` — fix WebKit rendering on some GPUs
-
----
-
-## Troubleshooting
-
-### Manual Model Installation
-
-For proxy users or restricted networks, models can be downloaded manually:
-
-1. Find your app data directory (shown in Settings → About)
-2. Place Whisper `.bin` files or extracted Parakeet `.tar.gz` archives in the `models` folder
-3. Restart S2B2S to detect them
-
-Typical paths:
-
-- **macOS**: `~/Library/Application Support/com.nairodorian.s2b2s/`
-- **Windows**: `C:\Users\{username}\AppData\Roaming\com.nairodorian.s2b2s\`
-- **Linux**: `~/.config/com.nairodorian.s2b2s/`
-
-Model download URLs:
-
-- Parakeet V3 (478 MB): `https://blob.handy.computer/parakeet-v3-int8.tar.gz`
-- Whisper Small (487 MB): `https://blob.handy.computer/ggml-small.bin`
-
-### Verify Release Signatures
-
-```bash
-ARTIFACT="S2B2S_0.1.0_amd64.AppImage"
-python3 - "$ARTIFACT" <<'PY'
-import base64, pathlib, sys
-artifact = sys.argv[1]
-pub = pathlib.Path("s2b2s.pub.b64").read_text().strip()
-pathlib.Path("s2b2s.pub").write_bytes(base64.b64decode(pub))
-sig = pathlib.Path(f"{artifact}.sig").read_text().strip()
-pathlib.Path(f"{artifact}.minisig").write_bytes(base64.b64decode(sig))
-PY
-minisign -Vm "$ARTIFACT" -p s2b2s.pub -x "$ARTIFACT.minisig"
-```
-
-### Debug Mode
+## Debug Mode
 
 Press `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) to toggle debug overlay. Also available in Advanced settings.
 
