@@ -534,17 +534,21 @@ fn default_endpoint_preset() -> String {
 
 impl BrainConfig {
     pub fn active_provider(&self) -> Option<&PostProcessProvider> {
-        self.providers
-            .iter()
-            .find(|p| p.id == self.provider_id)
+        self.providers.iter().find(|p| p.id == self.provider_id)
     }
 
     pub fn active_model(&self) -> String {
-        self.models.get(&self.provider_id).cloned().unwrap_or_default()
+        self.models
+            .get(&self.provider_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn active_api_key(&self) -> String {
-        self.api_keys.get(&self.provider_id).cloned().unwrap_or_default()
+        self.api_keys
+            .get(&self.provider_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn active_base_url(&self) -> String {
@@ -593,12 +597,13 @@ pub enum OverlayPosition {
     Bottom,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
     Never,
     Immediately,
     Min2,
+    #[default]
     Min5,
     Min10,
     Min15,
@@ -617,16 +622,18 @@ pub enum PasteMethod {
     ExternalScript,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ClipboardHandling {
+    #[default]
     DontModify,
     CopyToClipboard,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum AutoSubmitKey {
+    #[default]
     Enter,
     CtrlEnter,
     CmdEnter,
@@ -658,12 +665,6 @@ impl Default for KeyboardImplementation {
     }
 }
 
-impl Default for ModelUnloadTimeout {
-    fn default() -> Self {
-        ModelUnloadTimeout::Min5
-    }
-}
-
 impl Default for PasteMethod {
     fn default() -> Self {
         // Default to CtrlV for macOS and Windows, Direct for Linux
@@ -671,18 +672,6 @@ impl Default for PasteMethod {
         return PasteMethod::Direct;
         #[cfg(not(target_os = "linux"))]
         return PasteMethod::CtrlV;
-    }
-}
-
-impl Default for ClipboardHandling {
-    fn default() -> Self {
-        ClipboardHandling::DontModify
-    }
-}
-
-impl Default for AutoSubmitKey {
-    fn default() -> Self {
-        AutoSubmitKey::Enter
     }
 }
 
@@ -727,18 +716,19 @@ impl SoundTheme {
         }
     }
 
-    pub fn to_start_path(&self) -> String {
+    pub fn start_path(&self) -> String {
         format!("resources/{}_start.wav", self.as_str())
     }
 
-    pub fn to_stop_path(&self) -> String {
+    pub fn stop_path(&self) -> String {
         format!("resources/{}_stop.wav", self.as_str())
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum TypingTool {
+    #[default]
     Auto,
     Wtype,
     Kwtype,
@@ -747,41 +737,25 @@ pub enum TypingTool {
     Xdotool,
 }
 
-impl Default for TypingTool {
-    fn default() -> Self {
-        TypingTool::Auto
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum WhisperAcceleratorSetting {
+    #[default]
     Auto,
     Cpu,
     Gpu,
 }
 
-impl Default for WhisperAcceleratorSetting {
-    fn default() -> Self {
-        WhisperAcceleratorSetting::Auto
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum OrtAcceleratorSetting {
+    #[default]
     Auto,
     Cpu,
     Cuda,
     #[serde(rename = "directml")]
     DirectMl,
     Rocm,
-}
-
-impl Default for OrtAcceleratorSetting {
-    fn default() -> Self {
-        OrtAcceleratorSetting::Auto
-    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Type)]
@@ -1194,11 +1168,9 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
-                if existing.base_url != provider.base_url {
-                    if existing.id != "custom" {
-                        existing.base_url = provider.base_url.clone();
-                        changed = true;
-                    }
+                if existing.base_url != provider.base_url && existing.id != "custom" {
+                    existing.base_url = provider.base_url.clone();
+                    changed = true;
                 }
             }
             None => {
@@ -1244,11 +1216,9 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
-                if existing.base_url != provider.base_url {
-                    if existing.id != "custom" {
-                        existing.base_url = provider.base_url.clone();
-                        changed = true;
-                    }
+                if existing.base_url != provider.base_url && existing.id != "custom" {
+                    existing.base_url = provider.base_url.clone();
+                    changed = true;
                 }
             }
             None => {
@@ -1501,9 +1471,11 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
 
                 // Merge default bindings into existing settings
                 for (key, value) in default_settings.bindings {
-                    if !settings.bindings.contains_key(&key) {
-                        debug!("Adding missing binding: {}", key);
-                        settings.bindings.insert(key, value);
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        settings.bindings.entry(key)
+                    {
+                        debug!("Adding missing binding: {}", e.key());
+                        e.insert(value);
                         updated = true;
                     }
                 }

@@ -50,28 +50,60 @@ const VOICE_LANGUAGE_MAP: &[(&str, &str, &[&str])] = &[
 /// Known voice IDs (54 total).
 const KNOWN_VOICES: &[&str] = &[
     // US English
-    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
-    "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
-    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
-    "am_onyx", "am_puck", "am_santa",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_heart",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
     // British English
-    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
-    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
+    "bm_lewis",
     // Spanish
     "ef_dora",
     // French
     "ff_siwis",
     // Hindi
-    "hf_alpha", "hf_beta",
+    "hf_alpha",
+    "hf_beta",
     // Italian
-    "if_sara", "if_nicola",
+    "if_sara",
+    "if_nicola",
     // Japanese
-    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro",
+    "jf_alpha",
+    "jf_gongitsune",
+    "jf_nezumi",
+    "jf_tebukuro",
     // Brazilian Portuguese
     "pf_dora",
     // Mandarin Chinese
-    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
-    "zm_yunjian", "zm_yunxia", "zm_yunyang",
+    "zf_xiaobei",
+    "zf_xiaoni",
+    "zf_xiaoxiao",
+    "zf_xiaoyi",
+    "zm_yunjian",
+    "zm_yunxia",
+    "zm_yunyang",
 ];
 
 // ========================================================================
@@ -115,17 +147,14 @@ impl KokoroBackend {
                 let (lang, name) = VOICE_LANGUAGE_MAP
                     .iter()
                     .find_map(|(lang_code, region, prefixes)| {
-                        prefixes
-                            .iter()
-                            .find(|&&pfx| id.starts_with(pfx))
-                            .map(|_| {
-                                let label = if region.is_empty() {
-                                    lang_code.to_string()
-                                } else {
-                                    format!("{}-{}", lang_code, region)
-                                };
-                                (Some(label), id.trim_start_matches(&id[..3]))
-                            })
+                        prefixes.iter().find(|&&pfx| id.starts_with(pfx)).map(|_| {
+                            let label = if region.is_empty() {
+                                lang_code.to_string()
+                            } else {
+                                format!("{}-{}", lang_code, region)
+                            };
+                            (Some(label), id.trim_start_matches(&id[..3]))
+                        })
                     })
                     .unwrap_or((None, id));
                 Voice {
@@ -235,7 +264,7 @@ mod tests {
         let next = vec![1.0; 300];
         let result = KokoroBackend::crossfade(&prev, &next, 240);
         assert_eq!(result.len(), 360); // 300 + 300 - 240
-        // Start of crossfade region should be between 0.5 and 1.0
+                                       // Start of crossfade region should be between 0.5 and 1.0
         assert!(result[61] < 1.0 && result[61] > 0.5);
         // End should be close to 1.0
         assert!(result[result.len() - 1] >= 0.99);

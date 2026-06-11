@@ -206,12 +206,17 @@ pub async fn export_history_entries(
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("History entry {} not found", id))?;
-            
+
         let date_str = chrono::DateTime::from_timestamp(entry.timestamp, 0)
-            .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string())
+            .map(|dt| {
+                dt.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string()
+            })
             .unwrap_or_else(|| "Unknown".to_string());
-            
-        let duration_str = entry.duration_ms
+
+        let duration_str = entry
+            .duration_ms
             .map(|ms| format!("{:.2}s", ms as f64 / 1000.0))
             .unwrap_or_else(|| "N/A".to_string());
 
@@ -221,25 +226,28 @@ pub async fn export_history_entries(
             entry.entry_type.to_uppercase()
         ));
         markdown.push_str(&format!("- **Timestamp:** {}\n", date_str));
-        markdown.push_str(&format!("- **Model:** {}\n", entry.model_name.as_deref().unwrap_or("Unknown")));
+        markdown.push_str(&format!(
+            "- **Model:** {}\n",
+            entry.model_name.as_deref().unwrap_or("Unknown")
+        ));
         markdown.push_str(&format!("- **Duration:** {}\n\n", duration_str));
-        
+
         markdown.push_str("### Raw Text\n");
         markdown.push_str(&format!("{}\n\n", entry.transcription_text));
-        
+
         if let Some(ref ppt) = entry.post_processed_text {
             markdown.push_str("### Post-Processed Text\n");
             markdown.push_str(&format!("{}\n\n", ppt));
         }
-        
+
         markdown.push_str("---\n\n");
     }
 
-    let mut file = File::create(&file_path)
-        .map_err(|e| format!("Failed to create export file: {}", e))?;
+    let mut file =
+        File::create(&file_path).map_err(|e| format!("Failed to create export file: {}", e))?;
     file.write_all(markdown.as_bytes())
         .map_err(|e| format!("Failed to write export file: {}", e))?;
-        
+
     Ok(())
 }
 
@@ -270,6 +278,6 @@ pub async fn regenerate_history_entry(
     } else {
         return Err(format!("Unsupported entry type: {}", entry.entry_type));
     }
-    
+
     Ok(())
 }

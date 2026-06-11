@@ -6,10 +6,10 @@
 //   Pre-TTS:  pulldown-cmark → TN → regex cleanup → TTS
 
 pub(crate) mod cleanup;
-mod markdown;
-pub(crate) mod tts_normalize;
 pub mod itn;
+mod markdown;
 pub mod tn;
+pub(crate) mod tts_normalize;
 
 use crate::settings::SanitizationConfig;
 

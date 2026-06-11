@@ -702,7 +702,9 @@ pub fn capture_selection_text(app_handle: &AppHandle) -> Result<String, String> 
     if captured == sentinel || captured.trim().is_empty() {
         // Restore original clipboard
         let _ = clipboard.write_text(&previous);
-        return Err("No text selected — highlight text first, or copy it to speak from clipboard".into());
+        return Err(
+            "No text selected — highlight text first, or copy it to speak from clipboard".into(),
+        );
     }
 
     // Restore the user's clipboard

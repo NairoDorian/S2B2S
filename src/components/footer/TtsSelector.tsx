@@ -164,8 +164,9 @@ const TtsSelector: React.FC = () => {
         title={`TTS: ${getTtsDisplayText()}`}
       >
         <span className="flex items-center gap-1">
+          {/* eslint-disable-next-line i18next/no-literal-string */}
           <span>🗣️</span>
-          <span className="font-medium">TTS</span>
+          <span className="font-medium">{t("footer.tts")}</span>
         </span>
         <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${getTtsStatusColor()}`} />
         <svg
@@ -187,7 +188,7 @@ const TtsSelector: React.FC = () => {
         <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2.5 px-3 z-50 text-xs">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-mid-gray/10">
             <div className="flex flex-col">
-              <span className="font-semibold text-text/80">Speech (TTS)</span>
+              <span className="font-semibold text-text/80">{t("footer.ttsTitle")}</span>
               {tts.enabled && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
                   {tts.engine === "piper" 
@@ -209,7 +210,7 @@ const TtsSelector: React.FC = () => {
 
           <div className="space-y-1">
             <div className="text-[10px] text-text/40 uppercase font-medium tracking-wider mb-1 px-1">
-              Speech Engine
+              {t("footer.ttsEngine")}
             </div>
             {ENGINES.map((eng) => (
               <button

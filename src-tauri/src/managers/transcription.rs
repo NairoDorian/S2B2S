@@ -118,7 +118,7 @@ impl TranscriptionManager {
                     // model is never unloaded mid-session.
                     let is_recording = app_handle_cloned
                         .try_state::<Arc<AudioRecordingManager>>()
-                        .map_or(false, |a| a.is_recording());
+                        .is_some_and(|a| a.is_recording());
                     if is_recording {
                         manager_cloned.touch_activity();
                         continue;
@@ -487,7 +487,7 @@ impl TranscriptionManager {
                     is_loading = self.loading_condvar.wait(is_loading).unwrap();
                 }
             }
-            
+
             // Now load the target model
             self.load_model(&target_model_id)?;
         } else {

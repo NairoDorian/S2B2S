@@ -93,48 +93,82 @@ fn get_free_port() -> Option<u16> {
 #[cfg(windows)]
 fn get_expanded_path() -> String {
     static EXPANDED_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    EXPANDED_PATH.get_or_init(|| {
-        use std::collections::HashSet;
-        use std::env;
+    EXPANDED_PATH
+        .get_or_init(|| {
+            use std::collections::HashSet;
+            use std::env;
 
-        let current_path = env::var("PATH").unwrap_or_default();
-        let mut paths: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
-        let mut seen: HashSet<String> = paths.iter().cloned().collect();
+            let current_path = env::var("PATH").unwrap_or_default();
+            let mut paths: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
+            let mut seen: HashSet<String> = paths.iter().cloned().collect();
 
-        let home = env::var("USERPROFILE").unwrap_or_default();
-        let home_path = std::path::Path::new(&home);
+            let home = env::var("USERPROFILE").unwrap_or_default();
+            let home_path = std::path::Path::new(&home);
 
-        let mut extra_paths = Vec::new();
+            let mut extra_paths = Vec::new();
 
-        if !home.is_empty() {
-            extra_paths.push(home_path.join(".local").join("bin"));
-            extra_paths.push(home_path.join("AppData").join("Roaming").join("uv").join("tools").join("piper").join("Scripts"));
-            extra_paths.push(home_path.join("AppData").join("Local").join("bin"));
-            
-            // Add user Python installation Scripts and Python directories
+            if !home.is_empty() {
+                extra_paths.push(home_path.join(".local").join("bin"));
+                extra_paths.push(
+                    home_path
+                        .join("AppData")
+                        .join("Roaming")
+                        .join("uv")
+                        .join("tools")
+                        .join("piper")
+                        .join("Scripts"),
+                );
+                extra_paths.push(home_path.join("AppData").join("Local").join("bin"));
+
+                // Add user Python installation Scripts and Python directories
+                for ver in &["314", "313", "312", "311", "310"] {
+                    extra_paths.push(
+                        home_path
+                            .join("AppData")
+                            .join("Roaming")
+                            .join("Python")
+                            .join(format!("Python{}", ver))
+                            .join("Scripts"),
+                    );
+                    extra_paths.push(
+                        home_path
+                            .join("AppData")
+                            .join("Local")
+                            .join("Python")
+                            .join(format!("pythoncore-3.{}-64", &ver[1..]))
+                            .join("Scripts"),
+                    );
+                    extra_paths.push(
+                        home_path
+                            .join("AppData")
+                            .join("Local")
+                            .join("Programs")
+                            .join("Python")
+                            .join(format!("Python{}", ver)),
+                    );
+                }
+            }
+
+            // Global Python paths
             for ver in &["314", "313", "312", "311", "310"] {
-                extra_paths.push(home_path.join("AppData").join("Roaming").join("Python").join(format!("Python{}", ver)).join("Scripts"));
-                extra_paths.push(home_path.join("AppData").join("Local").join("Python").join(format!("pythoncore-3.{}-64", &ver[1..])).join("Scripts"));
-                extra_paths.push(home_path.join("AppData").join("Local").join("Programs").join("Python").join(format!("Python{}", ver)));
+                extra_paths.push(std::path::PathBuf::from(format!(
+                    r"C:\Python{}\Scripts",
+                    ver
+                )));
+                extra_paths.push(std::path::PathBuf::from(format!(r"C:\Python{}", ver)));
             }
-        }
 
-        // Global Python paths
-        for ver in &["314", "313", "312", "311", "310"] {
-            extra_paths.push(std::path::PathBuf::from(format!(r"C:\Python{}\Scripts", ver)));
-            extra_paths.push(std::path::PathBuf::from(format!(r"C:\Python{}", ver)));
-        }
-
-        for p in extra_paths {
-            let p_str = p.to_string_lossy().into_owned();
-            if !seen.contains(&p_str) {
-                seen.insert(p_str.clone());
-                paths.push(p_str);
+            for p in extra_paths {
+                let p_str = p.to_string_lossy().into_owned();
+                if !seen.contains(&p_str) {
+                    seen.insert(p_str.clone());
+                    paths.push(p_str);
+                }
             }
-        }
 
-        paths.join(";")
-    }).clone()
+            paths.join(";")
+        })
+        .clone()
 }
 
 #[cfg(not(windows))]
@@ -220,7 +254,7 @@ pub fn resolve_python_command() -> Result<PythonCommand, String> {
                 continue;
             }
             let dir_path = std::path::Path::new(dir);
-            
+
             #[cfg(windows)]
             let exes = &["python.exe", "python3.exe"];
             #[cfg(not(windows))]
@@ -256,24 +290,27 @@ pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::Pa
             }
         }
     }
-    
+
     // 2. Check current working directory / models / piper-voices (dev mode)
     if let Ok(cwd) = std::env::current_dir() {
         let path = cwd.join("models").join("piper-voices");
         if path.exists() {
             return path;
         }
-        
+
         // Also check if CWD is src-tauri
         let path_parent = cwd.join("..").join("models").join("piper-voices");
         if path_parent.exists() {
             return path_parent;
         }
     }
-    
+
     // 3. Fallback to resource directory if bundled
     if let Some(app) = app {
-        if let Ok(res_path) = app.path().resolve("resources/models/piper-voices", tauri::path::BaseDirectory::Resource) {
+        if let Ok(res_path) = app.path().resolve(
+            "resources/models/piper-voices",
+            tauri::path::BaseDirectory::Resource,
+        ) {
             if res_path.exists() {
                 return res_path;
             }
@@ -333,7 +370,10 @@ fn spawn_start_thread(
             if alt_path.exists() {
                 model_path = alt_path;
             } else {
-                log::warn!("[Piper] Start failed: model file not found at {}", model_path.display());
+                log::warn!(
+                    "[Piper] Start failed: model file not found at {}",
+                    model_path.display()
+                );
                 emit_model_status("error", Some(&voice), cuda, Some("Model file not found"));
                 return;
             }
@@ -348,7 +388,12 @@ fn spawn_start_thread(
             }
         };
 
-        log::info!("[Piper] Starting HTTP server on port {} — model: {}, cuda: {}", port, model_path.display(), cuda);
+        log::info!(
+            "[Piper] Starting HTTP server on port {} — model: {}, cuda: {}",
+            port,
+            model_path.display(),
+            cuda
+        );
 
         let mut cmd = std::process::Command::new(&command.executable);
         let mut args = Vec::new();
@@ -395,7 +440,12 @@ fn spawn_start_thread(
             Ok(c) => c,
             Err(e) => {
                 log::warn!("[Piper] Start failed: spawn error — {}", e);
-                emit_model_status("error", Some(&voice), cuda, Some(&format!("Spawn error: {}", e)));
+                emit_model_status(
+                    "error",
+                    Some(&voice),
+                    cuda,
+                    Some(&format!("Spawn error: {}", e)),
+                );
                 return;
             }
         };
@@ -423,7 +473,8 @@ fn spawn_start_thread(
                 for line in reader.lines() {
                     if let Ok(line) = line {
                         log::debug!("[piper-server] {}", line);
-                        let mut buffer = stderr_tail_clone.lock().unwrap_or_else(|p| p.into_inner());
+                        let mut buffer =
+                            stderr_tail_clone.lock().unwrap_or_else(|p| p.into_inner());
                         buffer.push(line);
                         if buffer.len() > 30 {
                             buffer.remove(0);
@@ -445,7 +496,12 @@ fn spawn_start_thread(
             Err(_) => {
                 let _ = child.kill();
                 log::warn!("[Piper] Start failed: could not build health-check client");
-                emit_model_status("error", Some(&voice), cuda, Some("Health client build failed"));
+                emit_model_status(
+                    "error",
+                    Some(&voice),
+                    cuda,
+                    Some("Health client build failed"),
+                );
                 return;
             }
         };
@@ -460,7 +516,10 @@ fn spawn_start_thread(
         while poll_start.elapsed() < std::time::Duration::from_secs(max_secs) {
             // Check if generation superseded
             if CURRENT_GENERATION.load(Ordering::SeqCst) != generation {
-                log::info!("[Piper] Generation {} superseded. Killing child.", generation);
+                log::info!(
+                    "[Piper] Generation {} superseded. Killing child.",
+                    generation
+                );
                 let _ = child.kill();
                 return;
             }
@@ -475,7 +534,12 @@ fn spawn_start_thread(
                     status.code(),
                     err_tail
                 );
-                emit_model_status("error", Some(&voice), cuda, Some("Server exited prematurely"));
+                emit_model_status(
+                    "error",
+                    Some(&voice),
+                    cuda,
+                    Some("Server exited prematurely"),
+                );
                 return;
             }
 
@@ -506,7 +570,11 @@ fn spawn_start_thread(
             return;
         }
 
-        log::info!("[Piper] Server ready on port {} (generation {})", port, generation);
+        log::info!(
+            "[Piper] Server ready on port {} (generation {})",
+            port,
+            generation
+        );
 
         // Substantial CUDA warmup sentence to compile JIT kernels
         emit_model_status("warming_up", Some(&voice), cuda, None);
@@ -519,11 +587,17 @@ fn spawn_start_thread(
         match warmup_client.post(&warmup_url).json(&warmup_body).send() {
             Ok(resp) => {
                 if let Ok(_bytes) = resp.bytes() {
-                    log::info!("[Piper] Warmup completed in {:.1}s", warmup_start.elapsed().as_secs_f64());
+                    log::info!(
+                        "[Piper] Warmup completed in {:.1}s",
+                        warmup_start.elapsed().as_secs_f64()
+                    );
                 }
             }
             Err(e) => {
-                log::warn!("[Piper] Warmup failed: {}. First synthesis will be slower.", e);
+                log::warn!(
+                    "[Piper] Warmup failed: {}. First synthesis will be slower.",
+                    e
+                );
             }
         }
 
@@ -539,19 +613,21 @@ fn spawn_start_thread(
             }));
             emit_model_status("ready", Some(&voice), cuda, None);
         } else {
-            log::info!("[Piper] Server on port {} was superseded during warmup. Killing.", port);
+            log::info!(
+                "[Piper] Server on port {} was superseded during warmup. Killing.",
+                port
+            );
             let _ = child.kill();
         }
     });
 }
 
-pub fn ensure_running(
-    voice: String,
-    cuda: bool,
-) -> Result<ServerHandle, String> {
+pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String> {
     let app = APP_HANDLE.get().ok_or("AppHandle not initialized")?;
     let command = resolve_python_command()?;
-    let data_dir = resolve_piper_voices_dir(Some(app)).to_string_lossy().to_string();
+    let data_dir = resolve_piper_voices_dir(Some(app))
+        .to_string_lossy()
+        .to_string();
 
     let start_wait = std::time::Instant::now();
     loop {
@@ -562,7 +638,11 @@ pub fn ensure_running(
                 drop(state);
 
                 let is_alive = matches!(
-                    active.child.lock().unwrap_or_else(|p| p.into_inner()).try_wait(),
+                    active
+                        .child
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .try_wait(),
                     Ok(None)
                 );
                 if is_alive && active.cuda == cuda && active.model_name == voice {
@@ -580,10 +660,8 @@ pub fn ensure_running(
                                 active.port
                             );
                             {
-                                let mut child = active
-                                    .child
-                                    .lock()
-                                    .unwrap_or_else(|p| p.into_inner());
+                                let mut child =
+                                    active.child.lock().unwrap_or_else(|p| p.into_inner());
                                 let _ = child.kill();
                                 let _ = child.wait(); // reap to avoid zombies on Unix
                             }
@@ -593,7 +671,11 @@ pub fn ensure_running(
                     }
                 }
             }
-            ServerState::Starting { _generation: _, config: starting_config, stderr_tail } => {
+            ServerState::Starting {
+                _generation: _,
+                config: starting_config,
+                stderr_tail,
+            } => {
                 if starting_config.command == command
                     && starting_config.data_dir == data_dir
                     && starting_config.cuda == cuda
@@ -604,7 +686,10 @@ pub fn ensure_running(
                             let buffer = stderr_tail.lock().unwrap_or_else(|p| p.into_inner());
                             buffer.join("\n")
                         };
-                        return Err(format!("Timeout waiting for Piper server to start. Stderr tail:\n{}", err_msg));
+                        return Err(format!(
+                            "Timeout waiting for Piper server to start. Stderr tail:\n{}",
+                            err_msg
+                        ));
                     }
                     drop(state);
                     std::thread::sleep(std::time::Duration::from_millis(200));
@@ -622,7 +707,14 @@ pub fn ensure_running(
                         stderr_tail: tail.clone(),
                     };
                     drop(state);
-                    spawn_start_thread(new_gen, command.clone(), voice.clone(), data_dir.clone(), cuda, tail);
+                    spawn_start_thread(
+                        new_gen,
+                        command.clone(),
+                        voice.clone(),
+                        data_dir.clone(),
+                        cuda,
+                        tail,
+                    );
                 }
             }
             ServerState::Stopped => {
@@ -638,7 +730,14 @@ pub fn ensure_running(
                     stderr_tail: tail.clone(),
                 };
                 drop(state);
-                spawn_start_thread(new_gen, command.clone(), voice.clone(), data_dir.clone(), cuda, tail);
+                spawn_start_thread(
+                    new_gen,
+                    command.clone(),
+                    voice.clone(),
+                    data_dir.clone(),
+                    cuda,
+                    tail,
+                );
             }
         }
     }
@@ -666,14 +765,19 @@ pub fn start_idle_watcher(app: tauri::AppHandle) {
                         .ok()
                         .map(|d| d.as_millis() as u64)
                         .unwrap_or(0);
-                    if app.try_state::<std::sync::Arc<crate::tts::manager::TtsManager>>().is_some() {
+                    if app
+                        .try_state::<std::sync::Arc<crate::tts::manager::TtsManager>>()
+                        .is_some()
+                    {
                         // Get the last_used from the idle atomic
-                        let idle_ms = crate::settings::ModelUnloadTimeout::Sec15.to_seconds()
+                        let idle_ms = crate::settings::ModelUnloadTimeout::Sec15
+                            .to_seconds()
                             .map(|check_secs| check_secs * 1000)
                             .unwrap_or(300_000);
-                        let since_last_build = crate::tts::backends::piper_server::get_last_synth_ms()
-                            .map(|last| now.saturating_sub(last))
-                            .unwrap_or(0);
+                        let since_last_build =
+                            crate::tts::backends::piper_server::get_last_synth_ms()
+                                .map(|last| now.saturating_sub(last))
+                                .unwrap_or(0);
                         if since_last_build > idle_ms && since_last_build > secs * 1000 {
                             log::info!("[Piper] Idle timeout ({secs}s) — unloading model");
                             unload_piper_model();
@@ -701,7 +805,11 @@ pub fn mark_synth() {
 /// Get the last synthesis timestamp for idle checking.
 pub fn get_last_synth_ms() -> Option<u64> {
     let val = LAST_SYNTH_MS.load(std::sync::atomic::Ordering::Acquire);
-    if val == 0 { None } else { Some(val) }
+    if val == 0 {
+        None
+    } else {
+        Some(val)
+    }
 }
 
 pub fn unload_piper_model() -> bool {

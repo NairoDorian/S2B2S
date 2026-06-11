@@ -7,10 +7,10 @@
 
 use crate::audio_toolkit::extract_envelope;
 use crate::settings::{get_settings, TtsConfig, TtsEngine};
-use crate::tts::backends::kokoro::KokoroBackend;
 use crate::tts::backends::kitten::KittenBackend;
-use crate::tts::backends::sapi::SapiBackend;
+use crate::tts::backends::kokoro::KokoroBackend;
 use crate::tts::backends::piper::{self, PiperBackend};
+use crate::tts::backends::sapi::SapiBackend;
 use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
 use crate::tts::sanitize::sanitize_text;
@@ -54,19 +54,17 @@ impl TtsManager {
             TtsEngine::Kokoro => Ok(Box::new(KokoroBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Kitten => Ok(Box::new(KittenBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Sapi => Ok(Box::new(SapiBackend::new(cfg.voice.clone(), cfg.speed))),
-            TtsEngine::Openai => Ok(Box::new(crate::tts::backends::openai::OpenAiTtsBackend::new(
-                cfg.openai.clone(),
-            ))),
-            TtsEngine::Elevenlabs => Ok(Box::new(crate::tts::backends::elevenlabs::ElevenLabsTtsBackend::new(
-                cfg.elevenlabs.clone(),
-            ))),
-            TtsEngine::Cartesia => Ok(Box::new(crate::tts::backends::cartesia::CartesiaTtsBackend::new(
-                cfg.cartesia.clone(),
-            ))),
+            TtsEngine::Openai => Ok(Box::new(
+                crate::tts::backends::openai::OpenAiTtsBackend::new(cfg.openai.clone()),
+            )),
+            TtsEngine::Elevenlabs => Ok(Box::new(
+                crate::tts::backends::elevenlabs::ElevenLabsTtsBackend::new(cfg.elevenlabs.clone()),
+            )),
+            TtsEngine::Cartesia => Ok(Box::new(
+                crate::tts::backends::cartesia::CartesiaTtsBackend::new(cfg.cartesia.clone()),
+            )),
         }
     }
-
-
 
     /// Enumerate available voices for a specific engine, or defaults to the configured engine.
     pub fn list_voices_for_engine(&self, engine: Option<TtsEngine>) -> Vec<Voice> {
@@ -79,24 +77,52 @@ impl TtsManager {
             TtsEngine::Sapi => SapiBackend::list_voices(),
             TtsEngine::Openai => {
                 vec![
-                    Voice { id: "alloy".to_string(), name: "Alloy".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "echo".to_string(), name: "Echo".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "fable".to_string(), name: "Fable".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "onyx".to_string(), name: "Onyx".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "nova".to_string(), name: "Nova".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "shimmer".to_string(), name: "Shimmer".to_string(), language: Some("en".to_string()) },
+                    Voice {
+                        id: "alloy".to_string(),
+                        name: "Alloy".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "echo".to_string(),
+                        name: "Echo".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "fable".to_string(),
+                        name: "Fable".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "onyx".to_string(),
+                        name: "Onyx".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "nova".to_string(),
+                        name: "Nova".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "shimmer".to_string(),
+                        name: "Shimmer".to_string(),
+                        language: Some("en".to_string()),
+                    },
                 ]
             }
             TtsEngine::Elevenlabs => {
-                let backend = crate::tts::backends::elevenlabs::ElevenLabsTtsBackend::new(cfg.elevenlabs.clone());
+                let backend = crate::tts::backends::elevenlabs::ElevenLabsTtsBackend::new(
+                    cfg.elevenlabs.clone(),
+                );
                 match backend.list_voices() {
                     Ok(voices) => voices
                         .into_iter()
                         .map(|v| Voice {
                             id: v.voice_id,
                             name: v.name.unwrap_or_else(|| "Unnamed".to_string()),
-                            language: v.labels.as_ref()
-                                .and_then(|l| l.get("language").and_then(|lang| lang.as_str().map(|s| s.to_string()))),
+                            language: v.labels.as_ref().and_then(|l| {
+                                l.get("language")
+                                    .and_then(|lang| lang.as_str().map(|s| s.to_string()))
+                            }),
                         })
                         .collect(),
                     Err(e) => {
@@ -107,9 +133,21 @@ impl TtsManager {
             }
             TtsEngine::Cartesia => {
                 vec![
-                    Voice { id: "f786b574-daa5-4673-aa0c-cbe3e8534c02".to_string(), name: "Katie".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "a5136bf9-224c-4d76-b823-52bd5efcffcc".to_string(), name: "Jameson (Deep Male)".to_string(), language: Some("en".to_string()) },
-                    Voice { id: "25a0312d-7437-4b70-9f1e-f3f2d2b512e0".to_string(), name: "Barack Obama".to_string(), language: Some("en".to_string()) },
+                    Voice {
+                        id: "f786b574-daa5-4673-aa0c-cbe3e8534c02".to_string(),
+                        name: "Katie".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "a5136bf9-224c-4d76-b823-52bd5efcffcc".to_string(),
+                        name: "Jameson (Deep Male)".to_string(),
+                        language: Some("en".to_string()),
+                    },
+                    Voice {
+                        id: "25a0312d-7437-4b70-9f1e-f3f2d2b512e0".to_string(),
+                        name: "Barack Obama".to_string(),
+                        language: Some("en".to_string()),
+                    },
                 ]
             }
         }
@@ -172,7 +210,11 @@ impl TtsManager {
             if let Some(split) = crate::brain::client::split_at_clause_boundary(remaining, 60) {
                 let first = remaining[..split].trim().to_string();
                 if !first.is_empty() {
-                    frags.push(crate::tts::pagination::TextFragment { text: first, index: 0, total: 0 });
+                    frags.push(crate::tts::pagination::TextFragment {
+                        text: first,
+                        index: 0,
+                        total: 0,
+                    });
                 }
                 remaining = remaining[split..].trim();
             }
@@ -186,7 +228,9 @@ impl TtsManager {
             }
             // Fix total count
             let total = frags.len();
-            for f in &mut frags { f.total = total; }
+            for f in &mut frags {
+                f.total = total;
+            }
             frags
         } else {
             paginate_text(&sanitized, &cfg.pagination)
@@ -202,7 +246,7 @@ impl TtsManager {
             let total = fragments.len();
             let _ = app.emit("tts:started", total);
             let mut all_chunks = Vec::new();
-            
+
             for frag in fragments {
                 if gen_counter.load(Ordering::SeqCst) != generation {
                     log::debug!("[TTS] speak aborted (superseded)");
@@ -219,11 +263,14 @@ impl TtsManager {
                         );
                         // Emit waveform envelope for HUD visualization
                         if let Some(envelope) = extract_envelope(&bytes, 32) {
-                            let _ = app.emit("tts:waveform", serde_json::json!({
-                                "fragment_index": frag.index,
-                                "values": envelope.values,
-                                "duration_ms": envelope.duration_ms,
-                            }));
+                            let _ = app.emit(
+                                "tts:waveform",
+                                serde_json::json!({
+                                    "fragment_index": frag.index,
+                                    "values": envelope.values,
+                                    "duration_ms": envelope.duration_ms,
+                                }),
+                            );
                         }
                         all_chunks.push(bytes.clone());
                         player.append(bytes);
@@ -238,7 +285,9 @@ impl TtsManager {
 
             // Save TTS entry to history with cached audio file
             if !all_chunks.is_empty() {
-                if let Some(hm) = app.try_state::<std::sync::Arc<crate::managers::history::HistoryManager>>() {
+                if let Some(hm) =
+                    app.try_state::<std::sync::Arc<crate::managers::history::HistoryManager>>()
+                {
                     let is_wav = all_chunks[0].len() >= 4 && &all_chunks[0][0..4] == b"RIFF";
                     let combined_bytes = if is_wav {
                         concatenate_wavs(&all_chunks)
@@ -253,7 +302,7 @@ impl TtsManager {
                     let ext = if is_wav { "wav" } else { "mp3" };
                     let file_name = format!("tts-{}.{}", chrono::Utc::now().timestamp(), ext);
                     let cache_path = hm.recordings_dir().join(&file_name);
-                    
+
                     if let Err(e) = std::fs::write(&cache_path, &combined_bytes) {
                         log::error!("[TTS] failed to write cached TTS audio: {e}");
                     } else {
@@ -368,8 +417,6 @@ impl TtsManager {
             }
         });
     }
-
-
 }
 
 fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
@@ -379,7 +426,7 @@ fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
     if chunks.len() == 1 {
         return chunks[0].clone();
     }
-    
+
     // Find the first valid WAV chunk to serve as our base
     let mut base_chunk = None;
     let mut start_idx = 0;
@@ -390,7 +437,7 @@ fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
             break;
         }
     }
-    
+
     let mut base = match base_chunk {
         Some(b) => b,
         None => {
@@ -402,13 +449,13 @@ fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
             return all;
         }
     };
-    
+
     let mut total_data_bytes = if base.len() >= 44 {
         u32::from_le_bytes(base[40..44].try_into().unwrap_or([0; 4])) as usize
     } else {
         base.len().saturating_sub(44)
     };
-    
+
     for chunk in &chunks[start_idx..] {
         if chunk.len() >= 44 && &chunk[0..4] == b"RIFF" {
             let data_part = &chunk[44..];
@@ -419,16 +466,16 @@ fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
             total_data_bytes += chunk.len();
         }
     }
-    
+
     if base.len() >= 8 {
         let riff_size = (base.len() as u32).saturating_sub(8);
         base[4..8].copy_from_slice(&riff_size.to_le_bytes());
     }
-    
+
     if base.len() >= 44 {
         let data_size = total_data_bytes as u32;
         base[40..44].copy_from_slice(&data_size.to_le_bytes());
     }
-    
+
     base
 }

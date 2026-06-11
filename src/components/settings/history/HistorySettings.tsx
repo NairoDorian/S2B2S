@@ -622,6 +622,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
               </span>
             )}
             {entry.duration_ms != null && (
+              /* eslint-disable-next-line i18next/no-literal-string */
               <span>{entry.duration_ms}ms</span>
             )}
           </div>

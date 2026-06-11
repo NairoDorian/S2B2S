@@ -8,25 +8,33 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
 pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<(), String> {
-    log::info!("Continuous voice pipeline started with {} samples", samples.len());
+    log::info!(
+        "Continuous voice pipeline started with {} samples",
+        samples.len()
+    );
 
-    let rm = app.try_state::<Arc<AudioRecordingManager>>()
+    let rm = app
+        .try_state::<Arc<AudioRecordingManager>>()
         .ok_or_else(|| "AudioRecordingManager not registered".to_string())?
         .inner()
         .clone();
-    let tm = app.try_state::<Arc<TranscriptionManager>>()
+    let tm = app
+        .try_state::<Arc<TranscriptionManager>>()
         .ok_or_else(|| "TranscriptionManager not registered".to_string())?
         .inner()
         .clone();
-    let hm = app.try_state::<Arc<HistoryManager>>()
+    let hm = app
+        .try_state::<Arc<HistoryManager>>()
         .ok_or_else(|| "HistoryManager not registered".to_string())?
         .inner()
         .clone();
-    let bm = app.try_state::<Arc<BrainManager>>()
+    let bm = app
+        .try_state::<Arc<BrainManager>>()
         .ok_or_else(|| "BrainManager not registered".to_string())?
         .inner()
         .clone();
-    let tts = app.try_state::<Arc<TtsManager>>()
+    let tts = app
+        .try_state::<Arc<TtsManager>>()
         .ok_or_else(|| "TtsManager not registered".to_string())?
         .inner()
         .clone();
@@ -102,46 +110,43 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     tauri::async_runtime::block_on(async move {
         let _ask_result = bm_clone.ask(transcription_clone).await;
 
-        if will_play_tts {
-            if tts.is_playing() {
-                log::info!("Waiting for TTS playback to finish...");
-                let (tx, rx) = std::sync::mpsc::channel::<()>();
-                
-                let tx_finished = tx.clone();
-                let id_finished = app_clone.once("tts:finished", move |_event| {
-                    let _ = tx_finished.send(());
-                });
+        if will_play_tts && tts.is_playing() {
+            log::info!("Waiting for TTS playback to finish...");
+            let (tx, rx) = std::sync::mpsc::channel::<()>();
 
-                let tx_stopped = tx.clone();
-                let id_stopped = app_clone.once("tts:stopped", move |_event| {
-                    let _ = tx_stopped.send(());
-                });
+            let tx_finished = tx.clone();
+            let id_finished = app_clone.once("tts:finished", move |_event| {
+                let _ = tx_finished.send(());
+            });
 
-                let tx_error = tx.clone();
-                let id_error = app_clone.once("tts:error", move |_event| {
-                    let _ = tx_error.send(());
-                });
+            let tx_stopped = tx.clone();
+            let id_stopped = app_clone.once("tts:stopped", move |_event| {
+                let _ = tx_stopped.send(());
+            });
 
-                struct EventCleanup {
-                    app: tauri::AppHandle,
-                    ids: Vec<tauri::EventId>,
-                }
-                impl Drop for EventCleanup {
-                    fn drop(&mut self) {
-                        for id in &self.ids {
-                            self.app.unlisten(*id);
-                        }
+            let tx_error = tx.clone();
+            let id_error = app_clone.once("tts:error", move |_event| {
+                let _ = tx_error.send(());
+            });
+
+            struct EventCleanup {
+                app: tauri::AppHandle,
+                ids: Vec<tauri::EventId>,
+            }
+            impl Drop for EventCleanup {
+                fn drop(&mut self) {
+                    for id in &self.ids {
+                        self.app.unlisten(*id);
                     }
                 }
-                let _cleanup = EventCleanup {
-                    app: app_clone.clone(),
-                    ids: vec![id_finished, id_stopped, id_error],
-                };
-
-                // Wait for TTS finished or 60s timeout
-                let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
-                log::info!("TTS playback finished or timed out.");
             }
+            let _cleanup = EventCleanup {
+                app: app_clone.clone(),
+                ids: vec![id_finished, id_stopped, id_error],
+            };
+
+            let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
+            log::info!("TTS playback finished or timed out.");
         }
     });
 

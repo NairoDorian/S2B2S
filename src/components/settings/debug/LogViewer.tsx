@@ -203,15 +203,15 @@ export const LogViewer: React.FC = () => {
               onChange={(e) => setLinesLimit(Number(e.target.value))}
               className="bg-background border border-mid-gray/20 rounded px-2.5 py-1 text-xs text-text/80 focus:outline-none focus:border-logo-primary/50 cursor-pointer"
             >
-              <option value={50}>Last 50 Lines</option>
-              <option value={100}>Last 100 Lines</option>
-              <option value={200}>Last 200 Lines</option>
-              <option value={500}>Last 500 Lines</option>
+              <option value={50}>{t("debug.logViewer.lastLines", { count: 50 })}</option>
+              <option value={100}>{t("debug.logViewer.lastLines", { count: 100 })}</option>
+              <option value={200}>{t("debug.logViewer.lastLines", { count: 200 })}</option>
+              <option value={500}>{t("debug.logViewer.lastLines", { count: 500 })}</option>
             </select>
 
             <input
               type="text"
-              placeholder="Search logs..."
+              placeholder={t("debug.logViewer.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-background border border-mid-gray/20 rounded px-2.5 py-1 text-xs text-text/80 focus:outline-none focus:border-logo-primary/50 w-44"
@@ -227,7 +227,7 @@ export const LogViewer: React.FC = () => {
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 className="rounded border-mid-gray/30 text-logo-primary focus:ring-0 cursor-pointer"
               />
-              <span>Auto-refresh</span>
+              <span>{t("debug.logViewer.autoRefresh")}</span>
             </label>
 
             <button
@@ -248,7 +248,7 @@ export const LogViewer: React.FC = () => {
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.2"
                 />
               </svg>
-              <span>Refresh</span>
+              <span>{t("debug.logViewer.refresh")}</span>
             </button>
 
             <button
@@ -268,7 +268,7 @@ export const LogViewer: React.FC = () => {
                   d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
                 />
               </svg>
-              <span>Copy</span>
+              <span>{t("debug.logViewer.copy")}</span>
             </button>
 
             <button
@@ -288,7 +288,7 @@ export const LogViewer: React.FC = () => {
                   d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                 />
               </svg>
-              <span>Clear</span>
+              <span>{t("debug.logViewer.clear")}</span>
             </button>
           </div>
         </div>
@@ -300,7 +300,7 @@ export const LogViewer: React.FC = () => {
         >
           {filteredLines.length === 0 ? (
             <div className="text-zinc-600 text-center py-10 italic">
-              {rawLogs.trim() ? "No log entries match your filter criteria." : "No log entries generated yet."}
+              {rawLogs.trim() ? t("debug.logViewer.noFilterMatch") : t("debug.logViewer.noEntries")}
             </div>
           ) : (
             filteredLines.map((line, idx) => (
@@ -335,10 +335,10 @@ export const LogViewer: React.FC = () => {
         {/* Counter Summary */}
         <div className="text-[10px] text-text/40 flex justify-between px-1">
           <span>
-            Showing {filteredLines.length} of {logLines.length} fetched log entries
+            {t("debug.logViewer.showing", { filtered: filteredLines.length, total: logLines.length })}
           </span>
           <span>
-            LogLevel Filter: {severityFilter.toUpperCase()}
+            {t("debug.logViewer.levelFilter", { level: severityFilter.toUpperCase() })}
           </span>
         </div>
       </div>

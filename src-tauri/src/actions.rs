@@ -598,13 +598,16 @@ impl ShortcutAction for TranscribeAction {
                                 // (and speaks it when read-aloud is on). No paste.
                                 let settings = get_settings(&ah);
                                 let use_post_process = settings.post_process_enabled;
-                                
+
                                 let processed = if use_post_process {
                                     show_processing_overlay(&ah);
                                     process_transcription_output(&ah, &transcription, true).await
                                 } else {
                                     let mut final_text = transcription.to_string();
-                                    if let Some(converted_text) = maybe_convert_chinese_variant(&settings, &transcription).await {
+                                    if let Some(converted_text) =
+                                        maybe_convert_chinese_variant(&settings, &transcription)
+                                            .await
+                                    {
                                         final_text = converted_text;
                                     }
                                     ProcessedTranscription {
@@ -616,7 +619,8 @@ impl ShortcutAction for TranscribeAction {
 
                                 if wav_saved {
                                     let stt_model = tm.get_current_model();
-                                    let stt_duration = Some(transcription_time.elapsed().as_millis() as i64);
+                                    let stt_duration =
+                                        Some(transcription_time.elapsed().as_millis() as i64);
                                     if let Err(err) = hm.save_entry(
                                         file_name,
                                         transcription.clone(),
@@ -664,7 +668,8 @@ impl ShortcutAction for TranscribeAction {
                             // Save to history if WAV was saved
                             if wav_saved {
                                 let stt_model = tm.get_current_model();
-                                let stt_duration = Some(transcription_time.elapsed().as_millis() as i64);
+                                let stt_duration =
+                                    Some(transcription_time.elapsed().as_millis() as i64);
                                 if let Err(err) = hm.save_entry(
                                     file_name,
                                     transcription,
@@ -839,20 +844,20 @@ impl ShortcutAction for TogglePauseAction {
 
 fn substitute_context_variables(prompt: &str) -> String {
     let mut substituted = prompt.to_string();
-    
+
     // 1. ${current_app}
     if substituted.contains("${current_app}") {
         let app_name = crate::active_app::get_frontmost_app_name()
             .unwrap_or_else(|| "Unknown Application".to_string());
         substituted = substituted.replace("${current_app}", &app_name);
     }
-    
+
     // 2. ${time_local}
     if substituted.contains("${time_local}") {
         let local_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         substituted = substituted.replace("${time_local}", &local_time);
     }
-    
+
     substituted
 }
 

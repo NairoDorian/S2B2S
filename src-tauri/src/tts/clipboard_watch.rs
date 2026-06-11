@@ -28,8 +28,8 @@ fn get_clipboard_change_id() -> u64 {
 
 #[cfg(target_os = "macos")]
 fn get_clipboard_change_id() -> u64 {
-    use objc::{class, msg_send, sel, sel_impl};
     use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
     static mut LAST_CHANGE_COUNT: u64 = 0;
     #[link(name = "AppKit", kind = "framework")]
     extern "C" {
@@ -70,8 +70,10 @@ fn get_clipboard_change_id() -> u64 {
 fn get_clipboard_text() -> String {
     // Try xclip first, then wl-paste
     use std::process::Command;
-    for cmd in &[("xclip", &["-selection", "clipboard", "-o"] as &[&str]),
-                  ("wl-paste", &[] as &[&str])] {
+    for cmd in &[
+        ("xclip", &["-selection", "clipboard", "-o"] as &[&str]),
+        ("wl-paste", &[] as &[&str]),
+    ] {
         if let Ok(out) = Command::new(cmd.0).args(cmd.1).output() {
             if out.status.success() {
                 return String::from_utf8_lossy(&out.stdout).trim().to_string();

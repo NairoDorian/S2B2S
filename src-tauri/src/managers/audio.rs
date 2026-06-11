@@ -1,4 +1,6 @@
-use crate::audio_toolkit::{list_input_devices, vad::SmoothedVad, vad::TripleVad, AudioRecorder, SileroVad};
+use crate::audio_toolkit::{
+    list_input_devices, vad::SmoothedVad, vad::TripleVad, AudioRecorder, SileroVad,
+};
 use crate::helpers::clamshell;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
@@ -128,18 +130,19 @@ fn create_audio_recorder(
     let settings = get_settings(app_handle);
     let silero = SileroVad::new(vad_path, 0.3)
         .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {}", e))?;
-    
-    let base_vad: Box<dyn crate::audio_toolkit::VoiceActivityDetector> = if settings.vad_mode == "triple" {
-        Box::new(TripleVad::new(
-            Box::new(silero),
-            noise_suppression_enabled,
-            settings.rnnoise_voice_threshold as f32,
-            0.002,
-        ))
-    } else {
-        Box::new(silero)
-    };
-    
+
+    let base_vad: Box<dyn crate::audio_toolkit::VoiceActivityDetector> =
+        if settings.vad_mode == "triple" {
+            Box::new(TripleVad::new(
+                Box::new(silero),
+                noise_suppression_enabled,
+                settings.rnnoise_voice_threshold as f32,
+                0.002,
+            ))
+        } else {
+            Box::new(silero)
+        };
+
     let smoothed_vad = SmoothedVad::new(base_vad, 15, 15, 2);
 
     // Recorder with VAD plus a spectrum-level callback that forwards updates to
@@ -194,7 +197,8 @@ impl AudioRecordingManager {
         };
 
         let is_paused = Arc::new(AtomicBool::new(false));
-        let noise_suppression_enabled = Arc::new(AtomicBool::new(settings.noise_suppression_enabled));
+        let noise_suppression_enabled =
+            Arc::new(AtomicBool::new(settings.noise_suppression_enabled));
         let continuous_mode = Arc::new(AtomicBool::new(false));
         let continuous_mode_paused = Arc::new(AtomicBool::new(false));
         let auto_stop_enabled = Arc::new(AtomicBool::new(false));
@@ -572,13 +576,14 @@ impl AudioRecordingManager {
     }
 
     pub fn set_noise_suppression_enabled(&self, enabled: bool) {
-        self.noise_suppression_enabled.store(enabled, Ordering::Relaxed);
+        self.noise_suppression_enabled
+            .store(enabled, Ordering::Relaxed);
     }
 
     pub fn set_continuous_mode(&self, enabled: bool) -> Result<(), anyhow::Error> {
         self.continuous_mode.store(enabled, Ordering::SeqCst);
         self.continuous_mode_paused.store(false, Ordering::SeqCst);
-        
+
         if enabled {
             self.update_mode(MicrophoneMode::AlwaysOn)?;
         } else {
@@ -590,7 +595,7 @@ impl AudioRecordingManager {
             };
             self.update_mode(original_mode)?;
         }
-        
+
         Ok(())
     }
 
@@ -612,8 +617,13 @@ impl AudioRecordingManager {
 
     pub fn set_auto_stop(&self, enabled: bool, duration_secs: u32) {
         self.auto_stop_enabled.store(enabled, Ordering::SeqCst);
-        self.auto_stop_duration_secs.store(duration_secs.max(5), Ordering::SeqCst);
-        log::info!("[AutoStop] {} ({}s silence)", if enabled { "enabled" } else { "disabled" }, duration_secs);
+        self.auto_stop_duration_secs
+            .store(duration_secs.max(5), Ordering::SeqCst);
+        log::info!(
+            "[AutoStop] {} ({}s silence)",
+            if enabled { "enabled" } else { "disabled" },
+            duration_secs
+        );
     }
 
     pub fn update_vad_mode(&self, _mode: &str) -> Result<(), anyhow::Error> {
@@ -621,7 +631,7 @@ impl AudioRecordingManager {
         let mut recorder_opt = self.recorder.lock().unwrap();
         *recorder_opt = None;
         drop(recorder_opt);
-        
+
         // If it was open, restart the stream to recreate the recorder
         if *self.is_open.lock().unwrap() {
             self.close_generation.fetch_add(1, Ordering::SeqCst);

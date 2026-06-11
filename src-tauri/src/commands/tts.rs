@@ -70,10 +70,7 @@ pub fn tts_get_voices(
 /// Save the most recent TTS audio to a user-chosen file path.
 #[tauri::command]
 #[specta::specta]
-pub fn tts_save_to_file(
-    app: AppHandle,
-    target_path: String,
-) -> Result<(), String> {
+pub fn tts_save_to_file(app: AppHandle, target_path: String) -> Result<(), String> {
     use crate::tts::audio_format::save_audio_file;
     use std::sync::Arc;
 
@@ -129,7 +126,8 @@ pub fn tts_unload_engine() -> Result<bool, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_piper_server_status() -> Result<crate::tts::backends::piper_server::PiperServerStatus, String> {
+pub fn get_piper_server_status(
+) -> Result<crate::tts::backends::piper_server::PiperServerStatus, String> {
     Ok(crate::tts::backends::piper_server::get_piper_server_status())
 }
 

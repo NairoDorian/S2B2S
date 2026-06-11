@@ -74,7 +74,11 @@ impl BrainManager {
         // Build the context window: system + optional speakable-output prompt + last N turns + the new user message.
         let mut messages = Vec::new();
         let system = if cfg.read_aloud && !cfg.speakable_output_prompt.trim().is_empty() {
-            format!("{}\n\n{}", cfg.system_prompt.trim(), cfg.speakable_output_prompt.trim())
+            format!(
+                "{}\n\n{}",
+                cfg.system_prompt.trim(),
+                cfg.speakable_output_prompt.trim()
+            )
         } else {
             cfg.system_prompt.clone()
         };
@@ -135,7 +139,10 @@ impl BrainManager {
                     if !ft.load(std::sync::atomic::Ordering::SeqCst) {
                         ft.store(true, std::sync::atomic::Ordering::SeqCst);
                         let ms = turn_clone.elapsed().as_millis() as u64;
-                        let _ = app_latency.emit("brain:latency", serde_json::json!({ "stage": "first_token", "ms": ms }));
+                        let _ = app_latency.emit(
+                            "brain:latency",
+                            serde_json::json!({ "stage": "first_token", "ms": ms }),
+                        );
                     }
                     let _ = app_tokens.emit("brain:token", token);
                 },
