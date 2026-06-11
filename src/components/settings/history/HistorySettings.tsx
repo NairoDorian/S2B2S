@@ -4,6 +4,7 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2, Mic, Volume2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   commands,
   events,
@@ -68,6 +69,10 @@ export const HistorySettings: React.FC = () => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const entriesRef = useRef<HistoryEntry[]>([]);
   const loadingRef = useRef(false);
+
+  // Upgraded multi-select state
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [exportingSelected, setExportingSelected] = useState(false);
 
   // Keep ref in sync for use in IntersectionObserver callback
   useEffect(() => {
@@ -141,8 +146,6 @@ export const HistorySettings: React.FC = () => {
           prev.map((e) => (e.id === payload.entry.id ? payload.entry : e)),
         );
       }
-      // "deleted" and "toggled" are handled by optimistic updates only,
-      // so we intentionally ignore them here to avoid double-mutation.
     });
 
     return () => {
@@ -204,6 +207,7 @@ export const HistorySettings: React.FC = () => {
   const deleteAudioEntry = async (id: number) => {
     // Optimistically remove
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    setSelectedIds((prev) => prev.filter((selectedId) => selectedId !== id));
     try {
       const result = await commands.deleteHistoryEntry(id);
       if (result.status !== "ok") {
@@ -216,8 +220,8 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
-  const retryHistoryEntry = async (id: number) => {
-    const result = await commands.retryHistoryEntryTranscription(id);
+  const regenerateHistoryEntry = async (id: number) => {
+    const result = await commands.regenerateHistoryEntry(id);
     if (result.status !== "ok") {
       throw new Error(String(result.error));
     }
@@ -228,7 +232,8 @@ export const HistorySettings: React.FC = () => {
       const result = await commands.deleteAllHistoryEntries();
       if (result.status === "ok") {
         setEntries([]);
-        toast.success(`Deleted ${result.data} entries`);
+        setSelectedIds([]);
+        toast.success(t("settings.history.deleteAllSuccess", { defaultValue: `Deleted all entries` }));
       }
     } catch (error) {
       console.error("Failed to delete all entries:", error);
@@ -243,6 +248,81 @@ export const HistorySettings: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to open recordings folder:", error);
+    }
+  };
+
+  // Upgraded bulk selection actions
+  const handleToggleSelect = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id)
+        ? prev.filter((selectedId) => selectedId !== id)
+        : [...prev, id]
+    );
+  };
+
+  const isAllSelected = entries.length > 0 && selectedIds.length === entries.length;
+
+  const handleSelectAllToggle = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(entries.map((e) => e.id));
+    }
+  };
+
+  const deleteSelectedEntries = async () => {
+    if (selectedIds.length === 0) return;
+    const idsToDelete = [...selectedIds];
+
+    // Optimistically remove from UI
+    setEntries((prev) => prev.filter((e) => !idsToDelete.includes(e.id)));
+    setSelectedIds([]);
+
+    try {
+      const result = await commands.deleteHistoryEntries(idsToDelete);
+      if (result.status === "ok") {
+        toast.success(t("settings.history.deleteSelectedSuccess", { defaultValue: "Selected entries deleted successfully." }));
+      } else {
+        toast.error(t("settings.history.deleteSelectedError", { defaultValue: `Delete failed: ${result.error}` }));
+        loadPage();
+      }
+    } catch (error) {
+      console.error("Failed to delete selected entries:", error);
+      toast.error(String(error));
+      loadPage();
+    }
+  };
+
+  const exportSelectedEntries = async () => {
+    if (selectedIds.length === 0) return;
+
+    try {
+      setExportingSelected(true);
+      const filePath = await save({
+        filters: [
+          {
+            name: "Markdown",
+            extensions: ["md"],
+          },
+        ],
+        defaultPath: "s2b2s-history-export.md",
+      });
+
+      if (!filePath) {
+        return;
+      }
+
+      const result = await commands.exportHistoryEntries(selectedIds, filePath);
+      if (result.status === "ok") {
+        toast.success(t("settings.history.exportSelectedSuccess", { defaultValue: "Selected entries exported successfully!" }));
+      } else {
+        toast.error(t("settings.history.exportSelectedError", { defaultValue: `Export failed: ${result.error}` }));
+      }
+    } catch (err) {
+      console.error("Failed to export selected entries:", err);
+      toast.error(String(err));
+    } finally {
+      setExportingSelected(false);
     }
   };
 
@@ -272,7 +352,9 @@ export const HistorySettings: React.FC = () => {
               onCopyText={() => copyToClipboard(entry.transcription_text)}
               getAudioUrl={getAudioUrl}
               deleteAudio={deleteAudioEntry}
-              retryTranscription={retryHistoryEntry}
+              regenerateEntry={regenerateHistoryEntry}
+              isSelected={selectedIds.includes(entry.id)}
+              onToggleSelect={() => handleToggleSelect(entry.id)}
             />
           ))}
         </div>
@@ -285,29 +367,72 @@ export const HistorySettings: React.FC = () => {
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-              {t("settings.history.title")}
-            </h2>
+        {selectedIds.length > 0 ? (
+          <div className="px-4 py-2 bg-mid-gray/10 rounded-lg flex items-center justify-between border border-mid-gray/20 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={handleSelectAllToggle}
+                className="w-4 h-4 rounded border-mid-gray/40 text-logo-primary focus:ring-logo-primary bg-background-ui cursor-pointer"
+              />
+              <span className="text-xs text-text/80 font-medium">
+                {t("settings.history.selectedCount", { count: selectedIds.length, defaultValue: `${selectedIds.length} selected` })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={exportSelectedEntries}
+                variant="secondary"
+                size="sm"
+                className="flex items-center gap-1"
+                disabled={exportingSelected}
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span className="text-xs">
+                  {exportingSelected
+                    ? t("settings.history.exporting", { defaultValue: "Exporting..." })
+                    : t("settings.history.exportSelected", { defaultValue: "Export Markdown" })}
+                </span>
+              </Button>
+              <Button
+                onClick={deleteSelectedEntries}
+                variant="danger"
+                size="sm"
+                className="flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="text-xs">
+                  {t("settings.history.deleteSelected", { defaultValue: "Delete Selected" })}
+                </span>
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={deleteAllEntries}
-              variant="secondary"
-              size="sm"
-              className="flex items-center gap-1 text-red-400 hover:text-red-300"
-              disabled={entries.length === 0}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span className="text-xs">{t("settings.history.deleteAll")}</span>
-            </Button>
-            <OpenRecordingsButton
-              onClick={openRecordingsFolder}
-              label={t("settings.history.openFolder")}
-            />
+        ) : (
+          <div className="px-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
+                {t("settings.history.title")}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={deleteAllEntries}
+                variant="secondary"
+                size="sm"
+                className="flex items-center gap-1 text-red-400 hover:text-red-300"
+                disabled={entries.length === 0}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="text-xs">{t("settings.history.deleteAll")}</span>
+              </Button>
+              <OpenRecordingsButton
+                onClick={openRecordingsFolder}
+                label={t("settings.history.openFolder")}
+              />
+            </div>
           </div>
-        </div>
+        )}
         <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
           {content}
         </div>
@@ -322,7 +447,9 @@ interface HistoryEntryProps {
   onCopyText: () => void;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
-  retryTranscription: (id: number) => Promise<void>;
+  regenerateEntry: (id: number) => Promise<void>;
+  isSelected: boolean;
+  onToggleSelect: () => void;
 }
 
 const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
@@ -331,11 +458,13 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   onCopyText,
   getAudioUrl,
   deleteAudio,
-  retryTranscription,
+  regenerateEntry,
+  isSelected,
+  onToggleSelect,
 }) => {
   const { t, i18n } = useTranslation();
   const [showCopied, setShowCopied] = useState(false);
-  const [retrying, setRetrying] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const hasTranscription = entry.transcription_text.trim().length > 0;
 
@@ -363,15 +492,16 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     }
   };
 
-  const handleRetranscribe = async () => {
+  const handleRegenerate = async () => {
     try {
-      setRetrying(true);
-      await retryTranscription(entry.id);
+      setRegenerating(true);
+      await regenerateEntry(entry.id);
+      toast.success(t("settings.history.regenerateSuccess", { defaultValue: "History entry successfully regenerated!" }));
     } catch (error) {
-      console.error("Failed to re-transcribe:", error);
-      toast.error(t("settings.history.retranscribeError"));
+      console.error("Failed to regenerate history entry:", error);
+      toast.error(t("settings.history.regenerateError", { defaultValue: "Failed to regenerate entry." }));
     } finally {
-      setRetrying(false);
+      setRegenerating(false);
     }
   };
 
@@ -379,116 +509,126 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const isTts = entry.entry_type === "tts";
 
   return (
-    <div className="px-4 py-2 pb-5 flex flex-col gap-3">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium">{formattedDate}</p>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isTts ? "bg-purple-500/20 text-purple-400" : "bg-logo-primary/20 text-logo-primary"}`}>
-            {isTts ? "TTS" : "STT"}
-          </span>
-        </div>
-        <div className="flex items-center">
-          <IconButton
-            onClick={handleCopyText}
-            disabled={!hasTranscription || retrying}
-            title={t("settings.history.copyToClipboard")}
-          >
-            {showCopied ? (
-              <Check width={16} height={16} />
-            ) : (
-              <Copy width={16} height={16} />
-            )}
-          </IconButton>
-          <IconButton
-            onClick={onToggleSaved}
-            disabled={retrying}
-            active={entry.saved}
-            title={
-              entry.saved
-                ? t("settings.history.unsave")
-                : t("settings.history.save")
-            }
-          >
-            <Star
-              width={16}
-              height={16}
-              fill={entry.saved ? "currentColor" : "none"}
-            />
-          </IconButton>
-          <IconButton
-            onClick={handleRetranscribe}
-            disabled={retrying}
-            title={t("settings.history.retranscribe")}
-          >
-            <RotateCcw
-              width={16}
-              height={16}
-              style={
-                retrying
-                  ? { animation: "spin 1s linear infinite reverse" }
-                  : undefined
-              }
-            />
-          </IconButton>
-          <IconButton
-            onClick={handleDeleteEntry}
-            disabled={retrying}
-            title={t("settings.history.delete")}
-          >
-            <Trash2 width={16} height={16} />
-          </IconButton>
-        </div>
+    <div className="px-4 py-2 pb-5 flex gap-4 items-start hover:bg-mid-gray/5 transition-colors">
+      <div className="pt-2 flex items-center">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelect}
+          className="w-4 h-4 rounded border-mid-gray/40 text-logo-primary focus:ring-logo-primary bg-background-ui cursor-pointer"
+        />
       </div>
-
-      <p
-        className={`italic text-sm pb-2 ${
-          retrying
-            ? ""
-            : hasTranscription
-              ? "text-text/90 select-text cursor-text whitespace-pre-wrap break-words"
-              : "text-text/40"
-        }`}
-        style={
-          retrying
-            ? { animation: "transcribe-pulse 3s ease-in-out infinite" }
-            : undefined
-        }
-      >
-        {retrying && (
-          <style>{`
-            @keyframes transcribe-pulse {
-              0%, 100% { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
-              50% { color: color-mix(in srgb, var(--color-text) 90%, transparent); }
-            }
-          `}</style>
-        )}
-        {retrying
-          ? t("settings.history.transcribing")
-          : hasTranscription
-            ? entry.transcription_text
-            : t("settings.history.transcriptionFailed")}
-      </p>
-
-      {(entry.model_name || entry.duration_ms != null) && (
-        <div className="flex items-center gap-3 text-[10px] text-text/40">
-          {isTts ? (
-            <span className="flex items-center gap-1">
-              <Volume2 className="w-3 h-3" />
-              {entry.model_name || "TTS"}
+      <div className="flex-1 flex flex-col gap-3 min-w-0">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">{formattedDate}</p>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isTts ? "bg-purple-500/20 text-purple-400" : "bg-logo-primary/20 text-logo-primary"}`}>
+              {isTts ? "TTS" : "STT"}
             </span>
-          ) : (
-            <span className="flex items-center gap-1">
-              <Mic className="w-3 h-3" />
-              {entry.model_name || "STT"}
-            </span>
-          )}
-          {entry.duration_ms != null && (
-            <span>{entry.duration_ms}ms</span>
-          )}
+          </div>
+          <div className="flex items-center">
+            <IconButton
+              onClick={handleCopyText}
+              disabled={!hasTranscription || regenerating}
+              title={t("settings.history.copyToClipboard")}
+            >
+              {showCopied ? (
+                <Check width={16} height={16} />
+              ) : (
+                <Copy width={16} height={16} />
+              )}
+            </IconButton>
+            <IconButton
+              onClick={onToggleSaved}
+              disabled={regenerating}
+              active={entry.saved}
+              title={
+                entry.saved
+                  ? t("settings.history.unsave")
+                  : t("settings.history.save")
+              }
+            >
+              <Star
+                width={16}
+                height={16}
+                fill={entry.saved ? "currentColor" : "none"}
+              />
+            </IconButton>
+            <IconButton
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              title={isTts ? t("settings.history.resynthesize", { defaultValue: "Re-synthesize audio" }) : t("settings.history.retranscribe", { defaultValue: "Re-transcribe audio" })}
+            >
+              <RotateCcw
+                width={16}
+                height={16}
+                style={
+                  regenerating
+                    ? { animation: "spin 1s linear infinite reverse" }
+                    : undefined
+                }
+              />
+            </IconButton>
+            <IconButton
+              onClick={handleDeleteEntry}
+              disabled={regenerating}
+              title={t("settings.history.delete")}
+            >
+              <Trash2 width={16} height={16} />
+            </IconButton>
+          </div>
         </div>
-      )}
 
-      <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
+        <p
+          className={`italic text-sm pb-2 ${
+            regenerating
+              ? ""
+              : hasTranscription
+                ? "text-text/90 select-text cursor-text whitespace-pre-wrap break-words"
+                : "text-text/40"
+          }`}
+          style={
+            regenerating
+              ? { animation: "transcribe-pulse 3s ease-in-out infinite" }
+              : undefined
+          }
+        >
+          {regenerating && (
+            <style>{`
+              @keyframes transcribe-pulse {
+                0%, 100% { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
+                50% { color: color-mix(in srgb, var(--color-text) 90%, transparent); }
+              }
+            `}</style>
+          )}
+          {regenerating
+            ? (isTts ? t("settings.history.synthesizing", { defaultValue: "Synthesizing audio..." }) : t("settings.history.transcribing", { defaultValue: "Transcribing..." }))
+            : hasTranscription
+              ? entry.transcription_text
+              : t("settings.history.transcriptionFailed")}
+        </p>
+
+        {(entry.model_name || entry.duration_ms != null) && (
+          <div className="flex items-center gap-3 text-[10px] text-text/40">
+            {isTts ? (
+              <span className="flex items-center gap-1">
+                <Volume2 className="w-3 h-3" />
+                {entry.model_name || "TTS"}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Mic className="w-3 h-3" />
+                {entry.model_name || "STT"}
+              </span>
+            )}
+            {entry.duration_ms != null && (
+              <span>{entry.duration_ms}ms</span>
+            )}
+          </div>
+        )}
+
+        <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
+      </div>
     </div>
   );
 };

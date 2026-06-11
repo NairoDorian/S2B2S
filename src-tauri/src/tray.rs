@@ -286,6 +286,10 @@ mod tests {
             post_processed_text: post_processed.map(|text| text.to_string()),
             post_process_prompt: None,
             post_process_requested: false,
+            entry_type: "stt".to_string(),
+            model_name: None,
+            model_info: None,
+            duration_ms: None,
         }
     }
 

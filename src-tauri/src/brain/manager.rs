@@ -154,4 +154,42 @@ impl BrainManager {
             }
         }
     }
+
+    /// Warm up the AI Brain silently. Does not touch conversation history,
+    /// does not emit Tauri events, and does not speak the reply.
+    pub async fn warmup(&self) -> Result<(), String> {
+        let cfg = get_settings(&self.app).brain;
+        if !cfg.enabled {
+            return Ok(());
+        }
+        let model = cfg.active_model();
+        if model.trim().is_empty() {
+            return Ok(());
+        }
+
+        let messages = vec![ChatMessage {
+            role: "user".into(),
+            content: "Count from 1 to 3".into(),
+        }];
+
+        // Create a standalone abort flag for warmup
+        let abort = Arc::new(AtomicBool::new(false));
+
+        log::info!("[Startup] Running silent Brain warm up stream...");
+        let _ = self
+            .client
+            .stream_chat(
+                &cfg.active_base_url(),
+                &cfg.active_api_key(),
+                &model,
+                &messages,
+                abort,
+                |_token| {},
+                |_sentence| {},
+            )
+            .await?;
+
+        log::info!("[Startup] Silent Brain warm up stream completed successfully.");
+        Ok(())
+    }
 }

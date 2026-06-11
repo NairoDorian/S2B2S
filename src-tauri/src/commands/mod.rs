@@ -7,6 +7,8 @@ pub mod tts;
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::cancel_current_operation;
+use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
@@ -185,5 +187,40 @@ pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
     app.manage(ShortcutsInitialized);
 
     log::info!("Shortcuts initialized successfully");
+    Ok(())
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn export_settings(app: AppHandle, path: String) -> Result<(), String> {
+    let settings = get_settings(&app);
+    let json = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to write settings file: {e}"))?;
+    Ok(())
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn import_settings(app: AppHandle, path: String) -> Result<(), String> {
+    let json = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read settings file: {e}"))?;
+    let settings: AppSettings = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse settings: {e}"))?;
+    
+    write_settings(&app, settings.clone());
+    
+    if let Some(rm) = app.try_state::<Arc<AudioRecordingManager>>() {
+        let new_mode = if settings.always_on_microphone {
+            MicrophoneMode::AlwaysOn
+        } else {
+            MicrophoneMode::OnDemand
+        };
+        let _ = rm.update_mode(new_mode);
+        rm.set_noise_suppression_enabled(settings.noise_suppression_enabled);
+        let _ = rm.update_vad_mode(&settings.vad_mode);
+    }
+    
     Ok(())
 }

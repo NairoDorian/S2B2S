@@ -349,6 +349,11 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "recording");
 }
 
+/// Shows the paused overlay window
+pub fn show_paused_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "paused");
+}
+
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "transcribing");

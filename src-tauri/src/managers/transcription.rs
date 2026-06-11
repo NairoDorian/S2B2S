@@ -458,22 +458,53 @@ impl TranscriptionManager {
             return Ok(String::new());
         }
 
-        // Check if model is loaded, if not try to load it
-        {
-            // If the model is loading, wait for it to complete.
+        // Determine target model based on audio duration and settings
+        let settings = get_settings(&self.app_handle);
+        let duration_seconds = audio.len() as f64 / 16000.0;
+        let mut target_model_id = settings.selected_model.clone();
+        if let Some(ref long_model) = settings.long_audio_model {
+            if !long_model.is_empty() && duration_seconds > settings.long_audio_threshold_seconds {
+                target_model_id = long_model.clone();
+                info!(
+                    "Long audio detected ({:.2}s > {}s), routing to model: {}",
+                    duration_seconds, settings.long_audio_threshold_seconds, target_model_id
+                );
+            }
+        }
+
+        // Load the target model if it's not the one currently loaded
+        let current_loaded = {
+            let cur = self.current_model_id.lock().unwrap();
+            cur.clone()
+        };
+
+        if Some(target_model_id.clone()) != current_loaded {
+            info!("Model routing: loading model '{}'", target_model_id);
+            // Wait for any concurrent loading to finish
+            {
+                let mut is_loading = self.is_loading.lock().unwrap();
+                while *is_loading {
+                    is_loading = self.loading_condvar.wait(is_loading).unwrap();
+                }
+            }
+            
+            // Now load the target model
+            self.load_model(&target_model_id)?;
+        } else {
+            // Otherwise, make sure any pending load is finished
             let mut is_loading = self.is_loading.lock().unwrap();
             while *is_loading {
                 is_loading = self.loading_condvar.wait(is_loading).unwrap();
             }
+        }
 
+        // Ensure engine is loaded
+        {
             let engine_guard = self.lock_engine();
             if engine_guard.is_none() {
                 return Err(anyhow::anyhow!("Model is not loaded for transcription."));
             }
         }
-
-        // Get current settings for configuration
-        let settings = get_settings(&self.app_handle);
 
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.

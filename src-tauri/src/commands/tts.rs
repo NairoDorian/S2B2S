@@ -57,11 +57,22 @@ pub fn tts_is_playing(tts: State<'_, Arc<TtsManager>>) -> Result<bool, String> {
     Ok(tts.is_playing())
 }
 
-/// Enumerate available voices for the configured engine.
+/// Enumerate available voices for a specific engine, or defaults to the configured engine.
 #[tauri::command]
 #[specta::specta]
-pub fn tts_get_voices(tts: State<'_, Arc<TtsManager>>) -> Result<Vec<Voice>, String> {
-    Ok(tts.list_voices())
+pub fn tts_get_voices(
+    tts: State<'_, Arc<TtsManager>>,
+    engine: Option<crate::settings::TtsEngine>,
+) -> Result<Vec<Voice>, String> {
+    Ok(tts.list_voices_for_engine(engine))
+}
+
+/// Play the startup greeting audio using customized greeting settings.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_play_greeting(tts: State<'_, Arc<TtsManager>>) -> Result<(), String> {
+    tts.play_greeting();
+    Ok(())
 }
 
 /// Unload the warm TTS model/server (tray "Unload model" parity).

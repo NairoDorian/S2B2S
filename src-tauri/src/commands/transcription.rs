@@ -38,3 +38,19 @@ pub fn unload_model_manually(
         .unload_model()
         .map_err(|e| format!("Failed to unload model: {}", e))
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_long_audio_model(app: AppHandle, model: Option<String>) {
+    let mut settings = get_settings(&app);
+    settings.long_audio_model = model;
+    write_settings(&app, settings);
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn set_long_audio_threshold(app: AppHandle, threshold: f64) {
+    let mut settings = get_settings(&app);
+    settings.long_audio_threshold_seconds = threshold;
+    write_settings(&app, settings);
+}
