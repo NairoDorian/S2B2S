@@ -163,6 +163,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let tts_manager = Arc::new(crate::tts::manager::TtsManager::new(app_handle.clone()));
     let brain_manager = Arc::new(crate::brain::manager::BrainManager::new(app_handle.clone()));
+    let llama_manager = Arc::new(crate::brain::llama_manager::LlamaManager::new(app_handle.clone()));
 
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
@@ -174,6 +175,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(tts_manager.clone());
     app_handle.manage(brain_manager.clone());
+    app_handle.manage(llama_manager.clone());
 
     // CopySpeak double-copy trigger (idles cheaply while disabled).
     crate::tts::clipboard_watch::start(app_handle.clone());
@@ -479,6 +481,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::brain::change_brain_base_url_setting,
             commands::brain::change_brain_api_key_setting,
             commands::brain::change_brain_model_setting,
+            commands::brain::download_llama_models,
+            commands::brain::get_llama_models_status,
+            commands::brain::is_llama_downloading,
             commands::discovery::discover_local_brains,
             commands::discovery::is_ollama_running,
             commands::wake_word::wake_word_start,
@@ -759,7 +764,11 @@ pub fn run(cli_args: CliArgs) {
             if let tauri::RunEvent::Reopen { .. } = &event {
                 show_main_window(app);
             }
-            let _ = (app, event);
+            if let tauri::RunEvent::Exit = &event {
+                if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+                    llama_manager.stop();
+                }
+            }
         });
 }
 

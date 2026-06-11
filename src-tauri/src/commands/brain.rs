@@ -3,7 +3,7 @@
 use crate::brain::manager::BrainManager;
 use crate::settings::{get_settings, write_settings, BrainConfig};
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Manager};
 
 /// AI Replace: speak an instruction to rewrite selected text via the Brain.
 /// Returns the rewritten text; caller pastes it at the cursor.
@@ -18,6 +18,11 @@ pub async fn ai_replace_selection(
     let brain_cfg = &settings.brain;
     if !brain_cfg.enabled {
         return Err("The Brain is disabled".to_string());
+    }
+    if brain_cfg.provider_id == "llama_cpp" {
+        if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+            llama_manager.ensure_server_running().await?;
+        }
     }
     let api_key = brain_cfg.active_api_key();
     let model = brain_cfg.active_model();
@@ -103,11 +108,17 @@ pub async fn fetch_brain_models(app: AppHandle) -> Result<Vec<String>, String> {
     let api_key = brain_cfg.active_api_key();
 
     // Skip fetching if no API key for providers that typically need one
-    if api_key.trim().is_empty() && provider.id != "custom" {
+    if api_key.trim().is_empty() && provider.id != "custom" && provider.id != "llama_cpp" {
         return Err(format!(
             "API key is required for {}. Please add an API key to list available models.",
             provider.label
         ));
+    }
+
+    if provider.id == "llama_cpp" {
+        if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+            llama_manager.ensure_server_running().await?;
+        }
     }
 
     crate::llm_client::fetch_models(provider, api_key).await
@@ -161,7 +172,7 @@ pub fn change_brain_base_url_setting(
         .provider_mut(&provider_id)
         .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
 
-    if provider.id != "custom" {
+    if !provider.allow_base_url_edit {
         return Err(format!(
             "Provider '{}' does not allow editing the base URL",
             provider.label
@@ -203,4 +214,29 @@ pub fn change_brain_model_setting(
     settings.brain.models.insert(provider_id, model);
     write_settings(&app, settings);
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn download_llama_models(
+    llama_manager: State<'_, Arc<crate::brain::llama_manager::LlamaManager>>,
+) -> Result<(), String> {
+    llama_manager.inner().clone().start_download_in_background();
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_llama_models_status(
+    llama_manager: State<'_, Arc<crate::brain::llama_manager::LlamaManager>>,
+) -> Result<bool, String> {
+    llama_manager.get_models_status()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn is_llama_downloading(
+    llama_manager: State<'_, Arc<crate::brain::llama_manager::LlamaManager>>,
+) -> Result<bool, String> {
+    Ok(llama_manager.is_downloading())
 }

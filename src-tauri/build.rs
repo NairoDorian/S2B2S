@@ -7,6 +7,8 @@ fn main() {
 
     generate_tray_translations();
 
+    build_llama_cpp();
+
     tauri_build::build()
 }
 
@@ -303,4 +305,145 @@ fn build_apple_intelligence_bridge() {
     }
 
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+}
+
+fn build_llama_cpp() {
+    use std::process::Command;
+    use std::path::Path;
+    use std::fs;
+
+    let res_dir = Path::new("resources");
+    let target_bin = res_dir.join(if cfg!(windows) { "llama-server.exe" } else { "llama-server" });
+    if target_bin.exists() {
+        println!("cargo:warning=llama-server already exists in resources folder. Skipping llama.cpp compilation to speed up builds.");
+        return;
+    }
+
+    let llama_dir = Path::new("../llama.cpp");
+    
+    // 1. Clone or pull llama.cpp
+    if !llama_dir.exists() {
+        println!("cargo:warning=Cloning latest llama.cpp from GitHub...");
+        let status = Command::new("git")
+            .args(&["clone", "https://github.com/ggml-org/llama.cpp", "../llama.cpp"])
+            .status();
+        match status {
+            Ok(s) if s.success() => {},
+            other => {
+                println!("cargo:warning=Failed to clone llama.cpp: {:?}", other);
+                return;
+            }
+        }
+    } else {
+        println!("cargo:warning=Updating llama.cpp repository...");
+        let status = Command::new("git")
+            .current_dir(llama_dir)
+            .args(&["pull"])
+            .status();
+        if let Err(e) = status {
+            println!("cargo:warning=Failed to pull updates for llama.cpp: {}", e);
+        }
+    }
+
+    // 2. Configure CMake
+    let build_dir = llama_dir.join("build");
+    println!("cargo:warning=Configuring llama.cpp with CMake...");
+    let mut status = Command::new("cmake")
+        .args(&[
+            "../llama.cpp",
+            "-B",
+            "../llama.cpp/build",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DGGML_CUDA=ON"
+        ])
+        .status();
+
+    let mut configured_with_cuda = false;
+    if let Ok(ref s) = status {
+        if s.success() {
+            println!("cargo:warning=Successfully configured llama.cpp with CUDA support!");
+            configured_with_cuda = true;
+        }
+    }
+
+    if !configured_with_cuda {
+        println!("cargo:warning=CMake configuration with CUDA failed. Retrying without CUDA (CPU-only)...");
+        status = Command::new("cmake")
+            .args(&[
+                "../llama.cpp",
+                "-B",
+                "../llama.cpp/build",
+                "-DBUILD_SHARED_LIBS=OFF",
+                "-DGGML_CUDA=OFF"
+            ])
+            .status();
+    }
+
+    match status {
+        Ok(s) if s.success() => {},
+        other => {
+            println!("cargo:warning=CMake configuration failed: {:?}", other);
+            return;
+        }
+    }
+
+    // 3. Build with CMake
+    println!("cargo:warning=Building llama.cpp targets with CMake...");
+    let status = Command::new("cmake")
+        .args(&[
+            "--build",
+            "../llama.cpp/build",
+            "--config",
+            "Release",
+            "-j",
+            "--target",
+            "llama-server"
+        ])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {},
+        other => {
+            println!("cargo:warning=CMake build failed: {:?}", other);
+            return;
+        }
+    }
+
+    // 4. Copy binaries to llama_dir and resources
+    println!("cargo:warning=Copying llama.cpp binaries...");
+    let bin_names = &["llama-server"];
+    
+    // Check both bin/ and bin/Release/ locations
+    let bin_dirs = &[
+        build_dir.join("bin"),
+        build_dir.join("bin").join("Release"),
+    ];
+
+    let res_dir = Path::new("resources");
+    if !res_dir.exists() {
+        let _ = fs::create_dir_all(res_dir);
+    }
+
+    for name in bin_names {
+        // Try with and without .exe extension
+        for ext in &["", ".exe"] {
+            let src_filename = format!("{}{}", name, ext);
+            for bin_dir in bin_dirs {
+                let src_path = bin_dir.join(&src_filename);
+                if src_path.exists() {
+                    let dest_path1 = llama_dir.join(&src_filename);
+                    let dest_path2 = res_dir.join(&src_filename);
+                    if let Err(e) = fs::copy(&src_path, &dest_path1) {
+                        println!("cargo:warning=Failed to copy {} to {}: {}", src_path.display(), dest_path1.display(), e);
+                    }
+                    if let Err(e) = fs::copy(&src_path, &dest_path2) {
+                        println!("cargo:warning=Failed to copy {} to {}: {}", src_path.display(), dest_path2.display(), e);
+                    } else {
+                        println!("cargo:warning=Successfully copied {} to {}", src_filename, dest_path2.display());
+                    }
+                    break;
+                }
+            }
+        }
+    }
 }

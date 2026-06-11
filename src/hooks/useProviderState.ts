@@ -110,7 +110,7 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
         const hasBaseUrl = (provider?.base_url ?? "").trim() !== "";
         const hasApiKey = key.trim() !== "";
 
-        if (provider?.id === "custom" ? hasBaseUrl : hasApiKey) {
+        if ((provider?.id === "custom" || provider?.id === "llama_cpp") ? hasBaseUrl : hasApiKey) {
           void config.fetchModels(providerId);
         }
       }
@@ -120,7 +120,7 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
 
   const handleBaseUrlChange = useCallback(
     (value: string) => {
-      if (!selectedProvider || selectedProvider.id !== "custom") return;
+      if (!selectedProvider || (selectedProvider.id !== "custom" && selectedProvider.id !== "llama_cpp")) return;
       const trimmed = value.trim();
       if (trimmed && trimmed !== baseUrl) {
         void config.updateBaseUrl(selectedProvider.id, trimmed);
@@ -203,7 +203,7 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
     `${prefix}_models_fetch:${selectedProviderId}`,
   );
 
-  const isCustomProvider = selectedProvider?.id === "custom";
+  const isCustomProvider = selectedProvider?.allow_base_url_edit ?? false;
 
   return {
     providerOptions,

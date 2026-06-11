@@ -66,7 +66,7 @@ fn build_system_prompt(prompt_template: &str) -> String {
     prompt_template.replace("${output}", "").trim().to_string()
 }
 
-async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
+async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, transcription: &str) -> Option<String> {
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
@@ -124,6 +124,15 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         provider.id, model
     );
 
+    if provider.id == "llama_cpp" {
+        if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+            if let Err(e) = llama_manager.ensure_server_running().await {
+                error!("Failed to start llama-server for post-processing: {}", e);
+                return None;
+            }
+        }
+    }
+
     let api_key = settings
         .post_process_api_keys
         .get(&provider.id)
@@ -135,7 +144,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     // - openrouter: nested reasoning object; exclude:true also keeps reasoning text
     //   out of the response so it can't pollute structured-output JSON parsing
     let (reasoning_effort, reasoning) = match provider.id.as_str() {
-        "custom" => (Some("none".to_string()), None),
+        "custom" | "llama_cpp" => (Some("none".to_string()), None),
         "openrouter" => (
             None,
             Some(crate::llm_client::ReasoningConfig {
@@ -373,7 +382,7 @@ pub(crate) async fn process_transcription_output(
     }
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        if let Some(processed_text) = post_process_transcription(app, &settings, &final_text).await {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 

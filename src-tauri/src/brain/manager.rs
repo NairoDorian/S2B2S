@@ -63,6 +63,11 @@ impl BrainManager {
         if !cfg.enabled {
             return Err("The Brain is disabled in settings".into());
         }
+        if cfg.provider_id == "llama_cpp" {
+            if let Some(llama_manager) = self.app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+                llama_manager.ensure_server_running().await?;
+            }
+        }
         let text = text.trim().to_string();
         if text.is_empty() {
             return Err("Empty input".into());
