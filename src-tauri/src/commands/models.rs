@@ -290,7 +290,12 @@ fn query_system_gpu_usage_bytes(adapter_luid: windows::Win32::Foundation::LUID) 
             ..Default::default()
         };
         let open_status = D3DKMTOpenAdapterFromLuid(&mut open);
-        if !nt_success(open_status) || open.hAdapter == 0 {
+        if !nt_success(open_status) {
+            log::warn!("[VRAM] D3DKMTOpenAdapterFromLuid failed: NTSTATUS=0x{:x}", open_status.0);
+            return None;
+        }
+        if open.hAdapter == 0 {
+            log::warn!("[VRAM] D3DKMTOpenAdapterFromLuid returned null adapter handle");
             return None;
         }
 
@@ -308,9 +313,13 @@ fn query_system_gpu_usage_bytes(adapter_luid: windows::Win32::Foundation::LUID) 
         });
 
         if !nt_success(query_status) {
+            log::warn!("[VRAM] D3DKMTQueryVideoMemoryInfo failed: NTSTATUS=0x{:x}", query_status.0);
             return None;
         }
 
+        let usage_mb = query.CurrentUsage / (1024 * 1024);
+        log::info!("[VRAM] D3DKMT system-wide VRAM: {} MB (CurrentUsage={}, Budget={})",
+            usage_mb, query.CurrentUsage, query.Budget);
         Some(query.CurrentUsage)
     }
 }
@@ -319,92 +328,261 @@ fn query_system_gpu_usage_bytes(adapter_luid: windows::Win32::Foundation::LUID) 
 fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
     use windows::core::Interface;
     use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory1, IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory6,
-        DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+        CreateDXGIFactory1, IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory1,
+        IDXGIFactory6, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
         DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO,
     };
 
     unsafe {
-        let factory: IDXGIFactory6 = CreateDXGIFactory1::<IDXGIFactory6>()
-            .map_err(|e| format!("Failed to create DXGI factory: {e}"))?;
+        // Try IDXGIFactory6 first (Windows 8.1+), fall back to IDXGIFactory1
+        let factory1 = match CreateDXGIFactory1::<IDXGIFactory6>() {
+            Ok(f6) => {
+                log::info!("[VRAM] Created IDXGIFactory6 successfully");
+                f6.cast::<IDXGIFactory1>().map_err(|e| format!("Failed to cast factory6 -> factory1: {e}"))?
+            }
+            Err(e) => {
+                log::warn!("[VRAM] Could not create IDXGIFactory6 (falling back to IDXGIFactory1): {e}");
+                CreateDXGIFactory1::<IDXGIFactory1>()
+                    .map_err(|e| format!("Failed to create IDXGIFactory1: {e}"))?
+            }
+        };
+
+        // Try to upgrade to IDXGIFactory6 for GPU preference enumeration
+        let factory6 = factory1.cast::<IDXGIFactory6>().ok();
 
         let mut best: Option<ActiveGpuVramSnapshot> = None;
         let mut adapter_index = 0u32;
 
-        loop {
-            let adapter: IDXGIAdapter1 = match factory
-                .EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE)
-            {
-                Ok(adapter) => adapter,
-                Err(_) => break,
-            };
-            adapter_index += 1;
+        // Try to use GPU preference enumeration if available
+        if let Some(ref f6) = factory6 {
+            log::info!("[VRAM] Using EnumAdapterByGpuPreference for adapter enumeration");
+            loop {
+                let adapter: IDXGIAdapter1 = match f6
+                    .EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE)
+                {
+                    Ok(adapter) => adapter,
+                    Err(_) => break,
+                };
+                adapter_index += 1;
 
-            let desc = match adapter.GetDesc1() {
-                Ok(desc) => desc,
-                Err(_) => continue,
-            };
+                let desc = match adapter.GetDesc1() {
+                    Ok(desc) => desc,
+                    Err(_) => continue,
+                };
 
-            if (desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32)) != 0 {
-                continue;
-            }
-
-            let adapter3: IDXGIAdapter3 = match adapter.cast::<IDXGIAdapter3>() {
-                Ok(adapter3) => adapter3,
-                Err(_) => continue,
-            };
-
-            let mut memory_info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
-            if adapter3
-                .QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut memory_info)
-                .is_err()
-            {
-                continue;
-            }
-
-            let budget_bytes = if memory_info.Budget > 0 {
-                memory_info.Budget
-            } else {
-                desc.DedicatedVideoMemory as u64
-            };
-            let used_bytes = memory_info.CurrentUsage;
-            let total_vram_bytes = if desc.DedicatedVideoMemory > 0 {
-                desc.DedicatedVideoMemory as u64
-            } else {
-                budget_bytes
-            };
-            let adapter_name = wide_to_string(&desc.Description);
-            let adapter_name = if adapter_name.is_empty() {
-                format!("GPU {}", adapter_index)
-            } else {
-                adapter_name
-            };
-
-            // Prefer the adapter with the largest total VRAM
-            let should_replace = match best {
-                None => true,
-                Some(ref best_snapshot) => {
-                    total_vram_bytes > best_snapshot.total_vram_bytes
-                        || (total_vram_bytes == best_snapshot.total_vram_bytes
-                            && (used_bytes > best_snapshot.process_used_bytes
-                                || (used_bytes == best_snapshot.process_used_bytes
-                                    && budget_bytes > best_snapshot.process_budget_bytes)))
+                if (desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32)) != 0 {
+                    log::info!("[VRAM] Skipping software adapter at index {}", adapter_index - 1);
+                    continue;
                 }
-            };
 
-            if should_replace {
-                best = Some(ActiveGpuVramSnapshot {
-                    adapter_name,
-                    adapter_luid: desc.AdapterLuid,
-                    process_used_bytes: used_bytes,
-                    process_budget_bytes: budget_bytes,
-                    total_vram_bytes,
-                });
+                let adapter3: IDXGIAdapter3 = match adapter.cast::<IDXGIAdapter3>() {
+                    Ok(adapter3) => adapter3,
+                    Err(_) => continue,
+                };
+
+                let mut memory_info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+                if adapter3
+                    .QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut memory_info)
+                    .is_err()
+                {
+                    continue;
+                }
+
+                let total_vram = if desc.DedicatedVideoMemory > 0 {
+                    desc.DedicatedVideoMemory as u64
+                } else {
+                    memory_info.Budget
+                };
+                let used = memory_info.CurrentUsage;
+                let budget = if memory_info.Budget > 0 { memory_info.Budget } else { total_vram };
+                let adapter_name = wide_to_string(&desc.Description);
+                let adapter_name = if adapter_name.is_empty() {
+                    format!("GPU {}", adapter_index - 1)
+                } else {
+                    adapter_name
+                };
+
+                log::info!("[VRAM] Adapter {}: {} - Total: {} MB, Used: {} MB",
+                    adapter_index - 1, adapter_name, total_vram / (1024*1024), used / (1024*1024));
+
+                let should_replace = match best {
+                    None => true,
+                    Some(ref best_snapshot) => {
+                        total_vram > best_snapshot.total_vram_bytes
+                            || (total_vram == best_snapshot.total_vram_bytes && used > best_snapshot.process_used_bytes)
+                    }
+                };
+
+                if should_replace {
+                    best = Some(ActiveGpuVramSnapshot {
+                        adapter_name,
+                        adapter_luid: desc.AdapterLuid,
+                        process_used_bytes: used,
+                        process_budget_bytes: budget,
+                        total_vram_bytes: total_vram,
+                    });
+                }
+            }
+        } else {
+            // Fallback: use basic EnumAdapters1
+            log::info!("[VRAM] Using EnumAdapters1 (no GPU preference support)");
+            loop {
+                let adapter = match factory1.EnumAdapters1(adapter_index) {
+                    Ok(adapter) => adapter,
+                    Err(_) => break,
+                };
+                adapter_index += 1;
+
+                let desc = match adapter.GetDesc1() {
+                    Ok(desc) => desc,
+                    Err(_) => continue,
+                };
+
+                if (desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32)) != 0 {
+                    log::info!("[VRAM] Skipping software adapter at index {}", adapter_index - 1);
+                    continue;
+                }
+
+                let total_vram = desc.DedicatedVideoMemory as u64;
+                let adapter_name = wide_to_string(&desc.Description);
+                let adapter_name = if adapter_name.is_empty() {
+                    format!("GPU {}", adapter_index - 1)
+                } else {
+                    adapter_name
+                };
+
+                // Try to get memory info via IDXGIAdapter3
+                let (used, budget) = match adapter.cast::<IDXGIAdapter3>() {
+                    Ok(adapter3) => {
+                        let mut mi = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+                        if adapter3.QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut mi).is_ok() {
+                            (mi.CurrentUsage, if mi.Budget > 0 { mi.Budget } else { total_vram })
+                        } else {
+                            (0u64, total_vram)
+                        }
+                    }
+                    Err(_) => (0u64, total_vram),
+                };
+
+                log::info!("[VRAM] Adapter {}: {} - Total: {} MB, Used: {} MB",
+                    adapter_index - 1, adapter_name, total_vram / (1024*1024), used / (1024*1024));
+
+                let should_replace = match best {
+                    None => true,
+                    Some(ref best_snapshot) => total_vram > best_snapshot.total_vram_bytes,
+                };
+
+                if should_replace {
+                    best = Some(ActiveGpuVramSnapshot {
+                        adapter_name,
+                        adapter_luid: desc.AdapterLuid,
+                        process_used_bytes: used,
+                        process_budget_bytes: budget,
+                        total_vram_bytes: total_vram,
+                    });
+                }
             }
         }
 
-        best.ok_or_else(|| "No active hardware GPU adapter detected".to_string())
+        let snapshot = best.ok_or_else(|| "No active hardware GPU adapter detected".to_string())?;
+        log::info!("[VRAM] Selected adapter: {} - Total: {} MB, Used: {} MB, Budget: {} MB",
+            snapshot.adapter_name,
+            snapshot.total_vram_bytes / (1024*1024),
+            snapshot.process_used_bytes / (1024*1024),
+            snapshot.process_budget_bytes / (1024*1024));
+        Ok(snapshot)
     }
+}
+
+#[cfg(target_os = "windows")]
+fn query_system_gpu_usage_bytes_fallback() -> Option<u64> {
+    // Try nvidia-smi first (most accurate, works with any GPU API)
+    if let Some(usage) = get_nvidia_vram_usage() {
+        return Some(usage);
+    }
+    // Fallback: DXGI process usage (may be 0 for apps using CUDA/ORT)
+    let (_, usage) = get_best_adapter_dxgi_info()?;
+    Some(usage)
+}
+
+#[cfg(target_os = "windows")]
+fn get_total_vram_fallback() -> Option<u64> {
+    // Try nvidia-smi first
+    if let Some(total) = get_nvidia_total_vram() {
+        return Some(total);
+    }
+    // Fallback: DXGI adapter DedicatedVideoMemory
+    let (total, _) = get_best_adapter_dxgi_info()?;
+    Some(total)
+}
+
+#[cfg(target_os = "windows")]
+fn get_best_adapter_dxgi_info() -> Option<(u64, u64)> {
+    // Returns (total_vram_bytes, current_usage_bytes) for the best adapter
+    use windows::core::Interface;
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory1,
+        DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+        DXGI_QUERY_VIDEO_MEMORY_INFO,
+    };
+
+    unsafe {
+        let factory1 = CreateDXGIFactory1::<IDXGIFactory1>().ok()?;
+        let mut best_total = 0u64;
+        let mut best_usage = 0u64;
+
+        for i in 0.. {
+            let adapter = match factory1.EnumAdapters1(i) {
+                Ok(a) => a,
+                Err(_) => break,
+            };
+            let desc = adapter.GetDesc1().ok()?;
+            if (desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32)) != 0 {
+                continue;
+            }
+            let total = desc.DedicatedVideoMemory as u64;
+            if total > best_total {
+                best_total = total;
+                if let Ok(adapter3) = adapter.cast::<IDXGIAdapter3>() {
+                    let mut mi = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+                    if adapter3.QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut mi).is_ok() {
+                        best_usage = mi.CurrentUsage;
+                    }
+                }
+            }
+        }
+        if best_total > 0 { Some((best_total, best_usage)) } else { None }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_nvidia_vram_usage() -> Option<u64> {
+    use std::process::Command;
+    let output = Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() { return None; }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let first_line = stdout.lines().next()?;
+    let parts: Vec<&str> = first_line.split(',').map(|s| s.trim()).collect();
+    if parts.len() < 2 { return None; }
+    let used_mb: u64 = parts[0].parse().ok()?;
+    log::info!("[VRAM] nvidia-smi used: {} MB", used_mb);
+    Some(used_mb * 1024 * 1024)
+}
+
+#[cfg(target_os = "windows")]
+fn get_nvidia_total_vram() -> Option<u64> {
+    use std::process::Command;
+    let output = Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() { return None; }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let total_mb: u64 = stdout.trim().parse().ok()?;
+    Some(total_mb * 1024 * 1024)
 }
 
 #[cfg(target_os = "windows")]
@@ -480,16 +658,34 @@ pub fn get_active_gpu_vram_status() -> Result<GpuVramStatus, String> {
 
     #[cfg(target_os = "windows")]
     {
+        // System-wide usage: nvidia-smi first (true GPU memory), then D3DKMT, then DXGI fallback
+        let nvidia_usage = get_nvidia_vram_usage();
+        let nvidia_total = get_nvidia_total_vram();
+
         match query_active_gpu_vram() {
             Ok(snapshot) => {
-                let system_used_bytes = query_system_gpu_usage_bytes(snapshot.adapter_luid)
+                let system_used_bytes = nvidia_usage
+                    .or_else(|| query_system_gpu_usage_bytes(snapshot.adapter_luid))
+                    .or_else(|| query_system_gpu_usage_bytes_fallback())
                     .unwrap_or(snapshot.process_used_bytes);
-                let system_free_bytes = snapshot.total_vram_bytes.saturating_sub(system_used_bytes);
+
+                let system_total_bytes = nvidia_total
+                    .unwrap_or(snapshot.total_vram_bytes);
+
+                let system_free_bytes = system_total_bytes.saturating_sub(system_used_bytes);
+
+                log::info!("[VRAM] Final: Adapter={}, Total={}MB, Used={}MB, Free={}MB, Process={}/{}MB",
+                    snapshot.adapter_name,
+                    system_total_bytes / (1024*1024),
+                    system_used_bytes / (1024*1024),
+                    system_free_bytes / (1024*1024),
+                    snapshot.process_used_bytes / (1024*1024),
+                    snapshot.process_budget_bytes / (1024*1024));
 
                 Ok(GpuVramStatus {
                     is_supported: true,
                     adapter_name: Some(snapshot.adapter_name),
-                    total_vram_mb: (snapshot.total_vram_bytes / (1024 * 1024)) as u32,
+                    total_vram_mb: (system_total_bytes / (1024 * 1024)) as u32,
                     used_vram_mb: (system_used_bytes / (1024 * 1024)) as u32,
                     free_vram_mb: (system_free_bytes / (1024 * 1024)) as u32,
                     process_used_mb: (snapshot.process_used_bytes / (1024 * 1024)) as u32,
@@ -499,18 +695,37 @@ pub fn get_active_gpu_vram_status() -> Result<GpuVramStatus, String> {
                     error: None,
                 })
             }
-            Err(error) => Ok(GpuVramStatus {
-                is_supported: false,
-                adapter_name: None,
-                total_vram_mb: 0,
-                used_vram_mb: 0,
-                free_vram_mb: 0,
-                process_used_mb: 0,
-                process_budget_mb: 0,
-                llm_servers,
-                updated_at_unix_ms,
-                error: Some(error),
-            }),
+            Err(error) => {
+                log::error!("[VRAM] Query failed: {error}");
+                if let Some(usage) = nvidia_usage.or_else(|| query_system_gpu_usage_bytes_fallback()) {
+                    let total = nvidia_total.or_else(get_total_vram_fallback).unwrap_or(usage);
+                    let free = total.saturating_sub(usage);
+                    return Ok(GpuVramStatus {
+                        is_supported: true,
+                        adapter_name: None,
+                        total_vram_mb: (total / (1024 * 1024)) as u32,
+                        used_vram_mb: (usage / (1024 * 1024)) as u32,
+                        free_vram_mb: (free / (1024 * 1024)) as u32,
+                        process_used_mb: (usage / (1024 * 1024)) as u32,
+                        process_budget_mb: (total / (1024 * 1024)) as u32,
+                        llm_servers,
+                        updated_at_unix_ms,
+                        error: Some(format!("Fallback: {}", error)),
+                    });
+                }
+                Ok(GpuVramStatus {
+                    is_supported: false,
+                    adapter_name: None,
+                    total_vram_mb: 0,
+                    used_vram_mb: 0,
+                    free_vram_mb: 0,
+                    process_used_mb: 0,
+                    process_budget_mb: 0,
+                    llm_servers,
+                    updated_at_unix_ms,
+                    error: Some(error),
+                })
+            }
         }
     }
 
