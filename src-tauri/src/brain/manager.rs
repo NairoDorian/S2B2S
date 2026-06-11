@@ -48,10 +48,6 @@ impl BrainManager {
         let _ = self.app.emit("brain:history-cleared", ());
     }
 
-    fn emit_latency(&self, stage: &str, ms: u64) {
-        let _ = self.app.emit("brain:latency", serde_json::json!({ "stage": stage, "ms": ms }));
-    }
-
     /// Ask the Brain. Streams the reply; returns the full assistant text.
     /// Any previous in-flight turn is aborted first (barge-in semantics).
     pub async fn ask(&self, text: String) -> Result<String, String> {

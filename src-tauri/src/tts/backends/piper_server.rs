@@ -666,7 +666,7 @@ pub fn start_idle_watcher(app: tauri::AppHandle) {
                         .ok()
                         .map(|d| d.as_millis() as u64)
                         .unwrap_or(0);
-                    if let Some(tts) = app.try_state::<std::sync::Arc<crate::tts::manager::TtsManager>>() {
+                    if app.try_state::<std::sync::Arc<crate::tts::manager::TtsManager>>().is_some() {
                         // Get the last_used from the idle atomic
                         let idle_ms = crate::settings::ModelUnloadTimeout::Sec15.to_seconds()
                             .map(|check_secs| check_secs * 1000)

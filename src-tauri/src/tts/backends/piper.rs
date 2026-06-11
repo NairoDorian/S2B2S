@@ -38,7 +38,7 @@
 //!
 //! ──────────────────────────────────────────────────────────────────────────
 
-use crate::settings::{get_settings, ModelUnloadTimeout};
+use crate::settings::get_settings;
 use crate::tts::{TtsBackend, Voice};
 use crate::tts::status::{EngineStatus, WarmEngine};
 use std::sync::atomic::{AtomicU64, Ordering};

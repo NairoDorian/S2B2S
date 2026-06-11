@@ -66,10 +66,7 @@ impl TtsManager {
         }
     }
 
-    /// Enumerate available voices for the configured engine.
-    pub fn list_voices(&self) -> Vec<Voice> {
-        self.list_voices_for_engine(None)
-    }
+
 
     /// Enumerate available voices for a specific engine, or defaults to the configured engine.
     pub fn list_voices_for_engine(&self, engine: Option<TtsEngine>) -> Vec<Voice> {
@@ -372,12 +369,7 @@ impl TtsManager {
         });
     }
 
-    /// Play raw audio bytes directly through the player.
-    pub fn play_raw(&self, bytes: Vec<u8>) {
-        let cfg = get_settings(&self.app).tts;
-        self.player.set_volume(cfg.volume);
-        self.player.append(bytes);
-    }
+
 }
 
 fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {

@@ -74,7 +74,7 @@ pub fn tts_save_to_file(
     app: AppHandle,
     target_path: String,
 ) -> Result<(), String> {
-    use crate::tts::audio_format::{save_audio_file, AudioFormat};
+    use crate::tts::audio_format::save_audio_file;
     use std::sync::Arc;
 
     let settings = crate::settings::get_settings(&app);

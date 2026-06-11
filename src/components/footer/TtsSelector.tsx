@@ -160,11 +160,14 @@ const TtsSelector: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
-        title={`TTS Status: ${getTtsDisplayText()}`}
+        className="flex items-center gap-1.5 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
+        title={`TTS: ${getTtsDisplayText()}`}
       >
-        <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${getTtsStatusColor()}`} />
-        <span className="max-w-44 truncate">{getTtsDisplayText()}</span>
+        <span className="flex items-center gap-1">
+          <span>🗣️</span>
+          <span className="font-medium">TTS</span>
+        </span>
+        <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${getTtsStatusColor()}`} />
         <svg
           className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
           fill="none"
@@ -183,7 +186,16 @@ const TtsSelector: React.FC = () => {
       {isOpen && (
         <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2.5 px-3 z-50 text-xs">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-mid-gray/10">
-            <span className="font-semibold text-text/80">Speech (TTS)</span>
+            <div className="flex flex-col">
+              <span className="font-semibold text-text/80">Speech (TTS)</span>
+              {tts.enabled && (
+                <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
+                  {tts.engine === "piper" 
+                    ? `Piper: ${getActiveVoiceName() || "Default"}${piperStatus.cuda ? " (CUDA)" : ""}`
+                    : `${tts.engine.toUpperCase()}: ${getActiveVoiceName() || "Default"}`}
+                </span>
+              )}
+            </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"

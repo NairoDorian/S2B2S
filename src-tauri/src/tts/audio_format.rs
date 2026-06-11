@@ -20,15 +20,6 @@ impl AudioFormat {
             AudioFormat::Flac => "flac",
         }
     }
-
-    pub fn mime_type(self) -> &'static str {
-        match self {
-            AudioFormat::Wav => "audio/wav",
-            AudioFormat::Mp3 => "audio/mpeg",
-            AudioFormat::Ogg => "audio/ogg",
-            AudioFormat::Flac => "audio/flac",
-        }
-    }
 }
 
 /// Convert WAV bytes to the requested format via ffmpeg.

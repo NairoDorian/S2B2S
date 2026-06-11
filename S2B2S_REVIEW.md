@@ -1066,7 +1066,6 @@ S2B2S/
 ├── 📄 CONTRIBUTING.md            # Contribution guide
 ├── 📄 CONTRIBUTING_TRANSLATIONS.md # Translation guide
 ├── 📄 CRUSH.md                   # Dev commands quick reference
-├── 📄 IMPROVEMENT_PLAN.md        # Roadmap & ADRs
 ├── 📄 CLAUDE.md                  # AI entry point
 ├── 📄 LICENSE                    # MIT
 ├── 📄 package.json               # JS deps & scripts
@@ -1633,4 +1632,4 @@ bun run check:translations           # i18n validation
 
 *This document serves as the definitive reference for the S2B2S project — for users, developers, and AI agents. Last updated June 2026.*
 
-*See [README.md](README.md) for quick start, [AGENTS.md](AGENTS.md) for AI development guidance, and [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) for the detailed roadmap.*
+*See [README.md](README.md) for quick start and [AGENTS.md](AGENTS.md) for AI development guidance.*

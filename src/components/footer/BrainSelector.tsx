@@ -46,17 +46,18 @@ const BrainSelector: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
-        title={brain.enabled ? `Brain enabled: ${providerLabel} (${activeModel})` : "Brain disabled"}
+        className="flex items-center gap-1.5 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
+        title={brain.enabled ? `Brain: ${providerLabel}${activeModel ? ` (${activeModel})` : ""}` : "Brain Disabled"}
       >
+        <span className="flex items-center gap-1">
+          <span>🧠</span>
+          <span className="font-medium">Brain</span>
+        </span>
         <div
-          className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+          className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
             brain.enabled ? "bg-green-400" : "bg-mid-gray/40"
           }`}
         />
-        <span className="max-w-40 truncate">
-          {brain.enabled ? `${providerLabel}${activeModel ? ` (${activeModel})` : ""}` : t("settings.brain.disabled", "Brain Off")}
-        </span>
         <svg
           className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
           fill="none"
@@ -75,7 +76,14 @@ const BrainSelector: React.FC = () => {
       {isOpen && (
         <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2.5 px-3 z-50 text-xs">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-mid-gray/10">
-            <span className="font-semibold text-text/80">AI Brain</span>
+            <div className="flex flex-col">
+              <span className="font-semibold text-text/80">AI Brain</span>
+              {brain.enabled && activeModel && (
+                <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
+                  {activeModel}
+                </span>
+              )}
+            </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"

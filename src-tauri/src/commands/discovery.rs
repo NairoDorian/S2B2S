@@ -1,7 +1,5 @@
-use crate::settings::get_settings;
 use serde::Serialize;
 use specta::Type;
-use std::sync::OnceLock;
 use tauri::AppHandle;
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -12,16 +10,11 @@ pub struct DiscoveredServer {
     pub provider_id: String,
 }
 
-static DISCOVERED_SERVERS: OnceLock<std::sync::Mutex<Vec<DiscoveredServer>>> = OnceLock::new();
 
-fn get_cache() -> &'static std::sync::Mutex<Vec<DiscoveredServer>> {
-    DISCOVERED_SERVERS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
-}
 
 #[tauri::command]
 #[specta::specta]
-pub async fn discover_local_brains(app: AppHandle) -> Result<Vec<DiscoveredServer>, String> {
-    let settings = get_settings(&app);
+pub async fn discover_local_brains(_app: AppHandle) -> Result<Vec<DiscoveredServer>, String> {
     let mut servers = Vec::new();
 
     let client = reqwest::Client::builder()
@@ -57,9 +50,7 @@ pub async fn discover_local_brains(app: AppHandle) -> Result<Vec<DiscoveredServe
         }
     }
 
-    if let Ok(cache) = get_cache().lock() {
-        log::info!("[Discovery] Found {} local Brain server(s)", servers.len());
-    }
+    log::info!("[Discovery] Found {} local Brain server(s)", servers.len());
     Ok(servers)
 }
 

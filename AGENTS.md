@@ -387,8 +387,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor guidelines |
 | [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
-| [CRUSH.md](CRUSH.md) | Development commands and code style |
-| [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) | Detailed improvement roadmap |
+| [CRUSH.md](CRUSH.md) | Dev commands quick reference |
 | [LICENSE](LICENSE) | MIT License |
 
 ---

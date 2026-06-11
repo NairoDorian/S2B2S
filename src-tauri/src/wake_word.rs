@@ -49,6 +49,7 @@ impl WakeWordDetector {
     }
 
     /// Feed audio into the ring buffer for energy analysis.
+    #[allow(dead_code)]
     pub fn feed_audio(&self, samples: &[f32]) {
         let mut buf = self.ring_buffer.lock().unwrap();
         buf.extend_from_slice(samples);
@@ -88,6 +89,7 @@ pub fn start_wake_word_detection(app: AppHandle) {
 
     std::thread::spawn(move || {
         log::info!("[WakeWord] thread started (VAD mode)");
+        // TO FINISH: connect audio input stream callback in recorder.rs to call detector.feed_audio()
         if let Some(mgr) = app2.try_state::<Arc<AudioRecordingManager>>() {
             mgr.enable_wake_word(true);
         }

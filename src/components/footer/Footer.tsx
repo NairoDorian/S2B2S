@@ -4,6 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import ModelSelector from "../model-selector";
 import BrainSelector from "./BrainSelector";
 import TtsSelector from "./TtsSelector";
+import GpuVramFooterIndicator from "./GpuVramFooterIndicator";
 import UpdateChecker from "../update-checker";
 
 const Footer: React.FC = () => {
@@ -32,6 +33,7 @@ const Footer: React.FC = () => {
           <BrainSelector />
           <span className="text-mid-gray/30">|</span>
           <TtsSelector />
+          <GpuVramFooterIndicator />
         </div>
 
         {/* Update Status */}

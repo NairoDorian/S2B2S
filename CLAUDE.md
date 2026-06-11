@@ -18,8 +18,6 @@ This project has comprehensive documentation for AI coding assistants. Please re
 
 7. **CHANGELOG.md** — Version history with all feature additions and fixes.
 
-8. **IMPROVEMENT_PLAN.md** — Detailed improvement roadmap with ADRs, phase execution plans, and technical decisions.
-
 ## Quick Start
 
 ```bash
