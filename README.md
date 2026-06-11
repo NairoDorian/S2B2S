@@ -287,9 +287,15 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | WarmEngine trait lifecycle (Loading→WarmingUp→Ready→Error) | ✅ Complete |
 | TTS performance telemetry (chars_per_ms adaptive sizing) | ✅ Complete |
 | Piper persistent HTTP server with CUDA auto-discovery | ✅ Complete |
-| Cargo test export_bindings (headless typed bindings) | ✅ Complete |
+| Headless typed bindings export (`cargo test export_bindings`) | ✅ Complete |
 | Kokoro worker pool + crossfade | 🚧 In progress |
 | RAM-persistent warm model lifecycle (unload timeout) | ✅ Complete |
+| AI Replace Selection | ✅ Complete |
+| Latency HUD (per-stage timestamps) | ✅ Complete |
+| Wake word detection (VAD-based) | ✅ Complete |
+| Save-to-file (MP3/OGG/FLAC) | ✅ Complete |
+| Waveform HUD | ✅ Complete |
+| Ollama/LM Studio/llama.cpp auto-discovery | ✅ Complete |
 | Streaming STT (WebSocket-based) | 📋 Planned |
 | Pocket TTS backend (voice cloning) | 📋 Planned |
 | Multi-OS polish, mobile companion | 📋 Later |

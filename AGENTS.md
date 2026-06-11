@@ -1,5 +1,7 @@
 # AGENTS.md
 
+# AGENTS.md — AI Coding Assistant Guide
+
 This file provides guidance to AI coding assistants working with code in this repository.
 
 ## Cross-Platform Mandate (READ FIRST — applies to EVERY change)

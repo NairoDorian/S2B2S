@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
+> **Status (June 2026):** Project cleanup and documentation overhaul complete.
+
+### Code Cleanup
+
+- **Cargo.toml cleanup** — removed commented-out `[[bin]]` section for CLI; removed trailing blank line before target-specific dependencies.
+- **Module documentation** — added module-level doc comments (`//!`) to `actions.rs`, `input.rs`, `audio_feedback.rs`, `commands/mod.rs`, `helpers/clamshell.rs` for clearer codebase navigation.
+- **Documentation sync** — updated roadmap in README.md to reflect all completed features (AI Replace, Latency HUD, wake word, save-to-file, waveform HUD, auto-discovery), removed stale entries.
+- **README.md polish** — streamlined features list and added clarity to pipeline descriptions.
+
 > **Status (June 2026):** All 19 focused improvement items complete.
 > Hybrid KWS+VAD wake word, AI Replace, latency HUD, Ollama discovery, save-to-file,
 > warm model unload timeout, cross-platform selection capture + double-copy, waveform HUD.
