@@ -56,7 +56,7 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct AmplitudeEnvelope {
     pub values: Vec<f32>,
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = u32)]
     pub duration_ms: u64,
 }
 

@@ -358,7 +358,7 @@ pub fn set_vad_mode(app: AppHandle, mode: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn set_recording_auto_stop(app: AppHandle, enabled: bool, silence_secs: u64) -> Result<(), String> {
+pub fn set_recording_auto_stop(app: AppHandle, enabled: bool, silence_secs: u32) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.set_auto_stop(enabled, silence_secs);
     Ok(())

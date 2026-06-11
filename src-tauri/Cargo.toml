@@ -25,13 +25,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # path = "src/audio_toolkit/bin/cli.rs"
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
-serde_json = "1"
-serde = { version = "1", features = ["derive"] }
+tauri-build = { version = "2.6.2", features = [] }
+serde_json = "1.0.150"
+serde = { version = "1.0.228", features = ["derive"] }
 
 [dependencies]
-once_cell = "1"
-tauri = { version = "2.11", features = [
+once_cell = "1.21.4"
+tauri = { version = "2.11.2", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
@@ -44,10 +44,10 @@ tauri-plugin-os = "2.3.2"
 tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-macos-permissions = "2.3.0"
 tauri-plugin-process = "2.3.1"
-rusqlite_migration = "2.6"
+rusqlite_migration = "2.6.0"
 tauri-plugin-fs = "2.5.1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
 rdev = { git = "https://github.com/rustdesk-org/rdev" }
 # Pinned to 0.17 (latest usable): rodio 0.22 requires cpal ^0.17, and a single
 # cpal version is mandatory because audio_feedback hands a cpal Device to rodio.
@@ -69,21 +69,21 @@ futures-util = "0.3"
 rustfft = "6.4.1"
 strsim = "0.11.1"
 natural = "0.5.0"
-regex = "1"
-chrono = "0.4"
-rusqlite = { version = "0.40", features = ["bundled"] }
+regex = "1.12.4"
+chrono = "0.4.45"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 nnnoiseless = { version = "0.5.2", default-features = false }
 tar = "0.4.46"
-flate2 = "1.1"
-sha2 = "0.11"
+flate2 = "1.1.9"
+sha2 = "0.11.0"
 transcribe-rs = { version = "0.3.11", features = ["whisper-cpp", "onnx"] }
 handy-keys = "0.2.4"
 ferrous-opencc = "0.4.0"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 specta = "=2.0.0-rc.25"
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
-tauri-plugin-dialog = "2.7"
+tauri-plugin-dialog = "2.7.1"
 text-processing-rs = "0.2.2"
 pulldown-cmark = "0.13"
 
@@ -118,7 +118,7 @@ transcribe-rs = { version = "0.3.11", features = ["whisper-metal"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
-gtk = "0.18"
+gtk = "0.18.2"
 transcribe-rs = { version = "0.3.11", features = ["whisper-vulkan"] }
 
 [dev-dependencies]

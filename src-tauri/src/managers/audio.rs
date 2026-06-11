@@ -179,7 +179,7 @@ pub struct AudioRecordingManager {
     continuous_mode_paused: Arc<AtomicBool>,
     /// Auto-stop: silence watchdog timer
     auto_stop_enabled: Arc<AtomicBool>,
-    auto_stop_duration_secs: Arc<std::sync::atomic::AtomicU64>,
+    auto_stop_duration_secs: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl AudioRecordingManager {
@@ -198,7 +198,7 @@ impl AudioRecordingManager {
         let continuous_mode = Arc::new(AtomicBool::new(false));
         let continuous_mode_paused = Arc::new(AtomicBool::new(false));
         let auto_stop_enabled = Arc::new(AtomicBool::new(false));
-        let auto_stop_duration_secs = Arc::new(std::sync::atomic::AtomicU64::new(30));
+        let auto_stop_duration_secs = Arc::new(std::sync::atomic::AtomicU32::new(30));
 
         let manager = Self {
             state: Arc::new(Mutex::new(RecordingState::Idle)),
@@ -610,7 +610,7 @@ impl AudioRecordingManager {
         }
     }
 
-    pub fn set_auto_stop(&self, enabled: bool, duration_secs: u64) {
+    pub fn set_auto_stop(&self, enabled: bool, duration_secs: u32) {
         self.auto_stop_enabled.store(enabled, Ordering::SeqCst);
         self.auto_stop_duration_secs.store(duration_secs.max(5), Ordering::SeqCst);
         log::info!("[AutoStop] {} ({}s silence)", if enabled { "enabled" } else { "disabled" }, duration_secs);
