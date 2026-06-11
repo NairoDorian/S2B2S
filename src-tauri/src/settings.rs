@@ -857,7 +857,7 @@ pub struct AppSettings {
     #[serde(default = "default_history_limit")]
     // specta-typescript 0.0.12 forbids exporting 64-bit ints by default; these
     // values are small, so exporting as TS `number` is lossless in practice.
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = u32)]
     pub history_limit: usize,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
@@ -898,7 +898,7 @@ pub struct AppSettings {
     #[serde(default = "default_show_tray_icon")]
     pub show_tray_icon: bool,
     #[serde(default = "default_paste_delay_ms")]
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = u32)]
     pub paste_delay_ms: u64,
     #[serde(default = "default_typing_tool")]
     pub typing_tool: TypingTool,
@@ -912,7 +912,7 @@ pub struct AppSettings {
     #[serde(default = "default_whisper_gpu_device")]
     pub whisper_gpu_device: i32,
     #[serde(default)]
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = u32)]
     pub extra_recording_buffer_ms: u64,
     /// Text-to-speech ("Read Anywhere" / CopySpeak) settings.
     #[serde(default)]

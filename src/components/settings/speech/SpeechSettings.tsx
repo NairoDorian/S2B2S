@@ -48,7 +48,7 @@ export const SpeechSettings: React.FC = () => {
       noise_scale: 0.667,
       noise_w_scale: 0.8,
     };
-    const result = await commands.ttsGetVoices(greeting.engine);
+    const result = await commands.ttsGetVoices(greeting.engine ?? null);
     if (result.status === "ok") {
       setGreetingVoices(result.data);
     }
@@ -185,7 +185,7 @@ export const SpeechSettings: React.FC = () => {
                   value: engine,
                   label: t(`settings.speech.engine.options.${engine}`),
                 }))}
-                selectedValue={greeting.engine}
+                selectedValue={greeting.engine ?? null}
                 onSelect={(value) => {
                   const newEngine = value as TtsEngine;
                   update({ greeting: { ...greeting, engine: newEngine, voice: "" } });

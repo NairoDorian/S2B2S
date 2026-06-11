@@ -115,10 +115,10 @@ export const commands = {
 	filename: string,
 	url: string | null,
 	sha256: string | null,
-	size_mb: number,
+	size_mb: number | null,
 	is_downloaded: boolean,
 	is_downloading: boolean,
-	partial_size: number,
+	partial_size: number | null,
 	is_directory: boolean,
 	engine_type: EngineType,
 	accuracy_score: number | null,
@@ -160,6 +160,7 @@ export const commands = {
 	setVadMode: (mode: string) => typedError<null, string>(__TAURI_INVOKE("set_vad_mode", { mode })),
 	startContinuousVoiceMode: () => typedError<null, string>(__TAURI_INVOKE("start_continuous_voice_mode")),
 	stopContinuousVoiceMode: () => typedError<null, string>(__TAURI_INVOKE("stop_continuous_voice_mode")),
+	setRecordingAutoStop: (enabled: boolean, silenceSecs: number) => typedError<null, string>(__TAURI_INVOKE("set_recording_auto_stop", { enabled, silenceSecs })),
 	setModelUnloadTimeout: (timeout: ModelUnloadTimeout) => __TAURI_INVOKE<void>("set_model_unload_timeout", { timeout }),
 	getModelLoadStatus: () => typedError<ModelLoadStatus, string>(__TAURI_INVOKE("get_model_load_status")),
 	unloadModelManually: () => typedError<null, string>(__TAURI_INVOKE("unload_model_manually")),
@@ -185,7 +186,7 @@ export const commands = {
 	ttsResume: () => typedError<null, string>(__TAURI_INVOKE("tts_resume")),
 	ttsIsPlaying: () => typedError<boolean, string>(__TAURI_INVOKE("tts_is_playing")),
 	/**  Enumerate available voices for a specific engine, or defaults to the configured engine. */
-	ttsGetVoices: (engine: "piper" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
+	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "sapi" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
 	/**  Unload the warm TTS model/server (tray "Unload model" parity). */
 	ttsUnloadEngine: () => typedError<boolean, string>(__TAURI_INVOKE("tts_unload_engine")),
 	getPiperServerStatus: () => typedError<PiperServerStatus, string>(__TAURI_INVOKE("get_piper_server_status")),
@@ -193,8 +194,15 @@ export const commands = {
 	changeTtsConfig: (config: TtsConfig) => typedError<null, string>(__TAURI_INVOKE("change_tts_config", { config })),
 	/**  Play the startup greeting audio using customized greeting settings. */
 	ttsPlayGreeting: () => typedError<null, string>(__TAURI_INVOKE("tts_play_greeting")),
+	/**  Save the most recent TTS audio to a user-chosen file path. */
+	ttsSaveToFile: (targetPath: string) => typedError<null, string>(__TAURI_INVOKE("tts_save_to_file", { targetPath })),
 	/**  Ask the Brain; streams `brain:token` / `brain:sentence` events and returns the full reply. */
 	brainAsk: (text: string) => typedError<string, string>(__TAURI_INVOKE("brain_ask", { text })),
+	/**
+	 *  AI Replace: speak an instruction to rewrite selected text via the Brain.
+	 *  Returns the rewritten text; caller pastes it at the cursor.
+	 */
+	aiReplaceSelection: (instruction: string, selectedText: string) => typedError<string, string>(__TAURI_INVOKE("ai_replace_selection", { instruction, selectedText })),
 	/**  Abort the in-flight Brain stream and stop any speech it queued (barge-in). */
 	brainAbort: () => typedError<null, string>(__TAURI_INVOKE("brain_abort")),
 	brainClearHistory: () => typedError<null, string>(__TAURI_INVOKE("brain_clear_history")),
@@ -206,6 +214,12 @@ export const commands = {
 	changeBrainBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_base_url_setting", { providerId, baseUrl })),
 	changeBrainApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_api_key_setting", { providerId, apiKey })),
 	changeBrainModelSetting: (providerId: string, model: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_model_setting", { providerId, model })),
+	discoverLocalBrains: () => typedError<DiscoveredServer[], string>(__TAURI_INVOKE("discover_local_brains")),
+	isOllamaRunning: () => __TAURI_INVOKE<boolean>("is_ollama_running"),
+	wakeWordStart: () => typedError<null, string>(__TAURI_INVOKE("wake_word_start")),
+	wakeWordStop: () => typedError<null, string>(__TAURI_INVOKE("wake_word_stop")),
+	wakeWordSetConfig: (config: WakeWordConfig) => typedError<null, string>(__TAURI_INVOKE("wake_word_set_config", { config })),
+	wakeWordStatus: () => typedError<boolean, string>(__TAURI_INVOKE("wake_word_status")),
 	/**
 	 *  Stub implementation for non-macOS platforms
 	 *  Always returns false since laptop detection is macOS-specific
@@ -277,6 +291,7 @@ export type AppSettings = {
 	long_audio_threshold_seconds?: number | null,
 	noise_suppression_enabled?: boolean,
 	vad_mode?: string,
+	rnnoise_voice_threshold?: number | null,
 };
 
 export type AudioDevice = {
@@ -284,6 +299,8 @@ export type AudioDevice = {
 	name: string,
 	is_default: boolean,
 };
+
+export type AudioFormat = "wav" | "mp3" | "ogg" | "flac";
 
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter";
 
@@ -311,6 +328,19 @@ export type BrainConfig = {
 	context_turns: number,
 	/**  Speak the Brain's reply aloud via the TTS subsystem. */
 	read_aloud: boolean,
+	/**
+	 *  Separate system prompt appended when read-aloud is ON.
+	 *  Instructs the model to answer conversationally for listening.
+	 */
+	speakable_output_prompt?: string,
+	/**  Conversation mode: push_to_talk | toggle | hands_free */
+	conversation_mode?: string,
+	/**  Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms) */
+	endpoint_preset?: string,
+	/**  Headphone mode — enables barge-in during TTS playback */
+	headphone_mode?: boolean,
+	/**  Auto-rearm mic after reply in hands-free mode */
+	auto_listen?: boolean,
 };
 
 export type CartesiaConfig = {
@@ -327,6 +357,13 @@ export type ClipboardHandling = "dont_modify" | "copy_to_clipboard";
 export type CustomSounds = {
 	start: boolean,
 	stop: boolean,
+};
+
+export type DiscoveredServer = {
+	name: string,
+	base_url: string,
+	models: string[],
+	provider_id: string,
 };
 
 export type ElevenLabsConfig = {
@@ -372,7 +409,7 @@ export type HistoryEntry = {
 	entry_type: string,
 	model_name: string | null,
 	model_info: string | null,
-	duration_ms: number,
+	duration_ms: number | null,
 };
 
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number };
@@ -401,10 +438,10 @@ export type ModelInfo = {
 	filename: string,
 	url: string | null,
 	sha256: string | null,
-	size_mb: number,
+	size_mb: number | null,
 	is_downloaded: boolean,
 	is_downloading: boolean,
-	partial_size: number,
+	partial_size: number | null,
 	is_directory: boolean,
 	engine_type: EngineType,
 	accuracy_score: number | null,
@@ -523,10 +560,18 @@ export type TtsConfig = {
 	openai?: OpenAIConfig,
 	elevenlabs?: ElevenLabsConfig,
 	cartesia?: CartesiaConfig,
+	/**  Number of parallel Kokoro synthesis workers (auto-tuned from CPU count, min 1, max 8). */
+	tts_workers?: number,
+	/**  Shorten the first chunk to reduce time-to-first-audio (Parrot pattern). */
+	tts_shorten_first_chunk?: boolean,
+	/**  Audio format for saved TTS output. */
+	tts_save_format?: AudioFormat,
+	/**  Wake word / always-listening keyword detection. */
+	wake_word?: WakeWordConfig,
 };
 
 /**  Which TTS engine synthesizes speech. */
-export type TtsEngine = "piper" | "openai" | "elevenlabs" | "cartesia";
+export type TtsEngine = "piper" | "kokoro" | "kitten" | "sapi" | "openai" | "elevenlabs" | "cartesia";
 
 export type TtsGreetingConfig = {
 	text?: string,
@@ -546,6 +591,14 @@ export type Voice = {
 	id: string,
 	name: string,
 	language: string | null,
+};
+
+/**  User-facing configuration for wake word detection. */
+export type WakeWordConfig = {
+	enabled: boolean,
+	keyword: string,
+	threshold: number | null,
+	show_indicator: boolean,
 };
 
 export type WhisperAcceleratorSetting = "auto" | "cpu" | "gpu";

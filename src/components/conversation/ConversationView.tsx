@@ -185,10 +185,12 @@ export const ConversationView: React.FC = () => {
               onClick={() => {
                 const newVal = !readAloud;
                 setReadAloud(newVal);
-                void commands.changeBrainConfig({
-                  ...settings.brain,
-                  read_aloud: newVal,
-                });
+                if (settings && settings.brain) {
+                  void commands.changeBrainConfig({
+                    ...settings.brain,
+                    read_aloud: newVal,
+                  });
+                }
               }}
               className="p-1.5 rounded-md text-mid-gray hover:text-foreground hover:bg-mid-gray/10 transition-colors"
               title={readAloud ? "Read replies aloud (ON)" : "Silent mode (OFF)"}

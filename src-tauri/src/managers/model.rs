@@ -38,11 +38,11 @@ pub struct ModelInfo {
     pub url: Option<String>,
     pub sha256: Option<String>,
     // Byte/MB counts fit safely in a TS `number` (< 2^53).
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = f64)]
     pub size_mb: u64,
     pub is_downloaded: bool,
     pub is_downloading: bool,
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = f64)]
     pub partial_size: u64,
     pub is_directory: bool,
     pub engine_type: EngineType,
@@ -58,9 +58,9 @@ pub struct ModelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct DownloadProgress {
     pub model_id: String,
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = f64)]
     pub downloaded: u64,
-    #[specta(type = specta_typescript::Number)]
+    #[specta(type = f64)]
     pub total: u64,
     pub percentage: f64,
 }
