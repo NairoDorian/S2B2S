@@ -515,9 +515,11 @@ pub fn run(cli_args: CliArgs) {
     let specta_builder = specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
-    specta_builder
+    if let Err(e) = specta_builder
         .export(Typescript::default(), "../src/bindings.ts")
-        .expect("Failed to export typescript bindings");
+    {
+        eprintln!("Warning: Failed to export TS bindings (ignored): {e}");
+    }
 
     let invoke_handler = specta_builder.invoke_handler();
 

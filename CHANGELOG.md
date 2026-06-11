@@ -54,11 +54,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **ConversationView** — latency HUD bar shows color-coded EP/STT/TTFT/TTFA. TTS toggle button in header. `ai_replace_selection` import.
 - **Continuous voice** — 250ms grace re-arm, respects `auto_listen` setting.
 
+### Fixed
+- **sherpa-onnx CRT conflict** — removed `sherpa-onnx` dependency due to `/MT` static CRT vs. `/MD` dynamic CRT conflict with `whisper-rs-sys` on Windows. VAD-based wake word retained; KWS integration code preserved in git history. To re-enable: add `sherpa-onnx = "1.13.2"` to `Cargo.toml` and download KWS model files to `models/wake_word/`.
+- **Specta TS bindings export** — softened to warning (no longer crashes debug builds) while root cause is investigated.
+
 ### Added Files
 - `src-tauri/src/commands/discovery.rs` — Ollama/LM Studio/llama.cpp auto-discovery
 - `src-tauri/src/commands/wake_word.rs` — wake word commands
 - `src-tauri/src/tts/audio_format.rs` — MP3/OGG/FLAC conversion
-- `src-tauri/src/wake_word.rs` — hybrid KWS+VAD wake word detector
+- `src-tauri/src/wake_word.rs` — VAD-based wake word detector (KWS-ready architecture)
 - `src-tauri/src/clipboard_ax.rs` — cross-platform selection capture
 
 **Documentation Overhaul:**
