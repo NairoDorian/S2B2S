@@ -222,7 +222,7 @@ export const ConversationView: React.FC = () => {
               }}
               className="p-1.5 rounded-md text-mid-gray hover:text-foreground hover:bg-mid-gray/10 transition-colors"
               title={
-                readAloud ? "Read replies aloud (ON)" : "Silent mode (OFF)"
+                readAloud ? t("conversation.readAloudOn") : t("conversation.readAloudOff")
               }
             >
               {readAloud ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -267,14 +267,13 @@ export const ConversationView: React.FC = () => {
               )}
             </div>
             <span className="text-sm font-medium text-logo-primary">
-              {voiceStatus === "listening" && "Voice Mode: Listening..."}
+              {voiceStatus === "listening" && t("conversation.voiceListening")}
               {voiceStatus === "speech_started" &&
-                "Voice Mode: Capturing Speech..."}
+                t("conversation.voiceCapturing")}
               {voiceStatus === "speech_ended" &&
-                "Voice Mode: Processing speech..."}
-              {voiceStatus === "thinking" && "Voice Mode: Brain is thinking..."}
-              {voiceStatus === "speaking" &&
-                "Voice Mode: Assistant is speaking..."}
+                t("conversation.voiceProcessing")}
+              {voiceStatus === "thinking" && t("conversation.voiceThinking")}
+              {voiceStatus === "speaking" && t("conversation.voiceSpeaking")}
             </span>
           </div>
           <button
@@ -422,7 +421,7 @@ export const ConversationView: React.FC = () => {
                   : ""
               }
             />
-            {voiceMode ? "Voice Mode ON" : "Voice Mode"}
+            {voiceMode ? t("conversation.voiceModeOn") : t("conversation.voiceMode")}
           </Button>
         </div>
       </div>

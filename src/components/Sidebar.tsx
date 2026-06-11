@@ -34,7 +34,7 @@ interface IconProps {
   height?: number | string;
   size?: number | string;
   className?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface SectionConfig {

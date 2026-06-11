@@ -241,9 +241,10 @@ S2B2S/
 ├── src/                   # Frontend (React/TypeScript)
 │   ├── App.tsx
 │   ├── components/        # UI components
-│   ├── hooks/             # React hooks
-│   ├── stores/            # Zustand stores
+│   ├── hooks/             # React hooks (useSettings, useOsType, useProviderState)
+│   ├── stores/            # Zustand stores (settings, model)
 │   ├── i18n/              # Translation files (20 languages)
+│   ├── lib/               # Utilities, types, constants
 │   └── ...
 ├── src-tauri/             # Backend (Rust)
 │   ├── src/               # Rust source

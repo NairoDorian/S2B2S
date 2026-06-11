@@ -7,13 +7,39 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Documentation cleanup, formatting pass, archive old analysis files.
+> **Status (June 2026):** Code quality pass — refactoring, type safety, i18n completion, and documentation sync.
 
-### Code Cleanup
+### Refactoring & Code Quality
 
-- **Root-level archive** — moved 31 stale analysis files and `old mds/` into `archive/` for a clean project root.
-- **Prettier formatting** — applied project-wide formatting to all 176 frontend + docs files.
-- **ESLint verification** — confirmed zero lint errors after formatting pass.
+- **Shared `useProviderState` hook** — extracted common provider state management from `useBrainProviderState.ts` and `usePostProcessProviderState.ts` into `src/hooks/useProviderState.ts`. Eliminated ~200 lines of nearly identical code. Both hooks now delegate to the shared generic hook with a configuration object.
+- **Deduplicated settings store** — extracted brain/post-process provider logic in `settingsStore.ts` into internal helpers (`_setProvider`, `_updateProviderSetting`, `_updateProviderBaseUrl`, `_fetchProviderModels`). Eliminated ~200 lines of duplicate provider management code.
+- **`TooltipIcon` sub-component** — extracted from `SettingContainer.tsx` to eliminate 3x duplicated SVG tooltip icon markup across stacked/horizontal layouts.
+- **`parseTimestamp` / `safeFormat` helpers** — extracted from `dateFormat.ts` to eliminate duplicate timestamp parsing and error handling in `formatDateTime` and `formatDate`.
+
+### Bug Fixes
+
+- **RecordingOverlay cleanup** — event listeners registered via `listen()` are now properly unregistered on component unmount. Previously the `setupEventListeners()` returned a cleanup function but the effect never called it, causing potential memory leaks.
+
+### Type Safety
+
+- **`Sidebar.tsx`** — changed `IconProps` index signature from `[key: string]: any` to `[key: string]: unknown` for better type safety with Lucide icons.
+- **`settingsStore.ts`** — replaced `value as any` for LogLevel with `value as LogLevel` using explicit `LogLevel` type import.
+- **`AccessibilityPermissions.tsx`** — replaced unsafe `as ButtonConfig` cast with proper null guard + early return.
+
+### i18n Completion
+
+- **`SpeechSettings.tsx`** — replaced 9 hardcoded strings with i18n keys (Greeting settings: group title, toggles, labels, descriptions, placeholders, noise scales).
+- **`ConversationView.tsx`** — replaced 8 hardcoded strings with i18n keys (voice mode status labels, toggle titles, button text).
+- Added all new i18n keys to `en/translation.json`.
+
+### Dead Code Removal
+
+- **`keyboard.ts`** — removed unused `normalizeKey` export. The `_osType` parameter in `formatKeyCombination` is retained (function signature matches callers).
+
+### Barrel Exports
+
+- **`ui/index.ts`** — completed barrel exports with all 17 UI components (added Alert, AudioPlayer, Badge, Button, Input, PathDisplay, ResetButton, Select).
+- **`icons/index.ts`** — completed barrel exports with all 6 icon components (added ResetIcon, S2B2SIcon, S2B2STextLogo).
 
 ### Documentation Fixes
 

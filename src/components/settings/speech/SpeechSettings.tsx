@@ -154,21 +154,21 @@ export const SpeechSettings: React.FC = () => {
         />
       </SettingsGroup>
 
-      <SettingsGroup title="Startup Greeting Settings">
+      <SettingsGroup title={t("settings.speech.greetingGroup")}>
         <ToggleSwitch
           checked={tts.play_startup_greeting ?? true}
           onChange={(play_startup_greeting) =>
             update({ play_startup_greeting })
           }
-          label="Play Startup Greeting Audio"
-          description="Speak the warmup sentence aloud when the voice model finishes loading"
+          label={t("settings.speech.playGreetingToggle.label")}
+          description={t("settings.speech.playGreetingToggle.description")}
           grouped
         />
         {tts.play_startup_greeting && (
           <>
             <SettingContainer
-              title="Greeting Text"
-              description="The greeting text spoken at startup"
+              title={t("settings.speech.greetingText.label")}
+              description={t("settings.speech.greetingText.description")}
               grouped
             >
               <Input
@@ -176,12 +176,12 @@ export const SpeechSettings: React.FC = () => {
                 onChange={(e) =>
                   update({ greeting: { ...greeting, text: e.target.value } })
                 }
-                placeholder="Enter greeting message..."
+                placeholder={t("settings.speech.greetingText.placeholder")}
               />
             </SettingContainer>
             <SettingContainer
-              title="Greeting Engine"
-              description="The TTS engine used for the startup greeting"
+              title={t("settings.speech.greetingEngine.label")}
+              description={t("settings.speech.greetingEngine.description")}
               grouped
             >
               <Dropdown
@@ -199,8 +199,8 @@ export const SpeechSettings: React.FC = () => {
               />
             </SettingContainer>
             <SettingContainer
-              title="Greeting Voice"
-              description="The voice used for the startup greeting"
+              title={t("settings.speech.greetingVoice.label")}
+              description={t("settings.speech.greetingVoice.description")}
               grouped
             >
               <Dropdown
@@ -222,8 +222,8 @@ export const SpeechSettings: React.FC = () => {
               min={0.5}
               max={2}
               step={0.05}
-              label="Greeting Speed"
-              description="Playback rate for the startup greeting"
+              label={t("settings.speech.greetingSpeed.label")}
+              description={t("settings.speech.greetingSpeed.description")}
               grouped
               showValue
               formatValue={(value) => `${value.toFixed(2)}x`}
@@ -236,8 +236,8 @@ export const SpeechSettings: React.FC = () => {
               min={0}
               max={1.5}
               step={0.01}
-              label="Noise Scale"
-              description="Speaking variability (Piper HTTP noise_scale). 0=monotone, 0.667=Piper default."
+              label={t("settings.speech.greetingNoiseScale.label")}
+              description={t("settings.speech.greetingNoiseScale.description")}
               grouped
               showValue
               formatValue={(value) => `${value.toFixed(3)}`}
@@ -253,8 +253,8 @@ export const SpeechSettings: React.FC = () => {
               min={0}
               max={1.5}
               step={0.01}
-              label="Noise W Scale"
-              description="Phoneme width variability (Piper HTTP noise_w_scale). 0=precise, 0.8=Piper default."
+              label={t("settings.speech.greetingNoiseWScale.label")}
+              description={t("settings.speech.greetingNoiseWScale.description")}
               grouped
               showValue
               formatValue={(value) => `${value.toFixed(3)}`}
@@ -265,8 +265,8 @@ export const SpeechSettings: React.FC = () => {
           </>
         )}
         <SettingContainer
-          title="Repeat Startup Greeting"
-          description="Play the startup greeting message out loud"
+          title={t("settings.speech.repeatGreeting.label")}
+          description={t("settings.speech.repeatGreeting.description")}
           grouped
         >
           <div className="flex gap-2">

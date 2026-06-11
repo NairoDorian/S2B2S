@@ -614,6 +614,40 @@
       "doubleCopy": {
         "label": "Double-copy to speak",
         "description": "Copy the same text twice within 1.5 seconds to read it aloud automatically (Windows only for now)."
+      },
+      "greetingGroup": "Startup Greeting Settings",
+      "playGreetingToggle": {
+        "label": "Play Startup Greeting Audio",
+        "description": "Speak the warmup sentence aloud when the voice model finishes loading"
+      },
+      "greetingText": {
+        "label": "Greeting Text",
+        "description": "The greeting text spoken at startup",
+        "placeholder": "Enter greeting message..."
+      },
+      "greetingEngine": {
+        "label": "Greeting Engine",
+        "description": "The TTS engine used for the startup greeting"
+      },
+      "greetingVoice": {
+        "label": "Greeting Voice",
+        "description": "The voice used for the startup greeting"
+      },
+      "greetingSpeed": {
+        "label": "Greeting Speed",
+        "description": "Playback rate for the startup greeting"
+      },
+      "greetingNoiseScale": {
+        "label": "Noise Scale",
+        "description": "Speaking variability (Piper HTTP noise_scale). 0=monotone, 0.667=Piper default."
+      },
+      "greetingNoiseWScale": {
+        "label": "Noise W Scale",
+        "description": "Phoneme width variability (Piper HTTP noise_w_scale). 0=precise, 0.8=Piper default."
+      },
+      "repeatGreeting": {
+        "label": "Repeat Startup Greeting",
+        "description": "Play the startup greeting message out loud"
       }
     },
     "brain": {
@@ -747,6 +781,16 @@
     "send": "Send",
     "stop": "Stop",
     "clear": "Clear",
+    "readAloudOn": "Read replies aloud (ON)",
+    "readAloudOff": "Silent mode (OFF)",
+    "voiceListening": "Voice Mode: Listening...",
+    "voiceCapturing": "Voice Mode: Capturing Speech...",
+    "voiceProcessing": "Voice Mode: Processing speech...",
+    "voiceThinking": "Voice Mode: Brain is thinking...",
+    "voiceSpeaking": "Voice Mode: Assistant is speaking...",
+    "voiceMode": "Voice Mode",
+    "voiceModeOn": "Voice Mode ON",
+    "stopVoiceMode": "Exit Voice Mode",
     "latency": {
       "ep": "EP:{{ms}}ms",
       "stt": "STT:{{ms}}ms",

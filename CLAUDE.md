@@ -42,8 +42,9 @@ S2B2S = Tauri 2 (Rust + React/TS)
 
 ## Code Cleanup Notes (June 2026)
 
-This project has been reviewed and cleaned up:
+This project has been reviewed and cleaned up across multiple passes:
 
+### Pass 1 — Initial Cleanup
 - All module doc comments added to top-level Rust modules
 - `Cargo.toml` cleaned of commented-out sections
 - Documentation (README, CHANGELOG, AGENTS, CLAUDE, BUILD, CRUSH) synced and updated
@@ -52,5 +53,21 @@ This project has been reviewed and cleaned up:
 - Fixed unsafe `static mut` usage in `clipboard_watch.rs` (replaced with `Mutex`/`AtomicU64`)
 - Fixed stray doc-comment block in `actions.rs` (mid-function)
 - Cleaned up misleading `pulldown-cmark` references in comments and docs
-- Roadmap in README reflects all completed features
-- See CHANGELOG.md for the full cleanup entry
+
+### Pass 2 — Code Quality & i18n
+- Resolved 44 clippy warnings across backend
+- Resolved 35 ESLint i18n errors across frontend (added 16 new i18n keys)
+- Settings enums now use `#[derive(Default)]` with `#[default]`
+- All dependencies updated to latest compatible versions
+
+### Pass 3 — Refactoring & Type Safety
+- Extracted shared `useProviderState` hook (eliminated ~200 lines of duplicate code between `useBrainProviderState` and `usePostProcessProviderState`)
+- Deduplicated brain/post-process provider logic in `settingsStore.ts` via internal `_setProvider`, `_updateProviderSetting`, `_updateProviderBaseUrl`, `_fetchProviderModels` helpers
+- Extracted `TooltipIcon` sub-component in `SettingContainer.tsx` (eliminated 3x duplicated SVG markup)
+- Extracted `parseTimestamp` / `safeFormat` helpers in `dateFormat.ts` (eliminated duplicate parsing logic)
+- Fixed `RecordingOverlay.tsx` event listener cleanup bug (listeners now properly unregistered on unmount)
+- Fixed type safety: `Sidebar.tsx` index signature `[key: string]: unknown`, `settingsStore.ts` LogLevel cast, `AccessibilityPermissions.tsx` null guard
+- Replaced hardcoded strings with i18n keys in `SpeechSettings.tsx` (9 new keys) and `ConversationView.tsx` (8 new keys)
+- Removed unused `normalizeKey` export and dead `_osType` parameter in `keyboard.ts`
+- Completed barrel exports in `ui/index.ts` and `icons/index.ts`
+- See CHANGELOG.md for the full history
