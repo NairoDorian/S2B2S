@@ -17,6 +17,7 @@ import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
+import { HerLoading } from "./components/HerLoading";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
@@ -45,10 +46,24 @@ function App() {
     (state) => state.refreshOutputDevices,
   );
   const hasCompletedPostOnboardingInit = useRef(false);
+  const loadingStartRef = useRef(Date.now());
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
 
   useEffect(() => {
     checkOnboardingStatus();
   }, []);
+
+  // Simulate gradual loading progress — ramp up to 85% over 3 seconds
+  useEffect(() => {
+    if (!showLoadingScreen) return;
+    const interval = setInterval(() => {
+      const elapsed = (Date.now() - loadingStartRef.current) / 1000;
+      const simProgress = Math.min(0.85, elapsed / 3.0);
+      setLoadingProgress((prev) => Math.max(prev, simProgress));
+    }, 50);
+    return () => clearInterval(interval);
+  }, [showLoadingScreen]);
 
   // Initialize RTL direction when language changes
   useEffect(() => {
@@ -221,6 +236,13 @@ function App() {
       console.error("Failed to check onboarding status:", error);
       setOnboardingStep("accessibility");
     }
+    // Ensure loading screen lasts at least 3 seconds
+    const elapsed = Date.now() - loadingStartRef.current;
+    const remaining = Math.max(0, 3000 - elapsed);
+    if (remaining > 0) {
+      await new Promise((r) => setTimeout(r, remaining));
+    }
+    setLoadingProgress(1);
   };
 
   const handleAccessibilityComplete = () => {
@@ -234,9 +256,14 @@ function App() {
     setOnboardingStep("done");
   };
 
-  // Still checking onboarding status
-  if (onboardingStep === null) {
-    return null;
+  // Show loading animation while checking onboarding status
+  if (showLoadingScreen) {
+    return (
+      <HerLoading
+        progress={loadingProgress}
+        onEnter={() => setShowLoadingScreen(false)}
+      />
+    );
   }
 
   if (onboardingStep === "accessibility") {
