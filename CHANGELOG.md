@@ -10,7 +10,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > **Status (June 2026):** All 19 focused improvement items complete.
 > Hybrid KWS+VAD wake word, AI Replace, latency HUD, Ollama discovery, save-to-file,
 > warm model unload timeout, cross-platform selection capture + double-copy, waveform HUD.
-> See [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) for detailed roadmap.
 
 ### Added
 
@@ -71,7 +70,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **AGENTS.md** — full architecture tree visualization, frontend+backend structure maps, technology stack table, i18n details, code style, platform notes, key files reference.
 - **BUILD.md** — macOS Intel ONNX Runtime setup, env vars table, CI/CD workflow table, project structure overview.
 - **CLAUDE.md** — expanded from single line to full entry point doc referencing all key project files.
-- **CONTRIBUTING.md, CONTRIBUTING_TRANSLATIONS.md, CRUSH.md, IMPROVEMENT_PLAN.md** — all updated with current state, commands, and architecture info.
+- **CONTRIBUTING.md, CONTRIBUTING_TRANSLATIONS.md, CRUSH.md** — all updated with current state, commands, and architecture info.
 - **PR template** — softened feature-freeze language to focus on priorities rather than rejection.
 - **Bug report template** — added crash log path and debug mode instructions.
 
@@ -144,3 +143,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Removed redundant test speak sample section** — "Play Greeting" button already serves this purpose.
 - **TTS entries not appearing in history** — double-copy, speak-selection, and test button spoken text now persisted after successful synthesis.
 - **Windows test executables** — `build.rs` now embeds Common-Controls v6 manifest into test binaries (fixes `STATUS_ENTRYPOINT_NOT_FOUND` after dependency upgrade).
+
+### Removed
+- **IMPROVEMENT_PLAN.md** — deleted the improvement plan file.
