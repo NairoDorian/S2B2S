@@ -294,22 +294,22 @@ export const ConversationView: React.FC = () => {
         <div className="flex gap-2 px-1 text-[10px] font-mono text-mid-gray/60">
           {latencyHud.endpoint != null && (
             <span className={latencyHud.endpoint < 600 ? "text-green-500/70" : "text-yellow-500/70"}>
-              EP:{latencyHud.endpoint}ms
+              {t("conversation.latency.ep", { ms: latencyHud.endpoint })}
             </span>
           )}
           {latencyHud.stt != null && (
             <span className={latencyHud.stt < 400 ? "text-green-500/70" : "text-yellow-500/70"}>
-              STT:{latencyHud.stt}ms
+              {t("conversation.latency.stt", { ms: latencyHud.stt })}
             </span>
           )}
           {latencyHud.first_token != null && (
             <span className={latencyHud.first_token < 600 ? "text-green-500/70" : "text-yellow-500/70"}>
-              TTFT:{latencyHud.first_token}ms
+              {t("conversation.latency.ttft", { ms: latencyHud.first_token })}
             </span>
           )}
           {latencyHud.first_audio != null && (
             <span className={latencyHud.first_audio < 1500 ? "text-green-500/70" : latencyHud.first_audio < 2500 ? "text-yellow-500/70" : "text-red-500/70"}>
-              TTFA:{latencyHud.first_audio}ms
+              {t("conversation.latency.ttfa", { ms: latencyHud.first_audio })}
             </span>
           )}
         </div>

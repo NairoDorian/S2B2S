@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { SettingContainer } from "./SettingContainer";
 
 interface SliderProps {
@@ -22,16 +23,17 @@ export const Slider: React.FC<SliderProps> = ({
   onChange,
   min,
   max,
-  step = 0.01,
+  step = 1,
   disabled = false,
   label,
   description,
-  descriptionMode = "tooltip",
+  descriptionMode = "inline",
   grouped = false,
   showValue = true,
-  formatValue = (v) => v.toFixed(2),
+  formatValue = (v: number) => v.toString(),
   onReset,
 }) => {
+  const { t } = useTranslation();
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange(parseFloat(e.target.value));
   };
@@ -72,9 +74,10 @@ export const Slider: React.FC<SliderProps> = ({
                   type="button"
                   onClick={onReset}
                   className="text-text/50 hover:text-text/90 transition-colors text-xs leading-none"
-                  title="Reset to default"
+                  title={t("ui.slider.resetToDefault")}
                 >
-                  ↺
+                  {/* eslint-disable-next-line i18next/no-literal-string */}
+                  <span>↺</span>
                 </button>
               )}
             </span>

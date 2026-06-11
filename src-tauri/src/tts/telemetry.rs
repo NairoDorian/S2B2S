@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(t.adaptive_fragment_size("none", 500), 500);
         // Fast
         t.record("fast:v", 5000, 1000); // 5.0 chars/ms
-        // Need >=3 samples for running stats to be reliable
+                                        // Need >=3 samples for running stats to be reliable
         t.record("fast:v", 5000, 1000);
         t.record("fast:v", 5000, 1000);
         assert!(t.adaptive_fragment_size("fast:v", 500) > 500);

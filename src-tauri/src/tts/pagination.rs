@@ -306,8 +306,6 @@ fn force_split(text: &str, max_size: usize) -> Vec<TextFragment> {
     fragments
 }
 
-
-
 /// Get the number of fragments that would be created for the given text.
 #[allow(dead_code)]
 pub fn estimate_fragment_count(text: &str, config: &PaginationConfig) -> usize {
@@ -478,8 +476,6 @@ mod tests {
         let combined: String = fragments.iter().map(|f| f.text.as_str()).collect();
         assert_eq!(combined.replace(' ', ""), text.replace(' ', ""));
     }
-
-
 
     #[test]
     fn test_force_split_no_sentence_boundaries() {

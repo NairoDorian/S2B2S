@@ -33,10 +33,7 @@ mod tests {
 
     #[test]
     fn test_money() {
-        assert_eq!(
-            itn_normalize_token("five dollars and fifty cents"),
-            "$5.50"
-        );
+        assert_eq!(itn_normalize_token("five dollars and fifty cents"), "$5.50");
     }
 
     #[test]

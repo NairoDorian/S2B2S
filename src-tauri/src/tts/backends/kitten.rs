@@ -8,7 +8,9 @@
 
 use crate::tts::{TtsBackend, Voice};
 
-const KITTEN_VOICES: &[&str] = &["alba", "elias", "hasper", "jill", "kasper", "melina", "nimitz", "sarah"];
+const KITTEN_VOICES: &[&str] = &[
+    "alba", "elias", "hasper", "jill", "kasper", "melina", "nimitz", "sarah",
+];
 
 #[allow(dead_code)]
 pub struct KittenBackend {
@@ -42,7 +44,8 @@ impl TtsBackend for KittenBackend {
         // TO FINISH: Spawn Python `kittentts-cli.py --voice {voice} --text "{text}"`
         // once the CLI adapter is created. For now, returns a clear error.
         Err("Kitten TTS requires the Python CLI adapter.\n\
-             Run: install-kittentts.ps1 to set up the engine.".to_string())
+             Run: install-kittentts.ps1 to set up the engine."
+            .to_string())
     }
 
     fn health_check(&self) -> Result<(), String> {

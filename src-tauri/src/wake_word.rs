@@ -54,14 +54,18 @@ impl WakeWordDetector {
         let mut buf = self.ring_buffer.lock().unwrap();
         buf.extend_from_slice(samples);
         let excess = buf.len().saturating_sub(32000);
-        if excess > 0 { buf.drain(0..excess); }
+        if excess > 0 {
+            buf.drain(0..excess);
+        }
     }
 
     /// Check RMS energy threshold (0.03) with 3-frame debounce.
     /// Returns true once per detection event.
     pub fn check_detected(&self) -> bool {
         let buf = self.ring_buffer.lock().unwrap();
-        if buf.len() < 1600 { return false; }
+        if buf.len() < 1600 {
+            return false;
+        }
 
         let rms = (buf.iter().map(|s| s * s).sum::<f32>() / buf.len() as f32).sqrt();
         if rms > 0.03 {
@@ -80,7 +84,9 @@ impl WakeWordDetector {
 /// Start the wake word detector background thread.
 pub fn start_wake_word_detection(app: AppHandle) {
     let detector = app.state::<Arc<WakeWordDetector>>();
-    if detector.active.load(Ordering::SeqCst) { return; }
+    if detector.active.load(Ordering::SeqCst) {
+        return;
+    }
     detector.reset();
     detector.active.store(true, Ordering::SeqCst);
 

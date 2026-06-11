@@ -577,6 +577,7 @@
         "speak": "Speak sample",
         "stop": "Stop"
       },
+      "playGreeting": "Play Greeting",
       "sampleText": "Hello! This is S2B2S speaking with the current voice settings.",
       "piperGroup": "Piper Engine",
       "piperPython": {
@@ -659,6 +660,13 @@
     }
   },
   "footer": {
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
     "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "Checking for updates...",
     "updateAvailable": "Update available: {{version}}",
@@ -738,6 +746,37 @@
     "inputPlaceholder": "Type a message (Enter to send, Shift+Enter for a new line)",
     "send": "Send",
     "stop": "Stop",
-    "clear": "Clear"
+    "clear": "Clear",
+    "latency": {
+      "ep": "EP:{{ms}}ms",
+      "stt": "STT:{{ms}}ms",
+      "ttft": "TTFT:{{ms}}ms",
+      "ttfa": "TTFA:{{ms}}ms"
+    }
+  },
+  "debug": {
+    "logViewer": {
+      "lastLines": "Last {{count}} Lines",
+      "autoRefresh": "Auto-refresh",
+      "refresh": "Refresh",
+      "copy": "Copy",
+      "clear": "Clear",
+      "searchPlaceholder": "Search logs...",
+      "showing": "Showing {{filtered}} of {{total}} fetched log entries",
+      "levelFilter": "LogLevel Filter: {{level}}",
+      "noFilterMatch": "No log entries match your filter criteria.",
+      "noEntries": "No log entries generated yet."
+    }
+  },
+  "gpuVram": {
+    "diagnostics": "GPU VRAM Diagnostics",
+    "usage": "{{used}} MB / {{total}} MB ({{percentage}}%)",
+    "used": "Used: {{used}} MB",
+    "free": "Free: {{free}} MB"
+  },
+  "ui": {
+    "slider": {
+      "resetToDefault": "Reset to default"
+    }
   }
 }

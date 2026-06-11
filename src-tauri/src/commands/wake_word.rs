@@ -1,5 +1,5 @@
-use crate::settings::{get_settings, write_settings};
 use crate::settings::WakeWordConfig;
+use crate::settings::{get_settings, write_settings};
 use crate::wake_word::{start_wake_word_detection, stop_wake_word_detection};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
@@ -40,7 +40,8 @@ pub fn wake_word_set_config(app: AppHandle, config: WakeWordConfig) -> Result<()
 #[tauri::command]
 #[specta::specta]
 pub fn wake_word_status(app: AppHandle) -> Result<bool, String> {
-    let running = app.try_state::<Arc<crate::wake_word::WakeWordDetector>>()
+    let running = app
+        .try_state::<Arc<crate::wake_word::WakeWordDetector>>()
         .map(|d| d.active.load(std::sync::atomic::Ordering::SeqCst))
         .unwrap_or(false);
     Ok(running)

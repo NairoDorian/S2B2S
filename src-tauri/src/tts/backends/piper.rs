@@ -38,12 +38,12 @@
 //!
 //! ──────────────────────────────────────────────────────────────────────────
 
+use super::piper_server;
 use crate::settings::get_settings;
-use crate::tts::{TtsBackend, Voice};
 use crate::tts::status::{EngineStatus, WarmEngine};
+use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::AppHandle;
-use super::piper_server;
 
 /// List available Piper voices by scanning the resolved voices directory for `*.onnx`.
 pub fn list_voices(app: &AppHandle) -> Vec<Voice> {
@@ -95,7 +95,11 @@ impl PiperBackend {
 
     fn touch(&self) {
         self.last_used.store(
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64).unwrap_or(0),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
             Ordering::Release,
         );
     }
@@ -105,7 +109,11 @@ impl WarmEngine for PiperBackend {
     fn warm(&self) -> Result<(), String> {
         // Pre-load the Piper server with voice
         let voice = get_settings(&self.app).tts.voice.clone();
-        let voice = if voice.trim().is_empty() { "en_US-joe-medium" } else { &voice };
+        let voice = if voice.trim().is_empty() {
+            "en_US-joe-medium"
+        } else {
+            &voice
+        };
         piper_server::ensure_running(voice.to_string(), self.cuda)?;
         log::info!("[Piper] WarmEngine: server ready and warm");
         Ok(())
@@ -162,10 +170,7 @@ impl TtsBackend for PiperBackend {
         }
 
         // 1. Ensure server is running and get handle
-        let handle = piper_server::ensure_running(
-            voice_to_use.to_string(),
-            self.cuda,
-        )?;
+        let handle = piper_server::ensure_running(voice_to_use.to_string(), self.cuda)?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
 
@@ -185,7 +190,8 @@ impl TtsBackend for PiperBackend {
         let deadline_ms = (5000u64 + text_chars * per_char_ms).clamp(10_000, 180_000);
         let deadline = std::time::Duration::from_millis(deadline_ms);
 
-        let response = handle.client
+        let response = handle
+            .client
             .post(&url)
             .timeout(deadline)
             .json(&body)
@@ -202,12 +208,10 @@ impl TtsBackend for PiperBackend {
             return Err(format!("Piper HTTP error {status}: {err_text}"));
         }
 
-        let bytes = response
-            .bytes()
-            .map_err(|e| {
-                let _ = piper_server::unload_piper_model();
-                format!("Failed to read Piper response bytes: {e}")
-            })?;
+        let bytes = response.bytes().map_err(|e| {
+            let _ = piper_server::unload_piper_model();
+            format!("Failed to read Piper response bytes: {e}")
+        })?;
 
         Ok(bytes.to_vec())
     }

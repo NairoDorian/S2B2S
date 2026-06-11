@@ -11,9 +11,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > Hybrid KWS+VAD wake word, AI Replace, latency HUD, Ollama discovery, save-to-file,
 > warm model unload timeout, cross-platform selection capture + double-copy, waveform HUD.
 
-### Added
+### Code Quality & Cleanup
 
-- **GPU VRAM footer indicator** — compact 📟 VRAM status dot (green <75%, yellow 75-90%, red >90%) with hover tooltip showing used/total MB. Polls every 5s via `get_active_gpu_vram_status` command.
+- **Rust clippy cleanup** — resolved all 44 clippy warnings across the backend: deprecated `rodio::DeviceTrait::name` → `description()`, `map_or(false, ...)` → `is_some_and(...)`, `map_or(true, ...)` → `is_none_or(...)`, `contains_key` + `insert` → `Entry::Vacant` API, `return Ok(())` → `Ok(())`, redundant closures → direct function references, manual saturating arithmetic → `saturating_sub`, collapsible `if` statements collapsed, manual `Default` impls replaced with `#[derive(Default)]`, empty doc comments fixed, `write!` → `writeln!`, test modules repositioned after function definitions, `io_other_error` patterns modernized, and `needless_borrow` references simplified. Architecture-level `#[allow(clippy::too_many_arguments)]` added to 4 long-parameter-sig functions.
+- **Rust formatting** — `cargo fmt` applied project-wide; trailing whitespace in `piper_server.rs` removed.
+- **ESLint i18n cleanup** — resolved all 35 `i18next/no-literal-string` errors across the frontend: added 16 new i18n keys (`conversation.latency.*`, `footer.brain*`, `footer.brainTitle`, `footer.tts*`, `gpuVram.*`, `debug.logViewer.*`, `ui.slider.resetToDefault`, `settings.speech.playGreeting`) and applied `eslint-disable-next-line` for icon/technical-unit literals.
+- **Settings enums** — 5 enums (`ModelUnloadTimeout`, `ClipboardHandling`, `AutoSubmitKey`, `TypingTool`, `WhisperAcceleratorSetting`, `OrtAcceleratorSetting`) now use `#[derive(Default)]` with `#[default]` annotations instead of manual `impl Default`.
+
+### Added (green <75%, yellow 75-90%, red >90%) with hover tooltip showing used/total MB. Polls every 5s via `get_active_gpu_vram_status` command.
 - **Log viewer console** — developer log viewer in Debug settings with level filter, search, auto-refresh (2s), manual refresh, copy to clipboard, and clear logs. Backed by `get_recent_logs` / `clear_logs` commands.
 
 ### Changed

@@ -51,7 +51,7 @@ const BrainSelector: React.FC = () => {
       >
         <span className="flex items-center gap-1">
           <span>🧠</span>
-          <span className="font-medium">Brain</span>
+          <span className="font-medium">{t("footer.brain")}</span>
         </span>
         <div
           className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
@@ -77,7 +77,7 @@ const BrainSelector: React.FC = () => {
         <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2.5 px-3 z-50 text-xs">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-mid-gray/10">
             <div className="flex flex-col">
-              <span className="font-semibold text-text/80">AI Brain</span>
+              <span className="font-semibold text-text/80">{t("footer.brainTitle")}</span>
               {brain.enabled && activeModel && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
                   {activeModel}
@@ -97,7 +97,7 @@ const BrainSelector: React.FC = () => {
 
           <div className="space-y-1">
             <div className="text-[10px] text-text/40 uppercase font-medium tracking-wider mb-1 px-1">
-              Active Provider
+              {t("footer.brainActiveProvider")}
             </div>
             {brain.providers.map((provider) => (
               <button

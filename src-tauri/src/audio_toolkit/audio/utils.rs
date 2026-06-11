@@ -1,9 +1,9 @@
 use anyhow::Result;
 use hound::{WavReader, WavSpec, WavWriter};
 use log::debug;
-use std::path::Path;
 use serde::Serialize;
 use specta::Type;
+use std::path::Path;
 
 /// Read a WAV file and return normalised f32 samples.
 pub fn read_wav_samples<P: AsRef<Path>>(file_path: P) -> Result<Vec<f32>> {
@@ -93,5 +93,8 @@ pub fn extract_envelope(wav_bytes: &[u8], num_bars: usize) -> Option<AmplitudeEn
         })
         .collect();
 
-    Some(AmplitudeEnvelope { values, duration_ms })
+    Some(AmplitudeEnvelope {
+        values,
+        duration_ms,
+    })
 }

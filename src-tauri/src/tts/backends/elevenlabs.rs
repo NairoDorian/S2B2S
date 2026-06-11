@@ -150,7 +150,10 @@ impl ElevenLabsTtsBackend {
 
         if !status.is_success() {
             log::error!("ElevenLabs API error {}: {}", status, response_text);
-            return Err(format!("ElevenLabs API error {}: {}", status, response_text));
+            return Err(format!(
+                "ElevenLabs API error {}: {}",
+                status, response_text
+            ));
         }
 
         #[derive(Deserialize)]

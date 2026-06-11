@@ -61,7 +61,11 @@ pub fn convert_audio_bytes(wav_bytes: &[u8], format: AudioFormat) -> Vec<u8> {
         Ok(out) if out.status.success() => {
             let result = std::fs::read(&output_path).unwrap_or_default();
             let _ = std::fs::remove_file(&output_path);
-            if result.is_empty() { wav_bytes.to_vec() } else { result }
+            if result.is_empty() {
+                wav_bytes.to_vec()
+            } else {
+                result
+            }
         }
         _ => {
             let _ = std::fs::remove_file(&output_path);
@@ -72,7 +76,11 @@ pub fn convert_audio_bytes(wav_bytes: &[u8], format: AudioFormat) -> Vec<u8> {
 }
 
 /// Save audio bytes to a file with the appropriate extension.
-pub fn save_audio_file(bytes: &[u8], path: &std::path::Path, format: AudioFormat) -> Result<(), String> {
+pub fn save_audio_file(
+    bytes: &[u8],
+    path: &std::path::Path,
+    format: AudioFormat,
+) -> Result<(), String> {
     let data = if format == AudioFormat::Wav {
         bytes.to_vec()
     } else {

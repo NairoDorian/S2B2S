@@ -1,7 +1,7 @@
-use nnnoiseless::DenoiseState;
-use rubato::{Fft, FixedSync, Resampler};
 use audioadapter::Adapter;
 use audioadapter_buffers::direct::InterleavedSlice;
+use nnnoiseless::DenoiseState;
+use rubato::{Fft, FixedSync, Resampler};
 
 const RNNOISE_SAMPLE_RATE: usize = 48_000;
 const RNNOISE_FRAME_SIZE: usize = DenoiseState::FRAME_SIZE; // 480 samples

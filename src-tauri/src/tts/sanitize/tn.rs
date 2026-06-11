@@ -30,16 +30,17 @@ mod tests {
 
     #[test]
     fn test_money() {
-        assert_eq!(
-            tn_normalize_token("$5.50"),
-            "five dollars and fifty cents"
-        );
+        assert_eq!(tn_normalize_token("$5.50"), "five dollars and fifty cents");
     }
 
     #[test]
     fn test_dates() {
         let result = tn_normalize_token("January 5, 2025");
-        assert!(result.contains("january") && result.contains("fifth") && result.contains("twenty five"));
+        assert!(
+            result.contains("january")
+                && result.contains("fifth")
+                && result.contains("twenty five")
+        );
     }
 
     #[test]
@@ -63,10 +64,7 @@ mod tests {
     #[test]
     fn test_sentence_mode() {
         let result = tn_normalize_text("I paid $5 for 23 items");
-        assert_eq!(
-            result,
-            "I paid five dollars for twenty three items"
-        );
+        assert_eq!(result, "I paid five dollars for twenty three items");
     }
 
     #[test]

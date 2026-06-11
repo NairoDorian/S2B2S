@@ -267,7 +267,7 @@ export const SpeechSettings: React.FC = () => {
                 }
               }}
             >
-              Play Greeting
+              {t("settings.speech.playGreeting")}
             </Button>
           </div>
         </SettingContainer>

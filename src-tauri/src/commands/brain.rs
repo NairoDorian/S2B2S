@@ -27,13 +27,18 @@ pub async fn ai_replace_selection(
         Output ONLY the rewritten text — no preamble, no explanation, no markdown formatting. \
         Preserve the original meaning unless the instruction changes it.";
 
-    let prompt = format!(
-        "TEXT:\n{selected_text}\n\nINSTRUCTION:\n{instruction}\n\nREWRITTEN TEXT:"
-    );
+    let prompt =
+        format!("TEXT:\n{selected_text}\n\nINSTRUCTION:\n{instruction}\n\nREWRITTEN TEXT:");
 
     let messages = vec![
-        crate::brain::client::ChatMessage { role: "system".to_string(), content: system_prompt.to_string() },
-        crate::brain::client::ChatMessage { role: "user".to_string(), content: prompt },
+        crate::brain::client::ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt.to_string(),
+        },
+        crate::brain::client::ChatMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
     ];
 
     let client = crate::brain::client::BrainClient::new();
@@ -48,7 +53,9 @@ pub async fn ai_replace_selection(
             &model,
             &messages,
             abort,
-            |token| { result.push_str(token); },
+            |token| {
+                result.push_str(token);
+            },
             |_sentence| {},
         )
         .await?;
@@ -88,7 +95,8 @@ pub fn brain_clear_history(brain: State<'_, Arc<BrainManager>>) -> Result<(), St
 pub async fn fetch_brain_models(app: AppHandle) -> Result<Vec<String>, String> {
     let settings = get_settings(&app);
     let brain_cfg = &settings.brain;
-    let provider = brain_cfg.active_provider()
+    let provider = brain_cfg
+        .active_provider()
         .ok_or_else(|| "No active Brain provider configured".to_string())?;
 
     // Get API key
@@ -148,7 +156,9 @@ pub fn change_brain_base_url_setting(
     base_url: String,
 ) -> Result<(), String> {
     let mut settings = get_settings(&app);
-    let provider = settings.brain.provider_mut(&provider_id)
+    let provider = settings
+        .brain
+        .provider_mut(&provider_id)
         .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
 
     if provider.id != "custom" {

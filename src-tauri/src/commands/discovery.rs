@@ -10,8 +10,6 @@ pub struct DiscoveredServer {
     pub provider_id: String,
 }
 
-
-
 #[tauri::command]
 #[specta::specta]
 pub async fn discover_local_brains(_app: AppHandle) -> Result<Vec<DiscoveredServer>, String> {

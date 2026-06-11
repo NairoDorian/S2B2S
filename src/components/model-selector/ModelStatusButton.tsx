@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 type ModelStatus =
   | "ready"
@@ -25,6 +26,7 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
   onClick,
   className = "",
 }) => {
+  const { t } = useTranslation();
   const getStatusColor = (status: ModelStatus): string => {
     switch (status) {
       case "ready":
@@ -55,8 +57,9 @@ const ModelStatusButton: React.FC<ModelStatusButtonProps> = ({
       title={`STT: ${displayText}`}
     >
       <span className="flex items-center gap-1">
+        {/* eslint-disable-next-line i18next/no-literal-string */}
         <span>🎙️</span>
-        <span className="font-medium">STT</span>
+        <span className="font-medium">{t("footer.stt")}</span>
       </span>
       <div className={`w-1.5 h-1.5 rounded-full ${getStatusColor(status)}`} />
       <svg

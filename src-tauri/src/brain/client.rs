@@ -64,6 +64,7 @@ impl BrainClient {
     /// `abort` is a per-request token: setting it stops the stream between chunks.
     /// Each request gets its own token so aborting one turn can never race with
     /// the next turn starting (barge-in).
+    #[allow(clippy::too_many_arguments)]
     pub async fn stream_chat<FT, FS>(
         &self,
         base_url: &str,
@@ -209,7 +210,9 @@ fn force_clause_boundary(buffer: &str, max_chars: usize) -> usize {
     }
     // Prefer strong boundary within max_chars+10, else clause boundary, else hard cut
     if let Some(s) = last_strong {
-        if s <= hard + 10 { return s; }
+        if s <= hard + 10 {
+            return s;
+        }
     }
     last_clause.unwrap_or(hard)
 }
@@ -224,9 +227,14 @@ pub fn split_at_clause_boundary(text: &str, target_chars: usize) -> Option<usize
     let mut count = 0usize;
 
     for (idx, c) in text.char_indices() {
-        if count < half { count += 1; continue; }
+        if count < half {
+            count += 1;
+            continue;
+        }
         count += 1;
-        if count > double { break; }
+        if count > double {
+            break;
+        }
 
         if matches!(c, ',' | ';' | ':' | '—') {
             best_clause = Some(idx + c.len_utf8());
@@ -240,7 +248,7 @@ pub fn split_at_clause_boundary(text: &str, target_chars: usize) -> Option<usize
     }
 
     if let Some(s) = best_strong {
-        if best_clause.map_or(true, |c| s <= c + 10) {
+        if best_clause.is_none_or(|c| s <= c + 10) {
             return Some(s);
         }
     }

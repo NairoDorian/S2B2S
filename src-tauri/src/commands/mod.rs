@@ -7,9 +7,9 @@ pub mod transcription;
 pub mod tts;
 pub mod wake_word;
 
+use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::cancel_current_operation;
-use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -198,21 +198,20 @@ pub fn export_settings(app: AppHandle, path: String) -> Result<(), String> {
     let settings = get_settings(&app);
     let json = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-    std::fs::write(&path, json)
-        .map_err(|e| format!("Failed to write settings file: {e}"))?;
+    std::fs::write(&path, json).map_err(|e| format!("Failed to write settings file: {e}"))?;
     Ok(())
 }
 
 #[specta::specta]
 #[tauri::command]
 pub fn import_settings(app: AppHandle, path: String) -> Result<(), String> {
-    let json = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read settings file: {e}"))?;
-    let settings: AppSettings = serde_json::from_str(&json)
-        .map_err(|e| format!("Failed to parse settings: {e}"))?;
-    
+    let json =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read settings file: {e}"))?;
+    let settings: AppSettings =
+        serde_json::from_str(&json).map_err(|e| format!("Failed to parse settings: {e}"))?;
+
     write_settings(&app, settings.clone());
-    
+
     if let Some(rm) = app.try_state::<Arc<AudioRecordingManager>>() {
         let new_mode = if settings.always_on_microphone {
             MicrophoneMode::AlwaysOn
@@ -223,7 +222,7 @@ pub fn import_settings(app: AppHandle, path: String) -> Result<(), String> {
         rm.set_noise_suppression_enabled(settings.noise_suppression_enabled);
         let _ = rm.update_vad_mode(&settings.vad_mode);
     }
-    
+
     Ok(())
 }
 
@@ -243,16 +242,13 @@ pub fn get_recent_logs(app: AppHandle, max_lines: u32) -> Result<String, String>
 
     use std::io::{BufRead, BufReader};
     let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines()
+    let lines: Vec<String> = reader
+        .lines()
         .map(|line| line.unwrap_or_default())
         .collect();
 
     let len = lines.len();
-    let start = if len > max_lines as usize {
-        len - max_lines as usize
-    } else {
-        0
-    };
+    let start = len.saturating_sub(max_lines as usize);
 
     Ok(lines[start..].join("\n"))
 }

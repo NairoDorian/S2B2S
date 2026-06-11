@@ -91,7 +91,11 @@ impl AudioRecorder {
         self
     }
 
-    pub fn with_continuous_mode(mut self, enabled: Arc<AtomicBool>, paused: Arc<AtomicBool>) -> Self {
+    pub fn with_continuous_mode(
+        mut self,
+        enabled: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
+    ) -> Self {
         self.continuous_mode = Some(enabled);
         self.continuous_mode_paused = Some(paused);
         self
@@ -137,8 +141,11 @@ impl AudioRecorder {
                 let channels = config.channels() as usize;
 
                 log::info!(
-                    "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
-                    thread_device.name(),
+                    "Using device: {}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
+                    thread_device
+                        .description()
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_else(|_| "Unknown".to_string()),
                     sample_rate,
                     channels,
                     config.sample_format()
@@ -242,10 +249,9 @@ impl AudioRecorder {
             }
             Err(recv_error) => {
                 let _ = worker.join();
-                Err(Box::new(Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to initialize microphone worker: {recv_error}"),
-                )))
+                Err(Box::new(Error::other(format!(
+                    "Failed to initialize microphone worker: {recv_error}",
+                ))))
             }
         }
     }
@@ -404,49 +410,7 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
             && normalized.contains("coreaudio"))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{is_microphone_access_denied, is_no_input_device_error};
-
-    #[test]
-    fn detects_access_is_denied() {
-        assert!(is_microphone_access_denied("Access is denied"));
-    }
-
-    #[test]
-    fn detects_permission_denied() {
-        assert!(is_microphone_access_denied("permission denied"));
-    }
-
-    #[test]
-    fn detects_windows_error_code() {
-        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
-    }
-
-    #[test]
-    fn does_not_match_unrelated_errors() {
-        assert!(!is_microphone_access_denied("device not found"));
-    }
-
-    #[test]
-    fn detects_no_input_device() {
-        assert!(is_no_input_device_error("No input device found"));
-    }
-
-    #[test]
-    fn detects_coreaudio_config_error() {
-        assert!(is_no_input_device_error(
-            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
-        ));
-    }
-
-    #[test]
-    fn does_not_match_other_errors_for_no_device() {
-        assert!(!is_no_input_device_error("permission denied"));
-        assert!(!is_no_input_device_error("device not found"));
-    }
-}
-
+#[allow(clippy::too_many_arguments)]
 fn run_consumer(
     in_sample_rate: u32,
     vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
@@ -518,18 +482,18 @@ fn run_consumer(
         }
     }
 
-    loop {
-        let chunk = match sample_rx.recv() {
-            Ok(c) => c,
-            Err(_) => break, // stream closed
-        };
+    while let Ok(c) = sample_rx.recv() {
+        let chunk = c;
 
         let raw = match chunk {
             AudioChunk::Samples(s) => s,
             AudioChunk::EndOfStream => continue,
         };
 
-        let is_paused = pause_flag.as_ref().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false);
+        let is_paused = pause_flag
+            .as_ref()
+            .map(|f| f.load(Ordering::Relaxed))
+            .unwrap_or(false);
 
         // ---------- spectrum processing ---------------------------------- //
         let visualizer_input = if is_paused {
@@ -545,8 +509,14 @@ fn run_consumer(
 
         // ---------- existing pipeline ------------------------------------ //
         if !is_paused {
-            let is_continuous = continuous_mode.as_ref().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false);
-            let is_continuous_paused = continuous_mode_paused.as_ref().map(|f| f.load(Ordering::Relaxed)).unwrap_or(false);
+            let is_continuous = continuous_mode
+                .as_ref()
+                .map(|f| f.load(Ordering::Relaxed))
+                .unwrap_or(false);
+            let is_continuous_paused = continuous_mode_paused
+                .as_ref()
+                .map(|f| f.load(Ordering::Relaxed))
+                .unwrap_or(false);
 
             if is_continuous && is_continuous_paused {
                 processed_samples.clear();
@@ -671,5 +641,48 @@ fn run_consumer(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_microphone_access_denied, is_no_input_device_error};
+
+    #[test]
+    fn detects_access_is_denied() {
+        assert!(is_microphone_access_denied("Access is denied"));
+    }
+
+    #[test]
+    fn detects_permission_denied() {
+        assert!(is_microphone_access_denied("permission denied"));
+    }
+
+    #[test]
+    fn detects_windows_error_code() {
+        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_errors() {
+        assert!(!is_microphone_access_denied("device not found"));
+    }
+
+    #[test]
+    fn detects_no_input_device() {
+        assert!(is_no_input_device_error("No input device found"));
+    }
+
+    #[test]
+    fn detects_coreaudio_config_error() {
+        assert!(is_no_input_device_error(
+            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
+        ));
+    }
+
+    #[test]
+    fn does_not_match_other_errors_for_no_device() {
+        assert!(!is_no_input_device_error("permission denied"));
+        assert!(!is_no_input_device_error("device not found"));
     }
 }

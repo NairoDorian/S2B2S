@@ -238,6 +238,7 @@ impl HistoryManager {
 
     /// Save a new history entry to the database.
     /// The WAV file should already have been written to the recordings directory.
+    #[allow(clippy::too_many_arguments)]
     pub fn save_entry(
         &self,
         file_name: String,
@@ -344,12 +345,11 @@ impl HistoryManager {
             return Err(anyhow!("History entry {} not found", id));
         }
 
-        let entry = conn
-            .query_row(
-                "SELECT * FROM transcription_history WHERE id = ?1",
-                params![id],
-                Self::map_history_entry,
-            )?;
+        let entry = conn.query_row(
+            "SELECT * FROM transcription_history WHERE id = ?1",
+            params![id],
+            Self::map_history_entry,
+        )?;
 
         debug!("Updated transcription for history entry {}", id);
 
@@ -368,19 +368,12 @@ impl HistoryManager {
         let retention_period = crate::settings::get_recording_retention_period(&self.app_handle);
 
         match retention_period {
-            crate::settings::RecordingRetentionPeriod::Never => {
-                // Don't delete anything
-                return Ok(());
-            }
+            crate::settings::RecordingRetentionPeriod::Never => Ok(()),
             crate::settings::RecordingRetentionPeriod::PreserveLimit => {
-                // Use the old count-based logic with history_limit
                 let limit = crate::settings::get_history_limit(&self.app_handle);
-                return self.cleanup_by_count(limit);
+                self.cleanup_by_count(limit)
             }
-            _ => {
-                // Use time-based logic
-                return self.cleanup_by_time(retention_period);
-            }
+            _ => self.cleanup_by_time(retention_period),
         }
     }
 
@@ -540,9 +533,8 @@ impl HistoryManager {
 
     #[cfg(test)]
     fn get_latest_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT * FROM transcription_history ORDER BY timestamp DESC LIMIT 1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT * FROM transcription_history ORDER BY timestamp DESC LIMIT 1")?;
 
         let entry = stmt.query_row([], Self::map_history_entry).optional()?;
         Ok(entry)
@@ -596,9 +588,7 @@ impl HistoryManager {
 
     pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare(
-            "SELECT * FROM transcription_history WHERE id = ?1",
-        )?;
+        let mut stmt = conn.prepare("SELECT * FROM transcription_history WHERE id = ?1")?;
 
         let entry = stmt.query_row([id], Self::map_history_entry).optional()?;
 

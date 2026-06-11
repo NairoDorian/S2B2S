@@ -22,7 +22,7 @@ pub struct CustomSounds {
 
 fn custom_sound_exists(app: &AppHandle, sound_type: &str) -> bool {
     crate::portable::resolve_app_data(app, &format!("custom_{}.wav", sound_type))
-        .map_or(false, |path| path.exists())
+        .is_ok_and(|path| path.exists())
 }
 
 #[tauri::command]
@@ -140,7 +140,7 @@ pub fn open_microphone_privacy_settings() -> Result<(), String> {
             .args(["/C", "start", "", "ms-settings:privacy-microphone"])
             .spawn()
             .map_err(|e| format!("Failed to open Windows microphone privacy settings: {}", e))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -351,14 +351,19 @@ pub fn set_vad_mode(app: AppHandle, mode: String) -> Result<(), String> {
     write_settings(&app, settings);
 
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-    audio_manager.update_vad_mode(&mode)
+    audio_manager
+        .update_vad_mode(&mode)
         .map_err(|e| format!("Failed to update VAD mode: {e}"))?;
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn set_recording_auto_stop(app: AppHandle, enabled: bool, silence_secs: u32) -> Result<(), String> {
+pub fn set_recording_auto_stop(
+    app: AppHandle,
+    enabled: bool,
+    silence_secs: u32,
+) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.set_auto_stop(enabled, silence_secs);
     Ok(())
@@ -368,7 +373,8 @@ pub fn set_recording_auto_stop(app: AppHandle, enabled: bool, silence_secs: u32)
 #[specta::specta]
 pub fn start_continuous_voice_mode(app: AppHandle) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-    audio_manager.set_continuous_mode(true)
+    audio_manager
+        .set_continuous_mode(true)
         .map_err(|e| format!("Failed to start continuous voice mode: {e}"))?;
     Ok(())
 }
@@ -377,7 +383,8 @@ pub fn start_continuous_voice_mode(app: AppHandle) -> Result<(), String> {
 #[specta::specta]
 pub fn stop_continuous_voice_mode(app: AppHandle) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-    audio_manager.set_continuous_mode(false)
+    audio_manager
+        .set_continuous_mode(false)
         .map_err(|e| format!("Failed to stop continuous voice mode: {e}"))?;
     Ok(())
 }

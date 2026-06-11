@@ -7,9 +7,9 @@ pub mod audio_toolkit;
 mod brain;
 pub mod cli;
 mod clipboard;
-mod crash_logging;
-mod control_server;
 mod commands;
+mod control_server;
+mod crash_logging;
 mod helpers;
 mod input;
 mod llm_client;
@@ -296,7 +296,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Get the autostart manager and configure based on user setting
     let autostart_manager = app_handle.autolaunch();
-    let settings = settings::get_settings(&app_handle);
+    let settings = settings::get_settings(app_handle);
 
     if settings.autostart_enabled {
         // Enable autostart if user has opted in
@@ -490,21 +490,6 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .events(collect_events![managers::history::HistoryUpdatePayload,])
 }
 
-#[cfg(test)]
-mod bindings_export_tests {
-    /// Regenerates ../src/bindings.ts from the typed IPC surface.
-    /// Run with: `cargo test export_bindings`
-    #[test]
-    fn export_bindings() {
-        super::specta_builder()
-            .export(
-                specta_typescript::Typescript::default(),
-                "../src/bindings.ts",
-            )
-            .expect("Failed to export typescript bindings");
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
@@ -517,9 +502,7 @@ pub fn run(cli_args: CliArgs) {
     let specta_builder = specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
-    if let Err(e) = specta_builder
-        .export(Typescript::default(), "../src/bindings.ts")
-    {
+    if let Err(e) = specta_builder.export(Typescript::default(), "../src/bindings.ts") {
         eprintln!("Warning: Failed to export TS bindings (ignored): {e}");
     }
 
@@ -611,7 +594,7 @@ pub fn run(cli_args: CliArgs) {
 
             win_builder.build()?;
 
-            let mut settings = get_settings(&app.handle());
+            let mut settings = get_settings(app.handle());
 
             // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)
             if cli_args.debug {
@@ -764,7 +747,7 @@ pub fn run(cli_args: CliArgs) {
             tauri::WindowEvent::ThemeChanged(theme) => {
                 log::info!("Theme changed to: {:?}", theme);
                 // Update tray icon to match new theme, maintaining idle state
-                utils::change_tray_icon(&window.app_handle(), utils::TrayIconState::Idle);
+                utils::change_tray_icon(window.app_handle(), utils::TrayIconState::Idle);
             }
             _ => {}
         })
@@ -776,6 +759,19 @@ pub fn run(cli_args: CliArgs) {
             if let tauri::RunEvent::Reopen { .. } = &event {
                 show_main_window(app);
             }
-            let _ = (app, event); // suppress unused warnings on non-macOS
+            let _ = (app, event);
         });
+}
+
+#[cfg(test)]
+mod bindings_export_tests {
+    #[test]
+    fn export_bindings() {
+        super::specta_builder()
+            .export(
+                specta_typescript::Typescript::default(),
+                "../src/bindings.ts",
+            )
+            .expect("Failed to export typescript bindings");
+    }
 }

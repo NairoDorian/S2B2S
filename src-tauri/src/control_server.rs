@@ -1,7 +1,7 @@
-use crate::tts::backends::piper_server;
-use crate::tts::manager::TtsManager;
 use crate::brain::manager::BrainManager;
 use crate::transcription_coordinator::TranscriptionCoordinator;
+use crate::tts::backends::piper_server;
+use crate::tts::manager::TtsManager;
 use serde::Deserialize;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -83,16 +83,18 @@ fn handle_connection(mut stream: TcpStream, app: AppHandle) {
     };
 
     let response = match read_result.and_then(|()| parse_request(&buffer)) {
-        Ok(ControlRequest::Health) => {
-            http_response(200, "OK", r#"{"ok":true,"app":"S2B2S"}"#)
-        }
+        Ok(ControlRequest::Health) => http_response(200, "OK", r#"{"ok":true,"app":"S2B2S"}"#),
         Ok(ControlRequest::PiperStatus) => {
             let status = piper_server::get_piper_server_status();
-            let body = serde_json::to_string(&status).unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());
+            let body = serde_json::to_string(&status)
+                .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());
             http_response(200, "OK", &body)
         }
         Ok(ControlRequest::Speak(request)) => {
-            if let Some(tts) = app.try_state::<Arc<TtsManager>>().map(|s| s.inner().clone()) {
+            if let Some(tts) = app
+                .try_state::<Arc<TtsManager>>()
+                .map(|s| s.inner().clone())
+            {
                 tts.speak(request.text);
                 http_response(200, "OK", r#"{"ok":true}"#)
             } else {
@@ -100,7 +102,10 @@ fn handle_connection(mut stream: TcpStream, app: AppHandle) {
             }
         }
         Ok(ControlRequest::Brain(request)) => {
-            if let Some(brain) = app.try_state::<Arc<BrainManager>>().map(|s| s.inner().clone()) {
+            if let Some(brain) = app
+                .try_state::<Arc<BrainManager>>()
+                .map(|s| s.inner().clone())
+            {
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = brain.ask(request.text).await {
                         log::error!("[Control] Brain ask failed: {}", e);
@@ -112,11 +117,18 @@ fn handle_connection(mut stream: TcpStream, app: AppHandle) {
             }
         }
         Ok(ControlRequest::Command(request)) => {
-            if let Some(coordinator) = app.try_state::<Arc<TranscriptionCoordinator>>().map(|s| s.inner().clone()) {
+            if let Some(coordinator) = app
+                .try_state::<Arc<TranscriptionCoordinator>>()
+                .map(|s| s.inner().clone())
+            {
                 coordinator.send_input(&request.command, "API", true, false);
                 http_response(200, "OK", r#"{"ok":true}"#)
             } else {
-                http_response(500, "Error", r#"{"error":"TranscriptionCoordinator not available"}"#)
+                http_response(
+                    500,
+                    "Error",
+                    r#"{"error":"TranscriptionCoordinator not available"}"#,
+                )
             }
         }
         Err((status, message)) => http_response(status, "Error", &json_error(&message)),
@@ -207,7 +219,11 @@ fn parse_request(buffer: &[u8]) -> Result<ControlRequest, (u16, String)> {
         return Ok(ControlRequest::Command(request));
     }
 
-    Err((404, "expected GET /health, GET /piper-status, POST /speak, POST /brain, or POST /command".to_string()))
+    Err((
+        404,
+        "expected GET /health, GET /piper-status, POST /speak, POST /brain, or POST /command"
+            .to_string(),
+    ))
 }
 
 fn get_body(buffer: &[u8], header_end: usize, headers: &str) -> Result<Vec<u8>, (u16, String)> {
