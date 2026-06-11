@@ -1,7 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2, Mic, Volume2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  FolderOpen,
+  RotateCcw,
+  Star,
+  Trash2,
+  Mic,
+  Volume2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -233,7 +242,11 @@ export const HistorySettings: React.FC = () => {
       if (result.status === "ok") {
         setEntries([]);
         setSelectedIds([]);
-        toast.success(t("settings.history.deleteAllSuccess", { defaultValue: `Deleted all entries` }));
+        toast.success(
+          t("settings.history.deleteAllSuccess", {
+            defaultValue: `Deleted all entries`,
+          }),
+        );
       }
     } catch (error) {
       console.error("Failed to delete all entries:", error);
@@ -256,11 +269,12 @@ export const HistorySettings: React.FC = () => {
     setSelectedIds((prev) =>
       prev.includes(id)
         ? prev.filter((selectedId) => selectedId !== id)
-        : [...prev, id]
+        : [...prev, id],
     );
   };
 
-  const isAllSelected = entries.length > 0 && selectedIds.length === entries.length;
+  const isAllSelected =
+    entries.length > 0 && selectedIds.length === entries.length;
 
   const handleSelectAllToggle = () => {
     if (isAllSelected) {
@@ -281,9 +295,17 @@ export const HistorySettings: React.FC = () => {
     try {
       const result = await commands.deleteHistoryEntries(idsToDelete);
       if (result.status === "ok") {
-        toast.success(t("settings.history.deleteSelectedSuccess", { defaultValue: "Selected entries deleted successfully." }));
+        toast.success(
+          t("settings.history.deleteSelectedSuccess", {
+            defaultValue: "Selected entries deleted successfully.",
+          }),
+        );
       } else {
-        toast.error(t("settings.history.deleteSelectedError", { defaultValue: `Delete failed: ${result.error}` }));
+        toast.error(
+          t("settings.history.deleteSelectedError", {
+            defaultValue: `Delete failed: ${result.error}`,
+          }),
+        );
         loadPage();
       }
     } catch (error) {
@@ -314,9 +336,17 @@ export const HistorySettings: React.FC = () => {
 
       const result = await commands.exportHistoryEntries(selectedIds, filePath);
       if (result.status === "ok") {
-        toast.success(t("settings.history.exportSelectedSuccess", { defaultValue: "Selected entries exported successfully!" }));
+        toast.success(
+          t("settings.history.exportSelectedSuccess", {
+            defaultValue: "Selected entries exported successfully!",
+          }),
+        );
       } else {
-        toast.error(t("settings.history.exportSelectedError", { defaultValue: `Export failed: ${result.error}` }));
+        toast.error(
+          t("settings.history.exportSelectedError", {
+            defaultValue: `Export failed: ${result.error}`,
+          }),
+        );
       }
     } catch (err) {
       console.error("Failed to export selected entries:", err);
@@ -377,7 +407,10 @@ export const HistorySettings: React.FC = () => {
                 className="w-4 h-4 rounded border-mid-gray/40 text-logo-primary focus:ring-logo-primary bg-background-ui cursor-pointer"
               />
               <span className="text-xs text-text/80 font-medium">
-                {t("settings.history.selectedCount", { count: selectedIds.length, defaultValue: `${selectedIds.length} selected` })}
+                {t("settings.history.selectedCount", {
+                  count: selectedIds.length,
+                  defaultValue: `${selectedIds.length} selected`,
+                })}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -391,8 +424,12 @@ export const HistorySettings: React.FC = () => {
                 <FolderOpen className="w-3.5 h-3.5" />
                 <span className="text-xs">
                   {exportingSelected
-                    ? t("settings.history.exporting", { defaultValue: "Exporting..." })
-                    : t("settings.history.exportSelected", { defaultValue: "Export Markdown" })}
+                    ? t("settings.history.exporting", {
+                        defaultValue: "Exporting...",
+                      })
+                    : t("settings.history.exportSelected", {
+                        defaultValue: "Export Markdown",
+                      })}
                 </span>
               </Button>
               <Button
@@ -403,7 +440,9 @@ export const HistorySettings: React.FC = () => {
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span className="text-xs">
-                  {t("settings.history.deleteSelected", { defaultValue: "Delete Selected" })}
+                  {t("settings.history.deleteSelected", {
+                    defaultValue: "Delete Selected",
+                  })}
                 </span>
               </Button>
             </div>
@@ -424,7 +463,9 @@ export const HistorySettings: React.FC = () => {
                 disabled={entries.length === 0}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="text-xs">{t("settings.history.deleteAll")}</span>
+                <span className="text-xs">
+                  {t("settings.history.deleteAll")}
+                </span>
               </Button>
               <OpenRecordingsButton
                 onClick={openRecordingsFolder}
@@ -496,10 +537,18 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     try {
       setRegenerating(true);
       await regenerateEntry(entry.id);
-      toast.success(t("settings.history.regenerateSuccess", { defaultValue: "History entry successfully regenerated!" }));
+      toast.success(
+        t("settings.history.regenerateSuccess", {
+          defaultValue: "History entry successfully regenerated!",
+        }),
+      );
     } catch (error) {
       console.error("Failed to regenerate history entry:", error);
-      toast.error(t("settings.history.regenerateError", { defaultValue: "Failed to regenerate entry." }));
+      toast.error(
+        t("settings.history.regenerateError", {
+          defaultValue: "Failed to regenerate entry.",
+        }),
+      );
     } finally {
       setRegenerating(false);
     }
@@ -522,7 +571,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">{formattedDate}</p>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isTts ? "bg-purple-500/20 text-purple-400" : "bg-logo-primary/20 text-logo-primary"}`}>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isTts ? "bg-purple-500/20 text-purple-400" : "bg-logo-primary/20 text-logo-primary"}`}
+            >
               {isTts ? "TTS" : "STT"}
             </span>
           </div>
@@ -557,7 +608,15 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             <IconButton
               onClick={handleRegenerate}
               disabled={regenerating}
-              title={isTts ? t("settings.history.resynthesize", { defaultValue: "Re-synthesize audio" }) : t("settings.history.retranscribe", { defaultValue: "Re-transcribe audio" })}
+              title={
+                isTts
+                  ? t("settings.history.resynthesize", {
+                      defaultValue: "Re-synthesize audio",
+                    })
+                  : t("settings.history.retranscribe", {
+                      defaultValue: "Re-transcribe audio",
+                    })
+              }
             >
               <RotateCcw
                 width={16}
@@ -602,7 +661,13 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             `}</style>
           )}
           {regenerating
-            ? (isTts ? t("settings.history.synthesizing", { defaultValue: "Synthesizing audio..." }) : t("settings.history.transcribing", { defaultValue: "Transcribing..." }))
+            ? isTts
+              ? t("settings.history.synthesizing", {
+                  defaultValue: "Synthesizing audio...",
+                })
+              : t("settings.history.transcribing", {
+                  defaultValue: "Transcribing...",
+                })
             : hasTranscription
               ? entry.transcription_text
               : t("settings.history.transcriptionFailed")}

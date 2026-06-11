@@ -1,5 +1,4 @@
-// Pass 1: Markdown syntax stripping.
-// Ported from the AgentZero prototype (MIT); lazy_static -> once_cell.
+// Pass 1: Markdown syntax stripping via regex.
 
 use once_cell::sync::Lazy;
 use regex::Regex;

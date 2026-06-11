@@ -34,6 +34,7 @@ Every change must work on Windows 11 (primary), macOS, and Linux. Never introduc
 ## Architecture Summary
 
 S2B2S = Tauri 2 (Rust + React/TS)
+
 - Backend: `src-tauri/src/` — managers/, tts/, brain/, audio_toolkit/, commands/
 - Frontend: `src/` — components/, hooks/, stores/, i18n/ (20 languages)
 - IPC: tauri-specta typed bindings (`src/bindings.ts`)
@@ -42,8 +43,14 @@ S2B2S = Tauri 2 (Rust + React/TS)
 ## Code Cleanup Notes (June 2026)
 
 This project has been reviewed and cleaned up:
+
 - All module doc comments added to top-level Rust modules
 - `Cargo.toml` cleaned of commented-out sections
 - Documentation (README, CHANGELOG, AGENTS, CLAUDE, BUILD, CRUSH) synced and updated
+- Removed unused crate: `pulldown-cmark` (markdown stripping uses regex)
+- Removed dead file: `clipboard_ax.rs` (orphan, not declared in lib.rs)
+- Fixed unsafe `static mut` usage in `clipboard_watch.rs` (replaced with `Mutex`/`AtomicU64`)
+- Fixed stray doc-comment block in `actions.rs` (mid-function)
+- Cleaned up misleading `pulldown-cmark` references in comments and docs
 - Roadmap in README reflects all completed features
 - See CHANGELOG.md for the full cleanup entry

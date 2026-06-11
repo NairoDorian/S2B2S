@@ -1,3 +1,7 @@
+//! Local TCP HTTP API server on 127.0.0.1:43117.
+//! Provides health check, speak, brain, and command endpoints
+//! for remote control and integration with external scripts.
+
 use crate::brain::manager::BrainManager;
 use crate::transcription_coordinator::TranscriptionCoordinator;
 use crate::tts::backends::piper_server;

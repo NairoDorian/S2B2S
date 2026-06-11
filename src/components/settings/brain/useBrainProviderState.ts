@@ -179,15 +179,9 @@ export const useBrainProviderState = (): BrainProviderState => {
     return options;
   }, [availableModelsRaw, model]);
 
-  const isBaseUrlUpdating = isUpdating(
-    `brain_base_url:${selectedProviderId}`,
-  );
-  const isApiKeyUpdating = isUpdating(
-    `brain_api_key:${selectedProviderId}`,
-  );
-  const isModelUpdating = isUpdating(
-    `brain_model:${selectedProviderId}`,
-  );
+  const isBaseUrlUpdating = isUpdating(`brain_base_url:${selectedProviderId}`);
+  const isApiKeyUpdating = isUpdating(`brain_api_key:${selectedProviderId}`);
+  const isModelUpdating = isUpdating(`brain_model:${selectedProviderId}`);
   const isFetchingModels = isUpdating(
     `brain_models_fetch:${selectedProviderId}`,
   );

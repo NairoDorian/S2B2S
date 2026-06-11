@@ -59,7 +59,9 @@ const GpuVramFooterIndicator: React.FC = () => {
     }
   }
 
-  const lastUpdated = new Date(status.updated_at_unix_ms ?? Date.now()).toLocaleTimeString();
+  const lastUpdated = new Date(
+    status.updated_at_unix_ms ?? Date.now(),
+  ).toLocaleTimeString();
   tooltipParts.push(`  Updated: ${lastUpdated}`);
   tooltipParts.push("Click to refresh");
 
@@ -75,7 +77,9 @@ const GpuVramFooterIndicator: React.FC = () => {
           <span>📟</span>
           <span className="font-medium">VRAM</span>
         </span>
-        <div className={`w-1.5 h-1.5 rounded-full ${getVramStatusColor()} ${loading ? "animate-pulse" : ""}`} />
+        <div
+          className={`w-1.5 h-1.5 rounded-full ${getVramStatusColor()} ${loading ? "animate-pulse" : ""}`}
+        />
         <span className="tabular-nums text-text/70">{percentage}%</span>
       </button>
     </>

@@ -1,6 +1,9 @@
 // Fragment queue: ordered text fragments + their synthesized audio, for
 // sequential streaming TTS playback (synthesize fragment i+1 while playing i).
-// Ported from the AgentZero prototype (MIT); import path adapted for S2B2S.
+//
+// NOTE: Currently unused - the TTS manager (TtsManager::new) uses TtsPlayer
+// directly for gapless streaming. This module is preserved from the AgentZero
+// prototype for potential future pre-synthesis optimization.
 #![allow(dead_code)]
 
 use crate::tts::pagination::TextFragment;

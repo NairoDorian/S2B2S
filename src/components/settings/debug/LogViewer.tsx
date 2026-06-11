@@ -58,7 +58,8 @@ export const LogViewer: React.FC = () => {
   // Scroll to bottom on load or when logs change (only if user was already near bottom)
   useEffect(() => {
     if (consoleContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = consoleContainerRef.current;
+      const { scrollTop, scrollHeight, clientHeight } =
+        consoleContainerRef.current;
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
       if (isNearBottom) {
         consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -80,9 +81,15 @@ export const LogViewer: React.FC = () => {
         severity = "error";
       } else if (upperLine.includes("[WARN]") || upperLine.includes(" WARN ")) {
         severity = "warn";
-      } else if (upperLine.includes("[DEBUG]") || upperLine.includes(" DEBUG ")) {
+      } else if (
+        upperLine.includes("[DEBUG]") ||
+        upperLine.includes(" DEBUG ")
+      ) {
         severity = "debug";
-      } else if (upperLine.includes("[TRACE]") || upperLine.includes(" TRACE ")) {
+      } else if (
+        upperLine.includes("[TRACE]") ||
+        upperLine.includes(" TRACE ")
+      ) {
         severity = "trace";
       } else if (upperLine.includes("[INFO]") || upperLine.includes(" INFO ")) {
         severity = "info";
@@ -157,16 +164,36 @@ export const LogViewer: React.FC = () => {
   const getSeverityBadge = (severity: LogSeverity) => {
     switch (severity) {
       case "error":
-        return <span className="text-[9px] bg-red-950 text-red-400 px-1 py-0.5 rounded border border-red-900/50">ERR</span>;
+        return (
+          <span className="text-[9px] bg-red-950 text-red-400 px-1 py-0.5 rounded border border-red-900/50">
+            ERR
+          </span>
+        );
       case "warn":
-        return <span className="text-[9px] bg-yellow-950 text-yellow-400 px-1 py-0.5 rounded border border-yellow-900/50">WRN</span>;
+        return (
+          <span className="text-[9px] bg-yellow-950 text-yellow-400 px-1 py-0.5 rounded border border-yellow-900/50">
+            WRN
+          </span>
+        );
       case "debug":
-        return <span className="text-[9px] bg-zinc-900 text-zinc-400 px-1 py-0.5 rounded border border-zinc-800/50">DBG</span>;
+        return (
+          <span className="text-[9px] bg-zinc-900 text-zinc-400 px-1 py-0.5 rounded border border-zinc-800/50">
+            DBG
+          </span>
+        );
       case "trace":
-        return <span className="text-[9px] bg-zinc-950 text-zinc-500 px-1 py-0.5 rounded border border-zinc-900/50">TRC</span>;
+        return (
+          <span className="text-[9px] bg-zinc-950 text-zinc-500 px-1 py-0.5 rounded border border-zinc-900/50">
+            TRC
+          </span>
+        );
       case "info":
       default:
-        return <span className="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded border border-blue-900/50">INF</span>;
+        return (
+          <span className="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded border border-blue-900/50">
+            INF
+          </span>
+        );
     }
   };
 
@@ -203,10 +230,18 @@ export const LogViewer: React.FC = () => {
               onChange={(e) => setLinesLimit(Number(e.target.value))}
               className="bg-background border border-mid-gray/20 rounded px-2.5 py-1 text-xs text-text/80 focus:outline-none focus:border-logo-primary/50 cursor-pointer"
             >
-              <option value={50}>{t("debug.logViewer.lastLines", { count: 50 })}</option>
-              <option value={100}>{t("debug.logViewer.lastLines", { count: 100 })}</option>
-              <option value={200}>{t("debug.logViewer.lastLines", { count: 200 })}</option>
-              <option value={500}>{t("debug.logViewer.lastLines", { count: 500 })}</option>
+              <option value={50}>
+                {t("debug.logViewer.lastLines", { count: 50 })}
+              </option>
+              <option value={100}>
+                {t("debug.logViewer.lastLines", { count: 100 })}
+              </option>
+              <option value={200}>
+                {t("debug.logViewer.lastLines", { count: 200 })}
+              </option>
+              <option value={500}>
+                {t("debug.logViewer.lastLines", { count: 500 })}
+              </option>
             </select>
 
             <input
@@ -300,7 +335,9 @@ export const LogViewer: React.FC = () => {
         >
           {filteredLines.length === 0 ? (
             <div className="text-zinc-600 text-center py-10 italic">
-              {rawLogs.trim() ? t("debug.logViewer.noFilterMatch") : t("debug.logViewer.noEntries")}
+              {rawLogs.trim()
+                ? t("debug.logViewer.noFilterMatch")
+                : t("debug.logViewer.noEntries")}
             </div>
           ) : (
             filteredLines.map((line, idx) => (
@@ -316,12 +353,12 @@ export const LogViewer: React.FC = () => {
                     [{line.timestamp}]
                   </span>
                 )}
-                
+
                 {/* Severity Badge */}
                 <span className="flex-shrink-0 select-none">
                   {getSeverityBadge(line.severity)}
                 </span>
-                
+
                 {/* Message */}
                 <span className="flex-1 select-text selection:bg-logo-primary/30 selection:text-white">
                   {line.message}
@@ -335,10 +372,15 @@ export const LogViewer: React.FC = () => {
         {/* Counter Summary */}
         <div className="text-[10px] text-text/40 flex justify-between px-1">
           <span>
-            {t("debug.logViewer.showing", { filtered: filteredLines.length, total: logLines.length })}
+            {t("debug.logViewer.showing", {
+              filtered: filteredLines.length,
+              total: logLines.length,
+            })}
           </span>
           <span>
-            {t("debug.logViewer.levelFilter", { level: severityFilter.toUpperCase() })}
+            {t("debug.logViewer.levelFilter", {
+              level: severityFilter.toUpperCase(),
+            })}
           </span>
         </div>
       </div>

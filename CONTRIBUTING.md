@@ -48,6 +48,7 @@ S2B2S aims to be the most forkable voice-native desktop app. The goal is to crea
 S2B2S follows a clean manager-based architecture:
 
 **Backend (Rust — `src-tauri/src/`):**
+
 - `lib.rs` — Main application entry point with Tauri setup
 - `managers/` — Core business logic (audio, model, transcription, history)
 - `tts/` — Text-to-speech subsystem (7+ backends: Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)
@@ -58,6 +59,7 @@ S2B2S follows a clean manager-based architecture:
 - `settings.rs` — Application settings management
 
 **Frontend (React/TypeScript — `src/`):**
+
 - `App.tsx` — Main application component with onboarding
 - `components/` — React UI components (settings, conversation, model-selector, overlay, etc.)
 - `hooks/` — Reusable React hooks
@@ -82,11 +84,13 @@ For more details, see [AGENTS.md](AGENTS.md) and [S2B2S_REVIEW.md](S2B2S_REVIEW.
 Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 **System Information:**
+
 - App version (from Settings → About)
 - Operating System (e.g., macOS 14.1, Windows 11, Ubuntu 22.04)
 - CPU and GPU
 
 **Bug Details:**
+
 - Clear description
 - Steps to reproduce
 - Expected vs actual behavior
@@ -129,12 +133,14 @@ We use GitHub Discussions for feature requests. This keeps issues focused on bug
 ### Code Style Guidelines
 
 **Rust:**
+
 - Run `cargo fmt` and `cargo clippy` before committing
 - Use descriptive names, add doc comments for public APIs
 - Handle errors explicitly (avoid `unwrap` in production)
 - Cross-platform: always provide macOS + Linux paths alongside Windows
 
 **TypeScript/React:**
+
 - Strict TypeScript, avoid `any` types
 - Functional components with hooks
 - Tailwind CSS for styling
@@ -142,6 +148,7 @@ We use GitHub Discussions for feature requests. This keeps issues focused on bug
 - Path aliases: `@/` → `./src/`
 
 **General:**
+
 - Write self-documenting code
 - Add comments for non-obvious logic
 - Keep functions small and single-purpose
@@ -150,6 +157,7 @@ We use GitHub Discussions for feature requests. This keeps issues focused on bug
 ### AI Assistance Disclosure
 
 AI-assisted PRs are welcome! In your PR description, please include:
+
 - Whether AI was used
 - Which tools were used (e.g., "Claude Code", "GitHub Copilot", "ChatGPT")
 - How extensively it was used
@@ -159,6 +167,7 @@ AI-assisted PRs are welcome! In your PR description, please include:
 ## Documentation Contributions
 
 Documentation improvements are valued! You can contribute by:
+
 - Improving README.md, BUILD.md, CONTRIBUTING.md, or AGENTS.md
 - Adding code comments and doc comments
 - Improving error messages

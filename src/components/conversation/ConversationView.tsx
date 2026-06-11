@@ -28,13 +28,24 @@ export const ConversationView: React.FC = () => {
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState<"idle" | "listening" | "speech_started" | "speech_ended" | "thinking" | "speaking">("idle");
+  const [voiceStatus, setVoiceStatus] = useState<
+    | "idle"
+    | "listening"
+    | "speech_started"
+    | "speech_ended"
+    | "thinking"
+    | "speaking"
+  >("idle");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const brainEnabled = settings?.brain?.enabled ?? false;
   const converseBinding = settings?.bindings?.converse?.current_binding;
-  const [readAloud, setReadAloud] = useState(settings?.brain?.read_aloud ?? true);
-  const [latencyHud, setLatencyHud] = useState<Record<string, number> | null>(null);
+  const [readAloud, setReadAloud] = useState(
+    settings?.brain?.read_aloud ?? true,
+  );
+  const [latencyHud, setLatencyHud] = useState<Record<string, number> | null>(
+    null,
+  );
 
   // Toggle voice mode
   const toggleVoiceMode = useCallback(async () => {
@@ -105,24 +116,41 @@ export const ConversationView: React.FC = () => {
       });
 
       // Continuous Voice Mode Events
-      const unlistenSpeechStarted = await listen("continuous-voice:speech-started", () => {
-        setVoiceStatus("speech_started");
-      });
-      const unlistenSpeechEnded = await listen("continuous-voice:speech-ended", () => {
-        setVoiceStatus("speech_ended");
-      });
-      const unlistenTtsPlaying = await listen<boolean>("tts:playing-changed", (event) => {
-        if (event.payload) {
-          setVoiceStatus("speaking");
-        } else {
-          setVoiceStatus((prev) => (prev === "speaking" ? "listening" : prev));
-        }
-      });
+      const unlistenSpeechStarted = await listen(
+        "continuous-voice:speech-started",
+        () => {
+          setVoiceStatus("speech_started");
+        },
+      );
+      const unlistenSpeechEnded = await listen(
+        "continuous-voice:speech-ended",
+        () => {
+          setVoiceStatus("speech_ended");
+        },
+      );
+      const unlistenTtsPlaying = await listen<boolean>(
+        "tts:playing-changed",
+        (event) => {
+          if (event.payload) {
+            setVoiceStatus("speaking");
+          } else {
+            setVoiceStatus((prev) =>
+              prev === "speaking" ? "listening" : prev,
+            );
+          }
+        },
+      );
 
       // Latency HUD events
-      const unlistenLatency = await listen<{ stage: string; ms: number }>("brain:latency", (event) => {
-        setLatencyHud((prev) => ({ ...prev, [event.payload.stage]: event.payload.ms }));
-      });
+      const unlistenLatency = await listen<{ stage: string; ms: number }>(
+        "brain:latency",
+        (event) => {
+          setLatencyHud((prev) => ({
+            ...prev,
+            [event.payload.stage]: event.payload.ms,
+          }));
+        },
+      );
 
       return () => {
         unlistenThinking();
@@ -193,7 +221,9 @@ export const ConversationView: React.FC = () => {
                 }
               }}
               className="p-1.5 rounded-md text-mid-gray hover:text-foreground hover:bg-mid-gray/10 transition-colors"
-              title={readAloud ? "Read replies aloud (ON)" : "Silent mode (OFF)"}
+              title={
+                readAloud ? "Read replies aloud (ON)" : "Silent mode (OFF)"
+              }
             >
               {readAloud ? <Volume2 size={16} /> : <VolumeX size={16} />}
             </button>
@@ -238,10 +268,13 @@ export const ConversationView: React.FC = () => {
             </div>
             <span className="text-sm font-medium text-logo-primary">
               {voiceStatus === "listening" && "Voice Mode: Listening..."}
-              {voiceStatus === "speech_started" && "Voice Mode: Capturing Speech..."}
-              {voiceStatus === "speech_ended" && "Voice Mode: Processing speech..."}
+              {voiceStatus === "speech_started" &&
+                "Voice Mode: Capturing Speech..."}
+              {voiceStatus === "speech_ended" &&
+                "Voice Mode: Processing speech..."}
               {voiceStatus === "thinking" && "Voice Mode: Brain is thinking..."}
-              {voiceStatus === "speaking" && "Voice Mode: Assistant is speaking..."}
+              {voiceStatus === "speaking" &&
+                "Voice Mode: Assistant is speaking..."}
             </span>
           </div>
           <button
@@ -293,22 +326,48 @@ export const ConversationView: React.FC = () => {
       {latencyHud && Object.keys(latencyHud).length > 0 && (
         <div className="flex gap-2 px-1 text-[10px] font-mono text-mid-gray/60">
           {latencyHud.endpoint != null && (
-            <span className={latencyHud.endpoint < 600 ? "text-green-500/70" : "text-yellow-500/70"}>
+            <span
+              className={
+                latencyHud.endpoint < 600
+                  ? "text-green-500/70"
+                  : "text-yellow-500/70"
+              }
+            >
               {t("conversation.latency.ep", { ms: latencyHud.endpoint })}
             </span>
           )}
           {latencyHud.stt != null && (
-            <span className={latencyHud.stt < 400 ? "text-green-500/70" : "text-yellow-500/70"}>
+            <span
+              className={
+                latencyHud.stt < 400
+                  ? "text-green-500/70"
+                  : "text-yellow-500/70"
+              }
+            >
               {t("conversation.latency.stt", { ms: latencyHud.stt })}
             </span>
           )}
           {latencyHud.first_token != null && (
-            <span className={latencyHud.first_token < 600 ? "text-green-500/70" : "text-yellow-500/70"}>
+            <span
+              className={
+                latencyHud.first_token < 600
+                  ? "text-green-500/70"
+                  : "text-yellow-500/70"
+              }
+            >
               {t("conversation.latency.ttft", { ms: latencyHud.first_token })}
             </span>
           )}
           {latencyHud.first_audio != null && (
-            <span className={latencyHud.first_audio < 1500 ? "text-green-500/70" : latencyHud.first_audio < 2500 ? "text-yellow-500/70" : "text-red-500/70"}>
+            <span
+              className={
+                latencyHud.first_audio < 1500
+                  ? "text-green-500/70"
+                  : latencyHud.first_audio < 2500
+                    ? "text-yellow-500/70"
+                    : "text-red-500/70"
+              }
+            >
               {t("conversation.latency.ttfa", { ms: latencyHud.first_audio })}
             </span>
           )}
@@ -355,7 +414,14 @@ export const ConversationView: React.FC = () => {
             onClick={toggleVoiceMode}
             className="ml-auto flex items-center gap-1.5"
           >
-            <Mic size={14} className={voiceStatus !== "idle" && voiceStatus !== "listening" ? "animate-pulse" : ""} />
+            <Mic
+              size={14}
+              className={
+                voiceStatus !== "idle" && voiceStatus !== "listening"
+                  ? "animate-pulse"
+                  : ""
+              }
+            />
             {voiceMode ? "Voice Mode ON" : "Voice Mode"}
           </Button>
         </div>

@@ -1,3 +1,5 @@
+//! Tauri commands for transcription history CRUD operations.
+
 use crate::actions::process_transcription_output;
 use crate::managers::{
     history::{HistoryManager, PaginatedHistory},

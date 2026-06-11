@@ -54,18 +54,18 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Attribute | Value |
-|-----------|-------|
-| **Name** | S2B2S (SpeechToBrainToSpeech) |
-| **Author** | NairoDorian |
-| **Version** | 0.1.0 |
-| **License** | MIT |
-| **Platform** | Windows 11 (primary), macOS (first-class), Linux (first-class) |
-| **Framework** | Tauri 2.x (Rust backend + React/TypeScript frontend) |
-| **Package Manager** | Bun |
-| **Rust MSRV** | 1.87 |
-| **Repository** | [github.com/NairoDorian/S2B2S](https://github.com/NairoDorian/S2B2S) |
-| **Base Project** | [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT) |
+| Attribute           | Value                                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| **Name**            | S2B2S (SpeechToBrainToSpeech)                                        |
+| **Author**          | NairoDorian                                                          |
+| **Version**         | 0.1.0                                                                |
+| **License**         | MIT                                                                  |
+| **Platform**        | Windows 11 (primary), macOS (first-class), Linux (first-class)       |
+| **Framework**       | Tauri 2.x (Rust backend + React/TypeScript frontend)                 |
+| **Package Manager** | Bun                                                                  |
+| **Rust MSRV**       | 1.87                                                                 |
+| **Repository**      | [github.com/NairoDorian/S2B2S](https://github.com/NairoDorian/S2B2S) |
+| **Base Project**    | [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT)            |
 
 ### What S2B2S Does
 
@@ -106,11 +106,11 @@
 
 ### Differentiators vs. Alternatives
 
-| vs. | S2B2S Advantage |
-|-----|-----------------|
-| **Wispr Flow / SuperWhisper** | Open source, free, BYOK, cross-platform, adds TTS read-aloud + Brain conversation |
-| **ChatGPT Voice / Copilot Voice** | Fully local option (data never leaves machine), any model, inspectable code |
-| **Open WebUI / LM Studio chat** | Voice-native (endpointing, barge-in, streaming TTS), lives system-wide, not in one window |
+| vs.                                             | S2B2S Advantage                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Wispr Flow / SuperWhisper**                   | Open source, free, BYOK, cross-platform, adds TTS read-aloud + Brain conversation           |
+| **ChatGPT Voice / Copilot Voice**               | Fully local option (data never leaves machine), any model, inspectable code                 |
+| **Open WebUI / LM Studio chat**                 | Voice-native (endpointing, barge-in, streaming TTS), lives system-wide, not in one window   |
 | **Individual tools** (Handy, Parrot, CopySpeak) | One app with shared audio stack, model manager, key vault, history across all three pillars |
 
 ---
@@ -199,14 +199,14 @@
 
 The application uses a **Manager Pattern** where core functionality is organized into independent managers, initialized at startup and managed via Tauri state:
 
-| Manager | File | Responsibility |
-|---------|------|----------------|
-| `AudioRecordingManager` | `managers/audio.rs` | Audio capture, device management, recording lifecycle |
-| `ModelManager` | `managers/model.rs` | Model downloads, verification, lifecycle |
-| `TranscriptionManager` | `managers/transcription.rs` | STT processing pipeline |
-| `HistoryManager` | `managers/history.rs` | SQLite persistence for transcriptions and TTS |
-| `TTS Manager` | `tts/manager.rs` | TTS orchestration: sanitize → paginate → synthesize |
-| `Brain Manager` | `brain/manager.rs` | LLM conversation state, turn history, barge-in |
+| Manager                 | File                        | Responsibility                                        |
+| ----------------------- | --------------------------- | ----------------------------------------------------- |
+| `AudioRecordingManager` | `managers/audio.rs`         | Audio capture, device management, recording lifecycle |
+| `ModelManager`          | `managers/model.rs`         | Model downloads, verification, lifecycle              |
+| `TranscriptionManager`  | `managers/transcription.rs` | STT processing pipeline                               |
+| `HistoryManager`        | `managers/history.rs`       | SQLite persistence for transcriptions and TTS         |
+| `TTS Manager`           | `tts/manager.rs`            | TTS orchestration: sanitize → paginate → synthesize   |
+| `Brain Manager`         | `brain/manager.rs`          | LLM conversation state, turn history, barge-in        |
 
 ### Command-Event Architecture
 
@@ -338,14 +338,14 @@ The app uses `tauri_plugin_single_instance` to enforce single-instance behavior:
 
 ### Speech-to-Text Engines
 
-| Engine | Type | Languages | Size | Default? | Notes |
-|--------|------|-----------|------|----------|-------|
+| Engine                   | Type       | Languages        | Size    | Default?       | Notes                                     |
+| ------------------------ | ---------- | ---------------- | ------- | -------------- | ----------------------------------------- |
 | **Parakeet TDT 0.6B V3** | Local ONNX | 25 (auto-detect) | ~478 MB | ✅ **Default** | CPU-optimized, ~5x real-time on mid-range |
-| Whisper Small | Local GGML | 99 | ~487 MB | Optional | |
-| Whisper Medium | Local GGML | 99 | ~492 MB | Optional | |
-| Whisper Turbo | Local GGML | 99 | ~1.6 GB | Optional | |
-| Whisper Large V3 | Local GGML | 99 | ~1.1 GB | Optional | |
-| Moonshine | Local ONNX | 99 | ~300 MB | Optional | Streaming-capable variant |
+| Whisper Small            | Local GGML | 99               | ~487 MB | Optional       |                                           |
+| Whisper Medium           | Local GGML | 99               | ~492 MB | Optional       |                                           |
+| Whisper Turbo            | Local GGML | 99               | ~1.6 GB | Optional       |                                           |
+| Whisper Large V3         | Local GGML | 99               | ~1.1 GB | Optional       |                                           |
+| Moonshine                | Local ONNX | 99               | ~300 MB | Optional       | Streaming-capable variant                 |
 
 ### STT Implementation
 
@@ -412,15 +412,15 @@ All STT engines are accessed through the `transcribe-rs` crate, which provides:
 
 ### TTS Backends Comparison
 
-| Backend | Type | Voices | Languages | Quality | Speed | RAM | Setup |
-|---------|------|--------|-----------|---------|-------|-----|-------|
-| **Piper** | Local (persistent HTTP) | 20+ EN, 7 FR | ~20 | Good | **Fastest** | ~100-200 MB | Auto-download |
-| **Kokoro-82M** | Local (in-process ONNX) | 54 | 9 (EN, ES, FR, HI, IT, JA, PT, ZH, KO) | **Excellent** | Fast | ~115 MB + 50 MB/worker | Auto-download |
-| **Kitten TTS** | Local (CLI skeleton) | 8 | EN only | Good | Medium | ~25-200 MB | Auto-download |
-| **SAPI** | OS (Windows) | OS-dependent | Depends | Moderate | Fast | ~0 MB | **Zero download** |
-| **OpenAI TTS** | Cloud API | 9 | Multiple | **Excellent** | Fast (network) | ~0 MB | API key |
-| **ElevenLabs** | Cloud API | Many | 29+ | **Excellent** | Fast (network) | ~0 MB | API key |
-| **Cartesia Sonic** | Cloud API | Many | Multiple | Excellent | **Lowest latency cloud** | ~0 MB | API key |
+| Backend            | Type                    | Voices       | Languages                              | Quality       | Speed                    | RAM                    | Setup             |
+| ------------------ | ----------------------- | ------------ | -------------------------------------- | ------------- | ------------------------ | ---------------------- | ----------------- |
+| **Piper**          | Local (persistent HTTP) | 20+ EN, 7 FR | ~20                                    | Good          | **Fastest**              | ~100-200 MB            | Auto-download     |
+| **Kokoro-82M**     | Local (in-process ONNX) | 54           | 9 (EN, ES, FR, HI, IT, JA, PT, ZH, KO) | **Excellent** | Fast                     | ~115 MB + 50 MB/worker | Auto-download     |
+| **Kitten TTS**     | Local (CLI skeleton)    | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
+| **SAPI**           | OS (Windows)            | OS-dependent | Depends                                | Moderate      | Fast                     | ~0 MB                  | **Zero download** |
+| **OpenAI TTS**     | Cloud API               | 9            | Multiple                               | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
+| **ElevenLabs**     | Cloud API               | Many         | 29+                                    | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
+| **Cartesia Sonic** | Cloud API               | Many         | Multiple                               | Excellent     | **Lowest latency cloud** | ~0 MB                  | API key           |
 
 ### TTS Backend Trait
 
@@ -511,18 +511,18 @@ The Brain is the LLM component that powers the Conversation mode. It:
 
 ### Supported Providers
 
-| Provider | Type | Default? | Auto-discover? |
-|----------|------|----------|----------------|
-| **Ollama** | Local | ✅ Default | ✅ Auto-detect `:11434` |
-| **LM Studio** | Local | ✅ | ✅ Auto-detect `:1234` |
-| llama.cpp server | Local | Optional | Via custom URL |
-| OpenAI | Cloud | Optional | API key |
-| Anthropic | Cloud | Optional | API key |
-| Gemini | Cloud | Optional | API key |
-| Groq | Cloud | Optional | API key |
-| OpenRouter | Cloud | Optional | API key |
-| Cerebras | Cloud | Optional | API key |
-| Custom (OpenAI-compatible) | Any | Optional | Custom base URL |
+| Provider                   | Type  | Default?   | Auto-discover?          |
+| -------------------------- | ----- | ---------- | ----------------------- |
+| **Ollama**                 | Local | ✅ Default | ✅ Auto-detect `:11434` |
+| **LM Studio**              | Local | ✅         | ✅ Auto-detect `:1234`  |
+| llama.cpp server           | Local | Optional   | Via custom URL          |
+| OpenAI                     | Cloud | Optional   | API key                 |
+| Anthropic                  | Cloud | Optional   | API key                 |
+| Gemini                     | Cloud | Optional   | API key                 |
+| Groq                       | Cloud | Optional   | API key                 |
+| OpenRouter                 | Cloud | Optional   | API key                 |
+| Cerebras                   | Cloud | Optional   | API key                 |
+| Custom (OpenAI-compatible) | Any   | Optional   | Custom base URL         |
 
 ### Brain Implementation
 
@@ -588,11 +588,11 @@ Microphone (16kHz, 480-sample frames @ 30fps)
 
 ### VAD Modes
 
-| Mode | Pipeline | Latency | Use Case |
-|------|----------|---------|----------|
-| **TripleVAD** (default) | RMS → RNNoise → Silero | ~2ms/frame | Best noise rejection, conversation |
-| Silero only | Silero VAD | ~1ms/frame | Lower latency, cleaner environments |
-| Push-to-talk | None (manual) | 0 | User controls start/stop |
+| Mode                    | Pipeline               | Latency    | Use Case                            |
+| ----------------------- | ---------------------- | ---------- | ----------------------------------- |
+| **TripleVAD** (default) | RMS → RNNoise → Silero | ~2ms/frame | Best noise rejection, conversation  |
+| Silero only             | Silero VAD             | ~1ms/frame | Lower latency, cleaner environments |
+| Push-to-talk            | None (manual)          | 0          | User controls start/stop            |
 
 ### RNNoise Integration
 
@@ -606,7 +606,7 @@ Microphone (16kHz, 480-sample frames @ 30fps)
 
 ## 9. Text Normalization Pipeline
 
-### 4-Pass Pipeline Architecture
+### 5-Stage Text Normalization Pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -641,9 +641,9 @@ Microphone (16kHz, 480-sample frames @ 30fps)
 │         │                                                            │
 │         ▼                                                            │
 │  ┌─────────────────┐                                                │
-│  │ Pass 3: Markdown│  pulldown-cmark AST walk                       │
-│  │ Strip           │  # Title → "Title."                            │
-│  │ pulldown-cmark  │  **bold** → "bold"                             │
+│  │ Pass 3: Markdown│  Regex-based stripping                         │
+│  │ Strip (regex)   │  # Title → "Title."                            │
+│  │                 │  **bold** → "bold"                             │
 │  └────────┬────────┘  `code` → "code: code"                         │
 │           │           URLs simplified                                │
 │           ▼                                                          │
@@ -668,6 +668,7 @@ Microphone (16kHz, 480-sample frames @ 30fps)
 ### Pass Details
 
 **Pass 1: ITN (Inverse Text Normalization)**
+
 - **Crate**: `text-processing-rs` (Apache 2.0)
 - **Purpose**: Convert ASR-style spoken text to proper written form
 - **Toggle**: Settings → Dictation → "Normalize spoken numbers (ITN)"
@@ -675,23 +676,27 @@ Microphone (16kHz, 480-sample frames @ 30fps)
 - **Categories**: cardinal, ordinal, decimal, money, measurements, dates, time, email/URL, telephone/IP, whitelist
 
 **Pass 2: Custom Words (Fuzzy Correction)**
+
 - **Purpose**: Domain-specific term correction
 - **Libraries**: `strsim` (string similarity), `natural` (NLP utilities)
 - **Use case**: Correct "handee" → "Handy", "pie per" → "Piper", "ollamaa" → "Ollama"
 
 **Pass 3: Markdown Strip**
-- **Crate**: `pulldown-cmark` 0.13 (MIT)
+
+- **Method**: Regex-based stripping (replaced `pulldown-cmark`)
 - **Purpose**: Convert markdown to natural spoken text
 - **Toggle**: Settings → Voice → "Strip markdown before speaking"
 - **Handles**: Headings, bold/italic, lists, links, code blocks, HTML entities, URLs
 
 **Pass 4: TN (Text Normalization)**
+
 - **Crate**: `text-processing-rs` (same crate, different mode)
 - **Purpose**: Convert written text to spoken form before TTS
 - **Toggle**: Settings → Voice → "Normalize written text (TN)"
 - **Handles**: Numbers, dates, currency, time, measurements, abbreviations
 
 **Pass 5: Regex Cleanup (Fallback)**
+
 - **Purpose**: Final scrub pass — remove artifacts, normalize whitespace
 - **Kept from**: Original CopySpeak sanitizer + S2B2S extensions
 
@@ -703,22 +708,22 @@ The `audio_toolkit` module provides low-level audio processing:
 
 ### Audio Capture (`audio_toolkit/audio/`)
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `Device` | `device.rs` | Microphone/output device enumeration |
-| `Recorder` | `recorder.rs` | Real-time audio capture via cpal callback |
-| `Resampler` | `resampler.rs` | Sample rate conversion (rubato) |
-| `Visualizer` | `visualizer.rs` | FFT-based audio visualization (rustfft) |
-| `NoiseSuppressor` | `noise_suppression.rs` | RNNoise denoising (nnnoiseless) |
-| `Utils` | `utils.rs` | Audio format helpers |
+| Component         | File                   | Purpose                                   |
+| ----------------- | ---------------------- | ----------------------------------------- |
+| `Device`          | `device.rs`            | Microphone/output device enumeration      |
+| `Recorder`        | `recorder.rs`          | Real-time audio capture via cpal callback |
+| `Resampler`       | `resampler.rs`         | Sample rate conversion (rubato)           |
+| `Visualizer`      | `visualizer.rs`        | FFT-based audio visualization (rustfft)   |
+| `NoiseSuppressor` | `noise_suppression.rs` | RNNoise denoising (nnnoiseless)           |
+| `Utils`           | `utils.rs`             | Audio format helpers                      |
 
 ### Voice Activity Detection (`audio_toolkit/vad/`)
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `SileroVad` | `silero.rs` | Neural VAD via ONNX (vad-rs) |
-| `SmoothedVad` | `smoothed.rs` | Temporal smoothing of VAD output |
-| `TripleVad` | `triple_vad.rs` | 3-stage cascade: RMS → RNNoise → Silero |
+| Component     | File            | Purpose                                 |
+| ------------- | --------------- | --------------------------------------- |
+| `SileroVad`   | `silero.rs`     | Neural VAD via ONNX (vad-rs)            |
+| `SmoothedVad` | `smoothed.rs`   | Temporal smoothing of VAD output        |
+| `TripleVad`   | `triple_vad.rs` | 3-stage cascade: RMS → RNNoise → Silero |
 
 ### Audio Playback (`tts/player.rs`)
 
@@ -737,6 +742,7 @@ The `audio_toolkit` module provides low-level audio processing:
 ### Model Manager (`managers/model.rs`)
 
 The ModelManager handles:
+
 - **Download**: Resumable HTTP downloads with progress events
 - **Verification**: SHA2 checksum validation after download
 - **Extraction**: tar.gz extraction for Parakeet models
@@ -795,17 +801,17 @@ The ModelManager handles:
 
 ### Major Setting Categories
 
-| Category | Settings |
-|----------|----------|
-| **General** | Language, Start hidden, Auto-start, Minimize to tray |
-| **Sound** | Microphone, Output device, Always-on mic, Mute while recording |
-| **Shortcuts** | Dictation, Read aloud, Conversation, Cancel, Toggle post-processing |
-| **Models** | STT engine (Parakeet/Whisper/Moonshine), GPU acceleration |
-| **TTS** | Engine, Voice, Speed, Volume, Workers, Shorten first chunk, Piper noise params |
-| **Brain** | Provider, Endpoint URL, Model, System prompt, Memory length, Read-aloud toggle |
-| **Advanced** | VAD mode, RNNoise threshold, Noise suppression, Paste method, Overlay position |
-| **Audio Enhancements** | TripleVAD toggle, RNNoise threshold slider, NS toggle |
-| **History** | Retention policy (time-based, count-based) |
+| Category               | Settings                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| **General**            | Language, Start hidden, Auto-start, Minimize to tray                           |
+| **Sound**              | Microphone, Output device, Always-on mic, Mute while recording                 |
+| **Shortcuts**          | Dictation, Read aloud, Conversation, Cancel, Toggle post-processing            |
+| **Models**             | STT engine (Parakeet/Whisper/Moonshine), GPU acceleration                      |
+| **TTS**                | Engine, Voice, Speed, Volume, Workers, Shorten first chunk, Piper noise params |
+| **Brain**              | Provider, Endpoint URL, Model, System prompt, Memory length, Read-aloud toggle |
+| **Advanced**           | VAD mode, RNNoise threshold, Noise suppression, Paste method, Overlay position |
+| **Audio Enhancements** | TripleVAD toggle, RNNoise threshold slider, NS toggle                          |
+| **History**            | Retention policy (time-based, count-based)                                     |
 
 ### History Database (SQLite)
 
@@ -820,18 +826,18 @@ The ModelManager handles:
 
 ### Technology Stack
 
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| React | 19 | UI framework |
-| TypeScript | 6 | Type safety |
-| Vite | 8 | Build tool / dev server |
-| Tailwind CSS | 4 | Styling |
-| Zustand | 5 | State management |
-| i18next | 26 | Internationalization |
-| Three.js | 0.184 | 3D loading animation |
-| Lucide React | Latest | Icons |
-| Sonner | 2 | Toast notifications |
-| Zod | 4 | Schema validation |
+| Technology   | Version | Purpose                 |
+| ------------ | ------- | ----------------------- |
+| React        | 19      | UI framework            |
+| TypeScript   | 6       | Type safety             |
+| Vite         | 8       | Build tool / dev server |
+| Tailwind CSS | 4       | Styling                 |
+| Zustand      | 5       | State management        |
+| i18next      | 26      | Internationalization    |
+| Three.js     | 0.184   | 3D loading animation    |
+| Lucide React | Latest  | Icons                   |
+| Sonner       | 2       | Toast notifications     |
+| Zod          | 4       | Schema validation       |
 
 ### UI Components
 
@@ -878,18 +884,18 @@ src/components/
 
 ### Supported Languages (20)
 
-| Code | Language | Code | Language |
-|------|----------|------|----------|
-| `ar` | Arabic | `ko` | Korean |
-| `bg` | Bulgarian | `pl` | Polish |
-| `cs` | Czech | `pt` | Portuguese |
-| `de` | German | `ru` | Russian |
-| `en` | English (source) | `sv` | Swedish |
-| `es` | Spanish | `tr` | Turkish |
-| `fr` | French | `uk` | Ukrainian |
-| `he` | Hebrew | `vi` | Vietnamese |
-| `it` | Italian | `zh` | Chinese (Simplified) |
-| `ja` | Japanese | `zh-TW` | Chinese (Traditional) |
+| Code | Language         | Code    | Language              |
+| ---- | ---------------- | ------- | --------------------- |
+| `ar` | Arabic           | `ko`    | Korean                |
+| `bg` | Bulgarian        | `pl`    | Polish                |
+| `cs` | Czech            | `pt`    | Portuguese            |
+| `de` | German           | `ru`    | Russian               |
+| `en` | English (source) | `sv`    | Swedish               |
+| `es` | Spanish          | `tr`    | Turkish               |
+| `fr` | French           | `uk`    | Ukrainian             |
+| `he` | Hebrew           | `vi`    | Vietnamese            |
+| `it` | Italian          | `zh`    | Chinese (Simplified)  |
+| `ja` | Japanese         | `zh-TW` | Chinese (Traditional) |
 
 ### i18n Architecture
 
@@ -905,29 +911,30 @@ src/components/
 
 ### GitHub Actions Workflows
 
-| Workflow | File | Purpose |
-|----------|------|---------|
-| Test | `.github/workflows/test.yml` | Unit tests + lint on push/PR |
-| Build | `.github/workflows/build.yml` | Build on Windows/macOS/Linux |
-| Build Test | `.github/workflows/build-test.yml` | Build + test |
-| Release | `.github/workflows/release.yml` | Manual release with platform bundles |
-| Playwright | `.github/workflows/playwright.yml` | E2E tests |
-| Code Quality | `.github/workflows/code-quality.yml` | ESLint + Prettier + Clippy |
-| PR Test Build | `.github/workflows/pr-test-build.yml` | PR verification |
-| Main Build | `.github/workflows/main-build.yml` | Main branch build |
-| Nix Check | `.github/workflows/nix-check.yml` | Nix flake validation |
+| Workflow      | File                                  | Purpose                              |
+| ------------- | ------------------------------------- | ------------------------------------ |
+| Test          | `.github/workflows/test.yml`          | Unit tests + lint on push/PR         |
+| Build         | `.github/workflows/build.yml`         | Build on Windows/macOS/Linux         |
+| Build Test    | `.github/workflows/build-test.yml`    | Build + test                         |
+| Release       | `.github/workflows/release.yml`       | Manual release with platform bundles |
+| Playwright    | `.github/workflows/playwright.yml`    | E2E tests                            |
+| Code Quality  | `.github/workflows/code-quality.yml`  | ESLint + Prettier + Clippy           |
+| PR Test Build | `.github/workflows/pr-test-build.yml` | PR verification                      |
+| Main Build    | `.github/workflows/main-build.yml`    | Main branch build                    |
+| Nix Check     | `.github/workflows/nix-check.yml`     | Nix flake validation                 |
 
 ### Build Targets
 
-| Platform | Installer | Notes |
-|----------|-----------|-------|
-| Windows x64 | NSIS (.exe), MSI | Common-Controls v6 manifest |
-| macOS (Intel + Apple Silicon) | DMG | Hardened runtime, signed |
-| Linux x64 | deb, rpm, AppImage | Nix flake for reproducible builds |
+| Platform                      | Installer          | Notes                             |
+| ----------------------------- | ------------------ | --------------------------------- |
+| Windows x64                   | NSIS (.exe), MSI   | Common-Controls v6 manifest       |
+| macOS (Intel + Apple Silicon) | DMG                | Hardened runtime, signed          |
+| Linux x64                     | deb, rpm, AppImage | Nix flake for reproducible builds |
 
 ### Nix Support
 
 A `flake.nix` provides reproducible builds on Linux (NixOS):
+
 - Uses `bun2nix` for dependency management
 - Declares common native dependencies (webkitgtk, gtk3, alsa-lib, onnxruntime, etc.)
 - Supports x86_64-linux and aarch64-linux
@@ -973,17 +980,17 @@ A `flake.nix` provides reproducible builds on Linux (NixOS):
 
 ### Feature Donor Map
 
-| Feature | Donor | How Used |
-|---------|-------|----------|
-| Tauri skeleton, managers, audio_toolkit | Handy | Core architecture |
-| Streaming STT, profiles, RNNoise, keyring | AIVORelay | Infrastructure |
-| Gemini STT, long-audio routing, crash logging | Parler | Ported features |
-| Kokoro TTS, crossfade, pulldown-cmark | Parrot | Core TTS engine |
-| TtsBackend trait, Piper server, double-copy, HUD | CopySpeak | TTS product patterns |
-| ITN/TN (text-processing-rs) | FluidInference | Text normalization |
-| Provider matrix, transformations concept | Whispering **AGPL** | Concept only — no code |
-| Persist-before-deliver, LAN GPU pattern | TranscriptionSuite **GPL** | Concept only — no code |
-| Streaming params (0.8s pause, 3s overlap) | Parakeet-RT **no license** | Parameters only — no code |
+| Feature                                          | Donor                      | How Used                  |
+| ------------------------------------------------ | -------------------------- | ------------------------- |
+| Tauri skeleton, managers, audio_toolkit          | Handy                      | Core architecture         |
+| Streaming STT, profiles, RNNoise, keyring        | AIVORelay                  | Infrastructure            |
+| Gemini STT, long-audio routing, crash logging    | Parler                     | Ported features           |
+| Kokoro TTS, crossfade, pulldown-cmark            | Parrot                     | Core TTS engine           |
+| TtsBackend trait, Piper server, double-copy, HUD | CopySpeak                  | TTS product patterns      |
+| ITN/TN (text-processing-rs)                      | FluidInference             | Text normalization        |
+| Provider matrix, transformations concept         | Whispering **AGPL**        | Concept only — no code    |
+| Persist-before-deliver, LAN GPU pattern          | TranscriptionSuite **GPL** | Concept only — no code    |
+| Streaming params (0.8s pause, 3s overlap)        | Parakeet-RT **no license** | Parameters only — no code |
 
 ### License Compliance
 
@@ -998,58 +1005,58 @@ A `flake.nix` provides reproducible builds on Linux (NixOS):
 
 ### Rust Dependencies (Key Crates)
 
-| Crate | Version | Purpose | License |
-|-------|---------|---------|---------|
-| `tauri` | 2.x | Desktop framework | MIT/Apache |
-| `tauri-specta` | rc | Typed IPC | MIT |
-| `transcribe-rs` | 0.3.11 | STT inference | MIT |
-| `cpal` | 0.17 | Audio I/O | MIT/Apache |
-| `rodio` | 0.22 | Audio playback | MIT |
-| `rubato` | 3.0 | Audio resampling | MIT |
-| `nnnoiseless` | 0.5.2 | RNNoise | MIT/Apache |
-| `vad-rs` | — | Silero VAD | MIT |
-| `rdev` | — | Global shortcuts | MIT |
-| `reqwest` | 0.13 | HTTP client | MIT/Apache |
-| `rusqlite` | 0.40 | SQLite | MIT |
-| `text-processing-rs` | 0.2.2 | ITN/TN | Apache 2.0 |
-| `pulldown-cmark` | 0.13 | Markdown parsing | MIT |
-| `tts-rs` | — | Kokoro TTS | MIT |
-| `enigo` | — | Keyboard simulation | MIT |
-| `serde` + `serde_json` | — | Serialization | MIT |
-| `tokio` | 1 | Async runtime | MIT |
-| `tower-http` | — | HTTP middleware | MIT |
-| `axum` | — | HTTP server | MIT |
-| `windows` | 0.62 | Win32 API | MIT |
-| `tray-icon` | — | System tray | MIT |
-| `image-png` | — | PNG icons | MIT |
-| `thiserror` | — | Error derive | MIT |
-| `anyhow` | — | Error handling | MIT |
-| `log` + `env_logger` | — | Logging | MIT |
-| `parking_lot` | — | Fast mutexes | MIT/Apache |
-| `dashmap` | — | Concurrent map | MIT |
-| `strsim` | — | String similarity | MIT |
-| `natural` | — | NLP utilities | MIT |
+| Crate                  | Version | Purpose             | License    |
+| ---------------------- | ------- | ------------------- | ---------- |
+| `tauri`                | 2.x     | Desktop framework   | MIT/Apache |
+| `tauri-specta`         | rc      | Typed IPC           | MIT        |
+| `transcribe-rs`        | 0.3.11  | STT inference       | MIT        |
+| `cpal`                 | 0.17    | Audio I/O           | MIT/Apache |
+| `rodio`                | 0.22    | Audio playback      | MIT        |
+| `rubato`               | 3.0     | Audio resampling    | MIT        |
+| `nnnoiseless`          | 0.5.2   | RNNoise             | MIT/Apache |
+| `vad-rs`               | —       | Silero VAD          | MIT        |
+| `rdev`                 | —       | Global shortcuts    | MIT        |
+| `reqwest`              | 0.13    | HTTP client         | MIT/Apache |
+| `rusqlite`             | 0.40    | SQLite              | MIT        |
+| `text-processing-rs`   | 0.2.2   | ITN/TN              | Apache 2.0 |
+| regex                  | 1.12    | Markdown stripping  | MIT/Apache |
+| `tts-rs`               | —       | Kokoro TTS          | MIT        |
+| `enigo`                | —       | Keyboard simulation | MIT        |
+| `serde` + `serde_json` | —       | Serialization       | MIT        |
+| `tokio`                | 1       | Async runtime       | MIT        |
+| `tower-http`           | —       | HTTP middleware     | MIT        |
+| `axum`                 | —       | HTTP server         | MIT        |
+| `windows`              | 0.62    | Win32 API           | MIT        |
+| `tray-icon`            | —       | System tray         | MIT        |
+| `image-png`            | —       | PNG icons           | MIT        |
+| `thiserror`            | —       | Error derive        | MIT        |
+| `anyhow`               | —       | Error handling      | MIT        |
+| `log` + `env_logger`   | —       | Logging             | MIT        |
+| `parking_lot`          | —       | Fast mutexes        | MIT/Apache |
+| `dashmap`              | —       | Concurrent map      | MIT        |
+| `strsim`               | —       | String similarity   | MIT        |
+| `natural`              | —       | NLP utilities       | MIT        |
 
 ### JavaScript/TypeScript Dependencies (Key)
 
-| Package | Version | Purpose | License |
-|---------|---------|---------|---------|
-| `react` | 19 | UI framework | MIT |
-| `react-dom` | 19 | DOM rendering | MIT |
-| `i18next` | 26 | Internationalization | MIT |
-| `react-i18next` | 17 | React i18n binding | MIT |
-| `zustand` | 5 | State management | MIT |
-| `zod` | 4 | Schema validation | MIT |
-| `three` | 0.184 | 3D graphics | MIT |
-| `tailwindcss` | 4 | CSS framework | MIT |
-| `lucide-react` | 1 | Icons | ISC |
-| `sonner` | 2 | Toasts | MIT |
-| `immer` | 11 | Immutable state | MIT |
-| `vite` | 8 | Build tool | MIT |
-| `typescript` | 6 | TypeScript | Apache 2.0 |
-| `eslint` | 10 | Linting | MIT |
-| `prettier` | 3 | Formatting | MIT |
-| `playwright` | 1.60 | E2E testing | Apache 2.0 |
+| Package         | Version | Purpose              | License    |
+| --------------- | ------- | -------------------- | ---------- |
+| `react`         | 19      | UI framework         | MIT        |
+| `react-dom`     | 19      | DOM rendering        | MIT        |
+| `i18next`       | 26      | Internationalization | MIT        |
+| `react-i18next` | 17      | React i18n binding   | MIT        |
+| `zustand`       | 5       | State management     | MIT        |
+| `zod`           | 4       | Schema validation    | MIT        |
+| `three`         | 0.184   | 3D graphics          | MIT        |
+| `tailwindcss`   | 4       | CSS framework        | MIT        |
+| `lucide-react`  | 1       | Icons                | ISC        |
+| `sonner`        | 2       | Toasts               | MIT        |
+| `immer`         | 11      | Immutable state      | MIT        |
+| `vite`          | 8       | Build tool           | MIT        |
+| `typescript`    | 6       | TypeScript           | Apache 2.0 |
+| `eslint`        | 10      | Linting              | MIT        |
+| `prettier`      | 3       | Formatting           | MIT        |
+| `playwright`    | 1.60    | E2E testing          | Apache 2.0 |
 
 ---
 
@@ -1165,7 +1172,7 @@ S2B2S/
 │   │   │       ├── 📄 mod.rs     # Pipeline orchestrator
 │   │   │       ├── 📄 itn.rs     # ITN wrapper
 │   │   │       ├── 📄 tn.rs      # TN wrapper
-│   │   │       ├── 📄 markdown.rs # pulldown-cmark
+│   │   │   ├── 📄 markdown.rs # regex stripping
 │   │   │       └── 📄 cleanup.rs # Regex scrub
 │   │   │
 │   │   ├── 📁 brain/             # LLM subsystem
@@ -1228,52 +1235,53 @@ S2B2S/
 
 ### Completed (✅)
 
-| Feature | Details |
-|---------|---------|
-| STT (Parakeet V3, Whisper, Moonshine) | Multi-engine STT with auto language detection |
-| TTS read-aloud (7 backends) | Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
-| Conversation mode | Streaming LLM + streaming TTS |
-| Double-copy clipboard trigger | Copy same text twice within 1.5s |
-| Text normalization pipeline | ITN + TN + markdown stripping (4 passes) |
-| TripleVAD | RMS → RNNoise → Silero cascade |
-| Crash logging | Full backtraces to s2b2s-crash.log |
-| Her 3D loading animation | Three.js tube geometry with ring reveal |
-| 20-language i18n | Full translation coverage |
-| WarmEngine trait | Stopped → Loading → WarmingUp → Ready |
-| TTS performance telemetry | chars_per_ms adaptive fragment sizing |
-| Piper persistent HTTP server | Warm model, CUDA auto-discovery |
-| cpal → rodio streaming playback | Gapless chunk synthesis |
-| Specta typed bindings | cargo test export_bindings (headless) |
+| Feature                                               | Details                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| STT (Parakeet V3, Whisper, Moonshine)                 | Multi-engine STT with auto language detection                  |
+| TTS read-aloud (7 backends)                           | Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia      |
+| Conversation mode                                     | Streaming LLM + streaming TTS                                  |
+| Double-copy clipboard trigger                         | Copy same text twice within 1.5s                               |
+| Text normalization pipeline                           | ITN + TN + markdown stripping (5 stages)                       |
+| TripleVAD                                             | RMS → RNNoise → Silero cascade                                 |
+| Crash logging                                         | Full backtraces to s2b2s-crash.log                             |
+| Her 3D loading animation                              | Three.js tube geometry with ring reveal                        |
+| 20-language i18n                                      | Full translation coverage                                      |
+| WarmEngine trait lifecycle                            | Stopped → Loading → WarmingUp → Ready → Error                  |
+| TTS performance telemetry                             | chars_per_ms adaptive fragment sizing                          |
+| Piper persistent HTTP server with CUDA auto-discovery | Warm model, CUDA EP auto-detection                             |
+| cpal → rodio streaming playback                       | Gapless chunk synthesis                                        |
+| Specta typed bindings                                 | cargo test export_bindings (headless)                          |
+| RAM-persistent warm model lifecycle                   | Model unload timeout with idle watcher                         |
+| Save-to-file                                          | MP3/OGG/FLAC export via ffmpeg                                 |
+| Waveform HUD                                          | AmplitudeEnvelope from TTS playback signal                     |
+| AI Replace Selection                                  | Voice-edit selected text via LLM                               |
+| Wake word (VAD-based)                                 | Simple energy-threshold detection; KWS blocked on CRT linking  |
+| Ollama/LM Studio/llama.cpp auto-discovery             | Probes :11434, :1234, :8080 for running servers                |
+| Latency HUD                                           | Per-stage timestamps (EP, STT, TTFT, TTFA) color-coded display |
 
 ### In Progress (🚧)
 
-| Feature | Details |
-|---------|---------|
-| Kokoro worker pool | Multi-worker parallel synthesis with semaphore |
-| Crossfade | 10ms @ 24kHz between chunks |
-| RAM-persistent model lifecycle | Model unload timeout |
-| Engine-switch cleanup | Unload previous engine when switching |
-| Test suite (text pipeline) | ITN 1217 tests + markdown + integration |
+| Feature                        | Details                                             |
+| ------------------------------ | --------------------------------------------------- |
+| Kokoro worker pool + crossfade | Multi-worker parallel synthesis with 10ms crossfade |
+| Engine-switch cleanup          | Unload previous engine when switching               |
+| Test suite (text pipeline)     | ITN 1217 tests + markdown + integration             |
 
 ### Planned (📋)
 
-| Phase | Features |
-|-------|----------|
-| **Streaming STT** | OpenAI Realtime WS, Deepgram WS, MoonshineStreaming |
-| **Pocket TTS** | Voice cloning from 5-10s reference audio |
-| **Profiles** | Per-mode language/prompt/model/hotkey configuration |
-| **Audio cache** | Hash-keyed audio replay from history |
-| **Save-to-file** | MP3/OGG/FLAC export |
-| **Control HTTP API** | axum server with crypto auth |
-| **Effects** | WalkieTalkie/GameBoy audio DSP |
-| **HUD waveform** | AmplitudeEnvelope from playback signal |
-| **AI Replace Selection** | Voice-edit selected text via LLM |
-| **Prompt variables** | `${current_app}`, `${time_local}`, etc. |
+| Phase                | Features                                            |
+| -------------------- | --------------------------------------------------- |
+| **Streaming STT**    | OpenAI Realtime WS, Deepgram WS, MoonshineStreaming |
+| **Pocket TTS**       | Voice cloning from 5-10s reference audio            |
+| **Profiles**         | Per-mode language/prompt/model/hotkey configuration |
+| **Audio cache**      | Hash-keyed audio replay from history                |
+| **Control HTTP API** | axum server with crypto auth                        |
+| **Effects**          | WalkieTalkie/GameBoy audio DSP                      |
+| **Prompt variables** | `${current_app}`, `${time_local}`, etc.             |
 
 ### Later (Post-1.0)
 
 - Full-duplex conversation with AEC
-- Wake word ("Hey S2B2S") via openWakeWord/sherpa-KWS
 - Local speaker diarization
 - Long-form model routing (big model for long recordings)
 - MCP tool use for Brain (file ops, web, app control)
@@ -1287,26 +1295,26 @@ S2B2S/
 
 ### Current Known Issues
 
-| Issue | Severity | Status |
-|-------|----------|--------|
-| **Whisper model crashes** on some Win/Linux configs | High | Parakeet V3 default avoids this |
-| **Wayland paste** needs wtype/dotool | Medium | Documented workaround |
-| **Overlay focus-stealing** on Linux | Medium | Disable overlay as workaround |
-| **AppImage build** fails on rolling distros | Low | Use deb/rpm instead |
-| **Kokoro crossfade** not yet implemented | Low | In progress |
-| **Engine-switch unload** may leak RAM | Low | In progress |
-| **macOS Intel** needs manual ONNX Runtime | Low | Documented in BUILD.md |
+| Issue                                               | Severity | Status                          |
+| --------------------------------------------------- | -------- | ------------------------------- |
+| **Whisper model crashes** on some Win/Linux configs | High     | Parakeet V3 default avoids this |
+| **Wayland paste** needs wtype/dotool                | Medium   | Documented workaround           |
+| **Overlay focus-stealing** on Linux                 | Medium   | Disable overlay as workaround   |
+| **AppImage build** fails on rolling distros         | Low      | Use deb/rpm instead             |
+| **Kokoro crossfade** not yet implemented            | Low      | In progress                     |
+| **Engine-switch unload** may leak RAM               | Low      | In progress                     |
+| **macOS Intel** needs manual ONNX Runtime           | Low      | Documented in BUILD.md          |
 
 ### Architecture Limitations
 
-| Limitation | Explanation |
-|------------|-------------|
-| **Half-duplex only** | Mic muted while TTS plays; barge-in via hotkey, not VAD |
-| **No wake word** | Requires always-listening KWS engine (backlog) |
-| **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns) |
-| **No voice cloning yet** | Pocket TTS backend planned |
-| **No profiles** | Per-context presets planned (Phase 6) |
-| **No remote LAN-GPU support** | For heavy models on a separate machine (backlog) |
+| Limitation                    | Explanation                                                             |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| **Half-duplex only**          | Mic muted while TTS plays; barge-in via hotkey, not VAD                 |
+| **Wake word (VAD-based)**     | Simple energy-threshold detection; KWS blocked on CRT linking (backlog) |
+| **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns)  |
+| **No voice cloning yet**      | Pocket TTS backend planned                                              |
+| **No profiles**               | Per-context presets planned (Phase 6)                                   |
+| **No remote LAN-GPU support** | For heavy models on a separate machine (backlog)                        |
 
 ### Security Considerations
 
@@ -1467,12 +1475,12 @@ STT Text: "meeting is at two thirty pm on january fifth"
 —> To Brain (in Conversation mode) or directly to TTS
          │
          ▼ (Brain may generate markdown)
-         
+
 LLM Text: "*The* meeting is at **2:30 PM** on **January 5th**."
          │
          ▼
 ┌─────────────────────┐
-│ pulldown-cmark      │  "The meeting is at 2:30 PM on January 5th."
+│ Regex Markdown Strip│  "The meeting is at 2:30 PM on January 5th."
 └─────────────────────┘
          │
          ▼
@@ -1605,31 +1613,31 @@ bun run check:translations           # i18n validation
 
 ### Key Files Quick Reference
 
-| File | What it contains |
-|------|-----------------|
-| `src-tauri/src/lib.rs` | App entry point, setup, event handlers |
-| `src-tauri/src/tts/manager.rs` | TTS orchestration |
-| `src-tauri/src/brain/client.rs` | SSE streaming LLM client |
-| `src-tauri/src/audio_toolkit/vad/triple_vad.rs` | 3-stage VAD |
-| `src-tauri/src/settings.rs` | All settings definitions |
-| `src-tauri/src/actions.rs` | Pipeline triggers |
-| `src/App.tsx` | Main frontend component |
-| `src/components/HerLoading.tsx` | 3D loading animation |
-| `src/bindings.ts` | Auto-generated typed IPC |
-| `src/i18n/locales/en/translation.json` | English translations |
+| File                                            | What it contains                       |
+| ----------------------------------------------- | -------------------------------------- |
+| `src-tauri/src/lib.rs`                          | App entry point, setup, event handlers |
+| `src-tauri/src/tts/manager.rs`                  | TTS orchestration                      |
+| `src-tauri/src/brain/client.rs`                 | SSE streaming LLM client               |
+| `src-tauri/src/audio_toolkit/vad/triple_vad.rs` | 3-stage VAD                            |
+| `src-tauri/src/settings.rs`                     | All settings definitions               |
+| `src-tauri/src/actions.rs`                      | Pipeline triggers                      |
+| `src/App.tsx`                                   | Main frontend component                |
+| `src/components/HerLoading.tsx`                 | 3D loading animation                   |
+| `src/bindings.ts`                               | Auto-generated typed IPC               |
+| `src/i18n/locales/en/translation.json`          | English translations                   |
 
 ### Key Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `S2B2S_NO_GTK_LAYER_SHELL=1` | Disable GTK layer shell (Linux) |
-| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering (Linux) |
-| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake on macOS |
-| `ORT_LIB_LOCATION` | ONNX Runtime path (Intel Mac) |
-| `RUST_LOG=debug` | Verbose logging |
+| Variable                           | Purpose                         |
+| ---------------------------------- | ------------------------------- |
+| `S2B2S_NO_GTK_LAYER_SHELL=1`       | Disable GTK layer shell (Linux) |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering (Linux)    |
+| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake on macOS              |
+| `ORT_LIB_LOCATION`                 | ONNX Runtime path (Intel Mac)   |
+| `RUST_LOG=debug`                   | Verbose logging                 |
 
 ---
 
-*This document serves as the definitive reference for the S2B2S project — for users, developers, and AI agents. Last updated June 2026.*
+_This document serves as the definitive reference for the S2B2S project — for users, developers, and AI agents. Last updated June 2026._
 
-*See [README.md](README.md) for quick start and [AGENTS.md](AGENTS.md) for AI development guidance.*
+_See [README.md](README.md) for quick start and [AGENTS.md](AGENTS.md) for AI development guidance._

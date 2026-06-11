@@ -49,7 +49,8 @@ impl WakeWordDetector {
     }
 
     /// Feed audio into the ring buffer for energy analysis.
-    #[allow(dead_code)]
+    /// NOTE: Currently not connected to the audio pipeline (V1 limitation).
+    /// V2 will connect this via recorder.rs callback.
     pub fn feed_audio(&self, samples: &[f32]) {
         let mut buf = self.ring_buffer.lock().unwrap();
         buf.extend_from_slice(samples);

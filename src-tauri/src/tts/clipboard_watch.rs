@@ -30,7 +30,8 @@ fn get_clipboard_change_id() -> u64 {
 fn get_clipboard_change_id() -> u64 {
     use objc::runtime::Object;
     use objc::{class, msg_send, sel, sel_impl};
-    static mut LAST_CHANGE_COUNT: u64 = 0;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST_CHANGE_COUNT: AtomicU64 = AtomicU64::new(0);
     #[link(name = "AppKit", kind = "framework")]
     extern "C" {
         fn NSPasteboard_generalPasteboard() -> *mut Object;
@@ -38,31 +39,26 @@ fn get_clipboard_change_id() -> u64 {
     unsafe {
         let pb = NSPasteboard_generalPasteboard();
         if pb.is_null() {
-            return LAST_CHANGE_COUNT;
+            return LAST_CHANGE_COUNT.load(Ordering::Relaxed);
         }
         let change_count: isize = msg_send![pb, changeCount];
         let new_count = change_count as u64;
-        if new_count != LAST_CHANGE_COUNT {
-            LAST_CHANGE_COUNT = new_count;
-            new_count
-        } else {
-            LAST_CHANGE_COUNT
-        }
+        LAST_CHANGE_COUNT.store(new_count, Ordering::Relaxed);
+        new_count
     }
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
 fn get_clipboard_change_id() -> u64 {
-    // On Linux/Wayland, poll clipboard text content and detect changes
-    static mut LAST_TEXT_CHECK: String = String::new();
-    unsafe {
-        let current = get_clipboard_text();
-        if current != LAST_TEXT_CHECK {
-            LAST_TEXT_CHECK = current.clone();
-            current.len() as u64
-        } else {
-            0
-        }
+    use std::sync::Mutex;
+    static LAST_TEXT_CHECK: Mutex<String> = Mutex::new(String::new());
+    let current = get_clipboard_text();
+    let mut last = LAST_TEXT_CHECK.lock().unwrap();
+    if current != *last {
+        *last = current.clone();
+        current.len() as u64
+    } else {
+        0
     }
 }
 

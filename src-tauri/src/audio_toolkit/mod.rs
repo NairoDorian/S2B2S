@@ -1,3 +1,6 @@
+//! Audio processing toolkit: capture, resampling, VAD, noise suppression,
+//! and spectral visualization. The foundation of the dictation pipeline.
+
 pub mod audio;
 pub mod constants;
 pub mod text;

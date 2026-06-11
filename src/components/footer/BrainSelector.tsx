@@ -25,7 +25,9 @@ const BrainSelector: React.FC = () => {
 
   if (!brain) return null;
 
-  const activeProvider = brain.providers.find((p) => p.id === brain.provider_id);
+  const activeProvider = brain.providers.find(
+    (p) => p.id === brain.provider_id,
+  );
   const activeModel = brain.models[brain.provider_id] || "";
   const providerLabel = activeProvider?.label || brain.provider_id;
 
@@ -47,7 +49,11 @@ const BrainSelector: React.FC = () => {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
-        title={brain.enabled ? `Brain: ${providerLabel}${activeModel ? ` (${activeModel})` : ""}` : "Brain Disabled"}
+        title={
+          brain.enabled
+            ? `Brain: ${providerLabel}${activeModel ? ` (${activeModel})` : ""}`
+            : "Brain Disabled"
+        }
       >
         <span className="flex items-center gap-1">
           <span>🧠</span>
@@ -77,7 +83,9 @@ const BrainSelector: React.FC = () => {
         <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2.5 px-3 z-50 text-xs">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-mid-gray/10">
             <div className="flex flex-col">
-              <span className="font-semibold text-text/80">{t("footer.brainTitle")}</span>
+              <span className="font-semibold text-text/80">
+                {t("footer.brainTitle")}
+              </span>
               {brain.enabled && activeModel && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
                   {activeModel}

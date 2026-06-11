@@ -37,9 +37,17 @@ export const ExportImportSettings: React.FC<ExportImportSettingsProps> = ({
 
       const result = await commands.exportSettings(filePath);
       if (result.status === "ok") {
-        toast.success(t("settings.about.exportSuccess", { defaultValue: "Settings exported successfully!" }));
+        toast.success(
+          t("settings.about.exportSuccess", {
+            defaultValue: "Settings exported successfully!",
+          }),
+        );
       } else {
-        toast.error(t("settings.about.exportError", { defaultValue: `Export failed: ${result.error}` }));
+        toast.error(
+          t("settings.about.exportError", {
+            defaultValue: `Export failed: ${result.error}`,
+          }),
+        );
       }
     } catch (err) {
       console.error(err);
@@ -76,12 +84,20 @@ export const ExportImportSettings: React.FC<ExportImportSettingsProps> = ({
 
       const result = await commands.importSettings(pathStr);
       if (result.status === "ok") {
-        toast.success(t("settings.about.importSuccess", { defaultValue: "Settings imported successfully! Reloading..." }));
+        toast.success(
+          t("settings.about.importSuccess", {
+            defaultValue: "Settings imported successfully! Reloading...",
+          }),
+        );
         setTimeout(() => {
           window.location.reload();
         }, 1000);
       } else {
-        toast.error(t("settings.about.importError", { defaultValue: `Import failed: ${result.error}` }));
+        toast.error(
+          t("settings.about.importError", {
+            defaultValue: `Import failed: ${result.error}`,
+          }),
+        );
       }
     } catch (err) {
       console.error(err);
@@ -94,8 +110,12 @@ export const ExportImportSettings: React.FC<ExportImportSettingsProps> = ({
   return (
     <>
       <SettingContainer
-        title={t("settings.about.exportSettings.title", { defaultValue: "Export Settings" })}
-        description={t("settings.about.exportSettings.description", { defaultValue: "Save your settings configuration to a file." })}
+        title={t("settings.about.exportSettings.title", {
+          defaultValue: "Export Settings",
+        })}
+        description={t("settings.about.exportSettings.description", {
+          defaultValue: "Save your settings configuration to a file.",
+        })}
         grouped={grouped}
       >
         <Button
@@ -104,13 +124,23 @@ export const ExportImportSettings: React.FC<ExportImportSettingsProps> = ({
           onClick={handleExport}
           disabled={exporting || importing}
         >
-          {exporting ? t("settings.about.exportSettings.exporting", { defaultValue: "Exporting..." }) : t("settings.about.exportSettings.button", { defaultValue: "Export" })}
+          {exporting
+            ? t("settings.about.exportSettings.exporting", {
+                defaultValue: "Exporting...",
+              })
+            : t("settings.about.exportSettings.button", {
+                defaultValue: "Export",
+              })}
         </Button>
       </SettingContainer>
 
       <SettingContainer
-        title={t("settings.about.importSettings.title", { defaultValue: "Import Settings" })}
-        description={t("settings.about.importSettings.description", { defaultValue: "Load your settings configuration from a backup file." })}
+        title={t("settings.about.importSettings.title", {
+          defaultValue: "Import Settings",
+        })}
+        description={t("settings.about.importSettings.description", {
+          defaultValue: "Load your settings configuration from a backup file.",
+        })}
         grouped={grouped}
       >
         <Button
@@ -119,7 +149,13 @@ export const ExportImportSettings: React.FC<ExportImportSettingsProps> = ({
           onClick={handleImport}
           disabled={exporting || importing}
         >
-          {importing ? t("settings.about.importSettings.importing", { defaultValue: "Importing..." }) : t("settings.about.importSettings.button", { defaultValue: "Import" })}
+          {importing
+            ? t("settings.about.importSettings.importing", {
+                defaultValue: "Importing...",
+              })
+            : t("settings.about.importSettings.button", {
+                defaultValue: "Import",
+              })}
         </Button>
       </SettingContainer>
     </>
