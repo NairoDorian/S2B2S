@@ -393,9 +393,22 @@ export type GpuDeviceOption = {
 
 export type GpuVramStatus = {
 	is_supported: boolean,
+	adapter_name: string | null,
+	/**  Total dedicated VRAM on the GPU in MB */
 	total_vram_mb: number,
+	/**  System-wide VRAM currently in use (matches Task Manager) */
 	used_vram_mb: number,
+	/**  System-wide free VRAM */
 	free_vram_mb: number,
+	/**  This process's VRAM budget usage (from DXGI) */
+	process_used_mb: number,
+	/**  This process's VRAM budget */
+	process_budget_mb: number,
+	/**  Detected LLM server processes consuming VRAM */
+	llm_servers: LlmServerInfo[],
+	/**  Unix ms timestamp of when this snapshot was taken */
+	updated_at_unix_ms: number | null,
+	error: string | null,
 };
 
 export type HistoryEntry = {
@@ -429,6 +442,11 @@ export type LLMPrompt = {
 	id: string,
 	name: string,
 	prompt: string,
+};
+
+export type LlmServerInfo = {
+	name: string,
+	pid: number,
 };
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
