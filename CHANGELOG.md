@@ -52,8 +52,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `cargo test export_bindings` (no GUI launch needed).
 - i18n keys for all new UI across all 20 locales (English placeholders pending
   translation).
+- **TTS entries saved to history** — all spoken text (double-copy trigger,
+  speak-selection shortcut, test button) is now persisted to the History tab
+  as `tts`-type entries with the TTS engine name recorded.
 
 ### Changed
+
+- **Always-On Microphone toggle moved to General settings** — the toggle was
+  previously only visible under Debug settings (hidden unless Debug Mode was
+  enabled); it now appears in the General → Sound section next to the
+  microphone selector for easy discovery.
 
 - **All dependencies updated to latest** (Rust and frontend):
   - Tauri 2.11 (official crates.io — the patched `cjpais/tauri` fork and the
@@ -85,6 +93,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **TTS entries not appearing in history** — previously, text spoken via
+  double-copy, speak-selection, or test button was never persisted; history
+  entries are now created after successful synthesis.
 - Windows test executables failed to load (`STATUS_ENTRYPOINT_NOT_FOUND`)
   because they lacked a Common-Controls v6 manifest after the dependency
   upgrade; `build.rs` now embeds one into test binaries.
