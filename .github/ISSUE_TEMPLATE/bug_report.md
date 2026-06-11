@@ -34,4 +34,6 @@ A clear and concise description of what the bug is.
 
 ## Logs
 
-<!-- Please attach relevant logs to help us diagnose the issue. You can find the log directory by going to Settings > About in the app. -->
+<!-- Please attach relevant logs to help us diagnose the issue. You can find logs at:
+- Crash log: `s2b2s-crash.log` in the app log directory (Settings → About → App Data Directory)
+- Debug mode: `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) enables verbose logging -->

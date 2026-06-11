@@ -1,9 +1,9 @@
 ## Before Submitting This PR
 
 <!--
-s2b2s IS UNDERGOING A FEATURE FREEZE. IF YOU ARE SUBMITTING A PR WHICH IS A NEW FEATURE THAT THE COMMUNITY HAS NOT ASKED FOR: PREPARE TO BE REJECTED. IF THE COMMUNITY HAS ASKED FOR IT, OR YOU HAVE EXPLICITLY GATHERED SUPPORT IT MAY STILL BE CONSIDERED.
-
-BUG FIXES ARE THE TOP PRIORITY. THERE ARE 60+ ISSUES TO FIX.
+s2b2s prioritizes stability and bug fixes. The core STT → Brain → TTS pipeline is feature-complete.
+New features should gather community support first via Discussions. Bug fixes, performance improvements, and cross-platform compatibility fixes are always welcome.
+See CONTRIBUTING.md and IMPROVEMENT_PLAN.md for current priorities.
 -->
 
 **Please confirm you have done the following:**

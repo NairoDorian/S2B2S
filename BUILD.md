@@ -1,66 +1,65 @@
 # Build Instructions
 
-This guide covers how to set up the development environment and build s2b2s from source across different platforms.
+This guide covers how to set up the development environment and build S2B2S from source across different platforms.
+
+---
 
 ## Prerequisites
 
 ### All Platforms
 
-- [Rust](https://rustup.rs/) (latest stable)
-- [Bun](https://bun.sh/) package manager
-- [Tauri Prerequisites](https://tauri.app/start/prerequisites/)
+- [Rust](https://rustup.rs/) (latest stable) — MSRV 1.87
+- [Bun](https://bun.sh/) package manager (v1.x)
+- [Tauri Prerequisites](https://tauri.app/start/prerequisites/) for your platform
 
-### Platform-Specific Requirements
+### macOS
 
-#### macOS
+```bash
+xcode-select --install
+```
 
-- Xcode Command Line Tools
-- Install with: `xcode-select --install`
+#### Intel Mac (x86_64) — ONNX Runtime
 
-##### Intel Mac (x86_64)
-
-Prebuilt ONNX Runtime binaries are not available for Intel Macs. Install ONNX Runtime via Homebrew and link dynamically:
+Prebuilt ONNX Runtime binaries aren't available for Intel Macs. Install via Homebrew and link dynamically:
 
 ```bash
 brew install onnxruntime
 ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun run tauri dev
-```
-
-The same environment variables apply for production builds:
-
-```bash
 ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun run tauri build
 ```
 
-#### Windows
+#### Apple Silicon (M1/M2/M3/M4) — works out of the box with bundled ONNX Runtime.
 
-- Microsoft C++ Build Tools
-- Visual Studio 2019/2022 with C++ development tools
-- Or Visual Studio Build Tools 2019/2022
+### Windows
 
-#### Linux
+- Microsoft C++ Build Tools or Visual Studio 2019/2022 with "Desktop development with C++" workload
+- WebView2 (included with Windows 11, available on Windows 10)
+- Install via: `bun install` will pull all JS dependencies; Rust dependencies via `cargo`
 
-- Build essentials
-- ALSA development libraries
-- Install with:
+### Linux
 
-  ```bash
-  # Ubuntu/Debian
-  sudo apt update
-  sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install build-essential libasound2-dev pkg-config libssl-dev \
+  libvulkan-dev vulkan-tools glslc libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 \
+  libgtk-layer-shell-dev patchelf cmake
 
-  # Fedora/RHEL
-  sudo dnf groupinstall "Development Tools"
-  sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
-    gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
-    gtk-layer-shell gtk-layer-shell-devel \
-    cmake
+# Fedora/RHEL
+sudo dnf groupinstall "Development Tools"
+sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
+  gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel \
+  librsvg2-devel gtk-layer-shell gtk-layer-shell-devel cmake
 
-  # Arch Linux
-  sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
-    gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
-    cmake
-  ```
+# Arch Linux
+sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
+  gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell cmake
+```
+
+**Nix/NixOS:** A `flake.nix` is provided for reproducible builds on Linux.
+
+---
 
 ## Setup Instructions
 
@@ -68,7 +67,7 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 
 ```bash
 git clone git@github.com:NairoDorian/S2B2S.git
-cd s2b2s
+cd S2B2S
 ```
 
 ### 2. Install Dependencies
@@ -77,29 +76,115 @@ cd s2b2s
 bun install
 ```
 
-### 3. Start Dev Server
+### 3. Download Required Models
 
 ```bash
-bun tauri dev
+mkdir -p src-tauri/resources/models
+curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
 ```
 
-### 4. Build for Production
+### 4. Start Dev Server
+
+```bash
+bun run tauri dev
+# On macOS if you encounter cmake errors:
+CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
+```
+
+### 5. Build for Production
 
 ```bash
 bun run tauri build
 ```
 
-This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; msi on Windows).
+This compiles a release binary and generates platform-specific bundles:
+- **Windows**: NSIS installer (`.exe`), MSI
+- **macOS**: DMG
+- **Linux**: deb, rpm, AppImage
 
-## Linux Install (from source)
+---
 
-The raw binary (`src-tauri/target/release/s2b2s`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
+## Frontend-Only Development
 
-**Install from the deb bundle** (works on any Linux distro):
+When working on UI only (no Rust changes needed):
 
 ```bash
+bun run dev       # Start Vite dev server on :1420
+bun run build     # Build frontend (TypeScript + Vite)
+bun run preview   # Preview built frontend
+```
+
+---
+
+## Linting and Formatting
+
+```bash
+bun run lint              # ESLint for frontend
+bun run lint:fix          # ESLint with auto-fix
+bun run format            # Prettier + cargo fmt
+bun run format:check      # Check formatting without changes
+bun run format:frontend   # Prettier only
+bun run format:backend    # cargo fmt only
+```
+
+---
+
+## TypeScript Type Checking & Bindings
+
+```bash
+bunx tsc --noEmit                    # TypeScript type checking
+cargo test export_bindings           # Regenerate src/bindings.ts (headless, no GUI launch)
+```
+
+---
+
+## Testing
+
+```bash
+# Playwright E2E tests
+bun run test:playwright
+bun run test:playwright:ui           # With UI
+
+# Rust unit tests
+cd src-tauri && cargo test
+
+# Translation check
+bun run check:translations
+```
+
+---
+
+## Common Issues
+
+### AppImage build fails on Arch / rolling-release distros
+
+`linuxdeploy` bundles an old `strip` binary that can't process libraries built with newer toolchains.
+
+**Workaround:** Build with deb/rpm only:
+```bash
+bun run tauri build -- --bundles deb
+```
+
+### macOS cmake errors
+
+```bash
+CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
+```
+
+### Windows test executables fail with `STATUS_ENTRYPOINT_NOT_FOUND`
+
+The `build.rs` now embeds Common-Controls v6 manifest into test binaries. If you still see this issue, ensure you have the latest Visual C++ Redistributables.
+
+---
+
+## Linux Installation (from source build)
+
+The raw binary at `src-tauri/target/release/s2b2s` cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) co-located.
+
+**Install from the deb bundle:**
+```bash
 cd /tmp
-ar x /path/to/s2b2s/src-tauri/target/release/bundle/deb/Handy_*_amd64.deb data.tar.gz
+ar x /path/to/S2B2S/src-tauri/target/release/bundle/deb/s2b2s_*_amd64.deb data.tar.gz
 tar xzf data.tar.gz
 sudo cp usr/bin/s2b2s /usr/bin/
 sudo cp -r usr/lib/s2b2s /usr/lib/
@@ -107,39 +192,66 @@ sudo cp -r usr/share/icons/hicolor/* /usr/share/icons/hicolor/
 sudo cp usr/share/applications/s2b2s.desktop /usr/share/applications/
 ```
 
-After subsequent rebuilds, only the binary needs re-copying:
-
+After rebuilding, only the binary needs re-copying:
 ```bash
 sudo cp src-tauri/target/release/s2b2s /usr/bin/
 ```
 
-Resources only need re-copying if they change upstream (new icons, sounds, etc.).
+---
 
-## Troubleshooting
+## Environment Variables
 
-### AppImage build fails on Arch / rolling-release distros
+| Variable | Purpose |
+|----------|---------|
+| `ORT_LIB_LOCATION` | Path to ONNX Runtime library (Intel Mac only) |
+| `ORT_PREFER_DYNAMIC_LINK=1` | Use dynamic linking for ONNX Runtime (Intel Mac only) |
+| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake errors on macOS |
+| `S2B2S_NO_GTK_LAYER_SHELL=1` | Disable GTK layer shell on Linux (Wayland workaround) |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos |
+| `RUST_LOG` | Set Rust log level (e.g., `debug`, `trace`) |
 
-`linuxdeploy` bundles its own `strip` binary which is too old to process system libraries built with newer toolchains on rolling-release distros (Arch, CachyOS, Manjaro, EndeavourOS).
+---
 
-The error from Tauri:
+## Continuous Integration
+
+CI is configured via GitHub Actions in `.github/workflows/`:
+
+| Workflow | Triggers | Purpose |
+|----------|----------|---------|
+| `test.yml` | Push/PR | Unit tests + lint |
+| `build.yml` | Push/PR | Build on Windows, macOS, Linux |
+| `build-test.yml` | Push/PR | Build + test |
+| `release.yml` | Manual | Create draft release + build platform bundles |
+| `playwright.yml` | Push/PR | E2E tests |
+| `code-quality.yml` | Push/PR | ESLint, Prettier, Clippy |
+| `pr-test-build.yml` | PR | PR build verification |
+| `nix-check.yml` | Push/PR | Nix flake check |
+| `main-build.yml` | Push to main | Main branch build |
+
+---
+
+## Project Structure Overview
 
 ```
-Bundling Handy_*_amd64.AppImage
-failed to bundle project `failed to run linuxdeploy`
+S2B2S/
+├── src/                   # Frontend (React/TypeScript)
+│   ├── App.tsx
+│   ├── components/        # UI components
+│   ├── hooks/             # React hooks
+│   ├── stores/            # Zustand stores
+│   ├── i18n/              # Translation files (20 languages)
+│   └── ...
+├── src-tauri/             # Backend (Rust)
+│   ├── src/               # Rust source
+│   ├── resources/         # Static resources (models, icons)
+│   ├── Cargo.toml         # Rust dependencies
+│   └── tauri.conf.json    # Tauri configuration
+├── models/                # STT/TTS model files
+├── scripts/               # Utility scripts
+├── tests/                 # E2E tests
+├── flake.nix              # Nix flake (Linux reproducible builds)
+├── package.json           # Node/JS dependencies
+└── vite.config.ts         # Vite configuration
 ```
 
-Tauri swallows the real linuxdeploy error. To see it, run linuxdeploy manually:
-
-```bash
-cd src-tauri/target/release/bundle/appimage
-~/.cache/tauri/linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
-  --appdir s2b2s.AppDir --plugin gtk --output appimage
-```
-
-**Workaround:** The binary, deb, and rpm bundles all build fine — only the AppImage step fails. To skip it:
-
-```bash
-bun run tauri build -- --bundles deb
-```
-
-Then install using the deb extraction method above.
+For the detailed architecture overview, see [AGENTS.md](AGENTS.md) and [S2B2S_REVIEW.md](S2B2S_REVIEW.md).

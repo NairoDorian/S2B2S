@@ -1,94 +1,74 @@
-# Contributing to s2b2s
+# Contributing to S2B2S
 
-Thank you for your interest in contributing to s2b2s! This guide will help you get started with contributing to this open source speech-to-text application.
+Thank you for your interest in contributing to S2B2S! This guide will help you get started with contributing to this open source voice-native desktop application (STT → Brain → TTS).
 
-## ⚠️ Feature Freeze
+## Feature Policy
 
-**s2b2s is currently undergoing a feature freeze.** If you are submitting a PR which is a new feature that the community has not asked for, it will be rejected. If the community has asked for it, or you have explicitly gathered support, it may still be considered.
+**S2B2S prioritizes stability and bug fixes.** The core STT → Brain → TTS pipeline is feature-complete. New features should gather community support first via [Discussions](https://github.com/NairoDorian/S2B2S/discussions) before a PR is opened. See [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) for the current roadmap and what's already in progress.
 
-**Bug fixes are the top priority.** There are 60+ issues to fix. Please focus your contributions on fixing bugs and improving stability.
+**Bug fixes, performance improvements, and cross-platform compatibility are always welcome.**
 
-## 📖 Philosophy
+---
 
-s2b2s aims to be the most forkable speech-to-text app. The goal is to create both a useful tool and a foundation for others to build upon—a well-patterned, simple codebase that serves the community. We prioritize:
+## Philosophy
+
+S2B2S aims to be the most forkable voice-native desktop app. The goal is to create both a useful tool and a foundation for others to build upon — a well-patterned, simple codebase that serves the community. We prioritize:
 
 - **Simplicity**: Clear, maintainable code over clever solutions
 - **Extensibility**: Make it easy for others to fork and customize
 - **Privacy**: Keep everything local and offline
 - **Accessibility**: Free tooling that belongs in everyone's hands
+- **Cross-platform**: Windows 11 primary, macOS + Linux first-class
 
-## 🚀 Getting Started
+---
+
+## Getting Started
 
 ### Prerequisites
 
-Before you begin, ensure you have the following installed:
-
-- [Rust](https://rustup.rs/) (latest stable)
+- [Rust](https://rustup.rs/) (latest stable) — MSRV 1.87
 - [Bun](https://bun.sh/) package manager
 - Platform-specific build tools (see [BUILD.md](BUILD.md))
 
 ### Setting Up Your Development Environment
 
 1. **Fork the repository** on GitHub
-
-2. **Clone your fork**:
-
-   ```bash
-   git clone git@github.com:YOUR_USERNAME/s2b2s.git
-   cd s2b2s
-   ```
-
-3. **Add upstream remote**:
-
-   ```bash
-   git remote add upstream git@github.com:NairoDorian/S2B2S.git
-   ```
-
-4. **Install dependencies**:
-
-   ```bash
-   bun install
-   ```
-
+2. **Clone your fork**: `git clone git@github.com:YOUR_USERNAME/S2B2S.git`
+3. **Add upstream remote**: `git remote add upstream git@github.com:NairoDorian/S2B2S.git`
+4. **Install dependencies**: `bun install`
 5. **Download required models**:
-
    ```bash
    mkdir -p src-tauri/resources/models
    curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
    ```
-
-6. **Run in development mode**:
-   ```bash
-   bun run tauri dev
-   # On macOS if you encounter cmake errors:
-   CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
-   ```
-
-For detailed platform-specific setup instructions, see [BUILD.md](BUILD.md).
+6. **Run in development mode**: `bun run tauri dev` (macOS: `CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev`)
 
 ### Understanding the Codebase
 
-s2b2s follows a clean architecture pattern:
+S2B2S follows a clean manager-based architecture:
 
-**Backend (Rust - `src-tauri/src/`):**
+**Backend (Rust — `src-tauri/src/`):**
+- `lib.rs` — Main application entry point with Tauri setup
+- `managers/` — Core business logic (audio, model, transcription, history)
+- `tts/` — Text-to-speech subsystem (7+ backends: Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)
+- `brain/` — Streaming LLM subsystem (SSE client, turn history, sentence splitter, TTS bridge)
+- `audio_toolkit/` — Audio processing (capture, VAD, noise suppression, resampling)
+- `commands/` — Tauri command handlers
+- `shortcut/` — Global keyboard shortcut handling
+- `settings.rs` — Application settings management
 
-- `lib.rs` - Main application entry point with Tauri setup
-- `managers/` - Core business logic (audio, model, transcription)
-- `audio_toolkit/` - Low-level audio processing (recording, VAD)
-- `commands/` - Tauri command handlers for frontend communication
-- `shortcut.rs` - Global keyboard shortcut handling
-- `settings.rs` - Application settings management
+**Frontend (React/TypeScript — `src/`):**
+- `App.tsx` — Main application component with onboarding
+- `components/` — React UI components (settings, conversation, model-selector, overlay, etc.)
+- `hooks/` — Reusable React hooks
+- `stores/` — Zustand state management
+- `i18n/` — Internationalization (20 languages)
 
-**Frontend (React/TypeScript - `src/`):**
+For more details, see [AGENTS.md](AGENTS.md) and [S2B2S_REVIEW.md](S2B2S_REVIEW.md).
 
-- `App.tsx` - Main application component
-- `components/` - React UI components
-- `hooks/` - Reusable React hooks
-- `lib/types.ts` - Shared TypeScript types
+---
 
-For more details, see the Architecture section in [README.md](README.md) or [AGENTS.md](AGENTS.md).
-
-## 🐛 Reporting Bugs
+## Reporting Bugs
 
 ### Before Submitting a Bug Report
 
@@ -99,224 +79,114 @@ For more details, see the Architecture section in [README.md](README.md) or [AGE
 
 ### Submitting a Bug Report
 
-When creating a bug report, please include:
+Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 **System Information:**
-
-- App version (found in settings or about section)
+- App version (from Settings → About)
 - Operating System (e.g., macOS 14.1, Windows 11, Ubuntu 22.04)
-- CPU (e.g., Apple M2, Intel i7-12700K, AMD Ryzen 7 5800X)
-- GPU (e.g., Apple M2 GPU, NVIDIA RTX 4080, Intel UHD Graphics)
+- CPU and GPU
 
 **Bug Details:**
-
-- Clear description of the bug
+- Clear description
 - Steps to reproduce
-- Expected behavior
-- Actual behavior
-- Screenshots or logs if applicable
-- Information from debug mode if relevant
+- Expected vs actual behavior
+- Debug logs (from `s2b2s-crash.log` or debug mode)
 
-Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md) when creating an issue.
+---
 
-## 💡 Suggesting Features
+## Suggesting Features
 
-We use GitHub Discussions for feature requests rather than issues. This keeps issues focused on bugs and actionable tasks while allowing more open-ended conversations about features.
-
-### Before Suggesting a Feature
+We use GitHub Discussions for feature requests. This keeps issues focused on bugs and actionable tasks.
 
 1. **Search existing discussions** at [github.com/NairoDorian/S2B2S/discussions](https://github.com/NairoDorian/S2B2S/discussions)
-2. **Check common feature requests**:
-   - [Post-processing / Editing Transcripts](https://github.com/NairoDorian/S2B2S/discussions/168)
-   - [Keyboard Shortcuts / Hotkeys](https://github.com/NairoDorian/S2B2S/discussions/211)
+2. **Check common feature requests** (Post-processing, Keyboard Shortcuts, etc.)
+3. **Create a new discussion** describing the problem, your proposed solution, and alternatives
 
-### Submitting a Feature Request
+---
 
-1. Go to [Discussions](https://github.com/NairoDorian/S2B2S/discussions)
-2. Click "New discussion"
-3. Choose the appropriate category (Ideas, Feature Requests, etc.)
-4. Describe your feature idea including:
-   - The problem you're trying to solve
-   - Your proposed solution
-   - Any alternatives you've considered
-   - How it fits with s2b2s's philosophy
-
-## 🔧 Making Code Contributions
+## Making Code Contributions
 
 ### Before You Start
 
-**This is critical:** Before writing any code, please do the following:
-
-1. **Search existing issues and PRs** - Check both open AND closed issues and pull requests. Someone may have already addressed this, or there may be a reason it was closed.
-   - [Open issues](https://github.com/NairoDorian/S2B2S/issues)
-   - [Closed issues](https://github.com/NairoDorian/S2B2S/issues?q=is%3Aissue+is%3Aclosed)
-   - [Open PRs](https://github.com/NairoDorian/S2B2S/pulls)
-   - [Closed PRs](https://github.com/NairoDorian/S2B2S/pulls?q=is%3Apr+is%3Aclosed)
-
-2. **If something was previously closed** - If you want to revisit a closed issue or PR, you need to:
-   - Provide a strong argument for why it should be reconsidered
-   - Gather community feedback first via [Discussions](https://github.com/NairoDorian/S2B2S/discussions)
-   - Link to that discussion in your PR
-
-3. **Get community feedback for features** - PRs with demonstrated community interest are **much more likely to be merged**. Start a discussion, get feedback, and link to it in your PR. This helps ensure s2b2s stays focused and useful for the most people without becoming bloated.
-
-Community feedback is essential to keeping s2b2s the best it can be for everyone. It helps prioritize what matters most and prevents feature creep.
+1. **Search existing issues and PRs** — both open and closed. Someone may have already addressed this.
+2. **Get community feedback for features** — PRs with demonstrated community interest are much more likely to be merged.
 
 ### Development Workflow
 
-1. **Create a feature branch**:
-
-   ```bash
-   git checkout -b feature/your-feature-name
-   # or
-   git checkout -b fix/your-bug-fix
-   ```
-
-2. **Make your changes**:
-   - Write clean, maintainable code
-   - Follow existing code style and patterns
-   - Add comments for complex logic
-   - Keep commits focused and atomic
-
-3. **Test thoroughly**:
-   - Test on your target platform(s)
-   - Verify existing functionality still works
-   - Test edge cases and error conditions
-   - Use debug mode to verify audio/transcription behavior
-
-4. **Commit your changes**:
-
-   ```bash
-   git add .
-   git commit -m "feat: add your feature description"
-   # or
-   git commit -m "fix: describe the bug fix"
-   ```
-
-   Use conventional commit messages:
+1. **Create a feature branch**: `git checkout -b feature/your-feature-name` or `fix/your-bug-fix`
+2. **Make your changes** following the code style guidelines
+3. **Test thoroughly** on your target platform(s)
+4. **Commit with conventional commit messages**:
    - `feat:` for new features
    - `fix:` for bug fixes
    - `docs:` for documentation changes
    - `refactor:` for code refactoring
    - `test:` for test additions/changes
    - `chore:` for maintenance tasks
-
-5. **Keep your fork updated**:
-
-   ```bash
-   git fetch upstream
-   git rebase upstream/main
-   ```
-
-6. **Push to your fork**:
-
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-7. **Create a Pull Request**:
-   - Go to the [s2b2s repository](https://github.com/NairoDorian/S2B2S)
-   - Click "New Pull Request"
-   - Select your fork and branch
-   - Fill out the PR template completely, including:
-     - Clear description of changes
-     - Links to related issues or discussions
-     - **Community feedback** (especially important for features)
-     - How you tested the changes
-     - Screenshots/videos if applicable
-     - Breaking changes (if any)
-
-   **Remember:** PRs with community support are prioritized. If you haven't already, start a [discussion](https://github.com/NairoDorian/S2B2S/discussions) to gather feedback before or alongside your PR. It is not explicitly required to gather feedback, but it certainly helps your PR get merged faster.
-
-### AI Assistance Disclosure
-
-**AI-assisted PRs are welcome!** Use whatever tools help you contribute, just be upfront about it.
-
-In your PR description, please include:
-
-- Whether AI was used (yes/no)
-- Which tools were used (e.g., "Claude Code", "GitHub Copilot", "ChatGPT")
-- How extensively it was used (e.g., "generated boilerplate", "helped debug", "wrote most of the code")
+5. **Keep your fork updated**: `git fetch upstream && git rebase upstream/main`
+6. **Push and create a Pull Request** — fill out the PR template completely
 
 ### Code Style Guidelines
 
 **Rust:**
-
-- Follow standard Rust formatting (`cargo fmt`)
-- Run `cargo clippy` and address warnings
-- Use descriptive variable and function names
-- Add doc comments for public APIs
-- Handle errors explicitly (avoid unwrap in production code)
+- Run `cargo fmt` and `cargo clippy` before committing
+- Use descriptive names, add doc comments for public APIs
+- Handle errors explicitly (avoid `unwrap` in production)
+- Cross-platform: always provide macOS + Linux paths alongside Windows
 
 **TypeScript/React:**
-
-- Use TypeScript strictly, avoid `any` types
-- Follow React hooks best practices
-- Use functional components
-- Keep components small and focused
-- Use Tailwind CSS for styling
+- Strict TypeScript, avoid `any` types
+- Functional components with hooks
+- Tailwind CSS for styling
+- All user-facing strings must use i18next
+- Path aliases: `@/` → `./src/`
 
 **General:**
-
 - Write self-documenting code
 - Add comments for non-obvious logic
 - Keep functions small and single-purpose
 - Prioritize readability over cleverness
 
-### Testing Your Changes
+### AI Assistance Disclosure
 
-**Manual Testing:**
+AI-assisted PRs are welcome! In your PR description, please include:
+- Whether AI was used
+- Which tools were used (e.g., "Claude Code", "GitHub Copilot", "ChatGPT")
+- How extensively it was used
 
-- Run the app in development mode: `bun run tauri dev`
-- Test your changes with debug mode enabled
-- Verify on multiple platforms if possible
-- Test with different audio devices
-- Try various transcription scenarios
+---
 
-**Building for Production:**
+## Documentation Contributions
 
-```bash
-bun run tauri build
-```
-
-Test the production build to ensure it works as expected.
-
-## 📝 Documentation Contributions
-
-Documentation improvements are highly valued! You can contribute by:
-
-- Improving README.md, BUILD.md, or this CONTRIBUTING.md
+Documentation improvements are valued! You can contribute by:
+- Improving README.md, BUILD.md, CONTRIBUTING.md, or AGENTS.md
 - Adding code comments and doc comments
-- Creating tutorials or guides
 - Improving error messages
-- Updating the project website content
+- Adding to [S2B2S_REVIEW.md](S2B2S_REVIEW.md)
 
-## 🤝 Community Guidelines
+---
 
-- **Be respectful and inclusive** - We welcome contributors of all skill levels
-- **Be patient** - This is maintained by a small team, responses may take time
-- **Be constructive** - Focus on solutions and improvements
-- **Be collaborative** - Help others and share knowledge
-- **Search first** - Check existing issues/discussions before creating new ones
+## Community Guidelines
 
-## 🎯 Good First Issues
+- **Be respectful and inclusive** — We welcome contributors of all skill levels
+- **Be patient** — Maintained by a small team, responses may take time
+- **Be constructive** — Focus on solutions and improvements
+- **Search first** — Check existing issues/discussions before creating new ones
 
-Look for issues labeled `good first issue` or `help wanted` if you're new to the project. These are typically:
+---
 
-- Well-defined and scoped
-- Good for learning the codebase
-- Mentor support available
-
-## 📞 Getting Help
+## Getting Help
 
 - **Discord**: Join our [Discord community](https://discord.com/invite/WVBeWsNXK4)
 - **Discussions**: Ask questions in [GitHub Discussions](https://github.com/NairoDorian/S2B2S/discussions)
 - **Email**: Reach out at [contact@s2b2s.computer](mailto:contact@s2b2s.computer)
 
-## 📜 License
+---
 
-By contributing to s2b2s, you agree that your contributions will be licensed under the MIT License. See [LICENSE](LICENSE) for details.
+## License
+
+By contributing to S2B2S, you agree that your contributions will be licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Thank you for contributing to s2b2s!** Your efforts help make speech-to-text technology more accessible, private, and extensible for everyone.
+**Thank you for contributing to S2B2S!** Your efforts help make speech-to-text and voice-native AI technology more accessible, private, and extensible for everyone.
