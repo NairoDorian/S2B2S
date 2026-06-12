@@ -42,9 +42,9 @@ struct CompletionChunk {
 }
 #[derive(Deserialize)]
 struct ChunkUsage {
-    #[serde(rename = "predicted_tokens_per_second")]
     predicted_per_second: Option<f64>,
-    #[serde(rename = "predicted_ms")]
+    #[serde(alias = "predicted_tokens_per_second")]
+    predicted_tokens_per_second: Option<f64>,
     predicted_ms: Option<f64>,
 }
 #[derive(Deserialize)]
@@ -158,7 +158,8 @@ impl BrainClient {
                     // Check for timing info in usage or delta.timings
                     if let Some(usage) = &parsed.usage {
                         final_timing = Some(BrainTiming {
-                            tokens_per_second: usage.predicted_per_second,
+                            tokens_per_second: usage.predicted_per_second
+                                .or(usage.predicted_tokens_per_second),
                             total_ms: usage.predicted_ms.map(|ms| ms as i64),
                         });
                     }

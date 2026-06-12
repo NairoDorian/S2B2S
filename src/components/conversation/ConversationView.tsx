@@ -13,6 +13,7 @@ interface Message {
   sttMs?: number;
   tokensPerSec?: number;
   totalMs?: number;
+  ttsMs?: number;
 }
 
 /**
@@ -161,6 +162,23 @@ export const ConversationView: React.FC = () => {
         },
       );
 
+      // TTS synthesis timing — update the latest assistant message
+      const unlistenTtsSynthDone = await listen<{ ms?: number }>(
+        "tts:synth-done",
+        (event) => {
+          const synthMs = event.payload?.ms;
+          if (synthMs != null) {
+            setMessages((prev) => {
+              const idx = prev.length - 1;
+              if (idx < 0 || prev[idx].role !== "assistant") return prev;
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ttsMs: synthMs };
+              return updated;
+            });
+          }
+        },
+      );
+
       // Latency HUD events
       const unlistenLatency = await listen<{ stage: string; ms: number }>(
         "brain:latency",
@@ -181,6 +199,7 @@ export const ConversationView: React.FC = () => {
         unlistenSpeechStarted();
         unlistenSpeechEnded();
         unlistenTtsPlaying();
+        unlistenTtsSynthDone();
         unlistenLatency();
       };
     };
@@ -321,18 +340,21 @@ export const ConversationView: React.FC = () => {
             }`}
           >
             {message.content}
-            {(message.sttMs != null ||
-              message.tokensPerSec != null ||
-              message.totalMs != null) && (
+            {message.role === "user" && message.sttMs != null && (
+              <div className="mt-1.5 pt-1.5 border-t border-text/5 text-[10px] text-text/30 font-mono">
+                <span>🎤 {message.sttMs}ms</span>
+              </div>
+            )}
+            {message.role === "assistant" && (
               <div className="mt-1.5 pt-1.5 border-t border-text/5 flex gap-3 text-[10px] text-text/30 font-mono">
-                {message.sttMs != null && (
-                  <span>🎤 {message.sttMs}ms</span>
-                )}
                 {message.tokensPerSec != null && (
                   <span>{message.tokensPerSec.toFixed(1)} t/s</span>
                 )}
                 {message.totalMs != null && (
                   <span>🧠 {message.totalMs}ms</span>
+                )}
+                {message.ttsMs != null && (
+                  <span>🔊 {message.ttsMs}ms</span>
                 )}
               </div>
             )}

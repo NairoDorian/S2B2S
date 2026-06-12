@@ -162,6 +162,17 @@ impl BrainManager {
 
         match result {
             Ok(BrainResult { text: full, timing }) => {
+                let total_ms = turn_start.elapsed().as_millis() as u64;
+                // Estimate tokens: ~4 chars per token for English
+                let estimated_tokens = (full.chars().count() / 4).max(1) as f64;
+                let tokens_per_sec = if total_ms > 0 {
+                    (estimated_tokens / total_ms as f64) * 1000.0
+                } else {
+                    0.0
+                };
+                // Prefer server-provided timing, fall back to measured
+                let server_tps = timing.as_ref().and_then(|t| t.tokens_per_second);
+                let server_ms = timing.as_ref().and_then(|t| t.total_ms);
                 {
                     let mut history = self.history.lock().unwrap();
                     history.push(ChatMessage {
@@ -175,8 +186,8 @@ impl BrainManager {
                 }
                 let done_payload = serde_json::json!({
                     "text": &full,
-                    "tokens_per_sec": timing.as_ref().and_then(|t| t.tokens_per_second),
-                    "total_ms": timing.as_ref().and_then(|t| t.total_ms),
+                    "tokens_per_sec": server_tps.unwrap_or(tokens_per_sec),
+                    "total_ms": server_ms.unwrap_or(total_ms as i64),
                 });
                 let _ = self.app.emit("brain:done", &done_payload);
                 Ok(full)
