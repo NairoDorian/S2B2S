@@ -46,18 +46,21 @@ struct ChunkUsage {
     #[serde(alias = "predicted_tokens_per_second")]
     predicted_tokens_per_second: Option<f64>,
     predicted_ms: Option<f64>,
+    prompt_ms: Option<f64>,
     completion_tokens: Option<u64>,
 }
 #[derive(Deserialize)]
 struct ChunkTimings {
     predicted_per_second: Option<f64>,
     predicted_ms: Option<f64>,
+    prompt_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
 pub struct BrainTiming {
     pub tokens_per_second: Option<f64>,
-    pub total_ms: Option<i64>,
+    pub predicted_ms: Option<i64>,
+    pub prompt_ms: Option<i64>,
     pub completion_tokens: Option<u64>,
 }
 
@@ -162,7 +165,8 @@ impl BrainClient {
                         final_timing = Some(BrainTiming {
                             tokens_per_second: usage.predicted_per_second
                                 .or(usage.predicted_tokens_per_second),
-                            total_ms: usage.predicted_ms.map(|ms| ms as i64),
+                            predicted_ms: usage.predicted_ms.map(|ms| ms as i64),
+                            prompt_ms: usage.prompt_ms.map(|ms| ms as i64),
                             completion_tokens: usage.completion_tokens,
                         });
                     }
@@ -170,7 +174,8 @@ impl BrainClient {
                         if let Some(timings) = &choice.delta.timings {
                             final_timing = Some(BrainTiming {
                                 tokens_per_second: timings.predicted_per_second,
-                                total_ms: timings.predicted_ms.map(|ms| ms as i64),
+                                predicted_ms: timings.predicted_ms.map(|ms| ms as i64),
+                                prompt_ms: timings.prompt_ms.map(|ms| ms as i64),
                                 completion_tokens: None,
                             });
                         }
