@@ -39,6 +39,7 @@ struct ChunkChoice {
 struct CompletionChunk {
     choices: Vec<ChunkChoice>,
     usage: Option<ChunkUsage>,
+    timings: Option<ChunkTimings>,
 }
 #[derive(Deserialize)]
 struct ChunkUsage {
@@ -160,8 +161,23 @@ impl BrainClient {
                     continue;
                 }
                 if let Ok(parsed) = serde_json::from_str::<CompletionChunk>(payload) {
+                    // Check for root-level timings block
+                    if let Some(timings) = &parsed.timings {
+                        log::debug!("[Brain] Server timings: predicted_ms={:?}, predicted_per_second={:?}, prompt_ms={:?}", 
+                            timings.predicted_ms, timings.predicted_per_second, timings.prompt_ms);
+                        if timings.predicted_per_second.is_some() || timings.predicted_ms.is_some() {
+                            final_timing = Some(BrainTiming {
+                                tokens_per_second: timings.predicted_per_second,
+                                predicted_ms: timings.predicted_ms.map(|ms| ms as i64),
+                                prompt_ms: timings.prompt_ms.map(|ms| ms as i64),
+                                completion_tokens: None,
+                            });
+                        }
+                    }
                     // Check for timing info in usage or delta.timings
                     if let Some(usage) = &parsed.usage {
+                        log::debug!("[Brain] Usage chunk: predicted_per_second={:?}, predicted_ms={:?}, completion_tokens={:?}",
+                            usage.predicted_per_second, usage.predicted_ms, usage.completion_tokens);
                         final_timing = Some(BrainTiming {
                             tokens_per_second: usage.predicted_per_second
                                 .or(usage.predicted_tokens_per_second),
