@@ -91,19 +91,21 @@ export const ConversationView: React.FC = () => {
         setThinking(false);
         setStreaming((prev) => prev + event.payload);
       });
-      const unlistenDone = await listen<{ text: string; tokens_per_sec?: number; total_ms?: number }>(
+      const unlistenDone = await listen<{ text: string; tokens_per_sec?: number; total_ms?: number; predicted_ms?: number }>(
         "brain:done",
         (event) => {
           setThinking(false);
           setStreaming("");
           const payload = event.payload;
+          // Use predicted_ms (generation time) as totalMs, fall back to total_ms
+          const genMs = typeof payload === "object" ? (payload.predicted_ms ?? payload.total_ms) : undefined;
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
               content: typeof payload === "string" ? payload : payload.text,
               tokensPerSec: typeof payload === "object" ? payload.tokens_per_sec : undefined,
-              totalMs: typeof payload === "object" ? payload.total_ms : undefined,
+              totalMs: genMs,
             },
           ]);
           setVoiceStatus((prev) => {

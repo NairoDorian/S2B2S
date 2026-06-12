@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { listen } from "@tauri-apps/api/event";
 import { RefreshCcw } from "lucide-react";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
@@ -141,17 +142,40 @@ export const BrainSettings: React.FC = () => {
     setTestMetrics({});
 
     const startTime = performance.now();
+    // Capture server metrics from brain:done event
+    let capturedMetrics: { tps?: number; ms?: number } = {};
+    const unlistenPromise = listen<{ tokens_per_sec?: number; predicted_ms?: number }>(
+      "brain:done",
+      (event) => {
+        const p = event.payload;
+        if (typeof p === "object") {
+          capturedMetrics = {
+            tps: p.tokens_per_sec,
+            ms: p.predicted_ms ?? undefined,
+          };
+        }
+      },
+    );
+
     const result = await commands.brainAsk(t("settings.brain.test.prompt"));
-    const totalMs = Math.round(performance.now() - startTime);
+    void unlistenPromise.then((fn) => fn());
 
     if (result.status === "ok") {
       setTestReply(result.data);
-      // Estimate tokens/sec from response length
-      const estimatedTokens = Math.max(1, result.data.length / 4);
-      const tokensPerSec = totalMs > 0
-        ? parseFloat(((estimatedTokens / totalMs) * 1000).toFixed(1))
-        : 0;
-      setTestMetrics({ tokensPerSec, totalMs });
+      // Use server metrics, fall back to client-side timing
+      if (capturedMetrics.tps != null && capturedMetrics.tps > 0) {
+        setTestMetrics({
+          tokensPerSec: capturedMetrics.tps,
+          totalMs: capturedMetrics.ms,
+        });
+      } else {
+        const elapsedMs = Math.round(performance.now() - startTime);
+        const estimatedTokens = Math.max(1, result.data.length / 4);
+        const tokensPerSec = elapsedMs > 0
+          ? parseFloat(((estimatedTokens / elapsedMs) * 1000).toFixed(1))
+          : 0;
+        setTestMetrics({ tokensPerSec, totalMs: elapsedMs });
+      }
       setTestState("ok");
     } else {
       setTestReply(String(result.error));
