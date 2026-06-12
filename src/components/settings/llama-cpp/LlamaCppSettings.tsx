@@ -12,19 +12,17 @@ import type {
 } from "@/bindings";
 
 function assetLabel(asset: LlamaAsset): string {
-  if (asset.backend === "cuda") {
-    // Extract CUDA version from name: "llama-b9601-bin-win-cuda-12.4-x64.zip" -> "12"
-    const match = asset.name.match(/cuda[_-](\d+)\.(\d+)/i);
-    if (match) return `CUDA ${match[1]}.${match[2]}`;
-    return "CUDA";
+  if (asset.backend.startsWith("cuda")) {
+    const version = asset.backend.replace("cuda-", "");
+    return `CUDA ${version}`;
   }
   if (asset.backend === "vulkan") return "Vulkan";
-  if (asset.backend === "cpu") return "CPU";
+  if (asset.backend === "cpu") return "CPU (x64)";
   return asset.backend;
 }
 
 function assetEmoji(backend: string): string {
-  if (backend === "cuda") return "🟢";
+  if (backend.startsWith("cuda")) return "🟢";
   if (backend === "vulkan") return "🟡";
   return "⚪";
 }
@@ -173,25 +171,32 @@ const LlamaCppSettings: React.FC = () => {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
+                      {!active && (
+                        <Button
+                          variant={downloaded ? "primary-soft" : "secondary"}
+                          size="sm"
+                          onClick={() => {
+                            if (downloaded) {
+                              handleSetActive(asset.backend, latestRelease.tag);
+                            } else {
+                              void handleDownload(asset, latestRelease.tag).then(() =>
+                                handleSetActive(asset.backend, latestRelease.tag)
+                              );
+                            }
+                          }}
+                          disabled={!!downloading && !downloaded}
+                        >
+                          {active ? "Active" : downloaded ? "Use" : isDl ? "DL..." : "Use"}
+                        </Button>
+                      )}
                       {downloaded ? (
-                        <>
-                          {!active && (
-                            <Button
-                              variant="primary-soft"
-                              size="sm"
-                              onClick={() => handleSetActive(asset.backend, latestRelease.tag)}
-                            >
-                              Use
-                            </Button>
-                          )}
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => handleRemove(asset.backend, latestRelease.tag)}
-                          >
-                            Remove
-                          </Button>
-                        </>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleRemove(asset.backend, latestRelease.tag)}
+                        >
+                          Remove
+                        </Button>
                       ) : (
                         <Button
                           variant="primary"
@@ -226,7 +231,7 @@ const LlamaCppSettings: React.FC = () => {
                   >
                     <span className="text-text/70">
                       {assetEmoji(srv.backend)}{" "}
-                      {srv.backend === "cuda" ? "CUDA" : srv.backend === "vulkan" ? "Vulkan" : "CPU"} · {srv.release_tag}
+                      {srv.backend.startsWith("cuda") ? `CUDA ${srv.backend.replace("cuda-", "")}` : srv.backend === "vulkan" ? "Vulkan" : "CPU (x64)"} · {srv.release_tag}
                       {active && <span className="ml-2 text-green-400 font-semibold">(active)</span>}
                     </span>
                     <div className="flex gap-1">

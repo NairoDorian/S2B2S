@@ -158,6 +158,10 @@ impl LlamaServerManager {
             }
 
             if !parsed_assets.is_empty() {
+                // Deduplicate by backend: keep only the first asset per backend
+                // (preferred: CUDA 13 > CUDA 12 > Vulkan > CPU)
+                let mut seen = std::collections::HashSet::new();
+                parsed_assets.retain(|a| seen.insert(a.backend.clone()));
                 result.push(LlamaRelease { tag, name, assets: parsed_assets });
             }
         }
@@ -246,9 +250,9 @@ impl LlamaServerManager {
         // Auto-pick: find any installed server, prefer CUDA > Vulkan > CPU
         let installed = self.list_downloaded_servers().unwrap_or_default();
         let preferred_order = ["cuda", "vulkan", "cpu"];
-        for backend in preferred_order {
+        for backend_prefix in preferred_order {
             for srv in &installed {
-                if srv.backend == backend {
+                if srv.backend.starts_with(backend_prefix) {
                     let binary = Path::new(&srv.path).join(self.server_binary_name());
                     if binary.exists() {
                         info!("[LlamaServerManager] Auto-selected {}-{} server", srv.backend, srv.release_tag);
@@ -331,24 +335,28 @@ fn parse_asset_name(name: &str) -> Option<(String, &str, &str)> {
     let arch = if name_lower.contains("arm64") || name_lower.contains("aarch64") { "arm64" }
         else { "x64" };
 
-    // Determine backend
+    // Determine backend — include CUDA version for differentiation
     let backend = if name_lower.contains("cuda") || name_lower.contains("cudart") {
-        "cuda".to_string()
+        // Extract CUDA version, e.g. "cuda-12.4" or "cuda-13.3"
+        let cuda_ver = name_lower.split("cuda-").nth(1)
+            .and_then(|s| s.split('-').next())
+            .unwrap_or("13");
+        format!("cuda-{}", cuda_ver)
     } else if name_lower.contains("vulkan") {
         "vulkan".to_string()
     } else if name_lower.contains("cpu") || name_lower.contains("opencl") || name_lower.contains("hip") || name_lower.contains("rocm") || name_lower.contains("openvino") {
-        // Map these to cpu-like for simplicity
         "cpu".to_string()
     } else if !name_lower.contains("cuda") && !name_lower.contains("vulkan") {
-        // Generic binary (e.g., llama-b9601-bin-macos-arm64) — CPU
         "cpu".to_string()
     } else {
         return None;
     };
 
-    // Skip cudart-llama variants (they're just the runtime, not the full server)
-    // Actually, they contain the full server + cudart DLL. We include them.
-    // But skip them if there's a smaller non-cudart variant
+    // Skip cudart-llama variants — they bundle the CUDA runtime separately.
+    // The regular llama-b9601-bin-win-cuda-* variants already have CUDA support.
+    if name_lower.starts_with("cudart") {
+        return None;
+    }
 
     Some((backend, os, arch))
 }
