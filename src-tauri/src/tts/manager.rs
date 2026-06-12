@@ -244,8 +244,10 @@ impl TtsManager {
 
         std::thread::spawn(move || {
             let total = fragments.len();
+            let synth_start = std::time::Instant::now();
             let _ = app.emit("tts:started", total);
             let mut all_chunks = Vec::new();
+            let mut first_audio_emitted = false;
 
             for frag in fragments {
                 if gen_counter.load(Ordering::SeqCst) != generation {
@@ -274,6 +276,11 @@ impl TtsManager {
                         }
                         all_chunks.push(bytes.clone());
                         player.append(bytes);
+                        if !first_audio_emitted {
+                            first_audio_emitted = true;
+                            let ttfa_ms = synth_start.elapsed().as_millis() as u64;
+                            let _ = app.emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
+                        }
                     }
                     Err(e) => {
                         log::error!("[TTS] synthesis failed: {e}");
@@ -281,7 +288,8 @@ impl TtsManager {
                     }
                 }
             }
-            let _ = app.emit("tts:synth-done", ());
+            let synth_total_ms = synth_start.elapsed().as_millis() as u64;
+            let _ = app.emit("tts:synth-done", serde_json::json!({ "ms": synth_total_ms }));
 
             // Save TTS entry to history with cached audio file
             if !all_chunks.is_empty() {

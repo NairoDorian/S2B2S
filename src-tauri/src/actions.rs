@@ -648,8 +648,13 @@ impl ShortcutAction for TranscribeAction {
                                 change_tray_icon(&ah, TrayIconState::Idle);
 
                                 if !processed.final_text.trim().is_empty() {
-                                    // Surface the spoken question in the Conversation view
-                                    let _ = ah.emit("brain:asked", &processed.final_text);
+                                    // Surface the spoken question in the Conversation view with STT timing
+                                    let stt_ms = transcription_time.elapsed().as_millis() as u64;
+                                    let asked_payload = serde_json::json!({
+                                        "text": processed.final_text,
+                                        "stt_ms": stt_ms,
+                                    });
+                                    let _ = ah.emit("brain:asked", &asked_payload);
                                     if let Some(bm) =
                                         ah.try_state::<Arc<crate::brain::manager::BrainManager>>()
                                     {

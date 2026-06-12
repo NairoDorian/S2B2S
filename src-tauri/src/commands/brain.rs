@@ -65,7 +65,7 @@ pub async fn ai_replace_selection(
         )
         .await?;
 
-    Ok(full.trim().to_string())
+    Ok(full.text.trim().to_string())
 }
 
 /// Ask the Brain; streams `brain:token` / `brain:sentence` events and returns the full reply.
