@@ -1,6 +1,5 @@
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { RefreshCcw } from "lucide-react";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
@@ -141,27 +140,18 @@ export const BrainSettings: React.FC = () => {
     setTestReply("");
     setTestMetrics({});
 
-    // Listen for brain:done with timing metrics (one-shot)
-    const unlistenPromise = listen<{
-      text: string;
-      tokens_per_sec?: number;
-      total_ms?: number;
-    }>("brain:done", (event) => {
-      const p = event.payload;
-      if (typeof p === "object" && p.tokens_per_sec != null) {
-        setTestMetrics({
-          tokensPerSec: p.tokens_per_sec,
-          totalMs: p.total_ms ?? undefined,
-        });
-      }
-    });
-
+    const startTime = performance.now();
     const result = await commands.brainAsk(t("settings.brain.test.prompt"));
-    // Unlisten after receiving the response
-    void unlistenPromise.then((fn) => fn());
+    const totalMs = Math.round(performance.now() - startTime);
 
     if (result.status === "ok") {
       setTestReply(result.data);
+      // Estimate tokens/sec from response length
+      const estimatedTokens = Math.max(1, result.data.length / 4);
+      const tokensPerSec = totalMs > 0
+        ? parseFloat(((estimatedTokens / totalMs) * 1000).toFixed(1))
+        : 0;
+      setTestMetrics({ tokensPerSec, totalMs });
       setTestState("ok");
     } else {
       setTestReply(String(result.error));

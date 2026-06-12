@@ -18,7 +18,8 @@
     "about": "About",
     "speech": "Speech",
     "brain": "Brain",
-    "conversation": "Conversation"
+    "conversation": "Conversation",
+    "llamaCpp": "Llama.cpp"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",

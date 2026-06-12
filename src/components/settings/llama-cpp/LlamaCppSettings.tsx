@@ -17,6 +17,24 @@ const BACKENDS = [
   { id: "cpu", label: "CPU", emoji: "⚪", desc: "CPU-only (no GPU required)" },
 ];
 
+function assetLabel(asset: LlamaAsset): string {
+  if (asset.backend === "cuda") {
+    // Extract CUDA version from name: "llama-b9601-bin-win-cuda-12.4-x64.zip" -> "12"
+    const match = asset.name.match(/cuda[_-](\d+)\.(\d+)/i);
+    if (match) return `CUDA ${match[1]}.${match[2]}`;
+    return "CUDA";
+  }
+  if (asset.backend === "vulkan") return "Vulkan";
+  if (asset.backend === "cpu") return "CPU";
+  return asset.backend;
+}
+
+function assetEmoji(backend: string): string {
+  if (backend === "cuda") return "🟢";
+  if (backend === "vulkan") return "🟡";
+  return "⚪";
+}
+
 const LlamaCppSettings: React.FC = () => {
   const { t } = useTranslation();
   const [gpuType, setGpuType] = useState<string>("cpu");
