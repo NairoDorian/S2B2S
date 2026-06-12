@@ -1,102 +1,60 @@
-# Llama.cpp & Gemma-4 MTP Integration Reference
+# Llama.cpp Pre-Compiled Server Integration
 
-This document acts as the official reference for the Llama.cpp integration inside the S2B2S project, preserving the exact commands and configurations for running Gemma-4 with Multi-Token Prediction (MTP) and Flash Attention.
-
----
-
-## 1. System Dependencies and Build Commands
-
-S2B2S's build pipeline (`src-tauri/build.rs`) automates these steps. However, for manual building or system reference, the dependencies and CMake commands are:
-
-```bash
-# Install required system dependencies
-apt-get install pciutils build-essential cmake curl libcurl4-openssl-dev -y
-
-# Clone the repository
-git clone https://github.com/ggml-org/llama.cpp
-
-# Configure the build directory (enabling CUDA acceleration, disabling shared libraries)
-cmake llama.cpp -B llama.cpp/build \
-    -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=ON
-
-# Compile the target binaries
-cmake --build llama.cpp/build --config Release -j --clean-first \
-    --target llama-cli --target llama-mtmd-cli --target llama-server --target llama-gguf-split
-
-# Copy the compiled binaries to the llama.cpp root folder
-cp llama.cpp/build/bin/llama-* llama.cpp
-```
+S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub releases](https://github.com/ggml-org/llama.cpp/releases), providing drop-in GPU acceleration for local LLM inference — no CMake, no source compilation, no Python dependencies.
 
 ---
 
-## 2. Downloading the Models (Hugging Face)
+## 1. Architecture
 
-The model and draft model files are downloaded using the official Hugging Face Hub CLI. First, make sure you have the required CLI tools installed:
+The integration is managed by **`LlamaServerManager`** in `src-tauri/src/llama_server/manager.rs` and `commands/llama_server.rs`:
 
-```bash
-# Install Hugging Face Hub with accelerated transfer support
-pip install huggingface_hub hf_transfer
-```
+- **Auto-download** — Fetches pre-compiled binaries (`llama-b9601-bin-win-cuda-cu12.4-x64.zip`, etc.) from GitHub releases. Filters duplicate backend variants automatically.
+- **Auto-install** — Extracts archives to `llama_cpp_servers/` in the app data directory. ZIP files deleted after extraction.
+- **Backend auto-detection** — Selects best available GPU backend at startup: **CUDA > Vulkan > CPU**. CUDA is detected via `nvidia-smi` or `CUDA_PATH` environment variable. Vulkan is probed via `vulkaninfo`.
+- **GPU VRAM offloading** — Server launch uses `-ngl all` to load all model layers into GPU VRAM when a CUDA or Vulkan binary is active.
+- **Health check** — Polls the server's `/v1/models` endpoint to confirm readiness.
+- **Auto-start** — `BrainManager::warmup()` calls `ensure_server_running()` for llama_cpp provider before sending the warmup prompt.
 
-Then, download the Gemma-4-E2B-it-qat GGUF model along with its vision project and Multi-Token Prediction (MTP) draft models:
+## 2. Supported Backends
 
-```bash
-# Download files into the local dir matching the include filters
-hf download unsloth/gemma-4-E2B-it-qat-GGUF \
-    --local-dir unsloth/gemma-4-E2B-it-qat-GGUF \
-    --include "*mmproj-F16*" \
-    --include "mtp-*" \
-    --include "*UD-Q4_K_XL*"
-```
+| Backend | Platform | Binary Suffix |
+|---------|----------|---------------|
+| CUDA 12.4 | Windows, Linux | `cuda-cu12.4` |
+| CUDA 13.3 | Windows, Linux | `cuda-cu13.3` |
+| Vulkan | Windows, Linux | `vulkan` |
+| CPU | Windows, Linux | `cpu` |
+| Metal | macOS | Built-in (no separate binary needed) |
 
----
+## 3. Settings & UI
 
-## 3. Running Llama-server with MTP and Flash Attention
+The **Llama.cpp settings tab** (`src/components/settings/llama-cpp/LlamaCppSettings.tsx`) provides:
 
-To run the OpenAI-compatible local API server using the downloaded Gemma-4 model, its vision projection, and the MTP draft model:
+- **GPU detection display** — shows detected GPU type and VRAM
+- **Release browser** — fetches available releases from GitHub, with per-backend download buttons and progress indicators
+- **Installed servers list** — shows version tags (e.g., `b9601`) per backend, with Remove/Use buttons
+- **VRAM usage indicator** — green (<75%), yellow (75-90%), red (>90%) with hover tooltip showing used/total MB. Polls GPU VRAM every 5 seconds.
+- **Footer Brain dot** — orange pulsing (loading), green (ready), gray (disabled)
 
-```bash
-./llama.cpp/llama-server \
-    --model unsloth/gemma-4-E2B-it-qat-GGUF/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf \
-    --mmproj unsloth/gemma-4-E2B-it-qat-GGUF/mmproj-F16.gguf \
-    --model-draft unsloth/gemma-4-E2B-it-qat-GGUF/mtp-gemma-4-E2B-it.gguf \
-    --temp 1.0 \
-    --top-p 0.95 \
-    --top-k 64 \
-    --alias "unsloth/gemma-4-e2b-it-qat-GGUF" \
-    --port 8001 \
-    --chat-template-kwargs '{"enable_thinking":false}'
-```
+## 4. Provider Configuration
 
-### Context Size & Flash Attention Options
-To run the server with a customized context size (e.g., `4096` tokens) and enable Flash Attention (`-fa` shortcut):
+In S2B2S settings under **Brain** or **Post-Process**, select the **Llama.cpp (Local)** provider:
 
-```bash
-# Set context length and enable flash attention
-./llama-server -m model.gguf --ctx-size 4096 --port 8080 --flash-attn on
-```
+- Default base URL: `http://localhost:8080/v1`
+- The `llama-server` process is managed automatically by S2B2S — no manual server launch needed.
+- Toggling Brain OFF terminates the llama-server process immediately.
 
----
+## 5. Model File
 
-## 4. Default CLI Usage (Testing)
+Place your GGUF model file in the `models/` directory, then select it in the llama.cpp settings UI. The default model alias is **Gemma-4 2B (Local)**.
 
-For testing generations locally through the CLI:
+## 6. Performance Metrics
 
-```bash
-export LLAMA_CACHE="unsloth/gemma-4-E2B-it-qat-GGUF"
-./llama.cpp/llama-cli \
-    -hf unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL \
-    --temp 1.0 \
-    --top-p 0.95 \
-    --top-k 64  \
-    --spec-type draft-mtp --spec-draft-n-max 2 \
-    --chat-template-kwargs '{"enable_thinking":false}'
-```
+The `brain:done` event carries per-response timing from the llama.cpp server:
+
+- `tokens_per_sec` — tokens/second throughput
+- `total_ms` — total generation time
+- Displayed in Conversation view next to each assistant message
 
 ---
 
-## 5. Integration Architecture inside S2B2S
-
-- **External Host**: S2B2S communicates with the local server over HTTP. The user spins up `llama-server` using the commands in Section 3.
-- **Provider Routing**: In the S2B2S settings under **Brain** or **Post-Process**, select the **Llama.cpp (Local)** provider. S2B2S will attempt to communicate with it on port `8001` (default base URL: `http://localhost:8001/v1`).
-- **MTP / Drafts**: Because the draft model parameter (`--model-draft`) is handled by the `llama-server` process itself, using this provider with a correctly launched server leverages Multi-Token Prediction (MTP) acceleration automatically.
+*The old CMake-based `build_llama_cpp()` pipeline in `build.rs` was fully removed in favor of this pre-compiled binary approach.*

@@ -28,7 +28,7 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 
 ## Why S2B2S?
 
-- **Local-first**: Everything works offline. Parakeet V3 for STT, Piper for TTS, Ollama/LM Studio for the Brain. No cloud required.
+- **Local-first**: Everything works offline. Parakeet V3 for STT, Piper for TTS, pre-compiled llama.cpp (CUDA/Vulkan/CPU) or Ollama/LM Studio for the Brain. No cloud required.
 - **Open Source (MIT)**: Forkable, inspectable, extendable.
 - **Private**: Your voice, text, and conversations stay on your machine. Keys stored in OS keychain.
 - **Voice-native**: Designed for spoken interaction — not a text chat with voice bolted on.
@@ -100,20 +100,23 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 │  │  Overlay    │     │   ├─ audio.rs (recording)                 ││
 │  │  Conversation│     │   ├─ model.rs (downloads)                ││
 │  │  History    │     │   ├─ transcription.rs (STT pipeline)      ││
-│  │  Onboarding │     │   └─ history.rs (SQLite)                  ││
-│  │  Her Loading│     │                                            ││
-│  └─────────────┘     │  tts/ (Text-to-Speech subsystem)          ││
+│  │  Onboarding │     │   ├─ history.rs (SQLite)                  ││
+│  │  Her Loading│     │   └─ continuous_voice.rs (hands-free)     ││
+│  └─────────────┘     │                                            ││
+│                       │  tts/ (Text-to-Speech subsystem)          ││
 │                       │   ├─ backends/ (Piper, Kokoro, Kitten,   ││
 │                       │   │   SAPI, OpenAI, ElevenLabs, Cartesia)││
 │                       │   ├─ manager.rs (orchestration)          ││
 │                       │   ├─ sanitize/ (ITN, TN, markdown strip) ││
 │                       │   ├─ pagination.rs / fragment_queue.rs   ││
 │                       │   ├─ player.rs (rodio playback)          ││
+│                       │   ├─ status.rs / telemetry.rs            ││
 │                       │   └─ clipboard_watch.rs (double-copy)    ││
 │                       │                                            ││
 │                       │  brain/ (Streaming LLM)                  ││
 │                       │   ├─ client.rs (SSE streaming)           ││
-│                       │   └─ manager.rs (turn history, barge-in) ││
+│                       │   ├─ manager.rs (turn history, barge-in) ││
+│                       │   └─ llama_manager.rs (llama.cpp bridge) ││
 │                       │                                            ││
 │                       │  llama_server/ (llama.cpp GPU)           ││
 │                       │   └─ manager.rs (auto-download, launch,  ││
@@ -177,7 +180,7 @@ S2B2S works fully offline with no configuration. The defaults are chosen for spe
 | **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                            | Silero only, Push-to-talk                                              |
 | **Noise Suppression** | RNNoise (toggleable, triple mode default)                     | Off                                                                    |
 | **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
-| **Brain**             | **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | llama.cpp (pre-compiled CUDA/Vulkan/CPU), Any OpenAI-compatible API, Anthropic, Gemini |
+| **Brain**             | **llama.cpp** (pre-compiled CUDA/Vulkan/CPU) / **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | Any OpenAI-compatible API, Anthropic, Gemini |
 | **Storage**           | SQLite (rusqlite + migrations)                                | —                                                                      |
 | **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)      | —                                                                      |
 

@@ -81,6 +81,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **AGENTS.md** — updated backend and frontend architecture trees with missing files (`active_app.rs`, `apple_intelligence.rs`, `wake_word.rs`, commands detail, `helpers/`, `shortcut/` backends, `modelStore.ts`).
 - **Module doc comments** — added `//!` docs to `active_app.rs`.
 
+### Documentation Sync (June 2026)
+
+- **LLAMA_CPP.md** — complete rewrite: removed all references to the old CMake-based `build_llama_cpp()` pipeline (removed in #v0.10). Now documents the pre-compiled `LlamaServerManager` architecture with auto-download from GitHub releases, CUDA/Vulkan/CPU backend auto-detection, GPU VRAM offloading with `-ngl all`, and the Llama.cpp settings management tab.
+- **AGENTS.md** — backend tree updated with missing modules: `llama_server/`, `brain/llama_manager.rs`, `commands/llama_server.rs`, `managers/continuous_voice.rs`, `managers/transcription_mock.rs`, `tts/status.rs`, `tts/telemetry.rs`, `tts/audio_format.rs`, `tts/backends/piper_server.rs`, `audio_toolkit/bin/`, `audio_toolkit/constants.rs`, `audio_toolkit/text.rs`. Frontend tree updated: `hooks/useLlamaState.ts`, `hooks/useProviderState.ts`, `lib/constants/`, `utils/`. Text normalization heading fixed: "4-pass" → "5-Stage".
+- **README.md** — architecture diagram updated with `continuous_voice.rs`, `status.rs/telemetry.rs`, `llama_manager.rs`. "Why S2B2S?" and Default Stack table now list pre-compiled llama.cpp as the primary Brain option alongside Ollama/LM Studio.
+- **S2B2S_REVIEW.md** — roadmap (section 19): added 7 completed features (pre-compiled llama.cpp server, settings tab, performance metrics, GPU VRAM indicator, log viewer console, footer status indicators, hands-free auto-listen). File tree (section 18): added `llama_server/`, `brain/llama_manager.rs`, `commands/llama_server.rs`.
+- **BUILD.md** — project structure overview refreshed with `llama_server/`, `brain/` directories, restored `resources/`/`Cargo.toml`/`tauri.conf.json` entries.
+- **CRUSH.md** — file structure reference updated with `llama.cpp/` and `llama_server/` references.
+- **CONTRIBUTING.md** — managers listing updated to include `continuous_voice`.
+
 ### Code Cleanup
 
 - **Cargo.toml cleanup** — removed commented-out `[[bin]]` section for CLI; removed trailing blank line before target-specific dependencies.

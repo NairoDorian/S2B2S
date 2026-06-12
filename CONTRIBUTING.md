@@ -50,7 +50,7 @@ S2B2S follows a clean manager-based architecture:
 **Backend (Rust — `src-tauri/src/`):**
 
 - `lib.rs` — Main application entry point with Tauri setup
-- `managers/` — Core business logic (audio, model, transcription, history)
+- `managers/` — Core business logic (audio, model, transcription, history, continuous voice)
 - `tts/` — Text-to-speech subsystem (7+ backends: Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)
 - `brain/` — Streaming LLM subsystem (SSE client, turn history, sentence splitter, TTS bridge)
 - `audio_toolkit/` — Audio processing (capture, VAD, noise suppression, resampling)

@@ -125,7 +125,8 @@ S2B2S/
 ├── tailwind.config.js      # Tailwind CSS config
 ├── tsconfig.json           # TypeScript config
 ├── src/                    # Frontend source (React/TS)
-├── src-tauri/              # Backend source (Rust)
+├── src-tauri/              # Backend source (Rust + llama_server/)
+├── llama.cpp/              # Pre-compiled server binaries (build artifact)
 ├── models/                 # Model files (STT, TTS)
 ├── scripts/                # Utility scripts
 ├── tests/                  # E2E tests
