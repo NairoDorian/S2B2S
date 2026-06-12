@@ -11,12 +11,6 @@ import type {
   LlamaServerConfig,
 } from "@/bindings";
 
-const BACKENDS = [
-  { id: "cuda", label: "CUDA", emoji: "🟢", desc: "NVIDIA GPU acceleration (fastest)" },
-  { id: "vulkan", label: "Vulkan", emoji: "🟡", desc: "Cross-platform GPU acceleration" },
-  { id: "cpu", label: "CPU", emoji: "⚪", desc: "CPU-only (no GPU required)" },
-];
-
 function assetLabel(asset: LlamaAsset): string {
   if (asset.backend === "cuda") {
     // Extract CUDA version from name: "llama-b9601-bin-win-cuda-12.4-x64.zip" -> "12"
@@ -148,7 +142,7 @@ const LlamaCppSettings: React.FC = () => {
             </h4>
             <div className="grid gap-2">
               {latestRelease.assets.map((asset) => {
-                const backendInfo = BACKENDS.find((b) => b.id === asset.backend);
+                const backendInfo = { backend: asset.backend, label: assetLabel(asset), emoji: assetEmoji(asset.backend) };
                 const downloaded = isDownloaded(asset.backend, latestRelease.tag);
                 const active = isActive(asset.backend, latestRelease.tag);
                 const isDl = downloading === `${asset.backend}-${latestRelease.tag}`;
@@ -175,7 +169,7 @@ const LlamaCppSettings: React.FC = () => {
                         )}
                       </div>
                       <p className="text-xs text-mid-gray mt-0.5">
-                        {backendInfo?.desc} · {Math.round(asset.size_bytes / (1024 * 1024))} MB
+                        v{latestRelease.tag} · {Math.round(asset.size_bytes / (1024 * 1024))} MB
                       </p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
@@ -231,8 +225,8 @@ const LlamaCppSettings: React.FC = () => {
                     }`}
                   >
                     <span className="text-text/70">
-                      {BACKENDS.find((b) => b.id === srv.backend)?.emoji}{" "}
-                      {BACKENDS.find((b) => b.id === srv.backend)?.label} · {srv.release_tag}
+                      {assetEmoji(srv.backend)}{" "}
+                      {srv.backend === "cuda" ? "CUDA" : srv.backend === "vulkan" ? "Vulkan" : "CPU"} · {srv.release_tag}
                       {active && <span className="ml-2 text-green-400 font-semibold">(active)</span>}
                     </span>
                     <div className="flex gap-1">
