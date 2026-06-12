@@ -147,7 +147,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 - **Manager pattern**: Audio, Model, Transcription, History, TTS, Brain
 - **TTS Backend trait**: 7+ engines with `WarmEngine` lifecycle
 - **TripleVAD**: 3-stage voice activity detection (RMS → RNNoise → Silero)
-- **Normalization pipeline**: ITN → Custom Words → TN → Markdown Strip → Regex Cleanup
+- **Normalization pipeline**: ITN → Custom Words → Markdown Strip → TN → Regex Cleanup
 - **Single instance** architecture with CLI remote control
 
 ### Core Libraries
@@ -312,7 +312,7 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Crash logging with full backtraces                                                                   | ✅ Complete    |
 | Her-style 3D loading animation                                                                       | ✅ Complete    |
 | 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW) | ✅ Complete    |
-| WarmEngine trait lifecycle (Loading→WarmingUp→Ready→Error)                                           | ✅ Complete    |
+| WarmEngine trait lifecycle (Stopped→Loading→WarmingUp→Ready→Error)                                   | ✅ Complete    |
 | TTS performance telemetry (chars_per_ms adaptive sizing)                                             | ✅ Complete    |
 | Piper persistent HTTP server with CUDA auto-discovery                                                | ✅ Complete    |
 | Headless typed bindings export (`cargo test export_bindings`)                                        | ✅ Complete    |
@@ -326,11 +326,12 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Ollama/LM Studio/llama.cpp auto-discovery                                                            | ✅ Complete    |
 | Footer status indicators (STT 🟢, Brain 🟢, TTS 🟢) with hover tooltips                             | ✅ Complete    |
 | GPU VRAM usage indicator with per-second polling                                                     | ✅ Complete    |
+| Hands-free auto-listen / continuous voice                                                           | ✅ Complete    |
 | Streaming STT (WebSocket-based)                                                                      | 📋 Planned     |
 | Pocket TTS backend (voice cloning)                                                                   | 📋 Planned     |
 | Profiles (per-application settings)                                                                  | 📋 Planned     |
 | Local audio cache for TTS fragments                                                                  | 📋 Planned     |
-| Engine-switch cleanup (graceful unload/reload)                                                       | 📋 Planned     |
+| Engine-switch cleanup (graceful unload/reload)                                                       | 🚧 In progress |
 | Full-duplex conversation with acoustic echo cancellation                                             | 📋 Later       |
 | Multi-OS polish, mobile companion                                                                    | 📋 Later       |
 | Local speaker diarization                                                                            | 📋 Later       |
