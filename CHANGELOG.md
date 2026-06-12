@@ -7,15 +7,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Local llama.cpp integration completed, followed by code quality pass — refactoring, type safety, i18n completion, and documentation sync.
+> **Status (June 2026):** Pre-compiled llama.cpp CUDA/Vulkan/CPU server integration, GPU VRAM offloading with `-ngl all`, auto-download from GitHub releases, and Llama.cpp settings management tab.
 
-### llama.cpp Server Integration (Local Gemma-4 UD-Q4_K_XL Engine)
+### Pre-compiled llama.cpp Server Integration (Drop-in GPU Acceleration)
 
-- **Local LLM Execution Engine** — Integrated the official `llama.cpp` server (`llama-server`) as the default local LLM Brain and post-processing provider, targeting the `unsloth/gemma-4-E2B-it-qat-GGUF` model suite.
-- **CMake Build Pipeline** — Configured `build.rs` to automatically clone, pull, and compile `llama-server` (and only `llama-server`) with CMake, with support for `-DGGML_CUDA=ON` and automatic fallback to CPU `-DGGML_CUDA=OFF`.
-- **Build Speed and Dev Watcher Optimization** — Optimized `build.rs` to skip `llama.cpp` compilation if `llama-server` is already present in the resources directory. Added `src-tauri/.taurignore` to ignore resources and `vite.config.ts` to ignore `llama.cpp/` to prevent Tauri dev rebuild loops.
-- **Tauri Subprocess Management** — Implemented background downloader in `llama_manager.rs` to fetch model files sequentially from Hugging Face into `models/llama_cpp/` with download speed and percentage reporting. Managed the background `llama-server` lifecycle, starting it with Multi-Token Prediction (MTP) and vision projector support, and terminating it gracefully on exit.
-- **Premium Setup & Download UI** — Designed and integrated premium download panels and status cards into `BrainSettings.tsx` and `PostProcessingSettings.tsx` to handle download progress, speeds, and server configurations smoothly.
+- **No more source compilation** — Removed the entire CMake-based `build_llama_cpp()` pipeline from `build.rs`. The app now downloads pre-compiled `llama-server` binaries directly from the [llama.cpp GitHub releases](https://github.com/ggml-org/llama.cpp/releases), supporting CUDA, Vulkan, and CPU backends across Windows, macOS, and Linux.
+- **LlamaServerManager** — New Rust module (`src-tauri/src/llama_server/`) with full lifecycle management: fetches GitHub releases, downloads/installs/extracts archives, lists installed servers, and auto-selects the best available backend (CUDA > Vulkan > CPU). Stores binaries in `llama_cpp_servers/` within the app data directory for persistence.
+- **GPU VRAM offloading** — The server launch command now passes `-ngl all` when a GPU-capable binary (CUDA or Vulkan) is detected, loading all model layers directly into GPU VRAM. CUDA runtime detection (`nvidia-smi` / `CUDA_PATH`) is automatic.
+- **Auto-start on Brain activation** — `warmup()` in `BrainManager` now calls `ensure_server_running()` for llama_cpp before sending the warmup prompt. The llama.cpp server auto-starts at app launch when Brain is enabled (default: `true`) with the `llama_cpp` provider selected.
+- **Brain status indicator** — The footer Brain dot now shows three states: orange pulsing (model loading into VRAM), green (ready), gray (disabled). Driven by `brain:llama-loading` / `brain:llama-ready` / `brain:llama-error` Tauri events.
+
+### Llama.cpp Settings Tab
+
+- **New "Llama.cpp" sidebar tab** — Full settings UI in `LlamaCppSettings.tsx` for managing pre-compiled server binaries. Shows detected GPU type, fetches available releases from GitHub, displays per-backend download buttons with progress, lists installed servers with version tags (e.g., `b9601`), and allows switching active backends.
+- **Default model display** — Footer now shows "Gemma-4 2B (Local)" for the llama_cpp provider instead of the raw server alias.
+
+### Developer Experience
+
+- **VRAM log cleanup** — All `[VRAM]` info-level logs in `commands/models.rs` demoted to `debug!` to stop the per-second VRAM polling spam in `npm run tauri dev` console output.
 
 
 ### Refactoring & Code Quality

@@ -571,8 +571,11 @@ impl Default for BrainConfig {
             api_keys.insert(provider.id.clone(), String::new());
             models.insert(provider.id.clone(), String::new());
         }
+        // Set default model for llama_cpp (local Gemma-4 engine)
+        models.insert("llama_cpp".to_string(), "unsloth/gemma-4-e2b-it-qat-GGUF".to_string());
+
         Self {
-            enabled: false,
+            enabled: true,
             provider_id: "llama_cpp".to_string(), // Default to Llama.cpp (Gemma-4 + MTP)
             providers,
             api_keys: SecretMap(api_keys),
@@ -904,6 +907,8 @@ pub struct AppSettings {
     pub vad_mode: String,
     #[serde(default = "default_rnnoise_voice_threshold")]
     pub rnnoise_voice_threshold: f64,
+    #[serde(default)]
+    pub llama_server: crate::llama_server::manager::LlamaServerConfig,
 }
 
 fn default_long_audio_threshold_seconds() -> f64 {
@@ -1442,6 +1447,7 @@ pub fn get_default_settings() -> AppSettings {
         noise_suppression_enabled: default_noise_suppression_enabled(),
         vad_mode: default_vad_mode(),
         rnnoise_voice_threshold: default_rnnoise_voice_threshold(),
+        llama_server: crate::llama_server::manager::LlamaServerConfig::default(),
     }
 }
 

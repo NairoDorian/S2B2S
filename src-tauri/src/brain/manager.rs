@@ -195,6 +195,14 @@ impl BrainManager {
             return Ok(());
         }
 
+        // Ensure llama.cpp server is running before warmup
+        if cfg.provider_id == "llama_cpp" {
+            let _ = self.app.emit("brain:llama-loading", ());
+            if let Some(llama_manager) = self.app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+                llama_manager.ensure_server_running().await?;
+            }
+        }
+
         let messages = vec![ChatMessage {
             role: "user".into(),
             content: "Count from 1 to 3".into(),
@@ -204,7 +212,7 @@ impl BrainManager {
         let abort = Arc::new(AtomicBool::new(false));
 
         log::info!("[Startup] Running silent Brain warm up stream...");
-        let _ = self
+        let result = self
             .client
             .stream_chat(
                 &cfg.active_base_url(),
@@ -215,9 +223,23 @@ impl BrainManager {
                 |_token| {},
                 |_sentence| {},
             )
-            .await?;
+            .await;
 
-        log::info!("[Startup] Silent Brain warm up stream completed successfully.");
-        Ok(())
+        match result {
+            Ok(_) => {
+                log::info!("[Startup] Silent Brain warm up stream completed successfully.");
+                if cfg.provider_id == "llama_cpp" {
+                    let _ = self.app.emit("brain:llama-ready", ());
+                }
+                Ok(())
+            }
+            Err(e) => {
+                log::error!("[Startup] Brain warm up stream failed: {}", e);
+                if cfg.provider_id == "llama_cpp" {
+                    let _ = self.app.emit("brain:llama-error", &e);
+                }
+                Err(e)
+            }
+        }
     }
 }

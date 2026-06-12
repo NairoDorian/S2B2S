@@ -219,6 +219,13 @@ export const commands = {
 	downloadLlamaModels: () => typedError<null, string>(__TAURI_INVOKE("download_llama_models")),
 	getLlamaModelsStatus: () => typedError<boolean, string>(__TAURI_INVOKE("get_llama_models_status")),
 	isLlamaDownloading: () => typedError<boolean, string>(__TAURI_INVOKE("is_llama_downloading")),
+	fetchLlamaReleases: () => typedError<LlamaRelease[], string>(__TAURI_INVOKE("fetch_llama_releases")),
+	downloadLlamaServer: (backend: string, releaseTag: string, downloadUrl: string) => typedError<null, string>(__TAURI_INVOKE("download_llama_server", { backend, releaseTag, downloadUrl })),
+	getDownloadedLlamaServers: () => typedError<DownloadedServer[], string>(__TAURI_INVOKE("get_downloaded_llama_servers")),
+	removeLlamaServer: (backend: string, releaseTag: string) => typedError<null, string>(__TAURI_INVOKE("remove_llama_server", { backend, releaseTag })),
+	setLlamaServerActive: (backend: string, releaseTag: string) => typedError<null, string>(__TAURI_INVOKE("set_llama_server_active", { backend, releaseTag })),
+	getLlamaServerConfig: () => typedError<LlamaServerConfig, string>(__TAURI_INVOKE("get_llama_server_config")),
+	detectGpuType: () => typedError<string, string>(__TAURI_INVOKE("detect_gpu_type")),
 	discoverLocalBrains: () => typedError<DiscoveredServer[], string>(__TAURI_INVOKE("discover_local_brains")),
 	isOllamaRunning: () => __TAURI_INVOKE<boolean>("is_ollama_running"),
 	wakeWordStart: () => typedError<null, string>(__TAURI_INVOKE("wake_word_start")),
@@ -297,6 +304,7 @@ export type AppSettings = {
 	noise_suppression_enabled?: boolean,
 	vad_mode?: string,
 	rnnoise_voice_threshold?: number | null,
+	llama_server?: LlamaServerConfig,
 };
 
 export type AudioDevice = {
@@ -369,6 +377,13 @@ export type DiscoveredServer = {
 	base_url: string,
 	models: string[],
 	provider_id: string,
+};
+
+export type DownloadedServer = {
+	backend: string,
+	release_tag: string,
+	path: string,
+	size_bytes: number,
 };
 
 export type ElevenLabsConfig = {
@@ -445,6 +460,26 @@ export type LLMPrompt = {
 	id: string,
 	name: string,
 	prompt: string,
+};
+
+export type LlamaAsset = {
+	name: string,
+	backend: string,
+	os: string,
+	arch: string,
+	download_url: string,
+	size_bytes: number,
+};
+
+export type LlamaRelease = {
+	tag: string,
+	name: string,
+	assets: LlamaAsset[],
+};
+
+export type LlamaServerConfig = {
+	backend: string,
+	release_tag: string,
 };
 
 export type LlmServerInfo = {

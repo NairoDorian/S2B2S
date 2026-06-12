@@ -10,6 +10,7 @@ import {
   Sparkles,
   Cpu,
   Volume2,
+  Terminal,
 } from "lucide-react";
 import S2B2SIcon from "./icons/S2B2SIcon";
 import appIcon from "../assets/icon.png";
@@ -24,6 +25,7 @@ import {
   ModelsSettings,
   SpeechSettings,
   BrainSettings,
+  LlamaCppSettings,
 } from "./settings";
 import { ConversationView } from "./conversation/ConversationView";
 
@@ -85,6 +87,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.brain",
     icon: Brain,
     component: BrainSettings,
+    enabled: () => true,
+  },
+  llamaCpp: {
+    labelKey: "sidebar.llamaCpp",
+    icon: Terminal,
+    component: LlamaCppSettings,
     enabled: () => true,
   },
   postprocessing: {

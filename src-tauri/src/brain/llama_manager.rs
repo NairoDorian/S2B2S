@@ -56,6 +56,14 @@ impl LlamaManager {
         self.downloading.load(Ordering::SeqCst)
     }
 
+    fn has_gpu_support(&self) -> bool {
+        if let Some(mgr) = self.app.try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>() {
+            mgr.has_gpu_support()
+        } else {
+            false
+        }
+    }
+
     pub fn stop(&self) {
         let mut guard = self.child.lock().unwrap();
         if let Some(mut child) = guard.take() {
@@ -90,12 +98,17 @@ impl LlamaManager {
             return Err("Gemma-4 models are missing. Please download them in settings first.".to_string());
         }
 
-        // Resolve bundled llama-server path
-        let server_bin = self.app.path().resolve(
-            #[cfg(windows)] "resources/llama-server.exe",
-            #[cfg(not(windows))] "resources/llama-server",
-            tauri::path::BaseDirectory::Resource,
-        ).map_err(|e| format!("Failed to resolve bundled llama-server resource: {}", e))?;
+        // Resolve the active pre-compiled llama-server path
+        let server_bin = if let Some(mgr) = self.app.try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>() {
+            mgr.get_active_server_path()?
+        } else {
+            // Fallback to resources (legacy)
+            self.app.path().resolve(
+                #[cfg(windows)] "resources/llama-server.exe",
+                #[cfg(not(windows))] "resources/llama-server",
+                tauri::path::BaseDirectory::Resource,
+            ).map_err(|e| format!("Failed to resolve llama-server path: {}", e))?
+        };
 
         if !server_bin.exists() {
             return Err(format!("Bundled llama-server executable not found at: {}", server_bin.display()));
@@ -107,6 +120,7 @@ impl LlamaManager {
         let draft_path = models_dir.join("mtp-gemma-4-E2B-it.gguf");
 
         info!("[LlamaManager] Spawning llama-server on port {} with MTP...", port);
+        let _ = self.app.emit("brain:llama-loading", ());
         
         let mut cmd = Command::new(&server_bin);
         cmd.args(&[
@@ -119,6 +133,14 @@ impl LlamaManager {
             "--flash-attn", "on",
             "--chat-template-kwargs", "{\"enable_thinking\":false}"
         ]);
+
+        // Offload all model layers to GPU when GPU build (CUDA/Vulkan) is available
+        if self.has_gpu_support() {
+            info!("[LlamaManager] GPU build detected — offloading all layers to GPU VRAM");
+            cmd.args(&["-ngl", "all"]);
+        } else {
+            info!("[LlamaManager] CPU-only build — model will run in RAM");
+        }
 
         #[cfg(windows)]
         {
@@ -134,10 +156,12 @@ impl LlamaManager {
         loop {
             if self.is_port_responding(port).await {
                 info!("[LlamaManager] llama-server started successfully and is responding.");
+                let _ = self.app.emit("brain:llama-ready", ());
                 break;
             }
             if start.elapsed().as_secs() > 60 {
                 let _ = child.kill();
+                let _ = self.app.emit("brain:llama-error", "llama-server failed to respond within 60 seconds");
                 return Err("llama-server failed to respond within 60 seconds".to_string());
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;

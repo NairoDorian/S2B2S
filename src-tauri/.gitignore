@@ -9,3 +9,6 @@
 # Local compiled resources (compiled automatically by build.rs)
 /resources/llama-*
 
+# GPU build marker (generated at build time)
+/resources/.gpu_build
+
