@@ -46,6 +46,7 @@ struct ChunkUsage {
     #[serde(alias = "predicted_tokens_per_second")]
     predicted_tokens_per_second: Option<f64>,
     predicted_ms: Option<f64>,
+    completion_tokens: Option<u64>,
 }
 #[derive(Deserialize)]
 struct ChunkTimings {
@@ -57,6 +58,7 @@ struct ChunkTimings {
 pub struct BrainTiming {
     pub tokens_per_second: Option<f64>,
     pub total_ms: Option<i64>,
+    pub completion_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +163,7 @@ impl BrainClient {
                             tokens_per_second: usage.predicted_per_second
                                 .or(usage.predicted_tokens_per_second),
                             total_ms: usage.predicted_ms.map(|ms| ms as i64),
+                            completion_tokens: usage.completion_tokens,
                         });
                     }
                     for choice in &parsed.choices {
@@ -168,6 +171,7 @@ impl BrainClient {
                             final_timing = Some(BrainTiming {
                                 tokens_per_second: timings.predicted_per_second,
                                 total_ms: timings.predicted_ms.map(|ms| ms as i64),
+                                completion_tokens: None,
                             });
                         }
                     }

@@ -163,8 +163,11 @@ impl BrainManager {
         match result {
             Ok(BrainResult { text: full, timing }) => {
                 let total_ms = turn_start.elapsed().as_millis() as u64;
-                // Estimate tokens: ~4 chars per token for English
-                let estimated_tokens = (full.chars().count() / 4).max(1) as f64;
+                // Prefer server token count, fall back to chars/4 estimate
+                let completion_tokens = timing.as_ref().and_then(|t| t.completion_tokens);
+                let estimated_tokens = completion_tokens
+                    .map(|c| c as f64)
+                    .unwrap_or_else(|| (full.chars().count() / 4).max(1) as f64);
                 let tokens_per_sec = if total_ms > 0 {
                     (estimated_tokens / total_ms as f64) * 1000.0
                 } else {
