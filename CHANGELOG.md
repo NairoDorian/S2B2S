@@ -7,7 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Pre-compiled llama.cpp CUDA/Vulkan/CPU server integration, GPU VRAM offloading with `-ngl all`, auto-download from GitHub releases, and Llama.cpp settings management tab.
+> **Status (June 2026):** Pre-compiled llama.cpp CUDA/Vulkan/CPU server integration, GPU VRAM offloading with `-ngl all`, auto-download from GitHub releases, Llama.cpp settings management tab, and per-message performance metrics.
+
+### Performance Metrics (Token/s, Latency, STT/TTS Timing)
+
+- **Brain response metrics** — `brain:done` event now carries `tokens_per_sec` and `total_ms` from the llama.cpp server timing response. Displayed in the Conversation view as `t/s` and `ms` next to each assistant message, and in the Brain Settings test panel.
+- **STT timing** — `brain:asked` event now includes `stt_ms` (audio-to-text latency). Rendered next to user messages in the Conversation view with a 🎤 icon.
+- **TTS synthesis timing** — `tts:synth-done` now emits total synthesis `ms`. `tts:first-audio` event tracks time-to-first-audio (TTFA) for streaming TTS.
+- **Brain client timing capture** — `BrainClient::stream_chat` now returns `BrainResult` with optional `BrainTiming` (tokens/sec, total ms) parsed from the SSE stream's `usage` or `delta.timings` fields.
 
 ### Pre-compiled llama.cpp Server Integration (Drop-in GPU Acceleration)
 

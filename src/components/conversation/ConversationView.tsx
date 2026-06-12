@@ -10,6 +10,9 @@ import { Mic, Volume2, VolumeX } from "lucide-react";
 interface Message {
   role: "user" | "assistant";
   content: string;
+  sttMs?: number;
+  tokensPerSec?: number;
+  totalMs?: number;
 }
 
 /**
@@ -87,20 +90,29 @@ export const ConversationView: React.FC = () => {
         setThinking(false);
         setStreaming((prev) => prev + event.payload);
       });
-      const unlistenDone = await listen<string>("brain:done", (event) => {
-        setThinking(false);
-        setStreaming("");
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: event.payload },
-        ]);
-        setVoiceStatus((prev) => {
-          if (prev === "thinking" || prev === "speech_ended") {
-            return "listening";
-          }
-          return prev;
-        });
-      });
+      const unlistenDone = await listen<{ text: string; tokens_per_sec?: number; total_ms?: number }>(
+        "brain:done",
+        (event) => {
+          setThinking(false);
+          setStreaming("");
+          const payload = event.payload;
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: typeof payload === "string" ? payload : payload.text,
+              tokensPerSec: typeof payload === "object" ? payload.tokens_per_sec : undefined,
+              totalMs: typeof payload === "object" ? payload.total_ms : undefined,
+            },
+          ]);
+          setVoiceStatus((prev) => {
+            if (prev === "thinking" || prev === "speech_ended") {
+              return "listening";
+            }
+            return prev;
+          });
+        },
+      );
       const unlistenError = await listen<string>("brain:error", (event) => {
         setThinking(false);
         setStreaming("");
@@ -108,12 +120,20 @@ export const ConversationView: React.FC = () => {
         setVoiceStatus((prev) => (prev !== "idle" ? "listening" : "idle"));
       });
       // Speech turns: surface the transcribed question in the transcript.
-      const unlistenAsked = await listen<string>("brain:asked", (event) => {
-        setMessages((prev) => [
-          ...prev,
-          { role: "user", content: event.payload },
-        ]);
-      });
+      const unlistenAsked = await listen<{ text: string; stt_ms?: number }>(
+        "brain:asked",
+        (event) => {
+          const payload = event.payload;
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "user",
+              content: typeof payload === "string" ? payload : payload.text,
+              sttMs: typeof payload === "object" ? payload.stt_ms : undefined,
+            },
+          ]);
+        },
+      );
 
       // Continuous Voice Mode Events
       const unlistenSpeechStarted = await listen(
@@ -301,6 +321,21 @@ export const ConversationView: React.FC = () => {
             }`}
           >
             {message.content}
+            {(message.sttMs != null ||
+              message.tokensPerSec != null ||
+              message.totalMs != null) && (
+              <div className="mt-1.5 pt-1.5 border-t border-text/5 flex gap-3 text-[10px] text-text/30 font-mono">
+                {message.sttMs != null && (
+                  <span>🎤 {message.sttMs}ms</span>
+                )}
+                {message.tokensPerSec != null && (
+                  <span>{message.tokensPerSec.toFixed(1)} t/s</span>
+                )}
+                {message.totalMs != null && (
+                  <span>🧠 {message.totalMs}ms</span>
+                )}
+              </div>
+            )}
           </div>
         ))}
         {thinking && (

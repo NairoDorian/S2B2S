@@ -5,7 +5,7 @@
 //! and — when read-aloud is enabled — feeds completed sentences straight into
 //! the TTS subsystem so speech starts before the reply finishes.
 
-use crate::brain::client::{BrainClient, ChatMessage};
+use crate::brain::client::{BrainClient, BrainResult, ChatMessage};
 use crate::settings::get_settings;
 use crate::tts::manager::TtsManager;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -161,7 +161,7 @@ impl BrainManager {
             .await;
 
         match result {
-            Ok(full) => {
+            Ok(BrainResult { text: full, timing }) => {
                 {
                     let mut history = self.history.lock().unwrap();
                     history.push(ChatMessage {
@@ -173,7 +173,12 @@ impl BrainManager {
                         content: full.clone(),
                     });
                 }
-                let _ = self.app.emit("brain:done", &full);
+                let done_payload = serde_json::json!({
+                    "text": &full,
+                    "tokens_per_sec": timing.as_ref().and_then(|t| t.tokens_per_second),
+                    "total_ms": timing.as_ref().and_then(|t| t.total_ms),
+                });
+                let _ = self.app.emit("brain:done", &done_payload);
                 Ok(full)
             }
             Err(e) => {
@@ -226,7 +231,7 @@ impl BrainManager {
             .await;
 
         match result {
-            Ok(_) => {
+            Ok(BrainResult { .. }) => {
                 log::info!("[Startup] Silent Brain warm up stream completed successfully.");
                 if cfg.provider_id == "llama_cpp" {
                     let _ = self.app.emit("brain:llama-ready", ());

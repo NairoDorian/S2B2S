@@ -1,5 +1,6 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { listen } from "@tauri-apps/api/event";
 import { RefreshCcw } from "lucide-react";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
@@ -118,6 +119,10 @@ export const BrainSettings: React.FC = () => {
     "idle" | "running" | "ok" | "error"
   >("idle");
   const [testReply, setTestReply] = useState("");
+  const [testMetrics, setTestMetrics] = useState<{
+    tokensPerSec?: number;
+    totalMs?: number;
+  }>({});
 
   const brain = settings?.brain;
 
@@ -134,7 +139,27 @@ export const BrainSettings: React.FC = () => {
   const testBrain = async () => {
     setTestState("running");
     setTestReply("");
+    setTestMetrics({});
+
+    // Listen for brain:done with timing metrics (one-shot)
+    const unlistenPromise = listen<{
+      text: string;
+      tokens_per_sec?: number;
+      total_ms?: number;
+    }>("brain:done", (event) => {
+      const p = event.payload;
+      if (typeof p === "object" && p.tokens_per_sec != null) {
+        setTestMetrics({
+          tokensPerSec: p.tokens_per_sec,
+          totalMs: p.total_ms ?? undefined,
+        });
+      }
+    });
+
     const result = await commands.brainAsk(t("settings.brain.test.prompt"));
+    // Unlisten after receiving the response
+    void unlistenPromise.then((fn) => fn());
+
     if (result.status === "ok") {
       setTestReply(result.data);
       setTestState("ok");
@@ -372,13 +397,26 @@ export const BrainSettings: React.FC = () => {
               </Button>
             </div>
             {testReply && (
-              <p
-                className={`text-sm whitespace-pre-wrap ${
-                  testState === "error" ? "text-red-500" : "text-mid-gray"
-                }`}
-              >
-                {testReply}
-              </p>
+              <div className="space-y-1">
+                <p
+                  className={`text-sm whitespace-pre-wrap ${
+                    testState === "error" ? "text-red-500" : "text-mid-gray"
+                  }`}
+                >
+                  {testReply}
+                </p>
+                {(testMetrics.tokensPerSec != null ||
+                  testMetrics.totalMs != null) && (
+                  <p className="text-[10px] text-text/30 font-mono flex gap-3">
+                    {testMetrics.tokensPerSec != null && (
+                      <span>{testMetrics.tokensPerSec.toFixed(1)} t/s</span>
+                    )}
+                    {testMetrics.totalMs != null && (
+                      <span>🧠 {testMetrics.totalMs}ms</span>
+                    )}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </SettingContainer>

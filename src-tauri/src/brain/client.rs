@@ -29,6 +29,7 @@ struct ChatCompletionRequest<'a> {
 #[derive(Deserialize)]
 struct Delta {
     content: Option<String>,
+    timings: Option<ChunkTimings>,
 }
 #[derive(Deserialize)]
 struct ChunkChoice {
@@ -37,6 +38,31 @@ struct ChunkChoice {
 #[derive(Deserialize)]
 struct CompletionChunk {
     choices: Vec<ChunkChoice>,
+    usage: Option<ChunkUsage>,
+}
+#[derive(Deserialize)]
+struct ChunkUsage {
+    #[serde(rename = "predicted_tokens_per_second")]
+    predicted_per_second: Option<f64>,
+    #[serde(rename = "predicted_ms")]
+    predicted_ms: Option<f64>,
+}
+#[derive(Deserialize)]
+struct ChunkTimings {
+    predicted_per_second: Option<f64>,
+    predicted_ms: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BrainTiming {
+    pub tokens_per_second: Option<f64>,
+    pub total_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BrainResult {
+    pub text: String,
+    pub timing: Option<BrainTiming>,
 }
 
 pub struct BrainClient {
@@ -74,7 +100,7 @@ impl BrainClient {
         abort: Arc<AtomicBool>,
         mut on_token: FT,
         mut on_sentence: FS,
-    ) -> Result<String, String>
+    ) -> Result<BrainResult, String>
     where
         FT: FnMut(&str) + Send,
         FS: FnMut(String) + Send,
@@ -108,11 +134,12 @@ impl BrainClient {
         let mut full = String::new();
         // Buffer partial SSE lines that span chunk boundaries.
         let mut pending = String::new();
+        let mut final_timing: Option<BrainTiming> = None;
 
         while let Some(chunk) = stream.next().await {
             if abort.load(Ordering::SeqCst) {
                 log::info!("[Brain] stream aborted by user");
-                return Ok(full);
+                return Ok(BrainResult { text: full, timing: final_timing });
             }
             let bytes = chunk.map_err(|e| format!("Brain stream error: {e}"))?;
             pending.push_str(&String::from_utf8_lossy(&bytes));
@@ -128,6 +155,21 @@ impl BrainClient {
                     continue;
                 }
                 if let Ok(parsed) = serde_json::from_str::<CompletionChunk>(payload) {
+                    // Check for timing info in usage or delta.timings
+                    if let Some(usage) = &parsed.usage {
+                        final_timing = Some(BrainTiming {
+                            tokens_per_second: usage.predicted_per_second,
+                            total_ms: usage.predicted_ms.map(|ms| ms as i64),
+                        });
+                    }
+                    for choice in &parsed.choices {
+                        if let Some(timings) = &choice.delta.timings {
+                            final_timing = Some(BrainTiming {
+                                tokens_per_second: timings.predicted_per_second,
+                                total_ms: timings.predicted_ms.map(|ms| ms as i64),
+                            });
+                        }
+                    }
                     if let Some(content) = parsed
                         .choices
                         .first()
@@ -148,7 +190,7 @@ impl BrainClient {
         if let Some(last) = splitter.flush() {
             on_sentence(last);
         }
-        Ok(full)
+        Ok(BrainResult { text: full, timing: final_timing })
     }
 }
 

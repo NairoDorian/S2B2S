@@ -43,7 +43,9 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     rm.set_continuous_mode_paused(true);
 
     // 2. Transcribe
+    let stt_start = std::time::Instant::now();
     let transcription_result = tm.transcribe(samples.clone());
+    let stt_ms = stt_start.elapsed().as_millis() as u64;
 
     let file_name = format!("s2b2s-{}.wav", chrono::Utc::now().timestamp());
     let wav_path = hm.recordings_dir().join(&file_name);
@@ -95,8 +97,12 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
         }
     }
 
-    // 4. Emit brain:asked to display on frontend
-    let _ = app.emit("brain:asked", &transcription);
+    // 4. Emit brain:asked to display on frontend with STT timing
+    let asked_payload = serde_json::json!({
+        "text": transcription,
+        "stt_ms": stt_ms,
+    });
+    let _ = app.emit("brain:asked", &asked_payload);
 
     // 5. Query Brain and play TTS
     let settings = get_settings(app);
