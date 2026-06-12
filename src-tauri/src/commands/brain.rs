@@ -143,6 +143,12 @@ pub fn change_brain_config(app: AppHandle, config: BrainConfig) -> Result<(), St
                 let _ = crate::shortcut::unregister_shortcut(&app, binding);
             }
         }
+        // Stop llama.cpp server when Brain is disabled
+        if !now_enabled && settings.brain.provider_id == "llama_cpp" {
+            if let Some(llama_mgr) = app.try_state::<std::sync::Arc<crate::brain::llama_manager::LlamaManager>>() {
+                llama_mgr.stop();
+            }
+        }
     }
     Ok(())
 }
