@@ -136,7 +136,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 ### Frontend (React)
 
-- **100+ components**: settings (11 subdirectories incl. LlamaCppSettings, ~50 files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
+- **90+ components**: settings (11 subdirectories incl. LlamaCppSettings, 60+ files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
 - **20-language i18n** via i18next
 - **Zustand** state management with typed bindings
 - **Her-style 3D loading animation** (Three.js)
@@ -161,7 +161,6 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 | `rdev`               | —       | Global keyboard shortcuts                               |
 | `rubato`             | 3.0     | Audio resampling                                        |
 | `rodio`              | 0.22    | Audio playback                                          |
-| `tts-rs`             | —       | Kokoro-82M in-process ONNX TTS (54 voices, 9 languages) |
 | `text-processing-rs` | 0.2.2   | ITN + TN normalization                                  |
 | `regex`              | 1.12    | Markdown stripping for TTS pipeline                     |
 | `rusqlite`           | 0.40    | SQLite persistence                                      |

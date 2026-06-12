@@ -91,6 +91,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **CRUSH.md** — file structure reference updated with `llama.cpp/` and `llama_server/` references.
 - **CONTRIBUTING.md** — managers listing updated to include `continuous_voice`.
 
+### Second-Pass Verification & Corrections
+
+- **README.md** — component count corrected: "100+ components" → "90+ components"; settings file count "~50 files" → "60+ files". Removed `tts-rs` from Core Libraries table (not a compiled dependency — Kokoro synthesis pending integration).
+- **AGENTS.md** — Key Files Reference now includes `LLAMA_CPP.md`. Technology stack table: Kokoro entry updated from "tts-rs in-process" to "skeleton". Backend tree: kokoro.rs comment updated.
+- **S2B2S_REVIEW.md** — hooks section now includes `useLlamaState.ts`. Kokoro Backend Details updated to note synthesis pending `tts-rs` integration (voice listing works). Platform matrix: Kokoro row updated. Key Files Quick Reference now includes `llama_server/manager.rs`.
+- **Full file inventory verification** — confirmed 88 `.rs` files, 91 `.tsx` files, 28 `.ts` files, 9 GitHub Actions workflows. All documented modules verified on disk.
+
 ### Code Cleanup
 
 - **Cargo.toml cleanup** — removed commented-out `[[bin]]` section for CLI; removed trailing blank line before target-specific dependencies.
