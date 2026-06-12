@@ -2,7 +2,7 @@
 
 **Local-first STT → Brain → TTS desktop app for Windows 11, macOS, and Linux. Dictate anywhere, read anything aloud, and talk naturally with a local AI — almost keyboard-free.**
 
-S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 7+ backends (Piper, Kokoro, Kitten, OpenAI, ElevenLabs, Cartesia, SAPI), a streaming LLM conversation mode, double-copy clipboard trigger, and a full text normalization pipeline (ITN + TN + markdown stripping).
+S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 7+ backends (Piper, Kokoro, Kitten, OpenAI, ElevenLabs, Cartesia, SAPI), a streaming LLM conversation mode, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), double-copy clipboard trigger, and a full text normalization pipeline (ITN + TN + markdown stripping).
 
 ---
 
@@ -19,6 +19,7 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 - [System Requirements](#system-requirements)
 - [Roadmap & Active Development](#roadmap--active-development)
 - [Debug Mode](#debug-mode)
+- [Troubleshooting](#troubleshooting)
 - [How to Contribute](#how-to-contribute)
 - [Related Projects](#related-projects)
 - [License & Attribution](#license--attribution)
@@ -39,7 +40,7 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 
 1. **Dictate Anywhere** — press a hotkey, speak, and polished text lands at your cursor. Powered by **Parakeet V3** (default, local, 25 languages with auto-detection).
 2. **Read Aloud** — select text anywhere, press a hotkey, and a local voice reads it instantly with pause/resume. Also triggered by **double-copy** (copy same text twice within 1.5s).
-3. **Talk to the Brain** — the Conversation window: speak naturally to a local LLM (Ollama/LM Studio) or any cloud LLM. Real-time STT in, streaming tokens out, TTS reads the reply aloud (toggleable, default ON).
+3. **Talk to the Brain** — the Conversation window: speak naturally to a local LLM (Ollama/LM Studio/llama.cpp with GPU offload) or any cloud LLM. Real-time STT in, streaming tokens out, TTS reads the reply aloud (toggleable, default ON). Per-message performance metrics (tokens/sec, latency) displayed in-line.
 
 ---
 
@@ -114,6 +115,10 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 │                       │   ├─ client.rs (SSE streaming)           ││
 │                       │   └─ manager.rs (turn history, barge-in) ││
 │                       │                                            ││
+│                       │  llama_server/ (llama.cpp GPU)           ││
+│                       │   └─ manager.rs (auto-download, launch,  ││
+│                       │       GPU VRAM offloading, health check) ││
+│                       │                                            ││
 │                       │  audio_toolkit/                          ││
 │                       │   ├─ audio/ (cpal capture, resample)     ││
 │                       │   └─ vad/ (TripleVAD: RMS→RNNoise→Silero)││
@@ -128,7 +133,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 ### Frontend (React)
 
-- **100+ components**: settings (10 subdirectories, ~45 files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
+- **100+ components**: settings (11 subdirectories incl. LlamaCppSettings, ~50 files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
 - **20-language i18n** via i18next
 - **Zustand** state management with typed bindings
 - **Her-style 3D loading animation** (Three.js)
@@ -172,7 +177,7 @@ S2B2S works fully offline with no configuration. The defaults are chosen for spe
 | **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                            | Silero only, Push-to-talk                                              |
 | **Noise Suppression** | RNNoise (toggleable, triple mode default)                     | Off                                                                    |
 | **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
-| **Brain**             | **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | Any OpenAI-compatible API, Anthropic, Gemini                           |
+| **Brain**             | **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | llama.cpp (pre-compiled CUDA/Vulkan/CPU), Any OpenAI-compatible API, Anthropic, Gemini |
 | **Storage**           | SQLite (rusqlite + migrations)                                | —                                                                      |
 | **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)      | —                                                                      |
 
@@ -293,7 +298,12 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | ---------------------------------------------------------------------------------------------------- | -------------- |
 | STT dictation (Parakeet V3, Whisper, Moonshine)                                                      | ✅ Complete    |
 | TTS read-aloud (Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)                           | ✅ Complete    |
-| Conversation mode with streaming LLM (Ollama/LM Studio/OpenAI-compatible)                            | ✅ Complete    |
+| Conversation mode with streaming LLM (Ollama/LM Studio/llama.cpp/OpenAI-compatible)                  | ✅ Complete    |
+| Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                               | ✅ Complete    |
+| Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                                | ✅ Complete    |
+| Llama.cpp settings tab (manage server binaries, GPU detection, backend switching)                    | ✅ Complete    |
+| VRAM usage indicator (green/yellow/red with hover tooltip)                                           | ✅ Complete    |
+| Log viewer console (level filter, search, auto-refresh)                                              | ✅ Complete    |
 | Double-copy clipboard trigger for speak-selection                                                    | ✅ Complete    |
 | Text normalization pipeline (ITN + TN + markdown stripping)                                          | ✅ Complete    |
 | TripleVAD (RMS → RNNoise → Silero) with tunable threshold                                            | ✅ Complete    |
@@ -312,6 +322,8 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Save-to-file (MP3/OGG/FLAC)                                                                          | ✅ Complete    |
 | Waveform HUD                                                                                         | ✅ Complete    |
 | Ollama/LM Studio/llama.cpp auto-discovery                                                            | ✅ Complete    |
+| Footer status indicators (STT 🟢, Brain 🟢, TTS 🟢) with hover tooltips                             | ✅ Complete    |
+| GPU VRAM usage indicator with per-second polling                                                     | ✅ Complete    |
 | Streaming STT (WebSocket-based)                                                                      | 📋 Planned     |
 | Pocket TTS backend (voice cloning)                                                                   | 📋 Planned     |
 | Profiles (per-application settings)                                                                  | 📋 Planned     |
@@ -328,6 +340,20 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 ## Debug Mode
 
 Press `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) to toggle debug overlay. Also available in Advanced settings.
+
+---
+
+## Troubleshooting
+
+| Issue                                    | Solution                                                                                                                               |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| piper-server not starting                | Ensure CUDA/Vulkan runtime is installed; check Debug → Log Viewer for errors                                                           |
+| llama.cpp server fails to launch         | Verify GPU drivers; select CPU backend in Llama.cpp settings if GPU not detected                                                       |
+| STT model download stalls                | Download manually from [Hugging Face](https://huggingface.co/tdt-ai/TDT) and place in `src-tauri/resources/models/`                    |
+| macOS accessibility permissions          | Grant permissions in System Preferences → Privacy & Security → Accessibility                                                           |
+| Linux Wayland overlay issues             | Set `S2B2S_NO_GTK_LAYER_SHELL=1` environment variable; install `wtype` or `dotool` for text input                                      |
+| Crash on startup                         | Check `s2b2s-crash.log` in app log directory; report with backtrace                                                                    |
+| No audio output                          | Verify output device selection in Settings → Audio; test with Play Greeting button in TTS settings                                     |
 
 ---
 

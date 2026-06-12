@@ -88,10 +88,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Documentation sync** — updated roadmap in README.md to reflect all completed features (AI Replace, Latency HUD, wake word, save-to-file, waveform HUD, auto-discovery), removed stale entries.
 - **README.md polish** — streamlined features list and added clarity to pipeline descriptions.
 
-> **Status (June 2026):** All 19 focused improvement items complete.
-> Hybrid KWS+VAD wake word, AI Replace, latency HUD, Ollama discovery, save-to-file,
-> warm model unload timeout, cross-platform selection capture + double-copy, waveform HUD.
-
 ### Code Quality & Cleanup
 
 - **Rust clippy cleanup** — resolved all 44 clippy warnings across the backend: deprecated `rodio::DeviceTrait::name` → `description()`, `map_or(false, ...)` → `is_some_and(...)`, `map_or(true, ...)` → `is_none_or(...)`, `contains_key` + `insert` → `Entry::Vacant` API, `return Ok(())` → `Ok(())`, redundant closures → direct function references, manual saturating arithmetic → `saturating_sub`, collapsible `if` statements collapsed, manual `Default` impls replaced with `#[derive(Default)]`, empty doc comments fixed, `write!` → `writeln!`, test modules repositioned after function definitions, `io_other_error` patterns modernized, and `needless_borrow` references simplified. Architecture-level `#[allow(clippy::too_many_arguments)]` added to 4 long-parameter-sig functions.
@@ -105,8 +101,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Log viewer console** — developer log viewer in Debug settings with level filter, search, auto-refresh (2s), manual refresh, copy to clipboard, and clear logs. Backed by `get_recent_logs` / `clear_logs` commands.
 - **Footer status indicators** — STT, Brain, and TTS indicators collapsed to emoticon + title + status dot (🎙️ STT 🟢, 🧠 Brain 🟢, 🗣️ TTS 🟢). Full model/voice details visible on hover tooltip and in their respective dropdown popovers.
 - **Documentation cleanup** — removed all remaining `IMPROVEMENT_PLAN.md` references from CONTRIBUTING.md, AGENTS.md, CRUSH.md, S2B2S_REVIEW.md, and PULL_REQUEST_TEMPLATE.md. Removed Sponsors section from README. Marked RAM-persistent warm model lifecycle as ✅ Complete in roadmap.
-
-### Added
 
 **Conversation & Brain:**
 
@@ -258,12 +252,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Removed redundant test speak sample section** — "Play Greeting" button already serves this purpose.
 - **TTS entries not appearing in history** — double-copy, speak-selection, and test button spoken text now persisted after successful synthesis.
 - **Windows test executables** — `build.rs` now embeds Common-Controls v6 manifest into test binaries (fixes `STATUS_ENTRYPOINT_NOT_FOUND` after dependency upgrade).
+- **TTS sentence ordering** — FIFO sentence queue via `mpsc::channel` consumer thread; sentences synthesized and appended in correct order, fixing out-of-order playback when short sentences synthesized faster than longer earlier ones.
+- **Tokio runtime panic** — channel-based approach isolates Piper backend synthesis in a dedicated `std::thread`, avoiding the "Cannot drop a runtime in a context where blocking is not allowed" panic from synchronous calls.
 
 ### Removed
 
 - **IMPROVEMENT_PLAN.md** — deleted the improvement plan file.
-
-### TTS Sentence Ordering Fix
-
-- **FIFO sentence queue** � speak_sentence now sends sentences to an mpsc::channel processed by a single consumer thread. Sentences are synthesized and appended to the player in correct order, fixing out-of-order playback when short sentences synthesized faster than longer earlier ones.
-- **Tokio runtime panic fix** � The Piper backend's HTTP synthesize() creates its own tokio runtime. The channel-based approach isolates synthesis in a dedicated std::thread, avoiding the Cannot drop a runtime in a context where blocking is not allowed panic from the previous synchronous call.
