@@ -178,22 +178,27 @@ impl BrainClient {
                     if let Some(usage) = &parsed.usage {
                         log::debug!("[Brain] Usage chunk: predicted_per_second={:?}, predicted_ms={:?}, completion_tokens={:?}",
                             usage.predicted_per_second, usage.predicted_ms, usage.completion_tokens);
-                        final_timing = Some(BrainTiming {
-                            tokens_per_second: usage.predicted_per_second
-                                .or(usage.predicted_tokens_per_second),
-                            predicted_ms: usage.predicted_ms.map(|ms| ms as i64),
-                            prompt_ms: usage.prompt_ms.map(|ms| ms as i64),
-                            completion_tokens: usage.completion_tokens,
-                        });
+                        // Only overwrite if usage has actual timing data
+                        if usage.predicted_per_second.is_some() || usage.predicted_ms.is_some() || usage.prompt_ms.is_some() {
+                            final_timing = Some(BrainTiming {
+                                tokens_per_second: usage.predicted_per_second
+                                    .or(usage.predicted_tokens_per_second),
+                                predicted_ms: usage.predicted_ms.map(|ms| ms as i64),
+                                prompt_ms: usage.prompt_ms.map(|ms| ms as i64),
+                                completion_tokens: usage.completion_tokens,
+                            });
+                        }
                     }
                     for choice in &parsed.choices {
                         if let Some(timings) = &choice.delta.timings {
-                            final_timing = Some(BrainTiming {
-                                tokens_per_second: timings.predicted_per_second,
-                                predicted_ms: timings.predicted_ms.map(|ms| ms as i64),
-                                prompt_ms: timings.prompt_ms.map(|ms| ms as i64),
-                                completion_tokens: None,
-                            });
+                            if timings.predicted_per_second.is_some() || timings.predicted_ms.is_some() {
+                                final_timing = Some(BrainTiming {
+                                    tokens_per_second: timings.predicted_per_second,
+                                    predicted_ms: timings.predicted_ms.map(|ms| ms as i64),
+                                    prompt_ms: timings.prompt_ms.map(|ms| ms as i64),
+                                    completion_tokens: None,
+                                });
+                            }
                         }
                     }
                     if let Some(content) = parsed
