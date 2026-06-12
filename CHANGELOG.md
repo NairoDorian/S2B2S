@@ -33,6 +33,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - **VRAM log cleanup** — All `[VRAM]` info-level logs in `commands/models.rs` demoted to `debug!` to stop the per-second VRAM polling spam in `npm run tauri dev` console output.
 
+### Fixes
+
+- **Removed `--flash-attn on`** from the llama-server launch command to resolve compatibility with the CUDA pre-built binary.
+- **Llama.cpp tab deduplication** — Filtered out `cudart-*` asset variants so only CUDA 12.4, CUDA 13.3, Vulkan, and CPU (x64) options appear. CUDA version is embedded in the backend string (`cuda-12.4`, `cuda-13.3`) so both are distinct entries.
+- **Download/Remove/Use buttons** — Each option now always shows a Use button (downloads then activates if not yet downloaded), with Download/Remove toggling based on existence. Zip files are deleted after extraction.
+- **Brain disable kills server** — Toggling Brain off when `llama_cpp` provider is active now terminates the llama-server process immediately.
+
 
 ### Refactoring & Code Quality
 
