@@ -131,7 +131,8 @@ impl LlamaManager {
             "--port", &port.to_string(),
             "--ctx-size", "4096",
             "--flash-attn", "on",
-            "--chat-template-kwargs", "{\"enable_thinking\":false}"
+            "--chat-template-kwargs", "{\"enable_thinking\":false}",
+            "--metrics",
         ]);
 
         // Offload all model layers to GPU when GPU build (CUDA/Vulkan) is available
