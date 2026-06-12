@@ -130,7 +130,6 @@ impl LlamaManager {
             "--alias", "unsloth/gemma-4-e2b-it-qat-GGUF",
             "--port", &port.to_string(),
             "--ctx-size", "4096",
-            "--flash-attn", "on",
             "--chat-template-kwargs", "{\"enable_thinking\":false}",
             "--metrics",
         ]);
