@@ -15,8 +15,9 @@ use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
 use crate::tts::sanitize::sanitize_text;
 use crate::tts::{TtsBackend, Voice};
+use std::sync::mpsc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub struct TtsManager {
@@ -24,6 +25,8 @@ pub struct TtsManager {
     player: TtsPlayer,
     /// Bumped on every `speak`/`stop`; stale workers observe the change and abort.
     generation: Arc<AtomicU64>,
+    /// Sentence queue sender for ordered FIFO synthesis
+    sentence_tx: Mutex<Option<mpsc::Sender<(String, u64)>>>,
 }
 
 impl TtsManager {
@@ -33,6 +36,7 @@ impl TtsManager {
             app,
             player,
             generation: Arc::new(AtomicU64::new(0)),
+            sentence_tx: Mutex::new(None),
         }
     }
 
@@ -172,6 +176,7 @@ impl TtsManager {
     /// Stop playback and abort any in-flight synthesis.
     pub fn stop(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        *self.sentence_tx.lock().unwrap() = None; // drop old channel, kills consumer thread
         self.player.stop();
         let _ = self.app.emit("tts:stopped", ());
     }
@@ -194,6 +199,7 @@ impl TtsManager {
 
         // New generation; stop anything currently playing.
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        *self.sentence_tx.lock().unwrap() = None; // drop old channel
         self.player.stop();
         self.player.set_volume(cfg.volume);
 
@@ -340,38 +346,49 @@ impl TtsManager {
         if sentence.trim().is_empty() {
             return;
         }
-        let backend = match self.build_backend(&cfg) {
-            Ok(b) => b,
-            Err(e) => {
-                log::error!("[TTS] {e}");
-                let _ = self.app.emit("tts:error", e);
-                return;
-            }
-        };
         let generation = self.generation.load(Ordering::SeqCst);
         self.player.set_volume(cfg.volume);
-        let app = self.app.clone();
-        let player = self.player.clone();
-        let gen_counter = self.generation.clone();
-        let voice = cfg.voice.clone();
 
-        // Synthesize synchronously to preserve sentence order.
-        // GPU TTS is fast enough (<100ms) that this won't block the SSE stream.
-        if gen_counter.load(Ordering::SeqCst) != generation {
-            return;
-        }
-        match backend.synthesize(&sentence, &voice, cfg.speed) {
-            Ok(bytes) => {
-                if gen_counter.load(Ordering::SeqCst) == generation {
-                    player.append(bytes);
-                    let _ = app.emit("tts:playing-changed", true);
+        // Create sentence queue consumer thread if not already running
+        let mut tx_guard = self.sentence_tx.lock().unwrap();
+        if tx_guard.is_none() {
+            let (tx, rx) = mpsc::channel::<(String, u64)>();
+            let backend = match self.build_backend(&cfg) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::error!("[TTS] {e}");
+                    let _ = self.app.emit("tts:error", e);
+                    return;
                 }
-            }
-            Err(e) => {
-                log::error!("[TTS] synthesis failed: {e}");
-                let _ = app.emit("tts:error", e);
-            }
+            };
+            let voice = cfg.voice.clone();
+            let speed = cfg.speed;
+            let player = self.player.clone();
+            let gen_counter = self.generation.clone();
+            let app = self.app.clone();
+            std::thread::spawn(move || {
+                while let Ok((text, gen)) = rx.recv() {
+                    if gen_counter.load(Ordering::SeqCst) != gen {
+                        continue; // stale sentence, skip
+                    }
+                    match backend.synthesize(&text, &voice, speed) {
+                        Ok(bytes) => {
+                            if gen_counter.load(Ordering::SeqCst) == gen {
+                                player.append(bytes);
+                                let _ = app.emit("tts:playing-changed", true);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("[TTS] sentence synthesis failed: {e}");
+                            let _ = app.emit("tts:error", e);
+                        }
+                    }
+                }
+            });
+            *tx_guard = Some(tx);
         }
+        let tx = tx_guard.as_ref().unwrap();
+        let _ = tx.send((sentence, generation));
     }
 
     /// Begin a fresh TTS session for streamed sentences (e.g. a new Brain turn).
