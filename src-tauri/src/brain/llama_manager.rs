@@ -124,12 +124,18 @@ impl LlamaManager {
         
         let mut cmd = Command::new(&server_bin);
         cmd.args(&[
-            "--model", &model_path.to_string_lossy(),
-            "--mmproj", &mmproj_path.to_string_lossy(),
+            "-m", &model_path.to_string_lossy(),
+            "-c", "4096",
+            "--parallel", "1",
+            "--flash-attn", "on",
+            "--no-context-shift",
+            "--jinja",
             "--model-draft", &draft_path.to_string_lossy(),
+            "--spec-type", "draft-mtp",
+            "--spec-draft-n-max", "2",
+            "--mmproj", &mmproj_path.to_string_lossy(),
             "--alias", "unsloth/gemma-4-e2b-it-qat-GGUF",
             "--port", &port.to_string(),
-            "--ctx-size", "4096",
             "--chat-template-kwargs", "{\"enable_thinking\":false}",
             "--metrics",
         ]);
@@ -137,7 +143,8 @@ impl LlamaManager {
         // Offload all model layers to GPU when GPU build (CUDA/Vulkan) is available
         if self.has_gpu_support() {
             info!("[LlamaManager] GPU build detected — offloading all layers to GPU VRAM");
-            cmd.args(&["-ngl", "all"]);
+            cmd.args(&["-ngl", "-1"]);
+            cmd.args(&["--threads", "-1"]);
         } else {
             info!("[LlamaManager] CPU-only build — model will run in RAM");
         }
