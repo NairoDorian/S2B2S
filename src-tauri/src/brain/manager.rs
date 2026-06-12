@@ -163,17 +163,17 @@ impl BrainManager {
         match result {
             Ok(BrainResult { text: full, timing }) => {
                 let total_ms = turn_start.elapsed().as_millis() as u64;
-                // Use server completion_tokens for accurate count, else estimate from chars
-                let completion_tokens = timing.as_ref().and_then(|t| t.completion_tokens);
-                let token_count = completion_tokens
-                    .map(|c| c as f64)
-                    .unwrap_or_else(|| (full.chars().count() / 4).max(1) as f64);
-                // Calculate t/s from actual token count and elapsed time
-                let tokens_per_sec = if total_ms > 0 {
-                    (token_count / total_ms as f64) * 1000.0
-                } else {
-                    0.0
-                };
+                // Use server predicted_per_second from timings block (exact generation speed)
+                let server_tps = timing.as_ref().and_then(|t| t.tokens_per_second);
+                // Fallback: calculate from completion_tokens / total_ms
+                let fallback_tps = timing.as_ref().and_then(|t| t.completion_tokens).map(|c| {
+                    let token_count = c as f64;
+                    if total_ms > 0 { (token_count / total_ms as f64) * 1000.0 } else { 0.0 }
+                }).unwrap_or_else(|| {
+                    let token_count = (full.chars().count() / 4).max(1) as f64;
+                    if total_ms > 0 { (token_count / total_ms as f64) * 1000.0 } else { 0.0 }
+                });
+                let tokens_per_sec = server_tps.unwrap_or(fallback_tps);
                 // Use server timing if available (predicted_ms + prompt_ms)
                 let predicted_ms = timing.as_ref().and_then(|t| t.predicted_ms);
                 let prompt_ms = timing.as_ref().and_then(|t| t.prompt_ms);
