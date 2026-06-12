@@ -473,11 +473,11 @@ trait WarmEngine: TtsBackend {
 
 ### Kokoro Backend Details
 
-- **Implementation**: In-process via `tts-rs` crate (ONNX Runtime)
+- **Implementation**: Skeleton backend — voice listing (54 voices, 9 languages) works; synthesis pending `tts-rs` crate integration
 - **Pool**: Configurable worker count (auto-tuned from CPU count, 1-4 range)
 - **Voices**: 54 voices across 9 languages (US/UK English, Spanish, French, Hindi, Italian, Japanese, Portuguese, Mandarin Chinese)
 - **Voice-per-language**: Auto-selection based on detected language
-- **Shorten-first-chunk**: Clause-split for fast time-to-first-audio (default ON)
+- **Shorten-first-chunk**: Clause-split for fast time-to-first-audio (planned)
 - **Crossfade**: 10ms @ 24kHz between chunks (in progress)
 
 ### SAPI Backend Details
@@ -1161,7 +1161,8 @@ S2B2S/
 │   ├── 📁 hooks/                 # React hooks
 │   │   ├── 📄 useSettings.ts     # Settings state hook
 │   │   ├── 📄 useOsType.ts       # OS detection hook
-│   │   └── 📄 useProviderState.ts # Shared provider state hook
+│   │   ├── 📄 useProviderState.ts # Shared provider state hook
+│   │   └── 📄 useLlamaState.ts   # Llama.cpp server & VRAM state
 │   │
 │   ├── 📁 stores/                # Zustand stores
 │   │   ├── 📄 settingsStore.ts   # App settings (785 lines)
@@ -1700,7 +1701,7 @@ Installer:          NSIS + MSI        DMG               deb + rpm + AppImage
 Secrets:            Credential Mgr    Keychain          keyring (DBus)
 
 TTS Voice Setup:    pip+Python HTTP   pip+Python HTTP   pip+Python HTTP
-                    tts-rs (Kokoro)   tts-rs (Kokoro)   tts-rs (Kokoro)
+                    Kokoro (skeleton)  Kokoro (skeleton) Kokoro (skeleton)
 ```
 
 ---
@@ -1738,6 +1739,7 @@ bun run check:translations           # i18n validation
 | `src-tauri/src/lib.rs`                          | App entry point, setup, event handlers |
 | `src-tauri/src/tts/manager.rs`                  | TTS orchestration                      |
 | `src-tauri/src/brain/client.rs`                 | SSE streaming LLM client               |
+| `src-tauri/src/llama_server/manager.rs`         | Llama.cpp server lifecycle & GPU VRAM  |
 | `src-tauri/src/audio_toolkit/vad/triple_vad.rs` | 3-stage VAD                            |
 | `src-tauri/src/settings.rs`                     | All settings definitions               |
 | `src-tauri/src/actions.rs`                      | Pipeline triggers                      |

@@ -131,7 +131,7 @@ src-tauri/src/
 │   │   ├── mod.rs          # Backend module declarations
 │   │   ├── piper.rs        # Piper HTTP client
 │   │   ├── piper_server.rs # Piper persistent server lifecycle
-│   │   ├── kokoro.rs       # Kokoro-82M in-process ONNX via tts-rs
+│   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (skeleton)
 │   │   ├── kitten.rs       # Kitten TTS (skeleton)
 │   │   ├── sapi.rs         # Windows SAPI fallback
 │   │   ├── openai.rs       # OpenAI TTS cloud
@@ -277,7 +277,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **i18n**            | i18next 26, react-i18next 17                                                                    |
 | **Animation**       | Three.js 0.184, Lucide React                                                                    |
 | **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
-| **TTS**             | Piper (persistent HTTP), Kokoro (tts-rs in-process), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
+| **TTS**             | Piper (persistent HTTP), Kokoro (skeleton), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
 | **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
 | **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
 | **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |
@@ -436,6 +436,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 | ------------------------------------------------------------ | ---------------------------------------------------------------- |
 | [README.md](README.md)                                       | Project overview, quick start, architecture                      |
 | [S2B2S_REVIEW.md](S2B2S_REVIEW.md)                           | Comprehensive project analysis (non-tech users, devs, AI agents) |
+| [LLAMA_CPP.md](LLAMA_CPP.md)                                 | Pre-compiled llama.cpp server integration reference              |
 | [BUILD.md](BUILD.md)                                         | Platform-specific build instructions                             |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor guidelines                                           |
 | [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide                                                |
