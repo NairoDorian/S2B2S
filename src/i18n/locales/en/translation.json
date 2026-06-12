@@ -795,8 +795,8 @@
     "latency": {
       "ep": "EP:{{ms}}ms",
       "stt": "STT:{{ms}}ms",
-      "ttft": "TTFT:{{ms}}ms",
-      "ttfa": "TTFA:{{ms}}ms"
+      "ttft": "Token:{{ms}}ms",
+      "ttfa": "Audio:{{ms}}ms"
     }
   },
   "debug": {
