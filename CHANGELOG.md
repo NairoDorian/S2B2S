@@ -262,3 +262,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Removed
 
 - **IMPROVEMENT_PLAN.md** â€” deleted the improvement plan file.
+
+### TTS Sentence Ordering Fix
+
+- **FIFO sentence queue** — speak_sentence now sends sentences to an mpsc::channel processed by a single consumer thread. Sentences are synthesized and appended to the player in correct order, fixing out-of-order playback when short sentences synthesized faster than longer earlier ones.
+- **Tokio runtime panic fix** — The Piper backend's HTTP synthesize() creates its own tokio runtime. The channel-based approach isolates synthesis in a dedicated std::thread, avoiding the Cannot drop a runtime in a context where blocking is not allowed panic from the previous synchronous call.
