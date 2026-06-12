@@ -354,23 +354,24 @@ impl TtsManager {
         let player = self.player.clone();
         let gen_counter = self.generation.clone();
         let voice = cfg.voice.clone();
-        let speed = cfg.speed;
-        std::thread::spawn(move || {
-            if gen_counter.load(Ordering::SeqCst) != generation {
-                return;
-            }
-            match backend.synthesize(&sentence, &voice, speed) {
-                Ok(bytes) => {
-                    if gen_counter.load(Ordering::SeqCst) == generation {
-                        player.append(bytes);
-                    }
-                }
-                Err(e) => {
-                    log::error!("[TTS] sentence synthesis failed: {e}");
-                    let _ = app.emit("tts:error", e);
+
+        // Synthesize synchronously to preserve sentence order.
+        // GPU TTS is fast enough (<100ms) that this won't block the SSE stream.
+        if gen_counter.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        match backend.synthesize(&sentence, &voice, cfg.speed) {
+            Ok(bytes) => {
+                if gen_counter.load(Ordering::SeqCst) == generation {
+                    player.append(bytes);
+                    let _ = app.emit("tts:playing-changed", true);
                 }
             }
-        });
+            Err(e) => {
+                log::error!("[TTS] synthesis failed: {e}");
+                let _ = app.emit("tts:error", e);
+            }
+        }
     }
 
     /// Begin a fresh TTS session for streamed sentences (e.g. a new Brain turn).
