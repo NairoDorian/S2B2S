@@ -142,6 +142,7 @@ src-tauri/src/
 │       ├── itn.rs          # Inverse Text Normalization (spoken→written)
 │       ├── tn.rs           # Text Normalization (written→spoken)
 │       ├── markdown.rs     # Regex-based markdown stripping
+│       ├── tts_normalize.rs  # Legacy TTS normalization rules
 │       └── cleanup.rs      # Regex-based final scrub
 │
 ├── brain/

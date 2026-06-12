@@ -98,6 +98,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **S2B2S_REVIEW.md** — hooks section now includes `useLlamaState.ts`. Kokoro Backend Details updated to note synthesis pending `tts-rs` integration (voice listing works). Platform matrix: Kokoro row updated. Key Files Quick Reference now includes `llama_server/manager.rs`.
 - **Full file inventory verification** — confirmed 88 `.rs` files, 91 `.tsx` files, 28 `.ts` files, 9 GitHub Actions workflows. All documented modules verified on disk.
 
+### Third-Pass Consistency Audit
+
+- **README.md** — **critical fix**: text normalization pipeline order corrected from `ITN → Custom Words → TN → Markdown Strip` to `ITN → Custom Words → Markdown Strip → TN → Regex Cleanup` (TN must run after markdown stripping, not before). WarmEngine lifecycle expanded to include "Stopped" state (5 states, was showing 4). Roadmap: added missing "Hands-free auto-listen / continuous voice" (✅) and "Engine-switch cleanup" (now 🚧 In Progress, matching S2B2S_REVIEW.md).
+- **CLAUDE.md** — backend summary now includes `llama_server/` directory.
+- **BUILD.md** — hooks list updated to include `useLlamaState`.
+- **CONTRIBUTING.md** — backend listing now includes `llama_server/` subsystem.
+- Verified all 20 i18n locale files match CONTRIBUTING_TRANSLATIONS.md language table. Confirmed version consistency: package.json/Cargo.toml both `0.1.0`, CHANGELOG working title `v0.10`. Confirmed Kokoro and Kitten backends are both skeletons (synthesis pending).
+
 ### Code Cleanup
 
 - **Cargo.toml cleanup** — removed commented-out `[[bin]]` section for CLI; removed trailing blank line before target-specific dependencies.

@@ -35,7 +35,7 @@ Every change must work on Windows 11 (primary), macOS, and Linux. Never introduc
 
 S2B2S = Tauri 2 (Rust + React/TS)
 
-- Backend: `src-tauri/src/` — managers/, tts/, brain/, audio_toolkit/, commands/
+- Backend: `src-tauri/src/` — managers/, tts/, brain/, llama_server/, audio_toolkit/, commands/
 - Frontend: `src/` — components/, hooks/, stores/, i18n/ (20 languages)
 - IPC: tauri-specta typed bindings (`src/bindings.ts`)
 - State: Zustand → Tauri Command → Rust → SQLite/Store
