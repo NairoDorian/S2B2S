@@ -1,14 +1,24 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { listen } from "@tauri-apps/api/event";
 import { useSettings } from "../../hooks/useSettings";
+
+type BrainStatus = "disabled" | "loading" | "ready";
 
 const BrainSelector: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, setBrainProvider } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
+  const [llamaStatus, setLlamaStatus] = useState<BrainStatus>("disabled");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const brain = settings?.brain;
+
+  const deriveStatus = useCallback(() => {
+    if (!brain?.enabled) return "disabled";
+    if (brain.provider_id !== "llama_cpp") return "ready";
+    return llamaStatus === "disabled" ? "loading" : llamaStatus;
+  }, [brain?.enabled, brain?.provider_id, llamaStatus]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -23,13 +33,38 @@ const BrainSelector: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const unlistenLoading = listen("brain:llama-loading", () => {
+      setLlamaStatus("loading");
+    });
+    const unlistenReady = listen("brain:llama-ready", () => {
+      setLlamaStatus("ready");
+    });
+    const unlistenError = listen<string>("brain:llama-error", () => {
+      setLlamaStatus("ready");
+    });
+    return () => {
+      void unlistenLoading.then((fn) => fn());
+      void unlistenReady.then((fn) => fn());
+      void unlistenError.then((fn) => fn());
+    };
+  }, []);
+
   if (!brain) return null;
+
+  const status = deriveStatus();
 
   const activeProvider = brain.providers.find(
     (p) => p.id === brain.provider_id,
   );
-  const activeModel = brain.models[brain.provider_id] || "";
+  const rawModel = brain.models[brain.provider_id] || "";
   const providerLabel = activeProvider?.label || brain.provider_id;
+
+  // Display-friendly model name
+  const displayModel =
+    brain.provider_id === "llama_cpp"
+      ? "Gemma-4 2B (Local)"
+      : rawModel;
 
   const handleToggleEnabled = async () => {
     await updateSetting("brain", {
@@ -51,7 +86,9 @@ const BrainSelector: React.FC = () => {
         className="flex items-center gap-1.5 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
         title={
           brain.enabled
-            ? `Brain: ${providerLabel}${activeModel ? ` (${activeModel})` : ""}`
+            ? status === "loading"
+              ? "Brain: Loading llama.cpp model..."
+              : `Brain: ${providerLabel}${displayModel ? ` (${displayModel})` : ""}`
             : "Brain Disabled"
         }
       >
@@ -61,7 +98,11 @@ const BrainSelector: React.FC = () => {
         </span>
         <div
           className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-            brain.enabled ? "bg-green-400" : "bg-mid-gray/40"
+            status === "loading"
+              ? "bg-orange-400 animate-pulse"
+              : status === "ready"
+                ? "bg-green-400"
+                : "bg-mid-gray/40"
           }`}
         />
         <svg
@@ -86,9 +127,9 @@ const BrainSelector: React.FC = () => {
               <span className="font-semibold text-text/80">
                 {t("footer.brainTitle")}
               </span>
-              {brain.enabled && activeModel && (
+              {brain.enabled && displayModel && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
-                  {activeModel}
+                  {displayModel}
                 </span>
               )}
             </div>

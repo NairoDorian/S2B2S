@@ -13,6 +13,7 @@ mod crash_logging;
 mod helpers;
 mod input;
 mod llm_client;
+mod llama_server;
 mod managers;
 mod overlay;
 pub mod portable;
@@ -164,6 +165,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let tts_manager = Arc::new(crate::tts::manager::TtsManager::new(app_handle.clone()));
     let brain_manager = Arc::new(crate::brain::manager::BrainManager::new(app_handle.clone()));
     let llama_manager = Arc::new(crate::brain::llama_manager::LlamaManager::new(app_handle.clone()));
+    let llama_server_manager = Arc::new(crate::llama_server::manager::LlamaServerManager::new(app_handle.clone()));
 
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
@@ -176,6 +178,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(tts_manager.clone());
     app_handle.manage(brain_manager.clone());
     app_handle.manage(llama_manager.clone());
+    app_handle.manage(llama_server_manager.clone());
 
     // CopySpeak double-copy trigger (idles cheaply while disabled).
     crate::tts::clipboard_watch::start(app_handle.clone());
@@ -484,6 +487,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::brain::download_llama_models,
             commands::brain::get_llama_models_status,
             commands::brain::is_llama_downloading,
+            commands::llama_server::fetch_llama_releases,
+            commands::llama_server::download_llama_server,
+            commands::llama_server::get_downloaded_llama_servers,
+            commands::llama_server::remove_llama_server,
+            commands::llama_server::set_llama_server_active,
+            commands::llama_server::get_llama_server_config,
+            commands::llama_server::detect_gpu_type,
             commands::discovery::discover_local_brains,
             commands::discovery::is_ollama_running,
             commands::wake_word::wake_word_start,

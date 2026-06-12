@@ -8,6 +8,7 @@ export { PostProcessingSettings } from "./post-processing/PostProcessingSettings
 export { ModelsSettings } from "./models/ModelsSettings";
 export { SpeechSettings } from "./speech/SpeechSettings";
 export { BrainSettings } from "./brain/BrainSettings";
+export { LlamaCppSettings } from "./llama-cpp/LlamaCppSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

@@ -349,7 +349,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
         // Try IDXGIFactory6 first (Windows 8.1+), fall back to IDXGIFactory1
         let factory1 = match CreateDXGIFactory1::<IDXGIFactory6>() {
             Ok(f6) => {
-                log::info!("[VRAM] Created IDXGIFactory6 successfully");
+                log::debug!("[VRAM] Created IDXGIFactory6 successfully");
                 f6.cast::<IDXGIFactory1>()
                     .map_err(|e| format!("Failed to cast factory6 -> factory1: {e}"))?
             }
@@ -370,7 +370,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
 
         // Try to use GPU preference enumeration if available
         if let Some(ref f6) = factory6 {
-            log::info!("[VRAM] Using EnumAdapterByGpuPreference for adapter enumeration");
+            log::debug!("[VRAM] Using EnumAdapterByGpuPreference for adapter enumeration");
             loop {
                 let adapter: IDXGIAdapter1 = match f6
                     .EnumAdapterByGpuPreference(adapter_index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE)
@@ -386,7 +386,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
                 };
 
                 if (desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32)) != 0 {
-                    log::info!(
+                    log::debug!(
                         "[VRAM] Skipping software adapter at index {}",
                         adapter_index - 1
                     );
@@ -424,7 +424,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
                     adapter_name
                 };
 
-                log::info!(
+                log::debug!(
                     "[VRAM] Adapter {}: {} - Total: {} MB, Used: {} MB",
                     adapter_index - 1,
                     adapter_name,
@@ -453,7 +453,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
             }
         } else {
             // Fallback: use basic EnumAdapters1
-            log::info!("[VRAM] Using EnumAdapters1 (no GPU preference support)");
+            log::debug!("[VRAM] Using EnumAdapters1 (no GPU preference support)");
             loop {
                 let adapter = match factory1.EnumAdapters1(adapter_index) {
                     Ok(adapter) => adapter,
@@ -467,7 +467,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
                 };
 
                 if (desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32)) != 0 {
-                    log::info!(
+                    log::debug!(
                         "[VRAM] Skipping software adapter at index {}",
                         adapter_index - 1
                     );
@@ -501,7 +501,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
                     Err(_) => (0u64, total_vram),
                 };
 
-                log::info!(
+                log::debug!(
                     "[VRAM] Adapter {}: {} - Total: {} MB, Used: {} MB",
                     adapter_index - 1,
                     adapter_name,
@@ -527,7 +527,7 @@ fn query_active_gpu_vram() -> Result<ActiveGpuVramSnapshot, String> {
         }
 
         let snapshot = best.ok_or_else(|| "No active hardware GPU adapter detected".to_string())?;
-        log::info!(
+        log::debug!(
             "[VRAM] Selected adapter: {} - Total: {} MB, Used: {} MB, Budget: {} MB",
             snapshot.adapter_name,
             snapshot.total_vram_bytes / (1024 * 1024),
@@ -625,7 +625,7 @@ fn get_nvidia_vram_usage() -> Option<u64> {
         return None;
     }
     let used_mb: u64 = parts[0].parse().ok()?;
-    log::info!("[VRAM] nvidia-smi used: {} MB", used_mb);
+    log::debug!("[VRAM] nvidia-smi used: {} MB", used_mb);
     Some(used_mb * 1024 * 1024)
 }
 
@@ -735,7 +735,7 @@ pub fn get_active_gpu_vram_status() -> Result<GpuVramStatus, String> {
 
                 let system_free_bytes = system_total_bytes.saturating_sub(system_used_bytes);
 
-                log::info!(
+                log::debug!(
                     "[VRAM] Final: Adapter={}, Total={}MB, Used={}MB, Free={}MB, Process={}/{}MB",
                     snapshot.adapter_name,
                     system_total_bytes / (1024 * 1024),

@@ -5,6 +5,7 @@ pub mod audio;
 pub mod brain;
 pub mod discovery;
 pub mod history;
+pub mod llama_server;
 pub mod models;
 pub mod transcription;
 pub mod tts;
