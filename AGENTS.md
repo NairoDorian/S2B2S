@@ -102,14 +102,20 @@ src-tauri/src/
 ├── tray.rs                 # System tray
 ├── tray_i18n.rs            # Tray i18n labels
 ├── llm_client.rs           # Multi-provider LLM client
+├── llama_server/            # Pre-compiled llama.cpp server manager
+│   ├── mod.rs               # Module declarations
+│   └── manager.rs           # Server lifecycle, download, GPU offloading
 ├── wake_word.rs            # VAD-based wake word detection (KWS-ready)
 ├── transcription_coordinator.rs  # Record → VAD → transcribe → paste orchestrator
 │
 ├── managers/
+│   ├── mod.rs               # Module declarations
 │   ├── audio.rs            # Audio recording and device management
 │   ├── model.rs            # Model downloading and management
 │   ├── transcription.rs    # STT processing pipeline
-│   └── history.rs          # SQLite transcription/TTS history
+│   ├── transcription_mock.rs  # CI mock for testing
+│   ├── history.rs          # SQLite transcription/TTS history
+│   └── continuous_voice.rs # Hands-free voice mode management
 │
 ├── tts/                    # Text-to-Speech subsystem
 │   ├── mod.rs              # TtsBackend trait + Voice struct
@@ -118,8 +124,13 @@ src-tauri/src/
 │   ├── pagination.rs       # UTF-8-safe text chunking
 │   ├── fragment_queue.rs   # Pre-synthesis queue (unused, kept for future use)
 │   ├── clipboard_watch.rs  # Double-copy trigger
+│   ├── audio_format.rs     # WAV → MP3/OGG/FLAC conversion
+│   ├── status.rs           # Engine status reporting
+│   ├── telemetry.rs        # Per-engine performance tracking
 │   ├── backends/
-│   │   ├── piper.rs        # Warm persistent Piper HTTP server
+│   │   ├── mod.rs          # Backend module declarations
+│   │   ├── piper.rs        # Piper HTTP client
+│   │   ├── piper_server.rs # Piper persistent server lifecycle
 │   │   ├── kokoro.rs       # Kokoro-82M in-process ONNX via tts-rs
 │   │   ├── kitten.rs       # Kitten TTS (skeleton)
 │   │   ├── sapi.rs         # Windows SAPI fallback
@@ -134,18 +145,27 @@ src-tauri/src/
 │       └── cleanup.rs      # Regex-based final scrub
 │
 ├── brain/
+│   ├── mod.rs              # Module declarations
 │   ├── client.rs           # SSE streaming chat client + sentence splitter
-│   └── manager.rs          # Turn history, abort (barge-in), sentence → TTS bridge
+│   ├── manager.rs          # Turn history, abort (barge-in), sentence → TTS bridge
+│   └── llama_manager.rs    # Llama.cpp server orchestration
 │
 ├── audio_toolkit/
+│   ├── mod.rs              # Module declarations
+│   ├── constants.rs        # Sample rates, frame sizes
+│   ├── text.rs             # Text processing utilities
 │   ├── audio/
+│   │   ├── mod.rs          # Audio module declarations
 │   │   ├── device.rs       # Device enumeration
 │   │   ├── recorder.rs     # Audio recording
 │   │   ├── resampler.rs    # rubato resampling
 │   │   ├── visualizer.rs   # rustfft visualizer
 │   │   ├── noise_suppression.rs  # RNNoise (nnnoiseless)
 │   │   └── utils.rs        # Audio utilities
+│   ├── bin/
+│   │   └── cli.rs          # Audio toolkit CLI test binary
 │   └── vad/
+│       ├── mod.rs          # VAD module declarations
 │       ├── silero.rs       # Silero VAD (vad-rs)
 │       ├── smoothed.rs     # Smoothed VAD output
 │       └── triple_vad.rs   # 3-stage: RMS → RNNoise prob → Silero
@@ -156,6 +176,7 @@ src-tauri/src/
 │   ├── brain.rs            # Brain/LLM-related commands
 │   ├── discovery.rs        # Ollama/LM Studio auto-discovery
 │   ├── history.rs          # History-related commands
+│   ├── llama_server.rs     # Llama.cpp server management commands
 │   ├── models.rs           # Model management commands
 │   ├── transcription.rs    # Transcription-related commands
 │   ├── tts.rs              # TTS-related commands
@@ -197,8 +218,10 @@ src/
 │   └── AccessibilityPermissions.tsx
 │
 ├── hooks/
-│   ├── useSettings.ts      # Settings state hook
-│   └── useOsType.ts        # OS type detection hook
+│   ├── useLlamaState.ts     # Llama.cpp server & VRAM state
+│   ├── useOsType.ts         # OS type detection hook
+│   ├── useProviderState.ts  # Shared provider state management
+│   └── useSettings.ts       # Settings state hook
 │
 ├── stores/
 │   ├── settingsStore.ts    # Zustand store (settings state)
@@ -213,8 +236,11 @@ src/
 │
 ├── lib/
 │   ├── types.ts            # Shared TS types
+│   ├── constants/          # Application constants
 │   ├── types/              # Type definitions (events, etc.)
-│   └── utils/              # Utility functions (RTL, etc.)
+│   └── utils/              # Utility functions (format, keyboard, RTL, etc.)
+│
+├── utils/                  # Shared utility functions (dateFormat, etc.)
 │
 ├── overlay/                # Recording overlay window entry
 └── assets/                 # Static assets (logo, icons)
@@ -234,7 +260,7 @@ src/
 
 **State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
-**Text Normalization (4-pass):**
+**Text Normalization (5-Stage):**
 
 ```
 Post-STT: ITN (text-processing-rs) → Custom Words (fuzzy correction)

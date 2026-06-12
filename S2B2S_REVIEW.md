@@ -1261,7 +1261,8 @@ S2B2S/
 │   │   ├── 📁 brain/             # LLM subsystem
 │   │   │   ├── 📄 mod.rs         # Module declarations
 │   │   │   ├── 📄 client.rs      # SSE streaming client
-│   │   │   └── 📄 manager.rs     # Turn history, barge-in
+│   │   │   ├── 📄 manager.rs     # Turn history, barge-in
+│   │   │   └── 📄 llama_manager.rs  # Llama.cpp server orchestration
 │   │   │
 │   │   ├── 📁 audio_toolkit/     # Audio processing
 │   │   │   ├── 📄 mod.rs         # Module declarations
@@ -1281,12 +1282,13 @@ S2B2S/
 │   │   │   └── 📁 bin/
 │   │   │       └── 📄 cli.rs     # Audio toolkit CLI test
 │   │   │
-│   │   ├── 📁 commands/          # 8 Tauri command modules
+│   │   ├── 📁 commands/          # 10 Tauri command modules
 │   │   │   ├── 📄 mod.rs         # Module declarations
 │   │   │   ├── 📄 audio.rs       # Audio device/recording cmds
 │   │   │   ├── 📄 brain.rs       # Brain/LLM commands
 │   │   │   ├── 📄 discovery.rs   # Ollama/LM Studio discovery
 │   │   │   ├── 📄 history.rs     # History CRUD commands
+│   │   │   ├── 📄 llama_server.rs  # Llama.cpp server management
 │   │   │   ├── 📄 models.rs      # Model management cmds
 │   │   │   ├── 📄 transcription.rs  # STT pipeline cmds
 │   │   │   ├── 📄 tts.rs         # TTS engine commands
@@ -1301,6 +1303,10 @@ S2B2S/
 │   │   ├── 📁 helpers/           # Helper utilities
 │   │   │   ├── 📄 mod.rs         # Module declarations
 │   │   │   └── 📄 clamshell.rs  # Clamshell mode detection
+│   │   │
+│   │   ├── 📁 llama_server/       # Pre-compiled llama.cpp manager
+│   │   │   ├── 📄 mod.rs         # Module declarations
+│   │   │   └── 📄 manager.rs     # Server lifecycle, download, GPU offload
 │   │
 │   ├── 📄 Cargo.toml             # Rust dependencies (60+ crates)
 │   ├── 📄 Cargo.lock             # Locked dependency versions
@@ -1365,6 +1371,13 @@ S2B2S/
 | Wake word (VAD-based)                                 | Simple energy-threshold detection; KWS blocked on CRT linking  |
 | Ollama/LM Studio/llama.cpp auto-discovery             | Probes :11434, :1234, :8080 for running servers                |
 | Latency HUD                                           | Per-stage timestamps (EP, STT, TTFT, TTFA) color-coded display |
+| Pre-compiled llama.cpp server                         | Drop-in CUDA/Vulkan/CPU GPU acceleration, auto-download, VRAM offloading |
+| Llama.cpp settings tab                                | Manage server binaries, GPU detection, backend switching        |
+| Performance metrics                                   | Tokens/sec, STT/TTS latency per message                         |
+| GPU VRAM usage indicator                              | Green/yellow/red with hover tooltip, per-second polling         |
+| Log viewer console                                    | Level filter, search, auto-refresh, copy to clipboard           |
+| Footer status indicators                              | STT 🟢, Brain 🟢, TTS 🟢 with hover tooltips                   |
+| Hands-free auto-listen / continuous voice             | Auto rearms mic after Brain+TTS finishes                        |
 
 ### In Progress (🚧)
 

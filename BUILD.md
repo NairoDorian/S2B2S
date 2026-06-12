@@ -248,6 +248,13 @@ S2B2S/
 │   └── ...
 ├── src-tauri/             # Backend (Rust)
 │   ├── src/               # Rust source
+│   │   ├── managers/      # Business logic (audio, model, transcription, history)
+│   │   ├── tts/           # TTS subsystem (7 backends)
+│   │   ├── brain/         # LLM subsystem (SSE client + llama.cpp bridge)
+│   │   ├── llama_server/  # Pre-compiled llama.cpp manager
+│   │   ├── audio_toolkit/ # Audio processing + VAD
+│   │   ├── commands/      # Tauri command handlers
+│   │   └── ...
 │   ├── resources/         # Static resources (models, icons)
 │   ├── Cargo.toml         # Rust dependencies
 │   └── tauri.conf.json    # Tauri configuration
