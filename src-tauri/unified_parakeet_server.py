@@ -318,8 +318,9 @@ def transcribe(audio: bytes) -> str:
 # Shared RNNT frame-by-frame decoder  (used by both offline and streaming)
 # ============================================================================
 def _targets_dtype(cfg: dict) -> np.dtype:
-    """EOU models expect int32; Unified (SentencePiece) models expect int64 (matching parakeet-rs)."""
-    return np.dtype(np.int64) if cfg.get("family") == "unified" else np.dtype(np.int32)
+    """Both EOU and Unified ONNX models expect int32 for targets.
+    (parakeet-rs uses i64 because the Rust ort crate auto-casts.)"""
+    return np.dtype(np.int32)
 
 
 def _decode_frames(
