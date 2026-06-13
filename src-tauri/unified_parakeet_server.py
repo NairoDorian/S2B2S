@@ -295,13 +295,7 @@ def transcribe(audio: bytes) -> str:
         return ""
     cfg = MODEL["config"]
     features = extract_features(samples, MODEL["mel_basis"], normalize=cfg["mel_normalize"])
-    encoder = MODEL["encoder"]
-    enc_input = features.T[np.newaxis, :, :]
-    enc_len = np.array([features.shape[0]], dtype=np.int64)
-    enc_out = encoder.run(None, {"audio_signal": enc_input, "length": enc_len})
-    encoded = enc_out[0]
-    enc_len_out = int(enc_out[1][0])
-    frame_count = min(enc_len_out, encoded.shape[2])
+    encoded, frame_count = _encoder_forward(MODEL["encoder"], features)
     if frame_count == 0:
         return ""
     tokens = _decode_frames(
@@ -318,9 +312,21 @@ def transcribe(audio: bytes) -> str:
 # Shared RNNT frame-by-frame decoder  (used by both offline and streaming)
 # ============================================================================
 def _targets_dtype(cfg: dict) -> np.dtype:
-    """Both EOU and Unified ONNX models expect int32 for targets.
-    (parakeet-rs uses i64 because the Rust ort crate auto-casts.)"""
-    return np.dtype(np.int32)
+    """EOU expects int32; Unified expects float32 (different ONNX export conventions)."""
+    return np.dtype(np.float32) if cfg.get("family") == "unified" else np.dtype(np.int32)
+
+
+def _encoder_forward(encoder, features):
+    """Run encoder and return (encoded, frame_count). Handles 1 or 2 output models."""
+    enc_input = features.T[np.newaxis, :, :]  # (1, 128, T)
+    enc_len = np.array([features.shape[0]], dtype=np.int64)
+    enc_out = encoder.run(None, {"audio_signal": enc_input, "length": enc_len})
+    encoded = enc_out[0]  # (1, D, T_enc)
+    if len(enc_out) >= 2:
+        frame_count = min(int(enc_out[1][0]), encoded.shape[2])
+    else:
+        frame_count = encoded.shape[2]
+    return encoded, frame_count
 
 
 def _decode_frames(
@@ -438,13 +444,7 @@ def _stream_feed(audio_bytes: bytes) -> dict:
 
     # Recompute mel + encoder on full accumulated audio
     features = extract_features(full_audio, MODEL["mel_basis"], normalize=cfg["mel_normalize"])
-    encoder = MODEL["encoder"]
-    enc_input = features.T[np.newaxis, :, :]
-    enc_len = np.array([features.shape[0]], dtype=np.int64)
-    enc_out = encoder.run(None, {"audio_signal": enc_input, "length": enc_len})
-    encoded = enc_out[0]
-    enc_len_out = int(enc_out[1][0])
-    frame_count = min(enc_len_out, encoded.shape[2])
+    encoded, frame_count = _encoder_forward(MODEL["encoder"], features)
 
     if frame_count <= STREAM["decoded_frame"]:
         return {"text": _decode_stream_tokens(), "eou": STREAM["found_eou"]}
