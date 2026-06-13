@@ -9,6 +9,45 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading, and 20-turn conversation memory.
 
+### Overlay Architecture — Tauri/OS-Native Toggle + WGPU Trail Foundation
+
+- **`OverlayMode` toggle** — Settings → Overlay Window now lets users switch between `Tauri` mode (CopySpeak HUD style — `always_on_top` + `transparent` only) and `OsNative` mode (Handy style — NSPanel on macOS, Win32 `HWND_TOPMOST` on Windows, GTK layer-shell on Linux). Both modes share the same window label and event bus.
+- **`OverlayWindowConfig`** — New settings struct controlling mode, position, width/height, opacity, corner radius, reply bubble toggle, and fade-out duration. Persisted via `tauri-plugin-store` with serde defaults.
+- **`WgpuTrailConfig`** — New settings struct for the native GPU cursor trail: segments, spring stiffness (0.39), friction (0.5), width taper exponent (1.5), glow opacity, lazy-brush radius/friction, click ripple toggle. All with TD_Web_Trail–derived defaults.
+- **`overlay.rs` refactored** — `create_recording_overlay` (both macOS and non-macOS variants) now respects `OverlayMode`. In Tauri mode: macOS skips NSPanel and uses plain `WebviewWindowBuilder`; Linux skips GTK layer-shell init; Windows skips `force_overlay_topmost()`. `calculate_overlay_position` uses configurable dimensions from `OverlayWindowConfig`. `hide_recording_overlay` uses configurable `fade_ms`.
+- **`overlay_fx/` Rust module** — New crate-internal module at `src-tauri/src/overlay_fx/` containing:
+  - `trail.rs` — Spring-friction chain physics engine + Catmull-Rom spline interpolation, ported from `TD_Web_Trail`. Lazy-brush dead-zone filter with non-linear damping. Trail system with idle-sleep after 2s of no movement. Includes unit tests.
+  - `window.rs` — `brain_overlay` window creation (transparent, click-through `set_ignore_cursor_events`, always-on-top). Show/hide helpers. Windows re-asserts topmost via `SetWindowPos`.
+  - `cursor_follow.rs` — ~30 Hz cursor polling loop using `enigo` (already a dependency). Quadrant-aware bubble positioning.
+  - `placement.rs` — `compute_bubble_anchor()` with DPI scaling and monitor-aware quadrant flipping.
+  - `events.rs` — `OverlayPhase` 8-state machine (Idle/Listening/Thinking/Seeing/Speaking/Done/Error/Hidden) + cursor/bubble payloads. All typed via specta.
+  - `capabilities.rs` — Per-OS GPU/cursor/layer-shell capability probe.
+  - `commands.rs` — 3 Tauri IPC commands: `overlay_fx_probe_capabilities`, `overlay_fx_show_conversation`, `overlay_fx_dismiss`.
+- **`brain_overlay` frontend** — New multi-page Vite entry at `src/brain-overlay/`:
+  - `index.html` — Transparent standalone HTML page.
+  - `main.tsx` — React 19 root with i18n support.
+  - `BrainOverlayApp.tsx` — State-driven UI: avatar placeholder (72px circle with phase-dependent emoji) + streaming reply bubble (glassmorphism with live cursor blink). Listens to `overlay:state`, `overlay:append`, `overlay:clear` events.
+- **`vite.config.ts`** — Added `brain_overlay` entry to multi-page Rollup input.
+- **Settings frontend tabs** — Two new sidebar tabs registered in `SECTIONS_CONFIG`:
+  - **Overlay Window** (`Monitor` icon) — OverlayMode selector (Tauri/OS-Native dropdown) + Reply Bubble toggle.
+  - **WGPU Trail** (`Zap` icon) — Enable toggle + Click Ripple toggle.
+- **i18n keys** — 20+ new keys in `en/translation.json` under `settings.advanced.overlayWindow.*`, `settings.advanced.wgpuTrail.*`, and `sidebar.overlayWindow`/`sidebar.wgpuTrail`.
+- **Typed bindings regenerated** — All new structs and commands exported to `src/bindings.ts` via `cargo test export_bindings`.
+
+### Futuristic Analysis — Transparent Overlay Vision Documents
+
+- **`futuristic_analysis/`** — 9 Markdown documents (00–08) analyzing the path from today's S2B2S to a full GPU transparent overlay with 3D avatar:
+  - `00_README_START_HERE.md` — Master index, architecture overview, core principles.
+  - `01_S2B2S_REVIEW.md` — Honest audit of current code: what works, what's missing.
+  - `02_REFERENCE_PROJECTS.md` — Deep read of `TD_Web_Trail` and `Cross_Platform_Rust_WebGPU_CursorFX` (both cloned at `../` for live reference). Exact techniques to lift, including the DX12 OOM / Vulkan+N.VAPI fix.
+  - `03_GPU_OVERLAY_ARCHITECTURE.md` — Two-track rendering (webview + native wgpu), per-OS technique matrix, DPI/click-through/perf budgets, failure ladder.
+  - `04_CONVERSATION_MODE_2.md` — UX spec: state machine, event contract, reply bubble, quick actions, coexistence with recording pill.
+  - `05_VISION_AND_SCREEN_UNDERSTANDING.md` — Screen capture (full + region), multimodal `ChatMessage` upgrade, cross-platform capture matrix, privacy invariants.
+  - `06_AVATAR_SPEC.md` — 3D cybernetic avatar spec: 4 senses → pipeline signals map, Catmull-Rom visual language, skins system, reduced-motion accessibility.
+  - `07_IMPLEMENTATION_ROADMAP.md` — 5-phase plan with file-level tasks, risk register, test matrix, performance targets.
+  - `08_TRANSPARENT_OVERLAY_IMPL_PLAN.md` — Concrete code-level plan bridging analysis to actual patterns from the cloned reference repos.
+- **Reference repos cloned** — `Cross_Platform_Rust_WebGPU_CursorFX` (Tauri V2 + wgpu transparent overlay, Vulkan + NVAPI fix) and `TD_Web_Trail` (spring-friction chain physics, 4-pass neon glow, Catmull-Rom splines, idle-sleep optimization) now live at the root `AZ/` directory alongside S2B2S.
+
 ### Model Directory Restructure (STT / Brain / TTS)
 
 - **Master `models/` organization** — All model files now live in three category subdirectories: `models/STT/` (speech-to-text: Parakeet, Silero VAD, Whisper), `models/Brain/` (LLM: llama.cpp GGUF), `models/TTS/` (text-to-speech: Kokoro, Piper, Pocket, Kitten). Each engine has its own folder inside its category.

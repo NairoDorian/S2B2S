@@ -16,6 +16,7 @@ mod llm_client;
 mod llama_server;
 mod managers;
 mod overlay;
+mod overlay_fx;
 pub mod portable;
 mod settings;
 mod shortcut;
@@ -505,6 +506,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::wake_word::wake_word_status,
             helpers::clamshell::is_laptop,
             commands::system::get_system_ram,
+            crate::overlay_fx::commands::overlay_fx_probe_capabilities,
+            crate::overlay_fx::commands::overlay_fx_show_conversation,
+            crate::overlay_fx::commands::overlay_fx_dismiss,
         ])
         .events(collect_events![managers::history::HistoryUpdatePayload,])
 }

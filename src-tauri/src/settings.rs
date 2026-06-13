@@ -601,6 +601,140 @@ pub enum OverlayPosition {
     Bottom,
 }
 
+/// Overlay approach: Tauri-only (CopySpeak HUD style — alwaysOnTop + transparent)
+/// or OS-native (NSPanel/Win32 HWND_TOPMOST/GTK layer-shell — Handy style).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayMode {
+    /// Tauri `always_on_top(true)` + `transparent(true)` only — simpler, fewer deps.
+    Tauri,
+    /// Per-OS native window APIs (NSPanel, Win32 topmost, GTK layer-shell).
+    OsNative,
+}
+
+impl Default for OverlayMode {
+    fn default() -> Self {
+        OverlayMode::OsNative
+    }
+}
+
+/// Configuration for the recording overlay window (the pill shown during dictation/TTS).
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct OverlayWindowConfig {
+    /// Which overlay approach to use.
+    #[serde(default)]
+    pub mode: OverlayMode,
+    /// Position on screen.
+    #[serde(default = "default_overlay_position")]
+    pub position: OverlayPosition,
+    /// Overlay width in logical pixels.
+    #[serde(default = "default_overlay_pill_width")]
+    pub width: u32,
+    /// Overlay height in logical pixels.
+    #[serde(default = "default_overlay_pill_height")]
+    pub height: u32,
+    /// Overlay background opacity (0.0–1.0).
+    #[serde(default = "default_overlay_opacity")]
+    pub opacity: f32,
+    /// Round the corners with this radius (0 = square).
+    #[serde(default = "default_overlay_corner_radius")]
+    pub corner_radius: f32,
+    /// Show a text reply bubble next to the cursor during Brain conversation.
+    #[serde(default = "default_overlay_reply_bubble")]
+    pub reply_bubble: bool,
+    /// Fade-out time in milliseconds.
+    #[serde(default = "default_overlay_fade_ms")]
+    pub fade_ms: u32,
+}
+
+fn default_overlay_pill_width() -> u32 { 172 }
+fn default_overlay_pill_height() -> u32 { 36 }
+fn default_overlay_opacity() -> f32 { 0.8 }
+fn default_overlay_corner_radius() -> f32 { 18.0 }
+fn default_overlay_reply_bubble() -> bool { false }
+fn default_overlay_fade_ms() -> u32 { 300 }
+
+impl Default for OverlayWindowConfig {
+    fn default() -> Self {
+        Self {
+            mode: OverlayMode::default(),
+            position: default_overlay_position(),
+            width: default_overlay_pill_width(),
+            height: default_overlay_pill_height(),
+            opacity: default_overlay_opacity(),
+            corner_radius: default_overlay_corner_radius(),
+            reply_bubble: default_overlay_reply_bubble(),
+            fade_ms: default_overlay_fade_ms(),
+        }
+    }
+}
+
+/// Cursor trail / wgpu overlay effect configuration (CursorFX + TD_Web_Trail).
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct WgpuTrailConfig {
+    /// Master enable for the native wgpu cursor trail.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Trail colour as hex string (e.g. "#7c3aed").
+    #[serde(default = "default_trail_color")]
+    pub color: String,
+    /// Number of trail segments (chain length).
+    #[serde(default = "default_trail_segments")]
+    pub segments: u32,
+    /// Spring stiffness for the physics chain (0.0–1.0).
+    #[serde(default = "default_trail_spring")]
+    pub spring: f32,
+    /// Velocity friction / damping (0.0–1.0).
+    #[serde(default = "default_trail_friction")]
+    pub friction: f32,
+    /// Base trail width in logical pixels at the head.
+    #[serde(default = "default_trail_width")]
+    pub width: f32,
+    /// Width taper exponent (e.g. 1.5 = trail tapers toward tail).
+    #[serde(default = "default_trail_taper")]
+    pub taper: f32,
+    /// Opacity of the glow pass (0.0–1.0).
+    #[serde(default = "default_trail_glow")]
+    pub glow: f32,
+    /// Lazy-brush dead-zone radius in logical pixels.
+    #[serde(default = "default_trail_lazy_radius")]
+    pub lazy_radius: f32,
+    /// Lazy-brush friction factor (0.0–1.0).
+    #[serde(default = "default_trail_lazy_friction")]
+    pub lazy_friction: f32,
+    /// Enable cursor click ripple effect.
+    #[serde(default)]
+    pub click_ripple: bool,
+}
+
+fn default_trail_color() -> String { "#7c3aed".to_string() }
+fn default_trail_segments() -> u32 { 50 }
+fn default_trail_spring() -> f32 { 0.39 }
+fn default_trail_friction() -> f32 { 0.5 }
+fn default_trail_width() -> f32 { 3.0 }
+fn default_trail_taper() -> f32 { 1.5 }
+fn default_trail_glow() -> f32 { 0.6 }
+fn default_trail_lazy_radius() -> f32 { 8.0 }
+fn default_trail_lazy_friction() -> f32 { 0.4 }
+
+impl Default for WgpuTrailConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: default_trail_color(),
+            segments: default_trail_segments(),
+            spring: default_trail_spring(),
+            friction: default_trail_friction(),
+            width: default_trail_width(),
+            taper: default_trail_taper(),
+            glow: default_trail_glow(),
+            lazy_radius: default_trail_lazy_radius(),
+            lazy_friction: default_trail_lazy_friction(),
+            click_ripple: false,
+        }
+    }
+}
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
@@ -822,6 +956,12 @@ pub struct AppSettings {
     pub selected_language: String,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
+    /// Overlay window behaviour + visual customization.
+    #[serde(default)]
+    pub overlay_window: OverlayWindowConfig,
+    /// Native wgpu cursor trail + click ripple effects.
+    #[serde(default)]
+    pub wgpu_trail: WgpuTrailConfig,
     #[serde(default = "default_debug_mode")]
     pub debug_mode: bool,
     #[serde(default = "default_log_level")]
@@ -1408,6 +1548,8 @@ pub fn get_default_settings() -> AppSettings {
         translate_to_english: false,
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
+        overlay_window: OverlayWindowConfig::default(),
+        wgpu_trail: WgpuTrailConfig::default(),
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),

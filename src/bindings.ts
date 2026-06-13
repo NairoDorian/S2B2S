@@ -240,6 +240,12 @@ export const commands = {
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
 	getSystemRam: () => typedError<SystemRamInfo, string>(__TAURI_INVOKE("get_system_ram")),
+	/**  Probe the current machine's overlay capabilities (WebGPU, Vulkan, cursor position, etc.). */
+	overlayFxProbeCapabilities: () => __TAURI_INVOKE<OverlayCapabilities>("overlay_fx_probe_capabilities"),
+	/**  Show the brain overlay at the cursor position and begin conversation. */
+	overlayFxShowConversation: () => typedError<null, string>(__TAURI_INVOKE("overlay_fx_show_conversation")),
+	/**  Hide the brain overlay and end the conversation. */
+	overlayFxDismiss: () => typedError<null, string>(__TAURI_INVOKE("overlay_fx_dismiss")),
 };
 
 /** Events */
@@ -265,6 +271,10 @@ export type AppSettings = {
 	translate_to_english?: boolean,
 	selected_language?: string,
 	overlay_position?: OverlayPosition,
+	/**  Overlay window behaviour + visual customization. */
+	overlay_window?: OverlayWindowConfig,
+	/**  Native wgpu cursor trail + click ripple effects. */
+	wgpu_trail?: WgpuTrailConfig,
 	debug_mode?: boolean,
 	log_level?: LogLevel,
 	custom_words?: string[],
@@ -529,7 +539,47 @@ export type OpenAIConfig = {
 
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm";
 
+/**  Overlay capability probe result — returned to the frontend, typed via specta. */
+export type OverlayCapabilities = {
+	os: string,
+	webgpu: boolean,
+	vulkan: boolean,
+	cursor_position: boolean,
+	layer_shell: boolean,
+	native_transparent: boolean,
+};
+
+/**
+ *  Overlay approach: Tauri-only (CopySpeak HUD style — alwaysOnTop + transparent)
+ *  or OS-native (NSPanel/Win32 HWND_TOPMOST/GTK layer-shell — Handy style).
+ */
+export type OverlayMode = 
+/**  Tauri `always_on_top(true)` + `transparent(true)` only — simpler, fewer deps. */
+"tauri" | 
+/**  Per-OS native window APIs (NSPanel, Win32 topmost, GTK layer-shell). */
+"os_native";
+
 export type OverlayPosition = "none" | "top" | "bottom";
+
+/**  Configuration for the recording overlay window (the pill shown during dictation/TTS). */
+export type OverlayWindowConfig = {
+	/**  Which overlay approach to use. */
+	mode?: OverlayMode,
+	/**  Position on screen. */
+	position?: OverlayPosition,
+	/**  Overlay width in logical pixels. */
+	width?: number,
+	/**  Overlay height in logical pixels. */
+	height?: number,
+	/**  Overlay background opacity (0.0–1.0). */
+	opacity?: number | null,
+	/**  Round the corners with this radius (0 = square). */
+	corner_radius?: number | null,
+	/**  Show a text reply bubble next to the cursor during Brain conversation. */
+	reply_bubble?: boolean,
+	/**  Fade-out time in milliseconds. */
+	fade_ms?: number,
+};
 
 export type PaginatedHistory = {
 	entries: HistoryEntry[],
@@ -666,6 +716,32 @@ export type WakeWordConfig = {
 	keyword: string,
 	threshold: number | null,
 	show_indicator: boolean,
+};
+
+/**  Cursor trail / wgpu overlay effect configuration (CursorFX + TD_Web_Trail). */
+export type WgpuTrailConfig = {
+	/**  Master enable for the native wgpu cursor trail. */
+	enabled?: boolean,
+	/**  Trail colour as hex string (e.g. "#7c3aed"). */
+	color?: string,
+	/**  Number of trail segments (chain length). */
+	segments?: number,
+	/**  Spring stiffness for the physics chain (0.0–1.0). */
+	spring?: number | null,
+	/**  Velocity friction / damping (0.0–1.0). */
+	friction?: number | null,
+	/**  Base trail width in logical pixels at the head. */
+	width?: number | null,
+	/**  Width taper exponent (e.g. 1.5 = trail tapers toward tail). */
+	taper?: number | null,
+	/**  Opacity of the glow pass (0.0–1.0). */
+	glow?: number | null,
+	/**  Lazy-brush dead-zone radius in logical pixels. */
+	lazy_radius?: number | null,
+	/**  Lazy-brush friction factor (0.0–1.0). */
+	lazy_friction?: number | null,
+	/**  Enable cursor click ripple effect. */
+	click_ripple?: boolean,
 };
 
 export type WhisperAcceleratorSetting = "auto" | "cpu" | "gpu";
