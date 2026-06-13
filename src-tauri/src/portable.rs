@@ -90,6 +90,21 @@ pub fn store_path(relative: &str) -> PathBuf {
     }
 }
 
+/// Resolve the STT models directory: `<app_data>/models/STT/`.
+pub fn stt_models_dir(app: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
+    Ok(app_data_dir(app)?.join("models").join("STT"))
+}
+
+/// Resolve the Brain models directory: `<app_data>/models/Brain/`.
+pub fn brain_models_dir(app: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
+    Ok(app_data_dir(app)?.join("models").join("Brain"))
+}
+
+/// Resolve the TTS models directory: `<app_data>/models/TTS/`.
+pub fn tts_models_dir(app: &tauri::AppHandle) -> Result<PathBuf, tauri::Error> {
+    Ok(app_data_dir(app)?.join("models").join("TTS"))
+}
+
 /// Check if a marker file path contains the portable magic string.
 /// Extracted for testability.
 fn is_valid_portable_marker(path: &std::path::Path) -> bool {

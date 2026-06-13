@@ -38,9 +38,11 @@ AVAILABLE_VOICES = POCKET_VOICES[:]
 
 
 def resolve_local_models_dir():
-    """Find the local models directory relative to this script."""
+    """Find the local TTS models directory relative to this script."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
+        os.path.join(script_dir, "models", "TTS"),
+        os.path.join(os.getcwd(), "models", "TTS"),
         os.path.join(script_dir, "models"),
         os.path.join(os.getcwd(), "models"),
     ]

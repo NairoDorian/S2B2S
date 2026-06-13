@@ -42,6 +42,33 @@ blob-report/
 
 # Nix build output
 result
-models/
+# Model binary files (downloaded via scripts — organized under models/STT/, models/Brain/, models/TTS/)
+models/STT/**/*.onnx
+models/STT/**/*.bin
+models/STT/**/*.tar.gz
+models/STT/**/*.json
+models/STT/**/*.txt
+models/Brain/**/*.gguf
+models/Brain/**/*.bin
+models/TTS/**/*.onnx
+models/TTS/**/*.onnx.json
+models/TTS/**/*.bin
+models/TTS/**/*.safetensors
+models/TTS/**/*.tar.gz
+models/TTS/**/*.zip
+models/TTS/**/*.json
+models/TTS/**/*.txt
+models/TTS/kokoro/
+models/TTS/piper-voices/
+models/TTS/pocket/hub/
+models/TTS/pocket/xet/
+
+# Keep download scripts and helpers in models/ root
+!models/*.ps1
+!models/*.py
+!models/*.sh
+
 llama.cpp/
+venv/
 __pycache__/
+test_models_download_remove_once_finished/

@@ -8,11 +8,12 @@ const POCKET_VOICES: &[&str] = &[
     "fantine", "cosette", "eponine", "azelma",
 ];
 
-const CLONED_VOICES_DIR: &str = "pocket-cloned-voices";
+const CLONED_VOICES_DIR: &str = "TTS/pocket-cloned-voices";
 
 pub fn cloned_voices_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
     crate::portable::app_data_dir(app)
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("models")
         .join(CLONED_VOICES_DIR)
 }
 

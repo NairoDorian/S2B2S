@@ -56,14 +56,20 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 ### Development Setup
 
 ```bash
-# Prerequisites: Rust (latest stable), Bun
+# Prerequisites: Rust (latest stable), Bun, Python 3.8+
+
+# 1. Install dependencies
 bun install
 
-# Download required models
-mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+# 2. Set up Python virtual environment for TTS engines
+#    Windows: .\scripts\setup_tts_venv.ps1
+#    macOS/Linux: bash scripts/setup_tts_venv.sh
 
-# Run in development mode
+# 3. Download model files (organized as models/STT/, models/Brain/, models/TTS/)
+#    Windows: .\models\download_models.ps1 -Model all --setup-venv
+#    macOS/Linux: bash models/download_models.sh --model all --setup-venv
+
+# 4. Run in development mode
 bun run tauri dev
 
 # On macOS if you encounter cmake errors:
@@ -149,6 +155,21 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 - **TripleVAD**: 3-stage voice activity detection (RMS → RNNoise → Silero)
 - **Normalization pipeline**: ITN → Custom Words → Markdown Strip → TN → Regex Cleanup
 - **Single instance** architecture with CLI remote control
+
+### Model Directory Structure
+
+```
+models/
+├── STT/         # Speech-to-text (Parakeet V3, Silero VAD, Whisper)
+├── Brain/       # LLM models (llama.cpp GGUF)
+└── TTS/         # Text-to-speech engines
+    ├── kokoro/        # Kokoro-82M ONNX + voices
+    ├── piper-voices/  # Piper voice files (.onnx + .json)
+    ├── pocket/        # Pocket TTS (auto-downloaded)
+    └── kitten/        # Kitten TTS (auto-downloaded)
+```
+
+All models, voices, and Brain GGUF files are organized under a master `models/` folder with three category subdirectories. The app resolves paths project-local first (`S2B2S/models/`) and falls back to the OS app data directory for installed builds. Python virtual environment is at `venv/` and used by all local TTS engines.
 
 ### Core Libraries
 
@@ -286,10 +307,11 @@ Unix signals (Linux/macOS):
 
 **TTS Backends:**
 
-- Piper: CPU/CUDA, ~100-200 MB RAM per voice. Python `piper-tts[http]` required.
-- Kokoro-82M: CPU-only, ~115 MB ONNX model. Python `kokoro-tts` or CLI required. 54 voices across 9 languages.
-- Kitten: CPU-only, ~25-80 MB ONNX models. Python `kittentts` required. 8 English voices.
-- Pocket: CPU/GPU (PyTorch), ~100 MB. Python `pocket-tts` required. 8 character voices.
+- Piper: CPU/CUDA, ~100-200 MB RAM per voice. Runs via project-local Python venv.
+- Kokoro-82M: CPU-only, ~115 MB ONNX model. Runs via project-local Python venv. 54 voices across 9 languages.
+- Kitten: CPU-only, ~25-80 MB ONNX models. Runs via project-local Python venv. 8 English voices.
+- Pocket: CPU/GPU (PyTorch), ~100 MB. Runs via project-local Python venv. 8 character voices.
+- All local TTS engines use the project `venv/` — no system Python packages required.
 - Cloud engines: Requires internet connection and API key.
 
 ---

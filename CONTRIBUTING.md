@@ -36,12 +36,21 @@ S2B2S aims to be the most forkable voice-native desktop app. The goal is to crea
 2. **Clone your fork**: `git clone git@github.com:YOUR_USERNAME/S2B2S.git`
 3. **Add upstream remote**: `git remote add upstream git@github.com:NairoDorian/S2B2S.git`
 4. **Install dependencies**: `bun install`
-5. **Download required models**:
+5. **Set up Python venv** (for TTS engines):
    ```bash
-   mkdir -p src-tauri/resources/models
-   curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+   # Windows
+   .\scripts\setup_tts_venv.ps1
+   # macOS/Linux
+   bash scripts/setup_tts_venv.sh
    ```
-6. **Run in development mode**: `bun run tauri dev` (macOS: `CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev`)
+6. **Download required models**:
+   ```bash
+   # Windows
+   .\models\download_models.ps1
+   # macOS/Linux
+   bash models/download_models.sh
+   ```
+7. **Run in development mode**: `bun run tauri dev` (macOS: `CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev`)
 
 ### Understanding the Codebase
 

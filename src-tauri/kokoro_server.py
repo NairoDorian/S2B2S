@@ -52,19 +52,21 @@ def resolve_local_path(filename):
     """Search for a model file in common local locations.
 
     Priority:
-    1. <script_dir>/models/kokoro/<filename>   (S2B2S project local)
-    2. <cwd>/models/kokoro/<filename>           (running from project root)
-    3. <script_dir>/kokoro/<filename>            (legacy src-tauri local)
-    4. <cwd>/kokoro/<filename>                   (legacy CWD local)
+    1. <script_dir>/models/TTS/kokoro/<filename>   (S2B2S project local)
+    2. <cwd>/models/TTS/kokoro/<filename>           (running from project root)
+    3. <script_dir>/models/kokoro/<filename>         (legacy flat)
+    4. <cwd>/models/kokoro/<filename>                 (legacy cwd)
+    5. <script_dir>/kokoro/<filename>                  (legacy src-tauri local)
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     cwd = os.getcwd()
 
     candidates = [
+        os.path.join(script_dir, "models", "TTS", "kokoro", filename),
+        os.path.join(cwd, "models", "TTS", "kokoro", filename),
         os.path.join(script_dir, "models", "kokoro", filename),
         os.path.join(cwd, "models", "kokoro", filename),
         os.path.join(script_dir, "kokoro", filename),
-        os.path.join(cwd, "kokoro", filename),
     ]
 
     for p in candidates:

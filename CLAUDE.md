@@ -22,8 +22,12 @@ This project has comprehensive documentation for AI coding assistants. Please re
 
 ```bash
 bun install
-mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+# Set up Python venv for TTS engines:
+#   Windows: .\scripts\setup_tts_venv.ps1
+#   macOS/Linux: bash scripts/setup_tts_venv.sh
+# Download models:
+#   Windows: .\models\download_models.ps1
+#   macOS/Linux: bash models/download_models.sh
 bun run tauri dev
 ```
 

@@ -90,18 +90,18 @@ impl KokoroBackend {
     }
 
     /// Find Kokoro model paths for passing to the server script.
-    /// Priority: project-local models/kokoro/ > app data dir > CWD fallbacks.
+    /// Priority: project-local models/TTS/kokoro/ > app data dir > CWD fallbacks.
     pub fn kokoro_model_args() -> Vec<String> {
         let model_name = "kokoro-v1.0.onnx";
         let voices_name = "voices-v1.0.bin";
 
         let search_paths: Vec<Option<std::path::PathBuf>> = vec![
-            // 1. Project-root: S2B2S/models/kokoro/ (canonical dev location)
-            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("models").join("kokoro")),
-            // 2. CWD-based: models/kokoro/ (running from project root)
+            // 1. Project-root: S2B2S/models/TTS/kokoro/ (canonical dev location)
+            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("models").join("TTS").join("kokoro")),
+            // 2. CWD-based: models/TTS/kokoro/ (running from project root)
+            std::env::current_dir().ok().map(|d| d.join("models").join("TTS").join("kokoro")),
+            // 3. CWD-based: models/kokoro/ (legacy compat)
             std::env::current_dir().ok().map(|d| d.join("models").join("kokoro")),
-            // 3. CWD-based: kokoro/ (legacy dev mode)
-            std::env::current_dir().ok().map(|d| d.join("kokoro")),
             // 4. src-tauri local: CARGO_MANIFEST_DIR/kokoro/ (legacy)
             Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kokoro")),
         ];
