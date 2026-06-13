@@ -58,7 +58,7 @@ impl TtsManager {
             )),
             TtsEngine::Kokoro => Ok(Box::new(KokoroBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Kitten => Ok(Box::new(KittenBackend::new(cfg.voice.clone(), cfg.speed))),
-            TtsEngine::Pocket => Ok(Box::new(PocketBackend::new(cfg.voice.clone(), cfg.speed))),
+            TtsEngine::Pocket => Ok(Box::new(PocketBackend::new(self.app.clone(), cfg.voice.clone(), cfg.speed))),
             TtsEngine::Sapi => Ok(Box::new(SapiBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Openai => Ok(Box::new(
                 crate::tts::backends::openai::OpenAiTtsBackend::new(cfg.openai.clone()),
@@ -80,7 +80,7 @@ impl TtsManager {
             TtsEngine::Piper => piper::list_voices(&self.app),
             TtsEngine::Kokoro => KokoroBackend::list_voices(),
             TtsEngine::Kitten => KittenBackend::list_voices(),
-            TtsEngine::Pocket => PocketBackend::list_voices(),
+            TtsEngine::Pocket => PocketBackend::list_voices(&self.app),
             TtsEngine::Sapi => SapiBackend::list_voices(),
             TtsEngine::Openai => {
                 vec![

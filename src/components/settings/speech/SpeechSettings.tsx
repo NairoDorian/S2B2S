@@ -10,7 +10,7 @@ import { Button } from "../../ui/Button";
 import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
 import type { TtsConfig, TtsEngine, Voice } from "@/bindings";
-import { ExternalLink, Terminal } from "lucide-react";
+import { ExternalLink, Terminal, Upload } from "lucide-react";
 
 const ENGINES: TtsEngine[] = ["piper", "kokoro", "kitten", "pocket", "sapi", "openai", "elevenlabs", "cartesia"];
 
@@ -40,6 +40,7 @@ export const SpeechSettings: React.FC = () => {
   const [speaking, setSpeaking] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [importingVoice, setImportingVoice] = useState(false);
 
   const tts = settings?.tts;
 
@@ -115,6 +116,29 @@ export const SpeechSettings: React.FC = () => {
       setTestResult({ success: false, message: String(err) });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleCloneVoice = async () => {
+    setImportingVoice(true);
+    try {
+      // Use Tauri dialog to pick a WAV file
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        filters: [{ name: "WAV Audio", extensions: ["wav"] }],
+        multiple: false,
+      });
+      if (selected && typeof selected === "string") {
+        const result = await commands.pocketImportClonedVoice(selected);
+        if (result.status === "ok") {
+          await refreshVoices();
+          update({ voice: result.data.id });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to import cloned voice:", err);
+    } finally {
+      setImportingVoice(false);
     }
   };
 
@@ -283,6 +307,32 @@ export const SpeechSettings: React.FC = () => {
               </p>
             </div>
           </div>
+        </SettingsGroup>
+      )}
+
+      {/* Pocket Voice Cloning */}
+      {tts.engine === "pocket" && (
+        <SettingsGroup title="Clone Voice (Pocket TTS)">
+          <SettingContainer
+            title="Import reference audio"
+            description="Select a 5-20 second WAV file of someone speaking clearly. Pocket TTS will clone that voice."
+            grouped
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={importingVoice}
+              onClick={handleCloneVoice}
+            >
+              <Upload size={14} className="mr-1" />
+              {importingVoice ? "Importing..." : "Select WAV File"}
+            </Button>
+          </SettingContainer>
+          {voices.some((v) => v.language === "cloned") && (
+            <div className="px-4 pb-3 text-[11px] text-text/40">
+              Cloned voices appear with 🎙️ prefix in the voice list.
+            </div>
+          )}
         </SettingsGroup>
       )}
 

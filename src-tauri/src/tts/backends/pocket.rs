@@ -8,31 +8,82 @@ const POCKET_VOICES: &[&str] = &[
     "fantine", "cosette", "eponine", "azelma",
 ];
 
+const CLONED_VOICES_DIR: &str = "pocket-cloned-voices";
+
+pub fn cloned_voices_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    crate::portable::app_data_dir(app)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join(CLONED_VOICES_DIR)
+}
+
 #[allow(dead_code)]
 pub struct PocketBackend {
     voice: String,
     speed: f32,
     last_used: AtomicU64,
+    app: tauri::AppHandle,
 }
 
 impl PocketBackend {
-    pub fn new(voice: String, speed: f32) -> Self {
+    pub fn new(app: tauri::AppHandle, voice: String, speed: f32) -> Self {
         Self {
             voice,
             speed,
             last_used: AtomicU64::new(0),
+            app,
         }
     }
 
-    pub fn list_voices() -> Vec<Voice> {
-        POCKET_VOICES
+    pub fn list_voices(app: &tauri::AppHandle) -> Vec<Voice> {
+        let mut voices: Vec<Voice> = POCKET_VOICES
             .iter()
             .map(|id| Voice {
                 id: id.to_string(),
                 name: id.to_string(),
                 language: Some("en".to_string()),
             })
-            .collect()
+            .collect();
+
+        // Scan for cloned voice WAV files
+        let dir = cloned_voices_dir(app);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("wav") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        voices.push(Voice {
+                            id: path.to_string_lossy().to_string(),
+                            name: format!("🎙️ {}", stem),
+                            language: Some("cloned".to_string()),
+                        });
+                    }
+                }
+            }
+        }
+
+        voices
+    }
+
+    /// Import a WAV file as a cloned voice. Copies to persistent storage.
+    pub fn import_cloned_voice(app: &tauri::AppHandle, source_wav: &std::path::Path) -> Result<Voice, String> {
+        let dir = cloned_voices_dir(app);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create cloned voices dir: {e}"))?;
+
+        let stem = source_wav
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("cloned");
+        let dest = dir.join(format!("{}.wav", stem));
+
+        std::fs::copy(source_wav, &dest)
+            .map_err(|e| format!("Failed to copy voice WAV: {e}"))?;
+
+        Ok(Voice {
+            id: dest.to_string_lossy().to_string(),
+            name: format!("🎙️ {}", stem),
+            language: Some("cloned".to_string()),
+        })
     }
 
     fn touch(&self) {

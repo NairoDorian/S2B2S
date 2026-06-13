@@ -155,6 +155,22 @@ pub fn get_local_tts_status(
     Ok(crate::tts::local_tts_server::get_engine_status(&engine))
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn pocket_import_cloned_voice(
+    app: AppHandle,
+    source_path: String,
+) -> Result<crate::tts::Voice, String> {
+    let source = std::path::Path::new(&source_path);
+    if !source.exists() {
+        return Err("Source WAV file not found".into());
+    }
+    if source.extension().map(|e| e.to_str().unwrap_or("")) != Some("wav") {
+        return Err("Source file must be a .wav file".into());
+    }
+    crate::tts::backends::pocket::PocketBackend::import_cloned_voice(&app, source)
+}
+
 /// Replace the whole TTS configuration (engine, voice, speed, volume, toggles).
 #[tauri::command]
 #[specta::specta]
