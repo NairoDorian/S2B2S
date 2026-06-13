@@ -541,7 +541,31 @@ fn run_consumer(
                 }
 
                 if is_continuous {
-                    if !is_continuous_paused {
+                    // Barge-in: when paused during TTS, VAD still runs to detect new user speech
+                    if is_continuous_paused {
+                        if let Some(v) = &vad {
+                            let mut det = v.lock().unwrap();
+                            if det.push_frame(&processed).unwrap_or(VadFrame::Noise).is_speech() {
+                                if !recording {
+                                    recording = true;
+                                    silence_frames = 0;
+                                    if let Some(app) = &app_handle {
+                                        let _ = app.emit("continuous-voice:speech-started", ());
+                                    }
+                                }
+                            } else if recording {
+                                silence_frames += 1;
+                                if silence_frames >= 40 {
+                                    recording = false;
+                                    silence_frames = 0;
+                                    // Don't process utterance — barge-in handler will do that
+                                    if let Some(v) = &vad {
+                                        v.lock().unwrap().reset();
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                         if let Some(v) = &vad {
                             let mut det = v.lock().unwrap();
                             match det.push_frame(&processed).unwrap_or(VadFrame::Speech(&processed)) {
