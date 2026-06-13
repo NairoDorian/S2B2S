@@ -9,6 +9,8 @@ export { ModelsSettings } from "./models/ModelsSettings";
 export { SpeechSettings } from "./speech/SpeechSettings";
 export { BrainSettings } from "./brain/BrainSettings";
 export { LlamaCppSettings } from "./llama-cpp/LlamaCppSettings";
+export { default as OverlayWindowSettings } from "./OverlayWindowSettings";
+export { default as WgpuTrailSettings } from "./WgpuTrailSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

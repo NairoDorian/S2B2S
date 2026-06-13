@@ -4,13 +4,12 @@
 
 use crate::input;
 use crate::settings;
-use crate::settings::OverlayPosition;
+use crate::settings::{OverlayMode, OverlayPosition, OverlayWindowConfig};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg(not(target_os = "macos"))]
 use log::debug;
 
-#[cfg(not(target_os = "macos"))]
 use tauri::WebviewWindowBuilder;
 
 #[cfg(target_os = "macos")]
@@ -56,7 +55,13 @@ fn update_gtk_layer_shell_anchors(overlay_window: &tauri::webview::WebviewWindow
         // Try to get the GTK window from the Tauri webview
         if let Ok(gtk_window) = window_clone.gtk_window() {
             let settings = settings::get_settings(window_clone.app_handle());
-            match settings.overlay_position {
+            // Use overlay_window.position; fall back to legacy field.
+            let pos = if settings.overlay_window.position == OverlayPosition::None {
+                settings.overlay_position
+            } else {
+                settings.overlay_window.position
+            };
+            match pos {
                 OverlayPosition::Top => {
                     gtk_window.set_anchor(Edge::Top, true);
                     gtk_window.set_anchor(Edge::Bottom, false);
@@ -218,12 +223,28 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
     let monitor_height = monitor.size().height as f64 / scale;
 
     let settings = settings::get_settings(app_handle);
+    let cfg = &settings.overlay_window;
 
-    let x = monitor_x + (monitor_width - OVERLAY_WIDTH) / 2.0;
-    let y = match settings.overlay_position {
+    // Use overlay_window.position; fall back to legacy overlay_position for migration.
+    let position = if cfg.position == OverlayPosition::None {
+        // Check legacy field for backward compat
+        if settings.overlay_position == OverlayPosition::None {
+            OverlayPosition::Bottom
+        } else {
+            settings.overlay_position
+        }
+    } else {
+        cfg.position
+    };
+
+    let overlay_w = cfg.width as f64;
+    let overlay_h = cfg.height as f64;
+
+    let x = monitor_x + (monitor_width - overlay_w) / 2.0;
+    let y = match position {
         OverlayPosition::Top => monitor_y + OVERLAY_TOP_OFFSET,
         OverlayPosition::Bottom | OverlayPosition::None => {
-            monitor_y + monitor_height - OVERLAY_HEIGHT - OVERLAY_BOTTOM_OFFSET
+            monitor_y + monitor_height - overlay_h - OVERLAY_BOTTOM_OFFSET
         }
     };
 
@@ -233,6 +254,10 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
 /// Creates the recording overlay window and keeps it hidden by default
 #[cfg(not(target_os = "macos"))]
 pub fn create_recording_overlay(app_handle: &AppHandle) {
+    let settings = settings::get_settings(app_handle);
+    let cfg = &settings.overlay_window;
+    let use_os_native = cfg.mode == OverlayMode::OsNative;
+
     // On Linux (Wayland), monitor detection often fails, but we don't need exact coordinates
     // for Layer Shell as we use anchors. On other platforms, we require a monitor.
     #[cfg(not(target_os = "linux"))]
@@ -253,7 +278,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     )
     .title("Recording")
     .resizable(false)
-    .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    .inner_size(cfg.width as f64, cfg.height as f64)
     .shadow(false)
     .maximizable(false)
     .minimizable(false)
@@ -274,7 +299,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     match builder.build() {
         Ok(window) => {
             #[cfg(target_os = "linux")]
-            {
+            if use_os_native {
                 // Try to initialize GTK layer shell, ignore errors if compositor doesn't support it
                 if init_gtk_layer_shell(&window) {
                     debug!("GTK layer shell initialized for overlay window");
@@ -294,6 +319,40 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 /// Creates the recording overlay panel and keeps it hidden by default (macOS)
 #[cfg(target_os = "macos")]
 pub fn create_recording_overlay(app_handle: &AppHandle) {
+    let settings = settings::get_settings(app_handle);
+    let cfg = &settings.overlay_window;
+
+    if cfg.mode == OverlayMode::Tauri {
+        // Tauri-only mode: use regular WebviewWindowBuilder (no NSPanel).
+        // This matches the CopySpeak HUD approach — always_on_top + transparent only.
+        let builder = WebviewWindowBuilder::new(
+            app_handle,
+            "recording_overlay",
+            tauri::WebviewUrl::App("src/overlay/index.html".into()),
+        )
+        .title("Recording")
+        .resizable(false)
+        .inner_size(cfg.width as f64, cfg.height as f64)
+        .shadow(false)
+        .maximizable(false)
+        .minimizable(false)
+        .closable(false)
+        .accept_first_mouse(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .transparent(true)
+        .focused(false)
+        .visible(false);
+
+        match builder.build() {
+            Ok(_) => debug!("Recording overlay (Tauri mode) created (hidden)"),
+            Err(e) => log::error!("Failed to create Tauri-mode overlay: {}", e),
+        }
+        return;
+    }
+
+    // OS-native mode: NSPanel
     if let Some((x, y)) = calculate_overlay_position(app_handle) {
         // PanelBuilder creates a Tauri window then converts it to NSPanel.
         // The window remains registered, so get_webview_window() still works.
@@ -303,13 +362,13 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             .position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
             .level(PanelLevel::Status)
             .size(tauri::Size::Logical(tauri::LogicalSize {
-                width: OVERLAY_WIDTH,
-                height: OVERLAY_HEIGHT,
+                width: cfg.width as f64,
+                height: cfg.height as f64,
             }))
             .has_shadow(false)
             .transparent(true)
             .no_activate(true)
-            .corner_radius(0.0)
+            .corner_radius(cfg.corner_radius)
             .with_window(|w| w.decorations(false).transparent(true))
             .collection_behavior(
                 CollectionBehavior::new()
@@ -331,7 +390,11 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
-    if settings.overlay_position == OverlayPosition::None {
+    let use_os_native = settings.overlay_window.mode == OverlayMode::OsNative;
+    // Bail if both overlay_window.position AND legacy overlay_position are None
+    if settings.overlay_window.position == OverlayPosition::None
+        && settings.overlay_position == OverlayPosition::None
+    {
         return;
     }
 
@@ -340,9 +403,12 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         let _ = overlay_window.show();
 
-        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+        // On Windows in OS-native mode, aggressively re-assert "topmost" in the
+        // native Z-order after showing. In Tauri mode, always_on_top handled this.
         #[cfg(target_os = "windows")]
-        force_overlay_topmost(&overlay_window);
+        if use_os_native {
+            force_overlay_topmost(&overlay_window);
+        }
 
         let _ = overlay_window.emit("show-overlay", state);
     }
@@ -390,15 +456,14 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
-    // Always hide the overlay regardless of settings - if setting was changed while recording,
-    // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Emit event to trigger fade-out animation
         let _ = overlay_window.emit("hide-overlay", ());
         // Hide the window after a short delay to allow animation to complete
+        let fade_ms = settings::get_settings(app_handle).overlay_window.fade_ms as u64;
         let window_clone = overlay_window.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(300));
+            std::thread::sleep(std::time::Duration::from_millis(fade_ms));
             let _ = window_clone.hide();
         });
     }

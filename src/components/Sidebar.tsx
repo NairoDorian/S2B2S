@@ -11,6 +11,8 @@ import {
   Cpu,
   Volume2,
   Terminal,
+  Monitor,
+  Zap,
 } from "lucide-react";
 import S2B2SIcon from "./icons/S2B2SIcon";
 import appIcon from "../assets/icon.png";
@@ -26,6 +28,8 @@ import {
   SpeechSettings,
   BrainSettings,
   LlamaCppSettings,
+  OverlayWindowSettings,
+  WgpuTrailSettings,
 } from "./settings";
 import { ConversationView } from "./conversation/ConversationView";
 
@@ -93,6 +97,18 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.llamaCpp",
     icon: Terminal,
     component: LlamaCppSettings,
+    enabled: () => true,
+  },
+  overlayWindow: {
+    labelKey: "sidebar.overlayWindow",
+    icon: Monitor,
+    component: OverlayWindowSettings,
+    enabled: () => true,
+  },
+  wgpuTrail: {
+    labelKey: "sidebar.wgpuTrail",
+    icon: Zap,
+    component: WgpuTrailSettings,
     enabled: () => true,
   },
   postprocessing: {
