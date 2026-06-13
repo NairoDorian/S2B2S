@@ -217,17 +217,41 @@ impl TtsManager {
             //   1st sentence split at first period/!-/? → play immediately
             //   2nd sentence split at next period → synthesized while 1st plays
             //   3rd fragment: rest of text in one go → synthesized while 2nd plays
+            //   Fallback: if no punctuation found, split at 12-word boundary
             let mut frags = Vec::new();
             let mut remaining = sanitized.as_str();
 
-            // Helper: find first sentence boundary (., !, ?, \n)
+            // Helper: find sentence boundary (., !, ?, \n) or word-count fallback
             let find_sentence_end = |t: &str| -> Option<usize> {
-                t.char_indices()
+                // First try punctuation
+                if let Some(idx) = t
+                    .char_indices()
                     .find(|(_, c)| matches!(c, '.' | '!' | '?' | '\n'))
                     .map(|(idx, c)| idx + c.len_utf8())
+                {
+                    return Some(idx);
+                }
+                // Fallback: find 12th word boundary
+                let mut word_count = 0;
+                let mut last_space = None;
+                for (idx, c) in t.char_indices() {
+                    if c == ' ' || c == '\t' {
+                        if word_count > 0 {
+                            last_space = Some(idx);
+                        }
+                    } else if last_space.map_or(true, |s| idx > s) {
+                        if word_count == 0 || t[..idx].chars().last().map_or(true, |prev| prev.is_whitespace()) {
+                            word_count += 1;
+                            if word_count >= 12 {
+                                return Some(idx + c.len_utf8());
+                            }
+                        }
+                    }
+                }
+                None
             };
 
-            // Fragment 1: up to first sentence-ending punctuation
+            // Fragment 1: up to first sentence-ending punctuation or 12-word boundary
             if let Some(split) = find_sentence_end(remaining) {
                 let first = remaining[..split].trim().to_string();
                 if !first.is_empty() {
@@ -240,7 +264,7 @@ impl TtsManager {
                 remaining = remaining[split..].trim();
             }
 
-            // Fragment 2: next sentence
+            // Fragment 2: next sentence or next 12-word boundary
             if !remaining.is_empty() {
                 if let Some(split) = find_sentence_end(remaining) {
                     let second = remaining[..split].trim().to_string();
