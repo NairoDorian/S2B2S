@@ -99,19 +99,16 @@ impl KokoroBackend {
             .ok();
 
         let search_paths: Vec<Option<std::path::PathBuf>> = vec![
+            // Project-local: models/kokoro/ (canonical location)
             std::env::current_dir().ok().map(|d| d.join("models").join("kokoro")),
+            // Project-local: kokoro/ (dev mode alternate)
             std::env::current_dir().ok().map(|d| d.join("kokoro")),
+            // From src-tauri/ (CARGO_MANIFEST_DIR)
             Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kokoro")),
+            // From project root (parent of src-tauri)
             Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("models").join("kokoro")),
-            home.as_ref().map(|h| std::path::PathBuf::from(h).join(".local").join("bin")),
-            home.as_ref().map(|h| std::path::PathBuf::from(h).join("AppData").join("Local").join("bin")),
-            home.as_ref().map(|h| std::path::PathBuf::from(h).join("AppData").join("Roaming").join("Python").join("Scripts")),
-            Some(std::path::PathBuf::from(r"C:\Python310\Scripts")),
-            Some(std::path::PathBuf::from(r"C:\Python311\Scripts")),
-            Some(std::path::PathBuf::from(r"C:\Python312\Scripts")),
-            Some(std::path::PathBuf::from("/usr/local/bin")),
-            Some(std::path::PathBuf::from("/usr/bin")),
-            Some(std::path::PathBuf::from("/opt/kokoro-tts")),
+            // App data directory (portable or installed)
+            home.as_ref().map(|h| std::path::PathBuf::from(h).join("AppData").join("Roaming").join("com.nairodorian.s2b2s").join("models").join("kokoro")),
         ];
 
         let mut args = Vec::new();
