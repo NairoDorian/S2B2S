@@ -47,7 +47,7 @@ pub mod unified_parakeet;
 // 5. Route through post-processing LLM
 // 6. Return final corrected text
 //
-// VRAM considerations: Models can be loaded on multiple backends:
+// RAM considerations: Models can be loaded on multiple backends:
 //   - Streaming model: CPU (Python ONNX) — always available
 //   - Backup models: GPU via CUDA/DirectML/WebGPU when available
 //   - UnifiedParakeet models share the same Python server (one at a time)
