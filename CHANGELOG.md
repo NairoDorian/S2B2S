@@ -7,7 +7,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Pre-compiled llama.cpp CUDA/Vulkan/CPU server integration, GPU VRAM offloading with `-ngl all`, auto-download from GitHub releases, Llama.cpp settings management tab, per-message performance metrics, 8 TTS backends with RAM-persistent warm model lifecycle, and system RAM indicator.
+> **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading, and 20-turn conversation memory.
 
 ### Pocket TTS + Full Kokoro/Kitten Synthesis with RAM Persistency
 
@@ -52,6 +52,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Fixed React hooks order crash** in `GpuVramMonitor` — `useTranslation()` moved before conditional return.
 - **TTS synthesis ms in history** — `speak()` now passes `synth_total_ms` to `duration_ms` in `save_entry()`, visible as `{ms}ms` in History Settings.
 - **Conversation TTS timing** — `speak_sentence()` now emits `tts:synth-done` with `ms` per sentence, showing `🔊 {ms}ms` on assistant messages.
+
+### Vox-Inspired Improvements (Voice Barge-in, Word-Count Fallback, Voice Cloning)
+
+- **Voice barge-in** — In continuous voice mode, VAD stays active during TTS playback. If user speaks, Brain is aborted, TTS is stopped, and the new utterance is captured immediately. Works like a real conversation — interrupt the assistant mid-sentence.
+- **Word-count fallback** — Sentence streaming now splits at 12-word boundaries when no punctuation is found, preventing long run-on text from being synthesized as one chunk.
+- **Pocket TTS voice cloning** — Import a 5-20 second WAV file and Pocket TTS clones that voice. `PocketBackend::import_cloned_voice()` copies WAV to persistent storage. Cloned voices appear in the voice list with 🎙️ prefix. New "Clone Voice" section in Speech Settings with WAV file picker.
+- **Voice counts in footer** — Each engine in the TTS dropdown now shows voice count (e.g., "Kokoro — 54 voices").
+- **Android Companion roadmap** — `S2B2S_ANDROID_COMPANION.md` with PWA architecture, 3-phase feature plan, WebSocket protocol design, references to 6 GitHub projects (NekoSpeak, speech-android, pocket-tts-unity, Kokoro-82M-Android, SherpaTTS, VoxSherpa-TTS), and brainstorm features.
+- **Vox vs S2B2S comparison** — `S2B2S_VOX_COMPANION.md` with full architecture comparison, feature gap analysis, and improvement plan.
+
+### Python Virtual Environment
+
+- **`scripts/setup_tts_venv.ps1` / `.sh`** — Creates a project-local Python venv at `venv/` and installs all TTS dependencies: `piper-tts[http]`, `kokoro-tts`, `pocket-tts`, `kittentts`, `torch`, `numpy`, `soundfile`. No more system-wide `pip install`.
+- **`resolve_venv_python()`** — New shared helper in `local_tts_server.rs`. Resolves Python from: project venv → app data venv → system fallback. Both Piper and local TTS servers use venv Python.
+- **All model/voice paths now project-local** — Piper voices `~/piper-voices` fallback removed. Kokoro model search no longer scans `C:\Python3xx\Scripts`, `/usr/local/bin`, `/opt/kokoro-tts`. Everything resolves to `models/` subfolder or app data directory.
+- **Removed dead code** — `resolve_python_command()` (now unused) and Python discovery helpers cleared from both server modules.
 
 ### Performance Metrics (Token/s, Latency, STT/TTS Timing)
 
