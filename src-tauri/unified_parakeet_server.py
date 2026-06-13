@@ -307,6 +307,7 @@ def transcribe(audio: bytes) -> str:
     tokens = _decode_frames(
         MODEL, encoded, frame_count, blank_id=cfg["blank_id"],
         n_layers=cfg["pred_layers"], hidden=cfg["pred_hidden"],
+        targets_dtype=_targets_dtype(cfg),
     )
     if not tokens:
         return ""
@@ -316,6 +317,11 @@ def transcribe(audio: bytes) -> str:
 # ============================================================================
 # Shared RNNT frame-by-frame decoder  (used by both offline and streaming)
 # ============================================================================
+def _targets_dtype(cfg: dict) -> np.dtype:
+    """EOU models expect int32 targets; Unified (SentencePiece) models expect float32."""
+    return np.dtype(np.float32) if cfg.get("family") == "unified" else np.dtype(np.int32)
+
+
 def _decode_frames(
     model: dict,
     encoded: np.ndarray,       # (1, D, T_enc)
@@ -326,11 +332,14 @@ def _decode_frames(
     start_frame: int = 0,
     decoder_state: dict | None = None,
     stop_on_eou: bool = False,
+    targets_dtype: np.dtype = np.dtype(np.int32),
 ):
     """
     Greedy RNNT decoder over encoder frames [start_frame, frame_count).
 
     Returns (tokens: list[int], last_frame: int, decoder_state: dict, found_eou: bool).
+
+    targets_dtype: np.int32 for EOU models, np.float32 for Unified (SentencePiece) models.
     """
     decoder = model["decoder"]
     tokenizer = model["tokenizer"]
@@ -357,7 +366,7 @@ def _decode_frames(
         for _ in range(MAX_SYMBOLS_PER_STEP):
             d_out = decoder.run(None, {
                 "encoder_outputs": frame,
-                "targets": last_token.astype(np.int32),
+                "targets": last_token.astype(targets_dtype),
                 "target_length": target_length,
                 "input_states_1": state_1,
                 "input_states_2": state_2,
@@ -448,6 +457,7 @@ def _stream_feed(audio_bytes: bytes) -> dict:
         start_frame=STREAM["decoded_frame"],
         decoder_state=STREAM["decoder_state"],
         stop_on_eou=True,
+        targets_dtype=_targets_dtype(cfg),
     )
 
     STREAM["tokens"].extend(result["tokens"])
