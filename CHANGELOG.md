@@ -21,6 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Dependency Checker & Script Cleanup
 
 - **`scripts/check-deps.ts`** — New cross-dependency version checker covering Bun, Node, Rust, Cargo, Tauri CLI, JS packages (React, Vite, TypeScript, Tailwind, Zustand, etc.), and Python TTS packages (piper-tts, kokoro-tts, pocket-tts, kittentts, torch). Detects outdated deps and outputs a summary.
+- **`scripts/check-deps.ts` overhauled** — Rust check now uses built-in `cargo update --dry-run --verbose` instead of external `cargo-outdated`, covering ALL Rust dependencies at ALL depths (including transitive). Distinguishes auto-updatable (`[Rust]`) from semver-constrained (`[Rust*]`) crates. JS check now parses `bun outdated` table output (the `--format json` flag is broken in Bun 1.3). Fixed Python pip version parser that captured trailing commas.
+- **Dependency bumps** — JS: `@tailwindcss/vite` 4.3.0→4.3.1, `tailwindcss` 4.3.0→4.3.1, `lucide-react` 1.17.0→1.18.0, `eslint` 10.4.1→10.5.0. Rust: 15 crates updated in `Cargo.lock` (cc, js-sys, memchr, openssl, openssl-sys, rust_decimal, smallvec, wasip2, wasm-bindgen ×5, web-sys, zeroize). 5 transitive crates remain semver-constrained (cpal pinned for rodio compat, generic-array/toml family via GTK system-deps).
 - **Removed unused scripts** — `check-latest.ts`, `find-bigints.ts`, `find-command-bigints.ts` removed (development-only tools, not referenced in CI or build). Kept `check-translations.ts`, `check-nix-deps.ts`, `setup_tts_venv.*`.
 
 ### Model Path Consolidation (Local-First Storage)
