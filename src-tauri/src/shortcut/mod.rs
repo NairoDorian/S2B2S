@@ -1152,6 +1152,15 @@ pub fn change_ort_accelerator_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_parakeet_streaming_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.parakeet_streaming_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_whisper_gpu_device(app: AppHandle, device: i32) -> Result<(), String> {
     let mut s = settings::get_settings(&app);
     s.whisper_gpu_device = device;

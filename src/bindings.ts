@@ -63,6 +63,7 @@ export const commands = {
 	changeShowTrayIconSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_tray_icon_setting", { enabled })),
 	changeWhisperAcceleratorSetting: (accelerator: WhisperAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_whisper_accelerator_setting", { accelerator })),
 	changeOrtAcceleratorSetting: (accelerator: OrtAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_ort_accelerator_setting", { accelerator })),
+	changeParakeetStreamingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_parakeet_streaming_setting", { enabled })),
 	changeWhisperGpuDevice: (device: number) => typedError<null, string>(__TAURI_INVOKE("change_whisper_gpu_device", { device })),
 	/**
 	 *  Return which accelerators and GPU devices are available for this build.
@@ -324,10 +325,11 @@ export type AppSettings = {
 	/**  Multi-STT post-processing prompt. {transcriptions} is replaced with the model results. */
 	multi_stt_prompt?: string,
 	/**
-	 *  EOU 120M streaming toggle: when enabled, the model uses the streaming API
-	 *  for progressive partial results. When disabled, uses offline /transcribe.
+	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
+	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
+	 *  results with stateful RNNT decoder. When disabled, uses offline /transcribe.
 	 */
-	eou_streaming_enabled?: boolean,
+	parakeet_streaming_enabled?: boolean,
 };
 
 export type AudioDevice = {

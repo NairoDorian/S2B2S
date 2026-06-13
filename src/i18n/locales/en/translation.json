@@ -159,7 +159,11 @@
   "settings": {
     "modelSettings": {
       "title": "{{model}} Settings",
-      "noSettingsNeeded": "This model works automatically with no configuration needed."
+      "noSettingsNeeded": "This model works automatically with no configuration needed.",
+      "parakeetStreamingToggle": {
+        "label": "Streaming Mode",
+        "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
+      }
     },
     "general": {
       "title": "General",

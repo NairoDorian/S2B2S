@@ -181,6 +181,8 @@ const settingUpdaters: {
     ),
   ort_accelerator: (value) =>
     commands.changeOrtAcceleratorSetting(value as OrtAcceleratorSetting),
+  parakeet_streaming_enabled: (value) =>
+    commands.changeParakeetStreamingSetting(value as boolean),
   whisper_gpu_device: (value) =>
     commands.changeWhisperGpuDevice(value as number),
   extra_recording_buffer_ms: (value) =>

@@ -397,6 +397,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_show_tray_icon_setting,
             shortcut::change_whisper_accelerator_setting,
             shortcut::change_ort_accelerator_setting,
+            shortcut::change_parakeet_streaming_setting,
             shortcut::change_whisper_gpu_device,
             shortcut::get_available_accelerators,
             shortcut::key_listener::start_key_listener_recording,
