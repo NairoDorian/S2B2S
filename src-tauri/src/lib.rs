@@ -185,6 +185,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Set AppHandle for persistent Piper server status emissions.
     crate::tts::backends::piper_server::set_app_handle(app_handle.clone());
+    crate::tts::local_tts_server::set_local_tts_app_handle(app_handle.clone());
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -471,6 +472,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::tts::tts_get_voices,
             commands::tts::tts_unload_engine,
             commands::tts::get_piper_server_status,
+            commands::tts::get_local_tts_status,
             commands::tts::change_tts_config,
             commands::tts::tts_play_greeting,
             commands::tts::tts_save_to_file,
@@ -501,6 +503,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::wake_word::wake_word_set_config,
             commands::wake_word::wake_word_status,
             helpers::clamshell::is_laptop,
+            commands::system::get_system_ram,
         ])
         .events(collect_events![managers::history::HistoryUpdatePayload,])
 }
@@ -678,9 +681,25 @@ pub fn run(cli_args: CliArgs) {
 
                     if settings.tts.engine == crate::settings::TtsEngine::Kokoro {
                         log::info!("[Startup] Pre-warming Kokoro TTS engine...");
-                        // Kokoro warm-up happens on first actual use via lazy-load.
-                        // The tts-rs crate loads models on first synthesize() call.
-                        log::info!("[Startup] Kokoro ready (lazy-loaded on first use).");
+                        let script_args = crate::tts::backends::kokoro::KokoroBackend::kokoro_model_args();
+                        match crate::tts::local_tts_server::ensure_running("kokoro", "python".to_string(), script_args) {
+                            Ok(_) => log::info!("[Startup] Kokoro persistent server loaded successfully."),
+                            Err(e) => log::error!("[Startup] Failed to auto-load Kokoro: {}", e),
+                        }
+                    }
+                    if settings.tts.engine == crate::settings::TtsEngine::Kitten {
+                        log::info!("[Startup] Pre-warming Kitten TTS engine...");
+                        match crate::tts::local_tts_server::ensure_running("kitten", "python".to_string(), vec![]) {
+                            Ok(_) => log::info!("[Startup] Kitten persistent server loaded successfully."),
+                            Err(e) => log::error!("[Startup] Failed to auto-load Kitten: {}", e),
+                        }
+                    }
+                    if settings.tts.engine == crate::settings::TtsEngine::Pocket {
+                        log::info!("[Startup] Pre-warming Pocket TTS engine...");
+                        match crate::tts::local_tts_server::ensure_running("pocket", "python".to_string(), vec![]) {
+                            Ok(_) => log::info!("[Startup] Pocket persistent server loaded successfully."),
+                            Err(e) => log::error!("[Startup] Failed to auto-load Pocket: {}", e),
+                        }
                     }
                 });
 
@@ -775,9 +794,13 @@ pub fn run(cli_args: CliArgs) {
                 show_main_window(app);
             }
             if let tauri::RunEvent::Exit = &event {
+                log::info!("[Shutdown] Cleaning up all TTS engines...");
+                crate::tts::backends::piper_server::unload_piper_model();
+                crate::tts::local_tts_server::unload_all();
                 if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
                     llama_manager.stop();
                 }
+                log::info!("[Shutdown] Cleanup complete.");
             }
         });
 }

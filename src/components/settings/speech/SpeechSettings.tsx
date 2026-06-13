@@ -10,14 +10,36 @@ import { Button } from "../../ui/Button";
 import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
 import type { TtsConfig, TtsEngine, Voice } from "@/bindings";
+import { ExternalLink, Terminal } from "lucide-react";
 
-const ENGINES: TtsEngine[] = ["piper", "openai", "elevenlabs", "cartesia"];
+const ENGINES: TtsEngine[] = ["piper", "kokoro", "kitten", "pocket", "sapi", "openai", "elevenlabs", "cartesia"];
+
+const ENGINE_BADGES: Record<string, ("offline" | "free" | "cloud" | "paid" | "freemium")[]> = {
+  piper: ["offline", "free"],
+  kokoro: ["offline", "free"],
+  kitten: ["offline", "free"],
+  pocket: ["offline", "free"],
+  sapi: ["offline", "free"],
+  openai: ["cloud", "paid"],
+  elevenlabs: ["cloud", "freemium"],
+  cartesia: ["cloud", "freemium"],
+};
+
+const BADGE_COLORS: Record<string, string> = {
+  offline: "bg-blue-500/15 text-blue-400 ring-blue-500/30",
+  free: "bg-green-500/15 text-green-400 ring-green-500/30",
+  cloud: "bg-violet-500/15 text-violet-400 ring-violet-500/30",
+  paid: "bg-amber-500/15 text-amber-400 ring-amber-500/30",
+  freemium: "bg-yellow-500/15 text-yellow-400 ring-yellow-500/30",
+};
 
 export const SpeechSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
   const [voices, setVoices] = useState<Voice[]>([]);
   const [speaking, setSpeaking] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const tts = settings?.tts;
 
@@ -64,7 +86,6 @@ export const SpeechSettings: React.FC = () => {
 
   if (!tts) return null;
 
-  // `sanitization` is optional in the generated bindings (serde default).
   const sanitization = tts.sanitization ?? {
     enabled: true,
     markdown: true,
@@ -79,6 +100,33 @@ export const SpeechSettings: React.FC = () => {
     noise_scale: 0.667,
     noise_w_scale: 0.8,
   };
+
+  const handleTestEngine = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await commands.ttsSpeak("Hello, this is a test of the S2B2S speech engine. If you can hear this clearly, the engine is working correctly.");
+      if (result.status === "ok") {
+        setTestResult({ success: true, message: "Engine test completed successfully." });
+      } else {
+        setTestResult({ success: false, message: result.error || "Test failed" });
+      }
+    } catch (err) {
+      setTestResult({ success: false, message: String(err) });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const getEngineLink = (engine: string): string | null => {
+    try { return t(`settings.speech.engine.links.${engine}`, "") || null; } catch { return null; }
+  };
+  const getEngineLinkLabel = (engine: string): string | null => {
+    try { return t(`settings.speech.engine.links.${engine}Label`, ""); } catch { return ""; }
+  };
+
+  const isLocalEngine = (engine: string) =>
+    ["piper", "kokoro", "kitten", "pocket", "sapi"].includes(engine);
 
   return (
     <div className="space-y-6">
@@ -102,9 +150,38 @@ export const SpeechSettings: React.FC = () => {
               label: t(`settings.speech.engine.options.${engine}`),
             }))}
             selectedValue={tts.engine}
-            onSelect={(value) => update({ engine: value as TtsEngine })}
+            onSelect={(value) => { update({ engine: value as TtsEngine }); setTestResult(null); }}
           />
         </SettingContainer>
+
+        {/* Engine description + badges + link */}
+        <div className="px-4 pb-1 flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {(ENGINE_BADGES[tts.engine] || []).map((badge) => (
+              <span
+                key={badge}
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${BADGE_COLORS[badge] || ""}`}
+              >
+                {t(`settings.speech.engine.badges.${badge}`, badge)}
+              </span>
+            ))}
+          </div>
+          <p className="text-[11px] text-text/40 leading-relaxed">
+            {t(`settings.speech.engine.descriptions.${tts.engine}`, "")}
+          </p>
+          {getEngineLink(tts.engine) && (
+            <a
+              href={getEngineLink(tts.engine)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-logo-primary hover:underline flex items-center gap-1 text-[11px] w-fit"
+            >
+              <ExternalLink className="w-3 h-3" />
+              {getEngineLinkLabel(tts.engine)}
+            </a>
+          )}
+        </div>
+
         <SettingContainer
           title={t("settings.speech.voice.label")}
           description={t("settings.speech.voice.description")}
@@ -152,7 +229,62 @@ export const SpeechSettings: React.FC = () => {
           description={t("settings.speech.doubleCopy.description")}
           grouped
         />
+        <ToggleSwitch
+          checked={tts.tts_shorten_first_chunk ?? true}
+          onChange={(tts_shorten_first_chunk) => update({ tts_shorten_first_chunk })}
+          label={t("settings.speech.fastFirstSentence.label")}
+          description={t("settings.speech.fastFirstSentence.description")}
+          grouped
+        />
       </SettingsGroup>
+
+      {/* Test Engine */}
+      <SettingsGroup title={t("settings.speech.testEngine.label")}>
+        <SettingContainer
+          title=""
+          description={t("settings.speech.testEngine.description")}
+          grouped
+        >
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!tts.enabled || testing}
+                onClick={handleTestEngine}
+              >
+                {testing ? t("settings.speech.testEngine.testing") : t("settings.speech.testEngine.button")}
+              </Button>
+            </div>
+            {testResult && (
+              <div className={`p-2 rounded text-xs border ${testResult.success ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                {testResult.success ? t("settings.speech.testEngine.engineWorking") : t("settings.speech.testEngine.engineFailed")}
+                {testResult.message && <div className="text-[10px] text-text/40 mt-0.5">{testResult.message}</div>}
+              </div>
+            )}
+          </div>
+        </SettingContainer>
+      </SettingsGroup>
+
+      {/* Command Preview (local engines only) */}
+      {isLocalEngine(tts.engine) && (
+        <SettingsGroup title={t("settings.speech.commandPreview.title")}>
+          <div className="border border-mid-gray/20 rounded-md">
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-text/50">
+              <Terminal size={13} className="shrink-0" />
+              <span className="font-medium">{t("settings.speech.commandPreview.title")}</span>
+            </div>
+            <div className="border-t border-mid-gray/10 px-3 py-2.5">
+              <pre className="bg-mid-gray/10 text-text/60 overflow-x-auto rounded px-3 py-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
+                {`python ${tts.engine}_server.py --port <auto> --host 127.0.0.1`}
+              </pre>
+              <p className="text-text/30 mt-1.5 text-[10px]">
+                {t("settings.speech.commandPreview.placeholder")}
+              </p>
+            </div>
+          </div>
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title={t("settings.speech.greetingGroup")}>
         <ToggleSwitch

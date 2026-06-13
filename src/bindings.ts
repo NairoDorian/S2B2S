@@ -188,10 +188,11 @@ export const commands = {
 	ttsResume: () => typedError<null, string>(__TAURI_INVOKE("tts_resume")),
 	ttsIsPlaying: () => typedError<boolean, string>(__TAURI_INVOKE("tts_is_playing")),
 	/**  Enumerate available voices for a specific engine, or defaults to the configured engine. */
-	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "sapi" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
+	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "pocket" | "sapi" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
 	/**  Unload the warm TTS model/server (tray "Unload model" parity). */
 	ttsUnloadEngine: () => typedError<boolean, string>(__TAURI_INVOKE("tts_unload_engine")),
 	getPiperServerStatus: () => typedError<PiperServerStatus, string>(__TAURI_INVOKE("get_piper_server_status")),
+	getLocalTtsStatus: (engine: string) => typedError<string | null, string>(__TAURI_INVOKE("get_local_tts_status", { engine })),
 	/**  Replace the whole TTS configuration (engine, voice, speed, volume, toggles). */
 	changeTtsConfig: (config: TtsConfig) => typedError<null, string>(__TAURI_INVOKE("change_tts_config", { config })),
 	/**  Play the startup greeting audio using customized greeting settings. */
@@ -237,6 +238,7 @@ export const commands = {
 	 *  Always returns false since laptop detection is macOS-specific
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
+	getSystemRam: () => typedError<SystemRamInfo, string>(__TAURI_INVOKE("get_system_ram")),
 };
 
 /** Events */
@@ -594,6 +596,12 @@ export type ShortcutBinding = {
 
 export type SoundTheme = "marimba" | "pop" | "custom";
 
+export type SystemRamInfo = {
+	total_mb: number,
+	used_mb: number,
+	free_mb: number,
+};
+
 /**  Text-to-speech ("Read Anywhere" / CopySpeak) configuration. */
 export type TtsConfig = {
 	enabled: boolean,
@@ -629,7 +637,7 @@ export type TtsConfig = {
 };
 
 /**  Which TTS engine synthesizes speech. */
-export type TtsEngine = "piper" | "kokoro" | "kitten" | "sapi" | "openai" | "elevenlabs" | "cartesia";
+export type TtsEngine = "piper" | "kokoro" | "kitten" | "pocket" | "sapi" | "openai" | "elevenlabs" | "cartesia";
 
 export type TtsGreetingConfig = {
 	text?: string,

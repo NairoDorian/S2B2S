@@ -10,6 +10,7 @@ use crate::settings::{get_settings, TtsConfig, TtsEngine};
 use crate::tts::backends::kitten::KittenBackend;
 use crate::tts::backends::kokoro::KokoroBackend;
 use crate::tts::backends::piper::{self, PiperBackend};
+use crate::tts::backends::pocket::PocketBackend;
 use crate::tts::backends::sapi::SapiBackend;
 use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
@@ -57,6 +58,7 @@ impl TtsManager {
             )),
             TtsEngine::Kokoro => Ok(Box::new(KokoroBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Kitten => Ok(Box::new(KittenBackend::new(cfg.voice.clone(), cfg.speed))),
+            TtsEngine::Pocket => Ok(Box::new(PocketBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Sapi => Ok(Box::new(SapiBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Openai => Ok(Box::new(
                 crate::tts::backends::openai::OpenAiTtsBackend::new(cfg.openai.clone()),
@@ -78,6 +80,7 @@ impl TtsManager {
             TtsEngine::Piper => piper::list_voices(&self.app),
             TtsEngine::Kokoro => KokoroBackend::list_voices(),
             TtsEngine::Kitten => KittenBackend::list_voices(),
+            TtsEngine::Pocket => PocketBackend::list_voices(),
             TtsEngine::Sapi => SapiBackend::list_voices(),
             TtsEngine::Openai => {
                 vec![
@@ -210,10 +213,22 @@ impl TtsManager {
         }
         let shorten_first = cfg.tts_shorten_first_chunk;
         let fragments = if shorten_first {
-            // Split first chunk at a clause boundary near 60 chars for fast TTFA
+            // 3-fragment streaming pattern for fast TTFA:
+            //   1st sentence split at first period/!-/? → play immediately
+            //   2nd sentence split at next period → synthesized while 1st plays
+            //   3rd fragment: rest of text in one go → synthesized while 2nd plays
             let mut frags = Vec::new();
             let mut remaining = sanitized.as_str();
-            if let Some(split) = crate::brain::client::split_at_clause_boundary(remaining, 60) {
+
+            // Helper: find first sentence boundary (., !, ?, \n)
+            let find_sentence_end = |t: &str| -> Option<usize> {
+                t.char_indices()
+                    .find(|(_, c)| matches!(c, '.' | '!' | '?' | '\n'))
+                    .map(|(idx, c)| idx + c.len_utf8())
+            };
+
+            // Fragment 1: up to first sentence-ending punctuation
+            if let Some(split) = find_sentence_end(remaining) {
                 let first = remaining[..split].trim().to_string();
                 if !first.is_empty() {
                     frags.push(crate::tts::pagination::TextFragment {
@@ -224,15 +239,32 @@ impl TtsManager {
                 }
                 remaining = remaining[split..].trim();
             }
+
+            // Fragment 2: next sentence
             if !remaining.is_empty() {
-                let rest = paginate_text(remaining, &cfg.pagination);
-                let offset = frags.len();
-                for (i, mut f) in rest.into_iter().enumerate() {
-                    f.index = offset + i;
-                    frags.push(f);
+                if let Some(split) = find_sentence_end(remaining) {
+                    let second = remaining[..split].trim().to_string();
+                    if !second.is_empty() {
+                        frags.push(crate::tts::pagination::TextFragment {
+                            text: second,
+                            index: frags.len(),
+                            total: 0,
+                        });
+                    }
+                    remaining = remaining[split..].trim();
                 }
             }
-            // Fix total count
+
+            // Fragment 3: rest in one go
+            if !remaining.is_empty() {
+                frags.push(crate::tts::pagination::TextFragment {
+                    text: remaining.to_string(),
+                    index: frags.len(),
+                    total: 0,
+                });
+            }
+
+            // Fix total
             let total = frags.len();
             for f in &mut frags {
                 f.total = total;
@@ -329,7 +361,7 @@ impl TtsManager {
                             "tts".to_string(),
                             Some(engine_name),
                             None,
-                            None,
+                            Some(synth_total_ms as i64),
                         );
                     }
                 }
@@ -369,12 +401,15 @@ impl TtsManager {
             std::thread::spawn(move || {
                 while let Ok((text, gen)) = rx.recv() {
                     if gen_counter.load(Ordering::SeqCst) != gen {
-                        continue; // stale sentence, skip
+                        continue;
                     }
+                    let synth_start = std::time::Instant::now();
                     match backend.synthesize(&text, &voice, speed) {
                         Ok(bytes) => {
                             if gen_counter.load(Ordering::SeqCst) == gen {
                                 player.append(bytes);
+                                let synth_ms = synth_start.elapsed().as_millis() as u64;
+                                let _ = app.emit("tts:synth-done", serde_json::json!({ "ms": synth_ms }));
                                 let _ = app.emit("tts:playing-changed", true);
                             }
                         }

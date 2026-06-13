@@ -9,4 +9,5 @@ pub mod kokoro;
 pub mod openai;
 pub mod piper;
 pub mod piper_server;
+pub mod pocket;
 pub mod sapi;

@@ -120,8 +120,24 @@ pub fn tts_play_greeting(tts: State<'_, Arc<TtsManager>>) -> Result<(), String> 
 /// Unload the warm TTS model/server (tray "Unload model" parity).
 #[tauri::command]
 #[specta::specta]
-pub fn tts_unload_engine() -> Result<bool, String> {
-    Ok(crate::tts::backends::piper_server::unload_piper_model())
+pub fn tts_unload_engine(app: AppHandle) -> Result<bool, String> {
+    let settings = get_settings(&app);
+    let unloaded = match settings.tts.engine {
+        crate::settings::TtsEngine::Piper => {
+            crate::tts::backends::piper_server::unload_piper_model()
+        }
+        crate::settings::TtsEngine::Kokoro => {
+            crate::tts::local_tts_server::unload("kokoro")
+        }
+        crate::settings::TtsEngine::Kitten => {
+            crate::tts::local_tts_server::unload("kitten")
+        }
+        crate::settings::TtsEngine::Pocket => {
+            crate::tts::local_tts_server::unload("pocket")
+        }
+        _ => false,
+    };
+    Ok(unloaded)
 }
 
 #[tauri::command]
@@ -131,14 +147,24 @@ pub fn get_piper_server_status(
     Ok(crate::tts::backends::piper_server::get_piper_server_status())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn get_local_tts_status(
+    engine: String,
+) -> Result<Option<String>, String> {
+    Ok(crate::tts::local_tts_server::get_engine_status(&engine))
+}
+
 /// Replace the whole TTS configuration (engine, voice, speed, volume, toggles).
 #[tauri::command]
 #[specta::specta]
 pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String> {
     let mut settings = get_settings(&app);
+    let old_engine = settings.tts.engine;
     let was_enabled = settings.tts.enabled;
     let volume = config.volume;
     let now_enabled = config.enabled;
+    let new_engine = config.engine;
     settings.tts = config;
     write_settings(&app, settings.clone());
 
@@ -157,5 +183,57 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
             }
         }
     }
+
+    // Handle local engine lifecycle: unload old engine, pre-warm new one
+    if old_engine != new_engine {
+        // Unload old local engine
+        match old_engine {
+            crate::settings::TtsEngine::Piper => {
+                crate::tts::backends::piper_server::unload_piper_model();
+            }
+            crate::settings::TtsEngine::Kokoro => {
+                crate::tts::local_tts_server::unload("kokoro");
+            }
+            crate::settings::TtsEngine::Kitten => {
+                crate::tts::local_tts_server::unload("kitten");
+            }
+            crate::settings::TtsEngine::Pocket => {
+                crate::tts::local_tts_server::unload("pocket");
+            }
+            _ => {}
+        }
+
+        // Pre-warm new local engine on a background thread
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            match new_engine {
+                crate::settings::TtsEngine::Piper => {
+                    let settings = crate::settings::get_settings(&app_clone);
+                    let voice = if settings.tts.voice.is_empty() {
+                        "en_US-joe-medium".to_string()
+                    } else {
+                        settings.tts.voice.clone()
+                    };
+                    let cuda = settings.tts.piper.cuda;
+                    match crate::tts::backends::piper_server::ensure_running(voice, cuda) {
+                        Ok(_) => log::info!("[Piper] Pre-warmed on engine switch"),
+                        Err(e) => log::error!("[Piper] Pre-warm failed: {e}"),
+                    }
+                }
+                crate::settings::TtsEngine::Kokoro => {
+                    let script_args = crate::tts::backends::kokoro::KokoroBackend::kokoro_model_args();
+                    crate::tts::local_tts_server::prewarm("kokoro".to_string(), "python".to_string(), script_args);
+                }
+                crate::settings::TtsEngine::Kitten => {
+                    crate::tts::local_tts_server::prewarm("kitten".to_string(), "python".to_string(), vec![]);
+                }
+                crate::settings::TtsEngine::Pocket => {
+                    crate::tts::local_tts_server::prewarm("pocket".to_string(), "python".to_string(), vec![]);
+                }
+                _ => {}
+            }
+        });
+    }
+
     Ok(())
 }
