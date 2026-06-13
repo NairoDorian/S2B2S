@@ -320,11 +320,12 @@ def transcribe(audio: bytes) -> str:
     encoded, frame_count = _encoder_forward(MODEL["encoder"], features)
     if frame_count == 0:
         return ""
-    tokens = _decode_frames(
+    result = _decode_frames(
         MODEL, encoded, frame_count, blank_id=cfg["blank_id"],
         n_layers=cfg["pred_layers"], hidden=cfg["pred_hidden"],
         targets_dtype=cfg["targets_dtype"],
     )
+    tokens = result["tokens"]
     if not tokens:
         return ""
     return MODEL["tokenizer"].decode(tokens)
