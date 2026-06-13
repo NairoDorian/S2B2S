@@ -318,6 +318,16 @@ export type AppSettings = {
 	vad_mode?: string,
 	rnnoise_voice_threshold?: number | null,
 	llama_server?: LlamaServerConfig,
+	/**  Multi-STT: run multiple transcription models in parallel and merge results. */
+	multi_stt_enabled?: boolean,
+	multi_stt_models?: string[],
+	/**  Multi-STT post-processing prompt. {transcriptions} is replaced with the model results. */
+	multi_stt_prompt?: string,
+	/**
+	 *  EOU 120M streaming toggle: when enabled, the model uses the streaming API
+	 *  for progressive partial results. When disabled, uses offline /transcribe.
+	 */
+	eou_streaming_enabled?: boolean,
 };
 
 export type AudioDevice = {
@@ -414,7 +424,7 @@ export type ElevenLabsConfig = {
 
 export type ElevenLabsOutputFormat = "mp3_44100_128" | "mp3_44100_192" | "mp3_44100_32" | "mp3_22050_32" | "pcm_44100" | "pcm_22050" | "pcm_16000" | "ogg_vorbis_44100" | "ogg_vorbis_22050" | "flac_44100" | "mulaw_8000";
 
-export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere";
+export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere" | "UnifiedParakeet";
 
 export type GpuDeviceOption = {
 	id: number,

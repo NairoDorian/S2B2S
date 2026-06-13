@@ -41,12 +41,13 @@ S2B2S = Tauri 2 (Rust + React/TS)
 
 - Backend: `src-tauri/src/` — managers/, tts/, brain/, llama_server/, audio_toolkit/, commands/
 - Frontend: `src/` — components/, hooks/, stores/, i18n/ (20 languages)
+- Evolution plans: `analysys/` — GPU overlay, Conversation Mode 2.0, Avatar "Orbi" specifications
 - IPC: tauri-specta typed bindings (`src/bindings.ts`)
 - State: Zustand → Tauri Command → Rust → SQLite/Store
 
 ## Code Cleanup Notes (June 2026)
 
-This project has been reviewed and cleaned up across multiple passes:
+This project has been reviewed and cleaned up across multiple passes. Current state (June 2026): 8 TTS backends (Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia), llama.cpp pre-compiled server integration, Pocket voice cloning, word-count fallback sentence streaming. Known gaps: SAPI synthesis is a non-functional stub, wake word detector runs idle (audio pipeline not connected). See CHANGELOG.md for full history.
 
 ### Pass 1 — Initial Cleanup
 - All module doc comments added to top-level Rust modules

@@ -71,7 +71,7 @@
 
 1. **Dictate Anywhere** — Press a hotkey, speak, and polished text lands at your cursor in any application. Powered by Parakeet V3 (default, local, 25 languages with auto-detection). Works fully offline.
 
-2. **Read Aloud** — Select text anywhere in any app, press a hotkey (or double-copy the same text within 1.5s), and a local voice reads it instantly. Features streaming playback, pause/resume, and 7+ TTS backends.
+2. **Read Aloud** — Select text anywhere in any app, press a hotkey (or double-copy the same text within 1.5s), and a local voice reads it instantly. Features streaming playback, pause/resume, and 8 TTS backends (Piper, Kokoro, Kitten, Pocket, SAPI [stub], OpenAI, ElevenLabs, Cartesia).
 
 3. **Talk to the Brain** — The Conversation window: speak naturally to a local LLM (Ollama/LM Studio) or any cloud LLM (OpenAI, Anthropic, Gemini). Real-time STT in, streaming tokens out, sentence-by-sentence TTS reads the reply aloud (toggleable, default ON). Interruptible mid-sentence (barge-in).
 
@@ -416,8 +416,8 @@ All STT engines are accessed through the `transcribe-rs` crate, which provides:
 | ------------------ | ----------------------- | ------------ | -------------------------------------- | ------------- | ------------------------ | ---------------------- | ----------------- |
 | **Piper**          | Local (persistent HTTP) | 20+ EN, 7 FR | ~20                                    | Good          | **Fastest**              | ~100-200 MB            | Auto-download     |
 | **Kokoro-82M**     | Local (in-process ONNX) | 54           | 9 (EN, ES, FR, HI, IT, JA, PT, ZH, KO) | **Excellent** | Fast                     | ~115 MB + 50 MB/worker | Auto-download     |
-| **Kitten TTS**     | Local (CLI)        | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
-| **SAPI**           | OS (Windows)            | OS-dependent | Depends                                | Moderate      | Fast                     | ~0 MB                  | **Zero download** |
+| **Kitten TTS**     | Local (persistent HTTP) | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
+| **SAPI**           | OS (Windows)            | 1 (placeholder) | Depends                                | N/A (stub)    | N/A                      | ~0 MB                  | **Zero download** (⚠️ non-functional stub) |
 | **OpenAI TTS**     | Cloud API               | 9            | Multiple                               | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **ElevenLabs**     | Cloud API               | Many         | 29+                                    | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **Cartesia Sonic** | Cloud API               | Many         | Multiple                               | Excellent     | **Lowest latency cloud** | ~0 MB                  | API key           |
@@ -482,9 +482,11 @@ trait WarmEngine: TtsBackend {
 
 ### SAPI Backend Details
 
-- **Windows-only** fallback that requires zero downloads
-- Always available via OS Speech API
-- Good for basic read-aloud when no model is downloaded
+- **Windows-only** stub backend (requires zero downloads)
+- `synthesize()` always returns error: "SAPI synthesis not yet implemented"
+- `list_voices()` returns single hardcoded placeholder voice
+- **⚠️ Non-functional** — the Windows-rs COM interop code is not yet written (marked `TO FINISH` in source)
+- Intended as zero-download fallback, but currently cannot produce audio
 
 ### Cloud TTS Backends
 
@@ -1131,7 +1133,14 @@ S2B2S/
 ├── 📄 tailwind.config.js         # Tailwind CSS
 ├── 📄 tsconfig.json              # TypeScript config
 ├── 📄 tsconfig.node.json         # Node TypeScript config
-├── 📄 eslint.config.js           # ESLint flat config
+├── 📁 analysys/                  # Evolution planning documents
+│   ├── 📄 00_OVERVIEW.md          # Vision: GPU overlay, Conversation 2.0, Avatar "Orbi"
+│   ├── 📄 01_REPO_REVIEW.md       # Current codebase audit for overlay/avatar work
+│   ├── 📄 02_GPU_OVERLAY_ARCHITECTURE.md  # Cross-platform transparent overlay design
+│   ├── 📄 03_CONVERSATION_MODE_2.md  # Conversation Mode 2.0 UX spec
+│   ├── 📄 04_AVATAR_SPEC.md       # Avatar "Orbi" visual design & state machine
+│   └── 📄 05_IMPLEMENTATION_ROADMAP.md  # Phased implementation plan (Phases 0-4)
+│
 ├── 📄 playwright.config.ts       # E2E test config
 ├── 📄 .gitignore                 # Git ignore
 ├── 📄 .prettierrc / .prettierignore  # Prettier config
@@ -1237,12 +1246,12 @@ S2B2S/
 │   │   │   ├── 📄 manager.rs     # Sanitize→Paginate→Synthesize
 │   │   │   ├── 📄 player.rs      # Streaming gapless playback
 │   │   │   ├── 📄 pagination.rs  # UTF-8-safe text chunking
-│   │   │   ├── 📄 fragment_queue.rs  # Pre-synth queue (unused)
+│   │   │   ├── 📄 fragment_queue.rs  # ⚠️ 306 lines dead code (preserved for future use)
 │   │   │   ├── 📄 clipboard_watch.rs  # Double-copy trigger
 │   │   │   ├── 📄 audio_format.rs # WAV→MP3/OGG/FLAC conversion
 │   │   │   ├── 📄 telemetry.rs   # TTS perf (chars_per_ms)
 │   │   │   ├── 📄 status.rs      # Engine status reporting
-│   │   │   ├── 📁 backends/      # 7 engine implementations
+│   │   │   ├── 📁 backends/      # 9 engine implementations (piper, piper_server, kokoro, kitten, pocket, sapi, openai, elevenlabs, cartesia)
 │   │   │   │   ├── 📄 piper.rs        # Piper HTTP client
 │   │   │   │   ├── 📄 piper_server.rs # Piper server lifecycle
 │   │   │   │   ├── 📄 kokoro.rs       # Kokoro-82M ONNX TTS
@@ -1352,7 +1361,7 @@ S2B2S/
 | Feature                                               | Details                                                        |
 | ----------------------------------------------------- | -------------------------------------------------------------- |
 | STT (Parakeet V3, Whisper, Moonshine)                 | Multi-engine STT with auto language detection                  |
-| TTS read-aloud (7 backends)                           | Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia      |
+| TTS read-aloud (8 backends)                           | Piper, Kokoro, Kitten, Pocket, SAPI (stub), OpenAI, ElevenLabs, Cartesia |
 | Conversation mode                                     | Streaming LLM + streaming TTS                                  |
 | Double-copy clipboard trigger                         | Copy same text twice within 1.5s                               |
 | Text normalization pipeline                           | ITN + TN + markdown stripping (5 stages)                       |
@@ -1369,7 +1378,7 @@ S2B2S/
 | Save-to-file                                          | MP3/OGG/FLAC export via ffmpeg                                 |
 | Waveform HUD                                          | AmplitudeEnvelope from TTS playback signal                     |
 | AI Replace Selection                                  | Voice-edit selected text via LLM                               |
-| Wake word (VAD-based)                                 | Simple energy-threshold detection; KWS blocked on CRT linking  |
+| Wake word (VAD-based)                                 | Simple RMS energy-threshold detection (0.03); KWS blocked on CRT linking; **audio pipeline NOT connected** — detector runs but receives no audio data |
 | Ollama/LM Studio/llama.cpp auto-discovery             | Probes :11434, :1234, :8080 for running servers                |
 | Latency HUD                                           | Per-stage timestamps (EP, STT, TTFT, TTFA) color-coded display |
 | Pre-compiled llama.cpp server                         | Drop-in CUDA/Vulkan/CPU GPU acceleration, auto-download, VRAM offloading |
@@ -1384,6 +1393,8 @@ S2B2S/
 
 | Feature                        | Details                                             |
 | ------------------------------ | --------------------------------------------------- |
+| SAPI TTS COM interop           | `windows-rs` SpVoice → ISpeechBaseStream → WAV bytes; currently non-functional stub |
+| Wake word audio pipeline       | Connect `recorder.rs` audio callback to `WakeWordDetector::feed_audio()`; currently detector runs idle |
 | Kokoro worker pool + crossfade | Multi-worker parallel synthesis with 10ms crossfade |
 | Engine-switch cleanup          | Unload previous engine when switching               |
 | Test suite (text pipeline)     | ITN 1217 tests + markdown + integration             |
@@ -1393,7 +1404,7 @@ S2B2S/
 | Phase                | Features                                            |
 | -------------------- | --------------------------------------------------- |
 | **Streaming STT**    | OpenAI Realtime WS, Deepgram WS, MoonshineStreaming |
-| **Pocket TTS**       | Voice cloning from 5-10s reference audio            |
+| **Pocket TTS**       | ✅ Complete — 8 character voices + voice cloning from WAV via Python HTTP server |
 | **Profiles**         | Per-mode language/prompt/model/hotkey configuration |
 | **Audio cache**      | Hash-keyed audio replay from history                |
 | **Control HTTP API** | axum server with crypto auth                        |
@@ -1418,6 +1429,8 @@ S2B2S/
 
 | Issue                                               | Severity | Status                          |
 | --------------------------------------------------- | -------- | ------------------------------- |
+| **SAPI TTS backend is a non-functional stub**       | Medium   | `synthesize()` always returns error; COM interop not yet written |
+| **Wake word detector not connected to audio**       | Medium   | `feed_audio()` never called from recording pipeline; detector runs idle |
 | **Whisper model crashes** on some Win/Linux configs | High     | Parakeet V3 default avoids this |
 | **Wayland paste** needs wtype/dotool                | Medium   | Documented workaround           |
 | **Overlay focus-stealing** on Linux                 | Medium   | Disable overlay as workaround   |
@@ -1431,9 +1444,10 @@ S2B2S/
 | Limitation                    | Explanation                                                             |
 | ----------------------------- | ----------------------------------------------------------------------- |
 | **Half-duplex only**          | Mic muted while TTS plays; barge-in via hotkey, not VAD                 |
-| **Wake word (VAD-based)**     | Simple energy-threshold detection; KWS blocked on CRT linking (backlog) |
+| **Wake word (VAD-based)**     | RMS energy threshold (0.03) with 3-frame debounce; **audio feed-in not connected** — detector runs idle. KWS blocked on CRT linking conflict (sherpa-onnx /MT vs transcribe-rs /MD on Windows) |
+| **SAPI TTS is a stub**        | `synthesize()` always returns error; COM interop via windows-rs not yet written; `list_voices()` returns placeholder only |
 | **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns)  |
-| **No voice cloning yet**      | Pocket TTS backend planned                                              |
+| **Pocket voice cloning**      | Implemented via Python server — clone from 5-20s WAV, persistent storage in `models/TTS/pocket-cloned-voices/` |
 | **No profiles**               | Per-context presets planned (Phase 6)                                   |
 | **No remote LAN-GPU support** | For heavy models on a separate machine (backlog)                        |
 
@@ -1739,7 +1753,9 @@ bun run check:translations           # i18n validation
 | `src-tauri/src/lib.rs`                          | App entry point, setup, event handlers |
 | `src-tauri/src/tts/manager.rs`                  | TTS orchestration                      |
 | `src-tauri/src/brain/client.rs`                 | SSE streaming LLM client               |
-| `src-tauri/src/llama_server/manager.rs`         | Llama.cpp server lifecycle & GPU VRAM  |
+| `src-tauri/src/llama_server/manager.rs`         | Pre-compiled llama.cpp server lifecycle, auto-download, GPU offloading |
+| `src-tauri/src/brain/llama_manager.rs`          | Llama.cpp server process management + Gemma-4 model orchestration |
+| `src-tauri/src/tts/backends/pocket.rs`          | Pocket TTS (Python server) + voice cloning from WAV |
 | `src-tauri/src/audio_toolkit/vad/triple_vad.rs` | 3-stage VAD                            |
 | `src-tauri/src/settings.rs`                     | All settings definitions               |
 | `src-tauri/src/actions.rs`                      | Pipeline triggers                      |

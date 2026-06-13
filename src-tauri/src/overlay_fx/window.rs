@@ -32,10 +32,7 @@ pub fn create_brain_overlay(app: &AppHandle) -> Result<(), Box<dyn std::error::E
         builder = builder.data_directory(data_dir.join("webview"));
     }
 
-    let window = builder.build()?;
-
-    // Make the whole window click-through by default.
-    let _ = window.set_ignore_cursor_events(true);
+    let _window = builder.build()?;
 
     log::debug!("Brain overlay window created (hidden)");
     Ok(())

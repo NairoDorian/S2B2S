@@ -9,6 +9,7 @@ lerna-debug.log*
 
 package-lock.json
 
+models/TTS/
 node_modules
 dist
 dist-ssr
@@ -72,3 +73,5 @@ llama.cpp/
 venv/
 __pycache__/
 test_models_download_remove_once_finished/
+
+analysys

@@ -103,7 +103,7 @@ bun scripts/check-deps.ts       # Check all dependency versions
 
 - **Cross-platform mandatory** — Windows 11 (primary), macOS (first-class), Linux (first-class)
 - **Manager pattern** — `managers/` (audio, model, transcription, history, TTS, brain)
-- **TTS backends** — `TtsBackend` trait under `tts/backends/` (Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)
+- **TTS backends** — `TtsBackend` trait under `tts/backends/` (Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia)
 - **Brain** — streaming LLM in `brain/` (SSE client + sentence splitter + TTS bridge)
 - **Text pipeline** — `tts/sanitize/` handles ITN, TN, markdown stripping, regex cleanup
 - **VAD** — TripleVAD default (RMS → RNNoise → Silero) in `audio_toolkit/vad/`
@@ -145,6 +145,15 @@ S2B2S/
 │   └── TTS/                #   Kokoro, Piper voices, Pocket, Kitten
 ├── scripts/                # Utility scripts (venv setup, dep checks, translations)
 ├── tests/                  # E2E tests
+├── S2B2S_ANDROID_COMPANION.md  # Android companion plans
+├── S2B2S_VOX_COMPARISON.md     # Vox vs S2B2S comparison & improvement plan
+├── analysys/                # Evolution plans (GPU overlay, Conv 2.0, Avatar)
+│   ├── 00_OVERVIEW.md        # Vision & three pillars
+│   ├── 01_REPO_REVIEW.md     # Current codebase audit
+│   ├── 02_GPU_OVERLAY_ARCHITECTURE.md
+│   ├── 03_CONVERSATION_MODE_2.md
+│   ├── 04_AVATAR_SPEC.md     # Orbi avatar design
+│   └── 05_IMPLEMENTATION_ROADMAP.md
 ├── flake.nix               # Nix flake
 └── .github/                # CI/CD workflows and templates
 ```

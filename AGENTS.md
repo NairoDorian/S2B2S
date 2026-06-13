@@ -121,7 +121,7 @@ src-tauri/src/
 ├── llama_server/            # Pre-compiled llama.cpp server manager
 │   ├── mod.rs               # Module declarations
 │   └── manager.rs           # Server lifecycle, download, GPU offloading
-├── wake_word.rs            # VAD-based wake word detection (KWS-ready)
+├── wake_word.rs            # VAD-based wake word detection (⚠️ KWS-ready but audio feed-in not connected — detector runs idle)
 ├── transcription_coordinator.rs  # Record → VAD → transcribe → paste orchestrator
 │
 ├── managers/
@@ -144,12 +144,13 @@ src-tauri/src/
 │   ├── status.rs           # Engine status reporting
 │   ├── telemetry.rs        # Per-engine performance tracking
 │   ├── backends/
-│   │   ├── mod.rs          # Backend module declarations
+│   │   ├── mod.rs          # Backend module declarations (9 backends: piper, piper_server, kokoro, kitten, pocket, sapi, openai, elevenlabs, cartesia)
 │   │   ├── piper.rs        # Piper HTTP client
 │   │   ├── piper_server.rs # Piper persistent server lifecycle
 │   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (persistent HTTP server)
 │   │   ├── kitten.rs       # Kitten TTS (persistent HTTP server)
-│   │   ├── sapi.rs         # Windows SAPI fallback
+│   │   ├── pocket.rs        # Pocket TTS (persistent HTTP server, voice cloning)
+│   │   ├── sapi.rs         # Windows SAPI fallback (⚠️ STUB — COM interop pending)
 │   │   ├── openai.rs       # OpenAI TTS cloud
 │   │   ├── elevenlabs.rs   # ElevenLabs TTS cloud
 │   │   └── cartesia.rs     # Cartesia Sonic cloud
@@ -294,7 +295,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **i18n**            | i18next 26, react-i18next 17                                                                    |
 | **Animation**       | Three.js 0.184, Lucide React                                                                    |
 | **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
-| **TTS**             | Piper (persistent HTTP), Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia |
+| **TTS**             | Piper (persistent HTTP), Kokoro, Kitten, Pocket (voice cloning), SAPI (⚠️ stub), OpenAI, ElevenLabs, Cartesia |
 | **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
 | **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
 | **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |

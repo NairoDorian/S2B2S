@@ -13,6 +13,32 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.
 
+### Repomix Codebase Packaging
+
+- **`repomix.config.json`** — Repomix bundler configuration for producing single-file codebase snapshots with file descriptions.
+- **`scripts/repomix-with-descriptions.ts`** — TypeScript script generating annotated Repomix outputs with per-file commentary.
+- **`S2B2S_repomix.txt`** / **`S2B2S_repomix_annotated.txt`** — Full and annotated Repomix codebase snapshots for AI context ingestion.
+- **`repomix-file-descriptions.md`** — Per-file descriptions of the entire S2B2S codebase (348+ documented files).
+
+### WGPU Native Overlay Shader
+
+- **`overlay_fx/native/mod.rs`** — New platform-native overlay module with WGPU render pipeline initialization, surface setup, and platform-agnostic shader compilation.
+- **`overlay_fx/native/shader.wgsl`** — WGSL compute/render shader for GPU-accelerated cursor trail effects (spring-friction physics, bloom glow, click ripple).
+
+### Brain Overlay 3D Avatar
+
+- **`brain-overlay/avatar/Avatar3D.tsx`** — 3D avatar component using Three.js with phase-reactive animations (Idle/Listening/Thinking/Speaking), orbital particle effects, and GPU-accelerated rendering.
+
+### GPU/VRAM Monitor
+
+- **`src/components/settings/models/GpuVramMonitor.tsx`** — Footer component displaying real-time GPU VRAM usage from llama.cpp server, with progress bar and memory pressure color coding.
+
+### Docs & Housekeeping
+
+- **AGENTS.md, README.md, BUILD.md, CLAUDE.md, CONTRIBUTING.md, CRUSH.md, S2B2S_REVIEW.md** — Updated cross-references, build instructions, and contributor guidance.
+- **sponsor-images/** — Removed deprecated sponsor image assets.
+- **models/TTS/** — Added Kitten TTS nano 0.8 pre-downloaded model files for offline first-run.
+
 ### Overlay Architecture — Tauri/OS-Native Toggle + WGPU Trail Foundation
 
 - **`OverlayMode` toggle** — Settings → Overlay Window now lets users switch between `Tauri` mode (CopySpeak HUD style — `always_on_top` + `transparent` only) and `OsNative` mode (Handy style — NSPanel on macOS, Win32 `HWND_TOPMOST` on Windows, GTK layer-shell on Linux). Both modes share the same window label and event bus.

@@ -477,4 +477,9 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         let _ = overlay_window.emit("mic-level", levels);
     }
+
+    // fan out to the brain overlay (avatar ears)
+    if let Some(brain_overlay) = app_handle.get_webview_window("brain_overlay") {
+        let _ = brain_overlay.emit("mic-level", levels);
+    }
 }

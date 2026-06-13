@@ -13,6 +13,7 @@ pub mod events;
 pub mod placement;
 pub mod trail;
 pub mod window;
+pub mod native;
 
 /// Overlay capability probe result — returned to the frontend, typed via specta.
 #[derive(Clone, serde::Serialize, specta::Type)]
