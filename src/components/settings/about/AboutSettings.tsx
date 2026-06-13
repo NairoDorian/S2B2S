@@ -10,6 +10,15 @@ import { AppLanguageSelector } from "../AppLanguageSelector";
 import { LogDirectory } from "../debug";
 import { ExportImportSettings } from "../ExportImportSettings";
 
+const ACKNOWLEDGMENT_SECTIONS = [
+  "forkLineage",
+  "sttModels",
+  "ttsEngines",
+  "brainLlm",
+  "keyCrates",
+  "pythonEcosystem",
+] as const;
+
 export const AboutSettings: React.FC = () => {
   const { t } = useTranslation();
   const [version, setVersion] = useState("");
@@ -79,16 +88,19 @@ export const AboutSettings: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.about.acknowledgments.title")}>
-        <SettingContainer
-          title={t("settings.about.acknowledgments.whisper.title")}
-          description={t("settings.about.acknowledgments.whisper.description")}
-          grouped={true}
-          layout="stacked"
-        >
-          <div className="text-sm text-mid-gray">
-            {t("settings.about.acknowledgments.whisper.details")}
-          </div>
-        </SettingContainer>
+        {ACKNOWLEDGMENT_SECTIONS.map((section) => (
+          <SettingContainer
+            key={section}
+            title={t(`settings.about.acknowledgments.${section}.title`)}
+            description={t(`settings.about.acknowledgments.${section}.description`)}
+            grouped={true}
+            layout="stacked"
+          >
+            <div className="text-sm text-mid-gray whitespace-pre-line">
+              {t(`settings.about.acknowledgments.${section}.details`)}
+            </div>
+          </SettingContainer>
+        ))}
       </SettingsGroup>
     </div>
   );

@@ -533,11 +533,36 @@
         "button": "후원하기"
       },
       "acknowledgments": {
-        "title": "감사의 말",
-        "whisper": {
-          "title": "Whisper.cpp",
-          "description": "OpenAI의 Whisper 자동 음성 인식 모델의 고성능 추론",
-          "details": "S2B2S는 빠르고 로컬 음성-텍스트 처리를 위해 Whisper.cpp를 사용합니다. Georgi Gerganov와 기여자들의 놀라운 작업에 감사드립니다."
+        "title": "Acknowledgments",
+        "forkLineage": {
+          "title": "Project Lineage & Forks",
+          "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
+          "details": "Handy (github.com/cjpais/Handy) — original STT desktop app skeleton, MIT\nAIVORelay (github.com/MaxITService/AIVORelay) — streaming STT, profiles, RNNoise, browser relay, MIT\nParler (github.com/Melvynx/Parler) — Gemini STT, long-audio routing, crash logging, MIT\nParrot (github.com/cjpais/parrot) — Kokoro worker pool, crossfade, markdown sanitization, MIT\nCopySpeak (github.com/yourfriendoss/copyspeak) — TTS read-aloud, warm-engine lifecycle, double-copy, MIT\nVox (github.com/mrtozner/vox) — voice-over-WebSocket protocol reference\nParakeet-Realtime-Transcriber — streaming STT parameter reference\nTranscriptionSuite — persist-before-deliver, LAN GPU concept, GPL-3.0\nWhispering — provider matrix, transformations concept, AGPL-3.0\n\nThank you to every contributor across this lineage for making S2B2S possible."
+        },
+        "sttModels": {
+          "title": "Speech-to-Text Models",
+          "description": "Local STT models and inference engines that power transcription",
+          "details": "Whisper.cpp (github.com/ggml-org/llama.cpp) — fast CPU/GPU Whisper inference by Georgi Gerganov\nNVIDIA NeMo Parakeet (github.com/NVIDIA/NeMo) — TDT 0.6B V3 STT model, CC-BY-4.0\nSilero VAD (github.com/snakers4/silero-vad) — voice activity detection, MIT\nMoonshine — streaming STT models by Useful Sensors\nWhisper Large V3 / Turbo / Small / Medium — OpenAI Whisper model family\nBreeze ASR — Chinese STT model\nCanary 180M / 1B — NVIDIA Canary STT\nSense Voice — multilingual STT\nGiga AM V3 — NVIDIA Giga AM STT\nCohere — Cohere STT model\n\nModels distributed via blob.handy.computer CDN."
+        },
+        "ttsEngines": {
+          "title": "Text-to-Speech Engines",
+          "description": "Local and cloud TTS engines that give S2B2S its voice",
+          "details": "Piper (github.com/rhasspy/piper) — fast local neural TTS, 26 English voices, MIT\nKokoro (github.com/hexgrad/kokoro) — 82M ONNX TTS, 54 voices across 9 languages, Apache 2.0\nKitten TTS (github.com/KittenML/KittenTTS) — ultra-lightweight CPU TTS, 8 voices, MIT\nPocket TTS (github.com/kyutai/pocket-tts-without-voice-cloning) — compact VITS TTS with voice cloning, MIT\n\nCloud TTS: OpenAI TTS, ElevenLabs, Cartesia Sonic"
+        },
+        "brainLlm": {
+          "title": "Brain & LLM Backend",
+          "description": "Local and cloud LLM providers that power the conversational Brain",
+          "details": "llama.cpp (github.com/ggml-org/llama.cpp) — pre-compiled CUDA/Vulkan/CPU inference server, MIT\nGemma-4 (Google / unsloth) — default local LLM model, Gemma license\n\nCloud providers: OpenAI, Anthropic Claude, Google Gemini, Groq, Cerebras, OpenRouter, Z.ai SenseNova, AWS Bedrock"
+        },
+        "keyCrates": {
+          "title": "Key Rust Crates & Libraries",
+          "description": "Open-source crates that form S2B2S's Rust backend foundation",
+          "details": "Tauri 2.x (github.com/tauri-apps/tauri) — desktop app framework, MIT/Apache 2.0\nrdev (github.com/rustdesk-org/rdev) — global keyboard shortcuts\nvad-rs (github.com/cjpais/vad-rs) — Silero VAD ONNX bindings\ntranscribe-rs — multi-engine STT inference (Parakeet, Whisper, Moonshine)\nnnnoiseless — RNNoise noise suppression\ncpal (github.com/rustaudio/cpal) — cross-platform audio I/O\nrodio (github.com/rustaudio/rodio) — audio playback\nrubato (github.com/henquist/rubato) — audio resampling\ntext-processing-rs — NVIDIA NeMo ITN/TN text normalization\nenigo — cross-platform keyboard input simulation\nrusqlite — SQLite database bindings\nspecta + tauri-specta — typed frontend-backend IPC bindings\n\nAnd all other crate authors whose work makes S2B2S possible."
+        },
+        "pythonEcosystem": {
+          "title": "Python & ML Ecosystem",
+          "description": "Python packages that power local TTS inference servers",
+          "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
         }
       }
     },
