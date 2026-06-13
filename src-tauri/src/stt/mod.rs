@@ -53,3 +53,25 @@ pub mod unified_parakeet;
 //   - Backup models: GPU via CUDA/DirectML/WebGPU when available
 //   - UnifiedParakeet models share the same Python server (one at a time)
 //   - Non-Python models (Whisper, Parakeet V3, etc.) loaded via transcribe-rs
+
+// ============================================================================
+// Future: Higgs Audio v3 TTS (4B params, 100+ languages)
+// ============================================================================
+//
+// Higgs Audio v3 TTS by Boson AI — expressive conversational speech with
+// zero-shot voice cloning, inline emotion/style/prosody/sfx control tokens.
+// Architecture: 4B autoregressive decoder, 8-codebook audio tokens, 24kHz output.
+//
+// Blockers:
+//   1. License: Boson Higgs Audio v3 Research and Non-Commercial License.
+//      Commercial use requires separate license from Boson AI.
+//   2. Serving stack: Requires SGLang-Omni server (Python + GPU, ~8GB VRAM),
+//      NOT a simple ONNX runtime session like Piper/Kokoro.
+//   3. Integration complexity: New TTS backend type (SGLangServer) with
+//      model download, server lifecycle, health check, and streaming API.
+//
+// Integration plan (post-license):
+//   1. Download ONNX weights from onnx-community/higgs-audio-v3-tts-4b
+//   2. Run SGLang-Omni server as a TTS backend (similar pattern to PiperServer)
+//   3. Map control tokens to TTS pipeline: allow Brain to inject emotion/style
+//   4. Support streaming SSE response for sub-second time-to-first-audio

@@ -4,7 +4,7 @@ HTTP server for Parakeet ONNX STT models — offline + streaming RNNT inference.
 
 Uses onnxruntime (>=1.26.0) for the latest optimizations including the Nemotron Conformer MHA fusion.
 
-Supports two model families via auto-detection:
+Supports model families via auto-detection:
 
   Unified (eschmidbauer/parakeet-unified-en-0.6b-onnx):
     tokenizer.model  (SentencePiece)
@@ -17,6 +17,10 @@ Supports two model families via auto-detection:
     encoder-model.{quant}.onnx / decoder_joint-model.{quant}.onnx
     Mel normalization: none (raw log-mel), decoder layers: 1, blank_id: from config.json
     Emits <EOU> token for end-of-utterance detection (streaming mode)
+
+  NOTE: Nemotron 3.5 ASR (onnxruntime-genai format) uses separate
+  encoder.onnx + decoder.onnx + joint.onnx + tokenizer.json — NOT yet
+  supported by this server. Needs genai-format inference implementation.
 
 Quantization: each model directory contains one encoder + one decoder ONNX.
 The server auto-detects whichever files are present.

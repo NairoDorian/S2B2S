@@ -294,6 +294,59 @@ impl ModelManager {
             },
         );
 
+        // Nemotron 3.5 ASR Streaming 0.6B — INT4 (multilingual, streaming, punctuation)
+        available_models.insert(
+            "nemotron-3.5-asr-0.6b-int4".to_string(),
+            ModelInfo {
+                id: "nemotron-3.5-asr-0.6b-int4".to_string(),
+                name: "Nemotron 3.5 ASR INT4".to_string(),
+                description: "Multilingual streaming ASR. 40 languages, punctuation + capitalization, 560ms chunk size."
+                    .to_string(),
+                filename: "nemotron-3.5-asr-0.6b-int4".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 400,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.91,
+                speed_score: 0.72,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec![
+                    "en", "es", "fr", "it", "pt", "nl", "de", "tr", "ru", "ar",
+                    "hi", "ja", "ko", "vi", "uk", "pl", "sv", "cs", "nb", "da",
+                    "bg", "fi", "hr", "sk", "zh", "hu", "ro", "et", "el", "lt",
+                    "lv", "mt", "sl", "he", "th", "nn",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                supports_language_selection: true,
+                is_custom: false,
+                hf_repo: Some(
+                    "https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "encoder.onnx".to_string(),
+                    "encoder.onnx.data".to_string(),
+                    "decoder.onnx".to_string(),
+                    "decoder.onnx.data".to_string(),
+                    "joint.onnx".to_string(),
+                    "joint.onnx.data".to_string(),
+                    "tokenizer.json".to_string(),
+                    "tokenizer_config.json".to_string(),
+                    "vocab.txt".to_string(),
+                    "genai_config.json".to_string(),
+                    "model_config.json".to_string(),
+                    "audio_processor_config.json".to_string(),
+                ]),
+            },
+        );
+
         available_models.insert(
             "medium".to_string(),
             ModelInfo {
