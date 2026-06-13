@@ -71,6 +71,10 @@ Write-Host "  -> kittentts (from wheel)" -ForegroundColor Gray
 Write-Host "  -> soundfile, numpy" -ForegroundColor Gray
 & $VenvPip install soundfile numpy --quiet
 
+# STT: Unified Parakeet ONNX runtime (1.26+)
+Write-Host "  -> onnxruntime>=1.26.0, sentencepiece" -ForegroundColor Gray
+& $VenvPip install "onnxruntime>=1.26.0" sentencepiece --quiet
+
 # Pocket-specific dependencies (PyTorch for CPU)
 Write-Host "  -> torch (CPU)" -ForegroundColor Gray
 & $VenvPip install torch --quiet

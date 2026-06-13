@@ -27,6 +27,7 @@ use transcribe_rs::{
     whisper_cpp::{WhisperEngine, WhisperInferenceParams},
     SpeechModel, TranscribeOptions,
 };
+use crate::stt::unified_parakeet::UnifiedParakeetServer;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ModelStateEvent {
@@ -45,6 +46,7 @@ enum LoadedEngine {
     GigaAM(GigaAMModel),
     Canary(CanaryModel),
     Cohere(CohereModel),
+    UnifiedParakeet(UnifiedParakeetServer),
 }
 
 /// RAII guard that clears the `is_loading` flag and notifies waiters on drop.
@@ -377,6 +379,20 @@ impl TranscriptionManager {
                 })?;
                 LoadedEngine::Cohere(engine)
             }
+            EngineType::UnifiedParakeet => {
+                let engine = UnifiedParakeetServer::launch(
+                    &model_path.to_string_lossy(),
+                )
+                .map_err(|e| {
+                    let error_msg = format!(
+                        "Failed to launch unified parakeet server {}: {}",
+                        model_id, e
+                    );
+                    emit_loading_failed(&error_msg);
+                    anyhow::anyhow!(error_msg)
+                })?;
+                LoadedEngine::UnifiedParakeet(engine)
+            }
         };
 
         // Update the current engine and model ID
@@ -659,6 +675,20 @@ impl TranscriptionManager {
                             cohere_engine
                                 .transcribe(&audio, &options)
                                 .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e))
+                        }
+                        LoadedEngine::UnifiedParakeet(server) => {
+                            let text = server
+                                .transcribe(&audio)
+                                .map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "Unified Parakeet transcription failed: {}",
+                                        e
+                                    )
+                                })?;
+                            Ok(transcribe_rs::TranscriptionResult {
+                                text,
+                                segments: None,
+                            })
                         }
                     }
                 },

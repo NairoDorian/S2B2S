@@ -394,12 +394,21 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Typed bindings regeneration** — `cargo test export_bindings` works headlessly (no GUI launch needed).
 - **i18n** — UI keys for all new features across all 20 locales (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW).
 
+**STT — Python ONNX Runtime 1.26 Server:**
+
+- **Parakeet Unified EN 0.6B model** — two new STT models: `parakeet-unified-en-0.6b-fp32` (2.4 GB, accuracy 0.88) and `parakeet-unified-en-0.6b-int8` (633 MB, accuracy 0.85). Both English-only RNN-T architecture from NVIDIA NeMo, registered in `ModelManager`.
+- **Python onnxruntime 1.26 server** (`unified_parakeet_server.py`) — dedicated HTTP server for Parakeet Unified inference using the latest ONNX Runtime 1.26 (benefits from the Nemotron Conformer MHA fusion optimizer in v1.25). Keeps encoder + decoder ONNX sessions loaded in RAM with SentencePiece tokenizer. Full RNN-T greedy decoder with 128-bin Slaney mel spectrogram, pre-emphasis, and per-feature normalization — matching parakeet-rs exactly.
+- **Rust STT backend module** (`src/stt/unified_parakeet.rs`) — manages the Python server lifecycle (spawn, health check with exponential backoff, transcription via HTTP POST of raw float32le audio bytes, graceful kill on drop). Python venv resolution follows the existing TTS priority chain (project venv → app-data venv → system Python).
+- **Model download paths** — fp32 and int8 variants served as `.tar.gz` archives from CDN, consistent with existing model distribution pattern.
+
 ### Changed
 
 - **Default VAD mode** changed from `"silero"` to `"triple"` for all modes (dictation, conversation, push-to-talk).
 - **Text sanitizer pipeline reordered** — markdown stripping runs first, then TN (text-processing-rs), then legacy regex-based TTS normalization, then artifact cleanup.
 - **Always-On Microphone toggle moved** from Debug settings to General → Sound section for easy discovery.
 - **All dependencies updated to latest** — Tauri 2.11, rodio 0.22, rubato 3.0, reqwest 0.13, rusqlite 0.40, `windows` 0.62, specta rc.25, transcribe-rs 0.3.11. React 19, Vite 8, TypeScript 6, zod 4, ESLint 10, i18next 26. `cpal` pinned to 0.17.
+- **Removed `parakeet-rs` crate** — replaced with Python onnxruntime 1.26 server for Parakeet Unified model inference. The Rust `ort` crate (locked to 2.0.0-rc.12, ONNX Runtime ~1.20) cannot be upgraded to 1.26 yet; Python path bypasses this bottleneck.
+- **Python venv now includes onnxruntime >= 1.26.0 and sentencepiece** for the Unified Parakeet STT server.
 - **Overlay threading simplified** — removed `run_on_main_thread` wrapping; overlay executes directly on calling thread.
 - **Removed COM initialization** from TTS audio player background thread.
 - **Removed dynamic Piper server reload** — `change_tts_config` no longer restarts the persistent server on voice/CUDA changes.

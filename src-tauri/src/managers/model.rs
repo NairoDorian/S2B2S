@@ -27,6 +27,7 @@ pub enum EngineType {
     GigaAM,
     Canary,
     Cohere,
+    UnifiedParakeet,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -336,6 +337,64 @@ impl ModelManager {
                 supports_translation: false,
                 is_recommended: true,
                 supported_languages: parakeet_v3_languages,
+                supports_language_selection: false,
+                is_custom: false,
+            },
+        );
+
+        // Parakeet Unified EN 0.6B — fp32 variant (RNN-T, English only)
+        available_models.insert(
+            "parakeet-unified-en-0.6b-fp32".to_string(),
+            ModelInfo {
+                id: "parakeet-unified-en-0.6b-fp32".to_string(),
+                name: "Parakeet Unified FP32".to_string(),
+                description: "High-accuracy RNN-T model. English only. Large but precise."
+                    .to_string(),
+                filename: "parakeet-unified-en-0.6b-fp32".to_string(),
+                url: Some(
+                    "https://blob.handy.computer/parakeet-unified-en-0.6b-fp32.tar.gz".to_string(),
+                ),
+                sha256: None, // TODO: add after uploading archive
+                size_mb: 2390,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.88,
+                speed_score: 0.65,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec!["en".to_string()],
+                supports_language_selection: false,
+                is_custom: false,
+            },
+        );
+
+        // Parakeet Unified EN 0.6B — int8 variant (RNN-T, English only)
+        available_models.insert(
+            "parakeet-unified-en-0.6b-int8".to_string(),
+            ModelInfo {
+                id: "parakeet-unified-en-0.6b-int8".to_string(),
+                name: "Parakeet Unified INT8".to_string(),
+                description: "Quantized RNN-T model. English only. Fast and compact."
+                    .to_string(),
+                filename: "parakeet-unified-en-0.6b-int8".to_string(),
+                url: Some(
+                    "https://blob.handy.computer/parakeet-unified-en-0.6b-int8.tar.gz".to_string(),
+                ),
+                sha256: None, // TODO: add after uploading archive
+                size_mb: 633,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.85,
+                speed_score: 0.80,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
             },

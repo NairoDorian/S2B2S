@@ -21,6 +21,7 @@ pub mod portable;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod stt;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
@@ -315,6 +316,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // Create the brain overlay window (hidden, shown on converse trigger)
+    if let Err(e) = crate::overlay_fx::window::create_brain_overlay(app_handle) {
+        log::error!("Failed to create brain overlay window: {}", e);
+    }
 
     // Start control TCP server
     control_server::start(app_handle.clone());

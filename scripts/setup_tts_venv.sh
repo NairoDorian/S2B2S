@@ -59,6 +59,10 @@ pip install "https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kitte
 echo "  -> soundfile, numpy"
 pip install soundfile numpy --quiet
 
+# STT: Unified Parakeet ONNX runtime (1.26+)
+echo "  -> onnxruntime>=1.26.0, sentencepiece"
+pip install "onnxruntime>=1.26.0" sentencepiece --quiet
+
 # PyTorch CPU-only to keep venv size reasonable
 echo "  -> torch (CPU)"
 pip install torch --quiet

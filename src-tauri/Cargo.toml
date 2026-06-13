@@ -20,6 +20,9 @@ incremental = true # Compile your binary in smaller steps.
 name = "s2b2s_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+overlay-native = []
+
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 serde_json = "1.0.150"
