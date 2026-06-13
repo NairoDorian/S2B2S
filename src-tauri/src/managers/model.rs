@@ -542,8 +542,15 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
-                hf_repo: None,
-                hf_files: None,
+                hf_repo: Some(
+                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "onnx_int8/encoder.int8.onnx".to_string(),
+                    "onnx_int8/decoder_joint.int8.onnx".to_string(),
+                    "onnx_int8/tokenizer.model".to_string(),
+                ]),
             },
         );
 

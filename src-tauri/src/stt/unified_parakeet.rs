@@ -1,7 +1,6 @@
 use crate::portable;
 use anyhow::{Context, Result};
 use log::info;
-use reqwest::blocking::Client;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -17,7 +16,7 @@ const REQUEST_TIMEOUT_SECS: u64 = 120;
 pub struct UnifiedParakeetServer {
     process: Arc<Mutex<Option<Child>>>,
     port: u16,
-    client: Client,
+    client: ureq::Agent,
     shutdown: Arc<AtomicBool>,
 }
 
@@ -74,8 +73,6 @@ impl UnifiedParakeetServer {
         }
         if let Some(stderr) = child.stderr.take() {
             let shutdown_stderr = shutdown.clone();
-            let last_lines = Arc::new(Mutex::new(Vec::new()));
-            let last_lines_clone = last_lines.clone();
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines() {
@@ -84,20 +81,15 @@ impl UnifiedParakeetServer {
                     }
                     if let Ok(l) = line {
                         info!("[unified_parakeet] {}", l);
-                        let mut buf = last_lines_clone.lock().unwrap();
-                        buf.push(l);
-                        if buf.len() > 30 {
-                            buf.remove(0);
-                        }
                     }
                 }
             });
         }
 
-        // Health check with exponential backoff
-        let client = Client::builder()
+        // Health check with exponential backoff — uses ureq (no tokio dependency)
+        let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .build()?;
+            .build();
 
         let health_url = format!("http://127.0.0.1:{}/health", port);
         let start = Instant::now();
@@ -120,8 +112,8 @@ impl UnifiedParakeetServer {
                 }
             }
 
-            match client.get(&health_url).send() {
-                Ok(resp) if resp.status().is_success() => {
+            match agent.get(&health_url).call() {
+                Ok(_resp) => {
                     info!(
                         "[unified_parakeet] Server healthy at {} ({}ms)",
                         health_url,
@@ -129,7 +121,7 @@ impl UnifiedParakeetServer {
                     );
                     break;
                 }
-                _ => {
+                Err(_) => {
                     if start.elapsed().as_secs() > HEALTH_TIMEOUT_SECS {
                         let _ = child.kill();
                         anyhow::bail!(
@@ -146,105 +138,64 @@ impl UnifiedParakeetServer {
         Ok(Self {
             process: Arc::new(Mutex::new(Some(child))),
             port,
-            client,
+            client: agent,
             shutdown,
         })
     }
 
     pub fn transcribe(&self, audio: &[f32]) -> Result<String> {
-        // Convert f32 samples to raw bytes (little-endian float32)
-        let audio_bytes: Vec<u8> = audio
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
-
+        let audio_bytes: Vec<u8> = audio.iter().flat_map(|s| s.to_le_bytes()).collect();
         let url = format!("http://127.0.0.1:{}/transcribe", self.port);
+
         let resp = self
             .client
             .post(&url)
-            .body(audio_bytes)
-            .send()
+            .send_bytes(&audio_bytes)
             .context("Failed to send audio to unified parakeet server")?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!("Unified parakeet server error ({}): {}", status, body);
-        }
-
         let json: serde_json::Value =
-            resp.json()
+            serde_json::from_reader(resp.into_reader())
                 .context("Failed to parse unified parakeet server response")?;
 
-        let text = json["text"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-
-        Ok(text)
+        Ok(json["text"].as_str().unwrap_or("").to_string())
     }
 
-    /// Reset the streaming state on the server for a new utterance.
     pub fn stream_start(&self) -> Result<()> {
         let url = format!("http://127.0.0.1:{}/stream_start", self.port);
-        let resp = self
-            .client
+        self.client
             .post(&url)
-            .send()
+            .send_bytes(&[])
             .context("Failed to start stream on unified parakeet server")?;
-        if !resp.status().is_success() {
-            anyhow::bail!(
-                "stream_start failed: HTTP {}",
-                resp.status()
-            );
-        }
         Ok(())
     }
 
-    /// Feed an audio chunk to the streaming decoder.
-    /// Returns (text, eou) — eou=true when end-of-utterance is detected.
     pub fn stream_feed(&self, audio: &[f32]) -> Result<(String, bool)> {
-        let audio_bytes: Vec<u8> = audio
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+        let audio_bytes: Vec<u8> = audio.iter().flat_map(|s| s.to_le_bytes()).collect();
         let url = format!("http://127.0.0.1:{}/stream_feed", self.port);
+
         let resp = self
             .client
             .post(&url)
-            .body(audio_bytes)
-            .send()
+            .send_bytes(&audio_bytes)
             .context("Failed to feed audio to streaming decoder")?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!("stream_feed error ({}): {}", status, body);
-        }
-        let json: serde_json::Value = resp.json()?;
+
+        let json: serde_json::Value = serde_json::from_reader(resp.into_reader())?;
         let text = json["text"].as_str().unwrap_or("").to_string();
         let eou = json["eou"].as_bool().unwrap_or(false);
         Ok((text, eou))
     }
 
-    /// Finalise the stream — feed any remaining audio and get final result.
     pub fn stream_end(&self, audio: &[f32]) -> Result<(String, bool)> {
-        let audio_bytes: Vec<u8> = audio
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+        let audio_bytes: Vec<u8> = audio.iter().flat_map(|s| s.to_le_bytes()).collect();
         let url = format!("http://127.0.0.1:{}/stream_end", self.port);
+
         let resp = self
             .client
             .post(&url)
-            .body(audio_bytes)
-            .send()
+            .send_bytes(&audio_bytes)
             .context("Failed to finalise stream on unified parakeet server")?;
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!("stream_end error ({}): {}", status, body);
-        }
-        let json: serde_json::Value = resp.json()?;
+
+        let json: serde_json::Value = serde_json::from_reader(resp.into_reader())?;
         let text = json["text"].as_str().unwrap_or("").to_string();
         let eou = json["eou"].as_bool().unwrap_or(false);
         Ok((text, eou))
@@ -269,12 +220,9 @@ impl Drop for UnifiedParakeetServer {
 }
 
 fn resolve_venv_python() -> Result<String> {
-    // Priority: project venv > system python
     let exe_name = if cfg!(windows) { "python.exe" } else { "python3" };
-
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    // Project-local venv
     let project_venv = manifest_dir.parent().unwrap().join("venv");
     let venv_python = if cfg!(windows) {
         project_venv.join("Scripts").join(exe_name)
@@ -285,7 +233,6 @@ fn resolve_venv_python() -> Result<String> {
         return Ok(venv_python.to_string_lossy().to_string());
     }
 
-    // App-data venv (portable/installed builds)
     if let Some(data_dir) = portable::data_dir() {
         let app_venv = if cfg!(windows) {
             data_dir.join("venv").join("Scripts").join(exe_name)
@@ -297,7 +244,6 @@ fn resolve_venv_python() -> Result<String> {
         }
     }
 
-    // System fallback
     let sys_python = if cfg!(windows) { "python" } else { "python3" };
     Ok(sys_python.to_string())
 }
@@ -305,13 +251,11 @@ fn resolve_venv_python() -> Result<String> {
 fn resolve_server_script() -> Result<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    // Priority 1: src-tauri/ (dev)
     let dev_path = manifest_dir.join(SCRIPT_NAME);
     if dev_path.exists() {
         return Ok(dev_path);
     }
 
-    // Priority 2: next to executable (bundled)
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
@@ -321,7 +265,6 @@ fn resolve_server_script() -> Result<PathBuf> {
         return Ok(bundled_path);
     }
 
-    // Priority 3: app data dir (portable mode)
     if let Some(data_dir) = portable::data_dir() {
         let portable_path = data_dir.join(SCRIPT_NAME);
         if portable_path.exists() {
