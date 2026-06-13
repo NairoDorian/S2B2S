@@ -12,7 +12,7 @@ $ProjectRoot = Resolve-Path "$ScriptDir\.."
 $VenvDir = Join-Path $ProjectRoot "venv"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  S2B2S — TTS Virtual Environment Setup" -ForegroundColor Cyan
+Write-Host "  S2B2S - TTS Virtual Environment Setup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
