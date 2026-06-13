@@ -318,8 +318,8 @@ def transcribe(audio: bytes) -> str:
 # Shared RNNT frame-by-frame decoder  (used by both offline and streaming)
 # ============================================================================
 def _targets_dtype(cfg: dict) -> np.dtype:
-    """EOU models expect int32 targets; Unified (SentencePiece) models expect float32."""
-    return np.dtype(np.float32) if cfg.get("family") == "unified" else np.dtype(np.int32)
+    """Both EOU and Unified models expect int32 for the targets tensor."""
+    return np.dtype(np.int32)
 
 
 def _decode_frames(
