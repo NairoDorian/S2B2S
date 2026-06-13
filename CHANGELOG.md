@@ -406,7 +406,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Streaming RNNT endpoints** (`/stream_start`, `/stream_feed`, `/stream_end`, `/stream_status`) — the Python server now supports incremental audio chunk processing with stateful decoder (LSTM states persist between chunks). Feeds audio in 250ms chunks, returns progressive partial results with EOU detection.
 - **EOU model auto-detection** — the transcription pipeline detects the EOU 120M model by its HuggingFace repo URL and routes through the streaming API. The Unified model continues using the offline `/transcribe` endpoint.
 - **`transcription-partial` event** — emitted by the Rust backend during streaming transcription whenever text changes. Enables real-time word-by-word overlay display in future frontend work.
-- **Multi-STT pipeline architecture** — documented in `src/stt/mod.rs`. Future plan: streaming model (real-time feedback) + 1–2 backup models (parallel full-audio transcription) + LLM post-processing to merge 2–3 noisy transcriptions into one clean result.
+
+**STT — Multi-STT Pipeline (Parallel Transcription + LLM Merge):**
+
+- **Multi-STT orchestrator** (`src/stt/multi_stt.rs`) — runs 2–3 STT models in parallel via `std::thread::spawn`. Each thread loads its own engine independently (transcribe-rs or Python server), transcribes the audio, and returns text. All 9 engine types supported.
+- **LLM merge** — results formatted as a transcriptions block and fed through the existing post-processing pipeline with a configurable prompt template (`{transcriptions}` placeholder). Falls back to the primary model's result when post-processing is disabled.
+- **Settings** — `multi_stt_enabled` (bool), `multi_stt_models` (Vec), `multi_stt_prompt` (String with default merge prompt). Integration point in `actions.rs` runs multi-STT before the existing post-process step.
+- **Architecture** documented in `src/stt/mod.rs` — streaming model for real-time feedback + 1–2 backup models for accuracy + LLM merge.
+
+**STT — EOU Streaming Toggle + Silence Gate:**
+
+- **`eou_streaming_enabled`** setting (default: `true`) — toggles between streaming API (`/stream_start` → `/stream_feed` → `/stream_end`) and offline `/transcribe` for the EOU 120M model. Disabling streaming uses a single HTTP call with no partial events.
+- **Silence gate on chunk feeding** — each 250ms audio chunk is checked for RMS energy before being sent to the streaming model. Chunks below the `0.002` RMS threshold (matching TripleVAD's energy gate) are skipped. Prevents background noise and silence gaps from triggering the model or causing premature `<EOU>` emission. Applied in both main transcription path and multi-STT parallel path.
 
 **STT — HuggingFace Direct Downloads:**
 
@@ -420,7 +431,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Always-On Microphone toggle moved** from Debug settings to General → Sound section for easy discovery.
 - **All dependencies updated to latest** — Tauri 2.11, rodio 0.22, rubato 3.0, reqwest 0.13, rusqlite 0.40, `windows` 0.62, specta rc.25, transcribe-rs 0.3.11. React 19, Vite 8, TypeScript 6, zod 4, ESLint 10, i18next 26. `cpal` pinned to 0.17.
 - **Removed `parakeet-rs` crate** — replaced with Python onnxruntime 1.26 server for Parakeet Unified model inference. The Rust `ort` crate (locked to 2.0.0-rc.12, ONNX Runtime ~1.20) cannot be upgraded to 1.26 yet; Python path bypasses this bottleneck.
-- **EOU 120M model uses streaming pipeline** — detected by HuggingFace repo URL, routes through `/stream_start` → chunked `/stream_feed` → `/stream_end` with `transcription-partial` events. Unified model stays on offline `/transcribe` endpoint.
+- **EOU 120M model uses streaming pipeline** — detected by HuggingFace repo URL, routes through `/stream_start` → chunked `/stream_feed` → `/stream_end` with `transcription-partial` events. Unified model stays on offline `/transcribe` endpoint. Toggleable via `eou_streaming_enabled` setting.
+- **Multi-STT and EOU streaming settings** added to `AppSettings`: `multi_stt_enabled`, `multi_stt_models`, `multi_stt_prompt`, `eou_streaming_enabled`.
+- **Silence-gated streaming** — audio chunks below 0.002 RMS energy are skipped before feeding to the streaming decoder, preventing noise-induced EOU hallucinations.
 - **Python venv now includes onnxruntime >= 1.26.0 and sentencepiece** for the Unified Parakeet STT server.
 - **Overlay threading simplified** — removed `run_on_main_thread` wrapping; overlay executes directly on calling thread.
 - **Removed COM initialization** from TTS audio player background thread.
