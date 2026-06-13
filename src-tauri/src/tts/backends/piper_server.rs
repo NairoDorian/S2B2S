@@ -632,7 +632,11 @@ fn spawn_start_thread(
 
 pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String> {
     let app = APP_HANDLE.get().ok_or("AppHandle not initialized")?;
-    let command = resolve_python_command()?;
+    let python_exe = crate::tts::local_tts_server::resolve_venv_python();
+    let command = PythonCommand {
+        executable: python_exe,
+        args: vec!["-u".to_string(), "-m".to_string(), "piper.http_server".to_string()],
+    };
     let data_dir = resolve_piper_voices_dir(Some(app))
         .to_string_lossy()
         .to_string();

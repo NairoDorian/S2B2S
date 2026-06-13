@@ -9,6 +9,51 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// Resolve the path to the Python executable inside the S2B2S venv.
+/// Priority: project venv > app_data venv > system Python.
+pub(crate) fn resolve_venv_python() -> String {
+    let venv_python = if cfg!(windows) {
+        "venv/Scripts/python.exe"
+    } else {
+        "venv/bin/python"
+    };
+
+    // 1. Project root venv (dev mode): CARGO_MANIFEST_DIR/../venv/
+    let project_venv = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(venv_python);
+    if project_venv.exists() {
+        log::info!("[Venv] Using project venv Python: {}", project_venv.display());
+        return project_venv.to_string_lossy().to_string();
+    }
+
+    // 2. Current directory venv (alternate dev mode)
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_venv = cwd.join("..").join(venv_python);
+        if cwd_venv.exists() {
+            return cwd_venv.to_string_lossy().to_string();
+        }
+        let cwd_venv2 = cwd.join(venv_python);
+        if cwd_venv2.exists() {
+            return cwd_venv2.to_string_lossy().to_string();
+        }
+    }
+
+    // 3. App data venv (installed builds)
+    if let Some(data_dir) = crate::portable::data_dir() {
+        let app_venv = data_dir.join(venv_python);
+        if app_venv.exists() {
+            log::info!("[Venv] Using app data venv Python: {}", app_venv.display());
+            return app_venv.to_string_lossy().to_string();
+        }
+    }
+
+    // 4. System Python fallback
+    let fallback = if cfg!(windows) { "python" } else { "python3" };
+    log::info!("[Venv] No venv found, falling back to system Python: {}", fallback);
+    fallback.to_string()
+}
+
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 pub fn set_local_tts_app_handle(handle: tauri::AppHandle) {
@@ -111,38 +156,6 @@ fn get_free_port() -> Option<u16> {
         .ok()
 }
 
-fn resolve_python_command(user_command: &str) -> String {
-    let cmd_lower = user_command.to_lowercase();
-    if cmd_lower == "py" || cmd_lower.starts_with("python") {
-        return user_command.to_string();
-    }
-
-    for candidate in &["python", "python3", "py"] {
-        if let Ok(output) = std::process::Command::new(candidate)
-            .arg("--version")
-            .output()
-        {
-            if output.status.success() {
-                return candidate.to_string();
-            }
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        if let Ok(output) = std::process::Command::new("py")
-            .args(["-3", "--version"])
-            .output()
-        {
-            if output.status.success() {
-                return "py".to_string();
-            }
-        }
-    }
-
-    user_command.to_string()
-}
-
 fn resolve_server_script(script_name: &str) -> Option<std::path::PathBuf> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let script_path = manifest_dir.join(script_name);
@@ -164,7 +177,7 @@ fn resolve_server_script(script_name: &str) -> Option<std::path::PathBuf> {
 fn spawn_start_thread(
     generation: u64,
     slot: &'static EngineSlot,
-    command: String,
+    _command: String,
     engine: String,
     script_args: Vec<String>,
     stderr_tail: Arc<Mutex<Vec<String>>>,
@@ -209,7 +222,7 @@ fn spawn_start_thread(
             script_path.display()
         );
 
-        let python_cmd = resolve_python_command(&command);
+        let python_cmd = resolve_venv_python();
         let mut cmd = Command::new(&python_cmd);
         let mut args = vec![
             script_path.to_string_lossy().to_string(),
