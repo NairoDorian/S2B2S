@@ -271,6 +271,26 @@ def load_model(model_dir: str):
     print(f"[unified_server] decoder: {os.path.basename(dec_path)}", file=sys.stderr, flush=True)
     decoder = ort.InferenceSession(dec_path, so, providers=["CPUExecutionProvider"])
 
+    # Inspect decoder ONNX inputs to determine expected dtypes — different
+    # ONNX exports use different conventions and we must match exactly.
+    decoder_inputs = {inp.name: inp for inp in decoder.get_inputs()}
+    _targets_dtype = np.int32  # default
+    _has_target_length = False
+    for name, meta in decoder_inputs.items():
+        if name == "targets":
+            onnx_type = meta.type
+            if "float" in onnx_type:
+                _targets_dtype = np.float32
+            elif "int32" in onnx_type:
+                _targets_dtype = np.int32
+            elif "int64" in onnx_type:
+                _targets_dtype = np.int64  # parakeet-rs uses this
+        if name == "target_length":
+            _has_target_length = True
+    print(f"[unified_server] decoder targets dtype={_targets_dtype.__name__}, "
+          f"has_target_length={_has_target_length}",
+          file=sys.stderr, flush=True)
+
     mel_basis = _create_mel_filterbank(N_FFT, FEATURE_SIZE, SAMPLE_RATE)
 
     return {
@@ -280,6 +300,8 @@ def load_model(model_dir: str):
             "blank_id": blank_id, "eou_id": eou_id,
             "pred_layers": pred_layers, "pred_hidden": pred_hidden,
             "mel_normalize": mel_normalize, "family": family,
+            "targets_dtype": _targets_dtype,
+            "has_target_length": _has_target_length,
         },
     }
 
@@ -301,7 +323,7 @@ def transcribe(audio: bytes) -> str:
     tokens = _decode_frames(
         MODEL, encoded, frame_count, blank_id=cfg["blank_id"],
         n_layers=cfg["pred_layers"], hidden=cfg["pred_hidden"],
-        targets_dtype=_targets_dtype(cfg),
+        targets_dtype=cfg["targets_dtype"],
     )
     if not tokens:
         return ""
@@ -311,11 +333,6 @@ def transcribe(audio: bytes) -> str:
 # ============================================================================
 # Shared RNNT frame-by-frame decoder  (used by both offline and streaming)
 # ============================================================================
-def _targets_dtype(cfg: dict) -> np.dtype:
-    """EOU expects int32; Unified expects float32 (different ONNX export conventions)."""
-    return np.dtype(np.float32) if cfg.get("family") == "unified" else np.dtype(np.int32)
-
-
 def _encoder_forward(encoder, features):
     """Run encoder and return (encoded, frame_count). Handles 1 or 2 output models."""
     enc_input = features.T[np.newaxis, :, :]  # (1, 128, T)
@@ -350,7 +367,9 @@ def _decode_frames(
     """
     decoder = model["decoder"]
     tokenizer = model["tokenizer"]
-    eou_id = model["config"].get("eou_id")
+    cfg = model["config"]
+    eou_id = cfg.get("eou_id")
+    has_target_length = cfg.get("has_target_length", True)
 
     if decoder_state is None:
         state_1 = np.zeros((n_layers, 1, hidden), dtype=np.float32)
@@ -371,13 +390,15 @@ def _decode_frames(
         last_processed = frame_idx
 
         for _ in range(MAX_SYMBOLS_PER_STEP):
-            d_out = decoder.run(None, {
+            feed = {
                 "encoder_outputs": frame,
                 "targets": last_token.astype(targets_dtype),
-                "target_length": target_length,
                 "input_states_1": state_1,
                 "input_states_2": state_2,
-            })
+            }
+            if has_target_length:
+                feed["target_length"] = target_length
+            d_out = decoder.run(None, feed)
             logits = d_out[0][0, 0, :]
             state_1 = d_out[1]
             state_2 = d_out[2]
@@ -458,7 +479,7 @@ def _stream_feed(audio_bytes: bytes) -> dict:
         start_frame=STREAM["decoded_frame"],
         decoder_state=STREAM["decoder_state"],
         stop_on_eou=True,
-        targets_dtype=_targets_dtype(cfg),
+        targets_dtype=cfg["targets_dtype"],
     )
 
     STREAM["tokens"].extend(result["tokens"])
