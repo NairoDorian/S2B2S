@@ -217,6 +217,12 @@ impl TtsBackend for PiperBackend {
     }
 
     fn health_check(&self) -> Result<(), String> {
-        piper_server::resolve_python_command().map(|_| ())
+        // Check that the venv Python executable exists
+        let python = crate::tts::local_tts_server::resolve_venv_python();
+        std::process::Command::new(&python)
+            .arg("--version")
+            .output()
+            .map(|_| ())
+            .map_err(|e| format!("Python not found: {e}"))
     }
 }
