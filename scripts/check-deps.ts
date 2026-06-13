@@ -62,29 +62,41 @@ try {
   const cargoV = execSync("cargo --version", { encoding: "utf8" }).trim().split(" ")[1];
   addResult({ name: "Cargo", current: cargoV, status: "info", source: "toolchain" });
 
-  // Check for outdated Rust dependencies
+  // Check for outdated Rust dependencies (ALL depths, including transitive)
   try {
-    const cargoOutdated = execSync("cargo outdated --depth 1 2>&1 || true", {
+    const cargoUpdate = execSync("cargo update --dry-run --verbose 2>&1", {
       encoding: "utf8",
       cwd: resolve(projectRoot, "src-tauri"),
       timeout: 120_000,
     });
-    const lines = cargoOutdated.split("\n");
+    const lines = cargoUpdate.split("\n");
     for (const line of lines) {
-      // cargo outdated format: "crate_name  current_version  ->  latest_version"
-      const m = line.match(/^(\S+)\s+(\S+)\s+->\s+(\S+)/);
+      // "Updating crate v1.0 -> v2.0" — can be updated via cargo update
+      let m = line.match(/^\s*Updating (\S+) v(\S+) -> v(\S+)/);
       if (m) {
         addResult({
           name: `[Rust] ${m[1]}`,
           current: m[2],
           latest: m[3],
           status: "outdated",
-          source: "cargo",
+          source: "cargo (auto)",
+        });
+        continue;
+      }
+      // "Unchanged crate v1.0 (available: v2.0)" — semver-constrained, needs manual Cargo.toml bump
+      m = line.match(/^\s*Unchanged (\S+) v(\S+) \(available: v(\S+)\)/);
+      if (m) {
+        addResult({
+          name: `[Rust*] ${m[1]}`,
+          current: m[2],
+          latest: m[3],
+          status: "outdated",
+          source: "cargo (constrained)",
         });
       }
     }
   } catch {
-    // cargo-outdated not installed, skip
+    addResult({ name: "Rust deps", current: "check failed", status: "error", source: "cargo" });
   }
 } catch {
   addResult({ name: "Rust", current: "not found", status: "error", source: "toolchain" });
@@ -94,47 +106,38 @@ try {
 // 3. Frontend (package.json) — check for outdated deps
 // ─────────────────────────────────────────────────────────────────────────
 try {
-  // Use bun to check for outdated packages
-  const outdated = execSync("bun outdated --format json 2>&1 || echo '[]'", {
-    encoding: "utf8",
-    cwd: projectRoot,
-    timeout: 60_000,
-  });
-
+  // Use bun to check for outdated packages (parse table output, --format json is broken)
   try {
-    const parsed = JSON.parse(outdated.trim());
-    if (Array.isArray(parsed)) {
-      for (const pkg of parsed) {
+    const tableOut = execSync("bun outdated 2>&1", {
+      encoding: "utf8",
+      cwd: projectRoot,
+      timeout: 60_000,
+    });
+    const lines = tableOut.split("\n");
+    for (const line of lines) {
+      // Table format: "│ package-name     │ current │ update │ latest │"
+      const m = line.match(/^\│\s*(\S.*?)\s*\│\s*(\S+)\s*\│\s*(\S+)\s*\│\s*(\S+)\s*\│/);
+      if (m && m[1] !== "Package") {
         addResult({
-          name: `[JS] ${pkg.name}`,
-          current: pkg.current || "?",
-          latest: pkg.latest || "?",
+          name: `[JS] ${m[1].trim()}`,
+          current: m[2],
+          latest: m[4],
           status: "outdated",
           source: "package.json",
         });
       }
     }
-  } catch {
-    // Could not parse bun outdated output — try reading package.json directly
+    // Also show key framework deps as info
     const pkgJson = JSON.parse(
       readFileSync(resolve(projectRoot, "package.json"), "utf8")
     );
-    // List key framework deps with their versions for awareness
     const keyDeps = [
-      "@tauri-apps/cli",
-      "vite",
-      "typescript",
-      "react",
-      "react-dom",
-      "tailwindcss",
-      "zustand",
-      "i18next",
-      "three",
-      "zod",
+      "@tauri-apps/cli", "vite", "typescript", "react", "react-dom",
+      "tailwindcss", "zustand", "i18next", "three", "zod",
     ];
     const allDeps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
     for (const dep of keyDeps) {
-      if (allDeps[dep]) {
+      if (allDeps[dep] && !results.some((r) => r.name === `[JS] ${dep}`)) {
         addResult({
           name: `[JS] ${dep}`,
           current: allDeps[dep].replace("^", "").replace("~", ""),
@@ -143,6 +146,8 @@ try {
         });
       }
     }
+  } catch {
+    addResult({ name: "[JS] deps", current: "check failed", status: "error", source: "package.json" });
   }
 } catch (e) {
   addResult({ name: "[JS] deps", current: "check failed", status: "error", source: "package.json" });
@@ -192,7 +197,7 @@ if (pythonCmd) {
             { encoding: "utf8", timeout: 15_000 }
           );
           const latestMatch = pipOutdated.match(/Available versions:\s*(\S+)/);
-          if (latestMatch) latest = latestMatch[1];
+          if (latestMatch) latest = latestMatch[1].replace(/[,;]$/, "");
         } catch {
           // pip index versions not available on older pip
         }
