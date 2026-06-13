@@ -101,19 +101,19 @@ pub struct ModelManager {
 
 impl ModelManager {
     pub fn new(app_handle: &AppHandle) -> Result<Self> {
-        // Create models directory in app data
-        let models_dir = crate::portable::app_data_dir(app_handle)
-            .map_err(|e| anyhow::anyhow!("Failed to get app data dir: {}", e))?
-            .join("models");
+        // Create STT models directory under models/STT/
+        let models_dir = crate::portable::stt_models_dir(app_handle)
+            .map_err(|e| anyhow::anyhow!("Failed to get STT models dir: {}", e))?;
 
         if !models_dir.exists() {
             fs::create_dir_all(&models_dir)?;
         }
 
-        // Project-local models dir (S2B2S/models/ in dev mode)
+        // Project-local STT models dir (S2B2S/models/STT/ in dev mode)
         let project_models = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
-            .join("models");
+            .join("models")
+            .join("STT");
         let project_local_models_dir = if project_models.is_dir() {
             Some(project_models)
         } else {

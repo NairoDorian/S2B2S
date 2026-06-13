@@ -54,27 +54,32 @@ pub(crate) fn resolve_venv_python() -> String {
     fallback.to_string()
 }
 
-/// Resolve the local models directory (S2B2S/models/) for HuggingFace cache
+/// Resolve the local TTS models directory (S2B2S/models/TTS/) for HuggingFace cache
 /// and model storage. Returns the path if it exists.
 pub(crate) fn resolve_local_models_dir() -> Option<std::path::PathBuf> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    // 1. Project root: S2B2S/models/ (canonical dev location)
-    let project_models = manifest_dir.join("..").join("models");
+    // 1. Project root: S2B2S/models/TTS/ (canonical dev location)
+    let project_models = manifest_dir.join("..").join("models").join("TTS");
     if project_models.is_dir() {
         return Some(project_models);
     }
 
-    // 2. Current directory: models/
+    // 2. Current directory: models/TTS/
     if let Ok(cwd) = std::env::current_dir() {
-        let cwd_models = cwd.join("models");
+        let cwd_models = cwd.join("models").join("TTS");
         if cwd_models.is_dir() {
             return Some(cwd_models);
         }
-        // 3. Parent directory: ../models/ (if running from src-tauri)
-        let parent_models = cwd.join("..").join("models");
+        // 3. Parent directory: ../models/TTS/ (if running from src-tauri)
+        let parent_models = cwd.join("..").join("models").join("TTS");
         if parent_models.is_dir() {
             return Some(parent_models);
+        }
+        // 4. Legacy: models/ (flat, no TTS subdir)
+        let legacy_models = cwd.join("models");
+        if legacy_models.is_dir() {
+            return Some(legacy_models);
         }
     }
 

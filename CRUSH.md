@@ -4,6 +4,16 @@
 
 ```bash
 bun install                              # Install dependencies
+
+# Python virtual environment for TTS engines
+.\scripts\setup_tts_venv.ps1             # Windows — creates venv/, installs TTS deps
+bash scripts/setup_tts_venv.sh           # macOS/Linux
+
+# Model files download
+.\models\download_models.ps1             # Windows — downloads STT/VAD/TTS models
+bash models/download_models.sh           # macOS/Linux
+
+# Minimal VAD model only
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
 ```
@@ -44,6 +54,7 @@ bun run test:playwright         # Playwright E2E tests
 bun run test:playwright:ui      # Playwright with UI
 cargo test                      # Rust unit tests
 bun run check:translations      # Verify i18n files
+bun scripts/check-deps.ts       # Check all dependency versions
 ```
 
 ---
@@ -127,8 +138,12 @@ S2B2S/
 ├── src/                    # Frontend source (React/TS)
 ├── src-tauri/              # Backend source (Rust + llama_server/)
 ├── llama.cpp/              # Pre-compiled server binaries (build artifact)
-├── models/                 # Model files (STT, TTS)
-├── scripts/                # Utility scripts
+├── venv/                   # Python virtual environment (created by setup script)
+├── models/                 # Model files in STT/Brain/TTS subfolders
+│   ├── STT/                #   Parakeet, Whisper, Silero VAD
+│   ├── Brain/              #   llama.cpp GGUF
+│   └── TTS/                #   Kokoro, Piper voices, Pocket, Kitten
+├── scripts/                # Utility scripts (venv setup, dep checks, translations)
 ├── tests/                  # E2E tests
 ├── flake.nix               # Nix flake
 └── .github/                # CI/CD workflows and templates

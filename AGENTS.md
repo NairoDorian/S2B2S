@@ -49,6 +49,22 @@ bun run preview    # Preview built frontend
 **Model Setup (Required for Development):**
 
 ```bash
+# Python venv for TTS engines (Piper, Kokoro, Kitten, Pocket):
+#   Windows: .\scripts\setup_tts_venv.ps1
+#   macOS/Linux: bash scripts/setup_tts_venv.sh
+
+# Download STT/TTS/Brain model files to models/
+#   Windows: .\models\download_models.ps1 -Model all
+#   macOS/Linux: bash models/download_models.sh --model all
+
+# One-shot venv + all models:
+#   Windows: .\models\download_models.ps1 -Model all -SetupVenv
+#   macOS/Linux: bash models/download_models.sh --model all --setup-venv
+
+# Check all dependencies for updates:
+bun scripts/check-deps.ts
+
+# Minimal (VAD only):
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
 ```
@@ -131,8 +147,8 @@ src-tauri/src/
 │   │   ├── mod.rs          # Backend module declarations
 │   │   ├── piper.rs        # Piper HTTP client
 │   │   ├── piper_server.rs # Piper persistent server lifecycle
-│   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (skeleton)
-│   │   ├── kitten.rs       # Kitten TTS (skeleton)
+│   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (persistent HTTP server)
+│   │   ├── kitten.rs       # Kitten TTS (persistent HTTP server)
 │   │   ├── sapi.rs         # Windows SAPI fallback
 │   │   ├── openai.rs       # OpenAI TTS cloud
 │   │   ├── elevenlabs.rs   # ElevenLabs TTS cloud
@@ -278,7 +294,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **i18n**            | i18next 26, react-i18next 17                                                                    |
 | **Animation**       | Three.js 0.184, Lucide React                                                                    |
 | **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
-| **TTS**             | Piper (persistent HTTP), Kokoro (skeleton), Kitten, SAPI, OpenAI, ElevenLabs, Cartesia |
+| **TTS**             | Piper (persistent HTTP), Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia |
 | **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
 | **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
 | **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |
@@ -295,7 +311,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 3. **Dictation:** Global shortcut triggers audio recording with TripleVAD filtering → Parakeet V3 transcription → ITN normalization → paste at cursor.
 4. **Read Aloud:** Global shortcut reads selected text (or double-copy clipboard trigger) → markdown stripping → TN normalization → TTS playback with streaming gapless playback.
 5. **Conversation:** Global shortcut starts recording → transcribe → send to Brain (LLM) → stream reply tokens → sentence splitter → TTS reads each sentence aloud with barge-in support.
-6. **TTS Engine Selection:** 7+ backends available (Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia) with warm-persistent model lifecycle (WarmEngine trait: Loading → WarmingUp → Ready → Error).
+6. **TTS Engine Selection:** 8 backends available (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with warm-persistent model lifecycle (WarmEngine trait: Loading → WarmingUp → Ready → Error).
 
 ### Settings System
 
@@ -304,7 +320,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - **Keyboard shortcuts**: configurable for push-to-talk, speak-selection, conversation, cancel
 - **Audio devices**: microphone/output selection
 - **STT model**: Parakeet V3, Whisper (Small/Medium/Turbo/Large), Moonshine
-- **TTS engine**: Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia — voice, speed, volume per engine
+- **TTS engine**: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia — voice, speed, volume per engine
 - **Brain**: Ollama/LM Studio endpoint, model, system prompt, memory, read-aloud toggle
 - **VAD mode**: TripleVAD/Silero with tunable RNNoise threshold (0.05–0.9)
 - **Text pipeline**: ITN/TN/markdown-strip toggles per stage

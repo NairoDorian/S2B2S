@@ -9,6 +9,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading, and 20-turn conversation memory.
 
+### Model Directory Restructure (STT / Brain / TTS)
+
+- **Master `models/` organization** — All model files now live in three category subdirectories: `models/STT/` (speech-to-text: Parakeet, Silero VAD, Whisper), `models/Brain/` (LLM: llama.cpp GGUF), `models/TTS/` (text-to-speech: Kokoro, Piper, Pocket, Kitten). Each engine has its own folder inside its category.
+- **Rust path resolution updated** — `portable.rs` now exports `stt_models_dir()`, `brain_models_dir()`, `tts_models_dir()` helpers. `model.rs` uses STT subdir. `llama_manager.rs` uses Brain subdir. `kokoro.rs`, `piper_server.rs`, `pocket.rs`, `local_tts_server.rs` all use TTS subdir with legacy compat fallbacks.
+- **Python server scripts updated** — `kokoro_server.py`, `kitten_server.py`, `pocket_server.py` now search `models/TTS/` first, with legacy `models/` flat directory as fallback for backward compatibility.
+- **`models/download_models.*` rewritten** — Now accepts `--path` (custom target directory), `--model` flags (pocket, piper, kokoro, kitten, stt, brain, tts, all). Creates proper STT/Brain/TTS folder structure at target path. Supports `--setup-venv` and `--clean-venv` for one-shot setup. Dry-run mode available.
+- **Pocket TTS model storage** — The `models/hub/` and `models/xet/` folders are HuggingFace auto-cache directories created by `pocket_tts`/`kittentts` Python packages when `HF_HOME` is set to `models/TTS/`. Pocket and Kitten models auto-download on first synthesis — no manual download needed.
+- **`.gitignore` rewritten** — Per-category patterns for binary files. Only scripts in `models/` root are tracked in git.
+
+### Dependency Checker & Script Cleanup
+
+- **`scripts/check-deps.ts`** — New cross-dependency version checker covering Bun, Node, Rust, Cargo, Tauri CLI, JS packages (React, Vite, TypeScript, Tailwind, Zustand, etc.), and Python TTS packages (piper-tts, kokoro-tts, pocket-tts, kittentts, torch). Detects outdated deps and outputs a summary.
+- **Removed unused scripts** — `check-latest.ts`, `find-bigints.ts`, `find-command-bigints.ts` removed (development-only tools, not referenced in CI or build). Kept `check-translations.ts`, `check-nix-deps.ts`, `setup_tts_venv.*`.
+
 ### Model Path Consolidation (Local-First Storage)
 
 - **`kokoro_server.py`** — Added `resolve_local_path()` fallback resolution. When `--model`/`--voices` args are missing, searches `models/kokoro/` relative to script dir and CWD before falling back to HuggingFace cache. Ensures the local `models/kokoro/kokoro-v1.0.onnx` + `voices-v1.0.bin` are always found.

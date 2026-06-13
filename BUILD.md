@@ -76,14 +76,62 @@ cd S2B2S
 bun install
 ```
 
-### 3. Download Required Models
+### 3. Set Up Python Virtual Environment (for TTS Engines)
 
+All local TTS engines (Piper, Kokoro, Kitten, Pocket) run inside a project-local Python venv. The app automatically resolves the venv Python first, falling back to system Python only if no venv is found.
+
+**Windows:**
+```powershell
+.\scripts\setup_tts_venv.ps1
+```
+
+**macOS / Linux:**
+```bash
+bash scripts/setup_tts_venv.sh
+```
+
+This creates `venv/` at the project root and installs: `piper-tts[http]`, `kokoro-tts`, `pocket-tts`, `kittentts`, `torch`, `numpy`, `soundfile`. All packages are installed exclusively in the venv — never on the system Python.
+
+### 4. Download Required Models
+
+Downloads STT, TTS, and Brain model files into the structured `models/` directory (`STT/`, `Brain/`, `TTS/` subfolders):
+
+**Windows:**
+```powershell
+.\models\download_models.ps1 -Model all    # download everything
+.\models\download_models.ps1 -Model kokoro # download only Kokoro TTS
+.\models\download_models.ps1 -Model piper,pocket,stt  # specific models
+.\models\download_models.ps1 -SetupVenv    # also setup Python venv
+.\models\download_models.ps1 -Path C:\my\models  # custom target path
+```
+
+**macOS / Linux:**
+```bash
+bash models/download_models.sh --model all
+bash models/download_models.sh --model kokoro
+bash models/download_models.sh --model piper,pocket,stt
+bash models/download_models.sh --setup-venv
+bash models/download_models.sh --path /my/models
+```
+
+Options: `-Force`/`--force` to re-download, `-DryRun`/`--dry-run` to preview. Available models: `stt`, `brain`, `piper`, `kokoro`, `pocket`, `kitten`, `tts` (all TTS), `all` (everything).
+
+For the minimal VAD model only (used in development):
 ```bash
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
 ```
 
-### 4. Start Dev Server
+**Model sources:**
+| Model | Size | Source |
+|-------|------|--------|
+| Silero VAD v4 | ~1.7 MB | blob.handy.computer |
+| Parakeet V3 (STT) | ~600 MB | blob.handy.computer |
+| Kokoro-82M (TTS) | ~330 MB | HuggingFace hexgrad/Kokoro-82M |
+| Piper en_US voices | ~30-70 MB each | HuggingFace rhasspy/piper-voices |
+| Pocket TTS | ~100 MB | Auto-downloaded by pocket-tts package |
+
+### 5. Start Dev Server
 
 ```bash
 bun run tauri dev
@@ -258,8 +306,12 @@ S2B2S/
 │   ├── resources/         # Static resources (models, icons)
 │   ├── Cargo.toml         # Rust dependencies
 │   └── tauri.conf.json    # Tauri configuration
-├── models/                # STT/TTS model files
-├── scripts/               # Utility scripts
+├── venv/                  # Python virtual environment (created by setup script)
+├── models/                # Models in STT/Brain/TTS subdirs (downloaded via scripts)
+│   ├── STT/               #   Parakeet, Whisper, Silero VAD
+│   ├── Brain/             #   llama.cpp GGUF
+│   └── TTS/               #   Kokoro, Piper, Pocket, Kitten
+├── scripts/               # Utility scripts (venv setup, dep checks, translations)
 ├── tests/                 # E2E tests
 ├── flake.nix              # Nix flake (Linux reproducible builds)
 ├── package.json           # Node/JS dependencies

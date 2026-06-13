@@ -416,7 +416,7 @@ All STT engines are accessed through the `transcribe-rs` crate, which provides:
 | ------------------ | ----------------------- | ------------ | -------------------------------------- | ------------- | ------------------------ | ---------------------- | ----------------- |
 | **Piper**          | Local (persistent HTTP) | 20+ EN, 7 FR | ~20                                    | Good          | **Fastest**              | ~100-200 MB            | Auto-download     |
 | **Kokoro-82M**     | Local (in-process ONNX) | 54           | 9 (EN, ES, FR, HI, IT, JA, PT, ZH, KO) | **Excellent** | Fast                     | ~115 MB + 50 MB/worker | Auto-download     |
-| **Kitten TTS**     | Local (CLI skeleton)    | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
+| **Kitten TTS**     | Local (CLI)        | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
 | **SAPI**           | OS (Windows)            | OS-dependent | Depends                                | Moderate      | Fast                     | ~0 MB                  | **Zero download** |
 | **OpenAI TTS**     | Cloud API               | 9            | Multiple                               | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **ElevenLabs**     | Cloud API               | Many         | 29+                                    | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
@@ -464,16 +464,16 @@ trait WarmEngine: TtsBackend {
 
 ### Piper Backend Details
 
-- **Implementation**: Persistent Python `piper.http_server` process
+- **Implementation**: Persistent Python `piper.http_server` process, launched via project-local venv Python
 - **Warmth**: Model stays in RAM; warm-up synthesis at startup
 - **CUDA**: Automatic NVIDIA DLL path discovery, CUDA Execution Provider toggle
-- **Voices**: 20+ English voices, 7 French voices (gilles, mls, mls_1840, siwis, tom, upmc)
+- **Voices**: 26 English voices (7 French voices available via manual download)
 - **Parameters**: `noise_scale` (0-1.5), `noise_w_scale` (0-1.5) — configurable in settings
 - **Edge case**: Child process stdio drained to prevent pipe buffer freeze
 
 ### Kokoro Backend Details
 
-- **Implementation**: Skeleton backend — voice listing (54 voices, 9 languages) works; synthesis pending `tts-rs` crate integration
+- **Implementation**: Persistent HTTP server backend via `kokoro_server.py` — voice listing (54 voices, 9 languages) works; synthesis fully operational via `kokoro_tts` Python API with venv-based Python resolution
 - **Pool**: Configurable worker count (auto-tuned from CPU count, 1-4 range)
 - **Voices**: 54 voices across 9 languages (US/UK English, Spanish, French, Hindi, Italian, Japanese, Portuguese, Mandarin Chinese)
 - **Voice-per-language**: Auto-selection based on detected language
@@ -1246,7 +1246,7 @@ S2B2S/
 │   │   │   │   ├── 📄 piper.rs        # Piper HTTP client
 │   │   │   │   ├── 📄 piper_server.rs # Piper server lifecycle
 │   │   │   │   ├── 📄 kokoro.rs       # Kokoro-82M ONNX TTS
-│   │   │   │   ├── 📄 kitten.rs       # Kitten TTS (skeleton)
+│   │   │   │   ├── 📄 kitten.rs       # Kitten TTS (persistent HTTP server)
 │   │   │   │   ├── 📄 sapi.rs         # Windows SAPI
 │   │   │   │   ├── 📄 openai.rs       # OpenAI TTS cloud
 │   │   │   │   ├── 📄 elevenlabs.rs   # ElevenLabs TTS cloud
@@ -1700,8 +1700,8 @@ Installer:          NSIS + MSI        DMG               deb + rpm + AppImage
 
 Secrets:            Credential Mgr    Keychain          keyring (DBus)
 
-TTS Voice Setup:    pip+Python HTTP   pip+Python HTTP   pip+Python HTTP
-                    Kokoro (skeleton)  Kokoro (skeleton) Kokoro (skeleton)
+TTS Voice Setup:    project venv      project venv      project venv
+                    Kokoro (complete)  Kokoro (complete) Kokoro (complete)
 ```
 
 ---

@@ -46,9 +46,9 @@ impl LlamaManager {
     }
 
     pub fn get_models_dir(&self) -> Result<PathBuf, String> {
-        let app_data = crate::portable::app_data_dir(&self.app)
-            .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
-        let models_dir = app_data.join("models").join("llama_cpp");
+        let models_dir = crate::portable::brain_models_dir(&self.app)
+            .map_err(|e| format!("Failed to resolve brain models dir: {}", e))?
+            .join("llama_cpp");
         if !models_dir.exists() {
             fs::create_dir_all(&models_dir).map_err(|e| format!("Failed to create models folder: {}", e))?;
         }

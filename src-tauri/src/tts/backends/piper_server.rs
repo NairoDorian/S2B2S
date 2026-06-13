@@ -176,139 +176,41 @@ fn get_expanded_path() -> String {
     std::env::var("PATH").unwrap_or_default()
 }
 
-fn test_python_import_piper(executable: &str) -> bool {
-    let mut cmd = Command::new(executable);
-    cmd.args(["-c", "import piper"]);
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.env("PATH", get_expanded_path());
-    }
-    match cmd.output() {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
-}
-
-#[cfg(windows)]
-fn test_py_launcher_import_piper(version: &str) -> bool {
-    let mut cmd = Command::new("py");
-    if !version.is_empty() {
-        cmd.arg(version);
-    }
-    cmd.args(["-c", "import piper"]);
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd.env("PATH", get_expanded_path());
-    match cmd.output() {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
-}
-
-pub fn resolve_python_command() -> Result<PythonCommand, String> {
-    static CACHED: OnceLock<Result<PythonCommand, String>> = OnceLock::new();
-    CACHED.get_or_init(|| {
-        log::info!("[Piper] Resolving Python command automatically...");
-
-        // 1. Test "python" in PATH
-        if test_python_import_piper("python") {
-            log::info!("[Piper] Found working global Python: 'python'");
-            return Ok(PythonCommand {
-                executable: "python".to_string(),
-                args: vec![],
-            });
-        }
-
-        // 2. Test "python3" in PATH
-        if test_python_import_piper("python3") {
-            log::info!("[Piper] Found working global Python3: 'python3'");
-            return Ok(PythonCommand {
-                executable: "python3".to_string(),
-                args: vec![],
-            });
-        }
-
-        // 3. Test py launcher with versions
-        #[cfg(windows)]
-        {
-            for ver in &["-3.12", "-3.11", "-3.10", "-3.13", "-3.14", ""] {
-                if test_py_launcher_import_piper(ver) {
-                    log::info!("[Piper] Found working Python via launcher: py {}", ver);
-                    return Ok(PythonCommand {
-                        executable: "py".to_string(),
-                        args: if ver.is_empty() { vec![] } else { vec![ver.to_string()] },
-                    });
-                }
-            }
-        }
-
-        // 4. Search absolute paths in the expanded PATH directories
-        let expanded = get_expanded_path();
-        #[cfg(windows)]
-        let separator = ";";
-        #[cfg(not(windows))]
-        let separator = ":";
-
-        for dir in expanded.split(separator) {
-            if dir.is_empty() {
-                continue;
-            }
-            let dir_path = std::path::Path::new(dir);
-
-            #[cfg(windows)]
-            let exes = &["python.exe", "python3.exe"];
-            #[cfg(not(windows))]
-            let exes = &["python", "python3"];
-
-            for exe_name in exes {
-                let exe_path = dir_path.join(exe_name);
-                if exe_path.exists() {
-                    let path_str = exe_path.to_string_lossy().to_string();
-                    if test_python_import_piper(&path_str) {
-                        log::info!("[Piper] Found working Python at absolute path: {}", path_str);
-                        return Ok(PythonCommand {
-                            executable: path_str,
-                            args: vec![],
-                        });
-                    }
-                }
-            }
-        }
-
-        log::error!("[Piper] Could not find any Python interpreter with the 'piper' module installed.");
-        Err("Python with 'piper' module installed was not found. Please install Python and run 'pip install piper-tts'.".to_string())
-    }).clone()
-}
-
 pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::PathBuf {
-    // 1. Check if we have a portable or app data directory
+    // 1. Check if we have a portable or app data directory (models/TTS/piper-voices/)
     if let Some(app) = app {
         if let Ok(app_data) = crate::portable::app_data_dir(app) {
-            let path = app_data.join("models").join("piper-voices");
+            let path = app_data.join("models").join("TTS").join("piper-voices");
             if path.exists() {
                 return path;
             }
         }
     }
 
-    // 2. Check current working directory / models / piper-voices (dev mode)
+    // 2. Check current working directory / models / TTS / piper-voices (dev mode)
     if let Ok(cwd) = std::env::current_dir() {
-        let path = cwd.join("models").join("piper-voices");
+        let path = cwd.join("models").join("TTS").join("piper-voices");
         if path.exists() {
             return path;
         }
 
         // Also check if CWD is src-tauri
-        let path_parent = cwd.join("..").join("models").join("piper-voices");
+        let path_parent = cwd.join("..").join("models").join("TTS").join("piper-voices");
         if path_parent.exists() {
             return path_parent;
+        }
+
+        // Legacy compat: old flat models/piper-voices/
+        let path_legacy = cwd.join("models").join("piper-voices");
+        if path_legacy.exists() {
+            return path_legacy;
         }
     }
 
     // 3. Fallback to resource directory if bundled
     if let Some(app) = app {
         if let Ok(res_path) = app.path().resolve(
-            "resources/models/piper-voices",
+            "resources/models/TTS/piper-voices",
             tauri::path::BaseDirectory::Resource,
         ) {
             if res_path.exists() {
@@ -317,19 +219,19 @@ pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::Pa
         }
     }
 
-    // 4. Default to project-local models/piper-voices (always inside S2B2S folder)
+    // 4. Default to project-local models/TTS/piper-voices (always inside S2B2S folder)
     //    Even if the directory doesn't exist yet, return this path so the user
-    //    gets a clear error: "place .onnx files in models/piper-voices/"
+    //    gets a clear error: "place .onnx files in models/TTS/piper-voices/"
     if let Ok(cwd) = std::env::current_dir() {
-        let path = cwd.join("models").join("piper-voices");
+        let path = cwd.join("models").join("TTS").join("piper-voices");
         return path;
     }
     if let Some(app) = app {
         if let Ok(app_data) = crate::portable::app_data_dir(app) {
-            return app_data.join("models").join("piper-voices");
+            return app_data.join("models").join("TTS").join("piper-voices");
         }
     }
-    std::path::PathBuf::from("models").join("piper-voices")
+    std::path::PathBuf::from("models").join("TTS").join("piper-voices")
 }
 
 #[cfg(windows)]
