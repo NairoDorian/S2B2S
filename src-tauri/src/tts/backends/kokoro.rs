@@ -1,40 +1,14 @@
-// Kokoro-82M TTS backend via tts-rs (in-process ONNX, no sidecar).
+// Kokoro-82M TTS backend via local persistent HTTP server.
 //
-// Pattern: Parrot's worker pool (managers/tts.rs) with CopySpeak's lifecycle
-// states (Loading → WarmingUp → Ready → Error → Stopped).
-//
+// Pattern: Piper server lifecycle (Loading → WarmingUp → Ready → Error → Stopped).
 // 54 voices across 9 languages, ~115 MB ONNX model, Apache 2.0.
 
+use crate::tts::local_tts_server;
+use crate::tts::status::{EngineStatus, WarmEngine};
 use crate::tts::{TtsBackend, Voice};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-
-/// Lifecycle state of the Kokoro engine.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KokoroStatus {
-    Stopped,
-    Loading,
-    WarmingUp,
-    Ready,
-    Error,
-}
-
-#[allow(dead_code)]
-impl KokoroStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            KokoroStatus::Stopped => "stopped",
-            KokoroStatus::Loading => "loading",
-            KokoroStatus::WarmingUp => "warming_up",
-            KokoroStatus::Ready => "ready",
-            KokoroStatus::Error => "error",
-        }
-    }
-}
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Voice prefixes per language (from Kokoro voice naming convention).
-/// Format: `{prefix}f_*` = female, `{prefix}m_*` = male.
 const VOICE_LANGUAGE_MAP: &[(&str, &str, &[&str])] = &[
     ("en", "US", &["af_", "am_"]),
     ("en", "GB", &["bf_", "bm_"]),
@@ -49,97 +23,37 @@ const VOICE_LANGUAGE_MAP: &[(&str, &str, &[&str])] = &[
 
 /// Known voice IDs (54 total).
 const KNOWN_VOICES: &[&str] = &[
-    // US English
-    "af_alloy",
-    "af_aoede",
-    "af_bella",
-    "af_heart",
-    "af_jessica",
-    "af_kore",
-    "af_nicole",
-    "af_nova",
-    "af_river",
-    "af_sarah",
-    "af_sky",
-    "am_adam",
-    "am_echo",
-    "am_eric",
-    "am_fenrir",
-    "am_liam",
-    "am_michael",
-    "am_onyx",
-    "am_puck",
-    "am_santa",
-    // British English
-    "bf_alice",
-    "bf_emma",
-    "bf_isabella",
-    "bf_lily",
-    "bm_daniel",
-    "bm_fable",
-    "bm_george",
-    "bm_lewis",
-    // Spanish
+    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
+    "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx", "am_puck", "am_santa",
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
     "ef_dora",
-    // French
     "ff_siwis",
-    // Hindi
-    "hf_alpha",
-    "hf_beta",
-    // Italian
-    "if_sara",
-    "if_nicola",
-    // Japanese
-    "jf_alpha",
-    "jf_gongitsune",
-    "jf_nezumi",
-    "jf_tebukuro",
-    // Brazilian Portuguese
+    "hf_alpha", "hf_beta",
+    "if_sara", "if_nicola",
+    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro",
     "pf_dora",
-    // Mandarin Chinese
-    "zf_xiaobei",
-    "zf_xiaoni",
-    "zf_xiaoxiao",
-    "zf_xiaoyi",
-    "zm_yunjian",
-    "zm_yunxia",
-    "zm_yunyang",
+    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+    "zm_yunjian", "zm_yunxia", "zm_yunyang",
 ];
-
-// ========================================================================
-// Single-engine backend (pool management lives in TtsManager)
-// ========================================================================
 
 #[allow(dead_code)]
 pub struct KokoroBackend {
     voice: String,
     speed: f32,
-    generation: Arc<AtomicU64>,
-    status: Arc<Mutex<KokoroStatus>>,
-    loaded: Arc<AtomicBool>,
+    last_used: AtomicU64,
 }
 
-#[allow(dead_code)]
 impl KokoroBackend {
     pub fn new(voice: String, speed: f32) -> Self {
         Self {
             voice,
             speed,
-            generation: Arc::new(AtomicU64::new(1)),
-            status: Arc::new(Mutex::new(KokoroStatus::Stopped)),
-            loaded: Arc::new(AtomicBool::new(false)),
+            last_used: AtomicU64::new(0),
         }
     }
 
-    pub fn status(&self) -> KokoroStatus {
-        *self.status.lock().unwrap()
-    }
-
-    pub fn is_loaded(&self) -> bool {
-        self.loaded.load(Ordering::Relaxed)
-    }
-
-    /// List all known Kokoro voices.
     pub fn list_voices() -> Vec<Voice> {
         KNOWN_VOICES
             .iter()
@@ -166,7 +80,6 @@ impl KokoroBackend {
             .collect()
     }
 
-    /// Select the best voice for a given language code (e.g., "fr", "ja").
     pub fn voice_for_language(lang_code: &str) -> Option<&'static str> {
         for (code, _, prefixes) in VOICE_LANGUAGE_MAP {
             if *code == lang_code {
@@ -176,30 +89,80 @@ impl KokoroBackend {
         None
     }
 
-    /// Crossfade two audio buffers at 24kHz (10ms overlap = 240 samples).
-    /// `prev_tail` should be the last N samples of the previous chunk.
-    /// Returns the crossfaded chunk (tail of prev crossfaded into head of next).
-    pub fn crossfade(prev_tail: &[f32], next_chunk: &[f32], overlap: usize) -> Vec<f32> {
-        if prev_tail.len() < overlap || next_chunk.len() < overlap {
-            let mut result = prev_tail.to_vec();
-            result.extend_from_slice(next_chunk);
-            return result;
+    /// Find Kokoro model paths for passing to the server script.
+    pub fn kokoro_model_args() -> Vec<String> {
+        let model_name = "kokoro-v1.0.onnx";
+        let voices_name = "voices-v1.0.bin";
+
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok();
+
+        let search_paths: Vec<Option<std::path::PathBuf>> = vec![
+            std::env::current_dir().ok().map(|d| d.join("models").join("kokoro")),
+            std::env::current_dir().ok().map(|d| d.join("kokoro")),
+            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kokoro")),
+            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("models").join("kokoro")),
+            home.as_ref().map(|h| std::path::PathBuf::from(h).join(".local").join("bin")),
+            home.as_ref().map(|h| std::path::PathBuf::from(h).join("AppData").join("Local").join("bin")),
+            home.as_ref().map(|h| std::path::PathBuf::from(h).join("AppData").join("Roaming").join("Python").join("Scripts")),
+            Some(std::path::PathBuf::from(r"C:\Python310\Scripts")),
+            Some(std::path::PathBuf::from(r"C:\Python311\Scripts")),
+            Some(std::path::PathBuf::from(r"C:\Python312\Scripts")),
+            Some(std::path::PathBuf::from("/usr/local/bin")),
+            Some(std::path::PathBuf::from("/usr/bin")),
+            Some(std::path::PathBuf::from("/opt/kokoro-tts")),
+        ];
+
+        let mut args = Vec::new();
+        for base_path in search_paths.iter().flatten() {
+            let model_path = base_path.join(model_name);
+            let voices_path = base_path.join(voices_name);
+            if model_path.exists() && voices_path.exists() {
+                args.push("--model".to_string());
+                args.push(model_path.to_string_lossy().to_string());
+                args.push("--voices".to_string());
+                args.push(voices_path.to_string_lossy().to_string());
+                break;
+            }
         }
+        args
+    }
 
-        let actual_overlap = overlap.min(prev_tail.len()).min(next_chunk.len());
-        let prev_start = prev_tail.len() - actual_overlap;
+    fn touch(&self) {
+        self.last_used.store(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            Ordering::Release,
+        );
+    }
+}
 
-        let mut result = Vec::with_capacity(prev_tail.len() + next_chunk.len() - actual_overlap);
-        result.extend_from_slice(&prev_tail[..prev_start]);
+impl WarmEngine for KokoroBackend {
+    fn warm(&self) -> Result<(), String> {
+        let script_args = Self::kokoro_model_args();
+        let handle = local_tts_server::ensure_running("kokoro", "python".to_string(), script_args)?;
+        log::info!("[Kokoro] WarmEngine: server ready on port {}", handle.port);
+        Ok(())
+    }
 
-        for i in 0..actual_overlap {
-            let fade = i as f32 / actual_overlap as f32;
-            let sample = prev_tail[prev_start + i] * (1.0 - fade) + next_chunk[i] * fade;
-            result.push(sample);
+    fn unload(&self) -> Result<(), String> {
+        if local_tts_server::unload("kokoro") {
+            log::info!("[Kokoro] WarmEngine: model unloaded");
         }
+        Ok(())
+    }
 
-        result.extend_from_slice(&next_chunk[actual_overlap..]);
-        result
+    fn status(&self) -> EngineStatus {
+        match local_tts_server::get_engine_status("kokoro").as_deref() {
+            Some("ready") => EngineStatus::Ready,
+            Some("loading") => EngineStatus::Loading,
+            Some("error") => EngineStatus::Error,
+            _ => EngineStatus::Stopped,
+        }
     }
 }
 
@@ -209,33 +172,58 @@ impl TtsBackend for KokoroBackend {
     }
 
     fn synthesize(&self, text: &str, voice: &str, _speed: f32) -> Result<Vec<u8>, String> {
-        // TO FINISH: Integrate tts-rs crate for actual synthesis.
-        // For now, return a properly-structured error that directs users to
-        // install the Kokoro model and espeak-ng data.
-        Err(format!(
-            "Kokoro-82M synthesis not yet available in this build.\n\n\
-             To use Kokoro:\n\
-             1. Place the Kokoro ONNX model in models/kokoro/\n\
-             2. Place espeak-ng data in src-tauri/resources/espeak-ng-data/\n\
-             3. Ensure tts-rs crate is compiled with 'kokoro' feature\n\
-             \n\
-             Requested: voice='{voice}', text='{}'",
-            &text[..text.len().min(40)]
-        ))
+        self.touch();
+        let voice_to_use = if voice.trim().is_empty() {
+            "af_heart"
+        } else {
+            voice
+        };
+
+        let script_args = Self::kokoro_model_args();
+        let handle = local_tts_server::ensure_running(
+            "kokoro",
+            "python".to_string(),
+            script_args,
+        )?;
+
+        let url = format!("http://127.0.0.1:{}/", handle.port);
+        let body = serde_json::json!({"text": text, "voice": voice_to_use, "length_scale": 1.0});
+
+        let text_chars = text.chars().count() as u64;
+        let deadline_ms = (5000u64 + text_chars * 30).clamp(10_000, 180_000);
+        let deadline = std::time::Duration::from_millis(deadline_ms);
+
+        let response = handle
+            .client
+            .post(&url)
+            .timeout(deadline)
+            .json(&body)
+            .send()
+            .map_err(|e| {
+                let _ = local_tts_server::unload("kokoro");
+                format!("Kokoro HTTP request failed: {e}")
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let err_text = response.text().unwrap_or_default();
+            return Err(format!("Kokoro HTTP error {status}: {err_text}"));
+        }
+
+        let bytes = response.bytes().map_err(|e| {
+            let _ = local_tts_server::unload("kokoro");
+            format!("Failed to read Kokoro response bytes: {e}")
+        })?;
+
+        Ok(bytes.to_vec())
     }
 
     fn health_check(&self) -> Result<(), String> {
-        match self.status() {
-            KokoroStatus::Ready => Ok(()),
-            KokoroStatus::Stopped => Err("Kokoro engine is stopped".to_string()),
-            KokoroStatus::Loading => Err("Kokoro engine is still loading".to_string()),
-            KokoroStatus::WarmingUp => Err("Kokoro engine is warming up".to_string()),
-            KokoroStatus::Error => Err("Kokoro engine is in error state".to_string()),
+        match local_tts_server::get_engine_status("kokoro").as_deref() {
+            Some("ready") => Ok(()),
+            Some("loading") => Err("Kokoro engine is still loading".to_string()),
+            _ => Err("Kokoro engine is not running".to_string()),
         }
-    }
-
-    fn file_extension(&self) -> &str {
-        "wav"
     }
 }
 
@@ -256,25 +244,5 @@ mod tests {
         assert_eq!(KokoroBackend::voice_for_language("fr"), Some("ff_"));
         assert_eq!(KokoroBackend::voice_for_language("ja"), Some("jf_"));
         assert!(KokoroBackend::voice_for_language("de").is_none());
-    }
-
-    #[test]
-    fn test_crossfade_basic() {
-        let prev = vec![0.5; 300];
-        let next = vec![1.0; 300];
-        let result = KokoroBackend::crossfade(&prev, &next, 240);
-        assert_eq!(result.len(), 360); // 300 + 300 - 240
-                                       // Start of crossfade region should be between 0.5 and 1.0
-        assert!(result[61] < 1.0 && result[61] > 0.5);
-        // End should be close to 1.0
-        assert!(result[result.len() - 1] >= 0.99);
-    }
-
-    #[test]
-    fn test_crossfade_small_buffers() {
-        let prev = vec![0.5; 100];
-        let next = vec![1.0; 100];
-        let result = KokoroBackend::crossfade(&prev, &next, 240);
-        assert_eq!(result.len(), 200); // fallback: concat
     }
 }

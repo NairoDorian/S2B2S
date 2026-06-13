@@ -8,6 +8,7 @@ pub mod audio_format;
 pub mod backends;
 pub mod clipboard_watch;
 pub mod fragment_queue;
+pub mod local_tts_server;
 pub mod manager;
 pub mod pagination;
 pub mod player;

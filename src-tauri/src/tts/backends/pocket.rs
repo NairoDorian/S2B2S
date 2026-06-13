@@ -3,19 +3,19 @@ use crate::tts::status::{EngineStatus, WarmEngine};
 use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const KITTEN_VOICES: &[&str] = &[
-    "Bella", "Jasper", "Luna", "Bruno",
-    "Rosie", "Hugo", "Kiki", "Leo",
+const POCKET_VOICES: &[&str] = &[
+    "alba", "marius", "javert", "jean",
+    "fantine", "cosette", "eponine", "azelma",
 ];
 
 #[allow(dead_code)]
-pub struct KittenBackend {
+pub struct PocketBackend {
     voice: String,
     speed: f32,
     last_used: AtomicU64,
 }
 
-impl KittenBackend {
+impl PocketBackend {
     pub fn new(voice: String, speed: f32) -> Self {
         Self {
             voice,
@@ -25,7 +25,7 @@ impl KittenBackend {
     }
 
     pub fn list_voices() -> Vec<Voice> {
-        KITTEN_VOICES
+        POCKET_VOICES
             .iter()
             .map(|id| Voice {
                 id: id.to_string(),
@@ -47,22 +47,22 @@ impl KittenBackend {
     }
 }
 
-impl WarmEngine for KittenBackend {
+impl WarmEngine for PocketBackend {
     fn warm(&self) -> Result<(), String> {
-        let handle = local_tts_server::ensure_running("kitten", "python".to_string(), vec![])?;
-        log::info!("[Kitten] WarmEngine: server ready on port {}", handle.port);
+        let handle = local_tts_server::ensure_running("pocket", "python".to_string(), vec![])?;
+        log::info!("[Pocket] WarmEngine: server ready on port {}", handle.port);
         Ok(())
     }
 
     fn unload(&self) -> Result<(), String> {
-        if local_tts_server::unload("kitten") {
-            log::info!("[Kitten] WarmEngine: model unloaded");
+        if local_tts_server::unload("pocket") {
+            log::info!("[Pocket] WarmEngine: model unloaded");
         }
         Ok(())
     }
 
     fn status(&self) -> EngineStatus {
-        match local_tts_server::get_engine_status("kitten").as_deref() {
+        match local_tts_server::get_engine_status("pocket").as_deref() {
             Some("ready") => EngineStatus::Ready,
             Some("loading") => EngineStatus::Loading,
             Some("error") => EngineStatus::Error,
@@ -71,21 +71,21 @@ impl WarmEngine for KittenBackend {
     }
 }
 
-impl TtsBackend for KittenBackend {
+impl TtsBackend for PocketBackend {
     fn name(&self) -> &str {
-        "Kitten"
+        "Pocket"
     }
 
     fn synthesize(&self, text: &str, voice: &str, _speed: f32) -> Result<Vec<u8>, String> {
         self.touch();
         let voice_to_use = if voice.trim().is_empty() {
-            "Rosie"
+            "alba"
         } else {
             voice
         };
 
         let handle = local_tts_server::ensure_running(
-            "kitten",
+            "pocket",
             "python".to_string(),
             vec![],
         )?;
@@ -104,29 +104,29 @@ impl TtsBackend for KittenBackend {
             .json(&body)
             .send()
             .map_err(|e| {
-                let _ = local_tts_server::unload("kitten");
-                format!("Kitten HTTP request failed: {e}")
+                let _ = local_tts_server::unload("pocket");
+                format!("Pocket HTTP request failed: {e}")
             })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let err_text = response.text().unwrap_or_default();
-            return Err(format!("Kitten HTTP error {status}: {err_text}"));
+            return Err(format!("Pocket HTTP error {status}: {err_text}"));
         }
 
         let bytes = response.bytes().map_err(|e| {
-            let _ = local_tts_server::unload("kitten");
-            format!("Failed to read Kitten response bytes: {e}")
+            let _ = local_tts_server::unload("pocket");
+            format!("Failed to read Pocket response bytes: {e}")
         })?;
 
         Ok(bytes.to_vec())
     }
 
     fn health_check(&self) -> Result<(), String> {
-        match local_tts_server::get_engine_status("kitten").as_deref() {
+        match local_tts_server::get_engine_status("pocket").as_deref() {
             Some("ready") => Ok(()),
-            Some("loading") => Err("Kitten engine is still loading".to_string()),
-            _ => Err("Kitten engine is not running".to_string()),
+            Some("loading") => Err("Pocket engine is still loading".to_string()),
+            _ => Err("Pocket engine is not running".to_string()),
         }
     }
 }

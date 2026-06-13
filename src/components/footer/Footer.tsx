@@ -5,6 +5,7 @@ import ModelSelector from "../model-selector";
 import BrainSelector from "./BrainSelector";
 import TtsSelector from "./TtsSelector";
 import GpuVramFooterIndicator from "./GpuVramFooterIndicator";
+import RamFooterIndicator from "./RamFooterIndicator";
 import UpdateChecker from "../update-checker";
 
 const Footer: React.FC = () => {
@@ -34,6 +35,7 @@ const Footer: React.FC = () => {
           <span className="text-mid-gray/30">|</span>
           <TtsSelector />
           <GpuVramFooterIndicator />
+          <RamFooterIndicator />
         </div>
 
         {/* Update Status */}

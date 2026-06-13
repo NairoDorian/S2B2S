@@ -24,6 +24,18 @@ pub struct LlamaManager {
     downloading: Arc<AtomicBool>,
 }
 
+impl Drop for LlamaManager {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.child.lock() {
+            if let Some(mut child) = guard.take() {
+                info!("[LlamaManager] Drop — killing orphaned llama-server process...");
+                let _ = child.kill();
+                // Don't wait — avoid blocking shutdown; the OS will reap the process
+            }
+        }
+    }
+}
+
 impl LlamaManager {
     pub fn new(app: AppHandle) -> Self {
         Self {
@@ -69,7 +81,8 @@ impl LlamaManager {
         if let Some(mut child) = guard.take() {
             info!("[LlamaManager] Terminating llama-server process...");
             let _ = child.kill();
-            let _ = child.wait();
+            // Don't block on wait() — the Drop impl ensures cleanup,
+            // and child.wait() can hang if the process is stuck.
         }
     }
 

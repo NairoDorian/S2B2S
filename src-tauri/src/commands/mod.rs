@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod history;
 pub mod llama_server;
 pub mod models;
+pub mod system;
 pub mod transcription;
 pub mod tts;
 pub mod wake_word;

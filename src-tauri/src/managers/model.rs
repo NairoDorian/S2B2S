@@ -1081,6 +1081,20 @@ impl ModelManager {
             response = client.get(&url).send().await?;
         }
 
+        // If we tried to resume but server returned 416 (Range Not Satisfiable),
+        // the partial file's byte offset exceeds the server's file size (file was
+        // replaced or truncated). Delete partial and restart fresh.
+        if resume_from > 0 && response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+            warn!(
+                "Range not satisfiable for model {} (partial file offset exceeds server file size), restarting download",
+                model_id
+            );
+            drop(response);
+            let _ = fs::remove_file(&partial_path);
+            resume_from = 0;
+            response = client.get(&url).send().await?;
+        }
+
         // Check for success or partial content status
         if !response.status().is_success()
             && response.status() != reqwest::StatusCode::PARTIAL_CONTENT

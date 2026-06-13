@@ -11,6 +11,12 @@ interface PiperStatusPayload {
   error: string | null;
 }
 
+interface LocalTtsStatusPayload {
+  engine: string;
+  phase: string;
+  error: string | null;
+}
+
 const TtsSelector: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting } = useSettings();
@@ -23,6 +29,7 @@ const TtsSelector: React.FC = () => {
     cuda: false,
     error: null,
   });
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
 
   const tts = settings?.tts;
 
@@ -61,20 +68,34 @@ const TtsSelector: React.FC = () => {
     fetchStatus();
 
     // Listen to backend status events
-    const unlisten = listen<PiperStatusPayload>(
+    const unlistenPiper = listen<PiperStatusPayload>(
       "piper-status-changed",
       (event) => {
         setPiperStatus(event.payload);
       },
     );
+    const unlistenLocal = listen<LocalTtsStatusPayload>(
+      "local-tts-status-changed",
+      (event) => {
+        setLocalStatuses((prev) => ({
+          ...prev,
+          [event.payload.engine]: event.payload.phase,
+        }));
+      },
+    );
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
-      unlisten.then((fn) => fn());
+      unlistenPiper.then((fn) => fn());
+      unlistenLocal.then((fn) => fn());
     };
   }, []);
 
   if (!tts) return null;
+
+  const getLocalEngineStatus = (engine: string) => {
+    return localStatuses[engine] || "stopped";
+  };
 
   const getActiveVoiceName = () => {
     switch (tts.engine) {
@@ -87,15 +108,19 @@ const TtsSelector: React.FC = () => {
       case "cartesia":
         return tts.cartesia?.voice_name || tts.cartesia?.voice_id || "";
       default:
-        return "";
+        return tts.voice || "";
     }
   };
 
-  const getTtsStatusColor = () => {
-    if (!tts.enabled) return "bg-mid-gray/40";
-    if (tts.engine !== "piper") return "bg-green-400";
+  const isLocalEngine = (engine: string) =>
+    ["piper", "kokoro", "kitten", "pocket", "sapi"].includes(engine);
 
-    switch (piperStatus.phase) {
+  const getEngineStatusColor = (engine: string) => {
+    const phase =
+      engine === "piper"
+        ? piperStatus.phase
+        : getLocalEngineStatus(engine);
+    switch (phase) {
       case "ready":
         return "bg-green-400";
       case "warming_up":
@@ -104,10 +129,15 @@ const TtsSelector: React.FC = () => {
         return "bg-yellow-400 animate-pulse";
       case "error":
         return "bg-red-400";
-      case "stopped":
       default:
         return "bg-mid-gray/40";
     }
+  };
+
+  const getTtsStatusColor = () => {
+    if (!tts.enabled) return "bg-mid-gray/40";
+    if (!isLocalEngine(tts.engine)) return "bg-green-400";
+    return getEngineStatusColor(tts.engine);
   };
 
   const getTtsDisplayText = () => {
@@ -115,29 +145,42 @@ const TtsSelector: React.FC = () => {
 
     const voiceName = getActiveVoiceName();
     const voiceDisplay = voiceName ? ` (${voiceName})` : "";
+    const engineLabel = getEngineLabel(tts.engine);
 
-    if (tts.engine === "piper") {
-      switch (piperStatus.phase) {
+    if (isLocalEngine(tts.engine)) {
+      const phase =
+        tts.engine === "piper"
+          ? piperStatus.phase
+          : getLocalEngineStatus(tts.engine);
+      switch (phase) {
         case "loading":
-          return "Piper Loading...";
+          return `${engineLabel} Loading...`;
         case "warming_up":
-          return "Piper Warming Up...";
+          return `${engineLabel} Warming Up...`;
         case "error":
-          return "Piper Error";
+          return `${engineLabel} Error`;
         case "stopped":
-          return "Piper Stopped";
-        case "ready":
+          return `${engineLabel} Stopped`;
         default:
-          return `Piper${voiceDisplay}${piperStatus.cuda ? " (CUDA)" : ""}`;
+          return `${engineLabel}${voiceDisplay}${tts.engine === "piper" && piperStatus.cuda ? " (CUDA)" : ""}`;
       }
     }
 
-    const engineLabels: Record<string, string> = {
+    return `${engineLabel}${voiceDisplay}`;
+  };
+
+  const getEngineLabel = (engine: string): string => {
+    const labels: Record<string, string> = {
+      piper: "Piper",
+      kokoro: "Kokoro",
+      kitten: "Kitten",
+      pocket: "Pocket",
+      sapi: "SAPI",
       openai: "OpenAI",
       elevenlabs: "ElevenLabs",
       cartesia: "Cartesia",
     };
-    return `${engineLabels[tts.engine] || tts.engine}${voiceDisplay}`;
+    return labels[engine] || engine;
   };
 
   const handleToggleEnabled = async () => {
@@ -158,6 +201,10 @@ const TtsSelector: React.FC = () => {
 
   const ENGINES = [
     { id: "piper", label: "Piper (Local)" },
+    { id: "kokoro", label: "Kokoro (Local)" },
+    { id: "kitten", label: "Kitten (Local)" },
+    { id: "pocket", label: "Pocket (Local)" },
+    { id: "sapi", label: "SAPI (Local)" },
     { id: "openai", label: "OpenAI (Cloud)" },
     { id: "elevenlabs", label: "ElevenLabs (Cloud)" },
     { id: "cartesia", label: "Cartesia (Cloud)" },
@@ -202,9 +249,7 @@ const TtsSelector: React.FC = () => {
               </span>
               {tts.enabled && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
-                  {tts.engine === "piper"
-                    ? `Piper: ${getActiveVoiceName() || "Default"}${piperStatus.cuda ? " (CUDA)" : ""}`
-                    : `${tts.engine.toUpperCase()}: ${getActiveVoiceName() || "Default"}`}
+                  {`${getEngineLabel(tts.engine)}: ${getActiveVoiceName() || "Default"}${tts.engine === "piper" && piperStatus.cuda ? " (CUDA)" : ""}`}
                 </span>
               )}
             </div>
@@ -244,6 +289,11 @@ const TtsSelector: React.FC = () => {
           {tts.engine === "piper" && piperStatus.error && (
             <div className="mt-2 p-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-[10px] break-words">
               {piperStatus.error}
+            </div>
+          )}
+          {isLocalEngine(tts.engine) && tts.engine !== "piper" && getLocalEngineStatus(tts.engine) === "error" && (
+            <div className="mt-2 p-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-[10px] break-words">
+              {`${getEngineLabel(tts.engine)} engine error`}
             </div>
           )}
         </div>

@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
-import { Mic, Volume2, VolumeX } from "lucide-react";
+import { Mic, Volume2, VolumeX, Eraser } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -380,57 +380,6 @@ export const ConversationView: React.FC = () => {
         <div ref={bottomRef} />
       </div>
 
-      {/* Latency HUD — shown when at least one timing is available */}
-      {latencyHud && Object.keys(latencyHud).length > 0 && (
-        <div className="flex gap-2 px-1 text-[10px] font-mono text-mid-gray/60">
-          {latencyHud.endpoint != null && (
-            <span
-              className={
-                latencyHud.endpoint < 600
-                  ? "text-green-500/70"
-                  : "text-yellow-500/70"
-              }
-            >
-              {t("conversation.latency.ep", { ms: latencyHud.endpoint })}
-            </span>
-          )}
-          {latencyHud.stt != null && (
-            <span
-              className={
-                latencyHud.stt < 400
-                  ? "text-green-500/70"
-                  : "text-yellow-500/70"
-              }
-            >
-              {t("conversation.latency.stt", { ms: latencyHud.stt })}
-            </span>
-          )}
-          {latencyHud.first_token != null && (
-            <span
-              className={
-                latencyHud.first_token < 600
-                  ? "text-green-500/70"
-                  : "text-yellow-500/70"
-              }
-            >
-              {t("conversation.latency.ttft", { ms: latencyHud.first_token })}
-            </span>
-          )}
-          {latencyHud.first_audio != null && (
-            <span
-              className={
-                latencyHud.first_audio < 1500
-                  ? "text-green-500/70"
-                  : latencyHud.first_audio < 2500
-                    ? "text-yellow-500/70"
-                    : "text-red-500/70"
-              }
-            >
-              {t("conversation.latency.ttfa", { ms: latencyHud.first_audio })}
-            </span>
-          )}
-        </div>
-      )}
       <div className="space-y-2">
         <Textarea
           variant="compact"
@@ -462,8 +411,9 @@ export const ConversationView: React.FC = () => {
           >
             {t("conversation.stop")}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => void clear()}>
-            {t("conversation.clear")}
+          <Button variant="ghost" size="sm" onClick={() => void clear()} className="flex items-center gap-1">
+            <Eraser size={13} />
+            {t("conversation.newConversation")}
           </Button>
           <Button
             variant={voiceMode ? "primary" : "secondary"}

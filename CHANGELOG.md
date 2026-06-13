@@ -7,7 +7,51 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** Pre-compiled llama.cpp CUDA/Vulkan/CPU server integration, GPU VRAM offloading with `-ngl all`, auto-download from GitHub releases, Llama.cpp settings management tab, and per-message performance metrics.
+> **Status (June 2026):** Pre-compiled llama.cpp CUDA/Vulkan/CPU server integration, GPU VRAM offloading with `-ngl all`, auto-download from GitHub releases, Llama.cpp settings management tab, per-message performance metrics, 8 TTS backends with RAM-persistent warm model lifecycle, and system RAM indicator.
+
+### Pocket TTS + Full Kokoro/Kitten Synthesis with RAM Persistency
+
+- **Pocket TTS backend** — New `TtsEngine::Pocket` variant, `PocketBackend` (8 character voices: alba, marius, javert, etc.), dedicated `pocket_server.py` HTTP server for RAM-persistent runtime.
+- **Kokoro synthesis** — Completed from skeleton. Now uses `kokoro_server.py` persistent HTTP server with `kokoro_tts` Python API (mode A) or CLI fallback (mode B). Model auto-discovery searches `models/kokoro/`, `CARGO_MANIFEST_DIR/kokoro/`, and common install paths.
+- **Kitten synthesis** — Completed from skeleton. Now uses `kitten_server.py` persistent HTTP server with `kittentts` Python API. 8 voices: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo.
+- **`local_tts_server.rs`** — Unified persistent HTTP server lifecycle for Kokoro, Kitten, Pocket (ported from CopySpeak `tts-perf-v2`). Per-engine state machine (Stopped→Starting→Ready), generation counter for safe abort, health polling with exponential backoff, warmup synthesis, idle watcher. Emits `local-tts-status-changed` Tauri events.
+- **`WarmEngine` trait** — Implemented on `KokoroBackend`, `KittenBackend`, `PocketBackend` for app-startup pre-warming and engine-switch unload/reload.
+- **Python encoding fix** — All local TTS server subprocesses now spawn with `PYTHONIOENCODING=utf-8` to prevent UnicodeEncodeError crashes.
+
+### Conversation Memory & Brain Context
+
+- **`context_turns` default changed to 20** — Brain now remembers 20 conversation turns by default (was 0 = stateless). Model receives full history of last N turns in context window.
+- **"Clear" → "New conversation"** button with Eraser icon in ConversationView. Clears both Rust in-memory history and frontend messages.
+
+### System RAM Footer Indicator
+
+- **`get_system_ram` command** — New Rust backend command (`commands/system.rs`) using cross-platform system tools (PowerShell `Get-CimInstance` on Windows, `/proc/meminfo` on Linux, `sysctl`/`vm_stat` on macOS). Returns `total_mb`, `used_mb`, `free_mb`.
+- **`RamFooterIndicator` component** — Shows real-time RAM usage percentage with green/yellow/red status dot and detailed hover tooltip. Updates every 5 seconds.
+
+### Sentence Streaming (Fast TTFA)
+
+- **3-fragment streaming pattern** — When `tts_shorten_first_chunk` is enabled: splits text at first period for fast first audio, splits second sentence for parallel synthesis, groups remaining text into one chunk. Replaced the old clause-boundary search with direct period-scanning.
+- **Fast first sentence toggle** — New UI toggle in Speech Settings to enable/disable the streaming pattern.
+
+### Engine Descriptions, Badges, Links & Test Button
+
+- **Engine descriptions** — Each TTS engine now shows i18n description, badges (Offline/Free/Cloud/Paid/Freemium), and GitHub/API docs link in Speech Settings.
+- **Test Engine button** — "Test Now" button in Speech Settings synthesizes a test phrase with the current engine.
+- **Command Preview** — Local engines show their Python server command preview in a collapsible terminal block.
+- **Footer engine list** — All 8 engines now visible in TtsSelector dropdown with per-engine status indicators.
+
+### Shutdown & Process Cleanup
+
+- **`Drop` impl on `LlamaManager`** — Ensures llama-server.exe is killed even on abnormal exit (taskbar close, panic, process kill).
+- **`RunEvent::Exit` cleanup** — Now unloads Piper server, all local TTS servers (Kokoro/Kitten/Pocket), and llama-server on shutdown.
+- **Model download resilience** — HTTP 416 Range Not Satisfiable on resume now auto-deletes stale partial file and restarts fresh.
+
+### UI Fixes
+
+- **Removed latency HUD** from ConversationView (endpoint/STT/token/audio labels above input box).
+- **Fixed React hooks order crash** in `GpuVramMonitor` — `useTranslation()` moved before conditional return.
+- **TTS synthesis ms in history** — `speak()` now passes `synth_total_ms` to `duration_ms` in `save_entry()`, visible as `{ms}ms` in History Settings.
+- **Conversation TTS timing** — `speak_sentence()` now emits `tts:synth-done` with `ms` per sentence, showing `🔊 {ms}ms` on assistant messages.
 
 ### Performance Metrics (Token/s, Latency, STT/TTS Timing)
 

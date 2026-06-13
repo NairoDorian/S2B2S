@@ -554,9 +554,46 @@
         "description": "Which text-to-speech engine synthesizes audio.",
         "options": {
           "piper": "Piper (local)",
+          "kokoro": "Kokoro (local)",
+          "kitten": "Kitten (local)",
+          "pocket": "Pocket (local)",
+          "sapi": "SAPI (local)",
           "openai": "OpenAI (cloud)",
           "elevenlabs": "ElevenLabs (cloud)",
           "cartesia": "Cartesia (cloud)"
+        },
+        "descriptions": {
+          "piper": "Local: Fast, lightweight neural TTS with 20+ English voices. Works fully offline — no account or internet required.",
+          "kokoro": "Local: High-quality offline TTS with natural-sounding voices and broad accent coverage. 54 voices across 9 languages.",
+          "kitten": "Local: Ultra-lightweight TTS (25-80MB) with 8 natural voices. CPU-optimized ONNX inference, no GPU required.",
+          "pocket": "Local: Compact offline TTS engine with 8 distinct character voices. Uses PyTorch/VITS architecture.",
+          "sapi": "Local: Built-in Windows speech synthesis. Zero download, always available as a fallback.",
+          "openai": "Cloud: High-quality natural voices via the OpenAI API. Requires an API key and internet connection.",
+          "elevenlabs": "Cloud: Premium AI voice synthesis with emotional range, 1000+ voices, and multilingual support.",
+          "cartesia": "Cloud: Low-latency, natural TTS powered by Sonic 3.5. Requires an API key and internet connection."
+        },
+        "links": {
+          "piper": "https://github.com/OHF-Voice/piper1-gpl",
+          "piperLabel": "Setup Guide",
+          "kokoro": "https://github.com/hexgrad/kokoro",
+          "kokoroLabel": "GitHub README",
+          "kitten": "https://github.com/KittenML/KittenTTS",
+          "kittenLabel": "GitHub",
+          "pocket": "",
+          "pocketLabel": "",
+          "openai": "https://platform.openai.com/docs/guides/text-to-speech",
+          "openaiLabel": "API Docs",
+          "elevenlabs": "https://elevenlabs.io/docs/api-reference/text-to-speech",
+          "elevenlabsLabel": "API Docs",
+          "cartesia": "https://docs.cartesia.ai/get-started/overview",
+          "cartesiaLabel": "API Docs"
+        },
+        "badges": {
+          "offline": "Offline",
+          "free": "Free",
+          "cloud": "Cloud",
+          "paid": "Paid",
+          "freemium": "Freemium"
         }
       },
       "voice": {
@@ -599,6 +636,20 @@
         "description": "Stop the warm TTS server and free its memory.",
         "button": "Unload now"
       },
+      "testEngine": {
+        "label": "Test Engine",
+        "description": "Run a short synthesis test to verify the engine is working.",
+        "testing": "Testing...",
+        "engineWorking": "Engine is working",
+        "engineFailed": "Engine test failed",
+        "button": "Test Now"
+      },
+      "commandPreview": {
+        "title": "Command Preview",
+        "placeholder": "The CLI command that will be executed for synthesis.",
+        "tempDirectory": "resolves to your system temp directory at runtime."
+      },
+      "reloadVoices": "Reload voices",
       "sanitizeGroup": "Text Cleanup",
       "sanitizeEnabled": {
         "label": "Clean text before speaking",
@@ -615,6 +666,10 @@
       "doubleCopy": {
         "label": "Double-copy to speak",
         "description": "Copy the same text twice within 1.5 seconds to read it aloud automatically (Windows only for now)."
+      },
+      "fastFirstSentence": {
+        "label": "Fast first sentence",
+        "description": "Split the first sentence at a clause boundary and play it immediately while the rest is still being synthesized. Dramatically reduces time-to-first-audio."
       },
       "greetingGroup": "Startup Greeting Settings",
       "playGreetingToggle": {
@@ -805,7 +860,8 @@
       "autoRefresh": "Auto-refresh",
       "refresh": "Refresh",
       "copy": "Copy",
-      "clear": "Clear",
+    "clear": "Clear",
+    "newConversation": "New conversation",
       "searchPlaceholder": "Search logs...",
       "showing": "Showing {{filtered}} of {{total}} fetched log entries",
       "levelFilter": "LogLevel Filter: {{level}}",

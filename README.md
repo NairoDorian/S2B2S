@@ -2,7 +2,7 @@
 
 **Local-first STT → Brain → TTS desktop app for Windows 11, macOS, and Linux. Dictate anywhere, read anything aloud, and talk naturally with a local AI — almost keyboard-free.**
 
-S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 7+ backends (Piper, Kokoro, Kitten, OpenAI, ElevenLabs, Cartesia, SAPI), a streaming LLM conversation mode, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), double-copy clipboard trigger, and a full text normalization pipeline (ITN + TN + markdown stripping).
+S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM indicator, and a full text normalization pipeline (ITN + TN + markdown stripping).
 
 ---
 
@@ -28,7 +28,7 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 
 ## Why S2B2S?
 
-- **Local-first**: Everything works offline. Parakeet V3 for STT, Piper for TTS, pre-compiled llama.cpp (CUDA/Vulkan/CPU) or Ollama/LM Studio for the Brain. No cloud required.
+- **Local-first**: Everything works offline. Parakeet V3 for STT, Piper/Kokoro/Kitten/Pocket for TTS, pre-compiled llama.cpp (CUDA/Vulkan/CPU) or Ollama/LM Studio for the Brain. No cloud required.
 - **Open Source (MIT)**: Forkable, inspectable, extendable.
 - **Private**: Your voice, text, and conversations stay on your machine. Keys stored in OS keychain.
 - **Voice-native**: Designed for spoken interaction — not a text chat with voice bolted on.
@@ -286,9 +286,11 @@ Unix signals (Linux/macOS):
 
 **TTS Backends:**
 
-- Piper: CPU-only, ~100-200 MB RAM per voice
-- Kokoro-82M: CPU-only, ~115 MB + 50 MB per worker
-- Cloud: Requires internet connection
+- Piper: CPU/CUDA, ~100-200 MB RAM per voice. Python `piper-tts[http]` required.
+- Kokoro-82M: CPU-only, ~115 MB ONNX model. Python `kokoro-tts` or CLI required. 54 voices across 9 languages.
+- Kitten: CPU-only, ~25-80 MB ONNX models. Python `kittentts` required. 8 English voices.
+- Pocket: CPU/GPU (PyTorch), ~100 MB. Python `pocket-tts` required. 8 character voices.
+- Cloud engines: Requires internet connection and API key.
 
 ---
 
@@ -299,29 +301,34 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Feature                                                                                              | Status         |
 | ---------------------------------------------------------------------------------------------------- | -------------- |
 | STT dictation (Parakeet V3, Whisper, Moonshine)                                                      | ✅ Complete    |
-| TTS read-aloud (Piper, Kokoro, Kitten, SAPI, OpenAI, ElevenLabs, Cartesia)                           | ✅ Complete    |
-| Conversation mode with streaming LLM (Ollama/LM Studio/llama.cpp/OpenAI-compatible)                  | ✅ Complete    |
-| Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                               | ✅ Complete    |
-| Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                                | ✅ Complete    |
-| Llama.cpp settings tab (manage server binaries, GPU detection, backend switching)                    | ✅ Complete    |
-| VRAM usage indicator (green/yellow/red with hover tooltip)                                           | ✅ Complete    |
-| Log viewer console (level filter, search, auto-refresh)                                              | ✅ Complete    |
-| Double-copy clipboard trigger for speak-selection                                                    | ✅ Complete    |
-| Text normalization pipeline (ITN + TN + markdown stripping)                                          | ✅ Complete    |
-| TripleVAD (RMS → RNNoise → Silero) with tunable threshold                                            | ✅ Complete    |
-| Crash logging with full backtraces                                                                   | ✅ Complete    |
-| Her-style 3D loading animation                                                                       | ✅ Complete    |
+| TTS read-aloud (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)              | ✅ Complete    |
+| Conversation mode with streaming LLM (Ollama/LM Studio/llama.cpp/OpenAI-compatible)             | ✅ Complete    |
+| Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                          | ✅ Complete    |
+| Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                           | ✅ Complete    |
+| Llama.cpp settings tab (manage server binaries, GPU detection, backend switching)               | ✅ Complete    |
+| VRAM usage indicator (green/yellow/red with hover tooltip)                                      | ✅ Complete    |
+| System RAM indicator (used/total percentage with hover tooltip)                                 | ✅ Complete    |
+| Log viewer console (level filter, search, auto-refresh)                                         | ✅ Complete    |
+| Double-copy clipboard trigger for speak-selection                                               | ✅ Complete    |
+| Text normalization pipeline (ITN + TN + markdown stripping)                                     | ✅ Complete    |
+| TripleVAD (RMS → RNNoise → Silero) with tunable threshold                                       | ✅ Complete    |
+| Crash logging with full backtraces                                                              | ✅ Complete    |
+| Her-style 3D loading animation                                                                  | ✅ Complete    |
 | 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW) | ✅ Complete    |
-| WarmEngine trait lifecycle (Stopped→Loading→WarmingUp→Ready→Error)                                   | ✅ Complete    |
-| TTS performance telemetry (chars_per_ms adaptive sizing)                                             | ✅ Complete    |
-| Piper persistent HTTP server with CUDA auto-discovery                                                | ✅ Complete    |
-| Headless typed bindings export (`cargo test export_bindings`)                                        | ✅ Complete    |
-| Kokoro worker pool + crossfade                                                                       | 🚧 In progress |
-| RAM-persistent warm model lifecycle (unload timeout)                                                 | ✅ Complete    |
-| AI Replace Selection                                                                                 | ✅ Complete    |
-| Latency HUD (per-stage timestamps)                                                                   | ✅ Complete    |
-| Wake word detection (VAD-based)                                                                      | ✅ Complete    |
-| Save-to-file (MP3/OGG/FLAC)                                                                          | ✅ Complete    |
+| Conversation memory (context_turns, default 20 turns)                                           | ✅ Complete    |
+| WarmEngine trait lifecycle (Stopped→Loading→WarmingUp→Ready→Error)                              | ✅ Complete    |
+| Sentience streaming (3-fragment pattern: sentence 1 → sentence 2 → rest)                       | ✅ Complete    |
+| TTS performance telemetry (chars_per_ms adaptive sizing)                                        | ✅ Complete    |
+| Piper persistent HTTP server with CUDA auto-discovery                                           | ✅ Complete    |
+| Kokoro/Kitten/Pocket persistent HTTP server with RAM persistency                                | ✅ Complete    |
+| Headless typed bindings export (`cargo test export_bindings`)                                   | ✅ Complete    |
+| Engine descriptions, badges, links, test button, command preview                                | ✅ Complete    |
+| Process cleanup on shutdown (Drop impls, Exit handler)                                          | ✅ Complete    |
+| Model download resilience (HTTP 416 auto-retry)                                                 | ✅ Complete    |
+| AI Replace Selection                                                                            | ✅ Complete    |
+| Latency HUD (per-stage timestamps)                                                              | ✅ Complete    |
+| Wake word detection (VAD-based)                                                                 | ✅ Complete    |
+| Save-to-file (MP3/OGG/FLAC)                                                                     | ✅ Complete    |
 | Waveform HUD                                                                                         | ✅ Complete    |
 | Ollama/LM Studio/llama.cpp auto-discovery                                                            | ✅ Complete    |
 | Footer status indicators (STT 🟢, Brain 🟢, TTS 🟢) with hover tooltips                             | ✅ Complete    |
