@@ -473,6 +473,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::tts::tts_unload_engine,
             commands::tts::get_piper_server_status,
             commands::tts::get_local_tts_status,
+            commands::tts::pocket_import_cloned_voice,
             commands::tts::change_tts_config,
             commands::tts::tts_play_greeting,
             commands::tts::tts_save_to_file,

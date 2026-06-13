@@ -193,6 +193,7 @@ export const commands = {
 	ttsUnloadEngine: () => typedError<boolean, string>(__TAURI_INVOKE("tts_unload_engine")),
 	getPiperServerStatus: () => typedError<PiperServerStatus, string>(__TAURI_INVOKE("get_piper_server_status")),
 	getLocalTtsStatus: (engine: string) => typedError<string | null, string>(__TAURI_INVOKE("get_local_tts_status", { engine })),
+	pocketImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("pocket_import_cloned_voice", { sourcePath })),
 	/**  Replace the whole TTS configuration (engine, voice, speed, volume, toggles). */
 	changeTtsConfig: (config: TtsConfig) => typedError<null, string>(__TAURI_INVOKE("change_tts_config", { config })),
 	/**  Play the startup greeting audio using customized greeting settings. */
