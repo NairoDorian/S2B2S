@@ -335,10 +335,9 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | GPU VRAM usage indicator with per-second polling                                                     | ✅ Complete    |
 | Hands-free auto-listen / continuous voice                                                           | ✅ Complete    |
 | Streaming STT (WebSocket-based)                                                                      | 📋 Planned     |
-| Pocket TTS backend (voice cloning)                                                                   | 📋 Planned     |
+| Pocket TTS backend (voice cloning)                                                                   | ✅ Complete    |
+| Engine-switch cleanup (graceful unload/reload)                                                       | ✅ Complete    |
 | Profiles (per-application settings)                                                                  | 📋 Planned     |
-| Local audio cache for TTS fragments                                                                  | 📋 Planned     |
-| Engine-switch cleanup (graceful unload/reload)                                                       | 🚧 In progress |
 | Full-duplex conversation with acoustic echo cancellation                                             | 📋 Later       |
 | Multi-OS polish, mobile companion                                                                    | 📋 Later       |
 | Local speaker diarization                                                                            | 📋 Later       |

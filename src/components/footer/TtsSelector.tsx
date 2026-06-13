@@ -30,6 +30,7 @@ const TtsSelector: React.FC = () => {
     error: null,
   });
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+  const [voiceCounts, setVoiceCounts] = useState<Record<string, number>>({});
 
   const tts = settings?.tts;
 
@@ -90,6 +91,24 @@ const TtsSelector: React.FC = () => {
       unlistenLocal.then((fn) => fn());
     };
   }, []);
+
+  // Fetch voice counts per engine
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const engines = ["piper", "kokoro", "kitten", "pocket", "sapi", "openai", "elevenlabs", "cartesia"];
+      const counts: Record<string, number> = {};
+      for (const engine of engines) {
+        try {
+          const res = await commands.ttsGetVoices(engine as any);
+          if (res.status === "ok") {
+            counts[engine] = res.data.length;
+          }
+        } catch { /* ignore */ }
+      }
+      setVoiceCounts(counts);
+    };
+    fetchCounts();
+  }, [tts?.piper?.data_dir]);
 
   if (!tts) return null;
 
@@ -278,9 +297,14 @@ const TtsSelector: React.FC = () => {
                     : "text-text/70"
                 }`}
               >
-                <span>{eng.label}</span>
+                <div className="flex items-center justify-between w-full">
+                  <span>{eng.label}</span>
+                  {voiceCounts[eng.id] > 0 && (
+                    <span className="text-[9px] text-text/30 ml-1">{voiceCounts[eng.id]} voices</span>
+                  )}
+                </div>
                 {tts.engine === eng.id && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-logo-primary" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-logo-primary ml-1 shrink-0" />
                 )}
               </button>
             ))}
