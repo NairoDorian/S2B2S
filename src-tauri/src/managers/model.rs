@@ -93,6 +93,7 @@ impl<'a> Drop for DownloadCleanup<'a> {
 pub struct ModelManager {
     app_handle: AppHandle,
     models_dir: PathBuf,
+    project_local_models_dir: Option<PathBuf>,
     available_models: Mutex<HashMap<String, ModelInfo>>,
     cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     extracting_models: Arc<Mutex<HashSet<String>>>,
@@ -108,6 +109,16 @@ impl ModelManager {
         if !models_dir.exists() {
             fs::create_dir_all(&models_dir)?;
         }
+
+        // Project-local models dir (S2B2S/models/ in dev mode)
+        let project_models = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("models");
+        let project_local_models_dir = if project_models.is_dir() {
+            Some(project_models)
+        } else {
+            None
+        };
 
         let mut available_models = HashMap::new();
 
@@ -620,9 +631,22 @@ impl ModelManager {
             warn!("Failed to discover custom models: {}", e);
         }
 
+        // Also discover from project-local models dir if it exists
+        if let Some(ref local_dir) = project_local_models_dir {
+            if let Err(e) =
+                Self::discover_custom_whisper_models(local_dir, &mut available_models)
+            {
+                warn!(
+                    "Failed to discover custom models from project-local dir: {}",
+                    e
+                );
+            }
+        }
+
         let manager = Self {
             app_handle: app_handle.clone(),
             models_dir,
+            project_local_models_dir,
             available_models: Mutex::new(available_models),
             cancel_flags: Arc::new(Mutex::new(HashMap::new())),
             extracting_models: Arc::new(Mutex::new(HashSet::new())),
@@ -736,6 +760,12 @@ impl ModelManager {
                     .models_dir
                     .join(format!("{}.extracting", &model.filename));
 
+                // Also check project-local models dir in dev mode
+                let local_exists = self.project_local_models_dir.as_ref()
+                    .map(|d| d.join(&model.filename))
+                    .map(|p| p.exists() && p.is_dir())
+                    .unwrap_or(false);
+
                 // Clean up any leftover .extracting directories from interrupted extractions
                 // But only if this model is NOT currently being extracted
                 let is_currently_extracting = {
@@ -747,7 +777,7 @@ impl ModelManager {
                     let _ = fs::remove_dir_all(&extracting_path);
                 }
 
-                model.is_downloaded = model_path.exists() && model_path.is_dir();
+                model.is_downloaded = (model_path.exists() && model_path.is_dir()) || local_exists;
                 model.is_downloading = false;
 
                 // Get partial file size if it exists (for the .tar.gz being downloaded)
@@ -761,7 +791,13 @@ impl ModelManager {
                 let model_path = self.models_dir.join(&model.filename);
                 let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
 
-                model.is_downloaded = model_path.exists();
+                // Also check project-local models dir in dev mode
+                let local_exists = self.project_local_models_dir.as_ref()
+                    .map(|d| d.join(&model.filename))
+                    .map(|p| p.exists())
+                    .unwrap_or(false);
+
+                model.is_downloaded = model_path.exists() || local_exists;
                 model.is_downloading = false;
 
                 // Get partial file size if it exists
@@ -1437,6 +1473,19 @@ impl ModelManager {
         let partial_path = self
             .models_dir
             .join(format!("{}.partial", &model_info.filename));
+
+        // Check project-local models dir first for dev mode
+        if let Some(ref local_dir) = self.project_local_models_dir {
+            let local_path = local_dir.join(&model_info.filename);
+            let model_exists = if model_info.is_directory {
+                local_path.exists() && local_path.is_dir()
+            } else {
+                local_path.exists()
+            };
+            if model_exists {
+                return Ok(local_path);
+            }
+        }
 
         if model_info.is_directory {
             // For directory-based models, ensure the directory exists and is complete

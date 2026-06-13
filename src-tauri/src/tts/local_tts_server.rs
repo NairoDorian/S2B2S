@@ -54,6 +54,45 @@ pub(crate) fn resolve_venv_python() -> String {
     fallback.to_string()
 }
 
+/// Resolve the local models directory (S2B2S/models/) for HuggingFace cache
+/// and model storage. Returns the path if it exists.
+pub(crate) fn resolve_local_models_dir() -> Option<std::path::PathBuf> {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    // 1. Project root: S2B2S/models/ (canonical dev location)
+    let project_models = manifest_dir.join("..").join("models");
+    if project_models.is_dir() {
+        return Some(project_models);
+    }
+
+    // 2. Current directory: models/
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_models = cwd.join("models");
+        if cwd_models.is_dir() {
+            return Some(cwd_models);
+        }
+        // 3. Parent directory: ../models/ (if running from src-tauri)
+        let parent_models = cwd.join("..").join("models");
+        if parent_models.is_dir() {
+            return Some(parent_models);
+        }
+    }
+
+    None
+}
+
+/// Build --models-dir args for passing to kitten/pocket server scripts.
+pub(crate) fn local_models_dir_args() -> Vec<String> {
+    if let Some(dir) = resolve_local_models_dir() {
+        vec![
+            "--models-dir".to_string(),
+            dir.to_string_lossy().to_string(),
+        ]
+    } else {
+        vec![]
+    }
+}
+
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 pub fn set_local_tts_app_handle(handle: tauri::AppHandle) {
@@ -231,12 +270,26 @@ fn spawn_start_thread(
             "--host".to_string(),
             "127.0.0.1".to_string(),
         ];
+
+        // Add local models dir args for kitten/pocket (kokoro handles its own paths)
+        if engine != "kokoro" {
+            let models_dir_args = local_models_dir_args();
+            if !models_dir_args.is_empty() {
+                args.extend(models_dir_args);
+            }
+        }
+
         args.extend(script_args);
 
         cmd.args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .env("PYTHONIOENCODING", "utf-8");
+
+        // Set HF_HOME to local models dir so HuggingFace downloads stay local
+        if let Some(models_dir) = resolve_local_models_dir() {
+            cmd.env("HF_HOME", models_dir);
+        }
 
         #[cfg(windows)]
         {

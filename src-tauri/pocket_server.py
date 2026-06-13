@@ -17,6 +17,7 @@ Endpoints (mirror Piper HTTP server contract):
 import argparse
 import io
 import json
+import os
 import sys
 import traceback
 import wave
@@ -36,9 +37,25 @@ SAMPLE_RATE = None
 AVAILABLE_VOICES = POCKET_VOICES[:]
 
 
-def load_model(language="english", device="cpu"):
+def resolve_local_models_dir():
+    """Find the local models directory relative to this script."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(script_dir, "models"),
+        os.path.join(os.getcwd(), "models"),
+    ]
+    for p in candidates:
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def load_model(language="english", device="cpu", models_dir=None):
     """Load Pocket TTS model once."""
     from pocket_tts.models.tts_model import TTSModel
+
+    if models_dir and os.path.isdir(models_dir):
+        os.environ.setdefault("HF_HOME", models_dir)
 
     model = TTSModel.load_model(language=language)
     model.to(device)
@@ -131,12 +148,24 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--language", default="english")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--models-dir",
+        default=None,
+        help="Directory for storing downloaded models (sets HF_HOME)",
+    )
     args = parser.parse_args()
 
     global MODEL, SAMPLE_RATE
 
+    models_dir = args.models_dir
+    if not models_dir:
+        models_dir = resolve_local_models_dir()
+
+    if models_dir:
+        print(f"[pocket_server] Using local models dir: {models_dir}", file=sys.stderr, flush=True)
+
     print("[pocket_server] Loading Pocket TTS model...", file=sys.stderr, flush=True)
-    MODEL = load_model(language=args.language, device=args.device)
+    MODEL = load_model(language=args.language, device=args.device, models_dir=models_dir)
     SAMPLE_RATE = MODEL.config.mimi.sample_rate
     print(
         f"[pocket_server] Model loaded. Voices: {AVAILABLE_VOICES}, sr={SAMPLE_RATE}Hz",

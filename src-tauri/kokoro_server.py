@@ -35,6 +35,8 @@ KOKORO_VOICES = [
 ]
 
 DEFAULT_VOICE = "af_heart"
+MODEL_FILENAME = "kokoro-v1.0.onnx"
+VOICES_FILENAME = "voices-v1.0.bin"
 
 # ---------------------------------------------------------------------------
 # Globals
@@ -44,6 +46,32 @@ AVAILABLE_VOICES = KOKORO_VOICES[:]
 USE_CLI_FALLBACK = False
 CLI_MODEL_PATH = None
 CLI_VOICES_PATH = None
+
+
+def resolve_local_path(filename):
+    """Search for a model file in common local locations.
+
+    Priority:
+    1. <script_dir>/models/kokoro/<filename>   (S2B2S project local)
+    2. <cwd>/models/kokoro/<filename>           (running from project root)
+    3. <script_dir>/kokoro/<filename>            (legacy src-tauri local)
+    4. <cwd>/kokoro/<filename>                   (legacy CWD local)
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+
+    candidates = [
+        os.path.join(script_dir, "models", "kokoro", filename),
+        os.path.join(cwd, "models", "kokoro", filename),
+        os.path.join(script_dir, "kokoro", filename),
+        os.path.join(cwd, "kokoro", filename),
+    ]
+
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+
+    return None
 
 
 def try_load_engine(model_path, voices_path):
@@ -190,11 +218,27 @@ def main():
 
     global ENGINE, USE_CLI_FALLBACK, CLI_MODEL_PATH, CLI_VOICES_PATH
 
-    CLI_MODEL_PATH = args.model
-    CLI_VOICES_PATH = args.voices
+    model_path = args.model
+    voices_path = args.voices
+
+    if not model_path or not os.path.isfile(model_path):
+        resolved = resolve_local_path(MODEL_FILENAME)
+        if resolved:
+            print(f"[kokoro_server] Found local model: {resolved}", file=sys.stderr, flush=True)
+            model_path = resolved
+            voices_path = os.path.join(os.path.dirname(resolved), VOICES_FILENAME)
+
+    if not voices_path or not os.path.isfile(voices_path):
+        resolved_voices = resolve_local_path(VOICES_FILENAME)
+        if resolved_voices:
+            print(f"[kokoro_server] Found local voices: {resolved_voices}", file=sys.stderr, flush=True)
+            voices_path = resolved_voices
+
+    CLI_MODEL_PATH = model_path
+    CLI_VOICES_PATH = voices_path
 
     print("[kokoro_server] Loading Kokoro model...", file=sys.stderr, flush=True)
-    ENGINE = try_load_engine(model_path=args.model, voices_path=args.voices)
+    ENGINE = try_load_engine(model_path=model_path, voices_path=voices_path)
 
     if ENGINE is not None:
         USE_CLI_FALLBACK = False

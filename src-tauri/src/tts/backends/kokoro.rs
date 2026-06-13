@@ -90,25 +90,20 @@ impl KokoroBackend {
     }
 
     /// Find Kokoro model paths for passing to the server script.
+    /// Priority: project-local models/kokoro/ > app data dir > CWD fallbacks.
     pub fn kokoro_model_args() -> Vec<String> {
         let model_name = "kokoro-v1.0.onnx";
         let voices_name = "voices-v1.0.bin";
 
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .ok();
-
         let search_paths: Vec<Option<std::path::PathBuf>> = vec![
-            // Project-local: models/kokoro/ (canonical location)
-            std::env::current_dir().ok().map(|d| d.join("models").join("kokoro")),
-            // Project-local: kokoro/ (dev mode alternate)
-            std::env::current_dir().ok().map(|d| d.join("kokoro")),
-            // From src-tauri/ (CARGO_MANIFEST_DIR)
-            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kokoro")),
-            // From project root (parent of src-tauri)
+            // 1. Project-root: S2B2S/models/kokoro/ (canonical dev location)
             Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("models").join("kokoro")),
-            // App data directory (portable or installed)
-            home.as_ref().map(|h| std::path::PathBuf::from(h).join("AppData").join("Roaming").join("com.nairodorian.s2b2s").join("models").join("kokoro")),
+            // 2. CWD-based: models/kokoro/ (running from project root)
+            std::env::current_dir().ok().map(|d| d.join("models").join("kokoro")),
+            // 3. CWD-based: kokoro/ (legacy dev mode)
+            std::env::current_dir().ok().map(|d| d.join("kokoro")),
+            // 4. src-tauri local: CARGO_MANIFEST_DIR/kokoro/ (legacy)
+            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kokoro")),
         ];
 
         let mut args = Vec::new();
