@@ -9,6 +9,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading, and 20-turn conversation memory.
 
+### Reference GitHub Links
+
+- **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.
+
 ### Overlay Architecture — Tauri/OS-Native Toggle + WGPU Trail Foundation
 
 - **`OverlayMode` toggle** — Settings → Overlay Window now lets users switch between `Tauri` mode (CopySpeak HUD style — `always_on_top` + `transparent` only) and `OsNative` mode (Handy style — NSPanel on macOS, Win32 `HWND_TOPMOST` on Windows, GTK layer-shell on Linux). Both modes share the same window label and event bus.
