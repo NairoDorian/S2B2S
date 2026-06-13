@@ -58,20 +58,31 @@ pub mod unified_parakeet;
 // Future: Higgs Audio v3 TTS (4B params, 100+ languages)
 // ============================================================================
 //
-// Higgs Audio v3 TTS by Boson AI — expressive conversational speech with
-// zero-shot voice cloning, inline emotion/style/prosody/sfx control tokens.
+// Higgs Audio v3 TTS by Boson AI — expressive conversational speech.
 // Architecture: 4B autoregressive decoder, 8-codebook audio tokens, 24kHz output.
 //
 // Blockers:
 //   1. License: Boson Higgs Audio v3 Research and Non-Commercial License.
-//      Commercial use requires separate license from Boson AI.
-//   2. Serving stack: Requires SGLang-Omni server (Python + GPU, ~8GB VRAM),
-//      NOT a simple ONNX runtime session like Piper/Kokoro.
-//   3. Integration complexity: New TTS backend type (SGLangServer) with
-//      model download, server lifecycle, health check, and streaming API.
+//   2. Serving stack: Requires SGLang-Omni server (GPU). The ONNX vocoder
+//      (Reza2kn/Higgs-Audio-v3-TTS-4bit-ONNX) is codec-decoder only —
+//      no text-to-codebook generation included.
+//   3. Integration complexity: New TTS backend type (SGLangServer).
 //
 // Integration plan (post-license):
-//   1. Download ONNX weights from onnx-community/higgs-audio-v3-tts-4b
-//   2. Run SGLang-Omni server as a TTS backend (similar pattern to PiperServer)
-//   3. Map control tokens to TTS pipeline: allow Brain to inject emotion/style
+//   1. SGLang-Omni server for text-to-codebook generation
+//   2. ONNX vocoder for codebook-to-waveform (optional, SGLang can do both)
+//   3. Map control tokens to TTS pipeline for emotion/style
 //   4. Support streaming SSE response for sub-second time-to-first-audio
+
+// ============================================================================
+// Future: Nemotron 3.5 ASR (sherpa-onnx format)
+// ============================================================================
+//
+// sherpa-onnx provides a complete RNNT inference pipeline via Python bindings:
+//   pip install sherpa-onnx
+//
+// Files: encoder.int8.onnx + decoder.int8.onnx + joiner.int8.onnx + tokens.txt
+//
+// Integration: new Python server path that uses sherpa-onnx's OnlineRecognizer
+// for streaming transcription with language-ID prompt, punctuation, and
+// capitalization — replacing our manual RNNT decoder for this model family.

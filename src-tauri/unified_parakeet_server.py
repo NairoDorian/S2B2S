@@ -18,9 +18,10 @@ Supports model families via auto-detection:
     Mel normalization: none (raw log-mel), decoder layers: 1, blank_id: from config.json
     Emits <EOU> token for end-of-utterance detection (streaming mode)
 
-  NOTE: Nemotron 3.5 ASR (onnxruntime-genai format) uses separate
-  encoder.onnx + decoder.onnx + joint.onnx + tokenizer.json — NOT yet
-  supported by this server. Needs genai-format inference implementation.
+  NOTE: Nemotron 3.5 ASR (sherpa-onnx format) uses separate
+  encoder.int8.onnx + decoder.int8.onnx + joiner.int8.onnx + tokens.txt —
+  NOT yet supported by this server. Needs sherpa-onnx Python bindings
+  (pip install sherpa-onnx) for inference.
 
 Quantization: each model directory contains one encoder + one decoder ONNX.
 The server auto-detects whichever files are present.

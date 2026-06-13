@@ -294,25 +294,25 @@ impl ModelManager {
             },
         );
 
-        // Nemotron 3.5 ASR Streaming 0.6B — INT4 (multilingual, streaming, punctuation)
+        // Nemotron 3.5 ASR Streaming — INT8 sherpa-onnx (multilingual, streaming)
         available_models.insert(
-            "nemotron-3.5-asr-0.6b-int4".to_string(),
+            "nemotron-3.5-asr-0.6b-int8".to_string(),
             ModelInfo {
-                id: "nemotron-3.5-asr-0.6b-int4".to_string(),
-                name: "Nemotron 3.5 ASR INT4".to_string(),
-                description: "Multilingual streaming ASR. 40 languages, punctuation + capitalization, 560ms chunk size."
+                id: "nemotron-3.5-asr-0.6b-int8".to_string(),
+                name: "Nemotron 3.5 ASR INT8".to_string(),
+                description: "Multilingual streaming ASR via sherpa-onnx. 40 languages, 80ms chunks, punctuation + capitalization."
                     .to_string(),
-                filename: "nemotron-3.5-asr-0.6b-int4".to_string(),
+                filename: "nemotron-3.5-asr-0.6b-int8".to_string(),
                 url: None,
                 sha256: None,
-                size_mb: 400,
+                size_mb: 680,
                 is_downloaded: false,
                 is_downloading: false,
                 partial_size: 0,
                 is_directory: true,
                 engine_type: EngineType::UnifiedParakeet,
-                accuracy_score: 0.91,
-                speed_score: 0.72,
+                accuracy_score: 0.93,
+                speed_score: 0.75,
                 supports_translation: false,
                 is_recommended: false,
                 supported_languages: vec![
@@ -327,22 +327,14 @@ impl ModelManager {
                 supports_language_selection: true,
                 is_custom: false,
                 hf_repo: Some(
-                    "https://huggingface.co/onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4"
+                    "https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-80ms-int8-2026-06-11"
                         .to_string(),
                 ),
                 hf_files: Some(vec![
-                    "encoder.onnx".to_string(),
-                    "encoder.onnx.data".to_string(),
-                    "decoder.onnx".to_string(),
-                    "decoder.onnx.data".to_string(),
-                    "joint.onnx".to_string(),
-                    "joint.onnx.data".to_string(),
-                    "tokenizer.json".to_string(),
-                    "tokenizer_config.json".to_string(),
-                    "vocab.txt".to_string(),
-                    "genai_config.json".to_string(),
-                    "model_config.json".to_string(),
-                    "audio_processor_config.json".to_string(),
+                    "encoder.int8.onnx".to_string(),
+                    "decoder.int8.onnx".to_string(),
+                    "joiner.int8.onnx".to_string(),
+                    "tokens.txt".to_string(),
                 ]),
             },
         );
