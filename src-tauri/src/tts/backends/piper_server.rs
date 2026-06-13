@@ -317,11 +317,19 @@ pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::Pa
         }
     }
 
-    // 4. Fallback to default user profile / piper-voices
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    std::path::PathBuf::from(home).join("piper-voices")
+    // 4. Default to project-local models/piper-voices (always inside S2B2S folder)
+    //    Even if the directory doesn't exist yet, return this path so the user
+    //    gets a clear error: "place .onnx files in models/piper-voices/"
+    if let Ok(cwd) = std::env::current_dir() {
+        let path = cwd.join("models").join("piper-voices");
+        return path;
+    }
+    if let Some(app) = app {
+        if let Ok(app_data) = crate::portable::app_data_dir(app) {
+            return app_data.join("models").join("piper-voices");
+        }
+    }
+    std::path::PathBuf::from("models").join("piper-voices")
 }
 
 #[cfg(windows)]
