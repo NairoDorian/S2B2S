@@ -21,6 +21,7 @@ Endpoints (mirror Piper HTTP server contract):
 import argparse
 import io
 import json
+import os
 import sys
 import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -50,9 +51,25 @@ TTS = None
 AVAILABLE_VOICES = KITTEN_VOICES[:]
 
 
-def load_model(model_name=DEFAULT_MODEL):
+def resolve_local_models_dir():
+    """Find the local models directory relative to this script."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(script_dir, "models"),
+        os.path.join(os.getcwd(), "models"),
+    ]
+    for p in candidates:
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def load_model(model_name=DEFAULT_MODEL, models_dir=None):
     """Load KittenTTS model once."""
     from kittentts import KittenTTS
+
+    if models_dir and os.path.isdir(models_dir):
+        os.environ.setdefault("HF_HOME", models_dir)
 
     tts = KittenTTS(model_name)
     return tts
@@ -148,12 +165,24 @@ def main():
         default=DEFAULT_MODEL,
         help=f"Model name on HuggingFace Hub (default: {DEFAULT_MODEL})",
     )
+    parser.add_argument(
+        "--models-dir",
+        default=None,
+        help="Directory for storing downloaded models (sets HF_HOME)",
+    )
     args = parser.parse_args()
 
     global TTS
 
+    models_dir = args.models_dir
+    if not models_dir:
+        models_dir = resolve_local_models_dir()
+
+    if models_dir:
+        print(f"[kitten_server] Using local models dir: {models_dir}", file=sys.stderr, flush=True)
+
     print(f"[kitten_server] Loading model: {args.model}", file=sys.stderr, flush=True)
-    TTS = load_model(model_name=args.model)
+    TTS = load_model(model_name=args.model, models_dir=models_dir)
     print(
         f"[kitten_server] Model loaded. Voices: {AVAILABLE_VOICES}",
         file=sys.stderr,

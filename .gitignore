@@ -44,3 +44,4 @@ blob-report/
 result
 models/
 llama.cpp/
+__pycache__/

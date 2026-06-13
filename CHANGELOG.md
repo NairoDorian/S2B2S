@@ -9,6 +9,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading, and 20-turn conversation memory.
 
+### Model Path Consolidation (Local-First Storage)
+
+- **`kokoro_server.py`** — Added `resolve_local_path()` fallback resolution. When `--model`/`--voices` args are missing, searches `models/kokoro/` relative to script dir and CWD before falling back to HuggingFace cache. Ensures the local `models/kokoro/kokoro-v1.0.onnx` + `voices-v1.0.bin` are always found.
+- **`kitten_server.py`** — Added `--models-dir` argument and `resolve_local_models_dir()` helper. Points HuggingFace Hub downloads at the project-local `models/` directory instead of global HF cache.
+- **`pocket_server.py`** — Same `--models-dir` + `resolve_local_models_dir()` pattern for local model storage. Sets `HF_HOME` for any HuggingFace-dependent packages.
+- **Kokoro backend** (`kokoro.rs`) — Simplified `kokoro_model_args()` search order: canonical `models/kokoro/` path first, then CWD-based, then legacy. Removed hardcoded `%APPDATA%` path.
+- **Model manager** (`model.rs`) — Added `project_local_models_dir` field that discovers `S2B2S/models/` in dev mode. `update_download_status()` and `get_model_path()` now resolve models from the local folder when they exist there.
+- **Local TTS server** (`local_tts_server.rs`) — Added `resolve_local_models_dir()`, `local_models_dir_args()`, and sets `HF_HOME` env var on all spawned Python subprocesses. Kitten and Pocket engines now automatically receive `--models-dir` pointing to the local `models/` folder.
+
 ### Pocket TTS + Full Kokoro/Kitten Synthesis with RAM Persistency
 
 - **Pocket TTS backend** — New `TtsEngine::Pocket` variant, `PocketBackend` (8 character voices: alba, marius, javert, etc.), dedicated `pocket_server.py` HTTP server for RAM-persistent runtime.
