@@ -555,16 +555,10 @@ impl TranscriptionManager {
         //
         // For EOU models (parakeet-realtime-eou-120m-v1), the streaming API is used
         // to emit partial transcription events to the frontend for real-time feedback.
-        let is_eou_model = self
-            .model_manager
-            .get_model_info(&target_model_id)
-            .and_then(|info| info.hf_repo)
-            .map(|repo| repo.contains("parakeet-realtime-eou-120m"))
-            .unwrap_or(false);
-
-        // Only use streaming if both (a) this is an EOU model AND (b) the user
-        // has streaming enabled in settings. Otherwise fall through to offline mode.
-        let use_streaming = is_eou_model && settings.eou_streaming_enabled;
+        // Streaming mode works for ALL UnifiedParakeet models (Unified 0.6B + EOU 120M).
+        // The EOU model additionally emits <EOU> tokens for end-of-utterance detection.
+        // When disabled, all models use the offline /transcribe endpoint.
+        let use_streaming = settings.parakeet_streaming_enabled;
 
         let result = {
             let mut engine_guard = self.lock_engine();
