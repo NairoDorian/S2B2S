@@ -7,6 +7,7 @@ use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
+use crate::stt::multi_stt;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
@@ -565,9 +566,26 @@ impl ShortcutAction for TranscribeAction {
                         crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
                     });
 
-                    // Transcribe concurrently with WAV save
+                    // Transcribe concurrently with WAV save.
+                    // When multi-STT is enabled, run multiple models in parallel
+                    // and merge results via LLM post-processing.
                     let transcription_time = Instant::now();
-                    let transcription_result = tm.transcribe(samples);
+                    let settings = get_settings(&ah);
+                    let transcription_result = if settings.multi_stt_enabled
+                        && !settings.multi_stt_models.is_empty()
+                    {
+                        let mm = Arc::clone(
+                            &ah.state::<Arc<crate::managers::model::ModelManager>>(),
+                        );
+                        multi_stt::transcribe_parallel(
+                            samples.clone(),
+                            &settings,
+                            &mm,
+                            &ah,
+                        )
+                    } else {
+                        tm.transcribe(samples)
+                    };
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -655,6 +673,18 @@ impl ShortcutAction for TranscribeAction {
                                         "stt_ms": stt_ms,
                                     });
                                     let _ = ah.emit("brain:asked", &asked_payload);
+
+                                    // Show the brain overlay if enabled in settings
+                                    {
+                                        let settings = crate::settings::get_settings(&ah);
+                                        if settings.overlay_window.reply_bubble {
+                                            crate::overlay_fx::window::show_brain_overlay(&ah);
+                                            let _ = ah.emit("overlay:state", crate::overlay_fx::events::OverlayState::new(
+                                                crate::overlay_fx::events::OverlayPhase::Listening,
+                                            ));
+                                        }
+                                    }
+
                                     if let Some(bm) =
                                         ah.try_state::<Arc<crate::brain::manager::BrainManager>>()
                                     {

@@ -901,6 +901,10 @@ impl ModelManager {
         models.get(model_id).cloned()
     }
 
+    pub fn models_dir(&self) -> &PathBuf {
+        &self.models_dir
+    }
+
     fn migrate_bundled_models(&self) -> Result<()> {
         // Check for bundled models and copy them to user directory
         let bundled_models = ["ggml-small.bin"]; // Add other bundled models here if any
