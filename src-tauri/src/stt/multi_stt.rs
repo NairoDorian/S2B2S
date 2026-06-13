@@ -246,6 +246,11 @@ fn transcribe_python(audio: &[f32], model_path: &Path, model_info: &ModelInfo) -
         let mut last_text = String::new();
         const CHUNK: usize = 4000; // 250ms
         for chunk in audio.chunks(CHUNK) {
+            // Gate on RMS — skip near-silent chunks
+            let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt();
+            if chunk.len() < CHUNK / 4 || rms < 0.002 {
+                continue;
+            }
             let (text, eou) = server.stream_feed(chunk)?;
             if !text.is_empty() {
                 last_text = text;

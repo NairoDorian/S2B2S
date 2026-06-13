@@ -1058,6 +1058,10 @@ pub struct AppSettings {
     /// Multi-STT post-processing prompt. {transcriptions} is replaced with the model results.
     #[serde(default = "default_multi_stt_prompt")]
     pub multi_stt_prompt: String,
+    /// EOU 120M streaming toggle: when enabled, the model uses the streaming API
+    /// for progressive partial results. When disabled, uses offline /transcribe.
+    #[serde(default = "default_eou_streaming_enabled")]
+    pub eou_streaming_enabled: bool,
 }
 
 fn default_long_audio_threshold_seconds() -> f64 {
@@ -1078,6 +1082,10 @@ fn default_rnnoise_voice_threshold() -> f64 {
 
 fn default_multi_stt_prompt() -> String {
     "You are a speech transcription corrector. Given multiple independent transcriptions of the same audio recording, produce the most accurate final transcription. Cross-reference the transcriptions to resolve disagreements. Fix obvious errors, remove repetitions, and ensure the output reads naturally.\n\nTranscriptions:\n{transcriptions}\n\nReturn only the corrected transcription text, nothing else.".to_string()
+}
+
+fn default_eou_streaming_enabled() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -1606,6 +1614,7 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_enabled: false,
         multi_stt_models: Vec::new(),
         multi_stt_prompt: default_multi_stt_prompt(),
+        eou_streaming_enabled: default_eou_streaming_enabled(),
     }
 }
 

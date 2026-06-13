@@ -562,6 +562,10 @@ impl TranscriptionManager {
             .map(|repo| repo.contains("parakeet-realtime-eou-120m"))
             .unwrap_or(false);
 
+        // Only use streaming if both (a) this is an EOU model AND (b) the user
+        // has streaming enabled in settings. Otherwise fall through to offline mode.
+        let use_streaming = is_eou_model && settings.eou_streaming_enabled;
+
         let result = {
             let mut engine_guard = self.lock_engine();
             let mut engine = match engine_guard.take() {
@@ -683,7 +687,7 @@ impl TranscriptionManager {
                                 .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e))
                         }
                         LoadedEngine::UnifiedParakeet(server) => {
-                            if is_eou_model {
+                            if use_streaming {
                                 // === Streaming path for EOU 120M model ===
                                 server.stream_start().map_err(|e| {
                                     anyhow::anyhow!(
@@ -694,10 +698,24 @@ impl TranscriptionManager {
 
                                 // Feed audio in chunks for progressive partial results.
                                 // 250ms chunks give ~4 updates/sec — responsive without spamming.
+                                // Chunks below the silence threshold are skipped to avoid
+                                // feeding background noise / gaps to the streaming model.
                                 const CHUNK_SAMPLES: usize = 4000; // 250ms at 16kHz
+                                const SILENCE_RMS_THRESHOLD: f32 = 0.002; // match TripleVAD RMS gate
                                 let mut last_emitted = String::new();
 
                                 for chunk in audio.chunks(CHUNK_SAMPLES) {
+                                    // Gate on RMS energy — skip near-silent chunks to avoid
+                                    // feeding background noise / gaps to the streaming model.
+                                    let rms = (chunk.iter()
+                                        .map(|s| s * s)
+                                        .sum::<f32>()
+                                        / chunk.len() as f32)
+                                        .sqrt();
+                                    if chunk.len() < CHUNK_SAMPLES / 4 || rms < SILENCE_RMS_THRESHOLD {
+                                        continue;
+                                    }
+
                                     let (text, eou) = server.stream_feed(chunk).map_err(|e| {
                                         anyhow::anyhow!(
                                             "Unified Parakeet stream feed failed: {}",
