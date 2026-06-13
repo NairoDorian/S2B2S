@@ -16,6 +16,7 @@ Curated list of STT, TTS, and voice-related open-source projects referenced by t
 - <https://github.com/NairoDorian/S2B2S>
 - <https://github.com/istupakov/onnx-asr>
 - <https://github.com/k2-fsa/sherpa-onnx>
+- <https://github.com/speechbrain/speechbrain>
 
 ## TTS (Text-to-Speech)
 

@@ -11,7 +11,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Reference GitHub Links
 
-- **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.
+- **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.
 
 ### Repomix Codebase Packaging
 
