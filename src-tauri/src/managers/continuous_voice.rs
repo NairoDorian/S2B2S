@@ -39,7 +39,8 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
         .inner()
         .clone();
 
-    // 1. Temporarily pause continuous listening
+    // 1. Temporarily pause continuous listening (prevents new utterance queuing)
+    //    but VAD stays active so we can detect barge-in speech during TTS playback
     rm.set_continuous_mode_paused(true);
 
     // 2. Transcribe
@@ -112,12 +113,38 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     let bm_clone = bm.clone();
     let transcription_clone = transcription.clone();
 
+    // Clone for async block — rm used both inside and after
+    let rm_for_after = rm.clone();
+
     // Run the async Brain/TTS pipeline
     tauri::async_runtime::block_on(async move {
         let _ask_result = bm_clone.ask(transcription_clone).await;
 
         if will_play_tts && tts.is_playing() {
-            log::info!("Waiting for TTS playback to finish...");
+            log::info!("Waiting for TTS playback to finish (barge-in active)...");
+
+            // Barge-in: if user speaks during TTS, abort current turn
+            let barge_aborted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let barge_aborted_clone = barge_aborted.clone();
+
+            let app_for_barge = app_clone.clone();
+            let bm_for_barge = bm_clone.clone();
+            let tts_for_barge = tts.clone();
+            let rm_for_barge = rm.clone();
+
+            // Listen for speech-start events while TTS is playing
+            let barge_listener = app_clone.listen("continuous-voice:speech-started", move |_| {
+                if !barge_aborted_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                    barge_aborted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                    log::info!("[Barge-in] User speech detected during TTS, aborting turn...");
+                    let _ = bm_for_barge.abort();
+                    tts_for_barge.stop();
+                    // Unpause so the new utterance gets processed normally
+                    rm_for_barge.set_continuous_mode_paused(false);
+                    let _ = app_for_barge.emit("brain:barge-in", ());
+                }
+            });
+
             let (tx, rx) = std::sync::mpsc::channel::<()>();
 
             let tx_finished = tx.clone();
@@ -152,7 +179,13 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
             };
 
             let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
-            log::info!("TTS playback finished or timed out.");
+            app_clone.unlisten(barge_listener);
+
+            if barge_aborted.load(std::sync::atomic::Ordering::Relaxed) {
+                log::info!("TTS turn aborted by barge-in.");
+            } else {
+                log::info!("TTS playback finished normally.");
+            }
         }
     });
 
@@ -160,7 +193,7 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     // Check if auto-listen is enabled; if not, automatically restart
     let settings = get_settings(app);
     if settings.brain.auto_listen {
-        rm.set_continuous_mode_paused(false);
+        rm_for_after.set_continuous_mode_paused(false);
         log::info!("Continuous listening resumed (auto-listen ON).");
     } else {
         // Re-arm listening after a 250ms grace period to avoid capturing room reverb
