@@ -357,7 +357,7 @@ def _decode_frames(
         for _ in range(MAX_SYMBOLS_PER_STEP):
             d_out = decoder.run(None, {
                 "encoder_outputs": frame,
-                "targets": last_token,
+                "targets": last_token.astype(np.int32),
                 "target_length": target_length,
                 "input_states_1": state_1,
                 "input_states_2": state_2,
