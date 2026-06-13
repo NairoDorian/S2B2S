@@ -401,6 +401,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Rust STT backend module** (`src/stt/unified_parakeet.rs`) — manages the Python server lifecycle (spawn, health check with exponential backoff, transcription via HTTP POST of raw float32le audio bytes, graceful kill on drop). Python venv resolution follows the existing TTS priority chain (project venv → app-data venv → system Python).
 - **Model download paths** — fp32 and int8 variants served as `.tar.gz` archives from CDN, consistent with existing model distribution pattern.
 
+**STT — Streaming Transcription (EOU 120M):**
+
+- **Streaming RNNT endpoints** (`/stream_start`, `/stream_feed`, `/stream_end`, `/stream_status`) — the Python server now supports incremental audio chunk processing with stateful decoder (LSTM states persist between chunks). Feeds audio in 250ms chunks, returns progressive partial results with EOU detection.
+- **EOU model auto-detection** — the transcription pipeline detects the EOU 120M model by its HuggingFace repo URL and routes through the streaming API. The Unified model continues using the offline `/transcribe` endpoint.
+- **`transcription-partial` event** — emitted by the Rust backend during streaming transcription whenever text changes. Enables real-time word-by-word overlay display in future frontend work.
+- **Multi-STT pipeline architecture** — documented in `src/stt/mod.rs`. Future plan: streaming model (real-time feedback) + 1–2 backup models (parallel full-audio transcription) + LLM post-processing to merge 2–3 noisy transcriptions into one clean result.
+
+**STT — HuggingFace Direct Downloads:**
+
+- **Multi-file HF downloads** — `ModelInfo` gains `hf_repo` + `hf_files` fields (hidden from frontend). `download_huggingface_model()` downloads individual ONNX/tokenizer/config files from HuggingFace repos with retry (3 attempts) and progress reporting.
+- **All 5 Parakeet ONNX models** now download directly from HuggingFace (eschmidbauer/unified + ysdede/eou-120m) — no CDN dependency.
+
 ### Changed
 
 - **Default VAD mode** changed from `"silero"` to `"triple"` for all modes (dictation, conversation, push-to-talk).
@@ -408,6 +420,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Always-On Microphone toggle moved** from Debug settings to General → Sound section for easy discovery.
 - **All dependencies updated to latest** — Tauri 2.11, rodio 0.22, rubato 3.0, reqwest 0.13, rusqlite 0.40, `windows` 0.62, specta rc.25, transcribe-rs 0.3.11. React 19, Vite 8, TypeScript 6, zod 4, ESLint 10, i18next 26. `cpal` pinned to 0.17.
 - **Removed `parakeet-rs` crate** — replaced with Python onnxruntime 1.26 server for Parakeet Unified model inference. The Rust `ort` crate (locked to 2.0.0-rc.12, ONNX Runtime ~1.20) cannot be upgraded to 1.26 yet; Python path bypasses this bottleneck.
+- **EOU 120M model uses streaming pipeline** — detected by HuggingFace repo URL, routes through `/stream_start` → chunked `/stream_feed` → `/stream_end` with `transcription-partial` events. Unified model stays on offline `/transcribe` endpoint.
 - **Python venv now includes onnxruntime >= 1.26.0 and sentencepiece** for the Unified Parakeet STT server.
 - **Overlay threading simplified** — removed `run_on_main_thread` wrapping; overlay executes directly on calling thread.
 - **Removed COM initialization** from TTS audio player background thread.

@@ -184,6 +184,72 @@ impl UnifiedParakeetServer {
         Ok(text)
     }
 
+    /// Reset the streaming state on the server for a new utterance.
+    pub fn stream_start(&self) -> Result<()> {
+        let url = format!("http://127.0.0.1:{}/stream_start", self.port);
+        let resp = self
+            .client
+            .post(&url)
+            .send()
+            .context("Failed to start stream on unified parakeet server")?;
+        if !resp.status().is_success() {
+            anyhow::bail!(
+                "stream_start failed: HTTP {}",
+                resp.status()
+            );
+        }
+        Ok(())
+    }
+
+    /// Feed an audio chunk to the streaming decoder.
+    /// Returns (text, eou) — eou=true when end-of-utterance is detected.
+    pub fn stream_feed(&self, audio: &[f32]) -> Result<(String, bool)> {
+        let audio_bytes: Vec<u8> = audio
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        let url = format!("http://127.0.0.1:{}/stream_feed", self.port);
+        let resp = self
+            .client
+            .post(&url)
+            .body(audio_bytes)
+            .send()
+            .context("Failed to feed audio to streaming decoder")?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("stream_feed error ({}): {}", status, body);
+        }
+        let json: serde_json::Value = resp.json()?;
+        let text = json["text"].as_str().unwrap_or("").to_string();
+        let eou = json["eou"].as_bool().unwrap_or(false);
+        Ok((text, eou))
+    }
+
+    /// Finalise the stream — feed any remaining audio and get final result.
+    pub fn stream_end(&self, audio: &[f32]) -> Result<(String, bool)> {
+        let audio_bytes: Vec<u8> = audio
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        let url = format!("http://127.0.0.1:{}/stream_end", self.port);
+        let resp = self
+            .client
+            .post(&url)
+            .body(audio_bytes)
+            .send()
+            .context("Failed to finalise stream on unified parakeet server")?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("stream_end error ({}): {}", status, body);
+        }
+        let json: serde_json::Value = resp.json()?;
+        let text = json["text"].as_str().unwrap_or("").to_string();
+        let eou = json["eou"].as_bool().unwrap_or(false);
+        Ok((text, eou))
+    }
+
     pub fn port(&self) -> u16 {
         self.port
     }

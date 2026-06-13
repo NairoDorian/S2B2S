@@ -552,12 +552,18 @@ impl TranscriptionManager {
         // Perform transcription with the appropriate engine.
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
         // which would make the app hang indefinitely on subsequent operations.
+        //
+        // For EOU models (parakeet-realtime-eou-120m-v1), the streaming API is used
+        // to emit partial transcription events to the frontend for real-time feedback.
+        let is_eou_model = self
+            .model_manager
+            .get_model_info(&target_model_id)
+            .and_then(|info| info.hf_repo)
+            .map(|repo| repo.contains("parakeet-realtime-eou-120m"))
+            .unwrap_or(false);
+
         let result = {
             let mut engine_guard = self.lock_engine();
-
-            // Take the engine out so we own it during transcription.
-            // If the engine panics, we simply don't put it back (effectively unloading it)
-            // instead of poisoning the mutex.
             let mut engine = match engine_guard.take() {
                 Some(e) => e,
                 None => {
@@ -566,9 +572,9 @@ impl TranscriptionManager {
                     ));
                 }
             };
-
-            // Release the lock before transcribing — no mutex held during the engine call
             drop(engine_guard);
+
+            let app_handle = self.app_handle.clone();
 
             let transcribe_result = catch_unwind(AssertUnwindSafe(
                 || -> Result<transcribe_rs::TranscriptionResult> {
@@ -677,18 +683,80 @@ impl TranscriptionManager {
                                 .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e))
                         }
                         LoadedEngine::UnifiedParakeet(server) => {
-                            let text = server
-                                .transcribe(&audio)
-                                .map_err(|e| {
+                            if is_eou_model {
+                                // === Streaming path for EOU 120M model ===
+                                server.stream_start().map_err(|e| {
                                     anyhow::anyhow!(
-                                        "Unified Parakeet transcription failed: {}",
+                                        "Unified Parakeet stream start failed: {}",
                                         e
                                     )
                                 })?;
-                            Ok(transcribe_rs::TranscriptionResult {
-                                text,
-                                segments: None,
-                            })
+
+                                // Feed audio in chunks for progressive partial results.
+                                // 250ms chunks give ~4 updates/sec — responsive without spamming.
+                                const CHUNK_SAMPLES: usize = 4000; // 250ms at 16kHz
+                                let mut last_emitted = String::new();
+
+                                for chunk in audio.chunks(CHUNK_SAMPLES) {
+                                    let (text, eou) = server.stream_feed(chunk).map_err(|e| {
+                                        anyhow::anyhow!(
+                                            "Unified Parakeet stream feed failed: {}",
+                                            e
+                                        )
+                                    })?;
+
+                                    // Emit partial result when text changes
+                                    if text != last_emitted && !text.is_empty() {
+                                        let _ = app_handle.emit(
+                                            "transcription-partial",
+                                            &text,
+                                        );
+                                        last_emitted = text;
+                                    }
+
+                                    if eou {
+                                        break;
+                                    }
+                                }
+
+                                // Finalise the stream
+                                let (_text, _eou) = server.stream_end(&[]).map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "Unified Parakeet stream end failed: {}",
+                                        e
+                                    )
+                                })?;
+
+                                // Use the last emitted text as final result
+                                let final_text = if _text != last_emitted && !_text.is_empty() {
+                                    let _ = app_handle.emit(
+                                        "transcription-partial",
+                                        &_text,
+                                    );
+                                    _text
+                                } else {
+                                    last_emitted
+                                };
+
+                                Ok(transcribe_rs::TranscriptionResult {
+                                    text: final_text,
+                                    segments: None,
+                                })
+                            } else {
+                                // === Offline path for Unified model ===
+                                let text = server
+                                    .transcribe(&audio)
+                                    .map_err(|e| {
+                                        anyhow::anyhow!(
+                                            "Unified Parakeet transcription failed: {}",
+                                            e
+                                        )
+                                    })?;
+                                Ok(transcribe_rs::TranscriptionResult {
+                                    text,
+                                    segments: None,
+                                })
+                            }
                         }
                     }
                 },

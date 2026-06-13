@@ -53,7 +53,14 @@ pub struct ModelInfo {
     pub is_recommended: bool,       // Whether this is the recommended model for new users
     pub supported_languages: Vec<String>, // Languages this model can transcribe
     pub supports_language_selection: bool, // Whether the user can explicitly pick a language
-    pub is_custom: bool,            // Whether this is a user-provided custom model
+    pub is_custom: bool,     // Whether this is a user-provided custom model
+    /// HuggingFace repo base URL (e.g. https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx).
+    /// When set, the model is downloaded as individual files from the HF repo instead of a single archive.
+    #[specta(skip)]
+    pub hf_repo: Option<String>,
+    /// Files to download from the HuggingFace repo (relative paths, e.g. "onnx_fp32/encoder.onnx").
+    #[specta(skip)]
+    pub hf_files: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -164,10 +171,129 @@ impl ModelManager {
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: Some(
+                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "onnx_int8/encoder.int8.onnx".to_string(),
+                    "onnx_int8/decoder_joint.int8.onnx".to_string(),
+                    "onnx_int8/tokenizer.model".to_string(),
+                ]),
             },
         );
 
-        // Add downloadable models
+        // Parakeet Realtime EOU 120M v1 — FP32/FP32 (English, RNN-T with EOU detection)
+        available_models.insert(
+            "parakeet-eou-120m-en-fp32".to_string(),
+            ModelInfo {
+                id: "parakeet-eou-120m-en-fp32".to_string(),
+                name: "Parakeet EOU 120M FP32".to_string(),
+                description: "Streaming RNN-T with end-of-utterance detection. English only."
+                    .to_string(),
+                filename: "parakeet-eou-120m-en-fp32".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 500,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.87,
+                speed_score: 0.70,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec!["en".to_string()],
+                supports_language_selection: false,
+                is_custom: false,
+                hf_repo: Some(
+                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "encoder-model.onnx".to_string(),
+                    "decoder_joint-model.onnx".to_string(),
+                    "vocab.txt".to_string(),
+                    "config.json".to_string(),
+                ]),
+            },
+        );
+
+        // Parakeet Realtime EOU 120M v1 — FP16/FP16 (English, RNN-T with EOU detection)
+        available_models.insert(
+            "parakeet-eou-120m-en-fp16".to_string(),
+            ModelInfo {
+                id: "parakeet-eou-120m-en-fp16".to_string(),
+                name: "Parakeet EOU 120M FP16".to_string(),
+                description: "FP16 variant. English only. Halved model size with exact parity."
+                    .to_string(),
+                filename: "parakeet-eou-120m-en-fp16".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 250,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.87,
+                speed_score: 0.78,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec!["en".to_string()],
+                supports_language_selection: false,
+                is_custom: false,
+                hf_repo: Some(
+                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "encoder-model.fp16.onnx".to_string(),
+                    "decoder_joint-model.fp16.onnx".to_string(),
+                    "vocab.txt".to_string(),
+                    "config.json".to_string(),
+                ]),
+            },
+        );
+
+        // Parakeet Realtime EOU 120M v1 — FP32/INT8 (decoder-only INT8, exact parity)
+        available_models.insert(
+            "parakeet-eou-120m-en-fp32int8".to_string(),
+            ModelInfo {
+                id: "parakeet-eou-120m-en-fp32int8".to_string(),
+                name: "Parakeet EOU 120M FP32+INT8".to_string(),
+                description: "FP32 encoder + INT8 decoder. English only. Compact with exact parity."
+                    .to_string(),
+                filename: "parakeet-eou-120m-en-fp32int8".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 400,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.87,
+                speed_score: 0.82,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec!["en".to_string()],
+                supports_language_selection: false,
+                is_custom: false,
+                hf_repo: Some(
+                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "encoder-model.onnx".to_string(),
+                    "decoder_joint-model.int8.onnx".to_string(),
+                    "vocab.txt".to_string(),
+                    "config.json".to_string(),
+                ]),
+            },
+        );
+
         available_models.insert(
             "medium".to_string(),
             ModelInfo {
@@ -192,6 +318,8 @@ impl ModelManager {
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -219,6 +347,8 @@ impl ModelManager {
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -246,6 +376,8 @@ impl ModelManager {
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -274,6 +406,8 @@ impl ModelManager {
                 supported_languages: whisper_languages,
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -302,6 +436,8 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -339,6 +475,8 @@ impl ModelManager {
                 supported_languages: parakeet_v3_languages,
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -351,10 +489,8 @@ impl ModelManager {
                 description: "High-accuracy RNN-T model. English only. Large but precise."
                     .to_string(),
                 filename: "parakeet-unified-en-0.6b-fp32".to_string(),
-                url: Some(
-                    "https://blob.handy.computer/parakeet-unified-en-0.6b-fp32.tar.gz".to_string(),
-                ),
-                sha256: None, // TODO: add after uploading archive
+                url: None,
+                sha256: None,
                 size_mb: 2390,
                 is_downloaded: false,
                 is_downloading: false,
@@ -368,6 +504,17 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: Some(
+                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx"
+                        .to_string(),
+                ),
+                hf_files: Some(vec![
+                    "onnx_fp32/encoder.onnx".to_string(),
+                    "onnx_fp32/encoder.onnx.data".to_string(),
+                    "onnx_fp32/decoder_joint.onnx".to_string(),
+                    "onnx_fp32/decoder_joint.onnx.data".to_string(),
+                    "onnx_fp32/tokenizer.model".to_string(),
+                ]),
             },
         );
 
@@ -380,10 +527,8 @@ impl ModelManager {
                 description: "Quantized RNN-T model. English only. Fast and compact."
                     .to_string(),
                 filename: "parakeet-unified-en-0.6b-int8".to_string(),
-                url: Some(
-                    "https://blob.handy.computer/parakeet-unified-en-0.6b-int8.tar.gz".to_string(),
-                ),
-                sha256: None, // TODO: add after uploading archive
+                url: None,
+                sha256: None,
                 size_mb: 633,
                 is_downloaded: false,
                 is_downloading: false,
@@ -397,6 +542,8 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -424,6 +571,8 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -453,6 +602,8 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -482,6 +633,8 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -511,6 +664,8 @@ impl ModelManager {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -546,6 +701,8 @@ impl ModelManager {
                 supported_languages: sense_voice_languages,
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -576,6 +733,8 @@ impl ModelManager {
                 supported_languages: gigaam_languages,
                 supports_language_selection: false,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -610,6 +769,8 @@ impl ModelManager {
                 supported_languages: canary_flash_languages,
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -647,6 +808,8 @@ impl ModelManager {
                 supported_languages: canary_1b_languages,
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -682,6 +845,8 @@ impl ModelManager {
                 supported_languages: cohere_languages,
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
@@ -1027,6 +1192,8 @@ impl ModelManager {
                     supported_languages: vec![],
                     supports_language_selection: true,
                     is_custom: true,
+                    hf_repo: None,
+                    hf_files: None,
                 },
             );
         }
@@ -1087,6 +1254,173 @@ impl ModelManager {
         Ok(digest.iter().map(|b| format!("{:02x}", b)).collect())
     }
 
+    /// Download a model from a HuggingFace repo as individual files.
+    /// Creates the model directory and downloads each file sequentially.
+    async fn download_huggingface_model(
+        &self,
+        model_id: &str,
+        model_info: &ModelInfo,
+        hf_repo: &str,
+        hf_files: &[String],
+        model_path: &Path,
+    ) -> Result<()> {
+        let client = reqwest::Client::new();
+
+        // Mark as downloading
+        {
+            let mut models = self.available_models.lock().unwrap();
+            if let Some(model) = models.get_mut(model_id) {
+                model.is_downloading = true;
+            }
+        }
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        {
+            let mut flags = self.cancel_flags.lock().unwrap();
+            flags.insert(model_id.to_string(), cancel_flag.clone());
+        }
+        let mut cleanup = DownloadCleanup {
+            available_models: &self.available_models,
+            cancel_flags: &self.cancel_flags,
+            model_id: model_id.to_string(),
+            disarmed: false,
+        };
+
+        // Create temp extraction dir
+        let temp_dir = self
+            .models_dir
+            .join(format!("{}.extracting", &model_info.filename));
+        if temp_dir.exists() {
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+        fs::create_dir_all(&temp_dir)?;
+
+        // Download each file
+        let total_files = hf_files.len();
+        for (i, file) in hf_files.iter().enumerate() {
+            if cancel_flag.load(Ordering::Relaxed) {
+                let _ = fs::remove_dir_all(&temp_dir);
+                info!("HF download cancelled for: {}", model_id);
+                return Ok(());
+            }
+
+            let url = format!("{}/resolve/main/{}", hf_repo.trim_end_matches('/'), file);
+            let dest = temp_dir.join(Path::new(file).file_name().unwrap_or(file.as_ref()));
+            let partial = temp_dir.join(format!(
+                "{}.partial",
+                Path::new(file).file_name().unwrap_or(file.as_ref()).to_string_lossy()
+            ));
+
+            info!(
+                "Downloading HF file {}/{} for {}: {} -> {:?}",
+                i + 1,
+                total_files,
+                model_id,
+                url,
+                dest
+            );
+
+            let mut retries = 0u32;
+            let max_retries = 3u32;
+
+            loop {
+                let response = client.get(&url).send().await.map_err(|e| {
+                    anyhow::anyhow!("Failed to download {} from {}: {}", file, hf_repo, e)
+                })?;
+                if !response.status().is_success() {
+                    return Err(anyhow::anyhow!(
+                        "HF server returned {} for {}: {}",
+                        response.status(),
+                        file,
+                        hf_repo
+                    ));
+                }
+
+                let mut downloaded: u64 = 0;
+                let total = response.content_length().unwrap_or(0);
+                let mut stream = response.bytes_stream();
+                let mut out_file = std::fs::File::create(&partial)?;
+
+                while let Some(chunk) = stream.next().await {
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        drop(out_file);
+                        let _ = fs::remove_file(&partial);
+                        let _ = fs::remove_dir_all(&temp_dir);
+                        info!("HF download cancelled for: {}", model_id);
+                        return Ok(());
+                    }
+                    let chunk = chunk?;
+                    out_file.write_all(&chunk)?;
+                    downloaded += chunk.len() as u64;
+
+                    let percentage = if total > 0 {
+                        (downloaded as f64 / total as f64) * 100.0
+                    } else {
+                        (i as f64 / total_files as f64) * 100.0
+                    };
+                    let progress = DownloadProgress {
+                        model_id: model_id.to_string(),
+                        downloaded,
+                        total,
+                        percentage,
+                    };
+                    let _ = self
+                        .app_handle
+                        .emit("model-download-progress", &progress);
+                }
+                out_file.flush()?;
+                drop(out_file);
+
+                // Verify file size
+                if total > 0 {
+                    let actual = partial.metadata()?.len();
+                    if actual != total {
+                        retries += 1;
+                        if retries < max_retries {
+                            warn!(
+                                "HF download incomplete for {} ({} bytes vs {} expected), retrying ({}/{})",
+                                file, actual, total, retries, max_retries
+                            );
+                            let _ = fs::remove_file(&partial);
+                            continue;
+                        }
+                        let _ = fs::remove_file(&partial);
+                        return Err(anyhow::anyhow!(
+                            "HF download incomplete for {}: expected {} bytes, got {}",
+                            file,
+                            total,
+                            actual
+                        ));
+                    }
+                }
+                // Success — rename partial to final
+                fs::rename(&partial, &dest)?;
+                break;
+            }
+        }
+
+        // Move temp dir to final location
+        if model_path.exists() {
+            fs::remove_dir_all(model_path)?;
+        }
+        fs::rename(&temp_dir, model_path)?;
+
+        // Cleanup
+        cleanup.disarmed = true;
+        {
+            let mut models = self.available_models.lock().unwrap();
+            if let Some(model) = models.get_mut(model_id) {
+                model.is_downloading = false;
+                model.is_downloaded = true;
+                model.partial_size = 0;
+            }
+        }
+        self.cancel_flags.lock().unwrap().remove(model_id);
+
+        let _ = self.app_handle.emit("model-download-complete", model_id);
+        info!("Successfully downloaded HF model {} to {:?}", model_id, model_path);
+        Ok(())
+    }
+
     pub async fn download_model(&self, model_id: &str) -> Result<()> {
         let model_info = {
             let models = self.available_models.lock().unwrap();
@@ -1096,9 +1430,6 @@ impl ModelManager {
         let model_info =
             model_info.ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
 
-        let url = model_info
-            .url
-            .ok_or_else(|| anyhow::anyhow!("No download URL for model"))?;
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
@@ -1106,13 +1437,40 @@ impl ModelManager {
 
         // Don't download if complete version already exists
         if model_path.exists() {
-            // Clean up any partial file that might exist
             if partial_path.exists() {
                 let _ = fs::remove_file(&partial_path);
             }
             self.update_download_status()?;
             return Ok(());
         }
+
+        // --- HuggingFace multi-file download path ---
+        if let (Some(hf_repo), Some(hf_files)) =
+            (&model_info.hf_repo, &model_info.hf_files)
+        {
+            return self
+                .download_huggingface_model(
+                    model_id,
+                    &model_info,
+                    hf_repo,
+                    hf_files,
+                    &model_path,
+                )
+                .await;
+        }
+
+        // Validate: if hf_repo is set, hf_files must also be set
+        if model_info.hf_repo.is_some() && model_info.hf_files.is_none() {
+            return Err(anyhow::anyhow!(
+                "Model {} has hf_repo but no hf_files",
+                model_id
+            ));
+        }
+
+        // --- Single-file download path (original) ---
+        let url = model_info
+            .url
+            .ok_or_else(|| anyhow::anyhow!("No download URL for model"))?;
 
         // Check if we have a partial download to resume
         let mut resume_from = if partial_path.exists() {
@@ -1650,6 +2008,8 @@ mod tests {
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: true,
                 is_custom: false,
+                hf_repo: None,
+                hf_files: None,
             },
         );
 
