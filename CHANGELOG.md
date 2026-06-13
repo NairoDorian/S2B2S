@@ -25,6 +25,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Dependency bumps** — JS: `@tailwindcss/vite` 4.3.0→4.3.1, `tailwindcss` 4.3.0→4.3.1, `lucide-react` 1.17.0→1.18.0, `eslint` 10.4.1→10.5.0. Rust: 15 crates updated in `Cargo.lock` (cc, js-sys, memchr, openssl, openssl-sys, rust_decimal, smallvec, wasip2, wasm-bindgen ×5, web-sys, zeroize). 5 transitive crates remain semver-constrained (cpal pinned for rodio compat, generic-array/toml family via GTK system-deps).
 - **Removed unused scripts** — `check-latest.ts`, `find-bigints.ts`, `find-command-bigints.ts` removed (development-only tools, not referenced in CI or build). Kept `check-translations.ts`, `check-nix-deps.ts`, `setup_tts_venv.*`.
 
+### About Tab — Expanded Acknowledgments
+
+- **`AboutSettings.tsx` rewritten** — The Acknowledgments section now renders 6 comprehensive categories mapped from i18n keys, replacing the single Whisper.cpp entry. Data-driven component using `ACKNOWLEDGMENT_SECTIONS` array for easy future additions.
+- **6 new acknowledgment sections** covering every project, model, library, and service used by S2B2S:
+  - **Project Lineage & Forks** — Handy, AIVORelay, Parler, Parrot, CopySpeak, Vox, Parakeet-Realtime-Transcriber, TranscriptionSuite, Whispering. All 9 projects in the root AZ directory.
+  - **STT Models** — Whisper.cpp, NVIDIA NeMo Parakeet, Silero VAD, Moonshine, Whisper, Breeze ASR, Canary, Sense Voice, Giga AM, Cohere.
+  - **TTS Engines** — Piper, Kokoro, Kitten, Pocket + cloud (OpenAI, ElevenLabs, Cartesia).
+  - **Brain & LLM** — llama.cpp, Gemma-4 + 8 cloud providers (OpenAI, Anthropic, Gemini, Groq, Cerebras, OpenRouter, Z.ai, AWS Bedrock).
+  - **Key Rust Crates** — Tauri, rdev, vad-rs, transcribe-rs, nnnoiseless, cpal, rodio, rubato, text-processing-rs, enigo, rusqlite, specta.
+  - **Python ML Ecosystem** — piper-tts, kokoro-tts, pocket-tts, kittentts, PyTorch, NumPy, SoundFile, ONNX Runtime.
+- **All 20 language files synced** — New acknowledgment keys propagated to all locales; old `whisper`-only keys removed from non-English files.
+
 ### Model Path Consolidation (Local-First Storage)
 
 - **`kokoro_server.py`** — Added `resolve_local_path()` fallback resolution. When `--model`/`--voices` args are missing, searches `models/kokoro/` relative to script dir and CWD before falling back to HuggingFace cache. Ensures the local `models/kokoro/kokoro-v1.0.onnx` + `voices-v1.0.bin` are always found.
