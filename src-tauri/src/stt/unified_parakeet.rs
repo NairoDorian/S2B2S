@@ -257,10 +257,6 @@ fn resolve_venv_python() -> Result<String> {
     Ok(sys_python.to_string())
 }
 
-fn resolve_server_script() -> Result<PathBuf> {
-    resolve_server_script_ex(SCRIPT_NAME)
-}
-
 fn resolve_server_script_ex(script_name: &str) -> Result<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
