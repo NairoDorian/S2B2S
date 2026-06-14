@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const SCRIPT_NAME: &str = "unified_parakeet_server.py";
+const SHERPA_SCRIPT_NAME: &str = "sherpa_onnx_server.py";
 const HEALTH_TIMEOUT_SECS: u64 = 60;
 const REQUEST_TIMEOUT_SECS: u64 = 120;
 
@@ -22,8 +23,16 @@ pub struct UnifiedParakeetServer {
 
 impl UnifiedParakeetServer {
     pub fn launch(model_dir: &str) -> Result<Self> {
+        Self::launch_with_script(model_dir, SCRIPT_NAME)
+    }
+
+    pub fn launch_nemotron(model_dir: &str) -> Result<Self> {
+        Self::launch_with_script(model_dir, SHERPA_SCRIPT_NAME)
+    }
+
+    fn launch_with_script(model_dir: &str, script_name: &str) -> Result<Self> {
         let python = resolve_venv_python()?;
-        let script = resolve_server_script()?;
+        let script = resolve_server_script_ex(script_name)?;
         let port = get_free_port()?;
         let shutdown = Arc::new(AtomicBool::new(false));
 
@@ -249,9 +258,13 @@ fn resolve_venv_python() -> Result<String> {
 }
 
 fn resolve_server_script() -> Result<PathBuf> {
+    resolve_server_script_ex(SCRIPT_NAME)
+}
+
+fn resolve_server_script_ex(script_name: &str) -> Result<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    let dev_path = manifest_dir.join(SCRIPT_NAME);
+    let dev_path = manifest_dir.join(script_name);
     if dev_path.exists() {
         return Ok(dev_path);
     }
@@ -260,19 +273,19 @@ fn resolve_server_script() -> Result<PathBuf> {
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .unwrap_or_default();
-    let bundled_path = exe_dir.join(SCRIPT_NAME);
+    let bundled_path = exe_dir.join(script_name);
     if bundled_path.exists() {
         return Ok(bundled_path);
     }
 
     if let Some(data_dir) = portable::data_dir() {
-        let portable_path = data_dir.join(SCRIPT_NAME);
+        let portable_path = data_dir.join(script_name);
         if portable_path.exists() {
             return Ok(portable_path);
         }
     }
 
-    anyhow::bail!("{} not found", SCRIPT_NAME)
+    anyhow::bail!("{} not found", script_name)
 }
 
 fn get_free_port() -> Result<u16> {

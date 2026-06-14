@@ -301,6 +301,13 @@ impl TranscriptionManager {
             );
         };
 
+        // Nemotron models use sherpa-onnx server instead of the direct ONNX server.
+        let is_nemotron = model_info
+            .hf_repo
+            .as_deref()
+            .unwrap_or("")
+            .contains("nemotron");
+
         let loaded_engine = match model_info.engine_type {
             EngineType::Whisper => {
                 let engine = WhisperEngine::load(&model_path).map_err(|e| {
@@ -380,9 +387,15 @@ impl TranscriptionManager {
                 LoadedEngine::Cohere(engine)
             }
             EngineType::UnifiedParakeet => {
-                let engine = UnifiedParakeetServer::launch(
-                    &model_path.to_string_lossy(),
-                )
+                let engine = if is_nemotron {
+                    UnifiedParakeetServer::launch_nemotron(
+                        &model_path.to_string_lossy(),
+                    )
+                } else {
+                    UnifiedParakeetServer::launch(
+                        &model_path.to_string_lossy(),
+                    )
+                }
                 .map_err(|e| {
                     let error_msg = format!(
                         "Failed to launch unified parakeet server {}: {}",

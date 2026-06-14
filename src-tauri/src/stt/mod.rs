@@ -61,28 +61,33 @@ pub mod unified_parakeet;
 // Higgs Audio v3 TTS by Boson AI — expressive conversational speech.
 // Architecture: 4B autoregressive decoder, 8-codebook audio tokens, 24kHz output.
 //
-// Blockers:
-//   1. License: Boson Higgs Audio v3 Research and Non-Commercial License.
-//   2. Serving stack: Requires SGLang-Omni server (GPU). The ONNX vocoder
-//      (Reza2kn/Higgs-Audio-v3-TTS-4bit-ONNX) is codec-decoder only —
-//      no text-to-codebook generation included.
-//   3. Integration complexity: New TTS backend type (SGLangServer).
+// Two integration paths under evaluation:
+//
+//   1. GGUF (llama.cpp): nopesadly/higgs-audio-v3-8b-stt-v2-Q4_K_M-GGUF
+//      Since S2B2S already ships llama.cpp for the Brain, GGUF TTS could
+//      reuse the same runtime. Requires GGUF speech tokenizer + decoder
+//      support in llama.cpp.
+//
+//   2. CLI (PyTorch/transformers): d6b057f/higgs-audio-v3-tts-cli
+//      Pure Python command-line interface using PyTorch and transformers.
+//      Could run via the same Python venv pattern as Piper/Kokoro/Kitten.
+//
+// Remaining blockers:
+//   a. License: Boson Higgs Audio v3 Research and Non-Commercial License.
+//   b. GGUF: needs llama.cpp speech-tokenizer/decoder support validation.
+//   c. CLI: needs to be packaged as an HTTP server (like our other backends).
 //
 // Integration plan (post-license):
-//   1. SGLang-Omni server for text-to-codebook generation
-//   2. ONNX vocoder for codebook-to-waveform (optional, SGLang can do both)
-//   3. Map control tokens to TTS pipeline for emotion/style
+//   1. Evaluate GGUF with S2B2S's existing llama-server
+//   2. Or wrap the PyTorch CLI in an HTTP server with model lifecycle
+//   3. Map control tokens (emotion/style/prosody/sfx) to TTS pipeline
 //   4. Support streaming SSE response for sub-second time-to-first-audio
 
 // ============================================================================
-// Future: Nemotron 3.5 ASR (sherpa-onnx format)
+// Future: Nemotron 3.5 ASR (sherpa-onnx format — IMPLEMENTED)
 // ============================================================================
 //
-// sherpa-onnx provides a complete RNNT inference pipeline via Python bindings:
-//   pip install sherpa-onnx
-//
-// Files: encoder.int8.onnx + decoder.int8.onnx + joiner.int8.onnx + tokens.txt
-//
-// Integration: new Python server path that uses sherpa-onnx's OnlineRecognizer
-// for streaming transcription with language-ID prompt, punctuation, and
-// capitalization — replacing our manual RNNT decoder for this model family.
+// Implemented via sherpa_onnx_server.py using sherpa-onnx's OnlineRecognizer.
+// Detected by hf_repo containing "nemotron", routes to launch_nemotron().
+// sherpa-onnx handles the full pipeline: mel features, encoder cache, RNNT
+// decoder, beam search, tokenizer, and endpoint detection.

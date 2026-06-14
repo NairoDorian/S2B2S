@@ -75,6 +75,10 @@ Write-Host "  -> soundfile, numpy" -ForegroundColor Gray
 Write-Host "  -> onnxruntime>=1.26.0, sentencepiece" -ForegroundColor Gray
 & $VenvPip install "onnxruntime>=1.26.0" sentencepiece --quiet
 
+# STT: Nemotron (sherpa-onnx)
+Write-Host "  -> sherpa-onnx" -ForegroundColor Gray
+& $VenvPip install sherpa-onnx --quiet
+
 # Pocket-specific dependencies (PyTorch for CPU)
 Write-Host "  -> torch (CPU)" -ForegroundColor Gray
 & $VenvPip install torch --quiet

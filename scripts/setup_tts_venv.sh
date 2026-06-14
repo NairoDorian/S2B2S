@@ -63,6 +63,10 @@ pip install soundfile numpy --quiet
 echo "  -> onnxruntime>=1.26.0, sentencepiece"
 pip install "onnxruntime>=1.26.0" sentencepiece --quiet
 
+# STT: Nemotron (sherpa-onnx)
+echo "  -> sherpa-onnx"
+pip install sherpa-onnx --quiet
+
 # PyTorch CPU-only to keep venv size reasonable
 echo "  -> torch (CPU)"
 pip install torch --quiet
