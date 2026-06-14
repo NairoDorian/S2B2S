@@ -7,11 +7,31 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading, and 20-turn conversation memory.
+> **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), and 20-turn conversation memory.
 
 ### Reference GitHub Links
 
 - **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.
+
+### Gemma 4 Reference Docs & Multimodal Brain Pipeline
+
+- **`gemma_4_qat_mtp_e2b/`** — Reference documentation for the Gemma 4 E2B brain model: MTP speculative decoding benchmarks (n=1..32, **n=13 peak at 216 tok/s**), attention rotation/KV cache optimization, multimodal API formats (image/audio input), and optimal llama.cpp server launch commands.
+- **`references_comparative_analysis_md/`** — Comparative analysis and individual reviews for all 22 projects in the S2B2S ecosystem, plus architecture pattern catalog, fork lineage, and license compatibility matrix.
+
+#### Llama.cpp Brain Optimizations
+
+- **MTP speculative decoding tuned to `n=13`** — From `--spec-draft-n-max 2` → `13` based on triple-validated benchmarks (3 sweeps × 21 runs each). Steady-state throughput at ~216 tok/s on RTX 4070 Laptop 8GB, up from ~170 tok/s.
+- **Switched `--chat-template-kwargs` → `--reasoning off`** — Modern llama.cpp flag replacing deprecated template kwargs.
+- **Conditional `--mmproj` loading** — Multimodal projector (CLIP, ~940 MB) only loaded when audio or image multimodal toggles are enabled. Saves ~1150 MiB VRAM for text-only brain use.
+
+#### Multimodal Brain Pipeline (Audio + Image)
+
+- **`BrainConfig.multimodal_audio_enabled`** — When active, raw WAV recording is base64-encoded and sent as `input_audio` alongside the text transcription. Gemma 4 performs its own native STT as an additional transcription pass.
+- **`BrainConfig.multimodal_image_enabled`** — Prepares the pipeline for screenshot/image input; images sent as `image_url` before text content (Gemma 4 best practice).
+- **`MessageContent` enum** — Brain client now supports OpenAI-compatible multimodal content arrays (`text`, `image_url`, `input_audio` parts) alongside plain string content.
+- **`BrainManager.ask_multimodal()`** — Extended `ask()` with optional `audio_wav_base64` and `image_png_base64` parameters. Content parts ordered image → text → audio per Gemma 4 best practices.
+- **`encode_wav_bytes()`** — New in-memory WAV encoder in `audio_toolkit` for zero-disk multimodal audio path.
+- **Frontend toggles** — "Multimodal Input (Gemma 4)" settings group with Audio/Image toggle switches in BrainSettings, visible only for llama_cpp provider.
 
 ### Repomix Codebase Packaging
 
@@ -449,6 +469,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **`eou_streaming_enabled`** setting (default: `true`) — toggles between streaming API (`/stream_start` → `/stream_feed` → `/stream_end`) and offline `/transcribe` for the EOU 120M model. Disabling streaming uses a single HTTP call with no partial events.
 - **Silence gate on chunk feeding** — each 250ms audio chunk is checked for RMS energy before being sent to the streaming model. Chunks below the `0.002` RMS threshold (matching TripleVAD's energy gate) are skipped. Prevents background noise and silence gaps from triggering the model or causing premature `<EOU>` emission. Applied in both main transcription path and multi-STT parallel path.
 
+**STT — Sherpa-ONNX Integration (Nemotron 3.5 ASR + Unified Streaming):**
+
+- **Nemotron 3.5 ASR model** (`nemotron-3.5-asr-0.6b-int8`) — 40-language streaming ASR via sherpa-onnx. 80ms chunks, punctuation + capitalization, per-stream language codes. Downloads 4 files from `csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-80ms-int8-2026-06-11`.
+- **Sherpa-onnx auto-detection** — the unified Python server detects sherpa-onnx format when `tokens.txt` is present and routes through `sherpa_onnx.OnlineRecognizer.from_transducer()`. Full pipeline handled by sherpa-onnx: mel features, encoder cache, buffered RNNT decoder, beam search, tokenizer, endpoint detection.
+- **Parakeet Unified sherpa-onnx streaming export** (`temp_export_onnx/`) — complete NeMo-to-ONNX pipeline for exporting the Unified 0.6B model to buffered streaming format (560ms, INT8). Venv with NeMo + PyTorch, download script (`download_nemo.py` via huggingface_hub), export script (`export_onnx_streaming.py` from sherpa-onnx PR #3575). Produces `encoder.int8.onnx` (624 MB), `decoder.int8.onnx` (7 MB), `joiner.int8.onnx` (2 MB), `tokens.txt`. Exported model at `models/STT/parakeet-unified-en-0.6b-sherpa-streaming/`.
+- **Sherpa-onnx buffered streaming metadata** — encoder ONNX tagged with `streaming_model_type=nemo_parakeet_unified_streaming`, `buffered_streaming=1`, left/chunk/right frame counts. Metadata-driven config — no more guessing preprocessing params or decoder dtype.
+- **Single server, two paths** — `unified_parakeet_server.py` auto-detects model format: tokens.txt → sherpa-onnx, tokenizer.model/vocab.txt → manual ONNX. Same HTTP API for both. Deleted `sherpa_onnx_server.py` (functionality merged).
+
 **STT — HuggingFace Direct Downloads:**
 
 - **Multi-file HF downloads** — `ModelInfo` gains `hf_repo` + `hf_files` fields (hidden from frontend). `download_huggingface_model()` downloads individual ONNX/tokenizer/config files from HuggingFace repos with retry (3 attempts) and progress reporting.
@@ -463,8 +491,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Removed `parakeet-rs` crate** — replaced with Python onnxruntime 1.26 server for Parakeet Unified model inference. The Rust `ort` crate (locked to 2.0.0-rc.12, ONNX Runtime ~1.20) cannot be upgraded to 1.26 yet; Python path bypasses this bottleneck.
 - **EOU 120M model uses streaming pipeline** — detected by HuggingFace repo URL, routes through `/stream_start` → chunked `/stream_feed` → `/stream_end` with `transcription-partial` events. Unified model stays on offline `/transcribe` endpoint. Toggleable via `eou_streaming_enabled` setting.
 - **Multi-STT and EOU streaming settings** added to `AppSettings`: `multi_stt_enabled`, `multi_stt_models`, `multi_stt_prompt`, `eou_streaming_enabled`.
-- **Silence-gated streaming** — audio chunks below 0.002 RMS energy are skipped before feeding to the streaming decoder, preventing noise-induced EOU hallucinations.
-- **Python venv now includes onnxruntime >= 1.26.0 and sentencepiece** for the Unified Parakeet STT server.
+- **Renamed `eou_streaming_enabled` → `parakeet_streaming_enabled`** — streaming mode now applies to all UnifiedParakeet models (Unified 0.6B + EOU 120M), not just EOU. EOU model additionally emits `<EOU>` tokens for end-of-utterance detection.
+- **Frontend streaming toggle** — `ParakeetStreamingToggle` component in `ModelSettingsCard`, appears for all UnifiedParakeet models. Reads/writes `parakeet_streaming_enabled` setting via Rust command + store updater.
+- **ONNX Runtime dtype inspection** — decoder input signatures read from actual ONNX metadata at load time instead of hardcoded guesses. `targets` dtype and `target_length` presence determined per-model. No more int32/float32 back-and-forth.
+- **Encoder output count handling** — `_encoder_forward()` supports both 1-output (EOU FP16) and 2-output (Unified INT8, EOU FP32) encoder ONNX models.
+- **`reqwest::blocking` replaced with `ureq`** in `unified_parakeet.rs` — prevents "Cannot drop a runtime" tokio panic when the Python server is launched from within an async context.
+- **HuggingFace multi-file downloads** — all 6 Parakeet ONNX models download directly from HuggingFace repos. `download_huggingface_model()` with retry (3 attempts) and progress events.
 - **Overlay threading simplified** — removed `run_on_main_thread` wrapping; overlay executes directly on calling thread.
 - **Removed COM initialization** from TTS audio player background thread.
 - **Removed dynamic Piper server reload** — `change_tts_config` no longer restarts the persistent server on voice/CUDA changes.
