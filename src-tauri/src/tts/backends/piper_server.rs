@@ -52,6 +52,7 @@ pub struct StartingConfig {
     pub command: PythonCommand,
     pub data_dir: String,
     pub cuda: bool,
+    pub voice: String,
 }
 
 pub enum ServerState {
@@ -285,6 +286,10 @@ fn spawn_start_thread(
                     model_path.display()
                 );
                 emit_model_status("error", Some(&voice), cuda, Some("Model file not found"));
+                let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
+                if CURRENT_GENERATION.load(Ordering::SeqCst) == generation {
+                    *state = ServerState::Stopped;
+                }
                 return;
             }
         }
@@ -294,6 +299,10 @@ fn spawn_start_thread(
             None => {
                 log::warn!("[Piper] Start failed: no free port available");
                 emit_model_status("error", Some(&voice), cuda, Some("No free port available"));
+                let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
+                if CURRENT_GENERATION.load(Ordering::SeqCst) == generation {
+                    *state = ServerState::Stopped;
+                }
                 return;
             }
         };
@@ -356,6 +365,10 @@ fn spawn_start_thread(
                     cuda,
                     Some(&format!("Spawn error: {}", e)),
                 );
+                let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
+                if CURRENT_GENERATION.load(Ordering::SeqCst) == generation {
+                    *state = ServerState::Stopped;
+                }
                 return;
             }
         };
@@ -412,18 +425,20 @@ fn spawn_start_thread(
                     cuda,
                     Some("Health client build failed"),
                 );
+                let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
+                if CURRENT_GENERATION.load(Ordering::SeqCst) == generation {
+                    *state = ServerState::Stopped;
+                }
                 return;
             }
         };
 
         let url = format!("http://127.0.0.1:{}/voices", port);
         let poll_start = std::time::Instant::now();
-        let max_secs = if cuda { 60 } else { 15 };
-        let mut ready = false;
         let mut poll_delay_ms = 100u64;
         let max_poll_delay_ms = 1600u64;
 
-        while poll_start.elapsed() < std::time::Duration::from_secs(max_secs) {
+        loop {
             // Check if generation superseded
             if CURRENT_GENERATION.load(Ordering::SeqCst) != generation {
                 log::info!(
@@ -450,34 +465,29 @@ fn spawn_start_thread(
                     cuda,
                     Some("Server exited prematurely"),
                 );
+                let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
+                if CURRENT_GENERATION.load(Ordering::SeqCst) == generation {
+                    *state = ServerState::Stopped;
+                }
                 return;
             }
 
             if let Ok(resp) = health_client.get(&url).send() {
                 if resp.status().is_success() {
-                    ready = true;
                     break;
                 }
             }
 
+            if poll_start.elapsed().as_millis() >= 10000 {
+                log::info!(
+                    "[Piper] Still waiting for server on port {} ({:.0}s elapsed)...",
+                    port,
+                    poll_start.elapsed().as_secs_f64()
+                );
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(poll_delay_ms));
             poll_delay_ms = (poll_delay_ms * 2).min(max_poll_delay_ms);
-        }
-
-        if !ready {
-            let _ = child.kill();
-            let err_tail = {
-                let buffer = stderr_tail.lock().unwrap_or_else(|p| p.into_inner());
-                buffer.join("\n")
-            };
-            let err_msg = format!("Start timed out after {}s", max_secs);
-            log::warn!(
-                "[Piper] Server start timed out after {}s. Stderr tail:\n{}",
-                max_secs,
-                err_tail
-            );
-            emit_model_status("error", Some(&voice), cuda, Some(&err_msg));
-            return;
         }
 
         log::info!(
@@ -532,9 +542,46 @@ fn spawn_start_thread(
     });
 }
 
+fn test_python_import_piper(executable: &str) -> bool {
+    let mut cmd = std::process::Command::new(executable);
+    cmd.args(["-c", "import piper"]);
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.env("PATH", get_expanded_path());
+    }
+    match cmd.output() {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
 pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String> {
     let app = APP_HANDLE.get().ok_or("AppHandle not initialized")?;
-    let python_exe = crate::tts::local_tts_server::resolve_venv_python();
+    let mut python_exe = crate::tts::local_tts_server::resolve_venv_python();
+
+    // Verify the resolved Python actually has piper-tts installed.
+    // If not, fall back to system Python.
+    if !test_python_import_piper(&python_exe) {
+        let sys_fallback = if cfg!(windows) { "python" } else { "python3" };
+        if python_exe != sys_fallback {
+            log::warn!(
+                "[Piper] Resolved Python '{}' does not have piper-tts installed. Falling back to system '{}'.",
+                python_exe, sys_fallback
+            );
+            if test_python_import_piper(sys_fallback) {
+                python_exe = sys_fallback.to_string();
+            } else {
+                return Err(format!(
+                    "piper-tts is not installed.\n\
+                     Install it with: pip install piper-tts[http]\n\
+                     (checked venv at '{}' and system '{}')",
+                    python_exe, sys_fallback
+                ));
+            }
+        }
+    }
+
     let command = PythonCommand {
         executable: python_exe,
         args: vec!["-u".to_string(), "-m".to_string(), "piper.http_server".to_string()],
@@ -543,7 +590,6 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
         .to_string_lossy()
         .to_string();
 
-    let start_wait = std::time::Instant::now();
     loop {
         let mut state = get_server_state().lock().unwrap_or_else(|p| p.into_inner());
         match &mut *state {
@@ -588,23 +634,14 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
             ServerState::Starting {
                 _generation: _,
                 config: starting_config,
-                stderr_tail,
+                stderr_tail: _,
             } => {
                 if starting_config.command == command
                     && starting_config.data_dir == data_dir
                     && starting_config.cuda == cuda
+                    && starting_config.voice == voice
                 {
                     // Wait for it
-                    if start_wait.elapsed() > std::time::Duration::from_secs(65) {
-                        let err_msg = {
-                            let buffer = stderr_tail.lock().unwrap_or_else(|p| p.into_inner());
-                            buffer.join("\n")
-                        };
-                        return Err(format!(
-                            "Timeout waiting for Piper server to start. Stderr tail:\n{}",
-                            err_msg
-                        ));
-                    }
                     drop(state);
                     std::thread::sleep(std::time::Duration::from_millis(200));
                 } else {
@@ -617,6 +654,7 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
                             command: command.clone(),
                             data_dir: data_dir.clone(),
                             cuda,
+                            voice: voice.clone(),
                         },
                         stderr_tail: tail.clone(),
                     };
@@ -640,6 +678,7 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
                         command: command.clone(),
                         data_dir: data_dir.clone(),
                         cuda,
+                        voice: voice.clone(),
                     },
                     stderr_tail: tail.clone(),
                 };

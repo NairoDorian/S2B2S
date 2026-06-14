@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const SCRIPT_NAME: &str = "unified_parakeet_server.py";
-const HEALTH_TIMEOUT_SECS: u64 = 60;
 const REQUEST_TIMEOUT_SECS: u64 = 120;
 
 pub struct UnifiedParakeetServer {
@@ -126,11 +125,10 @@ impl UnifiedParakeetServer {
                     break;
                 }
                 Err(_) => {
-                    if start.elapsed().as_secs() > HEALTH_TIMEOUT_SECS {
-                        let _ = child.kill();
-                        anyhow::bail!(
-                            "Unified parakeet server health check timeout after {}s",
-                            HEALTH_TIMEOUT_SECS
+                    if start.elapsed().as_millis() >= 10000 {
+                        info!(
+                            "[unified_parakeet] Still waiting for server ({:.0}s elapsed)...",
+                            start.elapsed().as_secs_f64()
                         );
                     }
                     std::thread::sleep(Duration::from_millis(backoff_ms));

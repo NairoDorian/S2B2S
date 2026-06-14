@@ -132,7 +132,12 @@ impl LlamaManager {
         let mmproj_path = models_dir.join("mmproj-F16.gguf");
         let draft_path = models_dir.join("mtp-gemma-4-E2B-it.gguf");
 
-        info!("[LlamaManager] Spawning llama-server on port {} with MTP...", port);
+        // Check if multimodal features are enabled (audio/image input)
+        let settings = crate::settings::get_settings(&self.app);
+        let multimodal_enabled = settings.brain.multimodal_audio_enabled
+            || settings.brain.multimodal_image_enabled;
+
+        info!("[LlamaManager] Spawning llama-server on port {} with MTP (n=13)...", port);
         let _ = self.app.emit("brain:llama-loading", ());
         
         let mut cmd = Command::new(&server_bin);
@@ -143,15 +148,22 @@ impl LlamaManager {
             "--flash-attn", "on",
             "--no-context-shift",
             "--jinja",
+            "--reasoning", "off",
             "--model-draft", &draft_path.to_string_lossy(),
             "--spec-type", "draft-mtp",
-            "--spec-draft-n-max", "2",
-            "--mmproj", &mmproj_path.to_string_lossy(),
+            "--spec-draft-n-max", "13",
             "--alias", "unsloth/gemma-4-e2b-it-qat-GGUF",
             "--port", &port.to_string(),
-            "--chat-template-kwargs", "{\"enable_thinking\":false}",
             "--metrics",
         ]);
+
+        // Load mmproj only when multimodal (audio/image) features are enabled
+        if multimodal_enabled {
+            info!("[LlamaManager] Multimodal mode — loading mmproj-F16.gguf for audio/image input");
+            cmd.args(&["--mmproj", &mmproj_path.to_string_lossy()]);
+        } else {
+            info!("[LlamaManager] Text-only mode — skipping mmproj (saves ~940 MB VRAM)");
+        }
 
         // Offload all model layers to GPU when GPU build (CUDA/Vulkan) is available
         if self.has_gpu_support() {
@@ -171,7 +183,7 @@ impl LlamaManager {
 
         let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
         
-        // Wait for port response (up to 15 seconds)
+        // Wait for port response — poll until ready or child exits
         let start = Instant::now();
         loop {
             if self.is_port_responding(port).await {
@@ -179,10 +191,16 @@ impl LlamaManager {
                 let _ = self.app.emit("brain:llama-ready", ());
                 break;
             }
-            if start.elapsed().as_secs() > 60 {
-                let _ = child.kill();
-                let _ = self.app.emit("brain:llama-error", "llama-server failed to respond within 60 seconds");
-                return Err("llama-server failed to respond within 60 seconds".to_string());
+            // Check if child process exited
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let _ = self.app.emit("brain:llama-error", format!("llama-server exited with status {:?}", status));
+                    return Err(format!("llama-server exited with status {:?}", status));
+                }
+                _ => {}
+            }
+            if start.elapsed().as_millis() >= 10000 {
+                info!("[LlamaManager] Still waiting for llama-server ({:.0}s elapsed)...", start.elapsed().as_secs_f64());
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }

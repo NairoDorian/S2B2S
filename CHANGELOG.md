@@ -9,6 +9,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), and 20-turn conversation memory.
 
+### Startup Optimization — Parallel Model Loading, No Timeouts
+
+- **All AI models load in parallel at startup** — Brain (LLM), STT, and TTS engines now fire simultaneously in 3 independent threads with no ordering dependencies. Brain warmup starts immediately as the highest-priority thread.
+- **Removed all model loading timeouts** — All poll loops for server readiness (Piper, Kokoro/Kitten/Pocket, llama.cpp, unified parakeet) now run indefinitely until the child process exits or health check succeeds, instead of aborting after arbitrary deadlines (15s–65s). Periodic log messages report elapsed time every 10s.
+- **Removed hardcoded 500ms sleep** — The artificial delay between TTS/STT load completion and brain warmup is gone. Brain starts warming up concurrently with other models.
+- **Removed blocking `join()` calls** — TTS and STT startup threads no longer block the brain warmup thread. All three run independently.
+- **Specific timeouts removed**:
+  - `piper_server.rs`: 60s/15s (CUDA/CPU) health poll timeout + 65s caller-side timeout
+  - `local_tts_server.rs`: 30s health poll timeout + 65s caller-side timeout
+  - `llama_manager.rs`: 60s startup readiness timeout → replaced with child-exit detection
+  - `unified_parakeet.rs`: 60s health check timeout → replaced with child-exit detection + periodic logging
+
 ### Reference GitHub Links
 
 - **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.

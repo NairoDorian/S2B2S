@@ -667,12 +667,32 @@ pub fn run(cli_args: CliArgs) {
             // Start the Piper idle watcher (checks ModelUnloadTimeout every 15s)
             crate::tts::backends::piper_server::start_idle_watcher(app_handle.clone());
 
-            // Auto-load STT and Piper TTS in parallel, then warm up Kokoro.
+            // Fire all AI models in parallel immediately — no waiting, no ordering.
+            // Brain (LLM) is the most latency-critical; STT and TTS load concurrently.
             let startup_app_handle = app_handle.clone();
-            std::thread::spawn(move || {
-                let app_tts = startup_app_handle.clone();
-                let tts_thread = std::thread::spawn(move || {
-                    let settings = crate::settings::get_settings(&app_tts);
+
+            // 1. Brain: warm up the AI Brain model as early as possible
+            {
+                let brain_handle = startup_app_handle.clone();
+                std::thread::spawn(move || {
+                    if let Some(brain) = brain_handle.try_state::<Arc<crate::brain::manager::BrainManager>>().map(|s| s.inner().clone()) {
+                        log::info!("[Startup] Warming up AI Brain model...");
+                        tauri::async_runtime::block_on(async {
+                            if let Err(e) = brain.warmup().await {
+                                log::error!("[Startup] Brain warm up request failed: {}", e);
+                            } else {
+                                log::info!("[Startup] Brain warm up complete.");
+                            }
+                        });
+                    }
+                });
+            }
+
+            // 2. TTS: Pre-load the configured TTS engine
+            {
+                let tts_handle = startup_app_handle.clone();
+                std::thread::spawn(move || {
+                    let settings = crate::settings::get_settings(&tts_handle);
                     let voice = if settings.tts.voice.is_empty() {
                         "en_US-joe-medium".to_string()
                     } else {
@@ -683,7 +703,7 @@ pub fn run(cli_args: CliArgs) {
                         log::info!("[Startup] Auto-loading Piper TTS persistent server...");
                         match crate::tts::backends::piper_server::ensure_running(voice, settings.tts.piper.cuda) {
                             Ok(_) => {
-                                log::info!("[Startup] Piper TTS persistent server loaded successfully (warm-up included).");
+                                log::info!("[Startup] Piper TTS persistent server loaded successfully.");
                             }
                             Err(e) => {
                                 log::error!("[Startup] Failed to auto-load Piper server: {}", e);
@@ -713,40 +733,26 @@ pub fn run(cli_args: CliArgs) {
                             Err(e) => log::error!("[Startup] Failed to auto-load Pocket: {}", e),
                         }
                     }
-                });
 
-                let app_stt = startup_app_handle.clone();
-                let stt_thread = std::thread::spawn(move || {
-                    log::info!("[Startup] Auto-loading STT model in parallel...");
-                    if let Some(transcription_manager) = app_stt.try_state::<Arc<crate::managers::transcription::TranscriptionManager>>().map(|s| s.inner().clone()) {
+                    // Play the startup greeting once TTS is loaded
+                    if settings.tts.play_startup_greeting {
+                        if let Some(tts) = tts_handle.try_state::<Arc<crate::tts::manager::TtsManager>>().map(|s| s.inner().clone()) {
+                            tts.play_greeting();
+                        }
+                    }
+                });
+            }
+
+            // 3. STT: Pre-load the transcription model
+            {
+                let stt_handle = startup_app_handle;
+                std::thread::spawn(move || {
+                    log::info!("[Startup] Auto-loading STT model...");
+                    if let Some(transcription_manager) = stt_handle.try_state::<Arc<crate::managers::transcription::TranscriptionManager>>().map(|s| s.inner().clone()) {
                         transcription_manager.initiate_model_load();
                     }
                 });
-
-                // Wait for both threads to finish loading
-                let _ = tts_thread.join();
-                let _ = stt_thread.join();
-
-                log::info!("[Startup] Both models finished loading. Running warm up...");
-
-                // 1. Play the startup greeting if enabled
-                if let Some(tts) = startup_app_handle.try_state::<Arc<crate::tts::manager::TtsManager>>().map(|s| s.inner().clone()) {
-                    let settings = crate::settings::get_settings(&startup_app_handle);
-                    if settings.tts.play_startup_greeting {
-                        tts.play_greeting();
-                    }
-                }
-
-                // 2. Send a simple silent prompt to warm up the AI Brain
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                if let Some(brain) = startup_app_handle.try_state::<Arc<crate::brain::manager::BrainManager>>().map(|s| s.inner().clone()) {
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) = brain.warmup().await {
-                            log::error!("[Startup] Brain warm up request failed: {}", e);
-                        }
-                    });
-                }
-            });
+            }
 
             // Hide tray icon if --no-tray was passed
             if cli_args.no_tray {

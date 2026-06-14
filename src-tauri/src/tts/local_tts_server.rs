@@ -364,12 +364,10 @@ fn spawn_start_thread(
 
         let url = format!("http://127.0.0.1:{}/voices", port);
         let poll_start = std::time::Instant::now();
-        let max_secs = 30;
-        let mut ready = false;
         let mut poll_delay_ms = 100u64;
         let max_poll_delay_ms = 1600u64;
 
-        while poll_start.elapsed() < std::time::Duration::from_secs(max_secs) {
+        loop {
             if slot.generation().load(Ordering::SeqCst) != generation {
                 log::info!(
                     "[LocalServer] {} generation {} superseded. Killing child.",
@@ -397,29 +395,21 @@ fn spawn_start_thread(
 
             if let Ok(resp) = health_client.get(&url).send() {
                 if resp.status().is_success() {
-                    ready = true;
                     break;
                 }
             }
 
+            if poll_start.elapsed().as_millis() >= 10000 {
+                log::info!(
+                    "[LocalServer] {} still waiting for server on port {} ({:.0}s elapsed)...",
+                    engine,
+                    port,
+                    poll_start.elapsed().as_secs_f64()
+                );
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(poll_delay_ms));
             poll_delay_ms = (poll_delay_ms * 2).min(max_poll_delay_ms);
-        }
-
-        if !ready {
-            let _ = child.kill();
-            let err_tail = {
-                let buffer = stderr_tail.lock().unwrap_or_else(|p| p.into_inner());
-                buffer.join("\n")
-            };
-            log::warn!(
-                "[LocalServer] {} start timed out after {}s. Stderr tail:\n{}",
-                engine,
-                max_secs,
-                err_tail
-            );
-            emit_status(&engine, "error", Some("Start timed out"));
-            return;
         }
 
         log::info!(
@@ -471,7 +461,6 @@ pub fn ensure_running(
     script_args: Vec<String>,
 ) -> Result<ServerHandle, String> {
     let slot = slot_for(engine).ok_or_else(|| format!("Unknown engine: {}", engine))?;
-    let start_wait = std::time::Instant::now();
 
     loop {
         let mut state = slot.state().lock().unwrap_or_else(|p| p.into_inner());
@@ -520,23 +509,12 @@ pub fn ensure_running(
             ServerState::Starting {
                 _generation: _,
                 config: starting_config,
-                stderr_tail,
+                stderr_tail: _,
             } => {
                 if starting_config.command == command
                     && starting_config.engine == engine
                     && starting_config.script_args == script_args
                 {
-                    if start_wait.elapsed() > std::time::Duration::from_secs(65) {
-                        let err_msg = {
-                            let buffer =
-                                stderr_tail.lock().unwrap_or_else(|p| p.into_inner());
-                            buffer.join("\n")
-                        };
-                        return Err(format!(
-                            "Timeout waiting for {} server to start. Stderr tail:\n{}",
-                            engine, err_msg
-                        ));
-                    }
                     drop(state);
                     std::thread::sleep(std::time::Duration::from_millis(200));
                 } else {
