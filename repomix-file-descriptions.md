@@ -13,8 +13,8 @@
 | `main.rs` | Binary entry point — parses CLI args (clap) and calls `lib::run()` |
 | `lib.rs` | App setup — Tauri builder, manager init, specta binding export, signal handlers |
 | `cli.rs` | 6 CLI flags: `--start-hidden`, `--no-tray`, `--toggle-transcription`, `--toggle-post-process`, `--cancel`, `--debug` |
-| `settings.rs` | All config types, defaults, migration, and store logic (~1,600 lines monolith) |
-| `actions.rs` | Shortcut action implementations (transcribe, converse, speak-selection, cancel) |
+| `settings.rs` | All config types, defaults, migration, and store logic (~1,800 lines monolith) |
+| `actions.rs` | Shortcut action implementations (transcribe, converse, speak-selection, cancel) — 973 lines |
 | `active_app.rs` | Windows-only foreground application detection via Win32 toolhelp snapshot |
 | `apple_intelligence.rs` | macOS aarch64 Apple Intelligence LLM integration via Swift interop |
 | `audio_feedback.rs` | Start/stop recording sound effects |
@@ -38,8 +38,8 @@
 |------|-------------|
 | `managers/mod.rs` | Module declarations for all managers |
 | `managers/audio.rs` | Recording lifecycle, mute/unmute, microphone mode, VAD integration (643 lines) |
-| `managers/model.rs` | Model download and management from HuggingFace |
-| `managers/transcription.rs` | STT engine management, idle watcher, GPU accelerator enumeration (886 lines) |
+| `managers/model.rs` | Model download and management from HuggingFace — 2,224 lines with 20+ hardcoded model entries (not JSON-driven) |
+| `managers/transcription.rs` | STT engine management, idle watcher, GPU accelerator enumeration — 996 lines |
 | `managers/transcription_mock.rs` | CI mock for testing without hardware |
 | `managers/history.rs` | SQLite persistence of transcriptions and TTS with retention policies |
 | `managers/continuous_voice.rs` | Hands-free conversation pipeline (VAD→STT→Brain→TTS→resume listening, 210 lines) |
@@ -64,8 +64,8 @@
 | `tts/fragment_queue.rs` | ⚠️ Dead code (306 lines) — pre-synthesis queue. Unused, preserved for future reference. Not connected to any pipeline. |
 | `tts/clipboard_watch.rs` | Double-copy clipboard trigger for speak-selection (1.5s detection window) |
 | `tts/audio_format.rs` | WAV to MP3/OGG/FLAC conversion |
-| `tts/status.rs` | `WarmEngine` trait (warm/unload/status lifecycle methods) |
-| `tts/telemetry.rs` | Per-engine performance tracking (154 lines, partially implemented — `chars_per_ms` adaptive sizing is functional; detailed metrics infrastructure is unused) |
+| `tts/status.rs` | `WarmEngine` trait (warm/unload/status lifecycle methods) — Implemented by all local TTS backends (Piper, Kokoro, Kitten, Pocket) but the orchestration layer calls server utilities directly. |
+| `tts/telemetry.rs` | Per-engine performance tracking (154 lines, partially implemented — `chars_per_ms` adaptive sizing infrastructure exists but `record()` is never called; telemetry state is registered in lib.rs but not wired) |
 | `tts/local_tts_server.rs` | Generic lifecycle for Python TTS servers (Kokoro, Kitten, Pocket) — 648 lines |
 
 ### `tts/backends/`
@@ -134,6 +134,7 @@
 | `commands/history.rs` | History CRUD, export, and retry commands |
 | `commands/llama_server.rs` | Pre-compiled llama.cpp server management commands |
 | `commands/models.rs` | STT model download, delete, and switch commands |
+| `commands/system.rs` | System RAM usage retrieval command. Implemented for Windows, Linux, and macOS. |
 | `commands/transcription.rs` | Unload timeout and load status commands |
 | `commands/tts.rs` | TTS speak, stop, pause, resume, voices, and save commands |
 | `commands/wake_word.rs` | Wake word start, stop, and status commands |
@@ -146,6 +147,29 @@
 | `shortcut/handler.rs` | Shortcut event dispatch (key press → action lookup) |
 | `shortcut/key_listener.rs` | rdev-based global key listener implementation |
 | `shortcut/tauri_impl.rs` | Tauri global-shortcut plugin implementation |
+
+### `stt/`
+
+| File | Description |
+|------|-------------|
+| `stt/mod.rs` | Multi-STT architecture documentation and module declarations (93 lines) |
+| `stt/unified_parakeet.rs` | Parakeet Unified/EOU Python ONNX Runtime server lifecycle — spawn, health check, streaming STT via HTTP (292 lines) |
+| `stt/multi_stt.rs` | Parallel multi-model transcription — runs 2-3 STT engines simultaneously, LLM merge (276 lines) |
+
+### `overlay_fx/`
+
+| File | Description |
+|------|-------------|
+| `overlay_fx/mod.rs` | Module declarations + `OverlayCapabilities` probe |
+| `overlay_fx/trail.rs` | Spring-friction chain physics engine + Catmull-Rom spline interpolation (248 lines) |
+| `overlay_fx/window.rs` | Transparent brain overlay webview — always-on-top, click-through (77 lines) |
+| `overlay_fx/cursor_follow.rs` | ~30 Hz cursor position polling loop (40 lines) |
+| `overlay_fx/placement.rs` | Bubble anchor math — quadrant-aware with DPI scaling (92 lines) |
+| `overlay_fx/events.rs` | `OverlayPhase` 8-state machine + cursor/bubble typed events (61 lines) |
+| `overlay_fx/capabilities.rs` | Per-OS GPU/cursor/layer-shell capability probe (10 lines) |
+| `overlay_fx/commands.rs` | 3 Tauri IPC commands — probe, show, dismiss (29 lines) |
+| `overlay_fx/native/mod.rs` | ⚠️ Placeholder — wgpu surface integration from CursorFX is pending (30 lines) |
+| `overlay_fx/native/shader.wgsl` | WGSL shader for cursor trail ribbon + click ripple SDF. Ported from WebGPU CursorFX and TD Web Trail glow recipe. |
 
 ### `llama_server/`
 
@@ -318,6 +342,14 @@
 |------|-------------|
 | `overlay/main.tsx` | Recording overlay window entry point (separate Tauri window) |
 | `overlay/RecordingOverlay.tsx` | Frameless recording indicator with mic level bars and cancel button |
+
+### `brain-overlay/` — Brain conversation overlay (separate Vite/webview entry)
+
+| File | Description |
+|------|-------------|
+| `brain-overlay/main.tsx` | Brain overlay window entry point |
+| `brain-overlay/BrainOverlayApp.tsx` | Main component — 8-phase state machine, reply bubble, metric chip, Esc dismiss (223 lines) |
+| `brain-overlay/avatar/Avatar3D.tsx` | Three.js 3D avatar (197 lines) — 4-sided pyramid, glow orb, phase-reactive animations |
 
 ## Config & Build Files
 

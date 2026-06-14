@@ -1,4 +1,4 @@
-﻿# @asrjs/speech-recognition -- Library/Reference (Category C/D)
+# @asrjs/speech-recognition -- Library/Reference (Category C/D)
 
 > Repo: `asrjs/speech-recognition` · HEAD: `b38d7eb` · License: Apache-2.0 · Author: asrjs · Platforms: Browser + Node.js
 > Nature: independent library · Role for S2B2S: reference API design patterns for multi-model STT abstraction layer, canonical transcript contracts, browser realtime helpers, IO/asset-loading architecture
@@ -515,7 +515,7 @@ S2B2S is a Tauri-based desktop app with STT/TTS/Brain pipelines written in Rust.
 | **Asset loading** | Provider/Cache pattern (HuggingFace, URL, Blob, IndexedDB) | Direct model download via reqwest | asrjs IO layer is more modular |
 | **Progress reporting** | 5-stage progressive: preprocess->encode->decode->postprocess->complete | Basic event-based progress | asrjs progress is more granular |
 | **Browser vs native** | Browser-first (Web Workers, MediaDevices, IndexedDB) | Native desktop (Tauri, cpal, rodio) | Different target environments |
-| **TTS** | None | 9 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) | S2B2S has TTS; asrjs does not |
+| **TTS** | None | 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) | S2B2S has TTS; asrjs does not |
 | **Brain/LLM** | None | SSE streaming chat + sentence splitter | S2B2S has LLM integration |
 | **Long audio** | Windowed transcription with merge strategies | Single-pass or chunked via transcribe-rs | asrjs windowing is more sophisticated |
 | **Word timestamps** | Cross-attention DTW (Whisper), frame-based (NeMo TDT), CTC spans (LASR) | Provided by transcribe-rs | Both support word-level timestamps |

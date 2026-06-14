@@ -144,7 +144,7 @@ src-tauri/src/
 │   ├── status.rs           # Engine status reporting
 │   ├── telemetry.rs        # Per-engine performance tracking
 │   ├── backends/
-│   │   ├── mod.rs          # Backend module declarations (9 backends: piper, piper_server, kokoro, kitten, pocket, sapi, openai, elevenlabs, cartesia)
+│   │   ├── mod.rs          # Backend module declarations (8 backends: piper, kokoro, kitten, pocket, sapi, openai, elevenlabs, cartesia; plus piper_server manager helper)
 │   │   ├── piper.rs        # Piper HTTP client
 │   │   ├── piper_server.rs # Piper persistent server lifecycle
 │   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (persistent HTTP server)
@@ -204,6 +204,23 @@ src-tauri/src/
 │   ├── mod.rs              # Helper module
 │   └── clamshell.rs        # Laptop clamshell mode detection
 │
+├── stt/                    # Alternative STT pipeline (Python ONNX Runtime server)
+│   ├── mod.rs              # Multi-STT architecture docs
+│   ├── unified_parakeet.rs # Parakeet Unified/EOU Python server lifecycle
+│   └── multi_stt.rs        # Parallel multi-model transcription
+│
+├── overlay_fx/             # GPU overlay system (cursor trail, brain overlay, wgpu)
+│   ├── mod.rs              # Module declarations + capability probe
+│   ├── trail.rs            # Spring-friction chain physics + Catmull-Rom splines
+│   ├── window.rs           # Transparent brain overlay webview
+│   ├── cursor_follow.rs    # Cursor position polling (~30 Hz)
+│   ├── placement.rs        # Bubble anchor math with DPI scaling
+│   ├── events.rs           # OverlayPhase 8-state machine + typed events
+│   ├── capabilities.rs     # Per-OS GPU/cursor/layer-shell capability probe
+│   ├── commands.rs         # 3 Tauri IPC commands
+│   └── native/
+│       └── mod.rs          # ⚠️ Placeholder — wgpu surface integration pending
+│
 └── shortcut/
     ├── mod.rs              # Shortcut manager
     ├── handler.rs           # Shortcut event handler
@@ -253,14 +270,15 @@ src/
 │       ├── de/ fr/ es/ ja/ ru/ zh/ ...
 │
 ├── lib/
-│   ├── types.ts            # Shared TS types
+│   ├── types.ts            # Shared TS types (⚠️ doesn't exist — see lib/types/events.ts)
 │   ├── constants/          # Application constants
-│   ├── types/              # Type definitions (events, etc.)
+│   ├── types/              # Type definitions (events.ts)
 │   └── utils/              # Utility functions (format, keyboard, RTL, etc.)
 │
 ├── utils/                  # Shared utility functions (dateFormat, etc.)
 │
-├── overlay/                # Recording overlay window entry
+├── overlay/                # Recording overlay window entry (separate Tauri webview)
+├── brain-overlay/          # Brain conversation overlay (separate Tauri webview, 3D avatar)
 └── assets/                 # Static assets (logo, icons)
 ```
 
@@ -295,7 +313,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **i18n**            | i18next 26, react-i18next 17                                                                    |
 | **Animation**       | Three.js 0.184, Lucide React                                                                    |
 | **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
-| **TTS**             | Piper (persistent HTTP), Kokoro, Kitten, Pocket (voice cloning), SAPI (⚠️ stub), OpenAI, ElevenLabs, Cartesia |
+| **TTS**             | Piper (persistent HTTP), Kokoro (persistent HTTP, 54 voices, 9 langs), Kitten, Pocket (voice cloning), SAPI (⚠️ stub), OpenAI, ElevenLabs, Cartesia |
 | **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
 | **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
 | **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |
@@ -312,7 +330,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 3. **Dictation:** Global shortcut triggers audio recording with TripleVAD filtering → Parakeet V3 transcription → ITN normalization → paste at cursor.
 4. **Read Aloud:** Global shortcut reads selected text (or double-copy clipboard trigger) → markdown stripping → TN normalization → TTS playback with streaming gapless playback.
 5. **Conversation:** Global shortcut starts recording → transcribe → send to Brain (LLM) → stream reply tokens → sentence splitter → TTS reads each sentence aloud with barge-in support.
-6. **TTS Engine Selection:** 8 backends available (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with warm-persistent model lifecycle (WarmEngine trait: Loading → WarmingUp → Ready → Error).
+6. **TTS Engine Selection:** 8 backends available (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia). Engine lifecycle managed by `local_tts_server.rs` and `piper_server.rs` state machines. The `WarmEngine` trait is implemented by all local backends (Piper, Kokoro, Kitten, Pocket) but the orchestration layer calls server utilities directly.
 
 ### Settings System
 
@@ -453,8 +471,11 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 | File                                                         | Purpose                                                          |
 | ------------------------------------------------------------ | ---------------------------------------------------------------- |
 | [README.md](README.md)                                       | Project overview, quick start, architecture                      |
-| [S2B2S_REVIEW.md](S2B2S_REVIEW.md)                           | Comprehensive project analysis (non-tech users, devs, AI agents) |
+| [S2B2S_REVIEW.md](S2B2S_REVIEW.md)                           | Comprehensive project analysis (non-tech users, devs, AI agents) — last audited June 2026 |
+| [references_comparative_analysis_md/](references_comparative_analysis_md/) | 23-project comparative analysis, individual reviews, license matrix, fork lineage |
 | [LLAMA_CPP.md](LLAMA_CPP.md)                                 | Pre-compiled llama.cpp server integration reference              |
+| [futuristic_analysis/](futuristic_analysis/)                 | Active evolution plan (9 docs, supersedes analysys/) — GPU overlay, Conv 2.0, 3D avatar |
+| [S2B2S_ANDROID_COMPANION.md](S2B2S_ANDROID_COMPANION.md)     | Android companion PWA architecture and 3-phase feature plan |
 | [BUILD.md](BUILD.md)                                         | Platform-specific build instructions                             |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor guidelines                                           |
 | [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide                                                |

@@ -1,4 +1,4 @@
-﻿# Parler — Fork of Handy
+# Parler — Fork of Handy
 
 > Repo: `Melvynx/Parler` · HEAD: `53b4ad5` · License: MIT · Author: Melvyn Malherbe · Platforms: macOS, Windows, Linux
 > Nature: **fork-of-Handy** (true git fork, shared history, semi-actively tracks upstream)
@@ -419,7 +419,7 @@ Parler is the most surgically clean fork in the Handy family. It adds ~1.5K line
 | Aspect | Parler | S2B2S | Verdict |
 |--------|--------|-------|---------|
 | **Rebrand approach** | Renamed identifier + productName; README still Handy | Full rebrand, custom README, custom AGENTS.md | S2B2S more thorough |
-| **TTS subsystem** | None | 9 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with warm-persistent lifecycle | S2B2S has massive TTS advantage |
+| **TTS subsystem** | None | 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with warm-persistent lifecycle | S2B2S has massive TTS advantage |
 | **Brain/LLM streaming** | None (post-processing only) | Full streaming conversation with SSE, sentence splitter, barge-in | S2B2S has full Brain |
 | **Pause/resume** | Yes (AtomicBool flag pattern) | Yes — inherited from Parler | Equivalent |
 | **Long-audio model switching** | Yes (duration threshold) | Yes — generalized into routing policies with additional conditions | S2B2S extended |
@@ -535,7 +535,7 @@ Parler is the most surgically clean fork in the Handy family. It adds ~1.5K line
 
 Parler is the gold-standard fork in the Handy ecosystem: surgical, focused, and production-quality. It proves that a single developer can add meaningful power-user features — pause/resume, long-audio model switching, settings export/import, crash logging, multi-monitor overlay fixes — to Handy without restructuring the codebase. At +1,469 / -99 lines of Rust, it is the leanest fork and the model S2B2S deliberately followed for its Phase 0.
 
-S2B2S inherited the most valuable patterns from Parler: the settings bindings backfill mechanism (now extended to all TTS/Brain settings), the pause/resume architecture, the TranscriptionCoordinator single-threaded lifecycle, and the crash logging infrastructure. S2B2S then built its entire Brain (streaming LLM conversation with barge-in) and TTS (9 backends with warm-persistent lifecycle) superstructure on top — capabilities that exist nowhere in the Handy fork ecosystem.
+S2B2S inherited the most valuable patterns from Parler: the settings bindings backfill mechanism (now extended to all TTS/Brain settings), the pause/resume architecture, the TranscriptionCoordinator single-threaded lifecycle, and the crash logging infrastructure. S2B2S then built its entire Brain (streaming LLM conversation with barge-in) and TTS (8 backends with warm-persistent lifecycle) superstructure on top — capabilities that exist nowhere in the Handy fork ecosystem.
 
 If you have time to harvest one more thing from Parler, take the **Apple Intelligence FFI bridge** (`src-tauri/src/apple_intelligence.rs`, 84 lines). It would give S2B2S a zero-cost, privacy-preserving local Brain option on Apple Silicon Macs — a unique feature no other Handy fork offers. The Gemini provider adapter pattern in `llm_client.rs` (`fetch_gemini_models()`, lines 254-296) is also worth studying — it's the exact template for integrating non-OpenAI-shaped TTS voice listing APIs (ElevenLabs, Cartesia) into S2B2S's existing provider abstraction.
 

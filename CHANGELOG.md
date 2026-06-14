@@ -7,7 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
 
-> **Status (June 2026):** 8 local TTS backends with RAM-persistent warm model lifecycle, voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), and 20-turn conversation memory.
+> **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.
+
+### Documentation & Code Review Synchronization
+
+- **Synchronized all project documentation** — Audited and updated `S2B2S_REVIEW.md`, `README.md`, `repomix-file-descriptions.md`, `AGENTS.md`, `BUILD.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `LLAMA_CPP.md`, and all 8 reference project reviews in `references_comparative_analysis_md/`.
+- **Corrected TTS Backend Count** — Standardized backend count to 8 (5 local, 3 cloud: Piper, Kokoro, Kitten, Pocket, SAPI [stub], OpenAI, ElevenLabs, Cartesia) across all documents, correcting historical references that erroneously counted `piper_server` as a 9th backend.
+- **Clarified `WarmEngine` Trait Status** — Corrected outdated claims that `WarmEngine` was dead code. Documented that it is fully implemented in `PiperBackend`, `KokoroBackend`, `KittenBackend`, and `PocketBackend`, but noted that the orchestrator layer currently calls lower-level lifecycle managers directly.
+- **Expanded STT Subsystem Documentation** — Added Canary, Cohere, SenseVoice, GigaAM, and Nemotron/UnifiedParakeet to the STT comparison tables and implementation descriptions (now documenting 9 STT engine types and 11 model variants).
+- **Added missing code mappings** — Documented `commands/system.rs` (cross-platform RAM retrieval command) and `overlay_fx/native/shader.wgsl` (WGPU trail shader).
 
 ### Startup Optimization — Parallel Model Loading, No Timeouts
 
@@ -23,7 +31,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Reference GitHub Links
 
-- **`reference_github_links.md`** — Curated list of 21 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, and TD_Web_Trail.
+- **`reference_github_links.md`** — Curated list of 23 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, LocalAI, and TD_Web_Trail.
 
 ### Gemma 4 Reference Docs & Multimodal Brain Pipeline
 
@@ -528,3 +536,37 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Removed
 
 - **IMPROVEMENT_PLAN.md** — deleted the improvement plan file.
+
+---
+
+## Documentation Audit & Sync (June 14, 2026)
+
+Full codebase audit and documentation pass — read every source file, verified every claim.
+
+### Corrections Applied
+
+- **S2B2S_REVIEW.md** — Updated TTS backend count (8→9, added Pocket TTS row). Noted `WarmEngine` trait in `tts/status.rs` is dead code (no backend implements it). Noted TTS telemetry `record()` never called. Updated Brain subsystem: 10 LLM providers (not ~7). Added `brain-overlay/`, `overlay_fx/`, and `stt/` modules to file structure. Updated Known Issues with 5 new items (WarmEngine dead code, telemetry not wired, model definitions hardcoded, wgpu placeholder, fragment_queue.rs dead code). Added Evolution Documents section noting `futuristic_analysis/` supersedes `analysys/`.
+- **README.md** — Updated TTS backend count (8→9), Brain provider count (3→10), STT engine types (3→10). Fixed "WarmEngine trait lifecycle" roadmap item to note it's defined but unimplemented. Added missing "Voice barge-in" roadmap item. Updated `reference_github_links.md` project count (21→23).
+- **AGENTS.md** — Fixed frontend tree: removed non-existent `src/lib/types.ts`, clarified `src/lib/types/events.ts`. Added `brain-overlay/` frontend entry. Added `stt/` and `overlay_fx/` backend entries. Updated TTS engine count, WarmEngine status note. Added `futuristic_analysis/` and `S2B2S_ANDROID_COMPANION.md` to Key Files Reference.
+- **CRUSH.md** — Removed orphaned `S2B2S_VOX_COMPARISON.md` reference (file never existed). Added full `futuristic_analysis/` directory with all 9 files. Noted `analysys/` superseded status. Added `stt/`, `overlay_fx/`, `brain-overlay/` to file structure.
+- **CHANGELOG.md** — Updated `reference_github_links.md` project count (21→23). This entry.
+- **CLAUDE.md** — Updated evolution plans reference to `futuristic_analysis/`, noted `analysys/` superseded status.
+- **repomix-file-descriptions.md** — Fixed `settings.rs` line count (1,600→1,800). Fixed `managers/transcription.rs` line count (886→996). Fixed `managers/model.rs` line count and noted 20+ hardcoded entries. Added `stt/` module entries. Added `overlay_fx/` module entries with placeholder note. Added `brain-overlay/` entries. Updated `tts/status.rs` and `tts/telemetry.rs` dead-code notes.
+- **LICENSE** — Added NairoDorian copyright line for S2B2S-specific additions.
+- **repomix-file-descriptions.md** — Added `stt/` and `overlay_fx/` module descriptions, `brain-overlay/` entries.
+
+### Verified Accurate (No Changes Needed)
+
+- **LLAMA_CPP.md** — Accurate. Pre-compiled server integration fully reflected.
+- **CONTRIBUTING.md** — Accurate. Manager listings, build steps, and philosophy all correct.
+- **CONTRIBUTING_TRANSLATIONS.md** — Accurate. All 20 languages confirmed.
+- **BUILD.md** — Accurate. Platform instructions verified.
+
+### Key Codebase Findings
+
+- **105 Rust source files** in `src-tauri/src/` (plus 8 in `overlay_fx/`, 3 in `stt/`)
+- **113+ TypeScript/React files** in `src/`
+- **9 CI workflows** in `.github/workflows/`
+- `settingsStore.ts` is 741 lines (not 739 as documented)
+- Non-English i18n locales are uniform 767 lines (likely auto-generated from template)
+- `analysys/` exists on disk but is gitignored and Repomix-excluded — superseded by `futuristic_analysis/`

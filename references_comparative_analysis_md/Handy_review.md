@@ -1,4 +1,4 @@
-﻿# Handy -- Mother Project (Fork Origin of S2B2S)
+# Handy -- Mother Project (Fork Origin of S2B2S)
 
 > Repo: `cjpais/Handy` · Version: **v0.8.3** · License: **MIT** · Author: **CJ Pais** · Platforms: **Windows / macOS / Linux**
 > Nature: **fork-origin (S2B2S is a fork of Handy)** · Role for S2B2S: **the complete skeleton** -- every subsystem S2B2S inherited was defined here first
@@ -441,7 +441,7 @@ S2B2S is a direct fork of Handy. Every single subsystem in this analysis was inh
 
 | Feature | Handy (v0.8.3) | S2B2S |
 |---------|---------------|-------|
-| **TTS (Text-to-Speech)** | None | Full subsystem: 9 backends (Piper, PiperServer, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia), streaming gapless playback (rodio), sentence pagination (UTF-8 safe chunking), 5-stage sanitize pipeline (ITN -> Custom Words -> Markdown Strip -> TN -> Regex Cleanup), fragment_queue (pre-synthesis queue, kept for future), clipboard_watch (double-copy trigger), audio_format conversion (WAV -> MP3/OGG/FLAC), telemetry (per-engine performance tracking), status reporting (WarmEngine trait: Loading -> WarmingUp -> Ready -> Error) |
+| **TTS (Text-to-Speech)** | None | Full subsystem: 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia), streaming gapless playback (rodio), sentence pagination (UTF-8 safe chunking), 5-stage sanitize pipeline (ITN -> Custom Words -> Markdown Strip -> TN -> Regex Cleanup), fragment_queue (pre-synthesis queue, kept for future), clipboard_watch (double-copy trigger), audio_format conversion (WAV -> MP3/OGG/FLAC), telemetry (per-engine performance tracking), status reporting (WarmEngine trait: Loading -> WarmingUp -> Ready -> Error) |
 | **Brain (Streaming LLM)** | Sync only, no streaming, no memory | Streaming SSE client (brain/client.rs), turn history management (brain/manager.rs), sentence splitter bridge to TTS, barge-in/abort support (cancel running response), conversation mode orchestration (record -> STT -> Brain -> TTS -> listen cycle), llama.cpp server manager (llama_server/manager.rs: download, lifecycle, GPU offloading) |
 | **Conversation Mode** | None | ConversationAction: full duplex voice interaction cycle, continuous listening between turns |
 | **Read Aloud** | None | SpeakSelectionAction: reads selected text or double-copy triggered text via TTS |

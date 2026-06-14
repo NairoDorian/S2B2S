@@ -1,4 +1,4 @@
-﻿# vibevoice-rs — Category D (Research/Reference)
+# vibevoice-rs — Category D (Research/Reference)
 
 > Repo: `danielclough/vibevoice-rs` · HEAD: not in git · License: MIT · Author: Daniel Clough · Platforms: macOS (Metal), Linux (CUDA), Windows (CUDA)
 > Nature: independent · Rust reimplementation of VibeVoice (Microsoft Research) TTS
@@ -384,7 +384,7 @@ When tracing is at DEBUG level, every intermediate tensor (noise, conditions, di
 
 1. **Text normalization pipeline**: 5-stage processing (ITN, custom words, markdown strip, TN, cleanup) vs vibevoice''s basic typographic normalization
 2. **Audio playback**: Streaming gapless playback via rodio with pause/resume/pre-decode vs client-side Web Audio API
-3. **Engine abstraction**: Trait-based `TtsBackend` with 9 backends vs hardcoded 3 model variants
+3. **Engine abstraction**: Trait-based `TtsBackend` with 8 backends vs hardcoded 3 model variants
 4. **Internationalization**: 20 languages vs English-only
 5. **Full application feature set**: STT, Brain (LLM), VAD, audio toolkit, tray i18n, shortcut system
 

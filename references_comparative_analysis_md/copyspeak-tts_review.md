@@ -398,7 +398,7 @@ CopySpeak TTS is **the direct ancestor** of S2B2S's TTS subsystem. S2B2S copied 
 
 | Aspect | CopySpeak TTS | S2B2S | Verdict |
 |--------|---------------|-------|---------|
-| **TTS trait** | `TtsBackend { synthesize(), health_check(), file_extension() }` -- 5 methods, `Send+Sync` | Extended with `WarmEngine` trait, engine status, `list_voices()`, async `synthesize_streaming()` -- 9 backends | S2B2S extended it |
+| **TTS trait** | `TtsBackend { synthesize(), health_check(), file_extension() }` -- 5 methods, `Send+Sync` | Extended with `WarmEngine` trait, engine status, `list_voices()`, async `synthesize_streaming()` -- 8 backends | S2B2S extended it |
 | **Piper server** | Persistent `piper.http_server` with state machine (`Stopped/Starting/Ready`), generation counter, CUDA, pre-warm | Same pattern adapted for S2B2S's Piper server with added `WarmEngine` lifecycle (`Loading/WarmingUp/Ready/Error`) | Copied pattern, S2B2S added lifecycle |
 | **Pagination** | Sentence-boundary, CJK-safe, abbreviation-aware, adaptive sizing from telemetry | Same module with Unicode-safe splitting; S2B2S also has CJK-safe pagination | Largely replicated |
 | **Telemetry** | EMA-based per-engine/voice/bucket, defer saves (every 10), confidence score | Similar pattern in S2B2S `telemetry.rs` | Copied pattern |

@@ -1,4 +1,4 @@
-﻿# Parrot — Structural Fork of Handy (TTS-Only)
+# Parrot — Structural Fork of Handy (TTS-Only)
 
 > Repo: `rishiskhare/parrot` · Version: **26.2.4** · HEAD analyzed: `44351ff` · License: **MIT** · Author: **Rishi Khare**
 > Platforms: **macOS / Windows / Linux** (cross-platform, Tauri 2.x)
@@ -387,7 +387,7 @@ A custom `SpeechTextRenderer` struct walks pulldown-cmark's event iterator, main
 
 | Aspect | Parrot | S2B2S | Verdict |
 |--------|--------|-------|---------|
-| **TTS engines** | Kokoro-82M only (single engine, tts-rs in-process) | 9 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia — plus `TtsBackend` trait | S2B2S has broader engine support; Parrot has deeper single-engine polish (pool, crossfade, chunking) |
+| **TTS engines** | Kokoro-82M only (single engine, tts-rs in-process) | 8 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia — plus `TtsBackend` trait | S2B2S has broader engine support; Parrot has deeper single-engine polish (pool, crossfade, chunking) |
 | **TTS text prep** | `text_normalization.rs` — pulldown-cmark structural markdown parsing | 5-stage pipe: ITN → Custom Words → Markdown strip → TN → Cleanup (regex-based) | Parrot's markdown handling is **strictly superior** (structural vs regex). S2B2S's ITN/TN is absent from Parrot |
 | **TTS streaming** | Parallel chunk synthesis + ordered BTreeMap + crossfade + overlay text updater | Fragment queue (unused), player.rs streaming, gapless via pre-decode | Parrot's chunk-based streaming with crossfade is **more sophisticated** |
 | **Selection capture** | macOS AX API (direct read, no clipboard) + sentinel clipboard probe fallback | Clipboard-based copy/paste only | Parrot's AX API approach is **cleaner** — no clipboard manipulation on macOS |

@@ -1,4 +1,4 @@
-﻿# AIVORelay -- Fork of Handy (Category A)
+# AIVORelay -- Fork of Handy (Category A)
 
 > Repo: `MaxITService/AIVORelay` · HEAD: `v1.0.19` · License: MIT · Author: Maxim Fomin (MaxITService) · Platform: **Windows-only** (new features)
 > Nature: **fork-of-Handy** -- merge-base near `d3a02810` (*"fix: prevent crash on macOS 26.x beta"*), ~**841 commits** of divergence. The most divergent Handy fork.
@@ -447,7 +447,7 @@ Tauri 2.10.2 framework, local Whisper (transcribe-rs), Audio Recording Manager, 
 | Aspect | AIVORelay | S2B2S | Verdict |
 |--------|-----------|-------|---------|
 | Streaming STT | 3 WS providers, interim tokens | None | **AIVORelay wins** |
-| TTS pipeline | None | 9 backends, gapless | **S2B2S wins** |
+| TTS pipeline | None | 8 backends, gapless | **S2B2S wins** |
 | Brain / conversation | Simple LLM post-processing | SSE streaming, sentence splitter, barge-in | **S2B2S wins** |
 | System audio capture | WASAPI loopback + Both-mode | None | **AIVORelay wins** |
 | Transcription profiles | Per-mode language/prompt/model | None | **AIVORelay wins** |

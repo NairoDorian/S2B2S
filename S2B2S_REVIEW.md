@@ -1,6 +1,8 @@
 # S2B2S — Complete Project Review & Analysis
 
 > **SpeechToBrainToSpeech**: A local-first, cross-platform, open-source desktop application that turns voice into text, text into speech, and enables natural spoken conversation with AI — all offline by default.
+>
+> **Last audited:** June 2026. This document reflects the verified state of the codebase (105 Rust source files, 113+ TypeScript/React source files, 20 locale files, 9 CI workflows).
 
 ---
 
@@ -58,7 +60,7 @@
 | ------------------- | -------------------------------------------------------------------- |
 | **Name**            | S2B2S (SpeechToBrainToSpeech)                                        |
 | **Author**          | NairoDorian                                                          |
-| **Version**         | 0.1.0                                                                |
+| **Version**         | 0.1.0 (working title v0.10)                                          |
 | **License**         | MIT                                                                  |
 | **Platform**        | Windows 11 (primary), macOS (first-class), Linux (first-class)       |
 | **Framework**       | Tauri 2.x (Rust backend + React/TypeScript frontend)                 |
@@ -338,22 +340,36 @@ The app uses `tauri_plugin_single_instance` to enforce single-instance behavior:
 
 ### Speech-to-Text Engines
 
-| Engine                   | Type       | Languages        | Size    | Default?       | Notes                                     |
+| Engine | Type | Languages | Size | Default? | Notes |
 | ------------------------ | ---------- | ---------------- | ------- | -------------- | ----------------------------------------- |
-| **Parakeet TDT 0.6B V3** | Local ONNX | 25 (auto-detect) | ~478 MB | ✅ **Default** | CPU-optimized, ~5x real-time on mid-range |
-| Whisper Small            | Local GGML | 99               | ~487 MB | Optional       |                                           |
-| Whisper Medium           | Local GGML | 99               | ~492 MB | Optional       |                                           |
-| Whisper Turbo            | Local GGML | 99               | ~1.6 GB | Optional       |                                           |
-| Whisper Large V3         | Local GGML | 99               | ~1.1 GB | Optional       |                                           |
-| Moonshine                | Local ONNX | 99               | ~300 MB | Optional       | Streaming-capable variant                 |
+| **Parakeet TDT 0.6B V3** | Local ONNX | 25 (auto-detect) | ~456 MB | ✅ **Default** | CPU-optimized, ~5x real-time on mid-range |
+| Whisper Small | Local GGML | 99 | ~465 MB | Optional | Fast and fairly accurate |
+| Whisper Medium | Local GGML | 99 | ~469 MB | Optional | Good accuracy, medium speed |
+| Whisper Turbo | Local GGML | 99 | ~1.5 GB | Optional | Balanced accuracy and speed |
+| Whisper Large | Local GGML | 99 | ~1.0 GB | Optional | Good accuracy, but slow |
+| Breeze ASR | Local GGML | 99 | ~1.0 GB | Optional | Optimized for Taiwanese Mandarin |
+| Moonshine Base | Local ONNX | 1 (en) | ~55 MB | Optional | Very fast, English only, handles accents well |
+| SenseVoice | Local ONNX | 5 | ~152 MB | Optional | Very fast; Chinese, English, Japanese, Korean, Cantonese |
+| GigaAM v3 | Local ONNX | 1 (ru) | ~151 MB | Optional | Russian speech recognition. Fast and accurate |
+| Canary 180M Flash | Local ONNX | 4 | ~146 MB | Optional | Very fast; English, German, Spanish, French. Supports translation |
+| Canary 1B v2 | Local ONNX | 25 | ~691 MB | Optional | Accurate multilingual; 25 European languages. Supports translation |
+| Cohere | Local ONNX | 16 | ~1.7 GB | Optional | Large, slower, but very accurate multilingual model |
+| Nemotron 3.5 ASR | Local ONNX | 36 | ~680 MB | Optional | Multilingual streaming ASR via sherpa-onnx. 80ms chunks |
+| Parakeet EOU 120M | Local ONNX | 1 (en) | ~250-500MB| Optional | Streaming RNN-T with end-of-utterance detection |
 
 ### STT Implementation
 
-All STT engines are accessed through the `transcribe-rs` crate, which provides:
+All STT engines are accessed through the `transcribe-rs` crate (and `unified_parakeet.rs` helper), which provides:
 
-- **Parakeet V3**: ONNX-based, NVIDIA NeMo architecture, auto language detection, CPU-optimized quantized (int8)
-- **Whisper**: GGML-based through whisper.cpp, supports GPU acceleration (Metal/Vulkan/DirectML/CUDA)
-- **Moonshine**: ONNX-based, lightweight, streaming-capable
+- **Parakeet V3**: ONNX-based, NVIDIA NeMo architecture, auto language detection, CPU-optimized quantized (int8).
+- **Whisper**: GGML-based through whisper.cpp, supports GPU acceleration (Metal/Vulkan/DirectML/CUDA).
+- **Moonshine**: ONNX-based, lightweight, streaming-capable.
+- **SenseVoice**: ONNX-based, optimized for fast multilingual voice detection and speech-to-text.
+- **GigaAM**: CTC-based Russian speech recognition, highly optimized.
+- **Canary**: Transformer-based encoder-decoder model supporting English, Spanish, German, French, and speech-to-text translation to English.
+- **Cohere**: High-accuracy large multilingual transcription model.
+- **UnifiedParakeet / Nemotron**: RNN-T streaming engines wrapping sherpa-onnx for low-latency end-of-utterance detection and real-time streaming transcripts.
+
 
 ### Key STT Features
 
@@ -369,6 +385,8 @@ All STT engines are accessed through the `transcribe-rs` crate, which provides:
 ## 6. TTS Subsystem
 
 ### TTS Engine Overview
+
+> **Note:** The `WarmEngine` trait in `tts/status.rs` is defined and implemented by all local TTS backends (`PiperBackend`, `KokoroBackend`, `KittenBackend`, `PocketBackend`) to support pre-warming and switch unloads. However, the orchestration layer (`commands/tts.rs` / `manager.rs`) currently interacts with these engines' lifecycles via direct server utilities (`local_tts_server` and `piper_server`) rather than using dynamic/polymorphic dispatch (`&dyn WarmEngine`). Telemetry (`tts/telemetry.rs`) is registered as Tauri state but `record()` is never called — the `chars_per_ms` adaptive sizing infrastructure is in place but not wired to any pipeline.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -387,14 +405,14 @@ All STT engines are accessed through the `transcribe-rs` crate, which provides:
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │  TTS Backend (TtsBackend trait + WarmEngine trait)            │   │
 │  │                                                               │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ │   │
-│  │  │ Piper   │ │ Kokoro  │ │ Kitten  │ │ SAPI   │ │ Cloud  │ │   │
-│  │  │ (local, │ │ (local, │ │ (local, │ │ (local, │ │ (OpenAI,│ │   │
-│  │  │ warm    │ │ 54 voic-│ │ 8 voic- │ │ zero    │ │ Eleven- │ │   │
-│  │  │ HTTP    │ │ es, 9   │ │ es, 3   │ │ down-   │ │ Labs,   │ │   │
-│  │  │ server) │ │ langs)  │ │ sizes)  │ │ load)   │ │ Carte-  │ │   │
-│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ │ sia)    │ │   │
-│  │                                                   └────────┘ │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐   │   │
+│  │  │ Piper   │ │ Kokoro  │ │ Kitten  │ │ SAPI   │ │ Cloud  │   │   │
+│  │  │ (local, │ │ (local, │ │ (local, │ │ (local, │ │ (OpenAI,│   │   │
+│  │  │ warm    │ │ 54 voic-│ │ 8 voic- │ │ zero    │ │ Eleven- │   │   │
+│  │  │ HTTP    │ │ es, 9   │ │ es, 3   │ │ down-   │ │ Labs,   │   │   │
+│  │  │ server) │ │ langs)  │ │ sizes)  │ │ load)   │ │ Carte-  │   │   │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ │ sia)    │   │   │
+│  │                                                   └────────┘   │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │                     │                                               │
 │                     ▼                                               │
@@ -417,29 +435,53 @@ All STT engines are accessed through the `transcribe-rs` crate, which provides:
 | **Piper**          | Local (persistent HTTP) | 20+ EN, 7 FR | ~20                                    | Good          | **Fastest**              | ~100-200 MB            | Auto-download     |
 | **Kokoro-82M**     | Local (in-process ONNX) | 54           | 9 (EN, ES, FR, HI, IT, JA, PT, ZH, KO) | **Excellent** | Fast                     | ~115 MB + 50 MB/worker | Auto-download     |
 | **Kitten TTS**     | Local (persistent HTTP) | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
+| **Pocket TTS**     | Local (persistent HTTP) | 8 + cloned   | EN                                     | Good          | Medium                   | ~100 MB                | Auto-download     |
 | **SAPI**           | OS (Windows)            | 1 (placeholder) | Depends                                | N/A (stub)    | N/A                      | ~0 MB                  | **Zero download** (⚠️ non-functional stub) |
 | **OpenAI TTS**     | Cloud API               | 9            | Multiple                               | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **ElevenLabs**     | Cloud API               | Many         | 29+                                    | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **Cartesia Sonic** | Cloud API               | Many         | Multiple                               | Excellent     | **Lowest latency cloud** | ~0 MB                  | API key           |
 
+**Total: 8 TTS backends** (5 local: Piper, Kokoro, Kitten, Pocket, SAPI [stub]; 3 cloud: OpenAI, ElevenLabs, Cartesia).
+
 ### TTS Backend Trait
 
 ```rust
-trait TtsBackend {
-    fn synthesize(&self, text: &str, voice: &Voice, speed: f32) -> Result<AudioChunk>;
-    fn list_voices(&self) -> Result<Vec<Voice>>;
-    fn health_check(&self) -> Result<HealthStatus>;
+pub trait TtsBackend: Send + Sync {
+    /// Human-readable name for settings UI / logs.
+    fn name(&self) -> &str;
+
+    /// Synthesize `text` with `voice` at `speed` into audio bytes.
+    fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String>;
+
+    /// Check that the engine/server is reachable.
+    fn health_check(&self) -> Result<(), String>;
+
+    /// File extension for the bytes returned by [`Self::synthesize`].
+    fn file_extension(&self) -> &str {
+        "wav"
+    }
 }
 
-trait WarmEngine: TtsBackend {
-    fn warm(&self) -> Result<(), String>;       // Pre-load model
-    fn unload(&self) -> Result<(), String>;     // Free RAM
-    fn status(&self) -> EngineStatus;           // Loading | WarmingUp | Ready | Error | Stopped
-    fn is_ready(&self) -> bool;
+pub trait WarmEngine {
+    /// Load the model and run a warm-up inference sentence.
+    fn warm(&self) -> Result<(), String>;
+
+    /// Free the model from RAM/VRAM. Called on engine switch or manual unload.
+    fn unload(&self) -> Result<(), String>;
+
+    /// Current lifecycle status.
+    fn status(&self) -> EngineStatus;
+
+    /// Whether the engine is ready for synthesis.
+    fn is_ready(&self) -> bool {
+        matches!(self.status(), EngineStatus::Ready)
+    }
 }
 ```
 
 ### TTS Lifecycle States
+
+> **Note:** The `WarmEngine` trait and `EngineStatus` enum in `tts/status.rs` are fully implemented by all local backends (`PiperBackend`, `KokoroBackend`, `KittenBackend`, `PocketBackend`) to manage model and server lifecycle stages (Stopped → Loading → WarmingUp → Ready). Although the traits are implemented, the main orchestration layer (`commands/tts.rs` / `manager.rs`) communicates directly with the lower-level process and HTTP server helpers (`local_tts_server` and `piper_server`) rather than via dynamic/polymorphic `dyn WarmEngine` dispatch.
 
 ```
                     ┌──────────────────────────────────┐
@@ -528,11 +570,13 @@ The Brain is the LLM component that powers the Conversation mode. It:
 
 ### Brain Implementation
 
-- **Client**: `brain/client.rs` — SSE streaming chat client with token delta accumulation
-- **Manager**: `brain/manager.rs` — Turn history, abort (barge-in), sentence → TTS bridge
+- **Client**: `brain/client.rs` (495 lines) — SSE streaming chat client with token delta accumulation and `SentenceSplitter`
+- **Manager**: `brain/manager.rs` (314 lines) — Turn history, abort (barge-in), sentence → TTS bridge, multimodal support (audio + image for Gemma 4)
+- **Llama Manager**: `brain/llama_manager.rs` (356 lines) — Llama.cpp server process management, Gemma-4 GGUF model download, MTP speculative decoding (n=13, ~216 tok/s), multimodal projector conditionally loaded
 - **Sentence splitter**: Accumulates tokens, emits at `. ? !` + length heuristics
-- **Multi-turn memory**: Configurable context window with oldest-first trimming
-- **System prompt**: Configurable per conversation
+- **Multi-turn memory**: Configurable context window with oldest-first trimming (default: 20 turns)
+- **System prompt**: Configurable per conversation + separate `speakable_output_prompt` when read-aloud toggled
+- **10 LLM providers**: openai, z.ai, google_ai_studio, openrouter, anthropic, groq, cerebras, bedrock_mantle, llama_cpp, custom (+ Apple Intelligence on macOS aarch64)
 
 ### Conversation Mode Features
 
@@ -1360,7 +1404,7 @@ S2B2S/
 
 | Feature                                               | Details                                                        |
 | ----------------------------------------------------- | -------------------------------------------------------------- |
-| STT (Parakeet V3, Whisper, Moonshine)                 | Multi-engine STT with auto language detection                  |
+| STT (9 engine types, 11 variants: Parakeet V3/V2/Unified/EOU, Whisper, Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary, Cohere) | Multi-engine STT with auto language detection, GPU acceleration |
 | TTS read-aloud (8 backends)                           | Piper, Kokoro, Kitten, Pocket, SAPI (stub), OpenAI, ElevenLabs, Cartesia |
 | Conversation mode                                     | Streaming LLM + streaming TTS                                  |
 | Double-copy clipboard trigger                         | Copy same text twice within 1.5s                               |
@@ -1369,7 +1413,7 @@ S2B2S/
 | Crash logging                                         | Full backtraces to s2b2s-crash.log                             |
 | Her 3D loading animation                              | Three.js tube geometry with ring reveal                        |
 | 20-language i18n                                      | Full translation coverage                                      |
-| WarmEngine trait lifecycle                            | Stopped → Loading → WarmingUp → Ready → Error                  |
+| WarmEngine trait lifecycle                            | Stopped → Loading → WarmingUp → Ready → Error (implemented in backends, direct-managed in orchestrator) |
 | TTS performance telemetry                             | chars_per_ms adaptive fragment sizing                          |
 | Piper persistent HTTP server with CUDA auto-discovery | Warm model, CUDA EP auto-detection                             |
 | cpal → rodio streaming playback                       | Gapless chunk synthesis                                        |
@@ -1388,6 +1432,12 @@ S2B2S/
 | Log viewer console                                    | Level filter, search, auto-refresh, copy to clipboard           |
 | Footer status indicators                              | STT 🟢, Brain 🟢, TTS 🟢 with hover tooltips                   |
 | Hands-free auto-listen / continuous voice             | Auto rearms mic after Brain+TTS finishes                        |
+| Voice barge-in                                        | Interrupt TTS with new speech in continuous voice mode          |
+| Brain overlay (3D avatar + reply bubble)               | ✅ Complete — 8-phase state machine, `brain-overlay/` React entry + `overlay_fx/` Rust module |
+| Overlay Window settings (Tauri/OS-Native mode toggle) | ✅ Complete — `OverlayWindowConfig`, WGPU trail config |
+| GPU overlay cursor trail physics                      | ✅ Complete — spring-friction chain, Catmull-Rom splines in `overlay_fx/trail.rs` |
+| GPU overlay wgpu native rendering (Track B)           | 🚧 Placeholder — `overlay_fx/native/mod.rs` is a no-op; physics engine done, surface integration pending |
+| Analysys/ evolution plans                             | 📋 Superseded — replaced by `futuristic_analysis/` (9 docs, 1,867 lines) which corrects CursorFX assumptions |
 
 ### In Progress (🚧)
 
@@ -1431,25 +1481,30 @@ S2B2S/
 | --------------------------------------------------- | -------- | ------------------------------- |
 | **SAPI TTS backend is a non-functional stub**       | Medium   | `synthesize()` always returns error; COM interop not yet written |
 | **Wake word detector not connected to audio**       | Medium   | `feed_audio()` never called from recording pipeline; detector runs idle |
+| **WarmEngine trait not dynamically dispatched**     | Low      | Trait is implemented by all local backends but not dynamically used in the manager; lifecycle handled directly |
+| **TTS telemetry not wired**                         | Low      | `telemetry.rs` `record()` never called; `chars_per_ms` adaptive sizing inactive |
+| **Model definitions hardcoded**                     | Low      | 20+ model entries hardcoded in `model.rs` (2,224 lines); not JSON-driven as planned |
+| **overlay_fx/native wgpu is placeholder**           | Low      | `NativeTrailOverlay::start()` is a no-op; wgpu surface integration pending |
 | **Whisper model crashes** on some Win/Linux configs | High     | Parakeet V3 default avoids this |
 | **Wayland paste** needs wtype/dotool                | Medium   | Documented workaround           |
 | **Overlay focus-stealing** on Linux                 | Medium   | Disable overlay as workaround   |
 | **AppImage build** fails on rolling distros         | Low      | Use deb/rpm instead             |
-| **Kokoro crossfade** not yet implemented            | Low      | In progress                     |
-| **Engine-switch unload** may leak RAM               | Low      | In progress                     |
 | **macOS Intel** needs manual ONNX Runtime           | Low      | Documented in BUILD.md          |
 
 ### Architecture Limitations
 
 | Limitation                    | Explanation                                                             |
 | ----------------------------- | ----------------------------------------------------------------------- |
-| **Half-duplex only**          | Mic muted while TTS plays; barge-in via hotkey, not VAD                 |
+| **Half-duplex only**          | Mic muted while TTS plays; barge-in via hotkey, not VAD. Voice barge-in works in continuous voice mode. |
 | **Wake word (VAD-based)**     | RMS energy threshold (0.03) with 3-frame debounce; **audio feed-in not connected** — detector runs idle. KWS blocked on CRT linking conflict (sherpa-onnx /MT vs transcribe-rs /MD on Windows) |
 | **SAPI TTS is a stub**        | `synthesize()` always returns error; COM interop via windows-rs not yet written; `list_voices()` returns placeholder only |
-| **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns)  |
+| **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns). Streaming STT available via WebSocket for EOU 120M model. |
 | **Pocket voice cloning**      | Implemented via Python server — clone from 5-20s WAV, persistent storage in `models/TTS/pocket-cloned-voices/` |
-| **No profiles**               | Per-context presets planned (Phase 6)                                   |
+| **No profiles**               | Per-context presets planned                                             |
 | **No remote LAN-GPU support** | For heavy models on a separate machine (backlog)                        |
+| **settings.rs is 1,803 lines** | Monolithic settings file; config fields spread across single `AppSettings` struct |
+| **models.rs is 2,224 lines**  | 20+ model entries hardcoded; no JSON/external config-driven model loading yet |
+| **`tts/fragment_queue.rs` is dead code** | 306 lines preserved for future use; marked `#![allow(dead_code)]` |
 
 ### Security Considerations
 
@@ -1776,6 +1831,28 @@ bun run check:translations           # i18n validation
 
 ---
 
-_This document serves as the definitive reference for the S2B2S project — for users, developers, and AI agents. Last updated June 2026._
+_This document serves as the definitive reference for the S2B2S project — for users, developers, and AI agents. Last audited June 2026._
 
 _See [README.md](README.md) for quick start and [AGENTS.md](AGENTS.md) for AI development guidance._
+
+### Evolution Documents
+
+S2B2S maintains two sets of evolution planning documents:
+
+- **`futuristic_analysis/`** (9 files, 1,867 lines) — **Active, current plan.** Supersedes `analysys/`. Corrects critical CursorFX assumptions (uses Tauri V2 + Vulkan, not winit + DX12). Covers: GPU overlay architecture (two-track: webview + native wgpu), Conversation Mode 2.0 UX spec, screen vision pipeline, 3D cybernetic avatar (Four Senses), concrete implementation plan with code-level specifics.
+- **`analysys/`** (6 files) — **Superseded.** Original evolution plan from earlier audit. Contains the now-corrected CursorFX assumptions (DX12/DirectComposition recommendation). Excluded from git and Repomix. Preserved on disk for reference but `futuristic_analysis/00_README_START_HERE.md` explicitly states it is superseded.
+- **`references_comparative_analysis_md/`** (27 files, ~10,300 lines) — Complete comparative analysis of all 23 reference projects. Includes individual reviews, fork lineage, license compatibility matrix, and architecture pattern catalog.
+- **`gemma_4_qat_mtp_e2b/`** (2 files) — Reference benchmarks and configuration for Gemma 4 E2B brain model (MTP n=13 at ~216 tok/s, multimodal API formats).
+
+---
+
+## Related Documentation
+
+| Document | Contents |
+|----------|----------|
+| `references_comparative_analysis_md/00_COMPARATIVE_ANALYSIS.md` | Cross-project comparison of all 22 reference projects, feature matrices, harvest priorities |
+| `references_comparative_analysis_md/README.md` | Folder index and reading guide for all 22 individual project reviews |
+| `references_comparative_analysis_md/FORK_LINEAGE.md` | Complete Handy family genealogy — what S2B2S inherited from each project |
+| `references_comparative_analysis_md/LICENSE_COMPATIBILITY.md` | Which projects' code can be reused (MIT) vs concept-only (GPL/AGPL) |
+| `reference_github_links.md` | Curated list of all reference project GitHub repos |
+| `futuristic_analysis/00_README_START_HERE.md` | S2B2S evolution vision — GPU overlay, conversation 2.0, screen vision, 3D avatar |

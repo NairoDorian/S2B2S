@@ -502,7 +502,7 @@ Formal state machine: pending → in_review → completed → released. Keyboard
 |--------|-------------------|-------|---------|
 | **Framework** | Electron + FastAPI (Python) | Tauri 2.x (Rust) + React/TS | S2B2S wins — lighter, faster, more secure |
 | **STT engines** | 11 backends (all GPU vendors) | 3 engines via transcribe-rs | TS has more backends; S2B2S tighter Rust integration |
-| **TTS engines** | None (transcription only) | 9 backends (Piper to Cartesia) | S2B2S uniquely voice-output capable |
+| **TTS engines** | None (transcription only) | 8 backends (Piper to Cartesia) | S2B2S uniquely voice-output capable |
 | **Diarization** | PyAnnote + Sortformer, full review UI | Not implemented | TS far ahead |
 | **Live mode** | WS-based VAD streaming, model swap | Push-to-talk dictation only | TS has live mode |
 | **Durability** | 3-wave system (job+audio+recovery) | SQLite history (basic) | TS pattern to copy for S2B2S |

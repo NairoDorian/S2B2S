@@ -296,11 +296,13 @@ S2B2S/
 │   └── ...
 ├── src-tauri/             # Backend (Rust)
 │   ├── src/               # Rust source
-│   │   ├── managers/      # Business logic (audio, model, transcription, history)
+│   │   ├── managers/      # Business logic (audio, model, transcription, history, continuous_voice)
 │   │   ├── tts/           # TTS subsystem (8 backends)
 │   │   ├── brain/         # LLM subsystem (SSE client + llama.cpp bridge)
 │   │   ├── llama_server/  # Pre-compiled llama.cpp manager
 │   │   ├── audio_toolkit/ # Audio processing + VAD
+│   │   ├── stt/           # Python ONNX Runtime STT pipeline (Parakeet Unified)
+│   │   ├── overlay_fx/    # GPU overlay system (cursor trail, brain overlay)
 │   │   ├── commands/      # Tauri command handlers
 │   │   └── ...
 │   ├── resources/         # Static resources (models, icons)

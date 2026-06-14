@@ -2,7 +2,7 @@
 
 **Local-first STT → Brain → TTS desktop app for Windows 11, macOS, and Linux. Dictate anywhere, read anything aloud, and talk naturally with a local AI — almost keyboard-free.**
 
-S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM indicator, Pocket voice cloning, and a full text normalization pipeline (ITN + TN + markdown stripping).
+S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory and 10 providers, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM/VRAM footer indicators, Pocket voice cloning, a full text normalization pipeline (ITN + TN + markdown stripping), and a brain overlay with 3D avatar.
 
 ---
 
@@ -200,7 +200,7 @@ S2B2S works fully offline with no configuration. The defaults are chosen for spe
 | **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                            | Silero only, Push-to-talk                                              |
 | **Noise Suppression** | RNNoise (toggleable, triple mode default)                     | Off                                                                    |
 | **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), SAPI (⚠️ stub), OpenAI, ElevenLabs, Cartesia |
-| **Brain**             | **llama.cpp** (pre-compiled CUDA/Vulkan/CPU) / **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | Any OpenAI-compatible API, Anthropic, Gemini |
+| **Brain**             | **llama.cpp** (pre-compiled CUDA/Vulkan/CPU) / **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | 9 other providers: OpenAI, Anthropic, Gemini, Groq, Cerebras, OpenRouter, Z.ai, AWS Bedrock, Apple Intelligence (macOS) |
 | **Storage**           | SQLite (rusqlite + migrations)                                | —                                                                      |
 | **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)      | —                                                                      |
 
@@ -323,9 +323,9 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 
 | Feature                                                                                              | Status         |
 | ---------------------------------------------------------------------------------------------------- | -------------- |
-| STT dictation (Parakeet V3, Whisper, Moonshine)                                                      | ✅ Complete    |
-| TTS read-aloud (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)              | ✅ Complete    |
-| Conversation mode with streaming LLM (Ollama/LM Studio/llama.cpp/OpenAI-compatible)             | ✅ Complete    |
+| STT dictation (Parakeet V3, Whisper, Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary, Cohere)               | ✅ Complete    |
+| TTS read-aloud (8 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)              | ✅ Complete    |
+| Conversation mode with streaming LLM (10 providers: Ollama/LM Studio/llama.cpp/OpenAI/Anthropic/Gemini/Groq/Cerebras/OpenRouter/Z.ai/Bedrock/custom) | ✅ Complete    |
 | Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                          | ✅ Complete    |
 | Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                           | ✅ Complete    |
 | Llama.cpp settings tab (manage server binaries, GPU detection, backend switching)               | ✅ Complete    |
@@ -339,7 +339,7 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Her-style 3D loading animation                                                                  | ✅ Complete    |
 | 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW) | ✅ Complete    |
 | Conversation memory (context_turns, default 20 turns)                                           | ✅ Complete    |
-| WarmEngine trait lifecycle (Stopped→Loading→WarmingUp→Ready→Error)                              | ✅ Complete    |
+| WarmEngine trait lifecycle (implemented by local backends, direct-managed in orchestrator) | ✅ Complete    |
 | Sentience streaming (3-fragment pattern: sentence 1 → sentence 2 → rest)                       | ✅ Complete    |
 | TTS performance telemetry (chars_per_ms adaptive sizing)                                        | ✅ Complete    |
 | Piper persistent HTTP server with CUDA auto-discovery                                           | ✅ Complete    |
@@ -357,9 +357,14 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Footer status indicators (STT 🟢, Brain 🟢, TTS 🟢) with hover tooltips                             | ✅ Complete    |
 | GPU VRAM usage indicator with per-second polling                                                     | ✅ Complete    |
 | Hands-free auto-listen / continuous voice                                                           | ✅ Complete    |
-| Streaming STT (WebSocket-based)                                                                      | 📋 Planned     |
+| Brain overlay (3D avatar + reply bubble)                                                                | ✅ Complete    |
+| Overlay Window settings (Tauri/OS-Native mode toggle)                                                   | ✅ Complete    |
+| GPU overlay cursor trail physics (spring-friction chain, Catmull-Rom)                                   | ✅ Complete    |
+| GPU overlay wgpu native rendering (Track B)                                                             | 🚧 Placeholder |
+| Evolution planning (`futuristic_analysis/` supersedes `analysys/`)                                      | 📋 Ongoing     |
 | Pocket TTS backend (voice cloning)                                                                   | ✅ Complete    |
 | Voice barge-in (continuous voice mode)                                                               | ✅ Complete    |
+| Streaming STT (WebSocket, EOU 120M via unified_parakeet server)                                         | ✅ Partial     |
 | SAPI TTS backend (⚠️ stub — COM interop pending)                                                     | 🚧 Stub        |
 | Wake word detection (⚠️ audio pipeline not connected to detector)                                   | 🚧 Non-functional |
 | Engine-switch cleanup (graceful unload/reload)                                                       | ✅ Complete    |

@@ -39,7 +39,7 @@ The **Llama.cpp settings tab** (`src/components/settings/llama-cpp/LlamaCppSetti
 
 In S2B2S settings under **Brain** or **Post-Process**, select the **Llama.cpp (Local)** provider:
 
-- Default base URL: `http://localhost:8080/v1`
+- Default base URL: `http://localhost:8001/v1`
 - The `llama-server` process is managed automatically by S2B2S — no manual server launch needed.
 - Toggling Brain OFF terminates the llama-server process immediately.
 
