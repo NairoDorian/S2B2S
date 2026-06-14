@@ -38,11 +38,11 @@ pub async fn ai_replace_selection(
     let messages = vec![
         crate::brain::client::ChatMessage {
             role: "system".to_string(),
-            content: system_prompt.to_string(),
+            content: crate::brain::client::MessageContent::text(system_prompt),
         },
         crate::brain::client::ChatMessage {
             role: "user".to_string(),
-            content: prompt,
+            content: crate::brain::client::MessageContent::text(prompt),
         },
     ];
 

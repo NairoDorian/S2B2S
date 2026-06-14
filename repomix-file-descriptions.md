@@ -78,7 +78,7 @@
 | `tts/backends/kokoro.rs` | Kokoro-82M ONNX TTS via Python HTTP server — 54 voices across 9 languages |
 | `tts/backends/kitten.rs` | KittenTTS via Python HTTP server — ultra-lightweight (25-80MB models, 8 voices) |
 | `tts/backends/pocket.rs` | Pocket TTS via Python HTTP server — voice cloning from WAV files |
-| `tts/backends/sapi.rs` | Windows SAPI backend — ⚠️ STUB: `synthesize()` always returns error; COM interop not yet written; `list_voices()` returns single placeholder |
+| `tts/backends/sapi.rs` | Windows SAPI backend — local Windows speech fallback using windows-rs COM interop; returns voice lists and synthesizes text to WAV bytes |
 | `tts/backends/openai.rs` | OpenAI cloud TTS integration |
 | `tts/backends/elevenlabs.rs` | ElevenLabs cloud TTS with voice library |
 | `tts/backends/cartesia.rs` | Cartesia Sonic cloud TTS (low-latency streaming) |

@@ -519,6 +519,14 @@ pub struct BrainConfig {
     /// Auto-rearm mic after reply in hands-free mode
     #[serde(default)]
     pub auto_listen: bool,
+    /// Send the WAV audio recording as `input_audio` to the multimodal Brain model
+    /// (Gemma 4 supports native audio transcription as an extra STT pass).
+    #[serde(default)]
+    pub multimodal_audio_enabled: bool,
+    /// Send a screenshot/image as `image_url` to the multimodal Brain model.
+    /// When enabled, images can be passed alongside text prompts for vision understanding.
+    #[serde(default)]
+    pub multimodal_image_enabled: bool,
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -589,6 +597,8 @@ impl Default for BrainConfig {
             endpoint_preset: default_endpoint_preset(),
             headphone_mode: false,
             auto_listen: false,
+            multimodal_audio_enabled: false,
+            multimodal_image_enabled: false,
         }
     }
 }

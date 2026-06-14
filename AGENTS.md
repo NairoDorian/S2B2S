@@ -150,7 +150,7 @@ src-tauri/src/
 │   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (persistent HTTP server)
 │   │   ├── kitten.rs       # Kitten TTS (persistent HTTP server)
 │   │   ├── pocket.rs        # Pocket TTS (persistent HTTP server, voice cloning)
-│   │   ├── sapi.rs         # Windows SAPI fallback (⚠️ STUB — COM interop pending)
+│   │   ├── sapi.rs         # Windows SAPI fallback (fully implemented via COM interop)
 │   │   ├── openai.rs       # OpenAI TTS cloud
 │   │   ├── elevenlabs.rs   # ElevenLabs TTS cloud
 │   │   └── cartesia.rs     # Cartesia Sonic cloud
@@ -313,7 +313,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **i18n**            | i18next 26, react-i18next 17                                                                    |
 | **Animation**       | Three.js 0.184, Lucide React                                                                    |
 | **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
-| **TTS**             | Piper (persistent HTTP), Kokoro (persistent HTTP, 54 voices, 9 langs), Kitten, Pocket (voice cloning), SAPI (⚠️ stub), OpenAI, ElevenLabs, Cartesia |
+| **TTS**             | Piper (persistent HTTP), Kokoro (persistent HTTP, 54 voices, 9 langs), Kitten, Pocket (voice cloning), SAPI (fully implemented Windows fallback), OpenAI, ElevenLabs, Cartesia |
 | **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
 | **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
 | **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |

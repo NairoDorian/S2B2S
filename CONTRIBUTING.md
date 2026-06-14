@@ -60,7 +60,7 @@ S2B2S follows a clean manager-based architecture:
 
 - `lib.rs` — Main application entry point with Tauri setup
 - `managers/` — Core business logic (audio, model, transcription, history, continuous voice)
-- `tts/` — Text-to-speech subsystem (8 backends: Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia)
+- `tts/` — Text-to-speech subsystem (8 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)
 - `brain/` — Streaming LLM subsystem (SSE client, turn history, sentence splitter, TTS bridge, llama.cpp integration)
 - `llama_server/` — Pre-compiled llama.cpp server manager (auto-download, GPU VRAM offloading)
 - `stt/` — Alternative STT pipeline (Python ONNX Runtime server for Parakeet Unified + multi-STT)

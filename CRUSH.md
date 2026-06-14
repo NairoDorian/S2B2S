@@ -103,8 +103,10 @@ bun scripts/check-deps.ts       # Check all dependency versions
 
 - **Cross-platform mandatory** — Windows 11 (primary), macOS (first-class), Linux (first-class)
 - **Manager pattern** — `managers/` (audio, model, transcription, history, TTS, brain)
-- **TTS backends** — `TtsBackend` trait under `tts/backends/` (Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia)
+- **TTS backends** — `TtsBackend` trait under `tts/backends/` (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)
 - **Brain** — streaming LLM in `brain/` (SSE client + sentence splitter + TTS bridge)
+- **STT alternative pipeline** — `stt/` (Python ONNX Runtime server for Parakeet Unified + multi-STT)
+- **GPU overlay** — `overlay_fx/` (cursor trail physics, brain overlay, wgpu placeholder)
 - **Text pipeline** — `tts/sanitize/` handles ITN, TN, markdown stripping, regex cleanup
 - **VAD** — TripleVAD default (RMS → RNNoise → Silero) in `audio_toolkit/vad/`
 - **Specta IPC** — typed bindings in `src/bindings.ts`; regenerate with `cargo test export_bindings`
@@ -146,14 +148,23 @@ S2B2S/
 ├── scripts/                # Utility scripts (venv setup, dep checks, translations)
 ├── tests/                  # E2E tests
 ├── S2B2S_ANDROID_COMPANION.md  # Android companion plans
-├── S2B2S_VOX_COMPARISON.md     # Vox vs S2B2S comparison & improvement plan
-├── analysys/                # Evolution plans (GPU overlay, Conv 2.0, Avatar)
-│   ├── 00_OVERVIEW.md        # Vision & three pillars
-│   ├── 01_REPO_REVIEW.md     # Current codebase audit
-│   ├── 02_GPU_OVERLAY_ARCHITECTURE.md
+├── analysys/                # ⚠️ Superseded evolution plans (GPU overlay, Conv 2.0, Avatar)
+│   ├── 00_OVERVIEW.md        # Superseded by futuristic_analysis/
+│   ├── 01_REPO_REVIEW.md     # Superseded by futuristic_analysis/
+│   ├── 02_GPU_OVERLAY_ARCHITECTURE.md  # ⚠️ Contains corrected CursorFX assumptions
 │   ├── 03_CONVERSATION_MODE_2.md
-│   ├── 04_AVATAR_SPEC.md     # Orbi avatar design
+│   ├── 04_AVATAR_SPEC.md     # Orbi 2D orb (superseded by 3D avatar in futuristic_analysis/)
 │   └── 05_IMPLEMENTATION_ROADMAP.md
+├── futuristic_analysis/      # ✅ Active evolution plan (supersedes analysys/)
+│   ├── 00_README_START_HERE.md  # Master index — explicitly supersedes analysys/
+│   ├── 01_S2B2S_REVIEW.md       # Verified source audit with corrected assumptions
+│   ├── 02_REFERENCE_PROJECTS.md  # CursorFX Tauri V2 + Vulkan correction
+│   ├── 03_GPU_OVERLAY_ARCHITECTURE.md  # Two-track rendering architecture
+│   ├── 04_CONVERSATION_MODE_2.md   # Expanded 7-state machine UX spec
+│   ├── 05_VISION_AND_SCREEN_UNDERSTANDING.md  # New screen vision pillar
+│   ├── 06_AVATAR_SPEC.md       # 3D cybernetic head (Four Senses)
+│   ├── 07_IMPLEMENTATION_ROADMAP.md  # 6-phase plan with risk register
+│   └── 08_TRANSPARENT_OVERLAY_IMPL_PLAN.md  # Concrete code-level plan
 ├── flake.nix               # Nix flake
 └── .github/                # CI/CD workflows and templates
 ```

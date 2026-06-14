@@ -85,6 +85,7 @@ specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "2.7.1"
 text-processing-rs = "0.2.2"
+base64 = "0.22"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"
@@ -109,6 +110,9 @@ windows = { version = "0.62.2", features = [
   "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
   "Wdk_Graphics_Direct3D",
+  "Win32_Media_Speech",
+  "Win32_Media_Audio",
+  "Win32_System_Com",
 ] }
 winreg = "0.56"
 

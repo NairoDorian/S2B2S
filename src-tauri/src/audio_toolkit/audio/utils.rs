@@ -3,6 +3,7 @@ use hound::{WavReader, WavSpec, WavWriter};
 use log::debug;
 use serde::Serialize;
 use specta::Type;
+use std::io::Cursor;
 use std::path::Path;
 
 /// Read a WAV file and return normalised f32 samples.
@@ -49,6 +50,26 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
     writer.finalize()?;
     debug!("Saved WAV file: {:?}", file_path.as_ref());
     Ok(())
+}
+
+/// Encode f32 audio samples to WAV bytes in memory (for multimodal Brain input).
+pub fn encode_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 16000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut buf = Cursor::new(Vec::new());
+    {
+        let mut writer = WavWriter::new(&mut buf, spec)?;
+        for sample in samples {
+            let sample_i16 = (sample * i16::MAX as f32) as i16;
+            writer.write_sample(sample_i16)?;
+        }
+        writer.finalize()?;
+    }
+    Ok(buf.into_inner())
 }
 
 /// RMS amplitude envelope — used for the waveform HUD during TTS playback.

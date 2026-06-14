@@ -379,6 +379,16 @@ export type BrainConfig = {
 	headphone_mode?: boolean,
 	/**  Auto-rearm mic after reply in hands-free mode */
 	auto_listen?: boolean,
+	/**
+	 *  Send the WAV audio recording as `input_audio` to the multimodal Brain model
+	 *  (Gemma 4 supports native audio transcription as an extra STT pass).
+	 */
+	multimodal_audio_enabled?: boolean,
+	/**
+	 *  Send a screenshot/image as `image_url` to the multimodal Brain model.
+	 *  When enabled, images can be passed alongside text prompts for vision understanding.
+	 */
+	multimodal_image_enabled?: boolean,
 };
 
 export type CartesiaConfig = {

@@ -2,7 +2,7 @@
 
 **Local-first STT → Brain → TTS desktop app for Windows 11, macOS, and Linux. Dictate anywhere, read anything aloud, and talk naturally with a local AI — almost keyboard-free.**
 
-S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI [⚠️ stub], OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory and 10 providers, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM/VRAM footer indicators, Pocket voice cloning, a full text normalization pipeline (ITN + TN + markdown stripping), and a brain overlay with 3D avatar.
+S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory and 10 providers, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM/VRAM footer indicators, Pocket voice cloning, a full text normalization pipeline (ITN + TN + markdown stripping), and a brain overlay with 3D avatar.
 
 ---
 
@@ -199,7 +199,7 @@ S2B2S works fully offline with no configuration. The defaults are chosen for spe
 | **STT**               | **Parakeet TDT 0.6B V3** (auto language, 25 langs, CPU-fast)  | Whisper (Small/Medium/Turbo/Large), Moonshine                          |
 | **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                            | Silero only, Push-to-talk                                              |
 | **Noise Suppression** | RNNoise (toggleable, triple mode default)                     | Off                                                                    |
-| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), SAPI (⚠️ stub), OpenAI, ElevenLabs, Cartesia |
+| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), SAPI, OpenAI, ElevenLabs, Cartesia |
 | **Brain**             | **llama.cpp** (pre-compiled CUDA/Vulkan/CPU) / **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | 9 other providers: OpenAI, Anthropic, Gemini, Groq, Cerebras, OpenRouter, Z.ai, AWS Bedrock, Apple Intelligence (macOS) |
 | **Storage**           | SQLite (rusqlite + migrations)                                | —                                                                      |
 | **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)      | —                                                                      |
@@ -311,7 +311,7 @@ Unix signals (Linux/macOS):
 - Kokoro-82M: CPU-only, ~115 MB ONNX model. Runs via project-local Python venv. 54 voices across 9 languages.
 - Kitten: CPU-only, ~25-80 MB ONNX models. Runs via project-local Python venv. 8 English voices.
 - Pocket: CPU/GPU (PyTorch), ~100 MB. Runs via project-local Python venv. 8 character voices + voice cloning from WAV.
-- SAPI: Windows-only voice API. ⚠️ **Non-functional stub** — COM interop not yet implemented (synthesis always returns error).
+- SAPI: Windows-only voice API. Fully implemented local fallback using windows-rs COM interop.
 - All local TTS engines use the project `venv/` — no system Python packages required.
 - Cloud engines: Requires internet connection and API key.
 
@@ -365,7 +365,7 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Pocket TTS backend (voice cloning)                                                                   | ✅ Complete    |
 | Voice barge-in (continuous voice mode)                                                               | ✅ Complete    |
 | Streaming STT (WebSocket, EOU 120M via unified_parakeet server)                                         | ✅ Partial     |
-| SAPI TTS backend (⚠️ stub — COM interop pending)                                                     | 🚧 Stub        |
+| SAPI TTS backend                                                                                    | ✅ Complete    |
 | Wake word detection (⚠️ audio pipeline not connected to detector)                                   | 🚧 Non-functional |
 | Engine-switch cleanup (graceful unload/reload)                                                       | ✅ Complete    |
 | Profiles (per-application settings)                                                                  | 📋 Planned     |
@@ -393,7 +393,7 @@ Press `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) to toggle debug ov
 | macOS accessibility permissions          | Grant permissions in System Preferences → Privacy & Security → Accessibility                                                           |
 | Linux Wayland overlay issues             | Set `S2B2S_NO_GTK_LAYER_SHELL=1` environment variable; install `wtype` or `dotool` for text input                                      |
 | Crash on startup                         | Check `s2b2s-crash.log` in app log directory; report with backtrace                                                                    |
-| No audio output                          | Verify output device selection in Settings → Audio; test with Play Greeting button in TTS settings. Note: SAPI engine is a stub (non-functional).                                     |
+| No audio output                          | Verify output device selection in Settings → Audio; test with Play Greeting button in TTS settings. Note: SAPI requires a Windows platform.                                     |
 
 ---
 

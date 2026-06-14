@@ -96,7 +96,7 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">MTP Acceleration</span>
-        <span className="font-medium text-text">Enabled (2 tokens/step)</span>
+        <span className="font-medium text-text">Enabled (n=13, ~216 tok/s)</span>
       </div>
       <div>
         <span className="text-mid-gray block">Vision Component</span>
@@ -382,6 +382,25 @@ export const BrainSettings: React.FC = () => {
           grouped
         />
       </SettingsGroup>
+
+      {state.selectedProviderId === "llama_cpp" && (
+        <SettingsGroup title="Multimodal Input (Gemma 4)">
+          <ToggleSwitch
+            checked={brain.multimodal_audio_enabled}
+            onChange={(multimodal_audio_enabled) => update({ multimodal_audio_enabled })}
+            label="Audio Input"
+            description="Send the raw WAV recording to the Brain model for native transcription. Gemma 4 performs its own STT as an additional pass alongside the text transcription."
+            grouped
+          />
+          <ToggleSwitch
+            checked={brain.multimodal_image_enabled}
+            onChange={(multimodal_image_enabled) => update({ multimodal_image_enabled })}
+            label="Image Input"
+            description="Enable image (screenshot) input support. When active, you can send a screenshot alongside text prompts for the AI to see and describe your screen."
+            grouped
+          />
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title={t("settings.brain.testGroup")}>
         <SettingContainer

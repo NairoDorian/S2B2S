@@ -12,7 +12,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Documentation & Code Review Synchronization
 
 - **Synchronized all project documentation** — Audited and updated `S2B2S_REVIEW.md`, `README.md`, `repomix-file-descriptions.md`, `AGENTS.md`, `BUILD.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `LLAMA_CPP.md`, and all 8 reference project reviews in `references_comparative_analysis_md/`.
-- **Corrected TTS Backend Count** — Standardized backend count to 8 (5 local, 3 cloud: Piper, Kokoro, Kitten, Pocket, SAPI [stub], OpenAI, ElevenLabs, Cartesia) across all documents, correcting historical references that erroneously counted `piper_server` as a 9th backend.
+- **Corrected TTS Backend Count** — Standardized backend count to 8 (5 local, 3 cloud: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) across all documents, correcting historical references that erroneously counted `piper_server` as a 9th backend.
+
+### Windows SAPI Fallback TTS Backend
+
+- **Implemented Local Windows SAPI Synthesis** — Completed the local Windows SAPI (Speech API) fallback TTS backend in `sapi.rs`, replacing the previous stub.
+- **COM Interface Integration** — Utilized raw `windows-rs` COM interop to create memory streams (`CreateStreamOnHGlobal`), bind them to SAPI stream objects (`ISpStream`) with the correct format GUID (`C31ADBAE-527F-4FF5-A230-F62BB61FF70C`), select voice tokens, and speak text synchronously.
+- **WAV Encapsulation** — Implemented an in-memory `pcm_to_wav` helper to wrap the raw synthesized PCM bytes from SAPI into standard 44-byte WAV container bytes.
+- **Unit Testing** — Created and verified backend test cases ensuring SAPI voice lists and text synthesis correctly return valid WAV file data starting with the `RIFF` header.
 - **Clarified `WarmEngine` Trait Status** — Corrected outdated claims that `WarmEngine` was dead code. Documented that it is fully implemented in `PiperBackend`, `KokoroBackend`, `KittenBackend`, and `PocketBackend`, but noted that the orchestrator layer currently calls lower-level lifecycle managers directly.
 - **Expanded STT Subsystem Documentation** — Added Canary, Cohere, SenseVoice, GigaAM, and Nemotron/UnifiedParakeet to the STT comparison tables and implementation descriptions (now documenting 9 STT engine types and 11 model variants).
 - **Added missing code mappings** — Documented `commands/system.rs` (cross-platform RAM retrieval command) and `overlay_fx/native/shader.wgsl` (WGPU trail shader).

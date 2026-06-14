@@ -5,7 +5,7 @@
 //! and — when read-aloud is enabled — feeds completed sentences straight into
 //! the TTS subsystem so speech starts before the reply finishes.
 
-use crate::brain::client::{BrainClient, BrainResult, ChatMessage};
+use crate::brain::client::{BrainClient, BrainResult, ChatMessage, MessageContent, ContentPart};
 use crate::settings::get_settings;
 use crate::tts::manager::TtsManager;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,9 +48,23 @@ impl BrainManager {
         let _ = self.app.emit("brain:history-cleared", ());
     }
 
-    /// Ask the Brain. Streams the reply; returns the full assistant text.
+    /// Ask the Brain (text-only). Streams the reply; returns the full assistant text.
     /// Any previous in-flight turn is aborted first (barge-in semantics).
     pub async fn ask(&self, text: String) -> Result<String, String> {
+        self.ask_multimodal(text, None, None).await
+    }
+
+    /// Ask the Brain with optional multimodal inputs.
+    /// - `audio_wav_base64`: raw base64-encoded WAV audio (for Gemma 4 native STT)
+    /// - `image_png_base64`: raw base64-encoded PNG screenshot (for vision)
+    /// Content parts order follows Gemma 4 best practices:
+    /// image → text → audio
+    pub async fn ask_multimodal(
+        &self,
+        text: String,
+        audio_wav_base64: Option<String>,
+        image_png_base64: Option<String>,
+    ) -> Result<String, String> {
         let turn_start = Instant::now();
         let abort = Arc::new(AtomicBool::new(false));
         {
@@ -90,7 +104,7 @@ impl BrainManager {
         if !system.trim().is_empty() {
             messages.push(ChatMessage {
                 role: "system".into(),
-                content: system,
+                content: MessageContent::text(system),
             });
         }
         if cfg.context_turns > 0 {
@@ -100,10 +114,40 @@ impl BrainManager {
             let start = history.len().saturating_sub(keep);
             messages.extend(history[start..].iter().cloned());
         }
-        messages.push(ChatMessage {
-            role: "user".into(),
-            content: text.clone(),
-        });
+        let has_multimodal = audio_wav_base64.is_some() || image_png_base64.is_some();
+        if has_multimodal {
+            let mut parts = Vec::new();
+            // Image goes before text (Gemma 4 best practice)
+            if let Some(ref img_b64) = image_png_base64 {
+                parts.push(ContentPart::ImageUrl {
+                    image_url: crate::brain::client::ImageUrl {
+                        url: format!("data:image/png;base64,{}", img_b64),
+                    },
+                });
+            }
+            // Text in the middle
+            parts.push(ContentPart::Text {
+                text: text.clone(),
+            });
+            // Audio goes after text (Gemma 4 best practice for ASR)
+            if let Some(ref audio_b64) = audio_wav_base64 {
+                parts.push(ContentPart::InputAudio {
+                    input_audio: crate::brain::client::InputAudio {
+                        data: audio_b64.clone(),
+                        format: "wav".to_string(),
+                    },
+                });
+            }
+            messages.push(ChatMessage {
+                role: "user".into(),
+                content: MessageContent::parts(parts),
+            });
+        } else {
+            messages.push(ChatMessage {
+                role: "user".into(),
+                content: MessageContent::text(text.clone()),
+            });
+        }
 
         // Read-aloud: start a fresh TTS session for this turn's sentences.
         let tts = if cfg.read_aloud {
@@ -184,11 +228,11 @@ impl BrainManager {
                     let mut history = self.history.lock().unwrap();
                     history.push(ChatMessage {
                         role: "user".into(),
-                        content: text,
+                        content: MessageContent::text(text),
                     });
                     history.push(ChatMessage {
                         role: "assistant".into(),
-                        content: full.clone(),
+                        content: MessageContent::text(full.clone()),
                     });
                 }
                 let done_payload = serde_json::json!({
@@ -230,7 +274,7 @@ impl BrainManager {
 
         let messages = vec![ChatMessage {
             role: "user".into(),
-            content: "Count from 1 to 3".into(),
+            content: MessageContent::text("Count from 1 to 3"),
         }];
 
         // Create a standalone abort flag for warmup

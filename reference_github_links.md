@@ -28,6 +28,10 @@ Curated list of STT, TTS, and voice-related open-source projects referenced by t
 - <https://github.com/danielclough/vibevoice-rs>
 - <https://github.com/diodiogod/TTS-Audio-Suite>
 
+## LLM / Brain / Local AI
+
+- <https://github.com/mudler/LocalAI>
+
 ## Voice I/O (STT + TTS)
 
 - <https://github.com/jamiepine/voicebox>

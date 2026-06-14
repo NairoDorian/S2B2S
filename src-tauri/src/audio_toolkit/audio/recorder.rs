@@ -43,6 +43,7 @@ pub struct AudioRecorder {
     app_handle: Option<tauri::AppHandle>,
     continuous_mode: Option<Arc<AtomicBool>>,
     continuous_mode_paused: Option<Arc<AtomicBool>>,
+    wake_word_detector: Option<Arc<crate::wake_word::WakeWordDetector>>,
 }
 
 impl AudioRecorder {
@@ -59,6 +60,7 @@ impl AudioRecorder {
             app_handle: None,
             continuous_mode: None,
             continuous_mode_paused: None,
+            wake_word_detector: None,
         })
     }
 
@@ -101,6 +103,14 @@ impl AudioRecorder {
         self
     }
 
+    pub fn with_wake_word_detector(
+        mut self,
+        detector: Arc<crate::wake_word::WakeWordDetector>,
+    ) -> Self {
+        self.wake_word_detector = Some(detector);
+        self
+    }
+
     pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
         if self.worker_handle.is_some() {
             return Ok(()); // already open
@@ -128,6 +138,7 @@ impl AudioRecorder {
         let app_handle = self.app_handle.clone();
         let continuous_mode = self.continuous_mode.clone();
         let continuous_mode_paused = self.continuous_mode_paused.clone();
+        let wake_word_detector = self.wake_word_detector.clone();
 
         let worker = std::thread::spawn(move || {
             let stop_flag = Arc::new(AtomicBool::new(false));
@@ -221,6 +232,7 @@ impl AudioRecorder {
                         app_handle,
                         continuous_mode,
                         continuous_mode_paused,
+                        wake_word_detector,
                     );
                     drop(stream);
                 }
@@ -424,6 +436,7 @@ fn run_consumer(
     app_handle: Option<tauri::AppHandle>,
     continuous_mode: Option<Arc<AtomicBool>>,
     continuous_mode_paused: Option<Arc<AtomicBool>>,
+    wake_word_detector: Option<Arc<crate::wake_word::WakeWordDetector>>,
 ) {
     let mut standalone_ns = if use_standalone_ns {
         NoiseSuppressor::new_16khz().ok()
@@ -537,6 +550,12 @@ fn run_consumer(
                     if let Some(ns) = &mut standalone_ns {
                         let (denoised, _) = ns.process_16khz_frame(frame);
                         processed = denoised;
+                    }
+                }
+
+                if let Some(detector) = &wake_word_detector {
+                    if detector.active.load(Ordering::SeqCst) {
+                        detector.feed_audio(&processed);
                     }
                 }
 

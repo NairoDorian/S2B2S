@@ -73,7 +73,7 @@
 
 1. **Dictate Anywhere** — Press a hotkey, speak, and polished text lands at your cursor in any application. Powered by Parakeet V3 (default, local, 25 languages with auto-detection). Works fully offline.
 
-2. **Read Aloud** — Select text anywhere in any app, press a hotkey (or double-copy the same text within 1.5s), and a local voice reads it instantly. Features streaming playback, pause/resume, and 8 TTS backends (Piper, Kokoro, Kitten, Pocket, SAPI [stub], OpenAI, ElevenLabs, Cartesia).
+2. **Read Aloud** — Select text anywhere in any app, press a hotkey (or double-copy the same text within 1.5s), and a local voice reads it instantly. Features streaming playback, pause/resume, and 8 TTS backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia).
 
 3. **Talk to the Brain** — The Conversation window: speak naturally to a local LLM (Ollama/LM Studio) or any cloud LLM (OpenAI, Anthropic, Gemini). Real-time STT in, streaming tokens out, sentence-by-sentence TTS reads the reply aloud (toggleable, default ON). Interruptible mid-sentence (barge-in).
 
@@ -436,12 +436,12 @@ All STT engines are accessed through the `transcribe-rs` crate (and `unified_par
 | **Kokoro-82M**     | Local (in-process ONNX) | 54           | 9 (EN, ES, FR, HI, IT, JA, PT, ZH, KO) | **Excellent** | Fast                     | ~115 MB + 50 MB/worker | Auto-download     |
 | **Kitten TTS**     | Local (persistent HTTP) | 8            | EN only                                | Good          | Medium                   | ~25-200 MB             | Auto-download     |
 | **Pocket TTS**     | Local (persistent HTTP) | 8 + cloned   | EN                                     | Good          | Medium                   | ~100 MB                | Auto-download     |
-| **SAPI**           | OS (Windows)            | 1 (placeholder) | Depends                                | N/A (stub)    | N/A                      | ~0 MB                  | **Zero download** (⚠️ non-functional stub) |
+| **SAPI**           | OS (Windows)            | Multiple (system) | Multiple (system)                       | Standard      | Fast                     | ~0 MB                  | **Zero download** (fully functional Windows fallback) |
 | **OpenAI TTS**     | Cloud API               | 9            | Multiple                               | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **ElevenLabs**     | Cloud API               | Many         | 29+                                    | **Excellent** | Fast (network)           | ~0 MB                  | API key           |
 | **Cartesia Sonic** | Cloud API               | Many         | Multiple                               | Excellent     | **Lowest latency cloud** | ~0 MB                  | API key           |
 
-**Total: 8 TTS backends** (5 local: Piper, Kokoro, Kitten, Pocket, SAPI [stub]; 3 cloud: OpenAI, ElevenLabs, Cartesia).
+**Total: 8 TTS backends** (5 local: Piper, Kokoro, Kitten, Pocket, SAPI; 3 cloud: OpenAI, ElevenLabs, Cartesia).
 
 ### TTS Backend Trait
 
@@ -524,11 +524,14 @@ pub trait WarmEngine {
 
 ### SAPI Backend Details
 
-- **Windows-only** stub backend (requires zero downloads)
-- `synthesize()` always returns error: "SAPI synthesis not yet implemented"
-- `list_voices()` returns single hardcoded placeholder voice
-- **⚠️ Non-functional** — the Windows-rs COM interop code is not yet written (marked `TO FINISH` in source)
-- Intended as zero-download fallback, but currently cannot produce audio
+- **Windows-only** fallback backend (requires zero downloads)
+- `list_voices()` retrieves list of installed system SAPI voices dynamically via COM
+- **Fully functional** — COM interop fully implemented using `windows-rs`:
+  - Allocates global memory for streams (`CreateStreamOnHGlobal`)
+  - Instantiates `ISpVoice` and `ISpStream` objects
+  - Performs text-to-speech rendering into the memory stream using the correct format GUID (`C31ADBAE-527F-4FF5-A230-F62BB61FF70C`)
+  - Packages raw PCM samples into standard 44-byte WAV bytes using an in-memory `pcm_to_wav` helper
+- Serves as the primary zero-download local fallback on Windows platforms
 
 ### Cloud TTS Backends
 
@@ -1405,7 +1408,7 @@ S2B2S/
 | Feature                                               | Details                                                        |
 | ----------------------------------------------------- | -------------------------------------------------------------- |
 | STT (9 engine types, 11 variants: Parakeet V3/V2/Unified/EOU, Whisper, Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary, Cohere) | Multi-engine STT with auto language detection, GPU acceleration |
-| TTS read-aloud (8 backends)                           | Piper, Kokoro, Kitten, Pocket, SAPI (stub), OpenAI, ElevenLabs, Cartesia |
+| TTS read-aloud (8 backends)                           | Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia |
 | Conversation mode                                     | Streaming LLM + streaming TTS                                  |
 | Double-copy clipboard trigger                         | Copy same text twice within 1.5s                               |
 | Text normalization pipeline                           | ITN + TN + markdown stripping (5 stages)                       |
@@ -1443,7 +1446,6 @@ S2B2S/
 
 | Feature                        | Details                                             |
 | ------------------------------ | --------------------------------------------------- |
-| SAPI TTS COM interop           | `windows-rs` SpVoice → ISpeechBaseStream → WAV bytes; currently non-functional stub |
 | Wake word audio pipeline       | Connect `recorder.rs` audio callback to `WakeWordDetector::feed_audio()`; currently detector runs idle |
 | Kokoro worker pool + crossfade | Multi-worker parallel synthesis with 10ms crossfade |
 | Engine-switch cleanup          | Unload previous engine when switching               |
@@ -1479,7 +1481,6 @@ S2B2S/
 
 | Issue                                               | Severity | Status                          |
 | --------------------------------------------------- | -------- | ------------------------------- |
-| **SAPI TTS backend is a non-functional stub**       | Medium   | `synthesize()` always returns error; COM interop not yet written |
 | **Wake word detector not connected to audio**       | Medium   | `feed_audio()` never called from recording pipeline; detector runs idle |
 | **WarmEngine trait not dynamically dispatched**     | Low      | Trait is implemented by all local backends but not dynamically used in the manager; lifecycle handled directly |
 | **TTS telemetry not wired**                         | Low      | `telemetry.rs` `record()` never called; `chars_per_ms` adaptive sizing inactive |
@@ -1497,7 +1498,6 @@ S2B2S/
 | ----------------------------- | ----------------------------------------------------------------------- |
 | **Half-duplex only**          | Mic muted while TTS plays; barge-in via hotkey, not VAD. Voice barge-in works in continuous voice mode. |
 | **Wake word (VAD-based)**     | RMS energy threshold (0.03) with 3-frame debounce; **audio feed-in not connected** — detector runs idle. KWS blocked on CRT linking conflict (sherpa-onnx /MT vs transcribe-rs /MD on Windows) |
-| **SAPI TTS is a stub**        | `synthesize()` always returns error; COM interop via windows-rs not yet written; `list_voices()` returns placeholder only |
 | **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns). Streaming STT available via WebSocket for EOU 120M model. |
 | **Pocket voice cloning**      | Implemented via Python server — clone from 5-20s WAV, persistent storage in `models/TTS/pocket-cloned-voices/` |
 | **No profiles**               | Per-context presets planned                                             |

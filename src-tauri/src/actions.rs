@@ -562,6 +562,7 @@ impl ShortcutAction for TranscribeAction {
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
                     let samples_for_wav = samples.clone();
+                    let samples_for_brain = samples.clone(); // Pre-clone for multimodal brain
                     let wav_handle = tauri::async_runtime::spawn_blocking(move || {
                         crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
                     });
@@ -690,8 +691,31 @@ impl ShortcutAction for TranscribeAction {
                                     {
                                         let bm = bm.inner().clone();
                                         let text_to_ask = processed.final_text.clone();
+                                        let multimodal_audio = settings.brain.multimodal_audio_enabled;
                                         tauri::async_runtime::spawn(async move {
-                                            if let Err(e) = bm.ask(text_to_ask).await {
+                                            let result = if multimodal_audio {
+                                                let wav_bytes = tokio::task::spawn_blocking(move || {
+                                                    crate::audio_toolkit::encode_wav_bytes(&samples_for_brain)
+                                                }).await;
+                                                match wav_bytes {
+                                                    Ok(Ok(bytes)) => {
+                                                        use base64::Engine;
+                                                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                                        bm.ask_multimodal(text_to_ask, Some(b64), None).await
+                                                    }
+                                                    Ok(Err(e)) => {
+                                                        error!("Failed to encode WAV for multimodal brain: {e}");
+                                                        bm.ask(text_to_ask).await
+                                                    }
+                                                    Err(e) => {
+                                                        error!("spawn_blocking panicked for WAV encoding: {e}");
+                                                        bm.ask(text_to_ask).await
+                                                    }
+                                                }
+                                            } else {
+                                                bm.ask(text_to_ask).await
+                                            };
+                                            if let Err(e) = result {
                                                 error!("Brain ask failed: {e}");
                                             }
                                         });

@@ -13,10 +13,51 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// OpenAI-compatible multimodal content: either a plain text string
+/// or an array of content parts (text, image_url, input_audio).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+impl MessageContent {
+    pub fn text(s: impl Into<String>) -> Self {
+        MessageContent::Text(s.into())
+    }
+    pub fn parts(parts: Vec<ContentPart>) -> Self {
+        MessageContent::Parts(parts)
+    }
+}
+
+/// A single part in a multimodal content array.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum ContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrl },
+    #[serde(rename = "input_audio")]
+    InputAudio { input_audio: InputAudio },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImageUrl {
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InputAudio {
+    pub data: String,
+    pub format: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    pub content: MessageContent,
 }
 
 #[derive(Serialize)]

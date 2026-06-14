@@ -147,7 +147,7 @@ fn create_audio_recorder(
 
     // Recorder with VAD plus a spectrum-level callback that forwards updates to
     // the frontend.
-    let recorder = AudioRecorder::new()
+    let mut recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
         .with_vad(Box::new(smoothed_vad))
         .with_pause_flag(is_paused)
@@ -159,6 +159,10 @@ fn create_audio_recorder(
                 utils::emit_levels(&app_handle, &levels);
             }
         });
+
+    if let Some(detector) = app_handle.try_state::<Arc<crate::wake_word::WakeWordDetector>>() {
+        recorder = recorder.with_wake_word_detector(detector.inner().clone());
+    }
 
     Ok(recorder)
 }
