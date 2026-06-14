@@ -18,10 +18,12 @@ Supports model families via auto-detection:
     Mel normalization: none (raw log-mel), decoder layers: 1, blank_id: from config.json
     Emits <EOU> token for end-of-utterance detection (streaming mode)
 
-  NOTE: Nemotron 3.5 ASR (sherpa-onnx format) uses separate
-  encoder.int8.onnx + decoder.int8.onnx + joiner.int8.onnx + tokens.txt —
-  NOT yet supported by this server. Needs sherpa-onnx Python bindings
-  (pip install sherpa-onnx) for inference.
+  Sherpa-onnx (Nemotron 3.5 ASR and future models):
+    tokens.txt         (simple token list)
+    encoder.int8.onnx / decoder.int8.onnx / joiner.int8.onnx
+    Full pipeline via sherpa-onnx OnlineRecognizer — mel, encoder cache,
+    RNNT decoder, beam search, tokenizer, endpoint detection.
+    Auto-detected when tokens.txt is present.
 
 Quantization: each model directory contains one encoder + one decoder ONNX.
 The server auto-detects whichever files are present.
@@ -199,12 +201,70 @@ class _VocabTxtTokenizer:
 
 
 # ============================================================================
-# Model loading
+# Sherpa-onnx model loading  (tokens.txt = sherpa-onnx format)
+# ============================================================================
+SHERPA_RECOGNIZER = None
+SHERPA_SAMPLE_RATE = 16000
+
+
+def _load_sherpa_model(model_dir: str):
+    global SHERPA_RECOGNIZER, SHERPA_SAMPLE_RATE
+    import sherpa_onnx
+
+    tokens = os.path.join(model_dir, "tokens.txt")
+    encoder = _find_onnx(model_dir, ["encoder.int8.onnx", "encoder.onnx"])
+    decoder = _find_onnx(model_dir, ["decoder.int8.onnx", "decoder.onnx"])
+    joiner = _find_onnx(model_dir, ["joiner.int8.onnx", "joiner.onnx"])
+
+    print(f"[unified_server] sherpa encoder: {os.path.basename(encoder)}", file=sys.stderr, flush=True)
+    print(f"[unified_server] sherpa decoder: {os.path.basename(decoder)}", file=sys.stderr, flush=True)
+    print(f"[unified_server] sherpa joiner:  {os.path.basename(joiner)}", file=sys.stderr, flush=True)
+
+    SHERPA_RECOGNIZER = sherpa_onnx.OnlineRecognizer.from_transducer(
+        tokens=tokens,
+        encoder=encoder,
+        decoder=decoder,
+        joiner=joiner,
+        num_threads=2,
+        sample_rate=16000,
+        feature_dim=80,
+        decoding_method="greedy_search",
+        provider="cpu",
+        enable_endpoint_detection=True,
+        rule1_min_trailing_silence=2.4,
+        rule2_min_trailing_silence=1.2,
+        rule3_min_utterance_length=20.0,
+    )
+    SHERPA_SAMPLE_RATE = int(SHERPA_RECOGNIZER.config.feat_config.sampling_rate)
+    print(f"[unified_server] sherpa model loaded. sample_rate={SHERPA_SAMPLE_RATE}",
+          file=sys.stderr, flush=True)
+
+    return {
+        "mode": "sherpa",
+        "encoder": SHERPA_RECOGNIZER,
+    }
+
+
+def _find_onnx(model_dir: str, candidates: list[str]) -> str:
+    for name in candidates:
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            return path
+    raise FileNotFoundError(f"No ONNX found in {model_dir} (tried {candidates})")
+
+
+# ============================================================================
+# Model loading  (manual ONNX path for Unified / EOU)
 # ============================================================================
 MODEL: dict | None = None
 
 
 def load_model(model_dir: str):
+    # --- Sherpa-onnx path (auto-detected: tokens.txt + encoder/decoder/joiner ONNX) ---
+    tokens_path = os.path.join(model_dir, "tokens.txt")
+    if os.path.isfile(tokens_path):
+        return _load_sherpa_model(model_dir)
+
     import onnxruntime as ort
 
     has_vocab_txt = os.path.isfile(os.path.join(model_dir, "vocab.txt"))
@@ -317,6 +377,23 @@ def load_model(model_dir: str):
 def transcribe(audio: bytes) -> str:
     if MODEL is None:
         raise RuntimeError("Model not loaded")
+
+    # Sherpa-onnx path
+    if MODEL.get("mode") == "sherpa":
+        r = SHERPA_RECOGNIZER
+        samples = np.frombuffer(audio, dtype=np.float32).copy()
+        if len(samples) == 0:
+            return ""
+        s = r.create_stream()
+        s.accept_waveform(SHERPA_SAMPLE_RATE, samples)
+        tail = np.zeros(int(0.5 * SHERPA_SAMPLE_RATE), dtype=np.float32)
+        s.accept_waveform(SHERPA_SAMPLE_RATE, tail)
+        s.input_finished()
+        while r.is_ready(s):
+            r.decode_streams([s])
+        return r.get_result(s)
+
+    # Manual ONNX path
     samples = np.frombuffer(audio, dtype=np.float32).copy()
     if len(samples) == 0:
         return ""
@@ -443,19 +520,46 @@ STREAM: dict = {
     "found_eou": False,
 }
 
+SHERPA_STREAM = None
+STREAM_RESULT_TEXT = ""
+STREAM_EOU_FLAG = False
+
+
+def _stream_feed_sherpa(audio_bytes: bytes) -> dict:
+    global STREAM_RESULT_TEXT, STREAM_EOU_FLAG
+    if SHERPA_RECOGNIZER is None or SHERPA_STREAM is None:
+        return {"text": "", "eou": False}
+    samples = np.frombuffer(audio_bytes, dtype=np.float32).copy()
+    if len(samples) == 0:
+        return {"text": STREAM_RESULT_TEXT, "eou": STREAM_EOU_FLAG}
+    SHERPA_STREAM.accept_waveform(SHERPA_SAMPLE_RATE, samples)
+    while SHERPA_RECOGNIZER.is_ready(SHERPA_STREAM):
+        SHERPA_RECOGNIZER.decode_streams([SHERPA_STREAM])
+        STREAM_RESULT_TEXT = SHERPA_RECOGNIZER.get_result(SHERPA_STREAM)
+        if SHERPA_RECOGNIZER.is_endpoint(SHERPA_STREAM):
+            STREAM_EOU_FLAG = True
+    return {"text": STREAM_RESULT_TEXT, "eou": STREAM_EOU_FLAG}
+
 
 def _stream_reset():
+    global SHERPA_STREAM, STREAM_RESULT_TEXT, STREAM_EOU_FLAG
     STREAM["audio_samples"] = []
     STREAM["tokens"] = []
     STREAM["decoder_state"] = None
     STREAM["decoded_frame"] = 0
     STREAM["found_eou"] = False
+    STREAM_RESULT_TEXT = ""
+    STREAM_EOU_FLAG = False
+    if MODEL and MODEL.get("mode") == "sherpa":
+        SHERPA_STREAM = SHERPA_RECOGNIZER.create_stream()
 
 
 def _stream_feed(audio_bytes: bytes) -> dict:
-    """Feed new audio chunk. Returns {"text": str, "eou": bool}."""
     if MODEL is None:
         raise RuntimeError("Model not loaded")
+
+    if MODEL.get("mode") == "sherpa":
+        return _stream_feed_sherpa(audio_bytes)
 
     new_samples = np.frombuffer(audio_bytes, dtype=np.float32).copy()
     if len(new_samples) == 0 and STREAM["found_eou"]:
