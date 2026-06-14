@@ -1,6 +1,9 @@
 *.nemo
+*.onnx
+*.weight
 venv/
-*.weights
 layers.*
 Constant_*
 onnx__*
+pre_encode.*
+parakeet-unified-en-0.6b-sherpa-streaming-*/
