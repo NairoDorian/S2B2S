@@ -30,7 +30,7 @@
 | `tray.rs` | System tray icon, menu, and state updates |
 | `tray_i18n.rs` | Tray menu i18n label generation |
 | `utils.rs` | Platform detection, tray updates, paste, overlay management helpers |
-| `wake_word.rs` | VAD-based wake word detection (⚠️ audio feed-in not connected — detector runs but receives no audio data) |
+| `wake_word.rs` | VAD-based wake word detection (fully connected via recorder.rs callback for local VAD energy check) |
 
 ### `managers/`
 

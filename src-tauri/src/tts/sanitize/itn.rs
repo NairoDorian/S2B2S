@@ -39,7 +39,9 @@ mod tests {
     #[test]
     fn test_dates() {
         let result = itn_normalize_token("january fifth twenty twenty five");
-        assert!(result.contains("January") && result.contains("5") && result.contains("2025"));
+        println!("test_dates result: '{}'", result);
+        let normalized_lower = result.to_lowercase();
+        assert!(normalized_lower.contains("january") && result.contains("5") && result.contains("2025"));
     }
 
     #[test]

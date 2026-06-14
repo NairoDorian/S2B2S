@@ -121,7 +121,7 @@ src-tauri/src/
 ├── llama_server/            # Pre-compiled llama.cpp server manager
 │   ├── mod.rs               # Module declarations
 │   └── manager.rs           # Server lifecycle, download, GPU offloading
-├── wake_word.rs            # VAD-based wake word detection (⚠️ KWS-ready but audio feed-in not connected — detector runs idle)
+├── wake_word.rs            # VAD-based wake word detection (fully connected via recorder.rs callback)
 ├── transcription_coordinator.rs  # Record → VAD → transcribe → paste orchestrator
 │
 ├── managers/

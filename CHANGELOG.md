@@ -9,6 +9,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.
 
+### TTS Pipeline Fixes & Telemetry Integration
+
+- **Fixed Text Sanitization/Normalization Pipeline** — Swapped pipeline execution order so that regex-based sanitization and web artifact cleanup (`sanitize_tts`) run *before* NeMo-based normalization (`tn_normalize_text`). This prevents NeMo from getting confused by URLs/emails and spelling out entire sentences letter-by-letter, and preserves title capitalization ("Doctor"/"Professor"). Made `test_dates` case-insensitive.
+- **Wired TTS Performance Telemetry** — Instantiated the `Telemetry` subsystem as a managed Tauri state and wired it into both the `speak` and `speak_sentence` synthesis loops to track real-time character-per-millisecond metrics.
+- **Enabled Adaptive Fragment Sizing** — Configured `TtsManager::speak` to query the telemetry store and dynamically adjust text fragment pagination sizes based on the performance speed of the active engine/voice.
+
 ### Documentation & Code Review Synchronization
 
 - **Synchronized all project documentation** — Audited and updated `S2B2S_REVIEW.md`, `README.md`, `repomix-file-descriptions.md`, `AGENTS.md`, `BUILD.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `LLAMA_CPP.md`, and all 8 reference project reviews in `references_comparative_analysis_md/`.

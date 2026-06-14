@@ -1420,12 +1420,13 @@ S2B2S/
 | TTS performance telemetry                             | chars_per_ms adaptive fragment sizing                          |
 | Piper persistent HTTP server with CUDA auto-discovery | Warm model, CUDA EP auto-detection                             |
 | cpal → rodio streaming playback                       | Gapless chunk synthesis                                        |
+| Wake word audio pipeline                              | Connected `recorder.rs` audio callback to `WakeWordDetector::feed_audio()` for local VAD energy check |
 | Specta typed bindings                                 | cargo test export_bindings (headless)                          |
 | RAM-persistent warm model lifecycle                   | Model unload timeout with idle watcher                         |
 | Save-to-file                                          | MP3/OGG/FLAC export via ffmpeg                                 |
 | Waveform HUD                                          | AmplitudeEnvelope from TTS playback signal                     |
 | AI Replace Selection                                  | Voice-edit selected text via LLM                               |
-| Wake word (VAD-based)                                 | Simple RMS energy-threshold detection (0.03); KWS blocked on CRT linking; **audio pipeline NOT connected** — detector runs but receives no audio data |
+| Wake word (VAD-based)                                 | Simple RMS energy-threshold detection (0.03); KWS blocked on CRT linking; audio pipeline is connected via recorder.rs callback |
 | Ollama/LM Studio/llama.cpp auto-discovery             | Probes :11434, :1234, :8080 for running servers                |
 | Latency HUD                                           | Per-stage timestamps (EP, STT, TTFT, TTFA) color-coded display |
 | Pre-compiled llama.cpp server                         | Drop-in CUDA/Vulkan/CPU GPU acceleration, auto-download, VRAM offloading |
@@ -1446,7 +1447,6 @@ S2B2S/
 
 | Feature                        | Details                                             |
 | ------------------------------ | --------------------------------------------------- |
-| Wake word audio pipeline       | Connect `recorder.rs` audio callback to `WakeWordDetector::feed_audio()`; currently detector runs idle |
 | Kokoro worker pool + crossfade | Multi-worker parallel synthesis with 10ms crossfade |
 | Engine-switch cleanup          | Unload previous engine when switching               |
 | Test suite (text pipeline)     | ITN 1217 tests + markdown + integration             |
@@ -1481,9 +1481,8 @@ S2B2S/
 
 | Issue                                               | Severity | Status                          |
 | --------------------------------------------------- | -------- | ------------------------------- |
-| **Wake word detector not connected to audio**       | Medium   | `feed_audio()` never called from recording pipeline; detector runs idle |
 | **WarmEngine trait not dynamically dispatched**     | Low      | Trait is implemented by all local backends but not dynamically used in the manager; lifecycle handled directly |
-| **TTS telemetry not wired**                         | Low      | `telemetry.rs` `record()` never called; `chars_per_ms` adaptive sizing inactive |
+| **TTS telemetry wired**                             | Low      | ✅ Complete — `telemetry.rs` registered as state, recording synthesis speed, dynamically driving adaptive sizing |
 | **Model definitions hardcoded**                     | Low      | 20+ model entries hardcoded in `model.rs` (2,224 lines); not JSON-driven as planned |
 | **overlay_fx/native wgpu is placeholder**           | Low      | `NativeTrailOverlay::start()` is a no-op; wgpu surface integration pending |
 | **Whisper model crashes** on some Win/Linux configs | High     | Parakeet V3 default avoids this |
@@ -1497,7 +1496,7 @@ S2B2S/
 | Limitation                    | Explanation                                                             |
 | ----------------------------- | ----------------------------------------------------------------------- |
 | **Half-duplex only**          | Mic muted while TTS plays; barge-in via hotkey, not VAD. Voice barge-in works in continuous voice mode. |
-| **Wake word (VAD-based)**     | RMS energy threshold (0.03) with 3-frame debounce; **audio feed-in not connected** — detector runs idle. KWS blocked on CRT linking conflict (sherpa-onnx /MT vs transcribe-rs /MD on Windows) |
+| **Wake word (VAD-based)**     | RMS energy threshold (0.03) with 3-frame debounce; audio feed-in is connected via `recorder.rs` callback. KWS blocked on CRT linking conflict (sherpa-onnx /MT vs transcribe-rs /MD on Windows) |
 | **No streaming STT defaults** | Conversation uses final-shot STT (lower total latency for short turns). Streaming STT available via WebSocket for EOU 120M model. |
 | **Pocket voice cloning**      | Implemented via Python server — clone from 5-20s WAV, persistent storage in `models/TTS/pocket-cloned-voices/` |
 | **No profiles**               | Per-context presets planned                                             |

@@ -165,6 +165,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let tts_manager = Arc::new(crate::tts::manager::TtsManager::new(app_handle.clone()));
+    let tts_telemetry = Arc::new(crate::tts::telemetry::Telemetry::new());
     let brain_manager = Arc::new(crate::brain::manager::BrainManager::new(app_handle.clone()));
     let llama_manager = Arc::new(crate::brain::llama_manager::LlamaManager::new(app_handle.clone()));
     let llama_server_manager = Arc::new(crate::llama_server::manager::LlamaServerManager::new(app_handle.clone()));
@@ -178,6 +179,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(tts_manager.clone());
+    app_handle.manage(tts_telemetry.clone());
     app_handle.manage(brain_manager.clone());
     app_handle.manage(llama_manager.clone());
     app_handle.manage(llama_server_manager.clone());

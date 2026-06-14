@@ -34,15 +34,16 @@ pub fn sanitize_text(text: &str, config: &SanitizationConfig) -> String {
         result = markdown::strip_markdown(&result);
     }
 
-    // Pass 2: Text normalization — written → spoken via text-processing-rs
-    if config.tts_normalization {
-        result = tn::tn_normalize_text(&result);
-    }
-
-    // Pass 3: Legacy regex-based TTS normalization (abbreviations, symbols, units)
+    // Pass 2: Legacy regex-based TTS normalization (abbreviations, symbols, units)
     // Kept as complement to TN which doesn't handle all colloquialisms.
+    // Running this first cleans up URLs, emails, citations, etc. so NeMo does not get confused.
     if config.tts_normalization {
         result = sanitize_tts(&result);
+    }
+
+    // Pass 3: Text normalization — written → spoken via text-processing-rs
+    if config.tts_normalization {
+        result = tn::tn_normalize_text(&result);
     }
 
     // Final pass: clean up spacing and punctuation artifacts from all prior passes
@@ -131,6 +132,7 @@ Visit https://example.com for more info & contact user@example.com.
 See [documentation](https://docs.example.com) for details."#;
 
         let result = sanitize_text(input, &cfg(true, true, true));
+        println!("test_full_sanitize_realistic_text result: '{}'", result);
 
         assert!(!result.contains('#'), "Should not contain markdown headers");
         assert!(!result.contains("**"), "Should not contain bold markers");

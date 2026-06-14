@@ -366,7 +366,7 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Voice barge-in (continuous voice mode)                                                               | ✅ Complete    |
 | Streaming STT (WebSocket, EOU 120M via unified_parakeet server)                                         | ✅ Partial     |
 | SAPI TTS backend                                                                                    | ✅ Complete    |
-| Wake word detection (⚠️ audio pipeline not connected to detector)                                   | 🚧 Non-functional |
+| Wake word detection (VAD-based)                                                                        | ✅ Complete    |
 | Engine-switch cleanup (graceful unload/reload)                                                       | ✅ Complete    |
 | Profiles (per-application settings)                                                                  | 📋 Planned     |
 | Full-duplex conversation with acoustic echo cancellation                                             | 📋 Later       |

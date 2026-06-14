@@ -48,7 +48,7 @@ S2B2S = Tauri 2 (Rust + React/TS)
 
 ## Code Cleanup Notes (June 2026)
 
-This project has been reviewed and cleaned up across multiple passes. Current state (June 2026): 8 TTS backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia), llama.cpp pre-compiled server integration, Pocket voice cloning, word-count fallback sentence streaming. Known gaps: wake word detector runs idle (audio pipeline not connected). See CHANGELOG.md for full history.
+This project has been reviewed and cleaned up across multiple passes. Current state (June 2026): 8 TTS backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia), llama.cpp pre-compiled server integration, Pocket voice cloning, word-count fallback sentence streaming. Known gaps: wgpu native rendering placeholder. See CHANGELOG.md for full history.
 
 ### Pass 1 — Initial Cleanup
 - All module doc comments added to top-level Rust modules

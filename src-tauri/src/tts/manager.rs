@@ -295,7 +295,14 @@ impl TtsManager {
             }
             frags
         } else {
-            paginate_text(&sanitized, &cfg.pagination)
+            let mut pagination_cfg = cfg.pagination.clone();
+            if let Some(telemetry) = self.app.try_state::<Arc<crate::tts::telemetry::Telemetry>>() {
+                let current_engine_name = format!("{:?}", cfg.engine).to_lowercase();
+                let key = format!("{}:{}", current_engine_name, cfg.voice);
+                let adaptive_size = telemetry.adaptive_fragment_size(&key, pagination_cfg.fragment_size as usize);
+                pagination_cfg.fragment_size = adaptive_size as u32;
+            }
+            paginate_text(&sanitized, &pagination_cfg)
         };
         let app = self.app.clone();
         let player = self.player.clone();
@@ -316,10 +323,16 @@ impl TtsManager {
                     log::debug!("[TTS] speak aborted (superseded)");
                     return;
                 }
+                let frag_synth_start = std::time::Instant::now();
                 match backend.synthesize(&frag.text, &voice, speed) {
                     Ok(bytes) => {
                         if gen_counter.load(Ordering::SeqCst) != generation {
                             return;
+                        }
+                        let frag_synth_ms = frag_synth_start.elapsed().as_millis() as u64;
+                        if let Some(telemetry) = app.try_state::<Arc<crate::tts::telemetry::Telemetry>>() {
+                            let key = format!("{}:{}", engine_name, voice);
+                            telemetry.record(&key, frag.text.len(), frag_synth_ms);
                         }
                         let _ = app.emit(
                             "tts:fragment",
@@ -422,6 +435,7 @@ impl TtsManager {
             let player = self.player.clone();
             let gen_counter = self.generation.clone();
             let app = self.app.clone();
+            let engine_name = format!("{:?}", cfg.engine).to_lowercase();
             std::thread::spawn(move || {
                 while let Ok((text, gen)) = rx.recv() {
                     if gen_counter.load(Ordering::SeqCst) != gen {
@@ -433,6 +447,10 @@ impl TtsManager {
                             if gen_counter.load(Ordering::SeqCst) == gen {
                                 player.append(bytes);
                                 let synth_ms = synth_start.elapsed().as_millis() as u64;
+                                if let Some(telemetry) = app.try_state::<Arc<crate::tts::telemetry::Telemetry>>() {
+                                    let key = format!("{}:{}", engine_name, voice);
+                                    telemetry.record(&key, text.len(), synth_ms);
+                                }
                                 let _ = app.emit("tts:synth-done", serde_json::json!({ "ms": synth_ms }));
                                 let _ = app.emit("tts:playing-changed", true);
                             }
