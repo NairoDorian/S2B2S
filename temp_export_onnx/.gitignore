@@ -1,0 +1,6 @@
+*.nemo
+venv/
+*.weights
+layers.*
+Constant_*
+onnx__*

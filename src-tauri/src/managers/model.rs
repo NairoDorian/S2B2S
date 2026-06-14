@@ -331,11 +331,40 @@ impl ModelManager {
                         .to_string(),
                 ),
                 hf_files: Some(vec![
-                    "encoder.int8.onnx".to_string(),
-                    "decoder.int8.onnx".to_string(),
-                    "joiner.int8.onnx".to_string(),
+                    "encoder.onnx".to_string(),
+                    "decoder.onnx".to_string(),
+                    "joiner.onnx".to_string(),
                     "tokens.txt".to_string(),
                 ]),
+            },
+        );
+
+        // Parakeet Unified EN 0.6B — sherpa-onnx streaming (INT8, 560ms, exported locally)
+        available_models.insert(
+            "parakeet-unified-en-0.6b-sherpa-streaming".to_string(),
+            ModelInfo {
+                id: "parakeet-unified-en-0.6b-sherpa-streaming".to_string(),
+                name: "Parakeet Unified Sherpa".to_string(),
+                description: "Sherpa-onnx exported streaming model. INT8, 560ms chunks. Uses buffered RNNT with ONNX Runtime 1.26."
+                    .to_string(),
+                filename: "parakeet-unified-en-0.6b-sherpa-streaming".to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 632,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::UnifiedParakeet,
+                accuracy_score: 0.88,
+                speed_score: 0.70,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: vec!["en".to_string()],
+                supports_language_selection: false,
+                is_custom: false,
+                hf_repo: None,  // exported locally, not on HF
+                hf_files: None,
             },
         );
 
