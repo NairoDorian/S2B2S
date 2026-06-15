@@ -227,6 +227,12 @@ def _load_sherpa_model(model_dir: str):
         joiner=joiner,
         num_threads=2,
         sample_rate=16000,
+        # sherpa-onnx reads the real feature dim from each model's ONNX metadata
+        # (`feat_dim`), so this is only a default that gets overridden per-model:
+        # Nemotron 3.5 = 80, the self-exported Parakeet-Unified = 128 — both load
+        # correctly through this one call. Do NOT pin this to 128: it would not
+        # change behavior but WOULD break Nemotron if a future sherpa respected it.
+        # Verified 2026-06-15: JFK sample transcribes identically at 80 and 128.
         feature_dim=80,
         decoding_method="greedy_search",
         provider="cpu",

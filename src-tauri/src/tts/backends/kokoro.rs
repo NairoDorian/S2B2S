@@ -163,7 +163,7 @@ impl TtsBackend for KokoroBackend {
         "Kokoro"
     }
 
-    fn synthesize(&self, text: &str, voice: &str, _speed: f32) -> Result<Vec<u8>, String> {
+    fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String> {
         self.touch();
         let voice_to_use = if voice.trim().is_empty() {
             "af_heart"
@@ -179,7 +179,11 @@ impl TtsBackend for KokoroBackend {
         )?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
-        let body = serde_json::json!({"text": text, "voice": voice_to_use, "length_scale": 1.0});
+        // The Kokoro server maps length_scale → playback speed as `speed = 1/length_scale`,
+        // so invert the requested speed multiplier (clamped to a sane range).
+        let length_scale = 1.0 / speed.clamp(0.5, 2.0);
+        let body =
+            serde_json::json!({"text": text, "voice": voice_to_use, "length_scale": length_scale});
 
         let text_chars = text.chars().count() as u64;
         let deadline_ms = (5000u64 + text_chars * 30).clamp(10_000, 180_000);

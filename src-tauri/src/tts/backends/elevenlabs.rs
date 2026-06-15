@@ -26,6 +26,10 @@ pub struct VoiceSettings {
     pub style: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_speaker_boost: Option<bool>,
+    /// Playback speed (0.7–1.2). Omitted when default so older models that don't
+    /// support the field aren't sent an unexpected key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f32>,
 }
 
 impl Default for VoiceSettings {
@@ -35,6 +39,7 @@ impl Default for VoiceSettings {
             similarity_boost: 0.75,
             style: None,
             use_speaker_boost: None,
+            speed: None,
         }
     }
 }
@@ -47,6 +52,10 @@ fn get_elevenlabs_client() -> &'static Client {
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_nodelay(true)
             .tcp_keepalive(std::time::Duration::from_secs(60))
+            // Bounded deadlines — a hung request must not hold the synthesis
+            // worker (and the per-engine lock) forever.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
             .build()
             .expect("Failed to create ElevenLabs HTTP client")
     })
@@ -260,7 +269,7 @@ impl TtsBackend for ElevenLabsTtsBackend {
         }
     }
 
-    fn synthesize(&self, text: &str, voice: &str, _speed: f32) -> Result<Vec<u8>, String> {
+    fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String> {
         let voice_id = if voice.trim().is_empty() {
             &self.config.voice_id
         } else {
@@ -289,6 +298,12 @@ impl TtsBackend for ElevenLabsTtsBackend {
                 similarity_boost: self.config.voice_similarity_boost,
                 style: self.config.voice_style,
                 use_speaker_boost: self.config.use_speaker_boost,
+                // Only sent when non-default; clamped to ElevenLabs' supported range.
+                speed: if (speed - 1.0).abs() > 0.001 {
+                    Some(speed.clamp(0.7, 1.2))
+                } else {
+                    None
+                },
             },
         });
 

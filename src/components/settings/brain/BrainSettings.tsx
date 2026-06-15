@@ -386,14 +386,14 @@ export const BrainSettings: React.FC = () => {
       {state.selectedProviderId === "llama_cpp" && (
         <SettingsGroup title="Multimodal Input (Gemma 4)">
           <ToggleSwitch
-            checked={brain.multimodal_audio_enabled}
+            checked={brain.multimodal_audio_enabled ?? false}
             onChange={(multimodal_audio_enabled) => update({ multimodal_audio_enabled })}
             label="Audio Input"
             description="Send the raw WAV recording to the Brain model for native transcription. Gemma 4 performs its own STT as an additional pass alongside the text transcription."
             grouped
           />
           <ToggleSwitch
-            checked={brain.multimodal_image_enabled}
+            checked={brain.multimodal_image_enabled ?? false}
             onChange={(multimodal_image_enabled) => update({ multimodal_image_enabled })}
             label="Image Input"
             description="Enable image (screenshot) input support. When active, you can send a screenshot alongside text prompts for the AI to see and describe your screen."

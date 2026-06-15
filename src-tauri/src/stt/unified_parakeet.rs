@@ -253,29 +253,30 @@ fn resolve_venv_python() -> Result<String> {
 fn resolve_server_script() -> Result<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
+    // 1. Dev: alongside the crate source (src-tauri/).
     let dev_path = manifest_dir.join(SCRIPT_NAME);
     if dev_path.exists() {
         return Ok(dev_path);
     }
 
-    let exe_dir = std::env::current_exe()
+    // 2. Packaged: next to the executable, or in the bundled resources dir.
+    if let Some(exe_dir) = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_default();
-    let bundled_path = exe_dir.join(SCRIPT_NAME);
-    if dev_path.exists() {
-        return Ok(dev_path);
+    {
+        for candidate in [
+            exe_dir.join(SCRIPT_NAME),
+            exe_dir.join("resources").join(SCRIPT_NAME),
+            // macOS .app: Contents/MacOS/<exe> → Contents/Resources/
+            exe_dir.join("..").join("Resources").join(SCRIPT_NAME),
+        ] {
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
     }
 
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_default();
-    let bundled_path = exe_dir.join(SCRIPT_NAME);
-    if bundled_path.exists() {
-        return Ok(bundled_path);
-    }
-
+    // 3. Portable / app data dir.
     if let Some(data_dir) = portable::data_dir() {
         let portable_path = data_dir.join(SCRIPT_NAME);
         if portable_path.exists() {
@@ -283,7 +284,10 @@ fn resolve_server_script() -> Result<PathBuf> {
         }
     }
 
-    anyhow::bail!("{} not found", SCRIPT_NAME)
+    anyhow::bail!(
+        "{} not found (looked in crate dir, exe dir, resources, and data dir)",
+        SCRIPT_NAME
+    )
 }
 
 fn get_free_port() -> Result<u16> {

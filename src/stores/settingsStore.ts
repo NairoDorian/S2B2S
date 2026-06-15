@@ -20,6 +20,8 @@ interface SettingsStore {
   settings: Settings | null;
   defaultSettings: Settings | null;
   isLoading: boolean;
+  /** Guards initialize() so the model-state-changed listener is registered once. */
+  initialized: boolean;
   isUpdating: Record<string, boolean>;
   audioDevices: AudioDevice[];
   outputDevices: AudioDevice[];
@@ -203,6 +205,7 @@ export const useSettingsStore = create<SettingsStore>()(
     settings: null,
     defaultSettings: null,
     isLoading: true,
+    initialized: false,
     isUpdating: {},
     audioDevices: [],
     outputDevices: [],
@@ -719,6 +722,12 @@ export const useSettingsStore = create<SettingsStore>()(
 
     // Initialize everything
     initialize: async () => {
+      // Guard against the many components that call initialize() during the initial
+      // async load window — without this, each one registers another
+      // `model-state-changed` listener that is never cleaned up.
+      if (get().initialized) return;
+      set({ initialized: true });
+
       const { refreshSettings, checkCustomSounds, loadDefaultSettings } = get();
 
       // Note: Audio devices are NOT refreshed here. The frontend (App.tsx)

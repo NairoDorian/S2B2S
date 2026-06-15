@@ -647,8 +647,9 @@ pub fn run(cli_args: CliArgs) {
 
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
-            // Register TTS telemetry for adaptive pagination (CopySpeak pattern).
-            app.manage(crate::tts::telemetry::Telemetry::new());
+            // (TTS telemetry is registered above as `Arc<Telemetry>` — the bare
+            // `Telemetry` that used to be managed here was a dead duplicate with a
+            // different type key that no consumer ever read.)
 
             // Register the wake word detector (inactive by default).
             app.manage(std::sync::Arc::new(crate::wake_word::WakeWordDetector::new()));

@@ -35,6 +35,9 @@ DEFAULT_VOICE = "alba"
 MODEL = None
 SAMPLE_RATE = None
 AVAILABLE_VOICES = POCKET_VOICES[:]
+# Cache of model states keyed by built-in voice name or reference WAV path, so
+# get_state_for_audio_prompt() runs once per voice instead of on every request.
+VOICE_STATE_CACHE = {}
 
 
 def resolve_local_models_dir():
@@ -64,11 +67,24 @@ def load_model(language="english", device="cpu", models_dir=None):
     return model
 
 
-def synthesize(text, voice, length_scale):
+def get_voice_state(prompt):
+    """Resolve a built-in voice name OR a reference WAV path to a cached model state.
+    Caching matters: get_state_for_audio_prompt() is expensive and would otherwise
+    run on every request."""
+    state = VOICE_STATE_CACHE.get(prompt)
+    if state is None:
+        state = MODEL.get_state_for_audio_prompt(prompt)
+        VOICE_STATE_CACHE[prompt] = state
+    return state
+
+
+def synthesize(text, voice, length_scale, voice_wav=None):
     """Run inference via direct Python API, return WAV bytes."""
     _ = length_scale  # Pocket doesn't expose speed at synthesis time
 
-    model_state = MODEL.get_state_for_audio_prompt(voice)
+    # A cloned voice supplies a reference WAV path; built-in voices use their name.
+    prompt = voice_wav if (voice_wav and os.path.isfile(voice_wav)) else voice
+    model_state = get_voice_state(prompt)
     chunks = MODEL.generate_audio_stream(
         model_state=model_state,
         text_to_generate=text,
@@ -111,6 +127,7 @@ class PocketHandler(BaseHTTPRequestHandler):
 
             text = req.get("text", "")
             voice = req.get("voice", DEFAULT_VOICE)
+            voice_wav = req.get("voice_wav")
             length_scale = req.get("length_scale", 1.0)
 
             if not text.strip():
@@ -119,7 +136,10 @@ class PocketHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b"empty text")
                 return
 
-            if voice not in AVAILABLE_VOICES:
+            # A cloned voice provides a reference WAV path; only fall back to the
+            # default voice for unknown *built-in* names.
+            has_cloned_wav = bool(voice_wav) and os.path.isfile(voice_wav)
+            if not has_cloned_wav and voice not in AVAILABLE_VOICES:
                 print(
                     f"[pocket_server] Unknown voice '{voice}', falling back to {DEFAULT_VOICE}",
                     file=sys.stderr,
@@ -127,7 +147,7 @@ class PocketHandler(BaseHTTPRequestHandler):
                 )
                 voice = DEFAULT_VOICE
 
-            wav_bytes = synthesize(text, voice, length_scale)
+            wav_bytes = synthesize(text, voice, length_scale, voice_wav=voice_wav)
 
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")

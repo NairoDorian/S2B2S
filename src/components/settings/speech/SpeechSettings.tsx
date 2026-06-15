@@ -33,6 +33,20 @@ const BADGE_COLORS: Record<string, string> = {
   freemium: "bg-yellow-500/15 text-yellow-400 ring-yellow-500/30",
 };
 
+// Engines whose backend actually applies `speed`: piper/kokoro via length_scale,
+// sapi via SetRate, openai/elevenlabs via the API. Kitten & Pocket have no speed
+// control in the underlying model, and Cartesia isn't plumbed — so the slider is
+// hidden for those to avoid a dead control. Keep in sync with the TtsBackend impls.
+const SPEED_CAPABLE_ENGINES = new Set<TtsEngine>([
+  "piper",
+  "kokoro",
+  "sapi",
+  "openai",
+  "elevenlabs",
+]);
+const engineSupportsSpeed = (engine?: TtsEngine | null): boolean =>
+  !!engine && SPEED_CAPABLE_ENGINES.has(engine);
+
 export const SpeechSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
@@ -222,18 +236,20 @@ export const SpeechSettings: React.FC = () => {
             onRefresh={() => void refreshVoices()}
           />
         </SettingContainer>
-        <Slider
-          value={tts.speed ?? 1}
-          onChange={(speed) => update({ speed })}
-          min={0.5}
-          max={2}
-          step={0.05}
-          label={t("settings.speech.speed.label")}
-          description={t("settings.speech.speed.description")}
-          grouped
-          showValue
-          formatValue={(value) => `${value.toFixed(2)}x`}
-        />
+        {engineSupportsSpeed(tts.engine) && (
+          <Slider
+            value={tts.speed ?? 1}
+            onChange={(speed) => update({ speed })}
+            min={0.5}
+            max={2}
+            step={0.05}
+            label={t("settings.speech.speed.label")}
+            description={t("settings.speech.speed.description")}
+            grouped
+            showValue
+            formatValue={(value) => `${value.toFixed(2)}x`}
+          />
+        )}
         <Slider
           value={tts.volume}
           onChange={(volume) => update({ volume: Math.round(volume) })}
@@ -398,18 +414,20 @@ export const SpeechSettings: React.FC = () => {
                 onRefresh={() => void refreshGreetingVoices()}
               />
             </SettingContainer>
-            <Slider
-              value={greeting.speed ?? 1}
-              onChange={(speed) => update({ greeting: { ...greeting, speed } })}
-              min={0.5}
-              max={2}
-              step={0.05}
-              label={t("settings.speech.greetingSpeed.label")}
-              description={t("settings.speech.greetingSpeed.description")}
-              grouped
-              showValue
-              formatValue={(value) => `${value.toFixed(2)}x`}
-            />
+            {engineSupportsSpeed(greeting.engine) && (
+              <Slider
+                value={greeting.speed ?? 1}
+                onChange={(speed) => update({ greeting: { ...greeting, speed } })}
+                min={0.5}
+                max={2}
+                step={0.05}
+                label={t("settings.speech.greetingSpeed.label")}
+                description={t("settings.speech.greetingSpeed.description")}
+                grouped
+                showValue
+                formatValue={(value) => `${value.toFixed(2)}x`}
+              />
+            )}
             <Slider
               value={greeting.noise_scale ?? 0.667}
               onChange={(noise_scale) =>

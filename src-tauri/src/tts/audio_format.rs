@@ -31,8 +31,16 @@ pub fn convert_audio_bytes(wav_bytes: &[u8], format: AudioFormat) -> Vec<u8> {
 
     let ext = format.as_str();
     let temp_dir = std::env::temp_dir();
-    let input_path = temp_dir.join("s2b2s_convert_input.wav");
-    let output_path = temp_dir.join(format!("s2b2s_convert_output.{}", ext));
+    // Unique per-call temp names so concurrent conversions don't clobber each other.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CONVERT_SEQ: AtomicU64 = AtomicU64::new(0);
+    let unique = format!(
+        "{}_{}",
+        std::process::id(),
+        CONVERT_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let input_path = temp_dir.join(format!("s2b2s_convert_{unique}_input.wav"));
+    let output_path = temp_dir.join(format!("s2b2s_convert_{unique}_output.{}", ext));
 
     // Write input WAV
     if std::fs::write(&input_path, wav_bytes).is_err() {

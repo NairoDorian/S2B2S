@@ -453,6 +453,11 @@ impl TranscriptionManager {
         current_model.clone()
     }
 
+    /// True while a model load is in progress (drives the UI loading indicator).
+    pub fn is_loading(&self) -> bool {
+        self.is_loading.lock().map(|g| *g).unwrap_or(false)
+    }
+
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("S2B2S_FORCE_TRANSCRIPTION_FAILURE").is_ok() {

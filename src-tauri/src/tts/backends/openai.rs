@@ -11,6 +11,10 @@ fn get_openai_client() -> &'static Client {
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_nodelay(true)
             .tcp_keepalive(std::time::Duration::from_secs(60))
+            // Bounded deadlines — a hung request must not hold the synthesis
+            // worker (and the per-engine lock) forever.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
             .build()
             .expect("Failed to create OpenAI HTTP client")
     })

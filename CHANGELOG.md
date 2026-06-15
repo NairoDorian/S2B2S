@@ -9,6 +9,60 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.
 
+### Correctness & Concurrency Hardening (June 15, 2026)
+
+A second, agent-assisted bug-hunt across the voice pipeline. Verified with `cargo check` (clean), 153 backend unit tests, and a clean frontend `tsc`.
+
+**Crash / hang / leak fixes**
+
+- **Fixed a UTF-8 panic in custom-word post-processing** — `extract_punctuation` sliced strings by a character count used as a byte index, panicking on multi-byte edge punctuation (`¿`, `—`, CJK brackets). Now byte-offset based.
+- **Silero VAD now resets between recordings** — `SileroVad::reset()` was the trait's no-op, leaving stale LSTM state that biased the first ~100–300 ms of each new utterance. It now clears the recurrent state.
+- **Local TTS servers no longer hang the synth worker on a failed start** — a launch failure left the engine slot in `Starting` forever and `ensure_running` busy-waited indefinitely. Added a `Failed` state + drop-guard so the caller returns an error (and can retry).
+- **Guarded llama-server startup against duplicate spawns / child leaks** — concurrent callers (warmup, `brain_ask`, model fetch, the converse shortcut) check-then-spawned with no lock. Added an await-safe `start_lock` mutex with a double-checked port probe.
+- **Added an HTTP timeout to the post-processing client** (`llm_client`) so a hung request can't block a command forever.
+
+**Correctness fixes**
+
+- **`is_model_loading` was inverted** — it returned `current_model.is_none()` (reporting "loading" while idle, "ready" mid-load). Now returns the real in-progress flag.
+- **TTS engine/voice/speed changes between Brain turns are honored** — `begin_session` now drops the lazy sentence consumer (it previously reused a stale backend/voice/speed).
+- **`concatenate_wavs` parses the RIFF chunk list** instead of assuming a fixed 44-byte header, so non-canonical WAVs (e.g. a float Kokoro WAV with `fact`/`PEAK` chunks) are no longer spliced with their metadata as audio in history saves.
+- Removed a dead duplicate `Telemetry` registration; fixed the unmatchable `vs.` abbreviation check in pagination; gave ffmpeg conversion unique temp filenames (concurrent-conversion clobber).
+
+**Frontend**
+
+- **Stopped leaking event listeners** — `settingsStore.initialize()` had no guard, so every mounting component registered another `model-state-changed` listener. Added an `initialized` flag.
+- **Fixed two binary sliders** — Volume and Word-Correction-Threshold (0–1 range with no `step`) could only snap to 0 or 1; both now use a fractional step.
+- `GlobalShortcutInput` sorts a copy instead of mutating React state in place; the Conversation read-aloud toggle re-syncs once settings finish loading (it was stuck on the default).
+
+### STT / TTS / Brain Correctness Pass (June 15, 2026)
+
+A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (clean, no new warnings) and the 57-test sanitization suite (all passing).
+
+**STT — model registry & loading**
+
+- **Fixed Whisper "small" downloading the wrong model** — its registry entry carried Parakeet `hf_repo`/`hf_files` (a copy-paste), and since the HuggingFace path takes precedence it fetched Parakeet ONNX files into a `ggml-small.bin` directory, producing an unloadable model. Cleared the stray fields so it downloads the GGML file via its `url`.
+- **Fixed Nemotron 3.5 ASR being un-downloadable** — `hf_files` requested bare `encoder.onnx`/`decoder.onnx`/`joiner.onnx`, but the sherpa repo ships only `*.int8.onnx`, so every file 404'd. Corrected to the int8 filenames (the Python sherpa loader already prefers them).
+- **Bundled the Python STT/TTS servers for packaged builds** — `unified_parakeet_server.py`, `kokoro_server.py`, `kitten_server.py`, and `pocket_server.py` are now listed in `tauri.conf.json` resources. `resolve_server_script` in `unified_parakeet.rs` had duplicated dead code (it re-checked `dev_path` instead of `bundled_path`) which was removed, and both server resolvers gained resource-dir / macOS-`Resources` fallbacks.
+- **Multi-STT no longer discards transcripts** — when post-processing has no LLM merge, `transcribe_parallel` now returns the longest transcript (the best proxy for "most complete") instead of silently dropping all but the first model's output.
+- **Verified the self-exported `parakeet-unified-en-0.6b-sherpa-streaming` model** — confirmed correct end-to-end (the JFK sample transcribes accurately through sherpa-onnx 1.13.2's native `nemo_parakeet_unified_streaming` buffered-streaming support). Documented that sherpa reads `feat_dim=128` from the ONNX metadata, so the shared loader's literal `feature_dim=80` is safely overridden — and must **not** be pinned to 128, which would break the 80-dim Nemotron model. It is now registered only when its files are present, since it has no download source.
+
+**TTS — backends**
+
+- **Fixed Cartesia producing garbled/no audio** — it sent `pcm_f32le` inside a `wav` container that the app's WAV parser rejects; it now sends `pcm_s16le` (format-1 WAV). Added `connect_timeout`/`timeout` so a hung request can't wedge the synthesis worker.
+- **Added request timeouts to OpenAI & ElevenLabs** — both already pooled their HTTP clients but had no deadline; a stalled connection now fails within 120s instead of blocking indefinitely.
+- **Speed control now works on ElevenLabs and Kokoro** — ElevenLabs sends `voice_settings.speed` (clamped to its 0.7–1.2 range, omitted when default); Kokoro sends `length_scale = 1/speed` (its server already honored it). With Piper/SAPI/OpenAI, 5 of 8 engines now apply speed.
+- **Fixed Pocket voice cloning (cloned voices never played)** — the client sent the cloned voice's file *path* as the voice id, which the server rejected and replaced with a stock voice. The client now uses the WAV stem as the id and resolves it to an absolute path sent as `voice_wav`; the server clones via `get_state_for_audio_prompt(path)` and caches voice states so repeats stay fast.
+- **Hid the speed slider for engines that ignore it** — Kitten and Pocket have no speed control in their models, and Cartesia isn't plumbed, so the speed slider (and greeting-speed slider) are hidden for those engines to avoid a dead control.
+
+**TTS — text sanitization**
+
+- **Markdown→speech no longer corrupts code** — emphasis stripping is now word-boundary aware, so `snake_case`, `__dunder__`, and `a * b` survive (previously a blunt `replace(['*','_'], "")` mangled them). Added a table-flattening pass that turns `| a | b |` rows into "a, b." and drops `|---|` separators.
+- **Normalizer no longer mangles paths/acronyms** — `wordA/wordB → "wordA or wordB"` now skips all-caps acronyms (TCP/IP, I/O) and path chains (`src/main/mod`); unit ratios (`km/h`) are expanded before generic slash-options so they read "kilometers per hour" instead of "km or h".
+
+**Brain**
+
+- **Verified the multimodal pipeline is correct** — the OpenAI-compatible `MessageContent`/`ContentPart` serialization (text / image_url / input_audio), SSE chunk-boundary buffering, and streaming sentence splitter were audited and confirmed correct; no changes required.
+
 ### TTS Pipeline Fixes & Telemetry Integration
 
 - **Fixed Text Sanitization/Normalization Pipeline** — Swapped pipeline execution order so that regex-based sanitization and web artifact cleanup (`sanitize_tts`) run *before* NeMo-based normalization (`tn_normalize_text`). This prevents NeMo from getting confused by URLs/emails and spelling out entire sentences letter-by-letter, and preserves title capitalization ("Doctor"/"Professor"). Made `test_dates` case-insensitive.

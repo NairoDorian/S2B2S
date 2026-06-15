@@ -1,6 +1,7 @@
 *.nemo
 *.onnx
 *.weight
+*.weights
 venv/
 layers.*
 Constant_*

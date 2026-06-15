@@ -18,6 +18,7 @@ export const VolumeSlider: React.FC<{ disabled?: boolean }> = ({
       }
       min={0}
       max={1}
+      step={0.01}
       label={t("settings.sound.volume.title")}
       description={t("settings.sound.volume.description")}
       descriptionMode="tooltip"

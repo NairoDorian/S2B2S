@@ -22,6 +22,8 @@ pub struct LlamaManager {
     app: AppHandle,
     child: Mutex<Option<std::process::Child>>,
     downloading: Arc<AtomicBool>,
+    /// Serializes server startup so concurrent callers don't spawn duplicates.
+    start_lock: tokio::sync::Mutex<()>,
 }
 
 impl Drop for LlamaManager {
@@ -42,6 +44,7 @@ impl LlamaManager {
             app,
             child: Mutex::new(None),
             downloading: Arc::new(AtomicBool::new(false)),
+            start_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -100,6 +103,16 @@ impl LlamaManager {
         // Check if responding
         if self.is_port_responding(port).await {
             info!("[LlamaManager] llama-server is already running on port {}", port);
+            return Ok(());
+        }
+
+        // Serialize startup so concurrent callers (warmup, brain_ask, fetch_models, the
+        // converse shortcut, …) don't each spawn a duplicate llama-server and leak the
+        // first child handle. Held across the spawn+poll below (tokio mutex is await-safe).
+        let _start_guard = self.start_lock.lock().await;
+        // Double-checked: another caller may have brought the server up while we waited.
+        if self.is_port_responding(port).await {
+            info!("[LlamaManager] llama-server was started by a concurrent caller; reusing it");
             return Ok(());
         }
 

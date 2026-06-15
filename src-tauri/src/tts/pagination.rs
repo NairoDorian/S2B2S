@@ -104,14 +104,26 @@ fn is_abbreviation(chars: &[char], pos: usize) -> bool {
         return false;
     }
 
-    // Check for special multi-period abbreviations (these take priority)
-    // "e.g.", "i.e.", "etc.", "n.b.", "vs."
+    // Check for special multi-period abbreviations (these take priority).
+    // "e.g.", "i.e.", "n.b." are 4 chars including both periods.
     if pos >= 3 {
         let four_char: String = chars[pos - 3..=pos]
             .iter()
             .collect::<String>()
             .to_lowercase();
-        if four_char == "e.g." || four_char == "i.e." || four_char == "n.b." || four_char == "vs." {
+        if four_char == "e.g." || four_char == "i.e." || four_char == "n.b." {
+            return true;
+        }
+    }
+
+    // "vs." is only 3 chars (v, s, .) — checked separately so it isn't missed by
+    // the 4-char window above (which could never match it).
+    if pos >= 2 {
+        let three_char: String = chars[pos - 2..=pos]
+            .iter()
+            .collect::<String>()
+            .to_lowercase();
+        if three_char == "vs." {
             return true;
         }
     }

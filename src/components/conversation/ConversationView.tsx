@@ -51,6 +51,15 @@ export const ConversationView: React.FC = () => {
     null,
   );
 
+  // Keep readAloud in sync once settings finish loading — the useState initializer
+  // runs while `settings` is still null, so it would otherwise stay at the default
+  // and ignore the user's persisted choice.
+  useEffect(() => {
+    if (settings?.brain) {
+      setReadAloud(settings.brain.read_aloud);
+    }
+  }, [settings?.brain?.read_aloud]);
+
   // Toggle voice mode
   const toggleVoiceMode = useCallback(async () => {
     if (voiceMode) {

@@ -472,6 +472,10 @@ impl TtsManager {
     pub fn begin_session(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.player.stop();
+        // Drop the lazy sentence consumer so the next turn rebuilds it with the
+        // current backend/voice/speed. stop()/speak() already do this; without it,
+        // a TTS engine/voice/speed change between Brain turns would be ignored.
+        *self.sentence_tx.lock().unwrap() = None;
     }
 
     /// Play the customized startup greeting message.
@@ -522,6 +526,31 @@ impl TtsManager {
     }
 }
 
+/// Walk a WAV's RIFF chunk list and return the byte range `[start, end)` of the
+/// named chunk's payload, or `None` if it isn't a parseable WAV / lacks the chunk.
+/// Handles non-canonical files where `fmt `/`data` aren't at the fixed 44-byte
+/// offset (e.g. libsndfile's `fact`/`PEAK` chunks for float WAVs).
+fn find_wav_chunk(wav: &[u8], id: &[u8; 4]) -> Option<(usize, usize)> {
+    if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut pos = 12;
+    while pos + 8 <= wav.len() {
+        let size = u32::from_le_bytes(wav[pos + 4..pos + 8].try_into().ok()?) as usize;
+        let data_start = pos + 8;
+        if &wav[pos..pos + 4] == id {
+            let end = data_start.saturating_add(size).min(wav.len());
+            return Some((data_start, end));
+        }
+        // Chunks are word-aligned: advance past the data plus an optional pad byte.
+        pos = data_start.saturating_add(size).saturating_add(size & 1);
+    }
+    None
+}
+
+/// Concatenate the PCM payloads of several same-format WAVs into one canonical WAV.
+/// Parses each file's `data` chunk (rather than assuming a fixed 44-byte header) so
+/// non-canonical inputs aren't spliced with their metadata chunks as if it were audio.
 fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
     if chunks.is_empty() {
         return Vec::new();
@@ -530,55 +559,44 @@ fn concatenate_wavs(chunks: &[Vec<u8>]) -> Vec<u8> {
         return chunks[0].clone();
     }
 
-    // Find the first valid WAV chunk to serve as our base
-    let mut base_chunk = None;
-    let mut start_idx = 0;
-    for (i, chunk) in chunks.iter().enumerate() {
-        if chunk.len() >= 44 && &chunk[0..4] == b"RIFF" {
-            base_chunk = Some(chunk.clone());
-            start_idx = i + 1;
-            break;
-        }
-    }
-
-    let mut base = match base_chunk {
-        Some(b) => b,
-        None => {
-            // None of the chunks are WAV, fallback to direct concatenation
-            let mut all = Vec::new();
-            for c in chunks {
-                all.extend_from_slice(c);
-            }
-            return all;
-        }
+    // The first parseable WAV provides the fmt template; concatenate every payload from it on.
+    let Some(base_idx) = chunks
+        .iter()
+        .position(|c| find_wav_chunk(c, b"data").is_some())
+    else {
+        return chunks.concat(); // no parseable WAV — best-effort raw concat
     };
 
-    let mut total_data_bytes = if base.len() >= 44 {
-        u32::from_le_bytes(base[40..44].try_into().unwrap_or([0; 4])) as usize
-    } else {
-        base.len().saturating_sub(44)
+    let Some((fmt_start, fmt_end)) = find_wav_chunk(&chunks[base_idx], b"fmt ") else {
+        return chunks.concat();
     };
+    let fmt_bytes = chunks[base_idx][fmt_start..fmt_end].to_vec();
 
-    for chunk in &chunks[start_idx..] {
-        if chunk.len() >= 44 && &chunk[0..4] == b"RIFF" {
-            let data_part = &chunk[44..];
-            base.extend_from_slice(data_part);
-            total_data_bytes += data_part.len();
+    let mut pcm = Vec::new();
+    for chunk in &chunks[base_idx..] {
+        if let Some((start, end)) = find_wav_chunk(chunk, b"data") {
+            pcm.extend_from_slice(&chunk[start..end]);
         } else {
-            base.extend_from_slice(chunk);
-            total_data_bytes += chunk.len();
+            pcm.extend_from_slice(chunk); // not a WAV — append raw (matches old fallback)
         }
     }
 
-    if base.len() >= 8 {
-        let riff_size = (base.len() as u32).saturating_sub(8);
-        base[4..8].copy_from_slice(&riff_size.to_le_bytes());
-    }
+    let fmt_len = fmt_bytes.len() as u32;
+    let data_len = pcm.len() as u32;
+    // RIFF size = "WAVE"(4) + fmt header(8) + fmt body + data header(8) + data body.
+    let riff_size = 4u32
+        .saturating_add(8 + fmt_len)
+        .saturating_add(8u32.saturating_add(data_len));
 
-    if base.len() >= 44 {
-        let data_size = total_data_bytes as u32;
-        base[40..44].copy_from_slice(&data_size.to_le_bytes());
-    }
-
-    base
+    let mut out = Vec::with_capacity(12 + 8 + fmt_bytes.len() + 8 + pcm.len());
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&riff_size.to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&fmt_len.to_le_bytes());
+    out.extend_from_slice(&fmt_bytes);
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    out.extend_from_slice(&pcm);
+    out
 }

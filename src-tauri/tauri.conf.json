@@ -27,7 +27,13 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "resources": ["resources/**/*"],
+    "resources": [
+      "resources/**/*",
+      "unified_parakeet_server.py",
+      "kokoro_server.py",
+      "kitten_server.py",
+      "pocket_server.py"
+    ],
     "license": "MIT",
     "icon": [
       "icons/32x32.png",

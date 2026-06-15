@@ -49,4 +49,11 @@ impl VoiceActivityDetector for SileroVad {
             Ok(VadFrame::Noise)
         }
     }
+
+    /// Clear the Silero LSTM hidden state so each new recording starts fresh.
+    /// The trait's default `reset()` is a no-op, which left stale recurrent state
+    /// from the previous utterance biasing the first ~100-300ms of the next one.
+    fn reset(&mut self) {
+        self.engine.reset();
+    }
 }

@@ -19,8 +19,9 @@ pub fn sanitize_tts(text: &str) -> String {
     result = remove_urls(&result);
     result = remove_citations(&result);
     result = expand_slash_lookups(&result);
-    result = expand_slash_options(&result);
+    // Ratios (km/h, m/s) before generic options so "km/h" → "km per h", not "km or h".
     result = expand_slash_ratios(&result);
+    result = expand_slash_options(&result);
     result = expand_latin_abbreviations(&result);
     result = expand_title_abbreviations(&result);
     result = expand_number_suffixes(&result); // Run before metric units (5m = 5 million, not 5 meters)
@@ -87,9 +88,30 @@ fn expand_slash_lookups(text: &str) -> String {
 // ── 4. Slash Options (Priority 2 — wordA/wordB → wordA or wordB) ───────────
 
 fn expand_slash_options(text: &str) -> String {
+    // wordA/wordB → "wordA or wordB", but only for lowercase pairs so acronyms
+    // (TCP/IP, I/O, A/B) are preserved, and never when part of a longer path/URL
+    // (src/main/mod, a/b/c) — detected by an adjacent '/' on either side.
     static SLASH_OPTION_REGEX: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\b([a-zA-Z]+)/([a-zA-Z]+)\b").unwrap());
-    SLASH_OPTION_REGEX.replace_all(text, "$1 or $2").to_string()
+        Lazy::new(|| Regex::new(r"\b([a-z]+)/([a-z]+)\b").unwrap());
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut last = 0;
+    for caps in SLASH_OPTION_REGEX.captures_iter(text) {
+        let m = caps.get(0).unwrap();
+        out.push_str(&text[last..m.start()]);
+        let before = m.start().checked_sub(1).map(|i| bytes[i]);
+        let after = bytes.get(m.end()).copied();
+        if before == Some(b'/') || after == Some(b'/') {
+            out.push_str(m.as_str()); // part of a path/URL — leave it alone
+        } else {
+            out.push_str(&caps[1]);
+            out.push_str(" or ");
+            out.push_str(&caps[2]);
+        }
+        last = m.end();
+    }
+    out.push_str(&text[last..]);
+    out
 }
 
 // ── 5. Slash Ratios (Priority 3 — unit/unit → unit per unit) ────────────────

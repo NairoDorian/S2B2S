@@ -59,8 +59,15 @@ pub fn transcribe_parallel(
     if settings.post_process_enabled && !settings.post_process_provider_id.is_empty() {
         Ok(format!("{}\n\n--- MULTI_STT_MERGE ---\n{}", transcriptions_block, prompt))
     } else {
-        // No LLM available: return the first (primary) model's result
-        Ok(results[0].1.clone())
+        // No LLM merge available: pick the longest transcript — the best proxy for
+        // "most complete capture" when we can't judge the candidates against each
+        // other — instead of blindly returning the first model's output.
+        let best = results
+            .iter()
+            .max_by_key(|(_, text)| text.chars().count())
+            .map(|(_, text)| text.clone())
+            .unwrap_or_default();
+        Ok(best)
     }
 }
 

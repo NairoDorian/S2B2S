@@ -14,6 +14,10 @@ fn get_cartesia_client() -> &'static Client {
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_nodelay(true)
             .tcp_keepalive(std::time::Duration::from_secs(60))
+            // Bounded deadlines — a hung request must not hold the synthesis
+            // worker (and the per-engine lock) forever.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
             .build()
             .expect("Failed to create Cartesia HTTP client")
     })
@@ -67,7 +71,9 @@ impl TtsBackend for CartesiaTtsBackend {
             },
             "output_format": {
                 "container": self.config.output_format,
-                "encoding": "pcm_f32le",
+                // s16le yields format-1 WAV that the app's parser (envelope, duration,
+                // concat) accepts — float WAV (format 3) is rejected and plays as garbage.
+                "encoding": "pcm_s16le",
                 "sample_rate": 44100,
             },
         });

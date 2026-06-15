@@ -143,6 +143,9 @@ enum ServerState {
         stderr_tail: Arc<Mutex<Vec<String>>>,
     },
     Ready(Arc<ActiveServer>),
+    /// A start attempt failed; the reason is surfaced to the caller so it returns
+    /// an error instead of busy-waiting on `Starting` forever.
+    Failed(String),
 }
 
 struct EngineSlot {
@@ -209,13 +212,41 @@ fn resolve_server_script(script_name: &str) -> Option<std::path::PathBuf> {
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let p = dir.join(script_name);
-            if p.exists() {
-                return Some(p);
+            for candidate in [
+                dir.join(script_name),
+                dir.join("resources").join(script_name),
+                // macOS .app: Contents/MacOS/<exe> → Contents/Resources/
+                dir.join("..").join("Resources").join(script_name),
+            ] {
+                if candidate.exists() {
+                    return Some(candidate);
+                }
             }
         }
     }
     None
+}
+
+/// Flips a slot from `Starting` to `Failed` if the start thread exits without
+/// reaching `Ready` (and wasn't superseded), so `ensure_running` stops waiting.
+struct StartFailGuard {
+    slot: &'static EngineSlot,
+    generation: u64,
+    armed: bool,
+}
+
+impl Drop for StartFailGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let mut state = self.slot.state().lock().unwrap_or_else(|p| p.into_inner());
+        if self.slot.generation().load(Ordering::SeqCst) == self.generation
+            && matches!(&*state, ServerState::Starting { .. })
+        {
+            *state = ServerState::Failed("server process failed to start".to_string());
+        }
+    }
 }
 
 fn spawn_start_thread(
@@ -227,6 +258,13 @@ fn spawn_start_thread(
     stderr_tail: Arc<Mutex<Vec<String>>>,
 ) {
     std::thread::spawn(move || {
+        // Arms a guard that flips the slot to `Failed` on any early return below,
+        // unless we reach `Ready` (where we disarm it).
+        let mut fail_guard = StartFailGuard {
+            slot,
+            generation,
+            armed: true,
+        };
         let script_name = match engine.as_str() {
             "kokoro" => "kokoro_server.py",
             "kitten" => "kitten_server.py",
@@ -443,6 +481,7 @@ fn spawn_start_thread(
                 engine_name: engine.clone(),
                 client: get_synth_client().clone(),
             }));
+            fail_guard.armed = false; // reached Ready — don't flip to Failed on drop
             emit_status(&engine, "ready", None);
         } else {
             log::info!(
@@ -562,6 +601,15 @@ pub fn ensure_running(
                     tail,
                 );
             }
+            ServerState::Failed(msg) => {
+                // A previous start attempt failed. Reset to Stopped so a future call
+                // can retry from scratch, and return the error instead of looping.
+                let msg = msg.clone();
+                slot.generation().fetch_add(1, Ordering::SeqCst);
+                *state = ServerState::Stopped;
+                drop(state);
+                return Err(format!("{} server failed to start: {}", engine, msg));
+            }
         }
     }
 }
@@ -600,6 +648,10 @@ pub fn unload(engine: &str) -> bool {
             true
         }
         ServerState::Stopped => false,
+        ServerState::Failed(_) => {
+            *state = ServerState::Stopped;
+            false
+        }
     }
 }
 
@@ -622,5 +674,6 @@ pub fn get_engine_status(engine: &str) -> Option<String> {
         ServerState::Stopped => Some("stopped".to_string()),
         ServerState::Starting { .. } => Some("loading".to_string()),
         ServerState::Ready(_) => Some("ready".to_string()),
+        ServerState::Failed(_) => Some("error".to_string()),
     }
 }

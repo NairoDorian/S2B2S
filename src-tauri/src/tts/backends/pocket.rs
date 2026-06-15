@@ -53,7 +53,10 @@ impl PocketBackend {
                 if path.extension().and_then(|s| s.to_str()) == Some("wav") {
                     if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                         voices.push(Voice {
-                            id: path.to_string_lossy().to_string(),
+                            // Use the stem as the id; synthesize() resolves it back to the
+                            // WAV path. (Passing the raw path as the id made the server
+                            // reject it and silently fall back to a stock voice.)
+                            id: stem.to_string(),
                             name: format!("🎙️ {}", stem),
                             language: Some("cloned".to_string()),
                         });
@@ -81,7 +84,7 @@ impl PocketBackend {
             .map_err(|e| format!("Failed to copy voice WAV: {e}"))?;
 
         Ok(Voice {
-            id: dest.to_string_lossy().to_string(),
+            id: stem.to_string(),
             name: format!("🎙️ {}", stem),
             language: Some("cloned".to_string()),
         })
@@ -143,7 +146,20 @@ impl TtsBackend for PocketBackend {
         )?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
-        let body = serde_json::json!({"text": text, "voice": voice_to_use, "length_scale": 1.0});
+        // A cloned voice id is a WAV stem under the cloned-voices dir; when one exists,
+        // send its absolute path so the server clones from it instead of falling back to
+        // a stock voice. (Pocket can't vary speed, so length_scale stays 1.0.)
+        let cloned_wav = cloned_voices_dir(&self.app).join(format!("{voice_to_use}.wav"));
+        let body = if cloned_wav.is_file() {
+            serde_json::json!({
+                "text": text,
+                "voice": voice_to_use,
+                "voice_wav": cloned_wav.to_string_lossy(),
+                "length_scale": 1.0,
+            })
+        } else {
+            serde_json::json!({"text": text, "voice": voice_to_use, "length_scale": 1.0})
+        };
 
         let text_chars = text.chars().count() as u64;
         let deadline_ms = (5000u64 + text_chars * 30).clamp(10_000, 180_000);
