@@ -118,9 +118,21 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
 
     // Run the async Brain/TTS pipeline
     tauri::async_runtime::block_on(async move {
-        let _ask_result = bm_clone.ask(transcription_clone).await;
+        let ask_result = bm_clone.ask(transcription_clone).await;
+        // Whether the Brain produced anything to speak this turn.
+        let has_reply = ask_result
+            .as_ref()
+            .map(|t| !t.trim().is_empty())
+            .unwrap_or(false);
 
-        if will_play_tts && tts.is_playing() {
+        // Do NOT gate on `tts.is_playing()`: TTS synthesis is asynchronous (sentences
+        // are queued during streaming and synthesized on a background thread), so when
+        // ask() returns the audio often hasn't started playing yet and is_playing()
+        // reads false. Gating on it skipped the wait/barge-in block entirely and made
+        // the assistant listen over its own speech. The terminal TTS event
+        // (tts:finished/stopped/error) for the LAST queued sentence fires after this
+        // point, so registering the listeners now and waiting for it is race-free.
+        if will_play_tts && has_reply {
             log::info!("Waiting for TTS playback to finish (barge-in active)...");
 
             // Barge-in: if user speaks during TTS, abort current turn

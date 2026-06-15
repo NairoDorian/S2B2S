@@ -65,6 +65,14 @@ MIN_LOG_HZ = 1000.0
 MIN_LOG_MEL = MIN_LOG_HZ / F_SP
 LOG_STEP = 0.06875177742094912
 
+# Analysis window: NeMo applies a WIN_LENGTH (400-sample / 25 ms) symmetric Hann
+# centered inside the N_FFT (512-point) frame — NOT a 512-wide window — with the
+# extra (512-400)/2 = 56 samples zero-padded on each side (== torch.stft with
+# win_length=400, n_fft=512). Precomputed once.
+_WIN_PAD = (N_FFT - WIN_LENGTH) // 2
+_STFT_WINDOW = np.zeros(N_FFT, dtype=np.float32)
+_STFT_WINDOW[_WIN_PAD : _WIN_PAD + WIN_LENGTH] = np.hanning(WIN_LENGTH).astype(np.float32)
+
 
 # ============================================================================
 # Mel spectrogram  (Slaney scale, matches parakeet-rs / speech-recognition)
@@ -113,13 +121,14 @@ def extract_features(
     audio = np.append(audio[0:1], audio[1:] - PREEMPHASIS_COEF * audio[:-1])
     pad = N_FFT // 2
     n_frames = 1 + (len(audio) + pad * 2 - N_FFT) // HOP_LENGTH
-    audio_padded = np.pad(audio, (pad, pad + HOP_LENGTH), mode='reflect')
+    # Zero-pad (NeMo's torch.stft uses center=True, pad_mode="constant").
+    audio_padded = np.pad(audio, (pad, pad + HOP_LENGTH), mode='constant')
     frames = np.zeros((n_frames, N_FFT), dtype=np.float32)
-    window = np.hanning(N_FFT).astype(np.float32)
     for i in range(n_frames):
         start = i * HOP_LENGTH
-        frames[i] = audio_padded[start:start + N_FFT] * window
-    spec = np.abs(np.fft.rfft(frames, n=N_FFT)).astype(np.float32)
+        frames[i] = audio_padded[start:start + N_FFT] * _STFT_WINDOW
+    # Power spectrum (|FFT|^2): NeMo's FilterbankFeatures uses mag_power=2.0.
+    spec = (np.abs(np.fft.rfft(frames, n=N_FFT)) ** 2).astype(np.float32)
     mel_spec = spec @ mel_basis.T
     log_zero_guard = 2.0 ** -24
     mel_spec = np.log(mel_spec + log_zero_guard)
@@ -452,7 +461,10 @@ def _decode_frames(
 
     Returns (tokens: list[int], last_frame: int, decoder_state: dict, found_eou: bool).
 
-    targets_dtype: np.int32 for EOU models, np.float32 for Unified (SentencePiece) models.
+    targets_dtype: introspected from the decoder ONNX at load — it is int32 for every
+    model actually shipped (the introspection exists only because early exports
+    disagreed; the old "float32 for Unified" note was wrong — Unified's decoder also
+    declares targets as int32).
     """
     decoder = model["decoder"]
     tokenizer = model["tokenizer"]
@@ -491,7 +503,13 @@ def _decode_frames(
             logits = d_out[0][0, 0, :]
             state_1 = d_out[1]
             state_2 = d_out[2]
-            token_id = int(np.argmax(logits))
+            # Argmax over the in-vocab logits only (blank is the last id). For these
+            # RNN-T models the joiner emits exactly vocab_size+1 values so this is
+            # equivalent today, but it keeps the loop robust if a TDT export (which
+            # appends duration logits) is ever loaded — otherwise a duration logit
+            # could be mis-read as a phantom token id. (Full TDT duration-skip decoding
+            # is not implemented; none of the shipped models are TDT.)
+            token_id = int(np.argmax(logits[: blank_id + 1]))
             if token_id == blank_id:
                 break
             tokens.append(token_id)
@@ -586,21 +604,24 @@ def _stream_feed(audio_bytes: bytes) -> dict:
     if frame_count <= STREAM["decoded_frame"]:
         return {"text": _decode_stream_tokens(), "eou": STREAM["found_eou"]}
 
-    # Continue decoding from where we left off
+    # The encoder is re-run over the FULL accumulated buffer every call, so the only
+    # correct way to decode is from frame 0 with a fresh predictor state, replacing the
+    # whole token list. Continuing a prior decoder state onto freshly recomputed encoder
+    # frames produced dropped/duplicated tokens at every chunk boundary (the error grew
+    # with utterance length). The RNN-T predictor is tiny, so re-decoding is cheap.
     result = _decode_frames(
         MODEL, encoded, frame_count,
         blank_id=cfg["blank_id"],
         n_layers=cfg["pred_layers"],
         hidden=cfg["pred_hidden"],
-        start_frame=STREAM["decoded_frame"],
-        decoder_state=STREAM["decoder_state"],
+        start_frame=0,
+        decoder_state=None,
         stop_on_eou=True,
         targets_dtype=cfg["targets_dtype"],
     )
 
-    STREAM["tokens"].extend(result["tokens"])
-    STREAM["decoder_state"] = result["decoder_state"]
-    STREAM["decoded_frame"] = result["last_frame"]
+    STREAM["tokens"] = result["tokens"]
+    STREAM["decoded_frame"] = frame_count
     if result["found_eou"]:
         STREAM["found_eou"] = True
 

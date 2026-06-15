@@ -703,15 +703,20 @@ impl TranscriptionManager {
                                 const SILENCE_RMS_THRESHOLD: f32 = 0.002; // match TripleVAD RMS gate
                                 let mut last_emitted = String::new();
 
-                                for chunk in audio.chunks(CHUNK_SAMPLES) {
-                                    // Gate on RMS energy — skip near-silent chunks to avoid
-                                    // feeding background noise / gaps to the streaming model.
+                                // The recording is already VAD-gated upstream, so only skip
+                                // near-silent MIDDLE chunks — never the final chunk, whose
+                                // tail (often a short remainder) was being dropped and
+                                // truncating the end of utterances.
+                                let chunks: Vec<&[f32]> = audio.chunks(CHUNK_SAMPLES).collect();
+                                let n_chunks = chunks.len();
+                                for (i, &chunk) in chunks.iter().enumerate() {
+                                    let is_last = i + 1 == n_chunks;
                                     let rms = (chunk.iter()
                                         .map(|s| s * s)
                                         .sum::<f32>()
                                         / chunk.len() as f32)
                                         .sqrt();
-                                    if chunk.len() < CHUNK_SAMPLES / 4 || rms < SILENCE_RMS_THRESHOLD {
+                                    if !is_last && rms < SILENCE_RMS_THRESHOLD {
                                         continue;
                                     }
 
@@ -744,8 +749,13 @@ impl TranscriptionManager {
                                     )
                                 })?;
 
-                                // Use the last emitted text as final result
-                                let final_text = if _text != last_emitted && !_text.is_empty() {
+                                // Prefer whichever of the stream_end flush and the last
+                                // partial is longer — the final pass can occasionally come
+                                // back shorter (or empty) than a good intermediate partial,
+                                // which would otherwise truncate the result.
+                                let final_text = if _text.chars().count()
+                                    > last_emitted.chars().count()
+                                {
                                     let _ = app_handle.emit(
                                         "transcription-partial",
                                         &_text,

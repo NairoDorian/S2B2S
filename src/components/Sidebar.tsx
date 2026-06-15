@@ -109,7 +109,10 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.wgpuTrail",
     icon: Zap,
     component: WgpuTrailSettings,
-    enabled: () => true,
+    // Hidden from the normal UI until the native wgpu overlay renderer exists — the
+    // toggle currently persists config the backend can't render. Still reachable in
+    // debug mode for development.
+    enabled: (settings) => settings?.debug_mode ?? false,
   },
   postprocessing: {
     labelKey: "sidebar.postProcessing",

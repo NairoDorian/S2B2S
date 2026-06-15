@@ -9,6 +9,27 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.
 
+### STT Streaming & Parakeet Accuracy (June 15, 2026)
+
+Cross-checked S2B2S's hand-rolled Parakeet STT server against the proven `transcribe-rs` (Rust) and `sherpa-onnx` (C++) implementations and NeMo's own preprocessor, fixed the divergences, and finished the deferred streaming-correctness cluster.
+
+**Parakeet feature extraction (accuracy).** The manual Python path (eschmidbauer "parakeet-unified" + ysdede "EOU" models) computed mel features that didn't match what those models were trained on:
+
+- **Power spectrum** — used `|FFT|` (magnitude); NeMo's `FilterbankFeatures` uses `|FFT|²` (`mag_power=2.0`), which distorted every mel value.
+- **Analysis window** — applied a 512-sample Hann over the whole FFT frame; NeMo uses a **400-sample** (25 ms) Hann centered in the 512-point FFT (the unused `WIN_LENGTH=400` constant showed it was intended but never wired).
+- **STFT padding** — `reflect` → `constant` (zero), matching NeMo's `center=True, pad_mode="constant"`.
+- **Validated**: the corrected features now correlate **0.99972** with NeMo's preprocessor on real speech (the JFK sample), up from **0.925** — a measurable accuracy gain for those models. (The sherpa-onnx path — Nemotron and the self-exported streaming model — uses sherpa's own feature extraction and was already correct.)
+
+**Parakeet greedy decoder.** Confirmed algorithmically correct vs both references (the "unified" model is plain RNN-T, not TDT). Hardened it anyway: argmax now runs over the in-vocab logits only (`[:vocab_size]`) so a future TDT export can't mis-read duration logits as phantom tokens. Corrected a misleading `targets` dtype comment (every shipped model uses int32, not float32).
+
+**Streaming correctness (the deferred cluster).**
+
+- **Continuous-voice barge-in race** — `is_playing()` was checked right after `ask()` returned, but TTS synthesis is async so it read false and the wait/barge-in block was skipped, making the assistant listen over its own speech. It now waits for the turn's terminal TTS event, which is race-free.
+- **Streaming RMS gate** — it skipped any chunk shorter than `CHUNK/4`, so the final (short) chunk of every utterance was dropped, truncating transcripts. Now only near-silent *middle* chunks are skipped; the final chunk is always fed.
+- **EOU streaming decoder** — the server re-encoded the full buffer each chunk but continued the decoder state from the previous pass, corrupting tokens at chunk boundaries. It now decodes from frame 0 with a fresh predictor state, and the final result prefers whichever of the last partial / `stream_end` flush is longer.
+
+**UI.** Hid the **WgpuTrail** settings panel from the normal sidebar (gated behind debug mode) — it persisted config the backend can't yet render.
+
 ### Correctness & Concurrency Hardening (June 15, 2026)
 
 A second, agent-assisted bug-hunt across the voice pipeline. Verified with `cargo check` (clean), 153 backend unit tests, and a clean frontend `tsc`.
