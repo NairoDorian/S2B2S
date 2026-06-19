@@ -722,11 +722,8 @@ export const useSettingsStore = create<SettingsStore>()(
 
     // Initialize everything
     initialize: async () => {
-      // Guard against the many components that call initialize() during the initial
-      // async load window — without this, each one registers another
-      // `model-state-changed` listener that is never cleaned up.
       if (get().initialized) return;
-      set({ initialized: true });
+      set({ initialized: true }); // Set eagerly — before any await — so concurrent calls see it
 
       const { refreshSettings, checkCustomSounds, loadDefaultSettings } = get();
 

@@ -11,6 +11,7 @@ This guide covers how to set up the development environment and build S2B2S from
 - [Rust](https://rustup.rs/) (latest stable) — MSRV 1.87
 - [Bun](https://bun.sh/) package manager (v1.x)
 - [Tauri Prerequisites](https://tauri.app/start/prerequisites/) for your platform
+- **Python 3.12** (for TTS engines — see [Python Version](#3-set-up-python-virtual-environment-for-tts-engines) section)
 
 ### macOS
 
@@ -34,7 +35,21 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 
 - Microsoft C++ Build Tools or Visual Studio 2019/2022 with "Desktop development with C++" workload
 - WebView2 (included with Windows 11, available on Windows 10)
-- Install via: `bun install` will pull all JS dependencies; Rust dependencies via `cargo`
+- **Python 3.12** (for TTS engines — see [Python Version](#python-version) below)
+- **libclang.dll** (build-time dep for whisper-rs-sys bindgen):
+
+  The easiest way on a fresh machine:
+  ```powershell
+  winget install -e --id LLVM.LLVM
+  ```
+  This installs LLVM and adds `libclang.dll` to PATH. No extra env vars needed.
+
+  Or run the helper script for guided install:
+  ```powershell
+  .\scripts\download-libclang.ps1
+  ```
+
+- Install deps: `bun install` pulls JS deps; Rust deps via `cargo`
 
 ### Linux
 
@@ -77,6 +92,11 @@ bun install
 ```
 
 ### 3. Set Up Python Virtual Environment (for TTS Engines)
+
+> **Python version: Use 3.12.** The `kittentts` wheel (v0.8.1) only ships pre-built binaries for Python 3.8–3.12. Python 3.13+ will not work. All other dependencies (`torch`, `onnxruntime`, `numpy`, etc.) are compatible with 3.12. Install from [python.org](https://www.python.org/downloads/release/python-31210/) or via winget:
+> ```powershell
+> winget install Python.Python.3.12
+> ```
 
 All local TTS engines (Piper, Kokoro, Kitten, Pocket) run inside a project-local Python venv. The app automatically resolves the venv Python first, falling back to system Python only if no venv is found.
 

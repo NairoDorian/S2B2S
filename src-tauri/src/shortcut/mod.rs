@@ -1059,6 +1059,222 @@ pub fn set_post_process_selected_prompt(app: AppHandle, id: String) -> Result<()
     Ok(())
 }
 
+// ============================================================================
+// Language Models & Post-Process Actions CRUD
+// ============================================================================
+
+fn validate_trigger_key(
+    settings: &settings::AppSettings,
+    trigger_key: Option<u8>,
+    exclude_action_id: Option<&str>,
+) -> Result<(), String> {
+    let Some(key) = trigger_key else {
+        return Ok(());
+    };
+    if !(1..=9).contains(&key) {
+        return Err("Trigger key must be between 1 and 9".to_string());
+    }
+    let taken = settings.post_process_actions.iter().any(|action| {
+        action.trigger_key == Some(key) && Some(action.id.as_str()) != exclude_action_id
+    });
+    if taken {
+        return Err(format!(
+            "Trigger key {} is already used by another action",
+            key
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn add_llm_model(
+    app: AppHandle,
+    provider_id: String,
+    model: String,
+    label: String,
+) -> Result<settings::LLMModel, String> {
+    let mut settings = settings::get_settings(&app);
+    validate_provider_exists(&settings, &provider_id)?;
+
+    let model = model.trim().to_string();
+    if model.is_empty() {
+        return Err("Model cannot be empty".to_string());
+    }
+    if settings
+        .llm_models
+        .iter()
+        .any(|m| m.provider_id == provider_id && m.model == model)
+    {
+        return Err("This model is already saved".to_string());
+    }
+
+    let label = label.trim().to_string();
+    let new_model = settings::LLMModel {
+        id: format!("llm_{}", chrono::Utc::now().timestamp_millis()),
+        provider_id,
+        label: if label.is_empty() {
+            model.clone()
+        } else {
+            label
+        },
+        model,
+    };
+
+    settings.llm_models.push(new_model.clone());
+    settings::write_settings(&app, settings);
+    Ok(new_model)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_llm_model(app: AppHandle, id: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+
+    let original_len = settings.llm_models.len();
+    settings.llm_models.retain(|model| model.id != id);
+    if settings.llm_models.len() == original_len {
+        return Err(format!("Language model '{}' not found", id));
+    }
+
+    for action in settings.post_process_actions.iter_mut() {
+        if action.llm_model_id.as_deref() == Some(id.as_str()) {
+            action.llm_model_id = None;
+        }
+    }
+
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn add_post_process_action(
+    app: AppHandle,
+    name: String,
+    prompt: String,
+    llm_model_id: Option<String>,
+    icon: String,
+    trigger_key: Option<u8>,
+) -> Result<settings::PostProcessAction, String> {
+    let mut settings = settings::get_settings(&app);
+
+    let name = name.trim().to_string();
+    let prompt = prompt.trim().to_string();
+    if name.is_empty() || prompt.is_empty() {
+        return Err("Name and prompt are required".to_string());
+    }
+    validate_trigger_key(&settings, trigger_key, None)?;
+
+    let icon = icon.trim().to_string();
+    let action = settings::PostProcessAction {
+        id: format!("act_{}", chrono::Utc::now().timestamp_millis()),
+        name: name.clone(),
+        prompt,
+        llm_model_id,
+        icon: if icon.is_empty() {
+            settings::default_action_icon()
+        } else {
+            icon
+        },
+        trigger_key,
+    };
+
+    settings.post_process_actions.push(action.clone());
+
+    let binding_id = settings::action_binding_id(&action.id);
+    settings.bindings.insert(
+        binding_id.clone(),
+        settings::ShortcutBinding {
+            id: binding_id,
+            name,
+            description: "Starts a transcription processed with this action.".to_string(),
+            default_binding: String::new(),
+            current_binding: String::new(),
+        },
+    );
+
+    settings::write_settings(&app, settings);
+    Ok(action)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn update_post_process_action(
+    app: AppHandle,
+    id: String,
+    name: String,
+    prompt: String,
+    llm_model_id: Option<String>,
+    icon: String,
+    trigger_key: Option<u8>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+
+    let name = name.trim().to_string();
+    let prompt = prompt.trim().to_string();
+    if name.is_empty() || prompt.is_empty() {
+        return Err("Name and prompt are required".to_string());
+    }
+    validate_trigger_key(&settings, trigger_key, Some(&id))?;
+
+    let icon = icon.trim().to_string();
+    let Some(action) = settings
+        .post_process_actions
+        .iter_mut()
+        .find(|action| action.id == id)
+    else {
+        return Err(format!("Action '{}' not found", id));
+    };
+
+    action.name = name.clone();
+    action.prompt = prompt;
+    action.llm_model_id = llm_model_id;
+    action.icon = if icon.is_empty() {
+        settings::default_action_icon()
+    } else {
+        icon
+    };
+    action.trigger_key = trigger_key;
+
+    let binding_id = settings::action_binding_id(&id);
+    if let Some(binding) = settings.bindings.get_mut(&binding_id) {
+        binding.name = name;
+    }
+
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_post_process_action(app: AppHandle, id: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+
+    let original_len = settings.post_process_actions.len();
+    settings
+        .post_process_actions
+        .retain(|action| action.id != id);
+    if settings.post_process_actions.len() == original_len {
+        return Err(format!("Action '{}' not found", id));
+    }
+
+    let binding_id = settings::action_binding_id(&id);
+    if let Some(binding) = settings.bindings.remove(&binding_id) {
+        if !binding.current_binding.trim().is_empty() {
+            if let Err(e) = unregister_shortcut(&app, binding) {
+                warn!(
+                    "Failed to unregister shortcut for deleted action '{}': {}",
+                    id, e
+                );
+            }
+        }
+    }
+
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_mute_while_recording_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

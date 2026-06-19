@@ -1,0 +1,73 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  Sparkles,
+  Wand2,
+  Stars,
+  Bot,
+  Brain,
+  Languages,
+  SpellCheck,
+  PenLine,
+  FileText,
+  ListChecks,
+  ScrollText,
+  Mail,
+  MessageSquare,
+  Quote,
+  Scissors,
+  Eraser,
+  Hash,
+  Code2,
+  Terminal,
+  Briefcase,
+  GraduationCap,
+  Lightbulb,
+  Rocket,
+  Zap,
+  Heart,
+  Smile,
+  Megaphone,
+  ThumbsUp,
+  BookOpen,
+  Feather,
+} from "lucide-react";
+
+export const ACTION_ICONS: Record<string, LucideIcon> = {
+  sparkles: Sparkles,
+  wand: Wand2,
+  stars: Stars,
+  bot: Bot,
+  brain: Brain,
+  languages: Languages,
+  spellcheck: SpellCheck,
+  pen: PenLine,
+  file: FileText,
+  checklist: ListChecks,
+  scroll: ScrollText,
+  mail: Mail,
+  chat: MessageSquare,
+  quote: Quote,
+  scissors: Scissors,
+  eraser: Eraser,
+  hash: Hash,
+  code: Code2,
+  terminal: Terminal,
+  briefcase: Briefcase,
+  graduation: GraduationCap,
+  lightbulb: Lightbulb,
+  rocket: Rocket,
+  zap: Zap,
+  heart: Heart,
+  smile: Smile,
+  megaphone: Megaphone,
+  thumbsup: ThumbsUp,
+  book: BookOpen,
+  feather: Feather,
+};
+
+export const ACTION_ICON_NAMES = Object.keys(ACTION_ICONS);
+
+export const DEFAULT_ACTION_ICON = "sparkles";
+
+export const getActionIcon = (name?: string | null): LucideIcon =>
+  (name && ACTION_ICONS[name]) || ACTION_ICONS[DEFAULT_ACTION_ICON];

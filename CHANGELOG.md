@@ -5,6 +5,50 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-06-19: Parler Integration & CUDA Fix
+
+> **Parler fork feature port.** Integrated post-process actions system (LLMModel + PostProcessAction CRUD), action-based shortcut bindings (`ppa_<id>`), trigger key selection (1-9), history action re-processing, and action icon system (28 Lucide icons). Backend: settings migration, shortcut scoping, WAL journal mode, batch DB deletes, startup timeout. Frontend: action management dialog, reusable Dialog component, macOS permissions helper.
+
+### Breaking / Notable
+
+- **Rust edition bumped to 2021** (was implicit). MSRV remains 1.87.
+- Database migration to version 9 (WAL journal mode + indexes). Rollback-safe.
+
+### Added
+
+- **Post-process actions system** (`settings.rs`): `LLMModel`, `PostProcessAction` structs with `ensure_post_process_actions()` migration from legacy prompts. Gemini provider added to defaults.
+- **Action CRUD commands** (`shortcut/mod.rs`): `add/update/delete_llm_model`, `add/update/delete_post_process_action` with `validate_trigger_key()`.
+- **Per-action shortcut bindings** (`transcription_coordinator.rs`): `ppa_<actionId>` prefix, `action_map_key()`, action pre-selection from per-action shortcuts, `emit_action_selected/deselected()` events.
+- **`run_post_process_action()`** (`actions.rs`): Resolves saved LLM model for an action, falls back to legacy config.
+- **`apply_action_to_history_entry()`** (`commands/history.rs`): Re-run any action on any history entry, persists processed text.
+- **Action icon system** (`src/lib/constants/actionIcons.tsx`): 28 Lucide icons with `getActionIcon()` picker.
+- **Action management UI** (`PostProcessActions.tsx`): Dialog-based create/edit, icon picker grid, model selector, trigger key dropdown, per-action shortcut binding.
+- **`Dialog.tsx`** (`src/components/ui/`): Reusable modal component with Escape-to-close.
+- **macOS permissions helper** (`src/lib/permissions.ts`): Polling-safe `checkMacOSAccessibilityReady()` avoids spamming TCC prompts.
+- **Settings backfill on every `get_settings()`** — new default bindings appear automatically.
+- **`#[allow(dead_code)]` annotations** on intentionally unused functions.
+
+### Changed
+
+- **llama-server config** (`llama_manager.rs`): `-c 16384` (was 4096), `--spec-draft-n-max 2`, `-ctk f16 -ctv f16`, `LLAMA_ATTN_ROT_DISABLE=1`, `--mmproj` conditional on multimodal, `-ngl -1` for CUDA builds. 90s startup timeout.
+- **`ActiveActionState`** from `Option<u8>` to `Option<String>` — carries action ID instead of key number.
+- **`Stage::Recording`** now holds `selected_action: Option<String>` for action-aware pipeline.
+- **Shortcut bindings**: `pause`, `show_history`, `copy_latest_history` added to defaults.
+- **Settings merge**: `load_or_create_app_settings()` and `get_settings()` both call `ensure_post_process_actions()` + `ensure_action_bindings()`.
+- **`settingsStore.ts` initialize guard**: Flag set eagerly before first await.
+
+### Fixed
+
+- **CUDA not activating**: `has_gpu_support()` now verifies server binary path contains `cuda` or `vulkan` before enabling GPU offload.
+- **Duplicate main window crash** (`lib.rs`): `get_webview_window("main").is_none()` guard prevents double-build during `applicationDidFinishLaunching`.
+- **History DB**: WAL journal mode, `synchronous = NORMAL`, batch DELETE in single transaction (one fsync instead of one per row), `cleanup_old_entries()` moved after event emit, indexes on `(saved, timestamp)` and `(timestamp)`.
+- **Libclang download** (`scripts/download-libclang.ps1`): Guided helper for bindgen dependency.
+
+### Infrastructure
+
+- `scripts/download-libclang.ps1` — downloads/extracts `libclang.dll` for `whisper-rs-sys` bindgen.
+- `AGENTS.md` / `BUILD.md` — Windows fresh-machine setup with Python 3.12 + libclang instructions.
+
 ## [Unreleased] — S2B2S v0.1.0 (Conversation Evolution)
 
 > **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.

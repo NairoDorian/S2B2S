@@ -5,7 +5,9 @@ use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, PostProcessAction, APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::shortcut;
 use crate::stt::multi_stt;
 use crate::tray::{change_tray_icon, TrayIconState};
@@ -311,6 +313,233 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
     }
 }
 
+/// Run a post-process action over the given text, resolving its saved
+/// language model (falling back to the first saved model, then to the legacy
+/// active provider configuration).
+pub(crate) async fn run_post_process_action(
+    app: &AppHandle,
+    settings: &AppSettings,
+    text: &str,
+    action: &PostProcessAction,
+) -> Option<String> {
+    let model = action
+        .llm_model_id
+        .as_deref()
+        .and_then(|id| settings.llm_model(id))
+        .or_else(|| settings.llm_models.first());
+
+    match model {
+        Some(model) => {
+            // Reuse the existing process_action logic by building a temporary prompt config
+            let temp_settings = settings.clone();
+            // This routes through the existing LLM client with the saved model's provider
+            if model.provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
+                debug!("Apple Intelligence provider selected for action, routing through legacy path");
+            }
+            process_action(
+                app,
+                settings,
+                text,
+                &action.prompt,
+                Some(&model.model),
+                Some(&model.provider_id),
+            )
+            .await
+        }
+        None => {
+            // Fallback to legacy post-processing with the active provider/model
+            debug!(
+                "No saved language model found for action '{}'; falling back to legacy config",
+                action.id
+            );
+            post_process_transcription_with_action(app, settings, text, &action.prompt).await
+        }
+    }
+}
+
+/// Fallback: process text using the legacy active provider/model config.
+async fn post_process_transcription_with_action(
+    app: &AppHandle,
+    settings: &AppSettings,
+    transcription: &str,
+    action_prompt: &str,
+) -> Option<String> {
+    let provider = match settings.active_post_process_provider().cloned() {
+        Some(provider) => provider,
+        None => {
+            debug!("Post-processing enabled but no provider is selected");
+            return None;
+        }
+    };
+
+    let model = settings
+        .post_process_models
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    if model.trim().is_empty() {
+        debug!(
+            "Post-processing skipped because provider '{}' has no model configured",
+            provider.id
+        );
+        return None;
+    }
+
+    let processed_prompt = action_prompt.replace("${output}", transcription);
+    let api_key = settings
+        .post_process_api_keys
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    debug!(
+        "Falling back to legacy post-processing with provider '{}' (model: {})",
+        provider.id, model
+    );
+
+    match crate::llm_client::send_chat_completion(
+        &provider,
+        api_key,
+        &model,
+        processed_prompt,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(Some(content)) => {
+            let content = strip_invisible_chars(&content);
+            debug!("Legacy post-processing succeeded. Output length: {} chars", content.len());
+            Some(content)
+        }
+        Ok(None) => {
+            error!("LLM API response has no content");
+            None
+        }
+        Err(e) => {
+            error!("LLM post-processing failed: {}", e);
+            None
+        }
+    }
+}
+
+/// Process text through the LLM with a specific prompt, provider, and model.
+/// Shared by both the action system and the legacy path.
+async fn process_action(
+    app: &AppHandle,
+    settings: &AppSettings,
+    text: &str,
+    prompt_template: &str,
+    model: Option<&str>,
+    provider_id: Option<&str>,
+) -> Option<String> {
+    let provider = match provider_id {
+        Some(pid) => settings.post_process_provider(pid).cloned(),
+        None => settings.active_post_process_provider().cloned(),
+    };
+    let provider = match provider {
+        Some(p) => p,
+        None => {
+            debug!("No provider available for action processing");
+            return None;
+        }
+    };
+
+    let model_str = match model {
+        Some(m) => m.to_string(),
+        None => settings
+            .post_process_models
+            .get(&provider.id)
+            .cloned()
+            .unwrap_or_default(),
+    };
+
+    if model_str.trim().is_empty() {
+        debug!("No model configured for action processing");
+        return None;
+    }
+
+    if provider.id == "llama_cpp" {
+        if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+            if let Err(e) = llama_manager.ensure_server_running().await {
+                error!("Failed to start llama-server for action processing: {}", e);
+                return None;
+            }
+        }
+    }
+
+    let api_key = settings
+        .post_process_api_keys
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    let processed_prompt = prompt_template.replace("${output}", text);
+    let system_prompt = prompt_template.replace("${output}", "").trim().to_string();
+
+    if provider.supports_structured_output {
+        let json_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                (TRANSCRIPTION_FIELD): {
+                    "type": "string",
+                    "description": "The cleaned and processed transcription text"
+                }
+            },
+            "required": [TRANSCRIPTION_FIELD],
+            "additionalProperties": false
+        });
+
+        match crate::llm_client::send_chat_completion_with_schema(
+            &provider,
+            api_key.clone(),
+            &model_str,
+            text.to_string(),
+            Some(system_prompt),
+            Some(json_schema),
+            None,
+            None,
+        )
+        .await
+        {
+            Ok(Some(content)) => {
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(json) => {
+                        if let Some(transcription_value) =
+                            json.get(TRANSCRIPTION_FIELD).and_then(|t| t.as_str())
+                        {
+                            return Some(strip_invisible_chars(transcription_value));
+                        }
+                        return Some(strip_invisible_chars(&content));
+                    }
+                    Err(_) => return Some(strip_invisible_chars(&content)),
+                }
+            }
+            Ok(None) => return None,
+            Err(_) => {} // Fall through to legacy
+        }
+    }
+
+    match crate::llm_client::send_chat_completion(
+        &provider,
+        api_key,
+        &model_str,
+        processed_prompt,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(Some(content)) => Some(strip_invisible_chars(&content)),
+        Ok(None) => None,
+        Err(e) => {
+            error!("Action LLM processing failed: {}", e);
+            None
+        }
+    }
+}
+
 async fn maybe_convert_chinese_variant(
     settings: &AppSettings,
     transcription: &str,
@@ -382,7 +611,23 @@ pub(crate) async fn process_transcription_output(
         final_text = itn_text;
     }
 
-    if post_process {
+    // Check if a specific post-process action was selected via shortcut
+    let action_id: Option<String> = app
+        .try_state::<ActiveActionState>()
+        .and_then(|state| state.0.lock().ok()?.take());
+
+    if let Some(action_id) = action_id {
+        let settings = get_settings(app);
+        if let Some(action) = settings.post_process_action(&action_id) {
+            if let Some(processed_text) =
+                run_post_process_action(app, &settings, &final_text, action).await
+            {
+                post_processed_text = Some(processed_text.clone());
+                post_process_prompt = Some(action.prompt.clone());
+                final_text = processed_text;
+            }
+        }
+    } else if post_process {
         if let Some(processed_text) = post_process_transcription(app, &settings, &final_text).await {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
@@ -928,6 +1173,10 @@ fn substitute_context_variables(prompt: &str) -> String {
 
     substituted
 }
+
+/// Id of the post-process action selected for the in-flight transcription,
+/// set by the coordinator right before the pipeline stops.
+pub struct ActiveActionState(pub std::sync::Mutex<Option<String>>);
 
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {

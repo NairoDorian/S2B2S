@@ -93,6 +93,44 @@ pub struct LLMPrompt {
     pub prompt: String,
 }
 
+/// A saved language model: a (provider, model) pair the user added in the
+/// Models > Language Models tab. Referenced by post-process actions.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct LLMModel {
+    pub id: String,
+    pub provider_id: String,
+    pub model: String,
+    pub label: String,
+}
+
+/// A post-processing action: a prompt applied to the transcription through a
+/// saved language model. Can be triggered by a dedicated global shortcut
+/// (stored in `bindings` under `ppa_<id>`) or by pressing `trigger_key`
+/// while a recording is in progress.
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct PostProcessAction {
+    pub id: String,
+    pub name: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub llm_model_id: Option<String>,
+    #[serde(default = "default_action_icon")]
+    pub icon: String,
+    #[serde(default)]
+    pub trigger_key: Option<u8>,
+}
+
+pub fn default_action_icon() -> String {
+    "sparkles".to_string()
+}
+
+/// Prefix for per-action global shortcut binding ids stored in `bindings`.
+pub const ACTION_BINDING_PREFIX: &str = "ppa_";
+
+pub fn action_binding_id(action_id: &str) -> String {
+    format!("{}{}", ACTION_BINDING_PREFIX, action_id)
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct PostProcessProvider {
     pub id: String,
@@ -1012,6 +1050,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
     #[serde(default)]
+    pub llm_models: Vec<LLMModel>,
+    #[serde(default)]
+    pub post_process_actions: Vec<PostProcessAction>,
+    #[serde(default)]
+    pub post_process_actions_initialized: bool,
+    #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
@@ -1202,6 +1246,14 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             id: "zai".to_string(),
             label: "Z.AI".to_string(),
             base_url: "https://api.z.ai/api/paas/v4".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
+        },
+        PostProcessProvider {
+            id: "gemini".to_string(),
+            label: "Google Gemini".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
@@ -1446,6 +1498,98 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+/// One-time migration: build saved language models and post-process actions
+/// from the legacy prompt/provider configuration. Returns true when settings
+/// were modified and need to be persisted.
+fn ensure_post_process_actions(settings: &mut AppSettings) -> bool {
+    if settings.post_process_actions_initialized {
+        return false;
+    }
+
+    let mut default_model_id: Option<String> = settings.llm_models.first().map(|m| m.id.clone());
+    if default_model_id.is_none() {
+        if let Some(provider) = settings.active_post_process_provider().cloned() {
+            if provider.id != APPLE_INTELLIGENCE_PROVIDER_ID {
+                if let Some(model) = settings.post_process_models.get(&provider.id).cloned() {
+                    if !model.trim().is_empty() {
+                        let id = format!("llm_{}", chrono::Utc::now().timestamp_millis());
+                        settings.llm_models.push(LLMModel {
+                            id: id.clone(),
+                            provider_id: provider.id.clone(),
+                            model: model.clone(),
+                            label: model,
+                        });
+                        default_model_id = Some(id);
+                    }
+                }
+            }
+        }
+    }
+
+    if settings.post_process_actions.is_empty() {
+        for (index, prompt) in settings.post_process_prompts.iter().enumerate() {
+            let trigger_key = u8::try_from(index + 1).ok().filter(|key| *key <= 9);
+            settings.post_process_actions.push(PostProcessAction {
+                id: format!("act_migrated_{}", index),
+                name: prompt.name.clone(),
+                prompt: prompt.prompt.clone(),
+                llm_model_id: default_model_id.clone(),
+                icon: default_action_icon(),
+                trigger_key,
+            });
+        }
+    }
+
+    settings.post_process_actions_initialized = true;
+    true
+}
+
+/// Ensure every post-process action has a matching `ppa_<id>` shortcut binding
+/// (created empty so the binding UI can manage it) and prune any orphan
+/// `ppa_` bindings whose action no longer exists. Returns true when settings
+/// were modified. Runs on every load so migrated actions stay consistent.
+fn ensure_action_bindings(settings: &mut AppSettings) -> bool {
+    let mut changed = false;
+
+    let to_create: Vec<(String, String)> = settings
+        .post_process_actions
+        .iter()
+        .map(|action| (action_binding_id(&action.id), action.name.clone()))
+        .filter(|(binding_id, _)| !settings.bindings.contains_key(binding_id))
+        .collect();
+    for (binding_id, name) in to_create {
+        settings.bindings.insert(
+            binding_id.clone(),
+            ShortcutBinding {
+                id: binding_id,
+                name,
+                description: "Starts a transcription processed with this action.".to_string(),
+                default_binding: String::new(),
+                current_binding: String::new(),
+            },
+        );
+        changed = true;
+    }
+
+    let valid_ids: std::collections::HashSet<String> = settings
+        .post_process_actions
+        .iter()
+        .map(|action| action_binding_id(&action.id))
+        .collect();
+    let orphans: Vec<String> = settings
+        .bindings
+        .keys()
+        .filter(|key| key.starts_with(ACTION_BINDING_PREFIX) && !valid_ids.contains(*key))
+        .cloned()
+        .collect();
+    for key in orphans {
+        settings.bindings.remove(&key);
+        changed = true;
+    }
+
+    changed
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -1536,6 +1680,36 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     bindings.insert(
+        "pause".to_string(),
+        ShortcutBinding {
+            id: "pause".to_string(),
+            name: "Pause / Resume".to_string(),
+            description: "Pauses or resumes the current recording.".to_string(),
+            default_binding: "f6".to_string(),
+            current_binding: "f6".to_string(),
+        },
+    );
+    bindings.insert(
+        "show_history".to_string(),
+        ShortcutBinding {
+            id: "show_history".to_string(),
+            name: "Show History".to_string(),
+            description: "Opens the app window and navigates to the History tab.".to_string(),
+            default_binding: "".to_string(),
+            current_binding: "".to_string(),
+        },
+    );
+    bindings.insert(
+        "copy_latest_history".to_string(),
+        ShortcutBinding {
+            id: "copy_latest_history".to_string(),
+            name: "Copy Latest History".to_string(),
+            description: "Copies the latest transcription entry to your clipboard.".to_string(),
+            default_binding: "".to_string(),
+            current_binding: "".to_string(),
+        },
+    );
+    bindings.insert(
         "toggle_pause".to_string(),
         ShortcutBinding {
             id: "toggle_pause".to_string(),
@@ -1599,6 +1773,9 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        llm_models: Vec::new(),
+        post_process_actions: Vec::new(),
+        post_process_actions_initialized: false,
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
@@ -1650,6 +1827,26 @@ impl AppSettings {
             .iter_mut()
             .find(|provider| provider.id == provider_id)
     }
+
+    pub fn llm_model(&self, id: &str) -> Option<&LLMModel> {
+        self.llm_models.iter().find(|model| model.id == id)
+    }
+
+    pub fn post_process_action(&self, id: &str) -> Option<&PostProcessAction> {
+        self.post_process_actions
+            .iter()
+            .find(|action| action.id == id)
+    }
+
+    pub fn post_process_action_by_trigger_key(&self, key: u8) -> Option<&PostProcessAction> {
+        self.post_process_actions
+            .iter()
+            .find(|action| action.trigger_key == Some(key))
+    }
+
+    pub fn default_post_process_action(&self) -> Option<&PostProcessAction> {
+        self.post_process_actions.first()
+    }
 }
 
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
@@ -1698,7 +1895,10 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let mut changed = ensure_post_process_defaults(&mut settings);
+    changed |= ensure_post_process_actions(&mut settings);
+    changed |= ensure_action_bindings(&mut settings);
+    if changed {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -1722,7 +1922,30 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
+    let mut updated = false;
+
+    let default_bindings = get_default_settings().bindings;
+    for (key, value) in default_bindings {
+        if !settings.bindings.contains_key(&key) {
+            debug!("Adding missing binding: {}", key);
+            settings.bindings.insert(key, value);
+            updated = true;
+        }
+    }
+
     if ensure_post_process_defaults(&mut settings) {
+        updated = true;
+    }
+
+    if ensure_post_process_actions(&mut settings) {
+        updated = true;
+    }
+
+    if ensure_action_bindings(&mut settings) {
+        updated = true;
+    }
+
+    if updated {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 

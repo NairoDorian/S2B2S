@@ -38,6 +38,11 @@ export const commands = {
 	updatePostProcessPrompt: (id: string, name: string, prompt: string) => typedError<null, string>(__TAURI_INVOKE("update_post_process_prompt", { id, name, prompt })),
 	deletePostProcessPrompt: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_post_process_prompt", { id })),
 	setPostProcessSelectedPrompt: (id: string) => typedError<null, string>(__TAURI_INVOKE("set_post_process_selected_prompt", { id })),
+	addLlmModel: (providerId: string, model: string, label: string) => typedError<LLMModel, string>(__TAURI_INVOKE("add_llm_model", { providerId, model, label })),
+	deleteLlmModel: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_llm_model", { id })),
+	addPostProcessAction: (name: string, prompt: string, llmModelId: string | null, icon: string, triggerKey: number | null) => typedError<PostProcessAction, string>(__TAURI_INVOKE("add_post_process_action", { name, prompt, llmModelId, icon, triggerKey })),
+	updatePostProcessAction: (id: string, name: string, prompt: string, llmModelId: string | null, icon: string, triggerKey: number | null) => typedError<null, string>(__TAURI_INVOKE("update_post_process_action", { id, name, prompt, llmModelId, icon, triggerKey })),
+	deletePostProcessAction: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_post_process_action", { id })),
 	updateCustomWords: (words: string[]) => typedError<null, string>(__TAURI_INVOKE("update_custom_words", { words })),
 	/**
 	 *  Temporarily unregister a binding while the user is editing it in the UI.
@@ -175,6 +180,11 @@ export const commands = {
 	deleteAllHistoryEntries: () => typedError<number, string>(__TAURI_INVOKE("delete_all_history_entries")),
 	deleteHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("delete_history_entry", { id })),
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
+	/**
+	 *  Re-run a post-process action over an existing history entry and persist
+	 *  the processed text. Returns the updated entry.
+	 */
+	applyActionToHistoryEntry: (id: number, actionId: string) => typedError<HistoryEntry, string>(__TAURI_INVOKE("apply_action_to_history_entry", { id, actionId })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
 	deleteHistoryEntries: (ids: number[]) => typedError<null, string>(__TAURI_INVOKE("delete_history_entries", { ids })),
@@ -294,6 +304,9 @@ export type AppSettings = {
 	post_process_models?: { [key in string]: string },
 	post_process_prompts?: LLMPrompt[],
 	post_process_selected_prompt_id?: string | null,
+	llm_models?: LLMModel[],
+	post_process_actions?: PostProcessAction[],
+	post_process_actions_initialized?: boolean,
 	mute_while_recording?: boolean,
 	append_trailing_space?: boolean,
 	app_language?: string,
@@ -491,6 +504,17 @@ export type ImplementationChangeResult = {
 
 export type KeyboardImplementation = "tauri" | "key_listener";
 
+/**
+ *  A saved language model: a (provider, model) pair the user added in the
+ *  Models > Language Models tab. Referenced by post-process actions.
+ */
+export type LLMModel = {
+	id: string,
+	provider_id: string,
+	model: string,
+	label: string,
+};
+
 export type LLMPrompt = {
 	id: string,
 	name: string,
@@ -635,6 +659,21 @@ export type PiperServerStatus = {
 	port: number | null,
 	cuda: boolean,
 	ready: boolean,
+};
+
+/**
+ *  A post-processing action: a prompt applied to the transcription through a
+ *  saved language model. Can be triggered by a dedicated global shortcut
+ *  (stored in `bindings` under `ppa_<id>`) or by pressing `trigger_key`
+ *  while a recording is in progress.
+ */
+export type PostProcessAction = {
+	id: string,
+	name: string,
+	prompt: string,
+	llm_model_id?: string | null,
+	icon?: string,
+	trigger_key?: number | null,
 };
 
 export type PostProcessProvider = {

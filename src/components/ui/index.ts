@@ -10,6 +10,7 @@ export { Select } from "./Select";
 export { SettingContainer } from "./SettingContainer";
 export { SettingsGroup } from "./SettingsGroup";
 export { Slider } from "./Slider";
+export { Dialog } from "./Dialog";
 export { Textarea } from "./Textarea";
 export { TextDisplay } from "./TextDisplay";
 export { ToggleSwitch } from "./ToggleSwitch";

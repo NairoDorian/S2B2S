@@ -31,6 +31,10 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
+    M::up(
+        "CREATE INDEX IF NOT EXISTS idx_history_saved_timestamp ON transcription_history(saved, timestamp);
+         CREATE INDEX IF NOT EXISTS idx_history_timestamp ON transcription_history(timestamp);",
+    ),
     M::up("ALTER TABLE transcription_history ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'stt';"),
     M::up("ALTER TABLE transcription_history ADD COLUMN model_name TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN model_info TEXT;"),
@@ -138,6 +142,10 @@ impl HistoryManager {
         // Apply any pending migrations
         migrations.to_latest(&mut conn)?;
 
+        // WAL avoids writers blocking readers and cuts fsync cost on the
+        // transcription hot path. The mode is persistent, set it once here.
+        let _mode: String = conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
+
         // Get version after migration
         let version_after: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 
@@ -211,7 +219,11 @@ impl HistoryManager {
     }
 
     fn get_connection(&self) -> Result<Connection> {
-        Ok(Connection::open(&self.db_path)?)
+        let conn = Connection::open(&self.db_path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        // NORMAL is safe with WAL and avoids an fsync per transaction.
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        Ok(conn)
     }
 
     fn map_history_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
@@ -304,8 +316,6 @@ impl HistoryManager {
 
         debug!("Saved history entry with id {}", entry.id);
 
-        self.cleanup_old_entries()?;
-
         // Emit typed event for real-time frontend updates
         if let Err(e) = (HistoryUpdatePayload::Added {
             entry: entry.clone(),
@@ -313,6 +323,12 @@ impl HistoryManager {
         .emit(&self.app_handle)
         {
             error!("Failed to emit history-updated event: {}", e);
+        }
+
+        // Retention cleanup is best-effort housekeeping; it must not delay
+        // the update event or fail the save.
+        if let Err(e) = self.cleanup_old_entries() {
+            error!("Failed to clean up old history entries: {}", e);
         }
 
         Ok(entry)
@@ -382,17 +398,20 @@ impl HistoryManager {
             return Ok(0);
         }
 
-        let conn = self.get_connection()?;
+        let mut conn = self.get_connection()?;
         let mut deleted_count = 0;
 
-        for (id, file_name) in entries {
-            // Delete database entry
-            conn.execute(
+        // Delete all rows in one transaction (one fsync instead of one per row)
+        let tx = conn.transaction()?;
+        for (id, _) in entries {
+            tx.execute(
                 "DELETE FROM transcription_history WHERE id = ?1",
                 params![id],
             )?;
+        }
+        tx.commit()?;
 
-            // Delete WAV file
+        for (_, file_name) in entries {
             let file_path = self.recordings_dir.join(file_name);
             if file_path.exists() {
                 if let Err(e) = fs::remove_file(&file_path) {

@@ -463,6 +463,7 @@
     },
     "postProcessing": {
       "title": "Post Process",
+      "description": "Configure post-processing providers and actions for refining transcriptions.",
       "hotkey": {
         "title": "Hotkey"
       },
@@ -498,6 +499,37 @@
           "placeholderNoOptions": "Type a model name",
           "refreshModels": "Refresh models"
         }
+      },
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
+      "defaultShortcut": {
+        "title": "Default Shortcut",
+        "toggleLabel": "Enable default post-processing shortcut",
+        "toggleDescription": "When enabled, pressing the transcribe-with-post-processing hotkey applies the first action to the transcription."
+      },
+      "actions": {
+        "title": "Actions",
+        "description": "Create actions with custom prompts, icons, and trigger keys. Each action can be bound to a global shortcut.",
+        "newAction": "New Action",
+        "newTitle": "New Action",
+        "editTitle": "Edit Action",
+        "dialogSubtitle": "Configure what this action does and how to trigger it.",
+        "name": "Name",
+        "namePlaceholder": "e.g. Fix grammar",
+        "icon": "Icon",
+        "prompt": "Prompt",
+        "promptPlaceholder": "Enter instructions for the AI…",
+        "promptHint": "Use ${output} to reference the transcribed text in your prompt.",
+        "model": "Language Model",
+        "modelPlaceholder": "Select a saved model",
+        "noModels": "No saved language models yet. Add one in the Models tab.",
+        "triggerKey": "Trigger Key",
+        "shortcut": "Global Shortcut",
+        "shortcutAfterSave": "Save the action first to set a custom global shortcut.",
+        "noKey": "None",
+        "keyTaken": "Key {key} (in use)",
+        "empty": "Create your first action to start processing transcriptions with custom prompts.",
+        "emptyTitle": "No actions yet",
+        "noModelShort": "No model"
       },
       "prompts": {
         "title": "Prompt",
@@ -535,7 +567,14 @@
       "retranscribe": "Re-transcribe",
       "retranscribeError": "Failed to re-transcribe. Please try again.",
       "transcribing": "Transcribing...",
-      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+      "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon.",
+      "processWith": "Process with action…",
+      "processError": "Failed to process entry with action.",
+      "processed": "Processed",
+      "retryTranscription": "Retry Transcription",
+      "regenerateSuccess": "History entry successfully regenerated!",
+      "regenerateError": "Failed to regenerate entry.",
+      "synthesizing": "Synthesizing audio…"
     },
     "debug": {
       "title": "Debug",

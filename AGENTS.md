@@ -26,32 +26,42 @@ When in doubt, choose the portable solution.
 
 ## Development Commands
 
-**Prerequisites:** Rust (latest stable), Bun
+**Prerequisites:** Rust (latest stable), Bun, **Python 3.12** (see below)
 
-```bash
-# Install dependencies
+```powershell
+# ── Windows Setup (fresh machine) ────────────────────────────────────
+
+# 1. Prerequisites
+#    - Rust:  https://rustup.rs
+#    - Bun:   https://bun.sh  (or: npm install -g bun)
+#    - Python 3.12:  https://www.python.org/downloads/
+#      IMPORTANT: Must be 3.12 (3.13 breaks kittentts wheel).
+
+# 2. Install frontend deps
 bun install
 
-# Run in development mode
-bun run tauri dev
-# If cmake error on macOS:
-CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
+# 3. Install libclang.dll (build-time dep for whisper-rs-sys bindgen)
+winget install -e --id LLVM.LLVM                # ~2 min, auto-PATH
+# or: .\scripts\download-libclang.ps1           # guided helper
 
-# Build for production
+# 4. Run in development mode
+bun run tauri dev
+# If cmake error on macOS:  CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
+
+# 5. Build for production
 bun run tauri build
 
-# Frontend only
+# ── Frontend only ────────────────────────────────────────────────────
 bun run dev        # Vite dev server
 bun run build      # TypeScript + Vite build
 bun run preview    # Preview built frontend
 ```
 
-**Model Setup (Required for Development):**
-
 ```bash
-# Python venv for TTS engines (Piper, Kokoro, Kitten, Pocket):
+# Python 3.12 venv for TTS engines (Piper, Kokoro, Kitten, Pocket):
 #   Windows: .\scripts\setup_tts_venv.ps1
 #   macOS/Linux: bash scripts/setup_tts_venv.sh
+#   NOTE: Python 3.12 is required (kittentts wheel doesn't support 3.13+)
 
 # Download STT/TTS/Brain model files to models/
 #   Windows: .\models\download_models.ps1 -Model all

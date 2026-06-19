@@ -6,6 +6,7 @@ import {
   Copy,
   FolderOpen,
   RotateCcw,
+  Sparkles,
   Star,
   Trash2,
   Mic,
@@ -19,8 +20,11 @@ import {
   events,
   type HistoryEntry,
   type HistoryUpdatePayload,
+  type PostProcessAction,
 } from "@/bindings";
 import { useOsType } from "@/hooks/useOsType";
+import { useSettings } from "@/hooks/useSettings";
+import { getActionIcon } from "@/lib/constants/actionIcons";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
