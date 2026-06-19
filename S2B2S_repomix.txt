@@ -36,20 +36,23 @@ The content is organized as follows:
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # User Provided Header
-## S2B2S — Repomix Architecture Overview
+## S2B2S — Repomix Codebase Snapshot (v0.10)
 
 Speech-to-Brain-to-Speech desktop app (Tauri 2 + Rust + React/TypeScript).
-Combines STT (7 engines), LLM Brain (11 providers), and TTS (8 engines) into
+Combines STT (9 engine types, 11 variants), LLM Brain (10 providers), and TTS (8 engines) into
 a unified voice assistant. ~15,000 lines Rust, ~10,000 lines TypeScript.
 
 Three pipelines: Dictation (speak→paste), Read Aloud (select→hear),
 Conversation (speak→LLM→hear). 20-language i18n, system tray, global shortcuts.
 
-See S2B2S_FULL_REVIEW.md for complete code review and cross-project analysis.
+See android-port-plan.md for Android on-device port plans.
+See improvement-plan.md for streaming STT/TTS analysis.
+See reference_links.md for 70+ project reference curated list.
 
 # Directory Structure
 ```
 AGENTS.md
+android-port-plan.md
 BUILD.md
 CHANGELOG.md
 CLAUDE.md
@@ -57,14 +60,23 @@ CONTRIBUTING_TRANSLATIONS.md
 CONTRIBUTING.md
 CRUSH.md
 eslint.config.js
+improvement-plan.md
 LICENSE
 LLAMA_CPP.md
 models/download_models.ps1
 models/download_models.sh
 models/install-kittentts.ps1
 models/kittentts-cli.py
+models/STT/cohere-int8/._cohere-encoder.int8.onnx.data
+models/STT/cohere-int8/cohere-encoder.int8.onnx.data
+models/STT/parakeet-unified-en-0.6b-fp32/decoder_joint.onnx.data
+models/STT/parakeet-unified-en-0.6b-fp32/encoder.onnx.data
+models/STT/parakeet-unified-en-0.6b-fp32/tokenizer.model
+models/STT/parakeet-unified-en-0.6b-int8/tokenizer.model
 package.json
 README.md
+reference_github_links.md
+reference_links.md
 repomix-file-descriptions.md
 S2B2S_ANDROID_COMPANION.md
 S2B2S_REVIEW.md
@@ -132,6 +144,16 @@ src-tauri/src/managers/mod.rs
 src-tauri/src/managers/model.rs
 src-tauri/src/managers/transcription_mock.rs
 src-tauri/src/managers/transcription.rs
+src-tauri/src/overlay_fx/capabilities.rs
+src-tauri/src/overlay_fx/commands.rs
+src-tauri/src/overlay_fx/cursor_follow.rs
+src-tauri/src/overlay_fx/events.rs
+src-tauri/src/overlay_fx/mod.rs
+src-tauri/src/overlay_fx/native/mod.rs
+src-tauri/src/overlay_fx/native/shader.wgsl
+src-tauri/src/overlay_fx/placement.rs
+src-tauri/src/overlay_fx/trail.rs
+src-tauri/src/overlay_fx/window.rs
 src-tauri/src/overlay.rs
 src-tauri/src/portable.rs
 src-tauri/src/settings.rs
@@ -140,6 +162,9 @@ src-tauri/src/shortcut/key_listener.rs
 src-tauri/src/shortcut/mod.rs
 src-tauri/src/shortcut/tauri_impl.rs
 src-tauri/src/signal_handle.rs
+src-tauri/src/stt/mod.rs
+src-tauri/src/stt/multi_stt.rs
+src-tauri/src/stt/unified_parakeet.rs
 src-tauri/src/transcription_coordinator.rs
 src-tauri/src/tray_i18n.rs
 src-tauri/src/tray.rs
@@ -171,11 +196,16 @@ src-tauri/src/tts/status.rs
 src-tauri/src/tts/telemetry.rs
 src-tauri/src/utils.rs
 src-tauri/src/wake_word.rs
+src-tauri/unified_parakeet_server.py
 src/App.css
 src/App.tsx
 src/assets/icon.png
 src/assets/logo.png
 src/bindings.ts
+src/brain-overlay/avatar/Avatar3D.tsx
+src/brain-overlay/BrainOverlayApp.tsx
+src/brain-overlay/index.html
+src/brain-overlay/main.tsx
 src/components/AccessibilityPermissions.tsx
 src/components/conversation/ConversationView.tsx
 src/components/footer/BrainSelector.tsx
@@ -247,6 +277,8 @@ src/components/settings/models/ModelsSettings.tsx
 src/components/settings/ModelUnloadTimeout.tsx
 src/components/settings/MuteWhileRecording.tsx
 src/components/settings/OutputDeviceSelector.tsx
+src/components/settings/OverlayWindowSettings.tsx
+src/components/settings/ParakeetStreamingToggle.tsx
 src/components/settings/PasteMethod.tsx
 src/components/settings/post-processing/PostProcessingSettings.tsx
 src/components/settings/PostProcessingSettingsApi/ApiKeyField.tsx
@@ -270,6 +302,7 @@ src/components/settings/TranslateToEnglish.tsx
 src/components/settings/TypingTool.tsx
 src/components/settings/UpdateChecksToggle.tsx
 src/components/settings/VolumeSlider.tsx
+src/components/settings/WgpuTrailSettings.tsx
 src/components/shared/index.ts
 src/components/shared/ProgressBar.tsx
 src/components/Sidebar.tsx

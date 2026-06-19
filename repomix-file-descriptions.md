@@ -192,6 +192,18 @@
 | `kokoro_server.py` | HTTP server wrapping kokoro-tts — Direct API mode or CLI fallback (271 lines) |
 | `kitten_server.py` | HTTP server wrapping KittenTTS — 8 voices, 25-80MB models (209 lines) |
 | `pocket_server.py` | HTTP server wrapping pocket_tts — 8 voices + custom cloned voices (189 lines) |
+| `unified_parakeet_server.py` | STT HTTP server — auto-detects sherpa-onnx vs manual ONNX, streaming + offline decode (703 lines) |
+
+### Export Scripts (`temp_export_onnx/`)
+
+| File | Description |
+|------|-------------|
+| `export_onnx_streaming.py` | Sherpa-onnx Parakeet Unified streaming exporter — identical to upstream PR #3575 |
+| `download_nemo.py` | Downloads nvidia/parakeet-unified-en-0.6b checkpoint from HuggingFace |
+| `export_unified.ps1` | PowerShell wrapper — runs export with 560ms latency preset |
+| `export_unified.sh` | Bash wrapper — same as .ps1 for Linux/macOS |
+| `README.md` | Export pipeline documentation |
+| `notes.md` | Developer notes on the export process |
 
 ## React Frontend (`src/`)
 
@@ -279,12 +291,20 @@
 | `settings/advanced/AudioEnhancements.tsx` | RNNoise noise suppression settings |
 | `settings/advanced/LongAudioRouting.tsx` | Long-audio model switching configuration |
 | `settings/speech/SpeechSettings.tsx` | TTS engine, voice, speed, volume, sanitization, greeting settings |
+| `settings/speech/TtsEngineSelector.tsx` | TTS engine dropdown with descriptions and badges |
 | `settings/brain/BrainSettings.tsx` | LLM provider, system prompt, context turns, read-aloud toggle |
 | `settings/brain/useBrainProviderState.ts` | Brain provider state management hook |
+| `settings/brain/BrainProviderSelector.tsx` | Brain provider dropdown with base URL and API key |
 | `settings/models/ModelsSettings.tsx` | Full STT model management with download progress |
+| `settings/models/GpuVramMonitor.tsx` | GPU VRAM usage display with % bar and color coding |
+| `settings/models/ModelSettingsCard.tsx` | Individual model card with download/delete/streaming toggle |
 | `settings/llama-cpp/LlamaCppSettings.tsx` | llama.cpp server GPU detection, release list, download/activate |
 | `settings/post-processing/PostProcessingSettings.tsx` | LLM post-processing config with API settings and prompt CRUD |
+| `settings/post-processing/PostProcessingApiSettings.tsx` | Post-processing API key and endpoint settings |
+| `settings/history/HistorySettings.tsx` | Transcription and TTS history with search, delete, type badges |
 | `settings/about/AboutSettings.tsx` | Language selector, version, export/import, source, log dir |
+| `settings/debug/DebugSettings.tsx` | Debug mode toggle, crash log path, log viewer |
+| `settings/debug/LogViewer.tsx` | Real-time log viewer with search, level filter, copy, clear |
 | `settings/PushToTalk.tsx` | Push-to-talk mode toggle |
 | `settings/ShortcutInput.tsx` | Keyboard shortcut capture input |
 | `settings/PasteMethod.tsx` | Paste method selector (Ctrl+V, Direct, etc.) |
@@ -322,13 +342,13 @@
 
 | File | Description |
 |------|-------------|
-| `lib/types.ts` | Shared TypeScript type definitions |
+| `lib/types/events.ts` | Tauri event type definitions |
+| `lib/constants/languages.ts` | Language code constants and metadata |
+| `lib/constants/models.ts` | Model-related constants |
 | `lib/utils/rtl.ts` | Right-to-left layout utilities for Arabic/Hebrew |
 | `lib/utils/keyboard.ts` | Keyboard event and shortcut utilities |
 | `lib/utils/format.ts` | Number and duration formatting utilities |
 | `lib/utils/modelTranslation.ts` | Model name translation and display helpers |
-| `lib/types/events.ts` | Tauri event type definitions |
-| `lib/constants/languages.ts` | Language code constants and metadata |
 
 ### `utils/`
 
@@ -374,7 +394,36 @@
 | `CHANGELOG.md` | Version history |
 | `CRUSH.md` | Dev commands quick reference |
 | `LLAMA_CPP.md` | llama.cpp server integration reference |
-| `S2B2S_ANDROID_COMPANION.md` | Android companion app documentation |
+| `S2B2S_ANDROID_COMPANION.md` | Android thin-client companion PWA brainstorm (⚠️ superseded by android-port-plan.md) |
+| `android-port-plan.md` | Full on-device Android STT→Brain→TTS architecture & implementation plan |
+| `improvement-plan.md` | Streaming STT/TTS deep-dive analysis with P0–P3 prioritized roadmap |
+| `reference_links.md` | Curated reference of 70+ open-source projects across 16 categories |
+| `reference_github_links.md` | Curated list of 30+ STT/TTS/voice-related GitHub projects with Android section |
+| `AGENTS.md` | AI coding assistant guide — architecture, conventions, commands, file tree |
+| `CLAUDE.md` | AI assistant entry point — key docs, cleanup notes, file structure |
 | `README.md` | Project overview, quick start, architecture diagrams |
-| `S2B2S_REVIEW.md` | Previous project analysis |
+| `S2B2S_REVIEW.md` | Comprehensive project analysis (1,857 lines) — architecture deep-dive, pipeline specs, roadmap |
 | `LICENSE` | MIT License |
+| `repomix.config.json` | Repomix bundler configuration for codebase snapshots |
+| `repomix-file-descriptions.md` | This file — per-file descriptions for the repomix annotated output |
+
+### Reference Documentation
+
+| File | Description |
+|------|-------------|
+| `gemma_4_qat_mtp_e2b/MULTIMODAL.md` | Gemma 4 E2B multimodal input docs — image + audio, MTP optimization |
+| `gemma_4_qat_mtp_e2b/REFERENCE.md` | Gemma 4 llama.cpp setup reference — commands, CUDA config, model files |
+| `futuristic_analysis/00_README_START_HERE.md` | Master index — architecture overview, core principles |
+| `futuristic_analysis/01_S2B2S_REVIEW.md` | Honest audit of current code — what works, what's missing |
+| `futuristic_analysis/02_REFERENCE_PROJECTS.md` | Deep read of TD_Web_Trail and CursorFX reference repos |
+| `futuristic_analysis/03_GPU_OVERLAY_ARCHITECTURE.md` | Two-track rendering (webview + native wgpu), per-OS matrix |
+| `futuristic_analysis/04_CONVERSATION_MODE_2.md` | UX spec — state machine, event contract, reply bubble |
+| `futuristic_analysis/05_VISION_AND_SCREEN_UNDERSTANDING.md` | Screen capture, multimodal ChatMessage, privacy invariants |
+| `futuristic_analysis/06_AVATAR_SPEC.md` | 3D cybernetic avatar spec — 4 senses, Catmull-Rom visual language |
+| `futuristic_analysis/07_IMPLEMENTATION_ROADMAP.md` | 5-phase plan with file-level tasks, risk register |
+| `futuristic_analysis/08_TRANSPARENT_OVERLAY_IMPL_PLAN.md` | Concrete code-level plan bridging analysis to reference repos |
+| `references_comparative_analysis_md/00_COMPARATIVE_ANALYSIS.md` | 23-project comparative analysis master document |
+| `references_comparative_analysis_md/ARCHITECTURE_PATTERNS_CATALOG.md` | Reusable architecture patterns extracted from reference projects |
+| `references_comparative_analysis_md/FORK_LINEAGE.md` | Fork lineage and project genealogy |
+| `references_comparative_analysis_md/LICENSE_COMPATIBILITY.md` | License compatibility matrix across all reference projects |
+| `references_comparative_analysis_md/ANALYSIS_TEMPLATE.md` | Template used for individual project reviews |
