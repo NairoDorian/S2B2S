@@ -2,8 +2,8 @@
 
 **Scope:** Verify that the locally-converted Parakeet streaming model is fully wired into the latest `main`, analyze the streaming STT and streaming TTS subsystems end-to-end, compare against `sherpa-onnx` and other relevant open-source projects, and lay out a prioritized improvement roadmap.
 
-**Repos reviewed:** `NairoDorian/S2B2S` @ `aa1c230` (2026-06-15, branch `main`) and `k2-fsa/sherpa-onnx` @ `6206c9c` (2026-06-15).
-**Commits analyzed:** last ~55 of `S2B2S` (the STT/TTS/streaming cluster spans 2026-06-12 → 2026-06-15).
+**Repos reviewed:** `NairoDorian/S2B2S` @ `aa1c230` (2026-06-15, branch `main`) and `k2-fsa/sherpa-onnx` @ `6206c9c` (2026-06-15). **Re-audited:** `NairoDorian/S2B2S` @ `2575210` (2026-06-19, branch `main`) — full codebase re-verification, dead code audit, and cross-reference against `android-port-plan.md` and `reference_links.md`.
+**Commits analyzed:** last ~55 of `S2B2S` (the STT/TTS/streaming cluster spans 2026-06-12 → 2026-06-15), plus the 4 intervening commits (2026-06-15 → 2026-06-19).
 **This is analysis + plan only. No code changes are proposed as diffs here.**
 
 ---
@@ -29,6 +29,26 @@ The single highest-leverage change is **#P0-2: feed live microphone audio to the
 | F5 | Nemotron 3.5 (80 ms, 40 langs, downloadable) is the stronger streaming model and is under-leveraged | High | ⚠️ Not default |
 | F6 | TTS "streaming" is fragment pipelining, not sample-level streaming | Medium | ⚠️ Partial |
 | F7 | sherpa-onnx WebSocket/streaming-server mode unused; HTTP-POST-per-chunk overhead | Medium | ⚠️ Custom HTTP |
+| F8 | `fragment_queue.rs` is 306 lines of fully dead code (unused, `#![allow(dead_code)]`) | Low | ❌ Dead code |
+| F9 | `control_server.rs` is a hand-rolled HTTP loop with no WebSocket, no auth, fire-and-forget Brain | Medium | ⚠️ Limited |
+
+### Status Update (June 19, 2026) — Codebase Re-Audit
+
+This plan was written against `S2B2S@aa1c230` (2026-06-15). A full re-audit of the current `main` branch confirms: **none of the P0/P1/P2 recommendations have been implemented.** The codebase is in exactly the state the plan describes, with one partial exception:
+
+- **Done:** The manual ONNX streaming decoder fix (§3.2, the chunk-boundary token corruption bug) has been applied (`unified_parakeet_server.py:607-611` now re-decodes from frame 0 with a fresh predictor state each chunk).
+- **Not done:** Everything else — no live mic tap, no persistent transport, no model download source, no STT path convergence, no TTS streaming callback, no EOU→sherpa export.
+
+**New findings from the re-audit:**
+
+1. **`fragment_queue.rs` is 306 lines of fully dead code** — suppressed with `#![allow(dead_code)]`, declared but never imported or instantiated anywhere. The file's own comment says it's "preserved from the AgentZero prototype for potential future pre-synthesis optimization." Either integrate it or remove it.
+2. **25 `#[allow(dead_code)]` annotations** across 10 files in `src-tauri/src/tts/` — many struct fields, enum variants, and helper functions kept "for future use" but genuinely unused. This masks maintenance burden and should be audited.
+3. **`control_server.rs` serves 5 endpoints** (`/health`, `/piper-status`, `/speak`, `/brain`, `/command`) over hand-rolled TCP/HTTP on port 43117, with no authentication. The Brain endpoint is fire-and-forget (spawns async, returns immediately). This is the foundation for the optional remote/hybrid mode — but upgrading it to WebSocket requires a full rewrite.
+4. **`gemma_4_qat_mtp_e2b/` (185+338 lines) is not covered by this plan** — it documents Gemma 4 E2B MTP optimization (n=13, ~216 tok/s), multimodal image input, and the llama.cpp setup. The plan deliberately scopes to STT/TTS streaming; the Brain subsystem is a separate analysis.
+5. **`futuristic_analysis/` (9 docs) is not reconciled** — the `04_CONVERSATION_MODE_2.md` doc overlaps with this plan's P0-2 conversation mode recommendations but the two documents were written independently.
+6. **Minor line number shift:** `transcription.rs` replay code extends to ~L780 (plan says ~L760). All other line number claims are exact matches.
+
+**Bottom line:** The plan's analysis remains fully accurate and its recommendations remain fully relevant. The new findings (F8, F9) add debt-cleanup and architectural-awareness items that don't change the priority order.
 
 ---
 
@@ -225,7 +245,7 @@ Beyond the projects S2B2S already credits, these are directly useful for the str
 | **Higgs Audio v3** (Boson AI; GGUF + PyTorch CLI variants) | Research/Non-Commercial | Already in the S2B2S TTS roadmap; the target for true **streaming, expressive** TTS (§6c). License is the gating item. |
 | **Kyutai / Moshi-style full-duplex** | (varies) | Long-horizon reference for the README's "Full-duplex conversation with AEC" roadmap item — simultaneous listen+speak. Not near-term, but the architecture in §3 (live tap) + §6 (streaming TTS) is the on-ramp. |
 
-Existing internal docs to align with (not duplicate): `references_comparative_analysis_md/sherpa-onnx_review.md`, `..._RealtimeSTT`/`Parakeet-Realtime-Transcriber_review.md`, `transcribe-rs_review.md`, and `futuristic_analysis/02_REFERENCE_PROJECTS.md`.
+Existing internal docs to align with (not duplicate): `references_comparative_analysis_md/sherpa-onnx_review.md`, `..._RealtimeSTT`/`Parakeet-Realtime-Transcriber_review.md`, `transcribe-rs_review.md`, `futuristic_analysis/02_REFERENCE_PROJECTS.md`, and `futuristic_analysis/04_CONVERSATION_MODE_2.md`. Related planning documents to reconcile with: `android-port-plan.md` (Android-specific STT/Brain/TTS architecture) and `reference_links.md` (curated 70+ project reference).
 
 ---
 
@@ -247,12 +267,21 @@ Priorities are by **leverage**, not effort. P0 items are the ones that make the 
 - **P2-8** Higgs Audio v3 with SSE/WebSocket streaming once licensing clears. *(§6c)*
 - **P2-9** Full-duplex conversation w/ AEC (listen while speaking), building on the P0-2 live tap + P1-6 streaming TTS. *(roadmap)*
 
+### P3 — Debt cleanup & hardening (new from June 19 re-audit)
+- **P3-10** Either integrate `fragment_queue.rs` into the TTS pipeline (it was designed for pre-synthesis queuing and could reduce TTFA further when combined with sentence streaming) or remove it. 306 lines of `#![allow(dead_code)]`-suppressed code is maintenance drag.
+- **P3-11** Audit and clean up the 25 `#[allow(dead_code)]` annotations across `src-tauri/src/tts/`. Many are struct fields or enum variants kept speculatively. Either wire them in or delete them.
+- **P3-12** Harden `control_server.rs` for remote/hybrid mode: add request authentication (shared secret or token), replace hand-rolled HTTP with `axum`, add WebSocket upgrade support, and make the Brain endpoint synchronous (wait for completion). This is prerequisite work for the P0-2e persistent transport if the remote companion path is pursued.
+- **P3-13** Reconcile this plan with `futuristic_analysis/04_CONVERSATION_MODE_2.md` — the two documents overlap on conversation mode streaming architecture but were written independently. Consolidate into one authoritative roadmap.
+
 ### Suggested sequencing
 ```
 P0-1 ──► (model is downloadable)
 P0-2 ──► (streaming is real) ──► P1-5 (now latency differences are felt) ──► P1-6d (snappy conversation)
 P1-4 ──► (one STT engine) ──────► P2-7 (clean transport/bindings)
 P1-6a/b ─► (fast TTS) ───────────► P2-8 (expressive streaming TTS) ──► P2-9 (full-duplex)
+P3-10/11 (dead code cleanup) — anytime, lowest risk
+P3-12 ──► (hardened control_server) ──► enables remote/hybrid mode if pursued
+P3-13 (doc consolidation) — after P0-2 and P1-6 are designed
 ```
 
 ---
@@ -266,6 +295,9 @@ P1-6a/b ─► (fast TTS) ───────────► P2-8 (expressive 
 - **Transport overhead.** True streaming multiplies the request rate; landing P0-2 without P0-2e (persistent transport) will trade latency for syscall/HTTP overhead. Treat them as one unit.
 - **EOU sherpa parity.** Before removing the manual EOU path (P1-4b), confirm the sherpa-exported EOU reproduces the `<EOU>` turn-end behavior the conversation loop relies on.
 - **Licensing.** Parakeet/Nemotron model cards: CC-BY-4.0 attribution to NVIDIA; exporter credit to sherpa-onnx (#3575). Higgs Audio v3 stays blocked until its Research/Non-Commercial license is cleared for S2B2S's use.
+- **Dead code rot.** The 25 `#[allow(dead_code)]` annotations and the 306-line `fragment_queue.rs` grow stale and create merge-conflict friction in active development areas (TTS subsystem). Clean them up before they accumulate further.
+- **control_server fragility.** The hand-rolled HTTP parser in `control_server.rs` will break on edge cases (chunked encoding, keep-alive, pipelined requests). If remote/hybrid mode is ever pursued, replacing it with `axum` + WebSocket early avoids two migrations.
+- **Document fragmentation.** This plan, `android-port-plan.md`, and `futuristic_analysis/` overlap on streaming STT, conversation mode, and remote companion topics. Without consolidation, contributors will default to whichever doc they find first, leading to divergent implementation.
 
 ---
 
@@ -288,6 +320,13 @@ P1-6a/b ─► (fast TTS) ───────────► P2-8 (expressive 
 | TTS fragment pipelining | `src-tauri/src/tts/manager.rs` ~L182–L224 (3-fragment pattern) |
 | Streaming STT = "Partial" | `README.md` Roadmap table |
 | sherpa WebSocket/migration framing | `references_comparative_analysis_md/sherpa-onnx_review.md` |
+| `fragment_queue.rs` dead code | `src-tauri/src/tts/fragment_queue.rs` L1-306 — `#![allow(dead_code)]`, comment says "currently unused", never imported outside own module |
+| 25 `#[allow(dead_code)]` annotations | `src-tauri/src/tts/` — `fragment_queue.rs` (1 crate-level), `pagination.rs` (4), `telemetry.rs` (4), `player.rs` (2), `status.rs` (3), `mod.rs` (3), `clipboard_watch.rs` (1), `kokoro.rs` (1), `pocket.rs` (1), `kitten.rs` (1), `sapi.rs` (2), `itn.rs` (1), `tn.rs` (1) |
+| `control_server.rs` endpoints & architecture | `src-tauri/src/control_server.rs` L1-255 — 5 endpoints (/health, /piper-status, /speak, /brain, /command), hand-rolled TCP/HTTP on port 43117, no WebSocket, no auth, fire-and-forget Brain |
+| `gemma_4_qat_mtp_e2b/` not covered | `gemma_4_qat_mtp_e2b/MULTIMODAL.md` (185 lines), `REFERENCE.md` (338 lines) — Gemma 4 E2B MTP optimization, multimodal, llama.cpp setup |
+| `futuristic_analysis/` not reconciled | `futuristic_analysis/04_CONVERSATION_MODE_2.md` overlaps with P0-2; 9 docs total, only `02_REFERENCE_PROJECTS.md` mentioned in passing |
+| Manual ONNX decoder fix applied | `unified_parakeet_server.py:607-611` — now re-decodes from frame 0 with fresh predictor state (was: corrupt at chunk boundaries) |
+| All other P0–P2 items: NOT implemented | Verified by full re-audit of `main` branch on 2026-06-19 — no live mic tap, no persistent transport, no model download source, no path convergence, no TTS streaming callback |
 
 ---
 
