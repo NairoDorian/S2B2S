@@ -50,7 +50,7 @@ S2B2S is a cross-platform desktop application that combines speech-to-text (STT)
 
 1. Download the latest release from the [releases page](https://github.com/NairoDorian/S2B2S/releases)
 2. Install and grant microphone permissions
-3. On first run, download **Parakeet V3** (~0.6 GB) — the default and recommended STT model
+3. On first run, download **Parakeet V3** (~478 MB) — the default and recommended STT model
 4. Configure your hotkeys and start transcribing!
 
 ### Development Setup
@@ -142,7 +142,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 ### Frontend (React)
 
-- **90+ components**: settings (11 subdirectories incl. LlamaCppSettings, 60+ files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
+- **110+ components**: settings (11 subdirectories, 60+ files), model-selector, onboarding, conversation, overlay, footer, sidebar, icons, shared utils, update-checker
 - **20-language i18n** via i18next
 - **Zustand** state management with typed bindings
 - **Her-style 3D loading animation** (Three.js)
@@ -151,7 +151,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 ### Backend (Rust)
 
 - **Manager pattern**: Audio, Model, Transcription, History, TTS, Brain
-- **TTS Backend trait**: 7+ engines with `WarmEngine` lifecycle
+- **TTS Backend trait**: 8 engines (5 local, 3 cloud) with `WarmEngine` lifecycle
 - **TripleVAD**: 3-stage voice activity detection (RMS → RNNoise → Silero)
 - **Normalization pipeline**: ITN → Custom Words → Markdown Strip → TN → Regex Cleanup
 - **Single instance** architecture with CLI remote control

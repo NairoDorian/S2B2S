@@ -43,6 +43,10 @@ S2B2S = Tauri 2 (Rust + React/TS)
 - Frontend: `src/` — components/, hooks/, stores/, i18n/ (20 languages)
 - Evolution plans: `futuristic_analysis/` (active, supersedes `analysys/`) — GPU overlay, Conversation Mode 2.0, Screen Vision, 3D Avatar "Four Senses"
 - `analysys/` is **superseded** — the original evolution plan with corrected CursorFX assumptions (DX12 → Vulkan). Excluded from git. See `futuristic_analysis/00_README_START_HERE.md`.
+- Android port: [`android-port-plan.md`](android-port-plan.md) — full on-device STT→Brain→TTS architecture plan (supersedes the thin-client approach in `S2B2S_ANDROID_COMPANION.md`)
+- Streaming analysis: [`improvement-plan.md`](improvement-plan.md) — deep-dive analysis of STT/TTS streaming subsystems with P0–P3 roadmap
+- Project reference: [`reference_links.md`](reference_links.md) — curated reference of 70+ open-source projects across 16 categories
+- Tech stack docs: [`reference_github_links.md`](reference_github_links.md), [`LLAMA_CPP.md`](LLAMA_CPP.md)
 - IPC: tauri-specta typed bindings (`src/bindings.ts`)
 - State: Zustand → Tauri Command → Rust → SQLite/Store
 

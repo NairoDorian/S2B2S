@@ -1,5 +1,7 @@
 # S2B2S Android Assistant Companion — Brainstorm & Plans
 
+> ⚠️ **Note:** This document describes a **thin-client PWA companion** that streams audio to/from the desktop. For the **full on-device** Android STT→Brain→TTS port (no desktop dependency), see [`android-port-plan.md`](android-port-plan.md).
+
 > Companion mobile app that extends the S2B2S desktop experience to Android.  
 > Connects to your desktop S2B2S instance via LAN for STT, TTS, and Brain access from your phone.
 

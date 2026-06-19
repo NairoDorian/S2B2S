@@ -156,7 +156,7 @@
 │  │  │  │  tts/    ││ │    │ │ suppres-  │ │  ┌───────────────────────┐  │   │   │
 │  │  │  │ ├ back-  ││ │    │ │ sion.rs   │ │  │  shortcut/            │  │   │   │
 │  │  │  │ │ ends/  ││ │    │ └ utils.rs  │ │  │  ├ mod.rs             │  │   │   │
-│  │  │  │ │ ├ piper││ │    │ └ vad/      │ │  │  └ handy_keys.rs      │  │   │   │
+│  │  │  │ │ ├ piper││ │    │ └ vad/      │ │  │  └ tauri_impl.rs       │  │   │   │
 │  │  │  │ │ ├ koko-││ │    │   ├ silero  │ │  └───────────────────────┘  │   │   │
 │  │  │  │ │ │ ro   ││ │    │   ├ smoothed│ │                             │   │   │
 │  │  │  │ │ ├ kit- ││ │    │   └ triple_ │ │  ┌───────────────────────┐  │   │   │
@@ -342,8 +342,8 @@ The app uses `tauri_plugin_single_instance` to enforce single-instance behavior:
 
 | Engine | Type | Languages | Size | Default? | Notes |
 | ------------------------ | ---------- | ---------------- | ------- | -------------- | ----------------------------------------- |
-| **Parakeet TDT 0.6B V3** | Local ONNX | 25 (auto-detect) | ~456 MB | ✅ **Default** | CPU-optimized, ~5x real-time on mid-range |
-| Whisper Small | Local GGML | 99 | ~465 MB | Optional | Fast and fairly accurate |
+| **Parakeet TDT 0.6B V3** | Local ONNX | 25 (auto-detect) | 478 MB | ✅ **Default** | CPU-optimized, ~5x real-time on mid-range |
+| Whisper Small | Local GGML | 99 | 487 MB | Optional | Fast and fairly accurate |
 | Whisper Medium | Local GGML | 99 | ~469 MB | Optional | Good accuracy, medium speed |
 | Whisper Turbo | Local GGML | 99 | ~1.5 GB | Optional | Balanced accuracy and speed |
 | Whisper Large | Local GGML | 99 | ~1.0 GB | Optional | Good accuracy, but slow |
@@ -805,7 +805,7 @@ The ModelManager handles:
 **STT Models:**
 | Model | File | Size | Download URL |
 |-------|------|------|-------------|
-| Silero VAD | `silero_vad_v4.onnx` | ~5 MB | `https://blob.handy.computer/silero_vad_v4.onnx` |
+| Silero VAD | `silero_vad_v4.onnx` | ~1.7 MB | `https://blob.handy.computer/silero_vad_v4.onnx` |
 | Parakeet V2 | `parakeet-v2-int8.tar.gz` | 473 MB | `https://blob.handy.computer/parakeet-v2-int8.tar.gz` |
 | Parakeet V3 | `parakeet-v3-int8.tar.gz` | 478 MB | `https://blob.handy.computer/parakeet-v3-int8.tar.gz` |
 | Whisper Small | `ggml-small.bin` | 487 MB | `https://blob.handy.computer/ggml-small.bin` |
@@ -1482,7 +1482,7 @@ S2B2S/
 | Issue                                               | Severity | Status                          |
 | --------------------------------------------------- | -------- | ------------------------------- |
 | **WarmEngine trait not dynamically dispatched**     | Low      | Trait is implemented by all local backends but not dynamically used in the manager; lifecycle handled directly |
-| **TTS telemetry wired**                             | Low      | ✅ Complete — `telemetry.rs` registered as state, recording synthesis speed, dynamically driving adaptive sizing |
+| **TTS telemetry registration**                       | Low      | ⚠️ Partial — `telemetry.rs` registered as Tauri state, `record()` wired to `speak`/`speak_sentence` for adaptive sizing; per-backend `chars_per_ms` tracking active |
 | **Model definitions hardcoded**                     | Low      | 20+ model entries hardcoded in `model.rs` (2,224 lines); not JSON-driven as planned |
 | **overlay_fx/native wgpu is placeholder**           | Low      | `NativeTrailOverlay::start()` is a no-op; wgpu surface integration pending |
 | **Whisper model crashes** on some Win/Linux configs | High     | Parakeet V3 default avoids this |

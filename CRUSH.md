@@ -147,7 +147,11 @@ S2B2S/
 │   └── TTS/                #   Kokoro, Piper voices, Pocket, Kitten
 ├── scripts/                # Utility scripts (venv setup, dep checks, translations)
 ├── tests/                  # E2E tests
-├── S2B2S_ANDROID_COMPANION.md  # Android companion plans
+├── S2B2S_ANDROID_COMPANION.md  # Android companion plans ⚠️ superseded by android-port-plan.md
+├── android-port-plan.md     # Full on-device Android STT→Brain→TTS architecture plan
+├── improvement-plan.md      # Streaming STT/TTS deep-dive with P0–P3 roadmap
+├── reference_links.md       # Curated reference of 70+ open-source projects across 16 categories
+├── reference_github_links.md  # Curated list of 30+ STT/TTS/voice GitHub projects
 ├── analysys/                # ⚠️ Superseded evolution plans (GPU overlay, Conv 2.0, Avatar)
 │   ├── 00_OVERVIEW.md        # Superseded by futuristic_analysis/
 │   ├── 01_REPO_REVIEW.md     # Superseded by futuristic_analysis/

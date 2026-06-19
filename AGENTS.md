@@ -270,7 +270,6 @@ src/
 │       ├── de/ fr/ es/ ja/ ru/ zh/ ...
 │
 ├── lib/
-│   ├── types.ts            # Shared TS types (⚠️ doesn't exist — see lib/types/events.ts)
 │   ├── constants/          # Application constants
 │   ├── types/              # Type definitions (events.ts)
 │   └── utils/              # Utility functions (format, keyboard, RTL, etc.)
@@ -312,25 +311,25 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **State**           | Zustand 5, Zod 4                                                                                |
 | **i18n**            | i18next 26, react-i18next 17                                                                    |
 | **Animation**       | Three.js 0.184, Lucide React                                                                    |
-| **STT**             | transcribe-rs (Parakeet V3 + Whisper + Moonshine)                                               |
+| **STT**             | transcribe-rs (Parakeet V3, Whisper, Moonshine, SenseVoice, GigaAM, Canary, Cohere) + sherpa-onnx (Nemotron 3.5, Parakeet Unified streaming) — 9 engine types, 11 model variants |
 | **TTS**             | Piper (persistent HTTP), Kokoro (persistent HTTP, 54 voices, 9 langs), Kitten, Pocket (voice cloning), SAPI (fully implemented Windows fallback), OpenAI, ElevenLabs, Cartesia |
 | **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
 | **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
 | **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |
-| **HTTP**            | reqwest 0.13                                                                                    |
+| **HTTP**            | reqwest 0.13, ureq 2.10                                                                         |
 | **Storage**         | rusqlite 0.40, tauri-plugin-store                                                               |
 | **IPC**             | tauri-specta (typed bindings)                                                                   |
 | **Shortcuts**       | rdev + Tauri global-shortcut                                                                    |
-| **Build**           | Bun, Cargo (Rust nightly)                                                                       |
+| **Build**           | Bun, Cargo (Rust stable, MSRV 1.87)                                                             |
 
 ### Application Flow
 
 1. **Initialization:** App starts (optionally minimized to tray), loads settings, initializes managers (Audio, Model, TTS, Brain). Shows Her-style 3D loading animation.
-2. **Model Setup:** First-run downloads Parakeet V3 (~0.6 GB) and Silero VAD model; Piper/Kokoro TTS models downloaded on first TTS use.
+2. **Model Setup:** First-run downloads Parakeet V3 (~478 MB) and Silero VAD model (~1.7 MB); Piper/Kokoro TTS models downloaded on first TTS use.
 3. **Dictation:** Global shortcut triggers audio recording with TripleVAD filtering → Parakeet V3 transcription → ITN normalization → paste at cursor.
 4. **Read Aloud:** Global shortcut reads selected text (or double-copy clipboard trigger) → markdown stripping → TN normalization → TTS playback with streaming gapless playback.
 5. **Conversation:** Global shortcut starts recording → transcribe → send to Brain (LLM) → stream reply tokens → sentence splitter → TTS reads each sentence aloud with barge-in support.
-6. **TTS Engine Selection:** 8 backends available (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia). Engine lifecycle managed by `local_tts_server.rs` and `piper_server.rs` state machines. The `WarmEngine` trait is implemented by all local backends (Piper, Kokoro, Kitten, Pocket) but the orchestration layer calls server utilities directly.
+6. **TTS Engine Selection:** 8 backends available (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia). Engine lifecycle managed by `piper_server.rs` and the unified `local_tts_server.rs` pattern (Kokoro, Kitten, Pocket share the same server lifecycle). The `WarmEngine` trait is implemented by all local backends (Piper, Kokoro, Kitten, Pocket) but the orchestration layer calls server utilities directly.
 
 ### Settings System
 
@@ -338,7 +337,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 - **Keyboard shortcuts**: configurable for push-to-talk, speak-selection, conversation, cancel
 - **Audio devices**: microphone/output selection
-- **STT model**: Parakeet V3, Whisper (Small/Medium/Turbo/Large), Moonshine
+- **STT model**: Parakeet V3, Whisper (Small/Medium/Turbo/Large), Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary (180M/1B), Cohere, Parakeet Unified streaming, Parakeet EOU 120M
 - **TTS engine**: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia — voice, speed, volume per engine
 - **Brain**: Ollama/LM Studio endpoint, model, system prompt, memory, read-aloud toggle
 - **VAD mode**: TripleVAD/Silero with tunable RNNoise threshold (0.05–0.9)
@@ -475,7 +474,11 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 | [references_comparative_analysis_md/](references_comparative_analysis_md/) | 23-project comparative analysis, individual reviews, license matrix, fork lineage |
 | [LLAMA_CPP.md](LLAMA_CPP.md)                                 | Pre-compiled llama.cpp server integration reference              |
 | [futuristic_analysis/](futuristic_analysis/)                 | Active evolution plan (9 docs, supersedes analysys/) — GPU overlay, Conv 2.0, 3D avatar |
-| [S2B2S_ANDROID_COMPANION.md](S2B2S_ANDROID_COMPANION.md)     | Android companion PWA architecture and 3-phase feature plan |
+| [S2B2S_ANDROID_COMPANION.md](S2B2S_ANDROID_COMPANION.md)     | Android companion PWA architecture and 3-phase feature plan ⚠️ superseded by android-port-plan.md |
+| [android-port-plan.md](android-port-plan.md)                 | Full on-device Android STT→Brain→TTS architecture & implementation plan |
+| [improvement-plan.md](improvement-plan.md)                   | Streaming STT/TTS deep-dive analysis with P0–P3 prioritized roadmap |
+| [reference_links.md](reference_links.md)                     | Curated reference of 70+ open-source projects across 16 categories |
+| [reference_github_links.md](reference_github_links.md)       | Curated list of 30+ STT, TTS, and voice-related GitHub projects |
 | [BUILD.md](BUILD.md)                                         | Platform-specific build instructions                             |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor guidelines                                           |
 | [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide                                                |

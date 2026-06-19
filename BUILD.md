@@ -139,7 +139,7 @@ bun run tauri dev
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 ```
 
-### 5. Build for Production
+### 6. Build for Production
 
 ```bash
 bun run tauri build
