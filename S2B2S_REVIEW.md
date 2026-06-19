@@ -60,7 +60,7 @@
 | ------------------- | -------------------------------------------------------------------- |
 | **Name**            | S2B2S (SpeechToBrainToSpeech)                                        |
 | **Author**          | NairoDorian                                                          |
-| **Version**         | 0.1.0 (working title v0.10)                                          |
+| **Version**         | 0.1.0 (tagged v0.1.0)                                              |
 | **License**         | MIT                                                                  |
 | **Platform**        | Windows 11 (primary), macOS (first-class), Linux (first-class)       |
 | **Framework**       | Tauri 2.x (Rust backend + React/TypeScript frontend)                 |

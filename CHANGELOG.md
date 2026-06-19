@@ -5,7 +5,7 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — S2B2S v0.10 (Conversation Evolution)
+## [Unreleased] — S2B2S v0.1.0 (Conversation Evolution)
 
 > **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.
 
@@ -401,7 +401,7 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 
 ### Documentation Sync (June 2026)
 
-- **LLAMA_CPP.md** — complete rewrite: removed all references to the old CMake-based `build_llama_cpp()` pipeline (removed in #v0.10). Now documents the pre-compiled `LlamaServerManager` architecture with auto-download from GitHub releases, CUDA/Vulkan/CPU backend auto-detection, GPU VRAM offloading with `-ngl all`, and the Llama.cpp settings management tab.
+- **LLAMA_CPP.md** — complete rewrite: removed all references to the old CMake-based `build_llama_cpp()` pipeline (removed in v0.1.0). Now documents the pre-compiled `LlamaServerManager` architecture with auto-download from GitHub releases, CUDA/Vulkan/CPU backend auto-detection, GPU VRAM offloading with `-ngl all`, and the Llama.cpp settings management tab.
 - **AGENTS.md** — backend tree updated with missing modules: `llama_server/`, `brain/llama_manager.rs`, `commands/llama_server.rs`, `managers/continuous_voice.rs`, `managers/transcription_mock.rs`, `tts/status.rs`, `tts/telemetry.rs`, `tts/audio_format.rs`, `tts/backends/piper_server.rs`, `audio_toolkit/bin/`, `audio_toolkit/constants.rs`, `audio_toolkit/text.rs`. Frontend tree updated: `hooks/useLlamaState.ts`, `hooks/useProviderState.ts`, `lib/constants/`, `utils/`. Text normalization heading fixed: "4-pass" → "5-Stage".
 - **README.md** — architecture diagram updated with `continuous_voice.rs`, `status.rs/telemetry.rs`, `llama_manager.rs`. "Why S2B2S?" and Default Stack table now list pre-compiled llama.cpp as the primary Brain option alongside Ollama/LM Studio.
 - **S2B2S_REVIEW.md** — roadmap (section 19): added 7 completed features (pre-compiled llama.cpp server, settings tab, performance metrics, GPU VRAM indicator, log viewer console, footer status indicators, hands-free auto-listen). File tree (section 18): added `llama_server/`, `brain/llama_manager.rs`, `commands/llama_server.rs`.
@@ -422,7 +422,7 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **CLAUDE.md** — backend summary now includes `llama_server/` directory.
 - **BUILD.md** — hooks list updated to include `useLlamaState`.
 - **CONTRIBUTING.md** — backend listing now includes `llama_server/` subsystem.
-- Verified all 20 i18n locale files match CONTRIBUTING_TRANSLATIONS.md language table. Confirmed version consistency: package.json/Cargo.toml both `0.1.0`, CHANGELOG working title `v0.10`. Confirmed Kokoro and Kitten backends are both skeletons (synthesis pending).
+- Verified all 20 i18n locale files match CONTRIBUTING_TRANSLATIONS.md language table. Confirmed version consistency: package.json/Cargo.toml/tauri.conf.json all `0.1.0`. Tag `v0.1.0` created as initial versioning baseline.
 
 ### Code Cleanup
 

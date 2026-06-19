@@ -3,7 +3,7 @@
   "output": {
     "filePath": "S2B2S_repomix.txt",
     "style": "markdown",
-    "headerText": "## S2B2S — Repomix Architecture Overview\n\nSpeech-to-Brain-to-Speech desktop app (Tauri 2 + Rust + React/TypeScript).\nCombines STT (7 engines), LLM Brain (11 providers), and TTS (8 engines) into\na unified voice assistant. ~15,000 lines Rust, ~10,000 lines TypeScript.\n\nThree pipelines: Dictation (speak→paste), Read Aloud (select→hear),\nConversation (speak→LLM→hear). 20-language i18n, system tray, global shortcuts.\n\nSee S2B2S_FULL_REVIEW.md for complete code review and cross-project analysis.",
+    "headerText": "## S2B2S — Repomix Codebase Snapshot (v0.1.0)\n\nSpeech-to-Brain-to-Speech desktop app (Tauri 2 + Rust + React/TypeScript).\nCombines STT (9 engine types, 11 variants), LLM Brain (10 providers), and TTS (8 engines) into\na unified voice assistant. ~15,000 lines Rust, ~10,000 lines TypeScript.\n\nThree pipelines: Dictation (speak→paste), Read Aloud (select→hear),\nConversation (speak→LLM→hear). 20-language i18n, system tray, global shortcuts.\n\nSee android-port-plan.md for Android on-device port plans.\nSee improvement-plan.md for streaming STT/TTS analysis.\nSee reference_links.md for 70+ project reference curated list.",
     "fileSummary": true,
     "directoryStructure": true,
     "files": false,
