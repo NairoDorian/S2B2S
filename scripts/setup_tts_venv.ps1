@@ -65,17 +65,23 @@ Write-Host "[4/5] Installing TTS engine packages..." -ForegroundColor Yellow
 Write-Host "  -> piper-tts[http]" -ForegroundColor Gray
 & $VenvPip install "piper-tts[http]" --quiet
 
+# Install build/runtime deps
+Write-Host "  -> coloredlogs, flatbuffers, packaging, protobuf, sympy" -ForegroundColor Gray
+& $VenvPip install coloredlogs flatbuffers packaging protobuf sympy --quiet
+
 # Remove CPU onnxruntime that piper-tts pulled in (conflicts with GPU version)
 Write-Host "  -> removing conflicting CPU onnxruntime" -ForegroundColor Gray
 & $VenvPip uninstall onnxruntime -y --quiet 2>$null
 
-# Install onnxruntime-gpu so Piper uses CUDA execution provider
-Write-Host "  -> onnxruntime-gpu>=1.26.0, sentencepiece" -ForegroundColor Gray
-& $VenvPip install "onnxruntime-gpu>=1.26.0" sentencepiece --quiet
+# Install onnxruntime-gpu from CUDA 13 nightly feed
+Write-Host "  -> sentencepiece" -ForegroundColor Gray
+& $VenvPip install sentencepiece --quiet
+Write-Host "  -> onnxruntime-gpu (CUDA 13 nightly)" -ForegroundColor Gray
+& $VenvPip install --pre --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" onnxruntime-gpu --quiet
 
-# NVIDIA CUDA runtime packages from PyPI so onnxruntime-gpu finds the DLLs
-Write-Host "  -> nvidia CUDA runtime packages (cu12)" -ForegroundColor Gray
-& $VenvPip install nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nvjitlink-cu12 --quiet
+# NVIDIA CUDA 13 runtime libraries (canonical names)
+Write-Host "  -> nvidia CUDA 13 runtime (canonical names)" -ForegroundColor Gray
+& $VenvPip install nvidia-cuda-runtime nvidia-cudnn-cu13 nvidia-cublas nvidia-cufft nvidia-curand nvidia-cusolver nvidia-cusparse nvidia-nvjitlink --quiet
 
 # Kokoro TTS
 Write-Host "  -> kokoro-tts" -ForegroundColor Gray

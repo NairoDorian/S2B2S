@@ -170,7 +170,7 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
       }
 
       if (!a.finished) {
-        a.step = Math.max(0, Math.min(240, a.toend ? a.step + 1 : a.step - 4));
+        a.step = Math.max(0, Math.min(240, a.toend ? a.step + 4 : a.step - 4));
         const acceleration = easing(a.step, 0, 1, 240);
 
         if (acceleration > 0.35) {
@@ -204,6 +204,13 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
     rafId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafId);
   }, []);
+
+  // Auto-trigger exit animation once progress reaches 1 (onboarding check done)
+  useEffect(() => {
+    if (progress >= 1) {
+      animRef.current.toend = true;
+    }
+  }, [progress]);
 
   return (
     <>

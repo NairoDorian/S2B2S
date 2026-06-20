@@ -62,23 +62,32 @@ Install-Pkg "soundfile, numpy"     @("soundfile", "numpy")
 # ── Install piper LAST (pulls CPU onnxruntime) ──
 Install-Pkg "piper-tts[http]"      @("piper-tts[http]")
 
-# ── Remove CPU onnxruntime, install GPU + CUDA DLLs ──
+# ── Install build/runtime deps ──
+Install-Pkg "coloredlogs, flatbuffers, packaging, protobuf, sympy" @("coloredlogs", "flatbuffers", "packaging", "protobuf", "sympy")
+
+# ── Remove CPU onnxruntime (pulled in by piper-tts) ──
 Uninstall-Pkg "removing CPU onnxruntime" "onnxruntime"
-Install-Pkg "onnxruntime-gpu, sentencepiece" @("onnxruntime-gpu>=1.26.0", "sentencepiece")
-Install-Pkg "nvidia CUDA runtime (cu12)" @(
-    "nvidia-cuda-runtime-cu12",
-    "nvidia-cudnn-cu12",
-    "nvidia-cublas-cu12",
-    "nvidia-cufft-cu12",
-    "nvidia-curand-cu12",
-    "nvidia-cusolver-cu12",
-    "nvidia-cusparse-cu12",
-    "nvidia-nvjitlink-cu12"
+
+# ── Install onnxruntime-gpu from CUDA 13 nightly feed ──
+Write-Host "  -> sentencepiece" -ForegroundColor Gray
+uv pip install sentencepiece 2>&1 | Out-Host
+Write-Host "  -> onnxruntime-gpu (CUDA 13 nightly)" -ForegroundColor Gray
+uv pip install --pre --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" onnxruntime-gpu 2>&1 | Out-Host
+
+# ── Install NVIDIA CUDA 13 runtime libraries (canonical names) ──
+Install-Pkg "nvidia CUDA 13 runtime" @(
+    "nvidia-cuda-runtime",
+    "nvidia-cudnn-cu13",
+    "nvidia-cublas",
+    "nvidia-cufft",
+    "nvidia-curand",
+    "nvidia-cusolver",
+    "nvidia-cusparse",
+    "nvidia-nvjitlink"
 )
 
-# ── Final safety: force GPU and purge any leftover CPU ──
-Write-Host "  -> onnxruntime-gpu (final override)" -ForegroundColor Gray
-uv pip install --force-reinstall "onnxruntime-gpu>=1.26.0" 2>&1 | Out-Host
+# ── Final safety: purge any leftover CPU onnxruntime ──
+Write-Host "  -> onnxruntime (final purge)" -ForegroundColor Gray
 uv pip uninstall onnxruntime --quiet 2>&1 | Out-Host
 
 Write-Host "[5/6] Verifying CUDA..." -ForegroundColor Yellow

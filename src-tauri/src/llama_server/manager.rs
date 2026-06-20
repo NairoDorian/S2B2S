@@ -343,9 +343,10 @@ impl LlamaServerManager {
                 let folder_name = path.file_name().unwrap().to_string_lossy().to_string();
                 let binary_path = path.join(binary_name);
                 if binary_path.exists() {
-                    let parts: Vec<&str> = folder_name.splitn(2, '-').collect();
-                    let backend = parts.first().unwrap_or(&"").to_string();
-                    let tag = parts.get(1).unwrap_or(&"").to_string();
+                    // Split on LAST hyphen: backend may contain hyphens (e.g. "cuda-13.3"), tag is always suffix (e.g. "b9741")
+                    let (backend, tag) = folder_name.rsplit_once('-').unwrap_or((&folder_name, ""));
+                    let backend = backend.to_string();
+                    let tag = tag.to_string();
                     let size = fs::metadata(&binary_path).map(|m| m.len()).unwrap_or(0);
                     servers.push(DownloadedServer {
                         backend,

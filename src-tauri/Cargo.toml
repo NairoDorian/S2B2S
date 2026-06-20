@@ -101,6 +101,7 @@ tauri-plugin-single-instance = "2.4.2"
 tauri-plugin-updater = "2.10.1"
 
 [target.'cfg(windows)'.dependencies]
+windows-core-061 = { package = "windows-core", version = "0.61" }
 windows-core = "0.62.2"
 webview2-com = "0.38.2"
 transcribe-rs = { version = "0.3.11", features = ["ort-directml"] }

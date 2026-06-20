@@ -6,7 +6,7 @@ pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
     let label = window.label().to_string();
     if let Err(err) = window.with_webview(move |webview| unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-        use windows::core::Interface;
+        use windows_core_061::Interface;
 
         let result = webview
             .controller()

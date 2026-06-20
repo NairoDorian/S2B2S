@@ -5,6 +5,18 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Piper CUDA DLL path discovery** (`piper_server.rs`): `get_nvidia_dll_paths` used `nvidia.__file__` which is `None` for namespace packages. Switched to `nvidia.__path__[0]` with dynamic `bin`/`bin/x86_64` discovery, fixing `CUDAExecutionProvider` init.  
+- **Build broken by windows-core version mismatch** (`webview_hardening.rs`): Added `windows-core-061` alias to fix `ICoreWebView2Settings.cast<>()` across two versions of `windows-core` in the dependency tree.  
+- **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.
+
+### Changed
+
+- **Venv setup scripts** (`setup_venv_uv.ps1`, `setup_tts_venv.ps1`): Switch onnxruntime-gpu to CUDA 13 nightly feed with canonical nvidia package names; add coloredlogs/flatbuffers/packaging/protobuf/sympy build deps.
+
 ## [0.1.4] — 2026-06-20: CI Consolidation, Standalone Speech Runtime & Playwright E2E Tests
 
 > **CI consolidation, standalone speech runtime, panic auditing, and Playwright E2E tests.** Consolidated documentation sprawl, established a single status dashboard (`STATUS.md`), optimized CI configurations, implemented onboarding-time portable Python/uv speech runtime provisioning, audited and converted Rust panics to safe errors, and created comprehensive mock Tauri IPC E2E tests.

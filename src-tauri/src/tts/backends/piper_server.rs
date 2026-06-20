@@ -250,7 +250,7 @@ pub(crate) fn get_nvidia_dll_paths(command: &PythonCommand) -> Option<String> {
             cmd.args(&command.args);
             cmd.args([
                 "-c",
-                "import os, nvidia; print(';'.join([os.path.join(os.path.dirname(nvidia.__file__), p, 'bin') for p in ['cublas', 'cuda_nvrtc', 'cuda_runtime', 'cudnn', 'cufft', 'curand', 'cusolver', 'cusparse', 'nvjitlink'] if os.path.exists(os.path.join(os.path.dirname(nvidia.__file__), p, 'bin'))]))"
+                "import os, nvidia; p = nvidia.__path__[0]; print(';'.join([os.path.join(p, d, 'bin', 'x86_64') if os.path.isdir(os.path.join(p, d, 'bin', 'x86_64')) else os.path.join(p, d, 'bin') for d in os.listdir(p) if os.path.isdir(os.path.join(p, d, 'bin')) or os.path.isdir(os.path.join(p, d, 'bin', 'x86_64'))]))"
             ]);
             cmd.creation_flags(CREATE_NO_WINDOW);
             let output = cmd.output().ok()?;
