@@ -562,7 +562,7 @@ pub struct BrainConfig {
     /// Auto-rearm mic after reply in hands-free mode
     #[serde(default)]
     pub auto_listen: bool,
-    /// Send the WAV audio recording as `input_audio` to the multimodal Brain model
+    /// Send the MP3 audio recording as `input_audio` to the multimodal Brain model
     /// (Gemma 4 supports native audio transcription as an extra STT pass).
     #[serde(default)]
     pub multimodal_audio_enabled: bool,
@@ -570,6 +570,11 @@ pub struct BrainConfig {
     /// When enabled, images can be passed alongside text prompts for vision understanding.
     #[serde(default)]
     pub multimodal_image_enabled: bool,
+    /// Bypass STT models and send raw audio directly to the multimodal Brain
+    /// with a fixed transcription prompt. Gemma 4 handles both transcription
+    /// and response using its native audio understanding.
+    #[serde(default)]
+    pub brain_only_transcription: bool,
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -587,6 +592,11 @@ fn default_warmup_prompt() -> String {
 fn default_endpoint_preset() -> String {
     "balanced".to_string()
 }
+
+/// Fixed prompt sent to the multimodal Brain instead of STT transcription
+/// when `brain_only_transcription` is enabled. The Brain receives raw audio
+/// alongside this instruction and transcribes/understands it natively.
+pub const BRAIN_ONLY_TRANSCRIPTION_PROMPT: &str = "Transcribe that audio. Transcribe the following speech segment segment segment in its original language. Follow these specific instructions for formatting the answer:\n* Only output the transcription, with no newlines.\n* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.";
 
 impl BrainConfig {
     pub fn active_provider(&self) -> Option<&PostProcessProvider> {
@@ -648,8 +658,9 @@ impl Default for BrainConfig {
             endpoint_preset: default_endpoint_preset(),
             headphone_mode: false,
             auto_listen: false,
-            multimodal_audio_enabled: false,
+            multimodal_audio_enabled: true,
             multimodal_image_enabled: false,
+            brain_only_transcription: false,
         }
     }
 }

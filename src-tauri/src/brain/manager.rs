@@ -8,6 +8,7 @@
 use crate::brain::client::{BrainClient, BrainResult, ChatMessage, ContentPart, MessageContent};
 use crate::settings::get_settings;
 use crate::tts::manager::TtsManager;
+use log::info;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -55,16 +56,33 @@ impl BrainManager {
     }
 
     /// Ask the Brain with optional multimodal inputs.
-    /// - `audio_wav_base64`: raw base64-encoded WAV audio (for Gemma 4 native STT)
+    /// - `audio_mp3_base64`: raw base64-encoded MP3 audio (for Gemma 4 native STT)
     /// - `image_png_base64`: raw base64-encoded PNG screenshot (for vision)
     /// Content parts order follows Gemma 4 best practices:
     /// image → text → audio
     pub async fn ask_multimodal(
         &self,
         text: String,
-        audio_wav_base64: Option<String>,
+        audio_mp3_base64: Option<String>,
         image_png_base64: Option<String>,
     ) -> Result<String, String> {
+        let has_audio = audio_mp3_base64.is_some();
+        let has_image = image_png_base64.is_some();
+        let audio_size = audio_mp3_base64.as_ref().map(|b| b.len()).unwrap_or(0);
+        // Gemma 4: ~25 tokens per second of audio at 16kHz, ~640 samples per token
+        // base64 ~4/3 expansion, 16-bit PCM = 2 bytes/sample
+        let raw_bytes_est = audio_size * 3 / 4;
+        let sample_count_est = raw_bytes_est / 2;
+        let audio_tokens_est = sample_count_est / 640;
+        let audio_seconds = sample_count_est as f64 / 16000.0;
+        let text_tokens_est = text.len() / 4; // rough: ~4 chars per token
+        info!(
+            "[BrainManager::ask_multimodal] has_audio={}, has_image={}, audio_base64_size={}, text_len={} — est. {:.1}s audio ≈ {} tokens + {} text tokens = {} total",
+            has_audio, has_image, audio_size, text.len(),
+            audio_seconds, audio_tokens_est, text_tokens_est,
+            audio_tokens_est + text_tokens_est
+        );
+
         let turn_start = Instant::now();
         let abort = Arc::new(AtomicBool::new(false));
         {
@@ -117,7 +135,7 @@ impl BrainManager {
             let start = history.len().saturating_sub(keep);
             messages.extend(history[start..].iter().cloned());
         }
-        let has_multimodal = audio_wav_base64.is_some() || image_png_base64.is_some();
+        let has_multimodal = audio_mp3_base64.is_some() || image_png_base64.is_some();
         if has_multimodal {
             let mut parts = Vec::new();
             // Image goes before text (Gemma 4 best practice)
@@ -131,11 +149,11 @@ impl BrainManager {
             // Text in the middle
             parts.push(ContentPart::Text { text: text.clone() });
             // Audio goes after text (Gemma 4 best practice for ASR)
-            if let Some(ref audio_b64) = audio_wav_base64 {
+            if let Some(ref audio_b64) = audio_mp3_base64 {
                 parts.push(ContentPart::InputAudio {
                     input_audio: crate::brain::client::InputAudio {
                         data: audio_b64.clone(),
-                        format: "wav".to_string(),
+                        format: "mp3".to_string(),
                     },
                 });
             }

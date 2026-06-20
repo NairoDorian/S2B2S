@@ -32,7 +32,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
   const [runtimeStatus, setRuntimeStatus] = useState<
     "checking" | "not_installed" | "installing" | "installed" | "failed"
   >("checking");
-  const [installProgressMessage, setInstallProgressMessage] = useState<string>("");
+  const [installProgressMessage, setInstallProgressMessage] =
+    useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   const isDownloading = selectedModelId !== null;
@@ -67,22 +68,33 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
         "runtime-install-progress",
         (event) => {
           setInstallProgressMessage(event.payload.message);
-        }
+        },
       );
 
       unlistenSuccess = await listen("runtime-install-success", () => {
-        toast.success(t("onboarding.runtime.success", "Speech runtime installed successfully!"));
+        toast.success(
+          t(
+            "onboarding.runtime.success",
+            "Speech runtime installed successfully!",
+          ),
+        );
         setRuntimeStatus("installed");
       });
 
-      unlistenFailed = await listen<string>("runtime-install-failed", (event) => {
-        const err = event.payload || "Unknown error occurred";
-        setErrorMessage(err);
-        setRuntimeStatus("failed");
-        toast.error(t("onboarding.runtime.failedTitle", "Installation Failed"), {
-          description: err,
-        });
-      });
+      unlistenFailed = await listen<string>(
+        "runtime-install-failed",
+        (event) => {
+          const err = event.payload || "Unknown error occurred";
+          setErrorMessage(err);
+          setRuntimeStatus("failed");
+          toast.error(
+            t("onboarding.runtime.failedTitle", "Installation Failed"),
+            {
+              description: err,
+            },
+          );
+        },
+      );
     };
 
     setupListeners();
@@ -96,13 +108,17 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
 
   const handleInstallRuntime = async () => {
     setRuntimeStatus("installing");
-    setInstallProgressMessage(t("onboarding.runtime.starting", "Initializing installation..."));
+    setInstallProgressMessage(
+      t("onboarding.runtime.starting", "Initializing installation..."),
+    );
     try {
       await commands.installSpeechRuntime();
     } catch (err: any) {
       setErrorMessage(err?.toString() || "Failed to start install process");
       setRuntimeStatus("failed");
-      toast.error(t("onboarding.runtime.startFailed", "Failed to start installation"));
+      toast.error(
+        t("onboarding.runtime.startFailed", "Failed to start installation"),
+      );
     }
   };
 
@@ -201,15 +217,30 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
         <div className="bg-mid-gray/5 border border-mid-gray/20 rounded-xl p-6 max-w-lg w-full flex flex-col gap-4 text-sm text-text/80">
           <div className="flex items-start gap-3">
             <span className="text-logo-primary font-bold">1.</span>
-            <p>{t("onboarding.runtime.step1", "Downloads a portable uv package manager matching your system.")}</p>
+            <p>
+              {t(
+                "onboarding.runtime.step1",
+                "Downloads a portable uv package manager matching your system.",
+              )}
+            </p>
           </div>
           <div className="flex items-start gap-3">
             <span className="text-logo-primary font-bold">2.</span>
-            <p>{t("onboarding.runtime.step2", "Configures a standalone relocatable Python 3.12 environment.")}</p>
+            <p>
+              {t(
+                "onboarding.runtime.step2",
+                "Configures a standalone relocatable Python 3.12 environment.",
+              )}
+            </p>
           </div>
           <div className="flex items-start gap-3">
             <span className="text-logo-primary font-bold">3.</span>
-            <p>{t("onboarding.runtime.step3", "Installs speech models and dependency packages locally.")}</p>
+            <p>
+              {t(
+                "onboarding.runtime.step3",
+                "Installs speech models and dependency packages locally.",
+              )}
+            </p>
           </div>
           <p className="text-xs text-text/50 border-t border-mid-gray/10 pt-3 mt-1">
             {t(
@@ -224,7 +255,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
           variant="primary"
           className="bg-logo-primary hover:bg-logo-primary-hover text-primary-foreground font-semibold px-8 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all cursor-pointer mt-4"
         >
-          {t("onboarding.runtime.installBtn", "Install Speech Runtime (~150MB)")}
+          {t(
+            "onboarding.runtime.installBtn",
+            "Install Speech Runtime (~150MB)",
+          )}
         </Button>
       </div>
     );
@@ -237,7 +271,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
         <div className="flex flex-col items-center gap-2 shrink-0 max-w-md text-center">
           <S2B2STextLogo width={200} />
           <h2 className="text-2xl font-bold mt-6 text-text animate-pulse">
-            {t("onboarding.runtime.installingTitle", "Installing Speech Runtime...")}
+            {t(
+              "onboarding.runtime.installingTitle",
+              "Installing Speech Runtime...",
+            )}
           </h2>
           <p className="text-text/70 mt-2 font-medium">
             {t(
@@ -250,7 +287,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
         <div className="bg-mid-gray/5 border border-mid-gray/20 rounded-xl p-6 max-w-lg w-full flex flex-col items-center gap-4">
           <div className="flex items-center gap-3">
             <Loader2 className="animate-spin h-6 w-6 text-primary" />
-            <span className="font-semibold text-text">{t("onboarding.runtime.processing", "Processing...")}</span>
+            <span className="font-semibold text-text">
+              {t("onboarding.runtime.processing", "Processing...")}
+            </span>
           </div>
 
           <div className="w-full bg-mid-gray/20 h-2 rounded-full overflow-hidden">
@@ -258,7 +297,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
           </div>
 
           <p className="text-sm text-text/80 bg-background/50 border border-mid-gray/10 rounded-lg p-3 w-full font-mono break-all text-center min-h-[44px]">
-            {installProgressMessage || t("onboarding.runtime.waiting", "Setting up local environment...")}
+            {installProgressMessage ||
+              t(
+                "onboarding.runtime.waiting",
+                "Setting up local environment...",
+              )}
           </p>
         </div>
       </div>
@@ -275,14 +318,23 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
             {t("onboarding.runtime.failedTitle", "Installation Failed")}
           </h2>
           <p className="text-text/70 mt-2 font-medium">
-            {t("onboarding.runtime.failedSubtitle", "An error occurred while installing the local speech runtime.")}
+            {t(
+              "onboarding.runtime.failedSubtitle",
+              "An error occurred while installing the local speech runtime.",
+            )}
           </p>
         </div>
 
         <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-6 max-w-lg w-full flex flex-col gap-3">
-          <h3 className="font-bold text-red-400 text-sm">{t("onboarding.runtime.errorLog", "Error Details:")}</h3>
+          <h3 className="font-bold text-red-400 text-sm">
+            {t("onboarding.runtime.errorLog", "Error Details:")}
+          </h3>
           <p className="text-xs text-text/80 bg-background/50 border border-red-500/10 rounded-lg p-3 w-full font-mono break-words max-h-40 overflow-y-auto">
-            {errorMessage || t("onboarding.runtime.unknownError", "An unknown error occurred.")}
+            {errorMessage ||
+              t(
+                "onboarding.runtime.unknownError",
+                "An unknown error occurred.",
+              )}
           </p>
         </div>
 

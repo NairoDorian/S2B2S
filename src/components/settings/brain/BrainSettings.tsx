@@ -426,12 +426,12 @@ export const BrainSettings: React.FC = () => {
       {state.selectedProviderId === "llama_cpp" && (
         <SettingsGroup title="Multimodal Input (Gemma 4)">
           <ToggleSwitch
-            checked={brain.multimodal_audio_enabled ?? false}
+            checked={brain.multimodal_audio_enabled ?? true}
             onChange={(multimodal_audio_enabled) =>
               update({ multimodal_audio_enabled })
             }
-            label="Audio Input"
-            description="Send the raw WAV recording to the Brain model for native transcription. Gemma 4 performs its own STT as an additional pass alongside the text transcription."
+            label="Audio Input (Default: On)"
+            description="Sends the raw WAV recording alongside text to the Brain model. Gemma 4 processes the audio natively for enhanced transcription accuracy. Enabled by default for the local Gemma 4 model."
             grouped
           />
           <ToggleSwitch

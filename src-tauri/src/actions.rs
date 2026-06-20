@@ -16,7 +16,7 @@ use crate::utils::{
 };
 use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1010,9 +1010,11 @@ impl ShortcutAction for TranscribeAction {
                     // and merge results via LLM post-processing.
                     let transcription_time = Instant::now();
                     let settings = get_settings(&ah);
-                    let transcription_result = if settings.multi_stt_enabled
-                        && !settings.multi_stt_models.is_empty()
+                    let transcription_result = if route_to_brain
+                        && settings.brain.brain_only_transcription
                     {
+                        Ok("[STT Bypassed]".to_string())
+                    } else if settings.multi_stt_enabled && !settings.multi_stt_models.is_empty() {
                         let mm =
                             Arc::clone(&ah.state::<Arc<crate::managers::model::ModelManager>>());
                         multi_stt::transcribe_parallel(samples.clone(), &settings, &mm, &ah)
@@ -1142,26 +1144,56 @@ impl ShortcutAction for TranscribeAction {
                                         }
                                     }
 
+                                    // When brain_only_transcription is on, bypass STT output and
+                                    // send the fixed transcription prompt + raw audio to the Brain.
+                                    // Gemma 4 handles both transcription and response natively.
+                                    let is_brain_only = settings.brain.brain_only_transcription;
+                                    let text_to_ask = if is_brain_only {
+                                        crate::settings::BRAIN_ONLY_TRANSCRIPTION_PROMPT.to_string()
+                                    } else {
+                                        processed.final_text.clone()
+                                    };
+                                    // When brain-only mode is on, multimodal audio is always required
+                                    let multimodal_audio =
+                                        is_brain_only || settings.brain.multimodal_audio_enabled;
+
                                     if let Some(bm) =
                                         ah.try_state::<Arc<crate::brain::manager::BrainManager>>()
                                     {
                                         let bm = bm.inner().clone();
-                                        let text_to_ask = processed.final_text.clone();
-                                        let multimodal_audio =
-                                            settings.brain.multimodal_audio_enabled;
+                                        let text_to_ask = text_to_ask;
+                                        let sample_count = samples_for_brain.len();
                                         tauri::async_runtime::spawn(async move {
                                             let result = if multimodal_audio {
-                                                let wav_bytes =
+                                                if is_brain_only {
+                                                    info!(
+                                                        "[Conversation] Brain-only transcription mode — encoding {} samples ({:.2}s) to MP3, bypassing STT, sending fixed prompt + audio to Gemma 4",
+                                                        sample_count,
+                                                        sample_count as f64 / 16000.0
+                                                    );
+                                                } else {
+                                                    info!(
+                                                        "[Conversation] Multimodal audio enabled — encoding {} samples ({:.2}s) to MP3 for Gemma 4",
+                                                        sample_count,
+                                                        sample_count as f64 / 16000.0
+                                                    );
+                                                }
+                                                let mp3_bytes =
                                                     tokio::task::spawn_blocking(move || {
-                                                        crate::audio_toolkit::encode_wav_bytes(
+                                                        crate::audio_toolkit::encode_mp3_bytes(
                                                             &samples_for_brain,
                                                         )
                                                     })
                                                     .await;
-                                                match wav_bytes {
+                                                match mp3_bytes {
                                                     Ok(Ok(bytes)) => {
                                                         use base64::Engine;
                                                         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                                        info!(
+                                                            "[Conversation] MP3 encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
+                                                            bytes.len(),
+                                                            b64.len()
+                                                        );
                                                         bm.ask_multimodal(
                                                             text_to_ask,
                                                             Some(b64),
@@ -1170,15 +1202,16 @@ impl ShortcutAction for TranscribeAction {
                                                         .await
                                                     }
                                                     Ok(Err(e)) => {
-                                                        error!("Failed to encode WAV for multimodal brain: {e}");
+                                                        error!("Failed to encode MP3 for multimodal brain: {e}");
                                                         bm.ask(text_to_ask).await
                                                     }
                                                     Err(e) => {
-                                                        error!("spawn_blocking panicked for WAV encoding: {e}");
+                                                        error!("spawn_blocking panicked for MP3 encoding: {e}");
                                                         bm.ask(text_to_ask).await
                                                     }
                                                 }
                                             } else {
+                                                info!("[Conversation] Multimodal audio disabled — text-only ask");
                                                 bm.ask(text_to_ask).await
                                             };
                                             if let Err(e) = result {

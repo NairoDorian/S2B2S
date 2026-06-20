@@ -7,15 +7,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Piper CUDA DLL path discovery** (`piper_server.rs`): `get_nvidia_dll_paths` used `nvidia.__file__` which is `None` for namespace packages. Switched to `nvidia.__path__[0]` with dynamic `bin`/`bin/x86_64` discovery, fixing `CUDAExecutionProvider` init.  
-- **Build broken by windows-core version mismatch** (`webview_hardening.rs`): Added `windows-core-061` alias to fix `ICoreWebView2Settings.cast<>()` across two versions of `windows-core` in the dependency tree.  
-- **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.
+- **Brain-Only STT Toggle in Conversation View** (`ConversationView.tsx`, `translation.json`): Added an inline switch next to the Voice Mode button to toggle Brain-only STT, bypassing local STT models and feeding raw audio directly to the multimodal Brain. Added corresponding English translation keys.
 
 ### Changed
 
+- **Brain-Only Transcription Prompt** (`settings.rs`): Updated the `BRAIN_ONLY_TRANSCRIPTION_PROMPT` constant to use the phrase `speech segment` instead of `speech`.
+- **STT Pipeline Bypass** (`actions.rs`, `continuous_voice.rs`): Bypassed the local STT model execution in the conversation shortcut pipeline and continuous voice pipeline when `brain_only_transcription` is enabled.
 - **Venv setup scripts** (`setup_venv_uv.ps1`, `setup_tts_venv.ps1`): Switch onnxruntime-gpu to CUDA 13 nightly feed with canonical nvidia package names; add coloredlogs/flatbuffers/packaging/protobuf/sympy build deps.
+
+### Fixed
+
+- **Piper CUDA DLL path discovery** (`piper_server.rs`): `get_nvidia_dll_paths` used `nvidia.__file__` which is `None` for namespace packages. Switched to `nvidia.__path__[0]` with dynamic `bin`/`bin/x86_64` discovery, fixing `CUDAExecutionProvider` init.
+- **Build broken by windows-core version mismatch** (`webview_hardening.rs`): Added `windows-core-061` alias to fix `ICoreWebView2Settings.cast<>()` across two versions of `windows-core` in the dependency tree.
+- **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.
+
 
 ## [0.1.4] — 2026-06-20: CI Consolidation, Standalone Speech Runtime & Playwright E2E Tests
 

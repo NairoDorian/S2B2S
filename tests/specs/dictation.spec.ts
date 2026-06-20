@@ -24,9 +24,13 @@ test.describe("Dictation HUD Overlay", () => {
     // 4. Assert overlay is visible and in recording state
     const overlay = page.locator(".recording-overlay");
     await expect(overlay).toHaveClass(/fade-in/);
-    
+
     // 5. Emit mic-levels to verify VAD bars rendering
-    await emitMockEvent(page, "mic-level", [0.1, 0.3, 0.8, 0.9, 0.5, 0.2, 0.1, 0.0, 0.4]);
+    await emitMockEvent(
+      page,
+      "mic-level",
+      [0.1, 0.3, 0.8, 0.9, 0.5, 0.2, 0.1, 0.0, 0.4],
+    );
     const bar = page.locator(".bar").first();
     await expect(bar).toBeVisible();
 
@@ -34,8 +38,10 @@ test.describe("Dictation HUD Overlay", () => {
     const cancelBtn = page.locator(".cancel-button");
     await expect(cancelBtn).toBeVisible();
     await cancelBtn.click();
-    
-    const wasCancelCalled = await page.evaluate(() => (window as any).__cancelCalled);
+
+    const wasCancelCalled = await page.evaluate(
+      () => (window as any).__cancelCalled,
+    );
     expect(wasCancelCalled).toBe(true);
 
     // 7. Test state transition to transcribing

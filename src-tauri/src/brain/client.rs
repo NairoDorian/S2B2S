@@ -164,7 +164,35 @@ impl BrainClient {
             req = req.bearer_auth(api_key);
         }
 
-        log::info!("[Brain] streaming from {url} (model {model})");
+        let msg_count = messages.len();
+        let last_has_parts = messages
+            .last()
+            .map(|m| matches!(m.content, MessageContent::Parts(_)))
+            .unwrap_or(false);
+        // Log content part details for the last user message to verify multimodal data was included
+        if let Some(last) = messages.last() {
+            if let MessageContent::Parts(parts) = &last.content {
+                let part_summary: Vec<String> = parts
+                    .iter()
+                    .map(|p| match p {
+                        ContentPart::Text { text } => format!("text({} chars)", text.len()),
+                        ContentPart::InputAudio { input_audio } => format!(
+                            "input_audio({} bytes, format={})",
+                            input_audio.data.len(),
+                            input_audio.format
+                        ),
+                        ContentPart::ImageUrl { image_url } => {
+                            format!("image_url({} bytes)", image_url.url.len())
+                        }
+                    })
+                    .collect();
+                log::info!(
+                    "[Brain] User message content parts: [{}]",
+                    part_summary.join(", ")
+                );
+            }
+        }
+        log::info!("[Brain] streaming from {url} (model {model}, {} messages, last_has_multimodal_parts={})", msg_count, last_has_parts);
         let response = req
             .send()
             .await

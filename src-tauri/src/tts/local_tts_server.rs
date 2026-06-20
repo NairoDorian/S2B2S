@@ -12,7 +12,9 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 /// Resolve the path to the Python executable inside the S2B2S venv.
 /// Priority: project venv > app_data venv > system Python.
 pub(crate) fn resolve_venv_python() -> String {
-    crate::portable::resolve_venv_python().to_string_lossy().to_string()
+    crate::portable::resolve_venv_python()
+        .to_string_lossy()
+        .to_string()
 }
 
 /// Resolve the local TTS models directory (S2B2S/models/TTS/) for HuggingFace cache

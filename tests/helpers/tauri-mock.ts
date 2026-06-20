@@ -13,7 +13,7 @@ export async function mockTauriIpc(page: Page) {
       os_type: "linux",
       arch: "x86_64",
       exe_extension: "",
-      eol: "\n"
+      eol: "\n",
     };
 
     // 2. Initialize a global registry for custom command handlers and events
@@ -23,26 +23,31 @@ export async function mockTauriIpc(page: Page) {
 
     // 3. Mock window.__TAURI_INTERNALS__ without destroying other properties
     const internals = (window as any).__TAURI_INTERNALS__ || {};
-    
+
     // Define transformCallback
-    internals.transformCallback = internals.transformCallback || ((callback: any, once: boolean) => {
-      const identifier = Math.floor(Math.random() * 9007199254740991) + 1;
-      (window as any)[identifier] = (data: any) => {
-        if (once) {
-          delete (window as any)[identifier];
-        }
-        callback(data);
-      };
-      return identifier;
-    });
+    internals.transformCallback =
+      internals.transformCallback ||
+      ((callback: any, once: boolean) => {
+        const identifier = Math.floor(Math.random() * 9007199254740991) + 1;
+        (window as any)[identifier] = (data: any) => {
+          if (once) {
+            delete (window as any)[identifier];
+          }
+          callback(data);
+        };
+        return identifier;
+      });
 
     // Mock window.__TAURI_EVENT_PLUGIN_INTERNALS__ for @tauri-apps/api/event
-    (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ || {
+    (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = (window as any)
+      .__TAURI_EVENT_PLUGIN_INTERNALS__ || {
       unregisterListener(event: string, id: number) {
         if ((window as any).__eventMap && (window as any).__eventMap[event]) {
-          (window as any).__eventMap[event] = (window as any).__eventMap[event].filter((cbId: number) => cbId !== id);
+          (window as any).__eventMap[event] = (window as any).__eventMap[
+            event
+          ].filter((cbId: number) => cbId !== id);
         }
-      }
+      },
     };
 
     // Mock legacy Tauri event system registry
@@ -56,9 +61,11 @@ export async function mockTauriIpc(page: Page) {
       },
       async unregisterListener(event: string, id: number) {
         if (this.listeners[event]) {
-          this.listeners[event] = this.listeners[event].filter((item: any) => item.id !== id);
+          this.listeners[event] = this.listeners[event].filter(
+            (item: any) => item.id !== id,
+          );
         }
-      }
+      },
     };
 
     internals.invoke = async (cmd: string, args: any) => {
@@ -134,8 +141,12 @@ export async function mockTauriIpc(page: Page) {
               speed: 1.0,
               volume: 80,
               pagination: { enabled: true },
-              sanitization: { enabled: true, markdown: true, tts_normalization: true },
-              piper: { model_id: "en_US-lessac-medium", voice_id: "medium" }
+              sanitization: {
+                enabled: true,
+                markdown: true,
+                tts_normalization: true,
+              },
+              piper: { model_id: "en_US-lessac-medium", voice_id: "medium" },
             },
             brain: {
               enabled: true,
@@ -144,12 +155,12 @@ export async function mockTauriIpc(page: Page) {
                 {
                   id: "llama_cpp",
                   label: "Llama.cpp",
-                  base_url: "http://localhost:8080/v1"
-                }
+                  base_url: "http://localhost:8080/v1",
+                },
               ],
               api_keys: {},
               models: {
-                "llama_cpp": "Gemma-4 2B (Local)"
+                llama_cpp: "Gemma-4 2B (Local)",
               },
               system_prompt: "You are a helpful assistant.",
               context_turns: 20,
@@ -160,7 +171,7 @@ export async function mockTauriIpc(page: Page) {
               endpoint_preset: "balanced",
               headphone_mode: false,
               auto_listen: false,
-              multimodal_audio_enabled: false
+              multimodal_audio_enabled: false,
             },
             long_audio_model: null,
             long_audio_threshold_seconds: 30,
@@ -175,11 +186,17 @@ export async function mockTauriIpc(page: Page) {
         case "install_speech_runtime":
           // Simulates installation progress steps
           setTimeout(() => {
-            (window as any).__mockEmit("runtime-install-progress", { message: "[1/5] Downloading portable uv..." });
+            (window as any).__mockEmit("runtime-install-progress", {
+              message: "[1/5] Downloading portable uv...",
+            });
             setTimeout(() => {
-              (window as any).__mockEmit("runtime-install-progress", { message: "[3/5] Creating standalone virtual environment..." });
+              (window as any).__mockEmit("runtime-install-progress", {
+                message: "[3/5] Creating standalone virtual environment...",
+              });
               setTimeout(() => {
-                (window as any).__mockEmit("runtime-install-progress", { message: "[4/5] Installing dependencies..." });
+                (window as any).__mockEmit("runtime-install-progress", {
+                  message: "[4/5] Installing dependencies...",
+                });
                 setTimeout(() => {
                   (window as any).__mockEmit("runtime-install-success", {});
                 }, 200);
@@ -211,7 +228,7 @@ export async function mockTauriIpc(page: Page) {
               is_recommended: true,
               supported_languages: ["en"],
               supports_language_selection: true,
-              is_custom: false
+              is_custom: false,
             },
             {
               id: "gemma-2b",
@@ -232,31 +249,49 @@ export async function mockTauriIpc(page: Page) {
               is_recommended: false,
               supported_languages: ["en"],
               supports_language_selection: false,
-              is_custom: false
-            }
+              is_custom: false,
+            },
           ];
-          return mockModels.map(m => ({
+          return mockModels.map((m) => ({
             ...m,
-            is_downloaded: ((window as any).__downloadedModels || []).includes(m.id)
+            is_downloaded: ((window as any).__downloadedModels || []).includes(
+              m.id,
+            ),
           }));
         case "get_current_model":
           return null;
         case "get_transcription_model_status":
-          return ((window as any).__downloadedModels || []).includes("parakeet-v3") ? "parakeet-v3" : null;
+          return ((window as any).__downloadedModels || []).includes(
+            "parakeet-v3",
+          )
+            ? "parakeet-v3"
+            : null;
         case "is_model_loading":
           return false;
         case "download_model":
           const modelId = args.modelId || "parakeet-v3";
           setTimeout(() => {
-            (window as any).__mockEmit("model-download-progress", { model_id: modelId, percentage: 25, speed: 12.5 });
+            (window as any).__mockEmit("model-download-progress", {
+              model_id: modelId,
+              percentage: 25,
+              speed: 12.5,
+            });
             setTimeout(() => {
-              (window as any).__mockEmit("model-download-progress", { model_id: modelId, percentage: 75, speed: 15.0 });
+              (window as any).__mockEmit("model-download-progress", {
+                model_id: modelId,
+                percentage: 75,
+                speed: 15.0,
+              });
               setTimeout(() => {
                 if (!(window as any).__downloadedModels.includes(modelId)) {
                   (window as any).__downloadedModels.push(modelId);
                 }
                 (window as any).__mockEmit("model-download-complete", modelId);
-                (window as any).__mockEmit("model-state-changed", { event_type: "downloaded", model_id: modelId, model_name: modelId });
+                (window as any).__mockEmit("model-state-changed", {
+                  event_type: "downloaded",
+                  model_id: modelId,
+                  model_name: modelId,
+                });
               }, 200);
             }, 200);
           }, 100);
@@ -295,7 +330,9 @@ export async function mockTauriIpc(page: Page) {
         case "plugin:event|unlisten": {
           const { event, eventId } = args;
           if ((window as any).__eventMap[event]) {
-            (window as any).__eventMap[event] = (window as any).__eventMap[event].filter((cbId: number) => cbId !== eventId);
+            (window as any).__eventMap[event] = (window as any).__eventMap[
+              event
+            ].filter((cbId: number) => cbId !== eventId);
           }
           return null;
         }
@@ -303,7 +340,11 @@ export async function mockTauriIpc(page: Page) {
           return { running: false, ready: false, model: null, cuda: false };
         case "tts_get_voices":
           return [
-            { id: "en_US-lessac-medium", name: "Lessac (medium)", language: "en-US" }
+            {
+              id: "en_US-lessac-medium",
+              name: "Lessac (medium)",
+              language: "en-US",
+            },
           ];
         case "get_active_gpu_vram_status":
           return {
@@ -316,7 +357,7 @@ export async function mockTauriIpc(page: Page) {
             process_budget_mb: 0,
             llm_servers: [],
             updated_at_unix_ms: null,
-            error: null
+            error: null,
           };
         case "plugin:app|version":
           return "1.0.0";
@@ -353,7 +394,10 @@ export async function mockTauriIpc(page: Page) {
  * Helper to emit a custom event to the frontend (e.g. STT transcriptions)
  */
 export async function emitMockEvent(page: Page, event: string, payload: any) {
-  await page.evaluate(({ event, payload }) => {
-    (window as any).__mockEmit(event, payload);
-  }, { event, payload });
+  await page.evaluate(
+    ({ event, payload }) => {
+      (window as any).__mockEmit(event, payload);
+    },
+    { event, payload },
+  );
 }

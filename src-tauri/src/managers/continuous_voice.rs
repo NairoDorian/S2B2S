@@ -44,8 +44,14 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     rm.set_continuous_mode_paused(true);
 
     // 2. Transcribe
+    let settings = get_settings(app);
+    let is_brain_only = settings.brain.brain_only_transcription;
     let stt_start = std::time::Instant::now();
-    let transcription_result = tm.transcribe(samples.clone());
+    let transcription_result = if is_brain_only {
+        Ok("[STT Bypassed]".to_string())
+    } else {
+        tm.transcribe(samples.clone())
+    };
     let stt_ms = stt_start.elapsed().as_millis() as u64;
 
     let file_name = format!("s2b2s-{}.wav", chrono::Utc::now().timestamp());
@@ -106,19 +112,71 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     let _ = app.emit("brain:asked", &asked_payload);
 
     // 5. Query Brain and play TTS
-    let settings = get_settings(app);
     let will_play_tts = settings.brain.read_aloud && settings.tts.enabled;
+    let multimodal_audio = settings.brain.multimodal_audio_enabled;
+
+    // When brain-only transcription is on, bypass STT output and send the
+    // fixed transcription prompt + raw audio to the Brain instead.
+    let brain_text = if is_brain_only {
+        crate::settings::BRAIN_ONLY_TRANSCRIPTION_PROMPT.to_string()
+    } else {
+        transcription.clone()
+    };
+    // Brain-only mode always requires multimodal audio
+    let multimodal_audio = is_brain_only || multimodal_audio;
 
     let app_clone = app.clone();
     let bm_clone = bm.clone();
-    let transcription_clone = transcription.clone();
+    let transcription_clone = brain_text.clone();
+    let samples_for_brain = if multimodal_audio {
+        Some(samples.clone())
+    } else {
+        None
+    };
 
     // Clone for async block — rm used both inside and after
     let rm_for_after = rm.clone();
 
     // Run the async Brain/TTS pipeline
     tauri::async_runtime::block_on(async move {
-        let ask_result = bm_clone.ask(transcription_clone).await;
+        let ask_result = if multimodal_audio {
+            let samples = samples_for_brain
+                .expect("samples_for_brain should be Some when multimodal_audio is true");
+            if is_brain_only {
+                log::info!(
+                    "[ContinuousVoice] Brain-only transcription mode — encoding {} samples ({:.2}s) to MP3, bypassing STT, sending fixed prompt + audio to Gemma 4",
+                    samples.len(),
+                    samples.len() as f64 / 16000.0
+                );
+            } else {
+                log::info!(
+                    "[ContinuousVoice] Multimodal audio enabled — encoding {} samples ({:.2}s) to MP3 for Gemma 4",
+                    samples.len(),
+                    samples.len() as f64 / 16000.0
+                );
+            }
+            match crate::audio_toolkit::encode_mp3_bytes(&samples) {
+                Ok(mp3_bytes) => {
+                    use base64::Engine;
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&mp3_bytes);
+                    log::info!(
+                        "[ContinuousVoice] MP3 encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
+                        mp3_bytes.len(),
+                        b64.len()
+                    );
+                    bm_clone
+                        .ask_multimodal(transcription_clone, Some(b64), None)
+                        .await
+                }
+                Err(e) => {
+                    log::error!("[ContinuousVoice] Failed to encode MP3 for multimodal brain: {e}");
+                    bm_clone.ask(transcription_clone).await
+                }
+            }
+        } else {
+            log::info!("[ContinuousVoice] Multimodal audio disabled — text-only ask");
+            bm_clone.ask(transcription_clone).await
+        };
         // Whether the Brain produced anything to speak this turn.
         let has_reply = ask_result
             .as_ref()

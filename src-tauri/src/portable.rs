@@ -23,7 +23,11 @@ pub fn get_app_handle() -> Option<tauri::AppHandle> {
 /// Resolve the path to the Python executable inside the S2B2S venv.
 /// Priority: project venv > app_data venv > system Python fallback.
 pub fn resolve_venv_python() -> PathBuf {
-    let exe_name = if cfg!(windows) { "python.exe" } else { "python3" };
+    let exe_name = if cfg!(windows) {
+        "python.exe"
+    } else {
+        "python3"
+    };
     let venv_python = if cfg!(windows) {
         std::path::Path::new("venv").join("Scripts").join(exe_name)
     } else {
@@ -34,7 +38,10 @@ pub fn resolve_venv_python() -> PathBuf {
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let project_venv = PathBuf::from(manifest_dir).join("..").join(&venv_python);
         if project_venv.exists() {
-            log::info!("[Venv] Using project venv Python: {}", project_venv.display());
+            log::info!(
+                "[Venv] Using project venv Python: {}",
+                project_venv.display()
+            );
             return project_venv;
         }
     }
@@ -77,7 +84,6 @@ pub fn resolve_venv_python() -> PathBuf {
     );
     PathBuf::from(fallback)
 }
-
 
 /// Detect portable mode by looking for a `portable` marker file next to the exe.
 /// Must be called once at startup before Tauri initializes.

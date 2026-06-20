@@ -118,12 +118,14 @@ fn get_ram_info() -> Result<(u64, u64), String> {
 fn resolve_resource_path(resource_name: &str) -> Option<std::path::PathBuf> {
     // 1. Dev mode: check manifest dir
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let dev_path = std::path::PathBuf::from(manifest_dir).join("..").join(resource_name);
+        let dev_path = std::path::PathBuf::from(manifest_dir)
+            .join("..")
+            .join(resource_name);
         if dev_path.exists() {
             return Some(dev_path);
         }
     }
-    
+
     // 2. Installed mode: check next to executable
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -138,7 +140,7 @@ fn resolve_resource_path(resource_name: &str) -> Option<std::path::PathBuf> {
             }
         }
     }
-    
+
     None
 }
 
@@ -154,52 +156,56 @@ pub fn check_speech_runtime_installed() -> bool {
 #[specta::specta]
 pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Emitter;
-    
+
     let app_data_dir = crate::portable::app_data_dir(&app)
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    
+
     let target_dir_str = app_data_dir.to_string_lossy().to_string();
-    
+
     let script_name = if cfg!(windows) {
         "scripts/install-speech-runtime.ps1"
     } else {
         "scripts/install-speech-runtime.sh"
     };
-    
+
     let script_path = resolve_resource_path(script_name)
         .ok_or_else(|| format!("Could not find runtime install script: {}", script_name))?;
-        
-    log::info!("Running runtime install script at {} with target dir {}", script_path.display(), target_dir_str);
-    
+
+    log::info!(
+        "Running runtime install script at {} with target dir {}",
+        script_path.display(),
+        target_dir_str
+    );
+
     let app_clone = app.clone();
     std::thread::spawn(move || {
         let mut cmd = if cfg!(windows) {
             let mut c = std::process::Command::new("powershell");
             c.args([
                 "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-File", &script_path.to_string_lossy().to_string(),
-                "-TargetDir", &target_dir_str,
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                &script_path.to_string_lossy().to_string(),
+                "-TargetDir",
+                &target_dir_str,
             ]);
             c
         } else {
             let mut c = std::process::Command::new("bash");
-            c.args([
-                &script_path.to_string_lossy().to_string(),
-                &target_dir_str,
-            ]);
+            c.args([&script_path.to_string_lossy().to_string(), &target_dir_str]);
             c
         };
-        
+
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
-        
+
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
-        
+
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -209,10 +215,10 @@ pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String>
                 return;
             }
         };
-        
+
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        
+
         let app_emit = app_clone.clone();
         let stdout_thread = std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
@@ -225,7 +231,7 @@ pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String>
                 }
             }
         });
-        
+
         let stderr_thread = std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
@@ -235,11 +241,11 @@ pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String>
                 }
             }
         });
-        
+
         let status = child.wait();
         let _ = stdout_thread.join();
         let _ = stderr_thread.join();
-        
+
         match status {
             Ok(s) if s.success() => {
                 log::info!("Runtime installation completed successfully");
@@ -260,4 +266,3 @@ pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String>
 
     Ok(())
 }
-

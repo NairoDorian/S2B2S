@@ -77,4 +77,3 @@ jobs:
         run: bunx playwright install chromium --with-deps
       - name: Run Playwright Tests
         run: bun run test:playwright
-

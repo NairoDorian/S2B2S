@@ -222,7 +222,9 @@ impl Drop for UnifiedParakeetServer {
 }
 
 fn resolve_venv_python() -> Result<String> {
-    Ok(crate::portable::resolve_venv_python().to_string_lossy().to_string())
+    Ok(crate::portable::resolve_venv_python()
+        .to_string_lossy()
+        .to_string())
 }
 
 fn resolve_server_script() -> Result<PathBuf> {

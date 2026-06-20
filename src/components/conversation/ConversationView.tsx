@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
-import { Mic, Volume2, VolumeX, Eraser } from "lucide-react";
+import { Mic, Volume2, VolumeX, Eraser, Brain } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -25,7 +25,7 @@ interface Message {
  */
 export const ConversationView: React.FC = () => {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { settings, updateSetting } = useSettings();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
@@ -433,12 +433,43 @@ export const ConversationView: React.FC = () => {
             <Eraser size={13} />
             {t("conversation.newConversation")}
           </Button>
+          {brainEnabled && (
+            <label
+              className="ml-auto inline-flex items-center cursor-pointer text-xs text-mid-gray hover:text-foreground select-none"
+              title={t(
+                "conversation.brainOnlySttTooltip",
+                "Bypass STT models and use Brain AI for transcription",
+              )}
+            >
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={settings?.brain?.brain_only_transcription ?? false}
+                onChange={(e) => {
+                  const newVal = e.target.checked;
+                  if (settings && settings.brain) {
+                    void updateSetting("brain", {
+                      ...settings.brain,
+                      brain_only_transcription: newVal,
+                    });
+                  }
+                }}
+              />
+              <div className="relative w-9 h-5 bg-mid-gray/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-logo-primary peer-disabled:opacity-50 mr-1.5"></div>
+              <Brain size={13} className="mr-1 inline-block" />
+              <span>{t("conversation.brainOnlyStt", "Brain STT")}</span>
+            </label>
+          )}
           <Button
             variant={voiceMode ? "primary" : "secondary"}
             size="sm"
             disabled={!brainEnabled}
             onClick={toggleVoiceMode}
-            className="ml-auto flex items-center gap-1.5"
+            className={
+              brainEnabled
+                ? "flex items-center gap-1.5"
+                : "ml-auto flex items-center gap-1.5"
+            }
           >
             <Mic
               size={14}
