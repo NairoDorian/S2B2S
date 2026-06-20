@@ -136,26 +136,26 @@ Run-UvPip "soundfile & numpy" @("soundfile", "numpy")
 # Install piper-tts (which pulls CPU onnxruntime)
 Run-UvPip "piper-tts" @("piper-tts[http]")
 
-# Remove conflicting CPU onnxruntime
+# Remove conflicting CPU onnxruntime (pulled in by piper-tts)
 Write-Host "Removing conflicting CPU onnxruntime (if any)..." -ForegroundColor Gray
 & $UvExe pip uninstall --python $VenvPython onnxruntime --yes --quiet 2>&1 | Out-Null
 
-# Install GPU onnxruntime and CUDA runtime cu12 (for accelerated Whisper and Piper)
-Run-UvPip "onnxruntime-gpu & sentencepiece" @("onnxruntime-gpu>=1.26.0", "sentencepiece")
-Run-UvPip "nvidia CUDA runtime packages" @(
-    "nvidia-cuda-runtime-cu12",
-    "nvidia-cudnn-cu12",
-    "nvidia-cublas-cu12",
-    "nvidia-cufft-cu12",
-    "nvidia-curand-cu12",
-    "nvidia-cusolver-cu12",
-    "nvidia-cusparse-cu12",
-    "nvidia-nvjitlink-cu12"
-)
+# Install onnxruntime-gpu dependencies first (required by the CUDA 13 nightly build)
+Run-UvPip "onnxruntime-gpu dependencies" @("coloredlogs", "flatbuffers", "numpy", "packaging", "protobuf", "sympy", "sentencepiece")
 
-# Final safety check: reinstall onnxruntime-gpu & clean up onnxruntime
+# Install onnxruntime-gpu nightly for CUDA 13.3 from the Azure DevOps feed
+Write-Host "Installing onnxruntime-gpu (CUDA 13.3 nightly)..." -ForegroundColor Yellow
+& $UvExe pip install --python $VenvPython `
+    --pre `
+    --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" `
+    onnxruntime-gpu 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to install onnxruntime-gpu from CUDA 13.3 nightly feed" -ForegroundColor Red
+    exit 1
+}
+
+# Final safety check: ensure CPU onnxruntime has not been re-added
 Write-Host "Verifying final GPU configuration..." -ForegroundColor Gray
-& $UvExe pip install --python $VenvPython --force-reinstall "onnxruntime-gpu>=1.26.0" 2>&1 | Out-Null
 & $UvExe pip uninstall --python $VenvPython onnxruntime --yes --quiet 2>&1 | Out-Null
 
 # 6. Verify environment

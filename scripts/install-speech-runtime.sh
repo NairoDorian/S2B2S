@@ -143,25 +143,24 @@ if [ "$(uname -s)" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 if [ "$IS_LINUX_CUDA" = true ]; then
-    echo "NVIDIA GPU detected on Linux. Setting up GPU acceleration..."
+    echo "NVIDIA GPU detected on Linux. Setting up GPU acceleration (CUDA 13.3 nightly)..."
     
-    # Remove conflicting CPU onnxruntime
+    # Remove conflicting CPU onnxruntime (pulled in by piper-tts)
     echo "Removing conflicting CPU onnxruntime..."
     "$UV_EXE" pip uninstall --python "$VENV_PYTHON" onnxruntime --yes --quiet || true
     
-    run_uv_pip "onnxruntime-gpu & sentencepiece" "onnxruntime-gpu>=1.26.0" "sentencepiece"
-    run_uv_pip "nvidia CUDA runtime packages" \
-        "nvidia-cuda-runtime-cu12" \
-        "nvidia-cudnn-cu12" \
-        "nvidia-cublas-cu12" \
-        "nvidia-cufft-cu12" \
-        "nvidia-curand-cu12" \
-        "nvidia-cusolver-cu12" \
-        "nvidia-cusparse-cu12" \
-        "nvidia-nvjitlink-cu12"
-        
-    # Reinstall GPU ORT to override any dependency regressions
-    "$UV_EXE" pip install --python "$VENV_PYTHON" --force-reinstall "onnxruntime-gpu>=1.26.0" --quiet
+    # Install onnxruntime-gpu dependencies first (required by the CUDA 13 nightly build)
+    run_uv_pip "onnxruntime-gpu dependencies" \
+        "coloredlogs" "flatbuffers" "numpy" "packaging" "protobuf" "sympy" "sentencepiece"
+    
+    # Install onnxruntime-gpu nightly for CUDA 13.3 from the Azure DevOps feed
+    echo "Installing onnxruntime-gpu (CUDA 13.3 nightly)..."
+    "$UV_EXE" pip install --python "$VENV_PYTHON" \
+        --pre \
+        --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" \
+        onnxruntime-gpu
+    
+    # Final safety check: ensure CPU onnxruntime has not been re-added
     "$UV_EXE" pip uninstall --python "$VENV_PYTHON" onnxruntime --yes --quiet || true
 else
     echo "Installing standard ONNX Runtime..."
