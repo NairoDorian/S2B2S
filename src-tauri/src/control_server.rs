@@ -89,57 +89,58 @@ fn handle_connection(mut stream: TcpStream, app: AppHandle) {
     let settings = crate::settings::get_settings(&app);
     let expected_token = settings.control_server_token.clone();
 
-    let response = match read_result.and_then(|()| parse_request(&buffer, expected_token.as_deref())) {
-        Ok(ControlRequest::Health) => http_response(200, "OK", r#"{"ok":true,"app":"S2B2S"}"#),
-        Ok(ControlRequest::PiperStatus) => {
-            let status = piper_server::get_piper_server_status();
-            let body = serde_json::to_string(&status)
-                .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());
-            http_response(200, "OK", &body)
-        }
-        Ok(ControlRequest::Speak(request)) => {
-            if let Some(tts) = app
-                .try_state::<Arc<TtsManager>>()
-                .map(|s| s.inner().clone())
-            {
-                tts.speak(request.text);
-                http_response(200, "OK", r#"{"ok":true}"#)
-            } else {
-                http_response(500, "Error", r#"{"error":"TtsManager not available"}"#)
+    let response =
+        match read_result.and_then(|()| parse_request(&buffer, expected_token.as_deref())) {
+            Ok(ControlRequest::Health) => http_response(200, "OK", r#"{"ok":true,"app":"S2B2S"}"#),
+            Ok(ControlRequest::PiperStatus) => {
+                let status = piper_server::get_piper_server_status();
+                let body = serde_json::to_string(&status)
+                    .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());
+                http_response(200, "OK", &body)
             }
-        }
-        Ok(ControlRequest::Brain(request)) => {
-            if let Some(brain) = app
-                .try_state::<Arc<BrainManager>>()
-                .map(|s| s.inner().clone())
-            {
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = brain.ask(request.text).await {
-                        log::error!("[Control] Brain ask failed: {}", e);
-                    }
-                });
-                http_response(200, "OK", r#"{"ok":true}"#)
-            } else {
-                http_response(500, "Error", r#"{"error":"BrainManager not available"}"#)
+            Ok(ControlRequest::Speak(request)) => {
+                if let Some(tts) = app
+                    .try_state::<Arc<TtsManager>>()
+                    .map(|s| s.inner().clone())
+                {
+                    tts.speak(request.text);
+                    http_response(200, "OK", r#"{"ok":true}"#)
+                } else {
+                    http_response(500, "Error", r#"{"error":"TtsManager not available"}"#)
+                }
             }
-        }
-        Ok(ControlRequest::Command(request)) => {
-            if let Some(coordinator) = app
-                .try_state::<Arc<TranscriptionCoordinator>>()
-                .map(|s| s.inner().clone())
-            {
-                coordinator.send_input(&request.command, "API", true, false);
-                http_response(200, "OK", r#"{"ok":true}"#)
-            } else {
-                http_response(
-                    500,
-                    "Error",
-                    r#"{"error":"TranscriptionCoordinator not available"}"#,
-                )
+            Ok(ControlRequest::Brain(request)) => {
+                if let Some(brain) = app
+                    .try_state::<Arc<BrainManager>>()
+                    .map(|s| s.inner().clone())
+                {
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = brain.ask(request.text).await {
+                            log::error!("[Control] Brain ask failed: {}", e);
+                        }
+                    });
+                    http_response(200, "OK", r#"{"ok":true}"#)
+                } else {
+                    http_response(500, "Error", r#"{"error":"BrainManager not available"}"#)
+                }
             }
-        }
-        Err((status, message)) => http_response(status, "Error", &json_error(&message)),
-    };
+            Ok(ControlRequest::Command(request)) => {
+                if let Some(coordinator) = app
+                    .try_state::<Arc<TranscriptionCoordinator>>()
+                    .map(|s| s.inner().clone())
+                {
+                    coordinator.send_input(&request.command, "API", true, false);
+                    http_response(200, "OK", r#"{"ok":true}"#)
+                } else {
+                    http_response(
+                        500,
+                        "Error",
+                        r#"{"error":"TranscriptionCoordinator not available"}"#,
+                    )
+                }
+            }
+            Err((status, message)) => http_response(status, "Error", &json_error(&message)),
+        };
 
     let _ = stream.write_all(response.as_bytes());
 }
@@ -201,7 +202,10 @@ fn get_header_value(headers: &str, name: &str) -> Option<String> {
         .map(|(_, v)| v.trim().to_string())
 }
 
-fn parse_request(buffer: &[u8], expected_token: Option<&str>) -> Result<ControlRequest, (u16, String)> {
+fn parse_request(
+    buffer: &[u8],
+    expected_token: Option<&str>,
+) -> Result<ControlRequest, (u16, String)> {
     let header_end = find_header_end(buffer).ok_or((400, "missing HTTP headers".to_string()))?;
     let headers = String::from_utf8_lossy(&buffer[..header_end]);
 
@@ -237,7 +241,10 @@ fn parse_request(buffer: &[u8], expected_token: Option<&str>) -> Result<ControlR
         };
 
         if !authenticated {
-            log::warn!("[Control] Unauthorized request to {}", request_line.split_whitespace().next().unwrap_or(""));
+            log::warn!(
+                "[Control] Unauthorized request to {}",
+                request_line.split_whitespace().next().unwrap_or("")
+            );
             return Err((401, "Unauthorized: missing or invalid token".to_string()));
         }
     }

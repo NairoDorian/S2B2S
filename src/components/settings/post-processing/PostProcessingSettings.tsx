@@ -37,8 +37,10 @@ const LlamaDownloadPanel: React.FC<{
             </span>
           </h4>
           <p className="text-xs text-mid-gray max-w-xl">
-            To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine.
-            We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).
+            To run post-processing locally, S2B2S compiles and executes
+            llama.cpp on your machine. We need to download the specialized
+            Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction,
+            and vision projector (total size ~2.2 GB).
           </p>
         </div>
       </div>
@@ -53,11 +55,15 @@ const LlamaDownloadPanel: React.FC<{
         <div className="space-y-2">
           <div className="flex justify-between text-xs font-medium text-mid-gray">
             <span className="truncate max-w-[280px]">
-              {llamaState.currentFile ? `Downloading ${llamaState.currentFile}...` : "Downloading models..."}
+              {llamaState.currentFile
+                ? `Downloading ${llamaState.currentFile}...`
+                : "Downloading models..."}
             </span>
             <span className="flex gap-2">
               <span>{llamaState.downloadSpeed.toFixed(1)} MB/s</span>
-              <span className="text-logo-primary font-semibold">{llamaState.downloadProgress.toFixed(1)}%</span>
+              <span className="text-logo-primary font-semibold">
+                {llamaState.downloadProgress.toFixed(1)}%
+              </span>
             </span>
           </div>
           <div className="w-full bg-black/40 rounded-full h-2 overflow-hidden border border-white/5 relative">
@@ -94,7 +100,9 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">Model</span>
-        <span className="font-medium text-text">Gemma-4-E2B-it-qat (UD-Q4_K_XL)</span>
+        <span className="font-medium text-text">
+          Gemma-4-E2B-it-qat (UD-Q4_K_XL)
+        </span>
       </div>
       <div>
         <span className="text-mid-gray block">MTP Acceleration</span>
@@ -106,7 +114,9 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">Execution Engine</span>
-        <span className="font-medium text-text">llama-server (Flash Attention)</span>
+        <span className="font-medium text-text">
+          llama-server (Flash Attention)
+        </span>
       </div>
     </div>
   );
@@ -143,7 +153,9 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             <>
               <SettingContainer
                 title={t("settings.postProcessing.api.baseUrl.title")}
-                description={t("settings.postProcessing.api.baseUrl.description")}
+                description={t(
+                  "settings.postProcessing.api.baseUrl.description",
+                )}
                 descriptionMode="tooltip"
                 layout="horizontal"
                 grouped={true}
@@ -152,7 +164,9 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
                   <BaseUrlField
                     value={state.baseUrl}
                     onBlur={state.handleBaseUrlChange}
-                    placeholder={t("settings.postProcessing.api.baseUrl.placeholder")}
+                    placeholder={t(
+                      "settings.postProcessing.api.baseUrl.placeholder",
+                    )}
                     disabled={state.isBaseUrlUpdating}
                     className="min-w-[380px]"
                   />
@@ -244,7 +258,9 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
                       ? t(
                           "settings.postProcessing.api.model.placeholderWithOptions",
                         )
-                      : t("settings.postProcessing.api.model.placeholderNoOptions")
+                      : t(
+                          "settings.postProcessing.api.model.placeholderNoOptions",
+                        )
                   }
                   onSelect={state.handleModelSelect}
                   onCreate={state.handleModelCreate}
@@ -254,7 +270,9 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
                 <ResetButton
                   onClick={state.handleRefreshModels}
                   disabled={state.isFetchingModels}
-                  ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
+                  ariaLabel={t(
+                    "settings.postProcessing.api.model.refreshModels",
+                  )}
                   className="flex h-10 w-10 items-center justify-center"
                 >
                   <RefreshCcw

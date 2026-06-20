@@ -30,7 +30,9 @@ async function main() {
   try {
     descriptionsContent = await Bun.file(DESCRIPTIONS_FILE).text();
   } catch {
-    console.warn("⚠️  No description file found, creating repomix-only output.");
+    console.warn(
+      "⚠️  No description file found, creating repomix-only output.",
+    );
   }
 
   // Merge: repomix tree first, then descriptions

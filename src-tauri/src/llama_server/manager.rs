@@ -1,9 +1,9 @@
+use log::info;
+use specta::Type;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tauri::{AppHandle};
-use log::info;
-use specta::Type;
+use tauri::AppHandle;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Type)]
 pub struct LlamaRelease {
@@ -34,8 +34,8 @@ pub struct DownloadedServer {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Type)]
 pub struct LlamaServerConfig {
-    pub backend: String,      // "cuda", "vulkan", "cpu"
-    pub release_tag: String,  // e.g. "b9601"
+    pub backend: String,     // "cuda", "vulkan", "cpu"
+    pub release_tag: String, // e.g. "b9601"
 }
 
 impl Default for LlamaServerConfig {
@@ -51,7 +51,11 @@ fn detect_preferred_backend() -> String {
     #[cfg(target_os = "windows")]
     {
         // Check for NVIDIA GPU via nvidia-smi
-        if let Ok(output) = Command::new("nvidia-smi").arg("--query-gpu=name").arg("--format=csv,noheader").output() {
+        if let Ok(output) = Command::new("nvidia-smi")
+            .arg("--query-gpu=name")
+            .arg("--format=csv,noheader")
+            .output()
+        {
             if output.status.success() && !output.stdout.is_empty() {
                 return "cuda".to_string();
             }
@@ -68,9 +72,13 @@ fn detect_preferred_backend() -> String {
     #[cfg(target_os = "linux")]
     {
         if let Ok(output) = Command::new("nvidia-smi").output() {
-            if output.status.success() { return "cuda".to_string(); }
+            if output.status.success() {
+                return "cuda".to_string();
+            }
         }
-        if Path::new("/usr/local/cuda").exists() { return "cuda".to_string(); }
+        if Path::new("/usr/local/cuda").exists() {
+            return "cuda".to_string();
+        }
     }
     #[cfg(target_os = "macos")]
     {
@@ -100,32 +108,48 @@ impl LlamaServerManager {
     }
 
     fn current_os_key(&self) -> &str {
-        if cfg!(target_os = "windows") { "windows" }
-        else if cfg!(target_os = "linux") { "linux" }
-        else { "macos" }
+        if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "linux") {
+            "linux"
+        } else {
+            "macos"
+        }
     }
 
     fn current_arch_key(&self) -> &str {
-        if cfg!(target_arch = "x86_64") { "x64" }
-        else if cfg!(target_arch = "aarch64") { "arm64" }
-        else { "x64" }
+        if cfg!(target_arch = "x86_64") {
+            "x64"
+        } else if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "x64"
+        }
     }
 
     fn server_binary_name(&self) -> &str {
-        if cfg!(windows) { "llama-server.exe" } else { "llama-server" }
+        if cfg!(windows) {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        }
     }
 
     /// Fetch available releases from GitHub
     pub async fn fetch_releases(&self) -> Result<Vec<LlamaRelease>, String> {
         let client = reqwest::Client::new();
         let url = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5";
-        let response = client.get(url)
+        let response = client
+            .get(url)
             .header("User-Agent", "s2b2s-llama-server-manager")
             .header("Accept", "application/vnd.github+json")
-            .send().await
+            .send()
+            .await
             .map_err(|e| format!("Failed to fetch releases: {}", e))?;
 
-        let releases: Vec<serde_json::Value> = response.json().await
+        let releases: Vec<serde_json::Value> = response
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse releases: {}", e))?;
 
         let os_key = self.current_os_key();
@@ -140,10 +164,14 @@ impl LlamaServerManager {
 
             for asset in assets {
                 let asset_name = asset["name"].as_str().unwrap_or("").to_string();
-                let download_url = asset["browser_download_url"].as_str().unwrap_or("").to_string();
+                let download_url = asset["browser_download_url"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
                 let size = asset["size"].as_u64().unwrap_or(0);
 
-                if let Some((backend, asset_os, asset_arch)) = parse_asset_name(&asset_name.clone()) {
+                if let Some((backend, asset_os, asset_arch)) = parse_asset_name(&asset_name.clone())
+                {
                     if asset_os == os_key && asset_arch == arch_key {
                         parsed_assets.push(LlamaAsset {
                             name: asset_name,
@@ -162,7 +190,11 @@ impl LlamaServerManager {
                 // (preferred: CUDA 13 > CUDA 12 > Vulkan > CPU)
                 let mut seen = std::collections::HashSet::new();
                 parsed_assets.retain(|a| seen.insert(a.backend.clone()));
-                result.push(LlamaRelease { tag, name, assets: parsed_assets });
+                result.push(LlamaRelease {
+                    tag,
+                    name,
+                    assets: parsed_assets,
+                });
             }
         }
 
@@ -170,7 +202,12 @@ impl LlamaServerManager {
     }
 
     /// Download a specific server binary
-    pub async fn download_server(&self, backend: &str, release_tag: &str, download_url: &str) -> Result<(), String> {
+    pub async fn download_server(
+        &self,
+        backend: &str,
+        release_tag: &str,
+        download_url: &str,
+    ) -> Result<(), String> {
         let servers_dir = self.servers_dir()?;
         let install_dir = servers_dir.join(format!("{}-{}", backend, release_tag));
         if !install_dir.exists() {
@@ -178,19 +215,28 @@ impl LlamaServerManager {
         }
 
         // Download the archive
-        info!("[LlamaServerManager] Downloading {} server {} from {}", backend, release_tag, download_url);
+        info!(
+            "[LlamaServerManager] Downloading {} server {} from {}",
+            backend, release_tag, download_url
+        );
         let client = reqwest::Client::new();
-        let response = client.get(download_url)
+        let response = client
+            .get(download_url)
             .header("User-Agent", "s2b2s-llama-server-manager")
-            .send().await
+            .send()
+            .await
             .map_err(|e| format!("Download failed: {}", e))?;
 
-        let bytes = response.bytes().await
+        let bytes = response
+            .bytes()
+            .await
             .map_err(|e| format!("Download read failed: {}", e))?;
 
         // For now, write to a temp file and extract
         let temp_dir = std::env::temp_dir().join(format!("s2b2s_llama_dl_{}", release_tag));
-        if temp_dir.exists() { let _ = fs::remove_dir_all(&temp_dir); }
+        if temp_dir.exists() {
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
         fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
         if download_url.ends_with(".zip") {
@@ -219,7 +265,9 @@ impl LlamaServerManager {
             let dest_bin = install_dir.join(binary_name);
             if dest_bin.exists() {
                 use std::os::unix::fs::PermissionsExt;
-                let mut perms = fs::metadata(&dest_bin).map_err(|e| e.to_string())?.permissions();
+                let mut perms = fs::metadata(&dest_bin)
+                    .map_err(|e| e.to_string())?
+                    .permissions();
                 perms.set_mode(0o755);
                 fs::set_permissions(&dest_bin, perms).map_err(|e| e.to_string())?;
             }
@@ -228,7 +276,12 @@ impl LlamaServerManager {
         // Cleanup temp
         let _ = fs::remove_dir_all(&temp_dir);
 
-        info!("[LlamaServerManager] Successfully installed {} server {} to {}", backend, release_tag, install_dir.display());
+        info!(
+            "[LlamaServerManager] Successfully installed {} server {} to {}",
+            backend,
+            release_tag,
+            install_dir.display()
+        );
         Ok(())
     }
 
@@ -236,7 +289,7 @@ impl LlamaServerManager {
     pub fn get_active_server_path(&self) -> Result<PathBuf, String> {
         let settings = crate::settings::get_settings(&self.app);
         let config = &settings.llama_server;
-        
+
         // If configured server exists, use it
         if !config.backend.is_empty() && !config.release_tag.is_empty() {
             let servers_dir = self.servers_dir()?;
@@ -255,14 +308,20 @@ impl LlamaServerManager {
                 if srv.backend.starts_with(backend_prefix) {
                     let binary = Path::new(&srv.path).join(self.server_binary_name());
                     if binary.exists() {
-                        info!("[LlamaServerManager] Auto-selected {}-{} server", srv.backend, srv.release_tag);
+                        info!(
+                            "[LlamaServerManager] Auto-selected {}-{} server",
+                            srv.backend, srv.release_tag
+                        );
                         return Ok(binary);
                     }
                 }
             }
         }
 
-        Err("No llama.cpp server downloaded. Go to Settings > Llama.cpp to download one.".to_string())
+        Err(
+            "No llama.cpp server downloaded. Go to Settings > Llama.cpp to download one."
+                .to_string(),
+        )
     }
 
     /// List all downloaded servers
@@ -275,7 +334,10 @@ impl LlamaServerManager {
         }
 
         let binary_name = self.server_binary_name();
-        for entry in fs::read_dir(&servers_dir).map_err(|e| e.to_string())?.flatten() {
+        for entry in fs::read_dir(&servers_dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+        {
             let path = entry.path();
             if path.is_dir() {
                 let folder_name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -304,7 +366,10 @@ impl LlamaServerManager {
         let server_dir = servers_dir.join(format!("{}-{}", backend, release_tag));
         if server_dir.exists() {
             fs::remove_dir_all(&server_dir).map_err(|e| format!("Failed to remove: {}", e))?;
-            info!("[LlamaServerManager] Removed server {}-{}", backend, release_tag);
+            info!(
+                "[LlamaServerManager] Removed server {}-{}",
+                backend, release_tag
+            );
         }
         Ok(())
     }
@@ -312,7 +377,8 @@ impl LlamaServerManager {
     /// Check if the configured server has GPU support
     pub fn has_gpu_support(&self) -> bool {
         let settings = crate::settings::get_settings(&self.app);
-        settings.llama_server.backend.starts_with("cuda") || settings.llama_server.backend == "vulkan"
+        settings.llama_server.backend.starts_with("cuda")
+            || settings.llama_server.backend == "vulkan"
     }
 
     /// Detect GPU type for UI
@@ -325,26 +391,42 @@ fn parse_asset_name(name: &str) -> Option<(String, &str, &str)> {
     let name_lower = name.to_lowercase();
 
     // Determine OS
-    let os = if name_lower.contains("win") { "windows" }
-        else if name_lower.contains("ubuntu") || name_lower.contains("linux") { "linux" }
-        else if name_lower.contains("macos") { "macos" }
-        else if name_lower.contains("mac") { "macos" }
-        else { return None };
+    let os = if name_lower.contains("win") {
+        "windows"
+    } else if name_lower.contains("ubuntu") || name_lower.contains("linux") {
+        "linux"
+    } else if name_lower.contains("macos") {
+        "macos"
+    } else if name_lower.contains("mac") {
+        "macos"
+    } else {
+        return None;
+    };
 
     // Determine arch
-    let arch = if name_lower.contains("arm64") || name_lower.contains("aarch64") { "arm64" }
-        else { "x64" };
+    let arch = if name_lower.contains("arm64") || name_lower.contains("aarch64") {
+        "arm64"
+    } else {
+        "x64"
+    };
 
     // Determine backend — include CUDA version for differentiation
     let backend = if name_lower.contains("cuda") || name_lower.contains("cudart") {
         // Extract CUDA version, e.g. "cuda-12.4" or "cuda-13.3"
-        let cuda_ver = name_lower.split("cuda-").nth(1)
+        let cuda_ver = name_lower
+            .split("cuda-")
+            .nth(1)
             .and_then(|s| s.split('-').next())
             .unwrap_or("13");
         format!("cuda-{}", cuda_ver)
     } else if name_lower.contains("vulkan") {
         "vulkan".to_string()
-    } else if name_lower.contains("cpu") || name_lower.contains("opencl") || name_lower.contains("hip") || name_lower.contains("rocm") || name_lower.contains("openvino") {
+    } else if name_lower.contains("cpu")
+        || name_lower.contains("opencl")
+        || name_lower.contains("hip")
+        || name_lower.contains("rocm")
+        || name_lower.contains("openvino")
+    {
         "cpu".to_string()
     } else if !name_lower.contains("cuda") && !name_lower.contains("vulkan") {
         "cpu".to_string()
@@ -365,7 +447,14 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         let status = Command::new("powershell")
-            .args(&["-Command", &format!("Expand-Archive -Path '{}' -DestinationPath '{}' -Force", zip_path.display(), dest.display())])
+            .args(&[
+                "-Command",
+                &format!(
+                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                    zip_path.display(),
+                    dest.display()
+                ),
+            ])
             .status()
             .map_err(|e| format!("Failed to run Expand-Archive: {}", e))?;
         if !status.success() {
@@ -375,7 +464,12 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let status = Command::new("unzip")
-            .args(&["-o", &zip_path.to_string_lossy(), "-d", &dest.to_string_lossy()])
+            .args(&[
+                "-o",
+                &zip_path.to_string_lossy(),
+                "-d",
+                &dest.to_string_lossy(),
+            ])
             .status()
             .map_err(|e| format!("Failed to run unzip: {}", e))?;
         if !status.success() {
@@ -388,7 +482,12 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
 fn extract_tgz(tar_path: &Path, dest: &Path) -> Result<(), String> {
     fs::create_dir_all(dest).map_err(|e| format!("mkdir: {}", e))?;
     let status = Command::new("tar")
-        .args(&["-xzf", &tar_path.to_string_lossy(), "-C", &dest.to_string_lossy()])
+        .args(&[
+            "-xzf",
+            &tar_path.to_string_lossy(),
+            "-C",
+            &dest.to_string_lossy(),
+        ])
         .status()
         .map_err(|e| format!("Failed to run tar: {}", e))?;
     if !status.success() {
@@ -422,7 +521,8 @@ fn copy_dir_contents(src: &Path, dest: &Path) -> Result<(), String> {
             if path.is_dir() {
                 copy_dir_contents(&path, &dest_path)?;
             } else {
-                fs::copy(&path, &dest_path).map_err(|e| format!("Failed to copy {}: {}", path.display(), e))?;
+                fs::copy(&path, &dest_path)
+                    .map_err(|e| format!("Failed to copy {}: {}", path.display(), e))?;
             }
         }
     }

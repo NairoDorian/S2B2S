@@ -5,10 +5,10 @@ scripts from [k2-fsa/sherpa-onnx PR #3575](https://github.com/k2-fsa/sherpa-onnx
 
 ## Models to export
 
-| Model | NeMo Checkpoint | Size | Output |
-|---|---|---|---|
-| Unified EN 0.6B | [nvidia/parakeet-unified-en-0.6b](https://huggingface.co/nvidia/parakeet-unified-en-0.6b) | 2.6 GB | encoder/decoder/joiner.int8.onnx + tokens.txt |
-| EOU 120M v1 | [nvidia/parakeet_realtime_eou_120m-v1](https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1) | TBD | TBD (export script to be created) |
+| Model           | NeMo Checkpoint                                                                                     | Size   | Output                                        |
+| --------------- | --------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------- |
+| Unified EN 0.6B | [nvidia/parakeet-unified-en-0.6b](https://huggingface.co/nvidia/parakeet-unified-en-0.6b)           | 2.6 GB | encoder/decoder/joiner.int8.onnx + tokens.txt |
+| EOU 120M v1     | [nvidia/parakeet_realtime_eou_120m-v1](https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1) | TBD    | TBD (export script to be created)             |
 
 ## Setup
 

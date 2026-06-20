@@ -5,7 +5,7 @@
 //! and — when read-aloud is enabled — feeds completed sentences straight into
 //! the TTS subsystem so speech starts before the reply finishes.
 
-use crate::brain::client::{BrainClient, BrainResult, ChatMessage, MessageContent, ContentPart};
+use crate::brain::client::{BrainClient, BrainResult, ChatMessage, ContentPart, MessageContent};
 use crate::settings::get_settings;
 use crate::tts::manager::TtsManager;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -78,7 +78,10 @@ impl BrainManager {
             return Err("The Brain is disabled in settings".into());
         }
         if cfg.provider_id == "llama_cpp" {
-            if let Some(llama_manager) = self.app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+            if let Some(llama_manager) = self
+                .app
+                .try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+            {
                 llama_manager.ensure_server_running().await?;
             }
         }
@@ -126,9 +129,7 @@ impl BrainManager {
                 });
             }
             // Text in the middle
-            parts.push(ContentPart::Text {
-                text: text.clone(),
-            });
+            parts.push(ContentPart::Text { text: text.clone() });
             // Audio goes after text (Gemma 4 best practice for ASR)
             if let Some(ref audio_b64) = audio_wav_base64 {
                 parts.push(ContentPart::InputAudio {
@@ -210,19 +211,30 @@ impl BrainManager {
                 // Use server predicted_per_second from timings block (exact generation speed)
                 let server_tps = timing.as_ref().and_then(|t| t.tokens_per_second);
                 // Fallback: calculate from completion_tokens / total_ms
-                let fallback_tps = timing.as_ref().and_then(|t| t.completion_tokens).map(|c| {
-                    let token_count = c as f64;
-                    if total_ms > 0 { (token_count / total_ms as f64) * 1000.0 } else { 0.0 }
-                }).unwrap_or_else(|| {
-                    let token_count = (full.chars().count() / 4).max(1) as f64;
-                    if total_ms > 0 { (token_count / total_ms as f64) * 1000.0 } else { 0.0 }
-                });
+                let fallback_tps = timing
+                    .as_ref()
+                    .and_then(|t| t.completion_tokens)
+                    .map(|c| {
+                        let token_count = c as f64;
+                        if total_ms > 0 {
+                            (token_count / total_ms as f64) * 1000.0
+                        } else {
+                            0.0
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        let token_count = (full.chars().count() / 4).max(1) as f64;
+                        if total_ms > 0 {
+                            (token_count / total_ms as f64) * 1000.0
+                        } else {
+                            0.0
+                        }
+                    });
                 let tokens_per_sec = server_tps.unwrap_or(fallback_tps);
                 // Use server timing if available (predicted_ms + prompt_ms)
                 let predicted_ms = timing.as_ref().and_then(|t| t.predicted_ms);
                 let prompt_ms = timing.as_ref().and_then(|t| t.prompt_ms);
-                let server_total_ms = predicted_ms.zip(prompt_ms)
-                    .map(|(p, pp)| p + pp);
+                let server_total_ms = predicted_ms.zip(prompt_ms).map(|(p, pp)| p + pp);
                 let display_ms = server_total_ms.unwrap_or(total_ms as i64);
                 {
                     let mut history = self.history.lock().unwrap();
@@ -267,7 +279,10 @@ impl BrainManager {
         // Ensure llama.cpp server is running before warmup.
         if cfg.provider_id == "llama_cpp" {
             let _ = self.app.emit("brain:llama-loading", ());
-            if let Some(llama_manager) = self.app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+            if let Some(llama_manager) = self
+                .app
+                .try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+            {
                 llama_manager.ensure_server_running().await?;
             }
             // ensure_server_running may fire brain:llama-ready when spawning

@@ -7,7 +7,13 @@ const PI2 = Math.PI * 2;
 const CANVAS_SIZE = 500;
 
 class HerCurve extends THREE.Curve<THREE.Vector3> {
-  getPoint(percent: number, optionalTarget = new THREE.Vector3()): THREE.Vector3 {
+  constructor() {
+    super();
+  }
+  getPoint(
+    percent: number,
+    optionalTarget = new THREE.Vector3(),
+  ): THREE.Vector3 {
     const x = LENGTH * Math.sin(PI2 * percent);
     const y = RADIUS * Math.cos(PI2 * 3 * percent);
     let t = (percent % 0.25) / 0.25;
@@ -104,7 +110,15 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
 
     el.appendChild(renderer.domElement);
 
-    sceneRef.current = { camera, scene, renderer, group, mesh, ring, ringcover };
+    sceneRef.current = {
+      camera,
+      scene,
+      renderer,
+      group,
+      mesh,
+      ring,
+      ringcover,
+    };
 
     return () => {
       renderer.dispose();
@@ -118,7 +132,9 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
   useEffect(() => {
     const a = animRef.current;
 
-    function trigger() { a.toend = true; }
+    function trigger() {
+      a.toend = true;
+    }
 
     document.addEventListener("click", trigger);
     document.addEventListener("touchstart", trigger);

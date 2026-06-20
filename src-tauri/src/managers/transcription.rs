@@ -4,6 +4,7 @@ use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
     get_settings, ModelUnloadTimeout, OrtAcceleratorSetting, WhisperAcceleratorSetting,
 };
+use crate::stt::unified_parakeet::UnifiedParakeetServer;
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::Serialize;
@@ -27,7 +28,6 @@ use transcribe_rs::{
     whisper_cpp::{WhisperEngine, WhisperInferenceParams},
     SpeechModel, TranscribeOptions,
 };
-use crate::stt::unified_parakeet::UnifiedParakeetServer;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ModelStateEvent {
@@ -380,17 +380,15 @@ impl TranscriptionManager {
                 LoadedEngine::Cohere(engine)
             }
             EngineType::UnifiedParakeet => {
-                let engine = UnifiedParakeetServer::launch(
-                    &model_path.to_string_lossy(),
-                )
-                .map_err(|e| {
-                    let error_msg = format!(
-                        "Failed to launch unified parakeet server {}: {}",
-                        model_id, e
-                    );
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
+                let engine =
+                    UnifiedParakeetServer::launch(&model_path.to_string_lossy()).map_err(|e| {
+                        let error_msg = format!(
+                            "Failed to launch unified parakeet server {}: {}",
+                            model_id, e
+                        );
+                        emit_loading_failed(&error_msg);
+                        anyhow::anyhow!(error_msg)
+                    })?;
                 LoadedEngine::UnifiedParakeet(engine)
             }
         };
@@ -531,7 +529,8 @@ impl TranscriptionManager {
         // If the language is "os_input", resolve it dynamically from active OS input source.
         // If the language isn't supported, fall back to "auto" to prevent errors.
         let resolved_language = if settings.selected_language == "os_input" {
-            crate::input_source::get_language_from_input_source().unwrap_or_else(|| "auto".to_string())
+            crate::input_source::get_language_from_input_source()
+                .unwrap_or_else(|| "auto".to_string())
         } else {
             settings.selected_language.clone()
         };
@@ -544,9 +543,7 @@ impl TranscriptionManager {
                 .get_model_info(&settings.selected_model)
                 .map(|info| {
                     info.supported_languages.is_empty()
-                        || info
-                            .supported_languages
-                            .contains(&resolved_language)
+                        || info.supported_languages.contains(&resolved_language)
                 })
                 .unwrap_or(true);
 
@@ -696,10 +693,7 @@ impl TranscriptionManager {
                             if use_streaming {
                                 // === Streaming path for EOU 120M model ===
                                 server.stream_start().map_err(|e| {
-                                    anyhow::anyhow!(
-                                        "Unified Parakeet stream start failed: {}",
-                                        e
-                                    )
+                                    anyhow::anyhow!("Unified Parakeet stream start failed: {}", e)
                                 })?;
 
                                 // Feed audio in chunks for progressive partial results.
@@ -718,9 +712,7 @@ impl TranscriptionManager {
                                 let n_chunks = chunks.len();
                                 for (i, &chunk) in chunks.iter().enumerate() {
                                     let is_last = i + 1 == n_chunks;
-                                    let rms = (chunk.iter()
-                                        .map(|s| s * s)
-                                        .sum::<f32>()
+                                    let rms = (chunk.iter().map(|s| s * s).sum::<f32>()
                                         / chunk.len() as f32)
                                         .sqrt();
                                     if !is_last && rms < SILENCE_RMS_THRESHOLD {
@@ -736,10 +728,7 @@ impl TranscriptionManager {
 
                                     // Emit partial result when text changes
                                     if text != last_emitted && !text.is_empty() {
-                                        let _ = app_handle.emit(
-                                            "transcription-partial",
-                                            &text,
-                                        );
+                                        let _ = app_handle.emit("transcription-partial", &text);
                                         last_emitted = text;
                                     }
 
@@ -750,27 +739,20 @@ impl TranscriptionManager {
 
                                 // Finalise the stream
                                 let (_text, _eou) = server.stream_end(&[]).map_err(|e| {
-                                    anyhow::anyhow!(
-                                        "Unified Parakeet stream end failed: {}",
-                                        e
-                                    )
+                                    anyhow::anyhow!("Unified Parakeet stream end failed: {}", e)
                                 })?;
 
                                 // Prefer whichever of the stream_end flush and the last
                                 // partial is longer — the final pass can occasionally come
                                 // back shorter (or empty) than a good intermediate partial,
                                 // which would otherwise truncate the result.
-                                let final_text = if _text.chars().count()
-                                    > last_emitted.chars().count()
-                                {
-                                    let _ = app_handle.emit(
-                                        "transcription-partial",
-                                        &_text,
-                                    );
-                                    _text
-                                } else {
-                                    last_emitted
-                                };
+                                let final_text =
+                                    if _text.chars().count() > last_emitted.chars().count() {
+                                        let _ = app_handle.emit("transcription-partial", &_text);
+                                        _text
+                                    } else {
+                                        last_emitted
+                                    };
 
                                 Ok(transcribe_rs::TranscriptionResult {
                                     text: final_text,
@@ -778,14 +760,9 @@ impl TranscriptionManager {
                                 })
                             } else {
                                 // === Offline path for Unified model ===
-                                let text = server
-                                    .transcribe(&audio)
-                                    .map_err(|e| {
-                                        anyhow::anyhow!(
-                                            "Unified Parakeet transcription failed: {}",
-                                            e
-                                        )
-                                    })?;
+                                let text = server.transcribe(&audio).map_err(|e| {
+                                    anyhow::anyhow!("Unified Parakeet transcription failed: {}", e)
+                                })?;
                                 Ok(transcribe_rs::TranscriptionResult {
                                     text,
                                     segments: None,

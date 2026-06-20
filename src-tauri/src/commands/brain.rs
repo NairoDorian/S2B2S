@@ -3,7 +3,7 @@
 use crate::brain::manager::BrainManager;
 use crate::settings::{get_settings, write_settings, BrainConfig};
 use std::sync::Arc;
-use tauri::{AppHandle, State, Manager};
+use tauri::{AppHandle, Manager, State};
 
 /// AI Replace: speak an instruction to rewrite selected text via the Brain.
 /// Returns the rewritten text; caller pastes it at the cursor.
@@ -20,7 +20,9 @@ pub async fn ai_replace_selection(
         return Err("The Brain is disabled".to_string());
     }
     if brain_cfg.provider_id == "llama_cpp" {
-        if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+        if let Some(llama_manager) =
+            app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+        {
             llama_manager.ensure_server_running().await?;
         }
     }
@@ -116,7 +118,9 @@ pub async fn fetch_brain_models(app: AppHandle) -> Result<Vec<String>, String> {
     }
 
     if provider.id == "llama_cpp" {
-        if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+        if let Some(llama_manager) =
+            app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+        {
             llama_manager.ensure_server_running().await?;
         }
     }
@@ -145,7 +149,9 @@ pub fn change_brain_config(app: AppHandle, config: BrainConfig) -> Result<(), St
         }
         // Stop llama.cpp server when Brain is disabled
         if !now_enabled && settings.brain.provider_id == "llama_cpp" {
-            if let Some(llama_mgr) = app.try_state::<std::sync::Arc<crate::brain::llama_manager::LlamaManager>>() {
+            if let Some(llama_mgr) =
+                app.try_state::<std::sync::Arc<crate::brain::llama_manager::LlamaManager>>()
+            {
                 llama_mgr.stop();
             }
         }

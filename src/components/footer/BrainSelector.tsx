@@ -62,9 +62,7 @@ const BrainSelector: React.FC = () => {
 
   // Display-friendly model name
   const displayModel =
-    brain.provider_id === "llama_cpp"
-      ? "Gemma-4 2B (Local)"
-      : rawModel;
+    brain.provider_id === "llama_cpp" ? "Gemma-4 2B (Local)" : rawModel;
 
   const handleToggleEnabled = async () => {
     await updateSetting("brain", {

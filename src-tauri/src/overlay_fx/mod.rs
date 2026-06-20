@@ -10,10 +10,10 @@ pub mod capabilities;
 pub mod commands;
 pub mod cursor_follow;
 pub mod events;
+pub mod native;
 pub mod placement;
 pub mod trail;
 pub mod window;
-pub mod native;
 
 /// Overlay capability probe result — returned to the frontend, typed via specta.
 #[derive(Clone, serde::Serialize, specta::Type)]
@@ -31,10 +31,7 @@ impl OverlayCapabilities {
         Self {
             os: std::env::consts::OS.to_string(),
             webgpu: cfg!(any(target_os = "windows", target_os = "macos")),
-            vulkan: cfg!(any(
-                target_os = "windows",
-                target_os = "linux"
-            )),
+            vulkan: cfg!(any(target_os = "windows", target_os = "linux")),
             cursor_position: cfg!(any(
                 target_os = "windows",
                 target_os = "macos",

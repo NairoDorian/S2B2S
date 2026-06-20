@@ -96,7 +96,9 @@ impl TranscriptionCoordinator {
                                     Stage::Idle => {
                                         start(&app, &mut stage, &binding_id, &hotkey_string);
                                     }
-                                    Stage::Recording { binding_id: id, .. } if id == &binding_id => {
+                                    Stage::Recording { binding_id: id, .. }
+                                        if id == &binding_id =>
+                                    {
                                         stop(&app, &mut stage, &binding_id, &hotkey_string);
                                     }
                                     _ => {
@@ -110,7 +112,8 @@ impl TranscriptionCoordinator {
                         } => {
                             // Don't reset during processing — wait for the pipeline to finish.
                             if !matches!(stage, Stage::Processing)
-                                && (recording_was_active || matches!(stage, Stage::Recording { .. }))
+                                && (recording_was_active
+                                    || matches!(stage, Stage::Recording { .. }))
                             {
                                 stage = Stage::Idle;
                             }

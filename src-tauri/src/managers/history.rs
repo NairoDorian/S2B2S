@@ -281,8 +281,8 @@ impl HistoryManager {
         let timestamp = Utc::now().timestamp();
         let title = self.format_timestamp_title(timestamp);
 
-        let enc_transcription = crate::crypto::encrypt_str(&transcription_text)
-            .unwrap_or_else(|e| {
+        let enc_transcription =
+            crate::crypto::encrypt_str(&transcription_text).unwrap_or_else(|e| {
                 log::error!("Failed to encrypt transcription: {}", e);
                 transcription_text.clone()
             });
@@ -370,8 +370,8 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
     ) -> Result<HistoryEntry> {
-        let enc_transcription = crate::crypto::encrypt_str(&transcription_text)
-            .unwrap_or_else(|e| {
+        let enc_transcription =
+            crate::crypto::encrypt_str(&transcription_text).unwrap_or_else(|e| {
                 log::error!("Failed to encrypt transcription: {}", e);
                 transcription_text.clone()
             });

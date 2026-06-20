@@ -62,11 +62,7 @@ pub fn compute_bubble_anchor(
 }
 
 /// Find the monitor whose rectangle contains the given cursor position.
-fn get_cursor_monitor(
-    app: &AppHandle,
-    cursor_x: i32,
-    cursor_y: i32,
-) -> Option<tauri::Monitor> {
+fn get_cursor_monitor(app: &AppHandle, cursor_x: i32, cursor_y: i32) -> Option<tauri::Monitor> {
     if let Ok(monitors) = app.available_monitors() {
         for monitor in monitors {
             let scale = monitor.scale_factor();

@@ -44,9 +44,7 @@ pub fn transcribe_parallel(
     let transcriptions_block: String = results
         .iter()
         .enumerate()
-        .map(|(i, (model_id, text))| {
-            format!("Transcription {} ({}):\n{}\n", i + 1, model_id, text)
-        })
+        .map(|(i, (model_id, text))| format!("Transcription {} ({}):\n{}\n", i + 1, model_id, text))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -57,7 +55,10 @@ pub fn transcribe_parallel(
     // If post-process is enabled, append the merge prompt for the LLM.
     // The caller (actions.rs) will feed this through the existing post_process pipeline.
     if settings.post_process_enabled && !settings.post_process_provider_id.is_empty() {
-        Ok(format!("{}\n\n--- MULTI_STT_MERGE ---\n{}", transcriptions_block, prompt))
+        Ok(format!(
+            "{}\n\n--- MULTI_STT_MERGE ---\n{}",
+            transcriptions_block, prompt
+        ))
     } else {
         // No LLM merge available: pick the longest transcript — the best proxy for
         // "most complete capture" when we can't judge the candidates against each
@@ -140,95 +141,72 @@ fn transcribe_single(
 ) -> Result<String> {
     match model_info.engine_type {
         EngineType::UnifiedParakeet => transcribe_python(audio, model_path, model_info),
-        EngineType::Whisper => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                let mut engine = transcribe_rs::whisper_cpp::WhisperEngine::load(path)?;
-                let params = transcribe_rs::whisper_cpp::WhisperInferenceParams::default();
-                let r = engine.transcribe_with(audio, &params)?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::Parakeet => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::parakeet::ParakeetModel;
-                use transcribe_rs::onnx::Quantization;
-                let mut engine = ParakeetModel::load(path, &Quantization::Int8)?;
-                let params = transcribe_rs::onnx::parakeet::ParakeetParams::default();
-                let r = engine.transcribe_with(audio, &params)?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::Moonshine => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::moonshine::{MoonshineModel, MoonshineVariant};
-                use transcribe_rs::onnx::Quantization;
-                use transcribe_rs::{SpeechModel, TranscribeOptions};
-                let mut engine = MoonshineModel::load(path, MoonshineVariant::Base, &Quantization::default())?;
-                let r = engine.transcribe(audio, &TranscribeOptions::default())?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::MoonshineStreaming => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::moonshine::StreamingModel;
-                use transcribe_rs::onnx::Quantization;
-                use transcribe_rs::{SpeechModel, TranscribeOptions};
-                let mut engine = StreamingModel::load(path, 0, &Quantization::default())?;
-                let r = engine.transcribe(audio, &TranscribeOptions::default())?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::SenseVoice => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::sense_voice::{SenseVoiceModel, SenseVoiceParams};
-                use transcribe_rs::onnx::Quantization;
-                let mut engine = SenseVoiceModel::load(path, &Quantization::Int8)?;
-                let params = SenseVoiceParams {
-                    language: None,
-                    use_itn: Some(true),
-                };
-                let r = engine.transcribe_with(audio, &params)?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::GigaAM => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::gigaam::GigaAMModel;
-                use transcribe_rs::onnx::Quantization;
-                use transcribe_rs::{SpeechModel, TranscribeOptions};
-                let mut engine = GigaAMModel::load(path, &Quantization::Int8)?;
-                let r = engine.transcribe(audio, &TranscribeOptions::default())?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::Canary => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::canary::CanaryModel;
-                use transcribe_rs::onnx::Quantization;
-                use transcribe_rs::{SpeechModel, TranscribeOptions};
-                let mut engine = CanaryModel::load(path, &Quantization::Int8)?;
-                let r = engine.transcribe(audio, &TranscribeOptions::default())?;
-                Ok(r.text)
-            },
-        ),
-        EngineType::Cohere => transcribe_transcribe_rs(
-            audio, model_path,
-            |path| {
-                use transcribe_rs::onnx::cohere::CohereModel;
-                use transcribe_rs::onnx::Quantization;
-                use transcribe_rs::{SpeechModel, TranscribeOptions};
-                let mut engine = CohereModel::load(path, &Quantization::Int8)?;
-                let r = engine.transcribe(audio, &TranscribeOptions::default())?;
-                Ok(r.text)
-            },
-        ),
+        EngineType::Whisper => transcribe_transcribe_rs(audio, model_path, |path| {
+            let mut engine = transcribe_rs::whisper_cpp::WhisperEngine::load(path)?;
+            let params = transcribe_rs::whisper_cpp::WhisperInferenceParams::default();
+            let r = engine.transcribe_with(audio, &params)?;
+            Ok(r.text)
+        }),
+        EngineType::Parakeet => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::parakeet::ParakeetModel;
+            use transcribe_rs::onnx::Quantization;
+            let mut engine = ParakeetModel::load(path, &Quantization::Int8)?;
+            let params = transcribe_rs::onnx::parakeet::ParakeetParams::default();
+            let r = engine.transcribe_with(audio, &params)?;
+            Ok(r.text)
+        }),
+        EngineType::Moonshine => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::moonshine::{MoonshineModel, MoonshineVariant};
+            use transcribe_rs::onnx::Quantization;
+            use transcribe_rs::{SpeechModel, TranscribeOptions};
+            let mut engine =
+                MoonshineModel::load(path, MoonshineVariant::Base, &Quantization::default())?;
+            let r = engine.transcribe(audio, &TranscribeOptions::default())?;
+            Ok(r.text)
+        }),
+        EngineType::MoonshineStreaming => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::moonshine::StreamingModel;
+            use transcribe_rs::onnx::Quantization;
+            use transcribe_rs::{SpeechModel, TranscribeOptions};
+            let mut engine = StreamingModel::load(path, 0, &Quantization::default())?;
+            let r = engine.transcribe(audio, &TranscribeOptions::default())?;
+            Ok(r.text)
+        }),
+        EngineType::SenseVoice => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::sense_voice::{SenseVoiceModel, SenseVoiceParams};
+            use transcribe_rs::onnx::Quantization;
+            let mut engine = SenseVoiceModel::load(path, &Quantization::Int8)?;
+            let params = SenseVoiceParams {
+                language: None,
+                use_itn: Some(true),
+            };
+            let r = engine.transcribe_with(audio, &params)?;
+            Ok(r.text)
+        }),
+        EngineType::GigaAM => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::gigaam::GigaAMModel;
+            use transcribe_rs::onnx::Quantization;
+            use transcribe_rs::{SpeechModel, TranscribeOptions};
+            let mut engine = GigaAMModel::load(path, &Quantization::Int8)?;
+            let r = engine.transcribe(audio, &TranscribeOptions::default())?;
+            Ok(r.text)
+        }),
+        EngineType::Canary => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::canary::CanaryModel;
+            use transcribe_rs::onnx::Quantization;
+            use transcribe_rs::{SpeechModel, TranscribeOptions};
+            let mut engine = CanaryModel::load(path, &Quantization::Int8)?;
+            let r = engine.transcribe(audio, &TranscribeOptions::default())?;
+            Ok(r.text)
+        }),
+        EngineType::Cohere => transcribe_transcribe_rs(audio, model_path, |path| {
+            use transcribe_rs::onnx::cohere::CohereModel;
+            use transcribe_rs::onnx::Quantization;
+            use transcribe_rs::{SpeechModel, TranscribeOptions};
+            let mut engine = CohereModel::load(path, &Quantization::Int8)?;
+            let r = engine.transcribe(audio, &TranscribeOptions::default())?;
+            Ok(r.text)
+        }),
     }
 }
 
@@ -252,8 +230,8 @@ fn transcribe_python(audio: &[f32], model_path: &Path, model_info: &ModelInfo) -
         server.stream_start()?;
         let mut last_text = String::new();
         const CHUNK: usize = 4000; // 250ms
-        // Skip near-silent MIDDLE chunks only — never the final chunk (the tail of
-        // already-VAD-gated speech), which was being dropped and truncating results.
+                                   // Skip near-silent MIDDLE chunks only — never the final chunk (the tail of
+                                   // already-VAD-gated speech), which was being dropped and truncating results.
         let chunks: Vec<&[f32]> = audio.chunks(CHUNK).collect();
         let n_chunks = chunks.len();
         for (i, &chunk) in chunks.iter().enumerate() {

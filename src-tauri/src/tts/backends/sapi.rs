@@ -24,7 +24,9 @@ impl SapiBackend {
         {
             use windows::core::BSTR;
             use windows::Win32::Media::Speech::{ISpeechVoice, SpVoice};
-            use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+            use windows::Win32::System::Com::{
+                CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+            };
 
             unsafe {
                 let mut list = vec![Voice {
@@ -41,7 +43,10 @@ impl SapiBackend {
                                 if let Ok(token) = tokens.Item(i) {
                                     if let Ok(id) = token.Id() {
                                         // Locale ID 0 uses the default system language
-                                        let name = token.GetDescription(0).map(|b| b.to_string()).unwrap_or_else(|_| id.to_string());
+                                        let name = token
+                                            .GetDescription(0)
+                                            .map(|b| b.to_string())
+                                            .unwrap_or_else(|_| id.to_string());
                                         list.push(Voice {
                                             id: id.to_string(),
                                             name,
@@ -75,15 +80,15 @@ impl TtsBackend for SapiBackend {
     fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String> {
         #[cfg(target_os = "windows")]
         {
-            use windows::core::{Interface, GUID, IUnknown, PCWSTR};
+            use std::ffi::c_void;
+            use windows::core::{IUnknown, Interface, GUID, PCWSTR};
             use windows::Win32::Media::Audio::{WAVEFORMATEX, WAVE_FORMAT_PCM};
             use windows::Win32::Media::Speech::{ISpStream, ISpVoice, SpStream, SpVoice};
             use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
             use windows::Win32::System::Com::{
-                CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED, IStream,
+                CoCreateInstance, CoInitializeEx, IStream, CLSCTX_ALL, COINIT_MULTITHREADED,
                 STREAM_SEEK_END, STREAM_SEEK_SET,
             };
-            use std::ffi::c_void;
 
             // Define SPDFID_WaveFormatEx manually as it's not exported correctly in windows-rs.
             // The correct SAPI GUID is C31ADBAE-527F-4FF5-A230-F62BB61FF70C.
@@ -98,10 +103,9 @@ impl TtsBackend for SapiBackend {
                 let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
                 // Create in-memory stream using the standard 2-argument signature returning Result
-                let mem_stream: IStream = CreateStreamOnHGlobal(
-                    windows::Win32::Foundation::HGLOBAL::default(),
-                    true,
-                ).map_err(|e| format!("CreateStreamOnHGlobal failed: {e}"))?;
+                let mem_stream: IStream =
+                    CreateStreamOnHGlobal(windows::Win32::Foundation::HGLOBAL::default(), true)
+                        .map_err(|e| format!("CreateStreamOnHGlobal failed: {e}"))?;
 
                 // Create SAPI stream wrapper
                 let sp_stream: ISpStream = CoCreateInstance(&SpStream, None, CLSCTX_ALL)
@@ -118,7 +122,12 @@ impl TtsBackend for SapiBackend {
                     cbSize: 0,
                 };
 
-                sp_stream.SetBaseStream(&mem_stream, &SPDFID_WAVEFORMATEX, &wfx as *const WAVEFORMATEX)
+                sp_stream
+                    .SetBaseStream(
+                        &mem_stream,
+                        &SPDFID_WAVEFORMATEX,
+                        &wfx as *const WAVEFORMATEX,
+                    )
                     .map_err(|e| format!("Failed to set base stream: {e}"))?;
 
                 // Create Voice
@@ -128,8 +137,11 @@ impl TtsBackend for SapiBackend {
                 // If a specific voice was requested, try to select it
                 if !voice.is_empty() && voice != "sapi_default" {
                     use windows::Win32::Media::Speech::{ISpObjectToken, SpObjectToken};
-                    if let Ok(token) = CoCreateInstance::<_, ISpObjectToken>(&SpObjectToken, None, CLSCTX_ALL) {
-                        let voice_w: Vec<u16> = voice.encode_utf16().chain(std::iter::once(0)).collect();
+                    if let Ok(token) =
+                        CoCreateInstance::<_, ISpObjectToken>(&SpObjectToken, None, CLSCTX_ALL)
+                    {
+                        let voice_w: Vec<u16> =
+                            voice.encode_utf16().chain(std::iter::once(0)).collect();
                         if token.SetId(None, PCWSTR(voice_w.as_ptr()), false).is_ok() {
                             let _ = speaker.SetVoice(&token);
                         }
@@ -141,7 +153,15 @@ impl TtsBackend for SapiBackend {
                 let _ = speaker.SetRate(rate);
 
                 // Set speaker output to our stream
-                speaker.SetOutput(Some(&sp_stream.cast::<IUnknown>().map_err(|e| format!("Cast failed: {e}"))?), true)
+                speaker
+                    .SetOutput(
+                        Some(
+                            &sp_stream
+                                .cast::<IUnknown>()
+                                .map_err(|e| format!("Cast failed: {e}"))?,
+                        ),
+                        true,
+                    )
                     .map_err(|e| format!("Failed to set speaker output: {e}"))?;
 
                 // Convert text to wide string
@@ -149,7 +169,8 @@ impl TtsBackend for SapiBackend {
                 let pcwstr = PCWSTR(text_w.as_ptr());
 
                 // Speak synchronously to write all audio into the stream
-                let _ = speaker.Speak(pcwstr, 0, None)
+                let _ = speaker
+                    .Speak(pcwstr, 0, None)
                     .map_err(|e| format!("SAPI Speak failed: {e}"))?;
 
                 // Wait until done (flushes buffer to stream)
@@ -157,7 +178,8 @@ impl TtsBackend for SapiBackend {
 
                 // Seek to the end of the memory stream to find the size
                 let mut size: u64 = 0;
-                mem_stream.Seek(0, STREAM_SEEK_END, Some(&mut size))
+                mem_stream
+                    .Seek(0, STREAM_SEEK_END, Some(&mut size))
                     .map_err(|e| format!("Failed to seek to end of stream: {e}"))?;
 
                 if size == 0 {
@@ -165,13 +187,20 @@ impl TtsBackend for SapiBackend {
                 }
 
                 // Seek back to the beginning to read the bytes
-                mem_stream.Seek(0, STREAM_SEEK_SET, None)
+                mem_stream
+                    .Seek(0, STREAM_SEEK_SET, None)
                     .map_err(|e| format!("Failed to seek to start of stream: {e}"))?;
 
                 // Read all bytes from the stream
                 let mut pcm_buffer = vec![0u8; size as usize];
                 let mut bytes_read = 0u32;
-                mem_stream.Read(pcm_buffer.as_mut_ptr() as *mut c_void, size as u32, Some(&mut bytes_read)).ok()
+                mem_stream
+                    .Read(
+                        pcm_buffer.as_mut_ptr() as *mut c_void,
+                        size as u32,
+                        Some(&mut bytes_read),
+                    )
+                    .ok()
                     .map_err(|e| format!("Failed to read from stream: {e}"))?;
 
                 // SAPI writes raw PCM bytes to the memory stream, so we wrap them in a standard WAV container.
@@ -251,7 +280,10 @@ mod tests {
             if let Some(first_nonzero) = wav_bytes.iter().position(|&b| b != 0) {
                 println!("First non-zero byte index: {}", first_nonzero);
                 let end_idx = (first_nonzero + 50).min(wav_bytes.len());
-                println!("Bytes around first non-zero: {:?}", &wav_bytes[first_nonzero..end_idx]);
+                println!(
+                    "Bytes around first non-zero: {:?}",
+                    &wav_bytes[first_nonzero..end_idx]
+                );
             }
             assert!(!wav_bytes.is_empty());
             // A valid WAV file starts with the RIFF header "RIFF"

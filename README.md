@@ -194,15 +194,15 @@ All models, voices, and Brain GGUF files are organized under a master `models/` 
 
 S2B2S works fully offline with no configuration. The defaults are chosen for speed, privacy, and broad hardware compatibility:
 
-| Layer                 | Default                                                       | Alternatives                                                           |
-| --------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **STT**               | **Parakeet TDT 0.6B V3** (auto language, 25 langs, CPU-fast)  | Whisper (Small/Medium/Turbo/Large), Moonshine                          |
-| **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                            | Silero only, Push-to-talk                                              |
-| **Noise Suppression** | RNNoise (toggleable, triple mode default)                     | Off                                                                    |
-| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)          | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), SAPI, OpenAI, ElevenLabs, Cartesia |
+| Layer                 | Default                                                                                                      | Alternatives                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| **STT**               | **Parakeet TDT 0.6B V3** (auto language, 25 langs, CPU-fast)                                                 | Whisper (Small/Medium/Turbo/Large), Moonshine                                                                           |
+| **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                                                                           | Silero only, Push-to-talk                                                                                               |
+| **Noise Suppression** | RNNoise (toggleable, triple mode default)                                                                    | Off                                                                                                                     |
+| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)                                                         | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), SAPI, OpenAI, ElevenLabs, Cartesia                          |
 | **Brain**             | **llama.cpp** (pre-compiled CUDA/Vulkan/CPU) / **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | 9 other providers: OpenAI, Anthropic, Gemini, Groq, Cerebras, OpenRouter, Z.ai, AWS Bedrock, Apple Intelligence (macOS) |
-| **Storage**           | SQLite (rusqlite + migrations)                                | —                                                                      |
-| **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)      | —                                                                      |
+| **Storage**           | SQLite (rusqlite + migrations)                                                                               | —                                                                                                                       |
+| **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)                                                     | —                                                                                                                       |
 
 ---
 
@@ -284,9 +284,9 @@ Unix signals (Linux/macOS):
 
 ### Linux Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `S2B2S_NO_GTK_LAYER_SHELL=1` | Skip GTK layer shell on Linux |
+| Variable                           | Purpose                                        |
+| ---------------------------------- | ---------------------------------------------- |
+| `S2B2S_NO_GTK_LAYER_SHELL=1`       | Skip GTK layer shell on Linux                  |
 | `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos |
 
 ---
@@ -321,59 +321,59 @@ Unix signals (Linux/macOS):
 
 S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Brain → TTS pipeline is feature-complete. Current work focuses on performance, stability, code quality, and polish.
 
-| Feature                                                                                              | Status         |
-| ---------------------------------------------------------------------------------------------------- | -------------- |
-| STT dictation (Parakeet V3, Whisper, Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary, Cohere)               | ✅ Complete    |
-| TTS read-aloud (8 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)              | ✅ Complete    |
-| Conversation mode with streaming LLM (10 providers: Ollama/LM Studio/llama.cpp/OpenAI/Anthropic/Gemini/Groq/Cerebras/OpenRouter/Z.ai/Bedrock/custom) | ✅ Complete    |
-| Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                          | ✅ Complete    |
-| Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                           | ✅ Complete    |
-| Llama.cpp settings tab (manage server binaries, GPU detection, backend switching)               | ✅ Complete    |
-| VRAM usage indicator (green/yellow/red with hover tooltip)                                      | ✅ Complete    |
-| System RAM indicator (used/total percentage with hover tooltip)                                 | ✅ Complete    |
-| Log viewer console (level filter, search, auto-refresh)                                         | ✅ Complete    |
-| Double-copy clipboard trigger for speak-selection                                               | ✅ Complete    |
-| Text normalization pipeline (ITN + TN + markdown stripping)                                     | ✅ Complete    |
-| TripleVAD (RMS → RNNoise → Silero) with tunable threshold                                       | ✅ Complete    |
-| Crash logging with full backtraces                                                              | ✅ Complete    |
-| Her-style 3D loading animation                                                                  | ✅ Complete    |
-| 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW) | ✅ Complete    |
-| Conversation memory (context_turns, default 20 turns)                                           | ✅ Complete    |
-| WarmEngine trait lifecycle (implemented by local backends, direct-managed in orchestrator) | ✅ Complete    |
-| Sentience streaming (3-fragment pattern: sentence 1 → sentence 2 → rest)                       | ✅ Complete    |
-| TTS performance telemetry (chars_per_ms adaptive sizing)                                        | ✅ Complete    |
-| Piper persistent HTTP server with CUDA auto-discovery                                           | ✅ Complete    |
-| Kokoro/Kitten/Pocket persistent HTTP server with RAM persistency                                | ✅ Complete    |
-| Headless typed bindings export (`cargo test export_bindings`)                                   | ✅ Complete    |
-| Engine descriptions, badges, links, test button, command preview                                | ✅ Complete    |
-| Process cleanup on shutdown (Drop impls, Exit handler)                                          | ✅ Complete    |
-| Model download resilience (HTTP 416 auto-retry)                                                 | ✅ Complete    |
-| AI Replace Selection                                                                            | ✅ Complete    |
-| Latency HUD (per-stage timestamps)                                                              | ✅ Complete    |
-| Wake word detection (VAD-based)                                                                 | ✅ Complete    |
-| Save-to-file (MP3/OGG/FLAC)                                                                     | ✅ Complete    |
-| Waveform HUD                                                                                         | ✅ Complete    |
-| Ollama/LM Studio/llama.cpp auto-discovery                                                            | ✅ Complete    |
-| Footer status indicators (STT 🟢, Brain 🟢, TTS 🟢) with hover tooltips                             | ✅ Complete    |
-| GPU VRAM usage indicator with per-second polling                                                     | ✅ Complete    |
-| Hands-free auto-listen / continuous voice                                                           | ✅ Complete    |
-| Brain overlay (3D avatar + reply bubble)                                                                | ✅ Complete    |
-| Overlay Window settings (Tauri/OS-Native mode toggle)                                                   | ✅ Complete    |
-| GPU overlay cursor trail physics (spring-friction chain, Catmull-Rom)                                   | ✅ Complete    |
-| GPU overlay wgpu native rendering (Track B)                                                             | 🚧 Placeholder |
-| Evolution planning (`futuristic_analysis/` supersedes `analysys/`)                                      | 📋 Ongoing     |
-| Pocket TTS backend (voice cloning)                                                                   | ✅ Complete    |
-| Voice barge-in (continuous voice mode)                                                               | ✅ Complete    |
-| Streaming STT (WebSocket, EOU 120M via unified_parakeet server)                                         | ✅ Partial     |
-| SAPI TTS backend                                                                                    | ✅ Complete    |
-| Wake word detection (VAD-based)                                                                        | ✅ Complete    |
-| Engine-switch cleanup (graceful unload/reload)                                                       | ✅ Complete    |
-| Profiles (per-application settings)                                                                  | 📋 Planned     |
-| Full-duplex conversation with acoustic echo cancellation                                             | 📋 Later       |
-| Multi-OS polish, mobile companion                                                                    | 📋 Later       |
-| Local speaker diarization                                                                            | 📋 Later       |
-| MCP tool use for Brain                                                                               | 📋 Later       |
-| Plugin/API ecosystem                                                                                 | 📋 Later       |
+| Feature                                                                                                                                              | Status                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| STT dictation (Parakeet V3, Whisper, Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary, Cohere)                                                    | ✅ Complete                                                       |
+| TTS read-aloud (8 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)                                                       | ✅ Complete                                                       |
+| Conversation mode with streaming LLM (10 providers: Ollama/LM Studio/llama.cpp/OpenAI/Anthropic/Gemini/Groq/Cerebras/OpenRouter/Z.ai/Bedrock/custom) | ✅ Complete                                                       |
+| Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                                                                               | ✅ Complete                                                       |
+| Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                                                                                | ✅ Complete                                                       |
+| Llama.cpp settings tab (manage server binaries, GPU detection, backend switching)                                                                    | ✅ Complete                                                       |
+| VRAM usage indicator (green/yellow/red with hover tooltip)                                                                                           | ✅ Complete                                                       |
+| System RAM indicator (used/total percentage with hover tooltip)                                                                                      | ✅ Complete                                                       |
+| Log viewer console (level filter, search, auto-refresh)                                                                                              | ✅ Complete                                                       |
+| Double-copy clipboard trigger for speak-selection                                                                                                    | ✅ Complete                                                       |
+| Text normalization pipeline (ITN + TN + markdown stripping)                                                                                          | ✅ Complete                                                       |
+| TripleVAD (RMS → RNNoise → Silero) with tunable threshold                                                                                            | ✅ Complete                                                       |
+| Crash logging with full backtraces                                                                                                                   | ✅ Complete                                                       |
+| Her-style 3D loading animation                                                                                                                       | ✅ Complete                                                       |
+| 20-language i18n (ar, bg, cs, de, en, es, fr, he, it, ja, ko, pl, pt, ru, sv, tr, uk, vi, zh, zh-TW)                                                 | 🟡 Partial (72% complete, missing keys in 19 non-English locales) |
+| Conversation memory (context_turns, default 20 turns)                                                                                                | ✅ Complete                                                       |
+| WarmEngine trait lifecycle (implemented by local backends, direct-managed in orchestrator)                                                           | ✅ Complete                                                       |
+| Sentience streaming (3-fragment pattern: sentence 1 → sentence 2 → rest)                                                                             | ✅ Complete                                                       |
+| TTS performance telemetry (chars_per_ms adaptive sizing)                                                                                             | ✅ Complete                                                       |
+| Piper persistent HTTP server with CUDA auto-discovery                                                                                                | ✅ Complete                                                       |
+| Kokoro/Kitten/Pocket persistent HTTP server with RAM persistency                                                                                     | ✅ Complete                                                       |
+| Headless typed bindings export (`cargo test export_bindings`)                                                                                        | ✅ Complete                                                       |
+| Engine descriptions, badges, links, test button, command preview                                                                                     | ✅ Complete                                                       |
+| Process cleanup on shutdown (Drop impls, Exit handler)                                                                                               | ✅ Complete                                                       |
+| Model download resilience (HTTP 416 auto-retry)                                                                                                      | ✅ Complete                                                       |
+| AI Replace Selection                                                                                                                                 | ✅ Complete                                                       |
+| Latency HUD (per-stage timestamps)                                                                                                                   | ✅ Complete                                                       |
+| Wake word detection (VAD-based)                                                                                                                      | ✅ Complete                                                       |
+| Save-to-file (MP3/OGG/FLAC)                                                                                                                          | ✅ Complete                                                       |
+| Waveform HUD                                                                                                                                         | ✅ Complete                                                       |
+| Ollama/LM Studio/llama.cpp auto-discovery                                                                                                            | ✅ Complete                                                       |
+| Footer status indicators (STT 🟢, Brain 🟢, TTS 🟢) with hover tooltips                                                                              | ✅ Complete                                                       |
+| GPU VRAM usage indicator with per-second polling                                                                                                     | ✅ Complete                                                       |
+| Hands-free auto-listen / continuous voice                                                                                                            | ✅ Complete                                                       |
+| Brain overlay (3D avatar + reply bubble)                                                                                                             | ✅ Complete                                                       |
+| Overlay Window settings (Tauri/OS-Native mode toggle)                                                                                                | ✅ Complete                                                       |
+| GPU overlay cursor trail physics (spring-friction chain, Catmull-Rom)                                                                                | ✅ Complete                                                       |
+| GPU overlay wgpu native rendering (Track B)                                                                                                          | 🚧 Placeholder                                                    |
+| Evolution planning (`futuristic_analysis/` supersedes `analysys/`)                                                                                   | 📋 Ongoing                                                        |
+| Pocket TTS backend (voice cloning)                                                                                                                   | ✅ Complete                                                       |
+| Voice barge-in (continuous voice mode)                                                                                                               | ✅ Complete                                                       |
+| Streaming STT (WebSocket, EOU 120M via unified_parakeet server)                                                                                      | ✅ Partial                                                        |
+| SAPI TTS backend                                                                                                                                     | ✅ Complete                                                       |
+| Wake word detection (VAD-based)                                                                                                                      | ✅ Complete                                                       |
+| Engine-switch cleanup (graceful unload/reload)                                                                                                       | ✅ Complete                                                       |
+| Profiles (per-application settings)                                                                                                                  | 📋 Planned                                                        |
+| Full-duplex conversation with acoustic echo cancellation                                                                                             | 📋 Later                                                          |
+| Multi-OS polish, mobile companion                                                                                                                    | 📋 Later                                                          |
+| Local speaker diarization                                                                                                                            | 📋 Later                                                          |
+| MCP tool use for Brain                                                                                                                               | 📋 Later                                                          |
+| Plugin/API ecosystem                                                                                                                                 | 📋 Later                                                          |
 
 ---
 
@@ -385,15 +385,15 @@ Press `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) to toggle debug ov
 
 ## Troubleshooting
 
-| Issue                                    | Solution                                                                                                                               |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| piper-server not starting                | Ensure CUDA/Vulkan runtime is installed; check Debug → Log Viewer for errors                                                           |
-| llama.cpp server fails to launch         | Verify GPU drivers; select CPU backend in Llama.cpp settings if GPU not detected                                                       |
-| STT model download stalls                | Download manually from [Hugging Face](https://huggingface.co/tdt-ai/TDT) and place in `src-tauri/resources/models/`                    |
-| macOS accessibility permissions          | Grant permissions in System Preferences → Privacy & Security → Accessibility                                                           |
-| Linux Wayland overlay issues             | Set `S2B2S_NO_GTK_LAYER_SHELL=1` environment variable; install `wtype` or `dotool` for text input                                      |
-| Crash on startup                         | Check `s2b2s-crash.log` in app log directory; report with backtrace                                                                    |
-| No audio output                          | Verify output device selection in Settings → Audio; test with Play Greeting button in TTS settings. Note: SAPI requires a Windows platform.                                     |
+| Issue                            | Solution                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| piper-server not starting        | Ensure CUDA/Vulkan runtime is installed; check Debug → Log Viewer for errors                                                                |
+| llama.cpp server fails to launch | Verify GPU drivers; select CPU backend in Llama.cpp settings if GPU not detected                                                            |
+| STT model download stalls        | Download manually from [Hugging Face](https://huggingface.co/tdt-ai/TDT) and place in `src-tauri/resources/models/`                         |
+| macOS accessibility permissions  | Grant permissions in System Preferences → Privacy & Security → Accessibility                                                                |
+| Linux Wayland overlay issues     | Set `S2B2S_NO_GTK_LAYER_SHELL=1` environment variable; install `wtype` or `dotool` for text input                                           |
+| Crash on startup                 | Check `s2b2s-crash.log` in app log directory; report with backtrace                                                                         |
+| No audio output                  | Verify output device selection in Settings → Audio; test with Play Greeting button in TTS settings. Note: SAPI requires a Windows platform. |
 
 ---
 
@@ -429,4 +429,4 @@ Built on [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT). Uses Parakee
 
 Inspired by and incorporating patterns from: AIVORelay by MaxITService (MIT), Parler by Melvynx (MIT), Parrot by Rishi Khare (MIT), CopySpeak by ilyaizen & NairoDorian (MIT). Concepts from Whispering (AGPL-3.0), TranscriptionSuite (GPL-3.0), and Parakeet-Realtime-Transcriber (concepts only).
 
-See [S2B2S_REVIEW.md](S2B2S_REVIEW.md) for the complete project analysis and [AGENTS.md](AGENTS.md) for AI assistant guidance.
+See [STATUS.md](STATUS.md) for the complete project status scorecard and [AGENTS.md](AGENTS.md) for AI assistant guidance.

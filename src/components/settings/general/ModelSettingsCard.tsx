@@ -16,8 +16,7 @@ export const ModelSettingsCard: React.FC = () => {
   const supportsLanguageSelection =
     currentModelInfo?.supports_language_selection ?? false;
   const supportsTranslation = currentModelInfo?.supports_translation ?? false;
-  const isParakeetModel =
-    currentModelInfo?.engine_type === "UnifiedParakeet";
+  const isParakeetModel = currentModelInfo?.engine_type === "UnifiedParakeet";
   const hasAnySettings =
     supportsLanguageSelection || supportsTranslation || isParakeetModel;
 
@@ -42,9 +41,7 @@ export const ModelSettingsCard: React.FC = () => {
       {supportsTranslation && (
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
       )}
-      {isParakeetModel && (
-        <ParakeetStreamingToggle />
-      )}
+      {isParakeetModel && <ParakeetStreamingToggle />}
     </SettingsGroup>
   );
 };

@@ -35,12 +35,13 @@ pub async fn apply_action_to_history_entry(
         .cloned()
         .ok_or_else(|| format!("Action '{}' not found", action_id))?;
 
-    let processed = run_post_process_action(&app, &settings, &entry.transcription_text, &action, None)
-        .await
-        .ok_or_else(|| {
-            "Post-processing failed. Check the action's model configuration and API key."
-                .to_string()
-        })?;
+    let processed =
+        run_post_process_action(&app, &settings, &entry.transcription_text, &action, None)
+            .await
+            .ok_or_else(|| {
+                "Post-processing failed. Check the action's model configuration and API key."
+                    .to_string()
+            })?;
 
     history_manager
         .update_transcription(
@@ -155,7 +156,8 @@ pub async fn retry_history_entry_transcription(
     }
 
     let processed =
-        process_transcription_output(&app, &transcription, entry.post_process_requested, None).await;
+        process_transcription_output(&app, &transcription, entry.post_process_requested, None)
+            .await;
     history_manager
         .update_transcription(
             id,

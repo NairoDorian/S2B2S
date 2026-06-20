@@ -186,7 +186,10 @@ impl BrainClient {
         while let Some(chunk) = stream.next().await {
             if abort.load(Ordering::SeqCst) {
                 log::info!("[Brain] stream aborted by user");
-                return Ok(BrainResult { text: full, timing: final_timing });
+                return Ok(BrainResult {
+                    text: full,
+                    timing: final_timing,
+                });
             }
             let bytes = chunk.map_err(|e| format!("Brain stream error: {e}"))?;
             pending.push_str(&String::from_utf8_lossy(&bytes));
@@ -206,7 +209,8 @@ impl BrainClient {
                     if let Some(timings) = &parsed.timings {
                         log::debug!("[Brain] Server timings: predicted_ms={:?}, predicted_per_second={:?}, prompt_ms={:?}", 
                             timings.predicted_ms, timings.predicted_per_second, timings.prompt_ms);
-                        if timings.predicted_per_second.is_some() || timings.predicted_ms.is_some() {
+                        if timings.predicted_per_second.is_some() || timings.predicted_ms.is_some()
+                        {
                             final_timing = Some(BrainTiming {
                                 tokens_per_second: timings.predicted_per_second,
                                 predicted_ms: timings.predicted_ms.map(|ms| ms as i64),
@@ -220,9 +224,13 @@ impl BrainClient {
                         log::debug!("[Brain] Usage chunk: predicted_per_second={:?}, predicted_ms={:?}, completion_tokens={:?}",
                             usage.predicted_per_second, usage.predicted_ms, usage.completion_tokens);
                         // Only overwrite if usage has actual timing data
-                        if usage.predicted_per_second.is_some() || usage.predicted_ms.is_some() || usage.prompt_ms.is_some() {
+                        if usage.predicted_per_second.is_some()
+                            || usage.predicted_ms.is_some()
+                            || usage.prompt_ms.is_some()
+                        {
                             final_timing = Some(BrainTiming {
-                                tokens_per_second: usage.predicted_per_second
+                                tokens_per_second: usage
+                                    .predicted_per_second
                                     .or(usage.predicted_tokens_per_second),
                                 predicted_ms: usage.predicted_ms.map(|ms| ms as i64),
                                 prompt_ms: usage.prompt_ms.map(|ms| ms as i64),
@@ -232,7 +240,9 @@ impl BrainClient {
                     }
                     for choice in &parsed.choices {
                         if let Some(timings) = &choice.delta.timings {
-                            if timings.predicted_per_second.is_some() || timings.predicted_ms.is_some() {
+                            if timings.predicted_per_second.is_some()
+                                || timings.predicted_ms.is_some()
+                            {
                                 final_timing = Some(BrainTiming {
                                     tokens_per_second: timings.predicted_per_second,
                                     predicted_ms: timings.predicted_ms.map(|ms| ms as i64),
@@ -262,7 +272,10 @@ impl BrainClient {
         if let Some(last) = splitter.flush() {
             on_sentence(last);
         }
-        Ok(BrainResult { text: full, timing: final_timing })
+        Ok(BrainResult {
+            text: full,
+            timing: final_timing,
+        })
     }
 }
 

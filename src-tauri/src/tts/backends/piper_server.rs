@@ -196,7 +196,11 @@ pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::Pa
         }
 
         // Also check if CWD is src-tauri
-        let path_parent = cwd.join("..").join("models").join("TTS").join("piper-voices");
+        let path_parent = cwd
+            .join("..")
+            .join("models")
+            .join("TTS")
+            .join("piper-voices");
         if path_parent.exists() {
             return path_parent;
         }
@@ -232,7 +236,9 @@ pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::Pa
             return app_data.join("models").join("TTS").join("piper-voices");
         }
     }
-    std::path::PathBuf::from("models").join("TTS").join("piper-voices")
+    std::path::PathBuf::from("models")
+        .join("TTS")
+        .join("piper-voices")
 }
 
 #[cfg(windows)]
@@ -586,7 +592,11 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
 
     let command = PythonCommand {
         executable: python_exe,
-        args: vec!["-u".to_string(), "-m".to_string(), "piper.http_server".to_string()],
+        args: vec![
+            "-u".to_string(),
+            "-m".to_string(),
+            "piper.http_server".to_string(),
+        ],
     };
     let data_dir = resolve_piper_voices_dir(Some(app))
         .to_string_lossy()

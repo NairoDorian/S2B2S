@@ -53,9 +53,7 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
     if (prefix === "brain") {
       return settings?.brain?.provider_id || providers[0]?.id || "custom";
     }
-    return (
-      settings?.post_process_provider_id || providers[0]?.id || "openai"
-    );
+    return settings?.post_process_provider_id || providers[0]?.id || "openai";
   }, [providers, settings, prefix]);
 
   const selectedProvider = useMemo(() => {
@@ -72,12 +70,12 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
   const baseUrl = selectedProvider?.base_url ?? "";
   const apiKey =
     prefix === "brain"
-      ? settings?.brain?.api_keys?.[selectedProviderId] ?? ""
-      : settings?.post_process_api_keys?.[selectedProviderId] ?? "";
+      ? (settings?.brain?.api_keys?.[selectedProviderId] ?? "")
+      : (settings?.post_process_api_keys?.[selectedProviderId] ?? "");
   const model =
     prefix === "brain"
-      ? settings?.brain?.models?.[selectedProviderId] ?? ""
-      : settings?.post_process_models?.[selectedProviderId] ?? "";
+      ? (settings?.brain?.models?.[selectedProviderId] ?? "")
+      : (settings?.post_process_models?.[selectedProviderId] ?? "");
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
     return providers.map((provider) => ({
@@ -105,12 +103,16 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
         const provider = providers.find((p) => p.id === providerId);
         const key =
           prefix === "brain"
-            ? settings?.brain?.api_keys?.[providerId] ?? ""
-            : settings?.post_process_api_keys?.[providerId] ?? "";
+            ? (settings?.brain?.api_keys?.[providerId] ?? "")
+            : (settings?.post_process_api_keys?.[providerId] ?? "");
         const hasBaseUrl = (provider?.base_url ?? "").trim() !== "";
         const hasApiKey = key.trim() !== "";
 
-        if ((provider?.id === "custom" || provider?.id === "llama_cpp") ? hasBaseUrl : hasApiKey) {
+        if (
+          provider?.id === "custom" || provider?.id === "llama_cpp"
+            ? hasBaseUrl
+            : hasApiKey
+        ) {
           void config.fetchModels(providerId);
         }
       }
@@ -120,7 +122,12 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
 
   const handleBaseUrlChange = useCallback(
     (value: string) => {
-      if (!selectedProvider || (selectedProvider.id !== "custom" && selectedProvider.id !== "llama_cpp")) return;
+      if (
+        !selectedProvider ||
+        (selectedProvider.id !== "custom" &&
+          selectedProvider.id !== "llama_cpp")
+      )
+        return;
       const trimmed = value.trim();
       if (trimmed && trimmed !== baseUrl) {
         void config.updateBaseUrl(selectedProvider.id, trimmed);
@@ -196,9 +203,7 @@ export const useProviderState = (config: ProviderConfig): ProviderState => {
   const isApiKeyUpdating = isUpdating(
     `${prefix}_api_key:${selectedProviderId}`,
   );
-  const isModelUpdating = isUpdating(
-    `${prefix}_model:${selectedProviderId}`,
-  );
+  const isModelUpdating = isUpdating(`${prefix}_model:${selectedProviderId}`);
   const isFetchingModels = isUpdating(
     `${prefix}_models_fetch:${selectedProviderId}`,
   );

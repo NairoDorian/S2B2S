@@ -1,4 +1,4 @@
-use crate::llama_server::manager::{LlamaServerManager, LlamaServerConfig};
+use crate::llama_server::manager::{LlamaServerConfig, LlamaServerManager};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -18,7 +18,9 @@ pub async fn download_llama_server(
     release_tag: String,
     download_url: String,
 ) -> Result<(), String> {
-    manager.download_server(&backend, &release_tag, &download_url).await
+    manager
+        .download_server(&backend, &release_tag, &download_url)
+        .await
 }
 
 #[tauri::command]
@@ -55,9 +57,7 @@ pub fn set_llama_server_active(
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_llama_server_config(
-    app: AppHandle,
-) -> Result<LlamaServerConfig, String> {
+pub fn get_llama_server_config(app: AppHandle) -> Result<LlamaServerConfig, String> {
     let settings = crate::settings::get_settings(&app);
     Ok(settings.llama_server.clone())
 }

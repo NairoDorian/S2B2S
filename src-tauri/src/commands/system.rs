@@ -55,16 +55,10 @@ fn get_ram_info() -> Result<(u64, u64), String> {
         let mut available: Option<u64> = None;
         for line in content.lines() {
             if line.starts_with("MemTotal:") {
-                total = line
-                    .split_whitespace()
-                    .nth(1)
-                    .and_then(|s| s.parse().ok());
+                total = line.split_whitespace().nth(1).and_then(|s| s.parse().ok());
             }
             if line.starts_with("MemAvailable:") {
-                available = line
-                    .split_whitespace()
-                    .nth(1)
-                    .and_then(|s| s.parse().ok());
+                available = line.split_whitespace().nth(1).and_then(|s| s.parse().ok());
             }
         }
         let total = total.ok_or("Failed to parse MemTotal")?;
@@ -90,10 +84,12 @@ fn get_ram_info() -> Result<(u64, u64), String> {
         let vm_stdout = String::from_utf8_lossy(&vm_output.stdout);
         let page_size_output = std::process::Command::new("pagesize")
             .output()
-            .unwrap_or_else(|_| std::process::Command::new("sysctl")
-                .args(["-n", "vm.pagesize"])
-                .output()
-                .unwrap());
+            .unwrap_or_else(|_| {
+                std::process::Command::new("sysctl")
+                    .args(["-n", "vm.pagesize"])
+                    .output()
+                    .unwrap()
+            });
         let page_size: u64 = String::from_utf8_lossy(&page_size_output.stdout)
             .trim()
             .parse()

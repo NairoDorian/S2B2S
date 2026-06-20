@@ -17,7 +17,12 @@ pub struct TrailPoint {
 
 impl TrailPoint {
     pub fn zero() -> Self {
-        Self { x: 0.0, y: 0.0, dx: 0.0, dy: 0.0 }
+        Self {
+            x: 0.0,
+            y: 0.0,
+            dx: 0.0,
+            dy: 0.0,
+        }
     }
 }
 

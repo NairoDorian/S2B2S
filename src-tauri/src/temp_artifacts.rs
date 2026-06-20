@@ -10,17 +10,22 @@ const ARTIFACT_TTL: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
 /// Validates that a requested file path is safe and contained entirely within a base directory.
 /// This prevents path traversal attacks (e.g. "../../../Windows/System32/...")
 pub fn validate_artifact_path(requested: &Path, base_dir: &Path) -> Result<PathBuf, String> {
-    let canonical_dir = base_dir.canonicalize()
+    let canonical_dir = base_dir
+        .canonicalize()
         .map_err(|e| format!("Base directory canonicalization failed: {}", e))?;
 
-    let parent = requested.parent()
+    let parent = requested
+        .parent()
         .ok_or_else(|| "Requested path has no parent directory".to_string())?;
 
-    let canonical_parent = parent.canonicalize()
+    let canonical_parent = parent
+        .canonicalize()
         .map_err(|e| format!("Requested path parent canonicalization failed: {}", e))?;
 
     if !canonical_parent.starts_with(&canonical_dir) {
-        return Err("Path traversal detected: requested path is outside the allowed directory".to_string());
+        return Err(
+            "Path traversal detected: requested path is outside the allowed directory".to_string(),
+        );
     }
 
     Ok(requested.to_path_buf())

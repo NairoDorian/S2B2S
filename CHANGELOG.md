@@ -5,6 +5,38 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] — 2026-06-20: Phase 0 Documentation & CI Workflow Cleanup
+
+> **Phase 0 Cleanup.** Consolidated documentation sprawl, established a single status dashboard (`STATUS.md`), made project roadmap claims honest, and optimized CI configurations.
+
+### Added
+
+- **`STATUS.md`**: Single source of truth status, scorecard, and roadmap for S2B2S.
+- **`docs/vision.md`**: Consolidated conceptual specifications for overlays, 3D avatar animations, screen understanding, and conversation mode 2.0.
+- **`docs/android.md`**: Consolidated Android porting and companion PWA plans.
+- **`docs/references.md`**: Consolidated link indexes and mobile AI libraries.
+- **`.github/workflows/ci.yml`**: Unified CI workflow running lint checks, translation checker, TypeScript compiler, and Rust unit tests.
+- **`.github/workflows/build-main.yml`**: Full cross-platform package build on pushes to `main`.
+- **`.github/workflows/build-test.yml`**: Manual build workflow for test runs across any branch, tag, or PR.
+
+### Changed
+
+- **`README.md`**: Restored transparency by honestly labeling translation completeness and the wgpu overlay stub, and pointing references to `STATUS.md`.
+- **`AGENTS.md`**: Merged development commands, environment setup details, and style guidelines from `CRUSH.md`.
+- **`BUILD.md`**: Merged pre-compiled `llama.cpp` integration details from `LLAMA_CPP.md`.
+- **`CONTRIBUTING.md`**: Merged translation contributor guidelines from `CONTRIBUTING_TRANSLATIONS.md`.
+- **`CLAUDE.md`**: Simplified to a 2-line pointer directing assistants to `AGENTS.md`.
+- **`HerLoading.tsx`**: Added explicit constructor call to `HerCurve` subclass to resolve a Three.js v0.184 TypeScript compiler warning.
+- **`.gitignore`**: Added `S2B2S_repomix*.txt` to prevent committing massive codebase text snapshots.
+
+### Removed
+
+- **Obsolete files**: `improvement-plan.md`, `AIVORELAY_INSPIRED_IMPROVEMENTS.md`, `S2B2S_REVIEW.md`, `reference_github_links.md`, `S2B2S_ANDROID_COMPANION.md`, `android-port-plan.md`, `S2B2S_repomix.txt`, `S2B2S_repomix_annotated.txt`, `CRUSH.md`, `CONTRIBUTING_TRANSLATIONS.md`, `LLAMA_CPP.md`.
+- **Obsolete directories**: `analysys/`, `futuristic_analysis/`, `references_comparative_analysis_md/`.
+- **Obsolete workflows**: `.github/workflows/code-quality.yml`, `.github/workflows/test.yml`, `.github/workflows/build-test.yml` (replaced), `.github/workflows/main-build.yml` (replaced), `.github/workflows/pr-test-build.yml` (replaced).
+
+---
+
 ## [0.1.3] — 2026-06-20: Piper CUDA, Warmup Prompt, Loading Animation & Process Cleanup
 
 > **Piper CUDA GPU inference, configurable Brain warmup prompt, interactive loading animation, and Windows Job Object process cleanup.** Fixed multiple startup/reliability issues: app invisibility on start-hidden, premature brain:llama-ready event during warmup, and test panel metrics race condition. Replaced TTS venv setup with uv-based approach following correct piper→onnxruntime-gpu install order. Added Windows Job Object to auto-kill child processes on crash.
@@ -132,7 +164,7 @@ Cross-checked S2B2S's hand-rolled Parakeet STT server against the proven `transc
 **Streaming correctness (the deferred cluster).**
 
 - **Continuous-voice barge-in race** — `is_playing()` was checked right after `ask()` returned, but TTS synthesis is async so it read false and the wait/barge-in block was skipped, making the assistant listen over its own speech. It now waits for the turn's terminal TTS event, which is race-free.
-- **Streaming RMS gate** — it skipped any chunk shorter than `CHUNK/4`, so the final (short) chunk of every utterance was dropped, truncating transcripts. Now only near-silent *middle* chunks are skipped; the final chunk is always fed.
+- **Streaming RMS gate** — it skipped any chunk shorter than `CHUNK/4`, so the final (short) chunk of every utterance was dropped, truncating transcripts. Now only near-silent _middle_ chunks are skipped; the final chunk is always fed.
 - **EOU streaming decoder** — the server re-encoded the full buffer each chunk but continued the decoder state from the previous pass, corrupting tokens at chunk boundaries. It now decodes from frame 0 with a fresh predictor state, and the final result prefers whichever of the last partial / `stream_end` flush is longer.
 
 **UI.** Hid the **WgpuTrail** settings panel from the normal sidebar (gated behind debug mode) — it persisted config the backend can't yet render.
@@ -179,7 +211,7 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **Fixed Cartesia producing garbled/no audio** — it sent `pcm_f32le` inside a `wav` container that the app's WAV parser rejects; it now sends `pcm_s16le` (format-1 WAV). Added `connect_timeout`/`timeout` so a hung request can't wedge the synthesis worker.
 - **Added request timeouts to OpenAI & ElevenLabs** — both already pooled their HTTP clients but had no deadline; a stalled connection now fails within 120s instead of blocking indefinitely.
 - **Speed control now works on ElevenLabs and Kokoro** — ElevenLabs sends `voice_settings.speed` (clamped to its 0.7–1.2 range, omitted when default); Kokoro sends `length_scale = 1/speed` (its server already honored it). With Piper/SAPI/OpenAI, 5 of 8 engines now apply speed.
-- **Fixed Pocket voice cloning (cloned voices never played)** — the client sent the cloned voice's file *path* as the voice id, which the server rejected and replaced with a stock voice. The client now uses the WAV stem as the id and resolves it to an absolute path sent as `voice_wav`; the server clones via `get_state_for_audio_prompt(path)` and caches voice states so repeats stay fast.
+- **Fixed Pocket voice cloning (cloned voices never played)** — the client sent the cloned voice's file _path_ as the voice id, which the server rejected and replaced with a stock voice. The client now uses the WAV stem as the id and resolves it to an absolute path sent as `voice_wav`; the server clones via `get_state_for_audio_prompt(path)` and caches voice states so repeats stay fast.
 - **Hid the speed slider for engines that ignore it** — Kitten and Pocket have no speed control in their models, and Cartesia isn't plumbed, so the speed slider (and greeting-speed slider) are hidden for those engines to avoid a dead control.
 
 **TTS — text sanitization**
@@ -193,7 +225,7 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 
 ### TTS Pipeline Fixes & Telemetry Integration
 
-- **Fixed Text Sanitization/Normalization Pipeline** — Swapped pipeline execution order so that regex-based sanitization and web artifact cleanup (`sanitize_tts`) run *before* NeMo-based normalization (`tn_normalize_text`). This prevents NeMo from getting confused by URLs/emails and spelling out entire sentences letter-by-letter, and preserves title capitalization ("Doctor"/"Professor"). Made `test_dates` case-insensitive.
+- **Fixed Text Sanitization/Normalization Pipeline** — Swapped pipeline execution order so that regex-based sanitization and web artifact cleanup (`sanitize_tts`) run _before_ NeMo-based normalization (`tn_normalize_text`). This prevents NeMo from getting confused by URLs/emails and spelling out entire sentences letter-by-letter, and preserves title capitalization ("Doctor"/"Professor"). Made `test_dates` case-insensitive.
 - **Wired TTS Performance Telemetry** — Instantiated the `Telemetry` subsystem as a managed Tauri state and wired it into both the `speak` and `speak_sentence` synthesis loops to track real-time character-per-millisecond metrics.
 - **Enabled Adaptive Fragment Sizing** — Configured `TtsManager::speak` to query the telemetry store and dynamically adjust text fragment pagination sizes based on the performance speed of the active engine/voice.
 
@@ -440,7 +472,6 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **Llama.cpp tab deduplication** — Filtered out `cudart-*` asset variants so only CUDA 12.4, CUDA 13.3, Vulkan, and CPU (x64) options appear. CUDA version is embedded in the backend string (`cuda-12.4`, `cuda-13.3`) so both are distinct entries.
 - **Download/Remove/Use buttons** — Each option now always shows a Use button (downloads then activates if not yet downloaded), with Download/Remove toggling based on existence. Zip files are deleted after extraction.
 - **Brain disable kills server** — Toggling Brain off when `llama_cpp` provider is active now terminates the llama-server process immediately.
-
 
 ### Refactoring & Code Quality
 

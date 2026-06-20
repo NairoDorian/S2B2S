@@ -10,12 +10,7 @@ import {
   DEFAULT_ACTION_ICON,
   getActionIcon,
 } from "@/lib/constants/actionIcons";
-import {
-  Dialog,
-  Dropdown,
-  SettingsGroup,
-  Textarea,
-} from "@/components/ui";
+import { Dialog, Dropdown, SettingsGroup, Textarea } from "@/components/ui";
 import { Input } from "../../ui/Input";
 import { Button } from "../../ui/Button";
 import { ShortcutInput } from "../ShortcutInput";
@@ -152,7 +147,17 @@ const ActionDialog: React.FC<ActionDialogProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [action, canSave, name, prompt, llmModelId, icon, triggerKey, refreshSettings, onSaved]);
+  }, [
+    action,
+    canSave,
+    name,
+    prompt,
+    llmModelId,
+    icon,
+    triggerKey,
+    refreshSettings,
+    onSaved,
+  ]);
 
   const handleDelete = React.useCallback(async () => {
     if (!action) return;
@@ -248,7 +253,9 @@ const ActionDialog: React.FC<ActionDialogProps> = ({
               selectedValue={llmModelId}
               options={modelOptions}
               onSelect={(value) => setLlmModelId(value)}
-              placeholder={t("settings.postProcessing.actions.modelPlaceholder")}
+              placeholder={t(
+                "settings.postProcessing.actions.modelPlaceholder",
+              )}
               className="w-full"
             />
           ) : (

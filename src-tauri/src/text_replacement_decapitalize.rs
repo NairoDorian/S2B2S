@@ -1,8 +1,8 @@
 // Adapted from AivoRelay (MaxITService/AIVORelay), MIT License.
 // Source: src-tauri/src/text_replacement_decapitalize.rs — Smart Decapitalization State Machine (2026-06-19).
 
-use std::sync::Mutex;
 use std::sync::LazyLock;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -214,9 +214,9 @@ fn find_first_alphabetic_char(text: &str) -> Option<(usize, char)> {
     text.char_indices().find(|(_, ch)| ch.is_alphabetic())
 }
 
+use rdev::Key;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
-use rdev::Key;
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
@@ -236,14 +236,18 @@ pub fn init_rdev_listener(app: AppHandle) {
                         return;
                     }
 
-                    let is_primary = string_to_rdev_key(&settings.text_replacement_decapitalize_after_edit_key)
-                        .map(|k| k == key)
-                        .unwrap_or(false);
-
-                    let is_secondary = settings.text_replacement_decapitalize_after_edit_secondary_key_enabled
-                        && string_to_rdev_key(&settings.text_replacement_decapitalize_after_edit_secondary_key)
+                    let is_primary =
+                        string_to_rdev_key(&settings.text_replacement_decapitalize_after_edit_key)
                             .map(|k| k == key)
                             .unwrap_or(false);
+
+                    let is_secondary = settings
+                        .text_replacement_decapitalize_after_edit_secondary_key_enabled
+                        && string_to_rdev_key(
+                            &settings.text_replacement_decapitalize_after_edit_secondary_key,
+                        )
+                        .map(|k| k == key)
+                        .unwrap_or(false);
 
                     if is_primary || is_secondary {
                         let timeout_ms = settings.text_replacement_decapitalize_timeout_ms;

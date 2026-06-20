@@ -23,7 +23,10 @@ pub(crate) fn resolve_venv_python() -> String {
         .join("..")
         .join(venv_python);
     if project_venv.exists() {
-        log::info!("[Venv] Using project venv Python: {}", project_venv.display());
+        log::info!(
+            "[Venv] Using project venv Python: {}",
+            project_venv.display()
+        );
         return project_venv.to_string_lossy().to_string();
     }
 
@@ -50,7 +53,10 @@ pub(crate) fn resolve_venv_python() -> String {
 
     // 4. System Python fallback
     let fallback = if cfg!(windows) { "python" } else { "python3" };
-    log::info!("[Venv] No venv found, falling back to system Python: {}", fallback);
+    log::info!(
+        "[Venv] No venv found, falling back to system Python: {}",
+        fallback
+    );
     fallback.to_string()
 }
 
@@ -166,8 +172,7 @@ impl EngineSlot {
     }
 
     fn state(&self) -> &Mutex<ServerState> {
-        self.state
-            .get_or_init(|| Mutex::new(ServerState::Stopped))
+        self.state.get_or_init(|| Mutex::new(ServerState::Stopped))
     }
 }
 
@@ -534,10 +539,8 @@ pub fn ensure_running(
                                 active.port
                             );
                             {
-                                let mut child = active
-                                    .child
-                                    .lock()
-                                    .unwrap_or_else(|p| p.into_inner());
+                                let mut child =
+                                    active.child.lock().unwrap_or_else(|p| p.into_inner());
                                 let _ = child.kill();
                                 let _ = child.wait();
                             }

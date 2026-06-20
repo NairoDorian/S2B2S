@@ -23,8 +23,18 @@ pub async fn discover_local_brains(_app: AppHandle) -> Result<Vec<DiscoveredServ
     let probes = vec![
         ("Ollama", "http://127.0.0.1:11434", "custom", "/api/tags"),
         ("LM Studio", "http://127.0.0.1:1234", "custom", "/v1/models"),
-        ("llama.cpp (8001)", "http://127.0.0.1:8001", "llama_cpp", "/v1/models"),
-        ("llama.cpp (8080)", "http://127.0.0.1:8080", "llama_cpp", "/v1/models"),
+        (
+            "llama.cpp (8001)",
+            "http://127.0.0.1:8001",
+            "llama_cpp",
+            "/v1/models",
+        ),
+        (
+            "llama.cpp (8080)",
+            "http://127.0.0.1:8080",
+            "llama_cpp",
+            "/v1/models",
+        ),
     ];
 
     for (name, base_url, provider_id, models_path) in &probes {

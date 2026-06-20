@@ -100,31 +100,37 @@ export const ConversationView: React.FC = () => {
         setThinking(false);
         setStreaming((prev) => prev + event.payload);
       });
-      const unlistenDone = await listen<{ text: string; tokens_per_sec?: number; total_ms?: number; predicted_ms?: number }>(
-        "brain:done",
-        (event) => {
-          setThinking(false);
-          setStreaming("");
-          const payload = event.payload;
-          // Use predicted_ms (generation time) as totalMs, fall back to total_ms
-          const genMs = typeof payload === "object" ? (payload.predicted_ms ?? payload.total_ms) : undefined;
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: typeof payload === "string" ? payload : payload.text,
-              tokensPerSec: typeof payload === "object" ? payload.tokens_per_sec : undefined,
-              totalMs: genMs,
-            },
-          ]);
-          setVoiceStatus((prev) => {
-            if (prev === "thinking" || prev === "speech_ended") {
-              return "listening";
-            }
-            return prev;
-          });
-        },
-      );
+      const unlistenDone = await listen<{
+        text: string;
+        tokens_per_sec?: number;
+        total_ms?: number;
+        predicted_ms?: number;
+      }>("brain:done", (event) => {
+        setThinking(false);
+        setStreaming("");
+        const payload = event.payload;
+        // Use predicted_ms (generation time) as totalMs, fall back to total_ms
+        const genMs =
+          typeof payload === "object"
+            ? (payload.predicted_ms ?? payload.total_ms)
+            : undefined;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: typeof payload === "string" ? payload : payload.text,
+            tokensPerSec:
+              typeof payload === "object" ? payload.tokens_per_sec : undefined,
+            totalMs: genMs,
+          },
+        ]);
+        setVoiceStatus((prev) => {
+          if (prev === "thinking" || prev === "speech_ended") {
+            return "listening";
+          }
+          return prev;
+        });
+      });
       const unlistenError = await listen<string>("brain:error", (event) => {
         setThinking(false);
         setStreaming("");
@@ -272,7 +278,9 @@ export const ConversationView: React.FC = () => {
               }}
               className="p-1.5 rounded-md text-mid-gray hover:text-foreground hover:bg-mid-gray/10 transition-colors"
               title={
-                readAloud ? t("conversation.readAloudOn") : t("conversation.readAloudOff")
+                readAloud
+                  ? t("conversation.readAloudOn")
+                  : t("conversation.readAloudOff")
               }
             >
               {readAloud ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -361,12 +369,8 @@ export const ConversationView: React.FC = () => {
                 {message.tokensPerSec != null && (
                   <span>{message.tokensPerSec.toFixed(1)} t/s</span>
                 )}
-                {message.totalMs != null && (
-                  <span>🧠 {message.totalMs}ms</span>
-                )}
-                {message.ttsMs != null && (
-                  <span>🔊 {message.ttsMs}ms</span>
-                )}
+                {message.totalMs != null && <span>🧠 {message.totalMs}ms</span>}
+                {message.ttsMs != null && <span>🔊 {message.ttsMs}ms</span>}
               </div>
             )}
           </div>
@@ -420,7 +424,12 @@ export const ConversationView: React.FC = () => {
           >
             {t("conversation.stop")}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => void clear()} className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void clear()}
+            className="flex items-center gap-1"
+          >
             <Eraser size={13} />
             {t("conversation.newConversation")}
           </Button>
@@ -439,7 +448,9 @@ export const ConversationView: React.FC = () => {
                   : ""
               }
             />
-            {voiceMode ? t("conversation.voiceModeOn") : t("conversation.voiceMode")}
+            {voiceMode
+              ? t("conversation.voiceModeOn")
+              : t("conversation.voiceMode")}
           </Button>
         </div>
       </div>

@@ -85,15 +85,25 @@ interface SettingsStore {
   setCustomSounds: (sounds: { start: boolean; stop: boolean }) => void;
 
   // Internal helpers to deduplicate brain/post-process provider logic
-  _setProvider: (prefix: "brain" | "post_process", providerId: string) => Promise<void>;
+  _setProvider: (
+    prefix: "brain" | "post_process",
+    providerId: string,
+  ) => Promise<void>;
   _updateProviderSetting: (
     prefix: "brain" | "post_process",
     settingType: "base_url" | "api_key" | "model",
     providerId: string,
     value: string,
   ) => Promise<void>;
-  _updateProviderBaseUrl: (prefix: "brain" | "post_process", providerId: string, baseUrl: string) => Promise<void>;
-  _fetchProviderModels: (prefix: "brain" | "post_process", providerId: string) => Promise<string[]>;
+  _updateProviderBaseUrl: (
+    prefix: "brain" | "post_process",
+    providerId: string,
+    baseUrl: string,
+  ) => Promise<void>;
+  _fetchProviderModels: (
+    prefix: "brain" | "post_process",
+    providerId: string,
+  ) => Promise<string[]>;
 }
 
 // Note: Default settings are now fetched from Rust via commands.getDefaultSettings()
@@ -447,7 +457,12 @@ export const useSettingsStore = create<SettingsStore>()(
       providerId: string,
       value: string,
     ) => {
-      await get()._updateProviderSetting("post_process", settingType, providerId, value);
+      await get()._updateProviderSetting(
+        "post_process",
+        settingType,
+        providerId,
+        value,
+      );
     },
 
     updatePostProcessBaseUrl: async (providerId, baseUrl) => {
@@ -489,7 +504,12 @@ export const useSettingsStore = create<SettingsStore>()(
       providerId: string,
       value: string,
     ) => {
-      await get()._updateProviderSetting("brain", settingType, providerId, value);
+      await get()._updateProviderSetting(
+        "brain",
+        settingType,
+        providerId,
+        value,
+      );
     },
 
     updateBrainBaseUrl: async (providerId, baseUrl) => {
@@ -527,8 +547,8 @@ export const useSettingsStore = create<SettingsStore>()(
       const updateKey = `${prefix}_provider_id`;
       const previousId =
         prefix === "brain"
-          ? settings?.brain?.provider_id ?? null
-          : settings?.post_process_provider_id ?? null;
+          ? (settings?.brain?.provider_id ?? null)
+          : (settings?.post_process_provider_id ?? null);
 
       setUpdating(updateKey, true);
 
@@ -596,12 +616,7 @@ export const useSettingsStore = create<SettingsStore>()(
       }
     },
 
-    _updateProviderSetting: async (
-      prefix,
-      settingType,
-      providerId,
-      value,
-    ) => {
+    _updateProviderSetting: async (prefix, settingType, providerId, value) => {
       const { setUpdating, refreshSettings } = get();
       const updateKey = `${prefix}_${settingType}:${providerId}`;
 

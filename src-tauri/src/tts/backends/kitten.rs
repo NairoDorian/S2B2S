@@ -4,8 +4,7 @@ use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const KITTEN_VOICES: &[&str] = &[
-    "Bella", "Jasper", "Luna", "Bruno",
-    "Rosie", "Hugo", "Kiki", "Leo",
+    "Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo",
 ];
 
 #[allow(dead_code)]
@@ -84,11 +83,7 @@ impl TtsBackend for KittenBackend {
             voice
         };
 
-        let handle = local_tts_server::ensure_running(
-            "kitten",
-            "python".to_string(),
-            vec![],
-        )?;
+        let handle = local_tts_server::ensure_running("kitten", "python".to_string(), vec![])?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
         let body = serde_json::json!({"text": text, "voice": voice_to_use, "length_scale": 1.0});

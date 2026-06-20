@@ -628,7 +628,10 @@ impl Default for BrainConfig {
             models.insert(provider.id.clone(), String::new());
         }
         // Set default model for llama_cpp (local Gemma-4 engine)
-        models.insert("llama_cpp".to_string(), "unsloth/gemma-4-e2b-it-qat-GGUF".to_string());
+        models.insert(
+            "llama_cpp".to_string(),
+            "unsloth/gemma-4-e2b-it-qat-GGUF".to_string(),
+        );
 
         Self {
             enabled: true,
@@ -705,12 +708,24 @@ pub struct OverlayWindowConfig {
     pub fade_ms: u32,
 }
 
-fn default_overlay_pill_width() -> u32 { 172 }
-fn default_overlay_pill_height() -> u32 { 36 }
-fn default_overlay_opacity() -> f32 { 0.8 }
-fn default_overlay_corner_radius() -> f32 { 18.0 }
-fn default_overlay_reply_bubble() -> bool { false }
-fn default_overlay_fade_ms() -> u32 { 300 }
+fn default_overlay_pill_width() -> u32 {
+    172
+}
+fn default_overlay_pill_height() -> u32 {
+    36
+}
+fn default_overlay_opacity() -> f32 {
+    0.8
+}
+fn default_overlay_corner_radius() -> f32 {
+    18.0
+}
+fn default_overlay_reply_bubble() -> bool {
+    false
+}
+fn default_overlay_fade_ms() -> u32 {
+    300
+}
 
 impl Default for OverlayWindowConfig {
     fn default() -> Self {
@@ -765,15 +780,33 @@ pub struct WgpuTrailConfig {
     pub click_ripple: bool,
 }
 
-fn default_trail_color() -> String { "#7c3aed".to_string() }
-fn default_trail_segments() -> u32 { 50 }
-fn default_trail_spring() -> f32 { 0.39 }
-fn default_trail_friction() -> f32 { 0.5 }
-fn default_trail_width() -> f32 { 3.0 }
-fn default_trail_taper() -> f32 { 1.5 }
-fn default_trail_glow() -> f32 { 0.6 }
-fn default_trail_lazy_radius() -> f32 { 8.0 }
-fn default_trail_lazy_friction() -> f32 { 0.4 }
+fn default_trail_color() -> String {
+    "#7c3aed".to_string()
+}
+fn default_trail_segments() -> u32 {
+    50
+}
+fn default_trail_spring() -> f32 {
+    0.39
+}
+fn default_trail_friction() -> f32 {
+    0.5
+}
+fn default_trail_width() -> f32 {
+    3.0
+}
+fn default_trail_taper() -> f32 {
+    1.5
+}
+fn default_trail_glow() -> f32 {
+    0.6
+}
+fn default_trail_lazy_radius() -> f32 {
+    8.0
+}
+fn default_trail_lazy_friction() -> f32 {
+    0.4
+}
 
 impl Default for WgpuTrailConfig {
     fn default() -> Self {
@@ -1472,7 +1505,10 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
-                if existing.base_url != provider.base_url && existing.id != "custom" && existing.id != "llama_cpp" {
+                if existing.base_url != provider.base_url
+                    && existing.id != "custom"
+                    && existing.id != "llama_cpp"
+                {
                     existing.base_url = provider.base_url.clone();
                     changed = true;
                 }
@@ -1520,7 +1556,10 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                     existing.supports_structured_output = provider.supports_structured_output;
                     changed = true;
                 }
-                if existing.base_url != provider.base_url && existing.id != "custom" && existing.id != "llama_cpp" {
+                if existing.base_url != provider.base_url
+                    && existing.id != "custom"
+                    && existing.id != "llama_cpp"
+                {
                     existing.base_url = provider.base_url.clone();
                     changed = true;
                 }
@@ -1870,11 +1909,15 @@ pub fn get_default_settings() -> AppSettings {
         recording_auto_stop_timeout_seconds: default_recording_auto_stop_timeout_seconds(),
         recording_auto_stop_paste: false,
         text_replacement_decapitalize_after_edit_key_enabled: false,
-        text_replacement_decapitalize_after_edit_key: default_text_replacement_decapitalize_after_edit_key(),
+        text_replacement_decapitalize_after_edit_key:
+            default_text_replacement_decapitalize_after_edit_key(),
         text_replacement_decapitalize_after_edit_secondary_key_enabled: false,
-        text_replacement_decapitalize_after_edit_secondary_key: default_text_replacement_decapitalize_after_edit_secondary_key(),
-        text_replacement_decapitalize_timeout_ms: default_text_replacement_decapitalize_timeout_ms(),
-        text_replacement_decapitalize_standard_post_recording_monitor_ms: default_text_replacement_decapitalize_standard_post_recording_monitor_ms(),
+        text_replacement_decapitalize_after_edit_secondary_key:
+            default_text_replacement_decapitalize_after_edit_secondary_key(),
+        text_replacement_decapitalize_timeout_ms: default_text_replacement_decapitalize_timeout_ms(
+        ),
+        text_replacement_decapitalize_standard_post_recording_monitor_ms:
+            default_text_replacement_decapitalize_standard_post_recording_monitor_ms(),
     }
 }
 
@@ -1922,17 +1965,23 @@ impl AppSettings {
 }
 
 fn encrypt_settings_keys(mut settings: AppSettings) -> AppSettings {
-    if !settings.tts.openai.api_key.is_empty() && !settings.tts.openai.api_key.starts_with("enc:v1:") {
+    if !settings.tts.openai.api_key.is_empty()
+        && !settings.tts.openai.api_key.starts_with("enc:v1:")
+    {
         if let Ok(enc) = crate::crypto::encrypt_str(&settings.tts.openai.api_key) {
             settings.tts.openai.api_key = enc;
         }
     }
-    if !settings.tts.elevenlabs.api_key.is_empty() && !settings.tts.elevenlabs.api_key.starts_with("enc:v1:") {
+    if !settings.tts.elevenlabs.api_key.is_empty()
+        && !settings.tts.elevenlabs.api_key.starts_with("enc:v1:")
+    {
         if let Ok(enc) = crate::crypto::encrypt_str(&settings.tts.elevenlabs.api_key) {
             settings.tts.elevenlabs.api_key = enc;
         }
     }
-    if !settings.tts.cartesia.api_key.is_empty() && !settings.tts.cartesia.api_key.starts_with("enc:v1:") {
+    if !settings.tts.cartesia.api_key.is_empty()
+        && !settings.tts.cartesia.api_key.starts_with("enc:v1:")
+    {
         if let Ok(enc) = crate::crypto::encrypt_str(&settings.tts.cartesia.api_key) {
             settings.tts.cartesia.api_key = enc;
         }
@@ -2074,7 +2123,10 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     if settings.control_server_token.is_none() {
         let mut token_bytes = [0u8; 16];
         if getrandom::getrandom(&mut token_bytes).is_ok() {
-            let token = token_bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let token = token_bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
             log::info!("Generated control server token: {}", token);
             settings.control_server_token = Some(token);
             updated = true;

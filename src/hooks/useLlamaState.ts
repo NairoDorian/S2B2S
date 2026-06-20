@@ -89,7 +89,7 @@ export const useLlamaState = (): LlamaState => {
           setIsDownloading(false);
           setError(payload.error || "Unknown download error");
         }
-      }
+      },
     );
 
     return () => {

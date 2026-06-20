@@ -4,8 +4,7 @@ use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const POCKET_VOICES: &[&str] = &[
-    "alba", "marius", "javert", "jean",
-    "fantine", "cosette", "eponine", "azelma",
+    "alba", "marius", "javert", "jean", "fantine", "cosette", "eponine", "azelma",
 ];
 
 const CLONED_VOICES_DIR: &str = "TTS/pocket-cloned-voices";
@@ -69,7 +68,10 @@ impl PocketBackend {
     }
 
     /// Import a WAV file as a cloned voice. Copies to persistent storage.
-    pub fn import_cloned_voice(app: &tauri::AppHandle, source_wav: &std::path::Path) -> Result<Voice, String> {
+    pub fn import_cloned_voice(
+        app: &tauri::AppHandle,
+        source_wav: &std::path::Path,
+    ) -> Result<Voice, String> {
         let dir = cloned_voices_dir(app);
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create cloned voices dir: {e}"))?;
@@ -80,8 +82,7 @@ impl PocketBackend {
             .unwrap_or("cloned");
         let dest = dir.join(format!("{}.wav", stem));
 
-        std::fs::copy(source_wav, &dest)
-            .map_err(|e| format!("Failed to copy voice WAV: {e}"))?;
+        std::fs::copy(source_wav, &dest).map_err(|e| format!("Failed to copy voice WAV: {e}"))?;
 
         Ok(Voice {
             id: stem.to_string(),
@@ -139,11 +140,7 @@ impl TtsBackend for PocketBackend {
             voice
         };
 
-        let handle = local_tts_server::ensure_running(
-            "pocket",
-            "python".to_string(),
-            vec![],
-        )?;
+        let handle = local_tts_server::ensure_running("pocket", "python".to_string(), vec![])?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
         // A cloned voice id is a WAV stem under the cloned-voices dir; when one exists,

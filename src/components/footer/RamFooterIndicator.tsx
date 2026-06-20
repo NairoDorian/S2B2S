@@ -59,9 +59,10 @@ const RamFooterIndicator: React.FC = () => {
     );
   }
 
-  const percentage = status.total_mb > 0
-    ? Math.round((status.used_mb / status.total_mb) * 100)
-    : 0;
+  const percentage =
+    status.total_mb > 0
+      ? Math.round((status.used_mb / status.total_mb) * 100)
+      : 0;
 
   const getRamStatusColor = () => {
     if (percentage > 90) return "bg-red-400 animate-pulse";
@@ -87,9 +88,7 @@ const RamFooterIndicator: React.FC = () => {
           <span>🧠</span>
           <span className="font-medium">RAM</span>
         </span>
-        <div
-          className={`w-1.5 h-1.5 rounded-full ${getRamStatusColor()}`}
-        />
+        <div className={`w-1.5 h-1.5 rounded-full ${getRamStatusColor()}`} />
         <span className="tabular-nums text-text/70">{percentage}%</span>
       </button>
     </>

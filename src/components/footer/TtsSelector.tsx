@@ -29,7 +29,9 @@ const TtsSelector: React.FC = () => {
     cuda: false,
     error: null,
   });
-  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>(
+    {},
+  );
   const [voiceCounts, setVoiceCounts] = useState<Record<string, number>>({});
 
   const tts = settings?.tts;
@@ -95,7 +97,16 @@ const TtsSelector: React.FC = () => {
   // Fetch voice counts per engine
   useEffect(() => {
     const fetchCounts = async () => {
-      const engines = ["piper", "kokoro", "kitten", "pocket", "sapi", "openai", "elevenlabs", "cartesia"];
+      const engines = [
+        "piper",
+        "kokoro",
+        "kitten",
+        "pocket",
+        "sapi",
+        "openai",
+        "elevenlabs",
+        "cartesia",
+      ];
       const counts: Record<string, number> = {};
       for (const engine of engines) {
         try {
@@ -103,7 +114,9 @@ const TtsSelector: React.FC = () => {
           if (res.status === "ok") {
             counts[engine] = res.data.length;
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       setVoiceCounts(counts);
     };
@@ -136,9 +149,7 @@ const TtsSelector: React.FC = () => {
 
   const getEngineStatusColor = (engine: string) => {
     const phase =
-      engine === "piper"
-        ? piperStatus.phase
-        : getLocalEngineStatus(engine);
+      engine === "piper" ? piperStatus.phase : getLocalEngineStatus(engine);
     switch (phase) {
       case "ready":
         return "bg-green-400";
@@ -300,7 +311,9 @@ const TtsSelector: React.FC = () => {
                 <div className="flex items-center justify-between w-full">
                   <span>{eng.label}</span>
                   {voiceCounts[eng.id] > 0 && (
-                    <span className="text-[9px] text-text/30 ml-1">{voiceCounts[eng.id]} voices</span>
+                    <span className="text-[9px] text-text/30 ml-1">
+                      {voiceCounts[eng.id]} voices
+                    </span>
                   )}
                 </div>
                 {tts.engine === eng.id && (
@@ -315,11 +328,13 @@ const TtsSelector: React.FC = () => {
               {piperStatus.error}
             </div>
           )}
-          {isLocalEngine(tts.engine) && tts.engine !== "piper" && getLocalEngineStatus(tts.engine) === "error" && (
-            <div className="mt-2 p-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-[10px] break-words">
-              {`${getEngineLabel(tts.engine)} engine error`}
-            </div>
-          )}
+          {isLocalEngine(tts.engine) &&
+            tts.engine !== "piper" &&
+            getLocalEngineStatus(tts.engine) === "error" && (
+              <div className="mt-2 p-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-[10px] break-words">
+                {`${getEngineLabel(tts.engine)} engine error`}
+              </div>
+            )}
         </div>
       )}
     </div>

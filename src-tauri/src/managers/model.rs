@@ -53,7 +53,7 @@ pub struct ModelInfo {
     pub is_recommended: bool,       // Whether this is the recommended model for new users
     pub supported_languages: Vec<String>, // Languages this model can transcribe
     pub supports_language_selection: bool, // Whether the user can explicitly pick a language
-    pub is_custom: bool,     // Whether this is a user-provided custom model
+    pub is_custom: bool,            // Whether this is a user-provided custom model
     /// HuggingFace repo base URL (e.g. https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx).
     /// When set, the model is downloaded as individual files from the HF repo instead of a single archive.
     #[specta(skip)]
@@ -204,8 +204,7 @@ impl ModelManager {
                 supports_language_selection: false,
                 is_custom: false,
                 hf_repo: Some(
-                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx"
-                        .to_string(),
+                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx".to_string(),
                 ),
                 hf_files: Some(vec![
                     "encoder-model.onnx".to_string(),
@@ -241,8 +240,7 @@ impl ModelManager {
                 supports_language_selection: false,
                 is_custom: false,
                 hf_repo: Some(
-                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx"
-                        .to_string(),
+                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx".to_string(),
                 ),
                 hf_files: Some(vec![
                     "encoder-model.fp16.onnx".to_string(),
@@ -259,8 +257,9 @@ impl ModelManager {
             ModelInfo {
                 id: "parakeet-eou-120m-en-fp32int8".to_string(),
                 name: "Parakeet EOU 120M FP32+INT8".to_string(),
-                description: "FP32 encoder + INT8 decoder. English only. Compact with exact parity."
-                    .to_string(),
+                description:
+                    "FP32 encoder + INT8 decoder. English only. Compact with exact parity."
+                        .to_string(),
                 filename: "parakeet-eou-120m-en-fp32int8".to_string(),
                 url: None,
                 sha256: None,
@@ -278,8 +277,7 @@ impl ModelManager {
                 supports_language_selection: false,
                 is_custom: false,
                 hf_repo: Some(
-                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx"
-                        .to_string(),
+                    "https://huggingface.co/ysdede/parakeet-realtime-eou-120m-v1-onnx".to_string(),
                 ),
                 hf_files: Some(vec![
                     "encoder-model.onnx".to_string(),
@@ -588,8 +586,7 @@ impl ModelManager {
                 supports_language_selection: false,
                 is_custom: false,
                 hf_repo: Some(
-                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx"
-                        .to_string(),
+                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx".to_string(),
                 ),
                 hf_files: Some(vec![
                     "onnx_fp32/encoder.onnx".to_string(),
@@ -607,8 +604,7 @@ impl ModelManager {
             ModelInfo {
                 id: "parakeet-unified-en-0.6b-int8".to_string(),
                 name: "Parakeet Unified INT8".to_string(),
-                description: "Quantized RNN-T model. English only. Fast and compact."
-                    .to_string(),
+                description: "Quantized RNN-T model. English only. Fast and compact.".to_string(),
                 filename: "parakeet-unified-en-0.6b-int8".to_string(),
                 url: None,
                 sha256: None,
@@ -626,8 +622,7 @@ impl ModelManager {
                 supports_language_selection: false,
                 is_custom: false,
                 hf_repo: Some(
-                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx"
-                        .to_string(),
+                    "https://huggingface.co/eschmidbauer/parakeet-unified-en-0.6b-onnx".to_string(),
                 ),
                 hf_files: Some(vec![
                     "onnx_int8/encoder.int8.onnx".to_string(),
@@ -947,9 +942,7 @@ impl ModelManager {
 
         // Also discover from project-local models dir if it exists
         if let Some(ref local_dir) = project_local_models_dir {
-            if let Err(e) =
-                Self::discover_custom_whisper_models(local_dir, &mut available_models)
-            {
+            if let Err(e) = Self::discover_custom_whisper_models(local_dir, &mut available_models) {
                 warn!(
                     "Failed to discover custom models from project-local dir: {}",
                     e
@@ -1079,7 +1072,9 @@ impl ModelManager {
                     .join(format!("{}.extracting", &model.filename));
 
                 // Also check project-local models dir in dev mode
-                let local_exists = self.project_local_models_dir.as_ref()
+                let local_exists = self
+                    .project_local_models_dir
+                    .as_ref()
                     .map(|d| d.join(&model.filename))
                     .map(|p| p.exists() && p.is_dir())
                     .unwrap_or(false);
@@ -1110,7 +1105,9 @@ impl ModelManager {
                 let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
 
                 // Also check project-local models dir in dev mode
-                let local_exists = self.project_local_models_dir.as_ref()
+                let local_exists = self
+                    .project_local_models_dir
+                    .as_ref()
                     .map(|d| d.join(&model.filename))
                     .map(|p| p.exists())
                     .unwrap_or(false);
@@ -1401,7 +1398,10 @@ impl ModelManager {
             let dest = temp_dir.join(Path::new(file).file_name().unwrap_or(file.as_ref()));
             let partial = temp_dir.join(format!(
                 "{}.partial",
-                Path::new(file).file_name().unwrap_or(file.as_ref()).to_string_lossy()
+                Path::new(file)
+                    .file_name()
+                    .unwrap_or(file.as_ref())
+                    .to_string_lossy()
             ));
 
             info!(
@@ -1457,9 +1457,7 @@ impl ModelManager {
                         total,
                         percentage,
                     };
-                    let _ = self
-                        .app_handle
-                        .emit("model-download-progress", &progress);
+                    let _ = self.app_handle.emit("model-download-progress", &progress);
                 }
                 out_file.flush()?;
                 drop(out_file);
@@ -1511,7 +1509,10 @@ impl ModelManager {
         self.cancel_flags.lock().unwrap().remove(model_id);
 
         let _ = self.app_handle.emit("model-download-complete", model_id);
-        info!("Successfully downloaded HF model {} to {:?}", model_id, model_path);
+        info!(
+            "Successfully downloaded HF model {} to {:?}",
+            model_id, model_path
+        );
         Ok(())
     }
 
@@ -1539,17 +1540,9 @@ impl ModelManager {
         }
 
         // --- HuggingFace multi-file download path ---
-        if let (Some(hf_repo), Some(hf_files)) =
-            (&model_info.hf_repo, &model_info.hf_files)
-        {
+        if let (Some(hf_repo), Some(hf_files)) = (&model_info.hf_repo, &model_info.hf_files) {
             return self
-                .download_huggingface_model(
-                    model_id,
-                    &model_info,
-                    hf_repo,
-                    hf_files,
-                    &model_path,
-                )
+                .download_huggingface_model(model_id, &model_info, hf_repo, hf_files, &model_path)
                 .await;
         }
 

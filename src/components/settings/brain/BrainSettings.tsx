@@ -35,8 +35,10 @@ const LlamaDownloadPanel: React.FC<{
             </span>
           </h4>
           <p className="text-xs text-mid-gray max-w-xl">
-            To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine.
-            We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).
+            To run the Brain locally, S2B2S compiles and executes llama.cpp on
+            your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL
+            model, draft model for Multi-Token Prediction, and vision projector
+            (total size ~2.2 GB).
           </p>
         </div>
       </div>
@@ -51,11 +53,15 @@ const LlamaDownloadPanel: React.FC<{
         <div className="space-y-2">
           <div className="flex justify-between text-xs font-medium text-mid-gray">
             <span className="truncate max-w-[280px]">
-              {llamaState.currentFile ? `Downloading ${llamaState.currentFile}...` : "Downloading models..."}
+              {llamaState.currentFile
+                ? `Downloading ${llamaState.currentFile}...`
+                : "Downloading models..."}
             </span>
             <span className="flex gap-2">
               <span>{llamaState.downloadSpeed.toFixed(1)} MB/s</span>
-              <span className="text-logo-primary font-semibold">{llamaState.downloadProgress.toFixed(1)}%</span>
+              <span className="text-logo-primary font-semibold">
+                {llamaState.downloadProgress.toFixed(1)}%
+              </span>
             </span>
           </div>
           <div className="w-full bg-black/40 rounded-full h-2 overflow-hidden border border-white/5 relative">
@@ -92,7 +98,9 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">Model</span>
-        <span className="font-medium text-text">Gemma-4-E2B-it-qat (UD-Q4_K_XL)</span>
+        <span className="font-medium text-text">
+          Gemma-4-E2B-it-qat (UD-Q4_K_XL)
+        </span>
       </div>
       <div>
         <span className="text-mid-gray block">MTP Acceleration</span>
@@ -104,7 +112,9 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">Execution Engine</span>
-        <span className="font-medium text-text">llama-server (Flash Attention)</span>
+        <span className="font-medium text-text">
+          llama-server (Flash Attention)
+        </span>
       </div>
     </div>
   );
@@ -146,19 +156,19 @@ export const BrainSettings: React.FC = () => {
     // Keep listener alive until we get metrics or a reasonable timeout.
     let capturedMetrics: { tps?: number; ms?: number } = {};
     let done = false;
-    const unlistenPromise = listen<{ tokens_per_sec?: number; predicted_ms?: number }>(
-      "brain:done",
-      (event) => {
-        const p = event.payload;
-        if (typeof p === "object") {
-          capturedMetrics = {
-            tps: p.tokens_per_sec,
-            ms: p.predicted_ms ?? undefined,
-          };
-          done = true;
-        }
-      },
-    );
+    const unlistenPromise = listen<{
+      tokens_per_sec?: number;
+      predicted_ms?: number;
+    }>("brain:done", (event) => {
+      const p = event.payload;
+      if (typeof p === "object") {
+        capturedMetrics = {
+          tps: p.tokens_per_sec,
+          ms: p.predicted_ms ?? undefined,
+        };
+        done = true;
+      }
+    });
 
     const result = await commands.brainAsk(t("settings.brain.test.prompt"));
 
@@ -181,9 +191,10 @@ export const BrainSettings: React.FC = () => {
       } else {
         const elapsedMs = Math.round(performance.now() - startTime);
         const estimatedTokens = Math.max(1, result.data.length / 4);
-        const tokensPerSec = elapsedMs > 0
-          ? parseFloat(((estimatedTokens / elapsedMs) * 1000).toFixed(1))
-          : 0;
+        const tokensPerSec =
+          elapsedMs > 0
+            ? parseFloat(((estimatedTokens / elapsedMs) * 1000).toFixed(1))
+            : 0;
         setTestMetrics({ tokensPerSec, totalMs: elapsedMs });
       }
       setTestState("ok");
@@ -229,7 +240,9 @@ export const BrainSettings: React.FC = () => {
               <>
                 <SettingContainer
                   title={t("settings.postProcessing.api.baseUrl.title")}
-                  description={t("settings.postProcessing.api.baseUrl.description")}
+                  description={t(
+                    "settings.postProcessing.api.baseUrl.description",
+                  )}
                   descriptionMode="tooltip"
                   layout="horizontal"
                   grouped={true}
@@ -238,7 +251,9 @@ export const BrainSettings: React.FC = () => {
                     <BaseUrlField
                       value={state.baseUrl}
                       onBlur={state.handleBaseUrlChange}
-                      placeholder={t("settings.postProcessing.api.baseUrl.placeholder")}
+                      placeholder={t(
+                        "settings.postProcessing.api.baseUrl.placeholder",
+                      )}
                       disabled={state.isBaseUrlUpdating}
                       className="min-w-[380px]"
                     />
@@ -344,7 +359,9 @@ export const BrainSettings: React.FC = () => {
                   <ResetButton
                     onClick={state.handleRefreshModels}
                     disabled={state.isFetchingModels}
-                    ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
+                    ariaLabel={t(
+                      "settings.postProcessing.api.model.refreshModels",
+                    )}
                     className="flex h-10 w-10 items-center justify-center"
                   >
                     <RefreshCcw
@@ -410,14 +427,18 @@ export const BrainSettings: React.FC = () => {
         <SettingsGroup title="Multimodal Input (Gemma 4)">
           <ToggleSwitch
             checked={brain.multimodal_audio_enabled ?? false}
-            onChange={(multimodal_audio_enabled) => update({ multimodal_audio_enabled })}
+            onChange={(multimodal_audio_enabled) =>
+              update({ multimodal_audio_enabled })
+            }
             label="Audio Input"
             description="Send the raw WAV recording to the Brain model for native transcription. Gemma 4 performs its own STT as an additional pass alongside the text transcription."
             grouped
           />
           <ToggleSwitch
             checked={brain.multimodal_image_enabled ?? false}
-            onChange={(multimodal_image_enabled) => update({ multimodal_image_enabled })}
+            onChange={(multimodal_image_enabled) =>
+              update({ multimodal_image_enabled })
+            }
             label="Image Input"
             description="Enable image (screenshot) input support. When active, you can send a screenshot alongside text prompts for the AI to see and describe your screen."
             grouped

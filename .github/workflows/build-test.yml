@@ -1,6 +1,22 @@
 name: "Build Test"
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or commit SHA to build (e.g. main)"
+        required: false
+        type: string
+        default: "main"
+      pr_number:
+        description: "PR number (if building a PR, posts download comment on PR)"
+        required: false
+        type: string
+      asset_prefix:
+        description: "Prefix for uploaded assets"
+        required: false
+        type: string
+        default: "s2b2s-test"
 
 jobs:
   build-test:
@@ -10,25 +26,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-26" # for Arm based macs (M1 and above). Uses macOS 26 for Apple Intelligence SDK.
+          - platform: "macos-26"
             args: "--target aarch64-apple-darwin"
             target: "aarch64-apple-darwin"
-          - platform: "macos-latest" # for Intel based macs.
+          - platform: "macos-latest"
             args: "--target x86_64-apple-darwin"
             target: "x86_64-apple-darwin"
-          - platform: "ubuntu-22.04" # Build .deb on 22.04
+          - platform: "ubuntu-22.04"
             args: "--bundles deb"
             target: "x86_64-unknown-linux-gnu"
-          - platform: "ubuntu-24.04" # Build AppImage and RPM on 24.04
+          - platform: "ubuntu-24.04"
             args: "--bundles appimage,rpm"
             target: "x86_64-unknown-linux-gnu"
-          - platform: "ubuntu-24.04-arm" # Build for ARM64 Linux
+          - platform: "ubuntu-24.04-arm"
             args: "--bundles appimage,deb,rpm"
             target: "aarch64-unknown-linux-gnu"
           - platform: "windows-latest"
             args: ""
             target: "x86_64-pc-windows-msvc"
-          - platform: "windows-11-arm" # for ARM64 Windows runner
+          - platform: "windows-11-arm"
             args: "--target aarch64-pc-windows-msvc"
             target: "aarch64-pc-windows-msvc"
 
@@ -38,7 +54,27 @@ jobs:
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
       sign-binaries: true
-      asset-prefix: "s2b2s-test"
+      asset-prefix: ${{ inputs.asset_prefix }}
       upload-artifacts: true
       is-debug-build: ${{ contains(matrix.args, '--debug') }}
+      ref: ${{ inputs.pr_number && format('refs/pull/{0}/merge', inputs.pr_number) || inputs.ref }}
     secrets: inherit
+
+  comment-on-pr:
+    needs: build-test
+    if: ${{ inputs.pr_number }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post artifact links to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt("${{ inputs.pr_number }}"),
+              body: `## 🧪 Test Build Ready\n\nBuild artifacts for PR #${{ inputs.pr_number }} are available for testing.\n\n**[Download artifacts from workflow run](${runUrl})**\n\nArtifacts expire after 30 days.`
+            });

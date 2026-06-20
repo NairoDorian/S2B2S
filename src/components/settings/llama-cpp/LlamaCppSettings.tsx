@@ -41,10 +41,18 @@ const LlamaCppSettings: React.FC = () => {
     setLoading(true);
     try {
       const [gpu, rels, srvs, cfg] = await Promise.all([
-        commands.detectGpuType().then((r) => (r.status === "ok" ? r.data : "cpu")),
-        commands.fetchLlamaReleases().then((r) => (r.status === "ok" ? r.data : [])),
-        commands.getDownloadedLlamaServers().then((r) => (r.status === "ok" ? r.data : [])),
-        commands.getLlamaServerConfig().then((r) => (r.status === "ok" ? r.data : null)),
+        commands
+          .detectGpuType()
+          .then((r) => (r.status === "ok" ? r.data : "cpu")),
+        commands
+          .fetchLlamaReleases()
+          .then((r) => (r.status === "ok" ? r.data : [])),
+        commands
+          .getDownloadedLlamaServers()
+          .then((r) => (r.status === "ok" ? r.data : [])),
+        commands
+          .getLlamaServerConfig()
+          .then((r) => (r.status === "ok" ? r.data : null)),
       ]);
       setGpuType(gpu);
       setReleases(rels);
@@ -65,7 +73,11 @@ const LlamaCppSettings: React.FC = () => {
     setDownloading(`${asset.backend}-${releaseTag}`);
     setError(null);
     try {
-      const res = await commands.downloadLlamaServer(asset.backend, releaseTag, asset.download_url);
+      const res = await commands.downloadLlamaServer(
+        asset.backend,
+        releaseTag,
+        asset.download_url,
+      );
       if (res.status === "ok") {
         await refresh();
         // If no active server, auto-select
@@ -123,12 +135,17 @@ const LlamaCppSettings: React.FC = () => {
           <p className="text-sm text-text/80 mb-1">
             Detected GPU preference:{" "}
             <span className="font-semibold">
-              {gpuType === "cuda" ? "🟢 NVIDIA CUDA" : gpuType === "vulkan" ? "🟡 Vulkan" : "⚪ CPU-only"}
+              {gpuType === "cuda"
+                ? "🟢 NVIDIA CUDA"
+                : gpuType === "vulkan"
+                  ? "🟡 Vulkan"
+                  : "⚪ CPU-only"}
             </span>
           </p>
           <p className="text-xs text-mid-gray">
-            Pre-compiled llama.cpp server binaries are downloaded from GitHub releases.
-            Select a backend and download the server to enable local LLM inference.
+            Pre-compiled llama.cpp server binaries are downloaded from GitHub
+            releases. Select a backend and download the server to enable local
+            LLM inference.
           </p>
         </div>
 
@@ -140,10 +157,18 @@ const LlamaCppSettings: React.FC = () => {
             </h4>
             <div className="grid gap-2">
               {latestRelease.assets.map((asset) => {
-                const backendInfo = { backend: asset.backend, label: assetLabel(asset), emoji: assetEmoji(asset.backend) };
-                const downloaded = isDownloaded(asset.backend, latestRelease.tag);
+                const backendInfo = {
+                  backend: asset.backend,
+                  label: assetLabel(asset),
+                  emoji: assetEmoji(asset.backend),
+                };
+                const downloaded = isDownloaded(
+                  asset.backend,
+                  latestRelease.tag,
+                );
                 const active = isActive(asset.backend, latestRelease.tag);
-                const isDl = downloading === `${asset.backend}-${latestRelease.tag}`;
+                const isDl =
+                  downloading === `${asset.backend}-${latestRelease.tag}`;
 
                 return (
                   <div
@@ -167,7 +192,8 @@ const LlamaCppSettings: React.FC = () => {
                         )}
                       </div>
                       <p className="text-xs text-mid-gray mt-0.5">
-                        v{latestRelease.tag} · {Math.round(asset.size_bytes / (1024 * 1024))} MB
+                        v{latestRelease.tag} ·{" "}
+                        {Math.round(asset.size_bytes / (1024 * 1024))} MB
                       </p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
@@ -179,21 +205,35 @@ const LlamaCppSettings: React.FC = () => {
                             if (downloaded) {
                               handleSetActive(asset.backend, latestRelease.tag);
                             } else {
-                              void handleDownload(asset, latestRelease.tag).then(() =>
-                                handleSetActive(asset.backend, latestRelease.tag)
+                              void handleDownload(
+                                asset,
+                                latestRelease.tag,
+                              ).then(() =>
+                                handleSetActive(
+                                  asset.backend,
+                                  latestRelease.tag,
+                                ),
                               );
                             }
                           }}
                           disabled={!!downloading && !downloaded}
                         >
-                          {active ? "Active" : downloaded ? "Use" : isDl ? "DL..." : "Use"}
+                          {active
+                            ? "Active"
+                            : downloaded
+                              ? "Use"
+                              : isDl
+                                ? "DL..."
+                                : "Use"}
                         </Button>
                       )}
                       {downloaded ? (
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleRemove(asset.backend, latestRelease.tag)}
+                          onClick={() =>
+                            handleRemove(asset.backend, latestRelease.tag)
+                          }
                         >
                           Remove
                         </Button>
@@ -202,7 +242,9 @@ const LlamaCppSettings: React.FC = () => {
                           variant="primary"
                           size="sm"
                           disabled={!!downloading}
-                          onClick={() => handleDownload(asset, latestRelease.tag)}
+                          onClick={() =>
+                            handleDownload(asset, latestRelease.tag)
+                          }
                         >
                           {isDl ? "Downloading..." : "Download"}
                         </Button>
@@ -218,7 +260,9 @@ const LlamaCppSettings: React.FC = () => {
         {/* Installed Servers (other versions) */}
         {servers.length > 0 && (
           <div className="space-y-2">
-            <h4 className="text-sm font-semibold text-text mt-4">Installed Servers</h4>
+            <h4 className="text-sm font-semibold text-text mt-4">
+              Installed Servers
+            </h4>
             <div className="grid gap-1">
               {servers.map((srv) => {
                 const active = isActive(srv.backend, srv.release_tag);
@@ -231,20 +275,33 @@ const LlamaCppSettings: React.FC = () => {
                   >
                     <span className="text-text/70">
                       {assetEmoji(srv.backend)}{" "}
-                      {srv.backend.startsWith("cuda") ? `CUDA ${srv.backend.replace("cuda-", "")}` : srv.backend === "vulkan" ? "Vulkan" : "CPU (x64)"} · {srv.release_tag}
-                      {active && <span className="ml-2 text-green-400 font-semibold">(active)</span>}
+                      {srv.backend.startsWith("cuda")
+                        ? `CUDA ${srv.backend.replace("cuda-", "")}`
+                        : srv.backend === "vulkan"
+                          ? "Vulkan"
+                          : "CPU (x64)"}{" "}
+                      · {srv.release_tag}
+                      {active && (
+                        <span className="ml-2 text-green-400 font-semibold">
+                          (active)
+                        </span>
+                      )}
                     </span>
                     <div className="flex gap-1">
                       {!active && (
                         <button
-                          onClick={() => handleSetActive(srv.backend, srv.release_tag)}
+                          onClick={() =>
+                            handleSetActive(srv.backend, srv.release_tag)
+                          }
                           className="text-logo-primary hover:underline"
                         >
                           Use
                         </button>
                       )}
                       <button
-                        onClick={() => handleRemove(srv.backend, srv.release_tag)}
+                        onClick={() =>
+                          handleRemove(srv.backend, srv.release_tag)
+                        }
                         className="text-red-400 hover:underline"
                       >
                         Remove
@@ -258,10 +315,17 @@ const LlamaCppSettings: React.FC = () => {
         )}
 
         {!latestRelease && !loading && (
-          <p className="text-xs text-mid-gray">No releases found. Check your internet connection.</p>
+          <p className="text-xs text-mid-gray">
+            No releases found. Check your internet connection.
+          </p>
         )}
 
-        <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={refresh}
+          disabled={loading}
+        >
           {loading ? "Refreshing..." : "Refresh Releases"}
         </Button>
       </SettingsGroup>

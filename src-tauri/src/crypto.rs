@@ -38,7 +38,9 @@ pub fn initialize(app_handle: &AppHandle) -> Result<(), String> {
             let fallback_path = app_data.join(".master_key");
             if fallback_path.exists() {
                 if let Ok(content) = fs::read_to_string(&fallback_path) {
-                    if let Ok(key) = base64::engine::general_purpose::STANDARD.decode(content.trim()) {
+                    if let Ok(key) =
+                        base64::engine::general_purpose::STANDARD.decode(content.trim())
+                    {
                         if key.len() == 32 {
                             key_opt = Some(key);
                         }
@@ -53,7 +55,8 @@ pub fn initialize(app_handle: &AppHandle) -> Result<(), String> {
         None => {
             // Generate a new cryptographically secure 32-byte key
             let mut new_key = vec![0u8; 32];
-            getrandom::getrandom(&mut new_key).map_err(|e| format!("Random generation failed: {}", e))?;
+            getrandom::getrandom(&mut new_key)
+                .map_err(|e| format!("Random generation failed: {}", e))?;
             let password = base64::engine::general_purpose::STANDARD.encode(&new_key);
 
             // Attempt to store it in the OS keyring
@@ -91,7 +94,8 @@ pub fn encrypt(plaintext: &[u8]) -> Result<String, String> {
     let cipher = Aes256Gcm::new(key);
 
     let mut nonce_bytes = [0u8; 12];
-    getrandom::getrandom(&mut nonce_bytes).map_err(|e| format!("Nonce generation failed: {}", e))?;
+    getrandom::getrandom(&mut nonce_bytes)
+        .map_err(|e| format!("Nonce generation failed: {}", e))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ciphertext = cipher

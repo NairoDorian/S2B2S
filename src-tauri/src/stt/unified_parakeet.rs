@@ -25,7 +25,7 @@ impl UnifiedParakeetServer {
     }
 
     fn launch_with_script(model_dir: &str, _script_name: &str) -> Result<Self> {
-    let python = resolve_venv_python()?;
+        let python = resolve_venv_python()?;
         let script = resolve_server_script()?;
         let port = get_free_port()?;
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -156,9 +156,8 @@ impl UnifiedParakeetServer {
             .send_bytes(&audio_bytes)
             .context("Failed to send audio to unified parakeet server")?;
 
-        let json: serde_json::Value =
-            serde_json::from_reader(resp.into_reader())
-                .context("Failed to parse unified parakeet server response")?;
+        let json: serde_json::Value = serde_json::from_reader(resp.into_reader())
+            .context("Failed to parse unified parakeet server response")?;
 
         Ok(json["text"].as_str().unwrap_or("").to_string())
     }
@@ -223,7 +222,11 @@ impl Drop for UnifiedParakeetServer {
 }
 
 fn resolve_venv_python() -> Result<String> {
-    let exe_name = if cfg!(windows) { "python.exe" } else { "python3" };
+    let exe_name = if cfg!(windows) {
+        "python.exe"
+    } else {
+        "python3"
+    };
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     let project_venv = manifest_dir.parent().unwrap().join("venv");

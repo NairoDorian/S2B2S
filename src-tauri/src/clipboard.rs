@@ -673,7 +673,6 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 mod win_clipboard {
     use log::{debug, warn};
-    use windows_core::Free;
     use std::mem::size_of;
     use std::ptr;
     use windows::core::PCWSTR;
@@ -687,6 +686,7 @@ mod win_clipboard {
     };
     use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GHND};
     use windows::Win32::UI::WindowsAndMessaging::{CopyImage, IMAGE_BITMAP, IMAGE_FLAGS};
+    use windows_core::Free;
 
     // Standard clipboard format IDs (Win32 API constants).
     const CF_BITMAP_ID: u32 = 2;
@@ -1049,9 +1049,15 @@ mod win_clipboard {
         unsafe {
             match entry.payload {
                 ClipboardPayload::GlobalMemory(_) => {}
-                ClipboardPayload::Bitmap(mut bitmap) => { let _ = bitmap.free(); },
-                ClipboardPayload::EnhancedMetafile(mut metafile) => { let _ = metafile.free(); },
-                ClipboardPayload::MetafilePict { mut metafile, .. } => { let _ = metafile.free(); },
+                ClipboardPayload::Bitmap(mut bitmap) => {
+                    let _ = bitmap.free();
+                }
+                ClipboardPayload::EnhancedMetafile(mut metafile) => {
+                    let _ = metafile.free();
+                }
+                ClipboardPayload::MetafilePict { mut metafile, .. } => {
+                    let _ = metafile.free();
+                }
             }
         }
     }
@@ -1070,7 +1076,10 @@ pub fn capture_selection_text(app_handle: &AppHandle) -> Result<String, String> 
     let advanced_backup = match win_clipboard::backup_all_formats() {
         Ok(backup) => Some(backup),
         Err(e) => {
-            log::warn!("Advanced clipboard backup failed: {}, falling back to text-only", e);
+            log::warn!(
+                "Advanced clipboard backup failed: {}, falling back to text-only",
+                e
+            );
             None
         }
     };
@@ -1129,7 +1138,10 @@ pub fn capture_selection_text(app_handle: &AppHandle) -> Result<String, String> 
     #[cfg(target_os = "windows")]
     if let Some(backup) = advanced_backup {
         if let Err(e) = win_clipboard::restore_all_formats(backup) {
-            log::warn!("Advanced clipboard restore failed: {}. Falling back to text restore.", e);
+            log::warn!(
+                "Advanced clipboard restore failed: {}. Falling back to text restore.",
+                e
+            );
             let _ = clipboard.write_text(&previous_text);
         }
     } else {

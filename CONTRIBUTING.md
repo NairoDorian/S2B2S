@@ -78,7 +78,7 @@ S2B2S follows a clean manager-based architecture:
 - `stores/` — Zustand state management
 - `i18n/` — Internationalization (20 languages)
 
-For more details, see [AGENTS.md](AGENTS.md) and [S2B2S_REVIEW.md](S2B2S_REVIEW.md).
+For more details, see [AGENTS.md](AGENTS.md) and [STATUS.md](STATUS.md).
 
 ---
 
@@ -183,7 +183,24 @@ Documentation improvements are valued! You can contribute by:
 - Improving README.md, BUILD.md, CONTRIBUTING.md, or AGENTS.md
 - Adding code comments and doc comments
 - Improving error messages
-- Adding to [S2B2S_REVIEW.md](S2B2S_REVIEW.md)
+- Improving the STATUS.md or docs/ files
+
+---
+
+## Translation Contributions
+
+We support **20 languages** and welcome contributions to add or improve translations!
+
+### File Structure
+
+Translation files are located in `src/i18n/locales/[language-code]/translation.json`.
+
+### Guidelines
+
+1. **Translate values, not keys**: Only translate the right-side values in the JSON file. Do NOT change left-side keys.
+2. **Preserve variables**: Do not translate or change double-curly-brace variables (e.g., `{{error}}` or `{{model}}`).
+3. **App Registration**: Register new languages in `src/i18n/languages.ts`.
+4. **Validation**: Test your changes by running `bun run check:translations` to verify JSON keys and formatting.
 
 ---
 

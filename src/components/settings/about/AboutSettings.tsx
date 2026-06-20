@@ -92,7 +92,9 @@ export const AboutSettings: React.FC = () => {
           <SettingContainer
             key={section}
             title={t(`settings.about.acknowledgments.${section}.title`)}
-            description={t(`settings.about.acknowledgments.${section}.description`)}
+            description={t(
+              `settings.about.acknowledgments.${section}.description`,
+            )}
             grouped={true}
             layout="stacked"
           >

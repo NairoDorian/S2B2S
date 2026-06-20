@@ -12,13 +12,13 @@ unsafe impl Sync for JobHandle {}
 #[cfg(windows)]
 pub(crate) fn register(child: &mut std::process::Child) {
     use std::os::windows::io::AsRawHandle;
-    use windows::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    };
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
 
     static JOB: OnceLock<JobHandle> = OnceLock::new();
 

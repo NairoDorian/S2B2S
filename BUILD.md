@@ -39,12 +39,15 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 - **libclang.dll** (build-time dep for whisper-rs-sys bindgen):
 
   The easiest way on a fresh machine:
+
   ```powershell
   winget install -e --id LLVM.LLVM
   ```
+
   This installs LLVM and adds `libclang.dll` to PATH. No extra env vars needed.
 
   Or run the helper script for guided install:
+
   ```powershell
   .\scripts\download-libclang.ps1
   ```
@@ -94,6 +97,7 @@ bun install
 ### 3. Set Up Python Virtual Environment (for TTS Engines)
 
 > **Python version: Use 3.12.** The `kittentts` wheel (v0.8.1) only ships pre-built binaries for Python 3.8–3.12. Python 3.13+ will not work. All other dependencies (`torch`, `onnxruntime`, `numpy`, etc.) are compatible with 3.12. Install from [python.org](https://www.python.org/downloads/release/python-31210/) or via winget:
+>
 > ```powershell
 > winget install Python.Python.3.12
 > ```
@@ -101,11 +105,13 @@ bun install
 All local TTS engines (Piper, Kokoro, Kitten, Pocket) run inside a project-local Python venv. The app automatically resolves the venv Python first, falling back to system Python only if no venv is found.
 
 **Windows:**
+
 ```powershell
 .\scripts\setup_tts_venv.ps1
 ```
 
 **macOS / Linux:**
+
 ```bash
 bash scripts/setup_tts_venv.sh
 ```
@@ -117,6 +123,7 @@ This creates `venv/` at the project root and installs: `piper-tts[http]`, `kokor
 Downloads STT, TTS, and Brain model files into the structured `models/` directory (`STT/`, `Brain/`, `TTS/` subfolders):
 
 **Windows:**
+
 ```powershell
 .\models\download_models.ps1 -Model all    # download everything
 .\models\download_models.ps1 -Model kokoro # download only Kokoro TTS
@@ -126,6 +133,7 @@ Downloads STT, TTS, and Brain model files into the structured `models/` director
 ```
 
 **macOS / Linux:**
+
 ```bash
 bash models/download_models.sh --model all
 bash models/download_models.sh --model kokoro
@@ -137,6 +145,7 @@ bash models/download_models.sh --path /my/models
 Options: `-Force`/`--force` to re-download, `-DryRun`/`--dry-run` to preview. Available models: `stt`, `brain`, `piper`, `kokoro`, `pocket`, `kitten`, `tts` (all TTS), `all` (everything).
 
 For the minimal VAD model only (used in development):
+
 ```bash
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
@@ -268,6 +277,36 @@ After rebuilding, only the binary needs re-copying:
 ```bash
 sudo cp src-tauri/target/release/s2b2s /usr/bin/
 ```
+
+---
+
+## Llama.cpp Pre-Compiled Server Integration
+
+S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub releases](https://github.com/ggml-org/llama.cpp/releases) to provide GPU-accelerated local LLM inference out of the box (no CMake, source compilation, or Python dependencies required).
+
+### 1. Architecture & Execution Flow
+
+- **Auto-download**: Fetches appropriate pre-compiled binaries (e.g., `llama-b9601-bin-win-cuda-cu12.4-x64.zip`) directly from GitHub.
+- **Auto-install**: Extracts server archives to the `llama_cpp_servers/` subdirectory in the app data directory.
+- **Backend Detection**: Probes the system on launch to select the optimal GPU backend: **CUDA > Vulkan > CPU**. CUDA is detected via `nvidia-smi` / `CUDA_PATH`, and Vulkan is verified via `vulkaninfo`.
+- **GPU VRAM Offload**: Passes `-ngl all` to offload all model layers into VRAM when GPU acceleration is active.
+- **Health Checks & Auto-start**: Polls `/v1/models` on start. `BrainManager::warmup()` ensures the server runs before executing the warmup prompt.
+
+### 2. Supported Backends
+
+| Backend       | Platform       | Suffix / Detail                      |
+| ------------- | -------------- | ------------------------------------ |
+| **CUDA 12.4** | Windows, Linux | `cuda-cu12.4`                        |
+| **CUDA 13.3** | Windows, Linux | `cuda-cu13.3`                        |
+| **Vulkan**    | Windows, Linux | `vulkan`                             |
+| **CPU**       | Windows, Linux | `cpu`                                |
+| **Metal**     | macOS          | Built-in (no separate binary needed) |
+
+### 3. Setup & Model File
+
+1. Place your GGUF model file in the `models/Brain/` directory.
+2. Select the **Llama.cpp (Local)** provider under S2B2S Brain Settings (default endpoint: `http://localhost:8001/v1`).
+3. Toggle Brain **OFF** in Settings to terminate the local server process immediately.
 
 ---
 

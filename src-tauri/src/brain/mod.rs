@@ -5,5 +5,5 @@
 //! latter feed streaming TTS), and supports mid-stream abort for barge-in.
 
 pub mod client;
-pub mod manager;
 pub mod llama_manager;
+pub mod manager;

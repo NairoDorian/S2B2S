@@ -97,6 +97,15 @@ bunx tsc --noEmit          # TypeScript type checking
 cargo test export_bindings # Regenerate src/bindings.ts (headless)
 ```
 
+**Testing:**
+
+```bash
+bun run test:playwright        # Playwright E2E tests
+bun run test:playwright:ui     # Playwright with UI
+cargo test                     # Run Rust unit/integration tests
+bun run check:translations     # Verify i18n files for missing/extra keys
+```
+
 For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
 ---
@@ -314,23 +323,23 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 
 ### Technology Stack
 
-| Category            | Libraries                                                                                       |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
-| **Framework**       | Tauri 2.x, React 19, TypeScript 6, Vite 8                                                       |
-| **Styling**         | Tailwind CSS 4                                                                                  |
-| **State**           | Zustand 5, Zod 4                                                                                |
-| **i18n**            | i18next 26, react-i18next 17                                                                    |
-| **Animation**       | Three.js 0.184, Lucide React                                                                    |
+| Category            | Libraries                                                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Framework**       | Tauri 2.x, React 19, TypeScript 6, Vite 8                                                                                                                                        |
+| **Styling**         | Tailwind CSS 4                                                                                                                                                                   |
+| **State**           | Zustand 5, Zod 4                                                                                                                                                                 |
+| **i18n**            | i18next 26, react-i18next 17                                                                                                                                                     |
+| **Animation**       | Three.js 0.184, Lucide React                                                                                                                                                     |
 | **STT**             | transcribe-rs (Parakeet V3, Whisper, Moonshine, SenseVoice, GigaAM, Canary, Cohere) + sherpa-onnx (Nemotron 3.5, Parakeet Unified streaming) — 9 engine types, 11 model variants |
-| **TTS**             | Piper (persistent HTTP), Kokoro (persistent HTTP, 54 voices, 9 langs), Kitten, Pocket (voice cloning), SAPI (fully implemented Windows fallback), OpenAI, ElevenLabs, Cartesia |
-| **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                               |
-| **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                               |
-| **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                        |
-| **HTTP**            | reqwest 0.13, ureq 2.10                                                                         |
-| **Storage**         | rusqlite 0.40, tauri-plugin-store                                                               |
-| **IPC**             | tauri-specta (typed bindings)                                                                   |
-| **Shortcuts**       | rdev + Tauri global-shortcut                                                                    |
-| **Build**           | Bun, Cargo (Rust stable, MSRV 1.87)                                                             |
+| **TTS**             | Piper (persistent HTTP), Kokoro (persistent HTTP, 54 voices, 9 langs), Kitten, Pocket (voice cloning), SAPI (fully implemented Windows fallback), OpenAI, ElevenLabs, Cartesia   |
+| **Audio I/O**       | cpal 0.17, rodio 0.22, rubato 3.0                                                                                                                                                |
+| **VAD**             | vad-rs (Silero ONNX), nnnoiseless 0.5.2 (RNNoise)                                                                                                                                |
+| **Text Processing** | text-processing-rs 0.2.2 (ITN/TN), regex                                                                                                                                         |
+| **HTTP**            | reqwest 0.13, ureq 2.10                                                                                                                                                          |
+| **Storage**         | rusqlite 0.40, tauri-plugin-store                                                                                                                                                |
+| **IPC**             | tauri-specta (typed bindings)                                                                                                                                                    |
+| **Shortcuts**       | rdev + Tauri global-shortcut                                                                                                                                                     |
+| **Build**           | Bun, Cargo (Rust stable, MSRV 1.87)                                                                                                                                              |
 
 ### Application Flow
 
@@ -470,31 +479,25 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 - **Opening an issue:** Read [`.github/ISSUE_TEMPLATE/bug_report.md`](.github/ISSUE_TEMPLATE/bug_report.md). Feature requests go to [Discussions](https://github.com/NairoDorian/S2B2S/discussions).
 - **Feature proposals:** s2b2s prioritizes stability. New features require community support via [Discussions](https://github.com/NairoDorian/S2B2S/discussions) before PR.
 - **AI Assistance Disclosure:** AI-assisted PRs are welcome. In the PR description, include whether AI was used, which tools, and how extensively.
-- **Translations:** Follow [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md).
+- **Translations:** Follow the Translations section in [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Full contributor workflow:** [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Key Files Reference
 
-| File                                                         | Purpose                                                          |
-| ------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [README.md](README.md)                                       | Project overview, quick start, architecture                      |
-| [S2B2S_REVIEW.md](S2B2S_REVIEW.md)                           | Comprehensive project analysis (non-tech users, devs, AI agents) — last audited June 2026 |
-| [references_comparative_analysis_md/](references_comparative_analysis_md/) | 23-project comparative analysis, individual reviews, license matrix, fork lineage |
-| [LLAMA_CPP.md](LLAMA_CPP.md)                                 | Pre-compiled llama.cpp server integration reference              |
-| [futuristic_analysis/](futuristic_analysis/)                 | Active evolution plan (9 docs, supersedes analysys/) — GPU overlay, Conv 2.0, 3D avatar |
-| [S2B2S_ANDROID_COMPANION.md](S2B2S_ANDROID_COMPANION.md)     | Android companion PWA architecture and 3-phase feature plan ⚠️ superseded by android-port-plan.md |
-| [android-port-plan.md](android-port-plan.md)                 | Full on-device Android STT→Brain→TTS architecture & implementation plan |
-| [improvement-plan.md](improvement-plan.md)                   | Streaming STT/TTS deep-dive analysis with P0–P3 prioritized roadmap |
-| [reference_links.md](reference_links.md)                     | Curated reference of 70+ open-source projects across 16 categories |
-| [reference_github_links.md](reference_github_links.md)       | Curated list of 30+ STT, TTS, and voice-related GitHub projects |
-| [BUILD.md](BUILD.md)                                         | Platform-specific build instructions                             |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor guidelines                                           |
-| [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md) | Translation guide                                                |
-| [CHANGELOG.md](CHANGELOG.md)                                 | Version history                                                  |
-| [CRUSH.md](CRUSH.md)                                         | Dev commands quick reference                                     |
-| [LICENSE](LICENSE)                                           | MIT License                                                      |
+| File                                     | Purpose                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| [README.md](README.md)                   | Project overview, quick start, architecture                                    |
+| [STATUS.md](STATUS.md)                   | Single source of truth for project status, scorecard, and roadmap              |
+| [BUILD.md](BUILD.md)                     | Platform-specific build instructions                                           |
+| [CONTRIBUTING.md](CONTRIBUTING.md)       | Contributor guidelines & translation contribution instructions                 |
+| [CHANGELOG.md](CHANGELOG.md)             | Version history                                                                |
+| [docs/vision.md](docs/vision.md)         | Long-term architecture vision (WGPU overlays, 3D avatar, screen understanding) |
+| [docs/android.md](docs/android.md)       | Plan for on-device Android voice assistant port                                |
+| [docs/references.md](docs/references.md) | Curated list of STT, TTS, and voice-related GitHub links                       |
+| [reference_links.md](reference_links.md) | Main curated reference of 70+ open-source projects                             |
+| [LICENSE](LICENSE)                       | MIT License                                                                    |
 
 ---
 

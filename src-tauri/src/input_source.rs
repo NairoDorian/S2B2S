@@ -85,7 +85,7 @@ static INPUT_SOURCE_MAP: LazyLock<HashMap<&'static str, &'static str>> = LazyLoc
     m.insert("00000439", "hi"); // Hindi
     m.insert("00000421", "id"); // Indonesian
     m.insert("0000043e", "ms"); // Malay
-    // Linux XKB layouts
+                                // Linux XKB layouts
     m.insert("us", "en");
     m.insert("gb", "en");
     m.insert("ru", "ru");

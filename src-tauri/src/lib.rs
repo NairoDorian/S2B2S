@@ -1,6 +1,5 @@
 mod actions;
 mod active_app;
-pub mod job_object;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -9,35 +8,36 @@ mod brain;
 pub mod cli;
 mod clipboard;
 mod commands;
-mod crypto;
 mod control_server;
 mod crash_logging;
+mod crypto;
 mod helpers;
 mod input;
-mod llm_client;
+mod input_source;
+pub mod job_object;
 mod llama_server;
+mod llm_client;
+mod llm_operation;
 mod managers;
 mod overlay;
 mod overlay_fx;
 pub mod portable;
+mod recording_auto_stop;
+mod recording_session;
 mod settings;
 mod shortcut;
 mod signal_handle;
-mod url_security;
-mod webview_hardening;
-mod temp_artifacts;
-mod recording_session;
-mod llm_operation;
-mod recording_auto_stop;
-mod input_source;
-mod text_replacement_decapitalize;
 mod stt;
+mod temp_artifacts;
+mod text_replacement_decapitalize;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod tts;
+mod url_security;
 mod utils;
 mod wake_word;
+mod webview_hardening;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -177,8 +177,12 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let tts_manager = Arc::new(crate::tts::manager::TtsManager::new(app_handle.clone()));
     let tts_telemetry = Arc::new(crate::tts::telemetry::Telemetry::new());
     let brain_manager = Arc::new(crate::brain::manager::BrainManager::new(app_handle.clone()));
-    let llama_manager = Arc::new(crate::brain::llama_manager::LlamaManager::new(app_handle.clone()));
-    let llama_server_manager = Arc::new(crate::llama_server::manager::LlamaServerManager::new(app_handle.clone()));
+    let llama_manager = Arc::new(crate::brain::llama_manager::LlamaManager::new(
+        app_handle.clone(),
+    ));
+    let llama_server_manager = Arc::new(crate::llama_server::manager::LlamaServerManager::new(
+        app_handle.clone(),
+    ));
 
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
@@ -641,17 +645,14 @@ pub fn run(cli_args: CliArgs) {
             } else {
                 "S2B2S"
             };
-            let mut win_builder = tauri::WebviewWindowBuilder::new(
-                app,
-                "main",
-                tauri::WebviewUrl::App("/".into()),
-            )
-            .title(window_title)
-            .inner_size(680.0, 570.0)
-            .min_inner_size(680.0, 570.0)
-            .resizable(true)
-            .maximizable(false)
-            .visible(true);
+            let mut win_builder =
+                tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
+                    .title(window_title)
+                    .inner_size(680.0, 570.0)
+                    .min_inner_size(680.0, 570.0)
+                    .resizable(true)
+                    .maximizable(false)
+                    .visible(true);
 
             if let Some(data_dir) = portable::data_dir() {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
@@ -692,14 +693,18 @@ pub fn run(cli_args: CliArgs) {
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
             app.manage(recording_session::ManagedSessionState::default());
             app.manage(recording_auto_stop::new_managed_state());
-            app.manage(std::sync::Arc::new(crate::llm_operation::LlmOperationTracker::new()));
+            app.manage(std::sync::Arc::new(
+                crate::llm_operation::LlmOperationTracker::new(),
+            ));
 
             // (TTS telemetry is registered above as `Arc<Telemetry>` — the bare
             // `Telemetry` that used to be managed here was a dead duplicate with a
             // different type key that no consumer ever read.)
 
             // Register the wake word detector (inactive by default).
-            app.manage(std::sync::Arc::new(crate::wake_word::WakeWordDetector::new()));
+            app.manage(std::sync::Arc::new(
+                crate::wake_word::WakeWordDetector::new(),
+            ));
 
             initialize_core_logic(&app_handle);
 
@@ -725,7 +730,10 @@ pub fn run(cli_args: CliArgs) {
             {
                 let brain_handle = startup_app_handle.clone();
                 std::thread::spawn(move || {
-                    if let Some(brain) = brain_handle.try_state::<Arc<crate::brain::manager::BrainManager>>().map(|s| s.inner().clone()) {
+                    if let Some(brain) = brain_handle
+                        .try_state::<Arc<crate::brain::manager::BrainManager>>()
+                        .map(|s| s.inner().clone())
+                    {
                         log::info!("[Startup] Warming up AI Brain model...");
                         tauri::async_runtime::block_on(async {
                             if let Err(e) = brain.warmup().await {
@@ -751,9 +759,14 @@ pub fn run(cli_args: CliArgs) {
 
                     if settings.tts.engine == crate::settings::TtsEngine::Piper {
                         log::info!("[Startup] Auto-loading Piper TTS persistent server...");
-                        match crate::tts::backends::piper_server::ensure_running(voice, settings.tts.piper.cuda) {
+                        match crate::tts::backends::piper_server::ensure_running(
+                            voice,
+                            settings.tts.piper.cuda,
+                        ) {
                             Ok(_) => {
-                                log::info!("[Startup] Piper TTS persistent server loaded successfully.");
+                                log::info!(
+                                    "[Startup] Piper TTS persistent server loaded successfully."
+                                );
                             }
                             Err(e) => {
                                 log::error!("[Startup] Failed to auto-load Piper server: {}", e);
@@ -763,30 +776,52 @@ pub fn run(cli_args: CliArgs) {
 
                     if settings.tts.engine == crate::settings::TtsEngine::Kokoro {
                         log::info!("[Startup] Pre-warming Kokoro TTS engine...");
-                        let script_args = crate::tts::backends::kokoro::KokoroBackend::kokoro_model_args();
-                        match crate::tts::local_tts_server::ensure_running("kokoro", "python".to_string(), script_args) {
-                            Ok(_) => log::info!("[Startup] Kokoro persistent server loaded successfully."),
+                        let script_args =
+                            crate::tts::backends::kokoro::KokoroBackend::kokoro_model_args();
+                        match crate::tts::local_tts_server::ensure_running(
+                            "kokoro",
+                            "python".to_string(),
+                            script_args,
+                        ) {
+                            Ok(_) => log::info!(
+                                "[Startup] Kokoro persistent server loaded successfully."
+                            ),
                             Err(e) => log::error!("[Startup] Failed to auto-load Kokoro: {}", e),
                         }
                     }
                     if settings.tts.engine == crate::settings::TtsEngine::Kitten {
                         log::info!("[Startup] Pre-warming Kitten TTS engine...");
-                        match crate::tts::local_tts_server::ensure_running("kitten", "python".to_string(), vec![]) {
-                            Ok(_) => log::info!("[Startup] Kitten persistent server loaded successfully."),
+                        match crate::tts::local_tts_server::ensure_running(
+                            "kitten",
+                            "python".to_string(),
+                            vec![],
+                        ) {
+                            Ok(_) => log::info!(
+                                "[Startup] Kitten persistent server loaded successfully."
+                            ),
                             Err(e) => log::error!("[Startup] Failed to auto-load Kitten: {}", e),
                         }
                     }
                     if settings.tts.engine == crate::settings::TtsEngine::Pocket {
                         log::info!("[Startup] Pre-warming Pocket TTS engine...");
-                        match crate::tts::local_tts_server::ensure_running("pocket", "python".to_string(), vec![]) {
-                            Ok(_) => log::info!("[Startup] Pocket persistent server loaded successfully."),
+                        match crate::tts::local_tts_server::ensure_running(
+                            "pocket",
+                            "python".to_string(),
+                            vec![],
+                        ) {
+                            Ok(_) => log::info!(
+                                "[Startup] Pocket persistent server loaded successfully."
+                            ),
                             Err(e) => log::error!("[Startup] Failed to auto-load Pocket: {}", e),
                         }
                     }
 
                     // Play the startup greeting once TTS is loaded
                     if settings.tts.play_startup_greeting {
-                        if let Some(tts) = tts_handle.try_state::<Arc<crate::tts::manager::TtsManager>>().map(|s| s.inner().clone()) {
+                        if let Some(tts) = tts_handle
+                            .try_state::<Arc<crate::tts::manager::TtsManager>>()
+                            .map(|s| s.inner().clone())
+                        {
                             tts.play_greeting();
                         }
                     }
@@ -798,7 +833,10 @@ pub fn run(cli_args: CliArgs) {
                 let stt_handle = startup_app_handle;
                 std::thread::spawn(move || {
                     log::info!("[Startup] Auto-loading STT model...");
-                    if let Some(transcription_manager) = stt_handle.try_state::<Arc<crate::managers::transcription::TranscriptionManager>>().map(|s| s.inner().clone()) {
+                    if let Some(transcription_manager) = stt_handle
+                        .try_state::<Arc<crate::managers::transcription::TranscriptionManager>>()
+                        .map(|s| s.inner().clone())
+                    {
                         transcription_manager.initiate_model_load();
                     }
                 });
@@ -829,9 +867,7 @@ pub fn run(cli_args: CliArgs) {
             if !main_window_created {
                 let tray_available = settings.show_tray_icon && !cli_args.no_tray;
                 if !tray_available {
-                    log::error!(
-                        "No main window and no tray icon — app is completely inaccessible"
-                    );
+                    log::error!("No main window and no tray icon — app is completely inaccessible");
                 }
             }
 
@@ -878,7 +914,9 @@ pub fn run(cli_args: CliArgs) {
                 log::info!("[Shutdown] Cleaning up all TTS engines...");
                 crate::tts::backends::piper_server::unload_piper_model();
                 crate::tts::local_tts_server::unload_all();
-                if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+                if let Some(llama_manager) =
+                    app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+                {
                     llama_manager.stop();
                 }
                 log::info!("[Shutdown] Cleanup complete.");

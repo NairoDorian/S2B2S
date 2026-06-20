@@ -1,13 +1,14 @@
 // Adapted from AivoRelay (MaxITService/AIVORelay), MIT License.
 // Source: src-tauri/src/url_security.rs — Canonical Base URLs (2026-06-19).
 
-use reqwest::Url;
 use crate::settings::{PostProcessProvider, APPLE_INTELLIGENCE_PROVIDER_ID};
+use reqwest::Url;
 
 pub const LLM_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const LLM_ZAI_BASE_URL: &str = "https://api.z.ai/api/paas/v4";
 pub const LLM_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
-pub const LLM_GOOGLE_AI_STUDIO_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai/";
+pub const LLM_GOOGLE_AI_STUDIO_BASE_URL: &str =
+    "https://generativelanguage.googleapis.com/v1beta/openai/";
 pub const LLM_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 pub const LLM_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 pub const LLM_GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
@@ -104,15 +105,30 @@ mod tests {
     #[test]
     fn canonical_llm_provider_base_url_returns_known_provider_defaults() {
         assert_eq!(
-            canonical_llm_provider_base_url(&provider("openai", "https://ignored.example.com", false)).unwrap(),
+            canonical_llm_provider_base_url(&provider(
+                "openai",
+                "https://ignored.example.com",
+                false
+            ))
+            .unwrap(),
             LLM_OPENAI_BASE_URL
         );
         assert_eq!(
-            canonical_llm_provider_base_url(&provider("groq", "https://ignored.example.com", false)).unwrap(),
+            canonical_llm_provider_base_url(&provider(
+                "groq",
+                "https://ignored.example.com",
+                false
+            ))
+            .unwrap(),
             LLM_GROQ_BASE_URL
         );
         assert_eq!(
-            canonical_llm_provider_base_url(&provider("cerebras", "https://ignored.example.com", false)).unwrap(),
+            canonical_llm_provider_base_url(&provider(
+                "cerebras",
+                "https://ignored.example.com",
+                false
+            ))
+            .unwrap(),
             LLM_CEREBRAS_BASE_URL
         );
     }
@@ -130,8 +146,9 @@ mod tests {
 
     #[test]
     fn canonical_llm_provider_base_url_rejects_custom_http_without_opt_in() {
-        let error = canonical_llm_provider_base_url(&provider("custom", "http://llm.local/v1", false))
-            .unwrap_err();
+        let error =
+            canonical_llm_provider_base_url(&provider("custom", "http://llm.local/v1", false))
+                .unwrap_err();
         assert!(error.contains("Custom LLM base URL"));
         assert!(error.contains("must use HTTPS"));
     }

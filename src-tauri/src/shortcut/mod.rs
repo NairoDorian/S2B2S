@@ -1039,7 +1039,9 @@ pub async fn fetch_post_process_models(
     }
 
     if provider_id == "llama_cpp" {
-        if let Some(llama_manager) = app.try_state::<std::sync::Arc<crate::brain::llama_manager::LlamaManager>>() {
+        if let Some(llama_manager) =
+            app.try_state::<std::sync::Arc<crate::brain::llama_manager::LlamaManager>>()
+        {
             llama_manager.ensure_server_running().await?;
         }
     }
@@ -1510,4 +1512,3 @@ pub fn get_text_replacement_decapitalize_overlay_state(
         decapitalize_armed: indicator.armed,
     }
 }
-

@@ -19,7 +19,14 @@ const TooltipIcon: React.FC<{
   setShowTooltip: (v: boolean) => void;
   description: string;
   position: "top" | "bottom";
-}> = ({ tooltipRef, showTooltip, toggleTooltip, setShowTooltip, description, position }) => (
+}> = ({
+  tooltipRef,
+  showTooltip,
+  toggleTooltip,
+  setShowTooltip,
+  description,
+  position,
+}) => (
   <div
     ref={tooltipRef}
     className="relative"
@@ -109,10 +116,14 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
           <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
             {title}
           </h3>
-          {descriptionMode === "tooltip" && <TooltipIcon {...commonTooltipProps} />}
+          {descriptionMode === "tooltip" && (
+            <TooltipIcon {...commonTooltipProps} />
+          )}
         </div>
         {descriptionMode === "inline" && (
-          <p className={`text-sm mb-2 ${disabled ? "opacity-50" : ""}`}>{description}</p>
+          <p className={`text-sm mb-2 ${disabled ? "opacity-50" : ""}`}>
+            {description}
+          </p>
         )}
         <div className="w-full">{children}</div>
       </div>
@@ -130,10 +141,14 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
           <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
             {title}
           </h3>
-          {descriptionMode === "tooltip" && <TooltipIcon {...commonTooltipProps} />}
+          {descriptionMode === "tooltip" && (
+            <TooltipIcon {...commonTooltipProps} />
+          )}
         </div>
         {descriptionMode === "inline" && (
-          <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>{description}</p>
+          <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
+            {description}
+          </p>
         )}
       </div>
       <div className="relative">{children}</div>

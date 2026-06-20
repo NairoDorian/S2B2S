@@ -5,9 +5,9 @@
 //! rule (the bubble stays put while the avatar is speaking so the user can read).
 
 use crate::overlay_fx::placement;
-use tauri::{AppHandle, LogicalPosition, Manager};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tauri::{AppHandle, LogicalPosition, Manager};
 
 /// Spawn a background thread that repositions the brain overlay to follow the cursor.
 /// Returns a shared flag — set to `true` to stop the follow loop.

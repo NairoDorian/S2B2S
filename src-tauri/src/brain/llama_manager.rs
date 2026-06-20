@@ -1,13 +1,13 @@
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::process::Command;
-use std::path::PathBuf;
+use futures_util::StreamExt;
+use log::{error, info};
 use std::fs::{self, File};
 use std::io::Write;
-use tauri::{AppHandle, Emitter, Manager};
-use log::{info, error};
-use futures_util::StreamExt;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(serde::Serialize, Clone)]
 struct DownloadProgressPayload {
@@ -53,7 +53,8 @@ impl LlamaManager {
             .map_err(|e| format!("Failed to resolve brain models dir: {}", e))?
             .join("llama_cpp");
         if !models_dir.exists() {
-            fs::create_dir_all(&models_dir).map_err(|e| format!("Failed to create models folder: {}", e))?;
+            fs::create_dir_all(&models_dir)
+                .map_err(|e| format!("Failed to create models folder: {}", e))?;
         }
         Ok(models_dir)
     }
@@ -72,20 +73,30 @@ impl LlamaManager {
     }
 
     fn has_gpu_support(&self) -> bool {
-        if let Some(mgr) = self.app.try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>() {
+        if let Some(mgr) = self
+            .app
+            .try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>()
+        {
             let gpu = mgr.has_gpu_support();
             if gpu {
                 // Verify the actual server binary supports CUDA/Vulkan
                 match mgr.get_active_server_path() {
                     Ok(path) => {
                         let name = path.to_string_lossy().to_lowercase();
-                        if name.contains("cpu") && !name.contains("cuda") && !name.contains("vulkan") {
+                        if name.contains("cpu")
+                            && !name.contains("cuda")
+                            && !name.contains("vulkan")
+                        {
                             info!("[LlamaManager] Server binary looks like CPU build ({:?}), disabling GPU offload despite config", path);
                             return false;
                         }
                         // Check CUDA runtime availability
                         if name.contains("cuda") {
-                            let cuda_ok = std::process::Command::new("nvidia-smi").arg("--query-gpu=driver_version").arg("--format=csv,noheader").output().is_ok()
+                            let cuda_ok = std::process::Command::new("nvidia-smi")
+                                .arg("--query-gpu=driver_version")
+                                .arg("--format=csv,noheader")
+                                .output()
+                                .is_ok()
                                 && std::process::Command::new("nvidia-smi").output().is_ok();
                             if !cuda_ok {
                                 info!("[LlamaManager] nvidia-smi not available, CUDA offload disabled");
@@ -116,7 +127,9 @@ impl LlamaManager {
 
     pub async fn ensure_server_running(&self) -> Result<(), String> {
         let settings = crate::settings::get_settings(&self.app);
-        let provider = settings.brain.active_provider()
+        let provider = settings
+            .brain
+            .active_provider()
             .ok_or_else(|| "No active brain provider".to_string())?;
 
         if provider.id != "llama_cpp" {
@@ -127,7 +140,10 @@ impl LlamaManager {
 
         // Check if responding
         if self.is_port_responding(port).await {
-            info!("[LlamaManager] llama-server is already running on port {}", port);
+            info!(
+                "[LlamaManager] llama-server is already running on port {}",
+                port
+            );
             return Ok(());
         }
 
@@ -146,30 +162,49 @@ impl LlamaManager {
 
         // Check if models exist
         if !self.get_models_status()? {
-            return Err("Gemma-4 models are missing. Please download them in settings first.".to_string());
+            return Err(
+                "Gemma-4 models are missing. Please download them in settings first.".to_string(),
+            );
         }
 
         // Resolve the active pre-compiled llama-server path
-        let server_bin = if let Some(mgr) = self.app.try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>() {
+        let server_bin = if let Some(mgr) = self
+            .app
+            .try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>()
+        {
             mgr.get_active_server_path()?
         } else {
             // Fallback to resources (legacy)
-            self.app.path().resolve(
-                #[cfg(windows)] "resources/llama-server.exe",
-                #[cfg(not(windows))] "resources/llama-server",
-                tauri::path::BaseDirectory::Resource,
-            ).map_err(|e| format!("Failed to resolve llama-server path: {}", e))?
+            self.app
+                .path()
+                .resolve(
+                    #[cfg(windows)]
+                    "resources/llama-server.exe",
+                    #[cfg(not(windows))]
+                    "resources/llama-server",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .map_err(|e| format!("Failed to resolve llama-server path: {}", e))?
         };
 
         if !server_bin.exists() {
-            return Err(format!("Bundled llama-server executable not found at: {}", server_bin.display()));
+            return Err(format!(
+                "Bundled llama-server executable not found at: {}",
+                server_bin.display()
+            ));
         }
 
         info!("[LlamaManager] Server binary: {:?}", server_bin);
         let is_cuda_build = server_bin.to_string_lossy().to_lowercase().contains("cuda");
-        let is_vulkan_build = server_bin.to_string_lossy().to_lowercase().contains("vulkan");
+        let is_vulkan_build = server_bin
+            .to_string_lossy()
+            .to_lowercase()
+            .contains("vulkan");
         let is_gpu_build = is_cuda_build || is_vulkan_build;
-        info!("[LlamaManager] CUDA build: {}, Vulkan build: {}", is_cuda_build, is_vulkan_build);
+        info!(
+            "[LlamaManager] CUDA build: {}, Vulkan build: {}",
+            is_cuda_build, is_vulkan_build
+        );
 
         let models_dir = self.get_models_dir()?;
         let model_path = models_dir.join("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
@@ -178,12 +213,15 @@ impl LlamaManager {
 
         // Check if multimodal features are enabled (audio/image input)
         let settings = crate::settings::get_settings(&self.app);
-        let multimodal_enabled = settings.brain.multimodal_audio_enabled
-            || settings.brain.multimodal_image_enabled;
+        let multimodal_enabled =
+            settings.brain.multimodal_audio_enabled || settings.brain.multimodal_image_enabled;
 
-        info!("[LlamaManager] Spawning llama-server on port {} with MTP...", port);
+        info!(
+            "[LlamaManager] Spawning llama-server on port {} with MTP...",
+            port
+        );
         let _ = self.app.emit("brain:llama-loading", ());
-        
+
         let mut cmd = Command::new(&server_bin);
         // Disable attention rotation — saves ~3-4% on short contexts (benchmarked: 203→211 tok/s).
         // Rotation helps at very large contexts (32K+) where quantized KV cache matters,
@@ -192,23 +230,37 @@ impl LlamaManager {
 
         // Base args
         cmd.args(&[
-            "-m", &model_path.to_string_lossy(),
-            "--port", &port.to_string(),
-            "-c", "16384",
-            "--parallel", "1",
-            "--flash-attn", "on",
+            "-m",
+            &model_path.to_string_lossy(),
+            "--port",
+            &port.to_string(),
+            "-c",
+            "16384",
+            "--parallel",
+            "1",
+            "--flash-attn",
+            "on",
             "--no-context-shift",
-            "-ngl", "-1",
-            "--threads", "-1",
+            "-ngl",
+            "-1",
+            "--threads",
+            "-1",
             "--jinja",
-            "--reasoning", "off",
-            "--model-draft", &draft_path.to_string_lossy(),
-            "--spec-type", "draft-mtp",
-            "--spec-draft-n-max", "2",
-            "--alias", "unsloth/gemma-4-e2b-it-qat-GGUF",
+            "--reasoning",
+            "off",
+            "--model-draft",
+            &draft_path.to_string_lossy(),
+            "--spec-type",
+            "draft-mtp",
+            "--spec-draft-n-max",
+            "2",
+            "--alias",
+            "unsloth/gemma-4-e2b-it-qat-GGUF",
             "--metrics",
-            "-ctk", "f16",
-            "-ctv", "f16",
+            "-ctk",
+            "f16",
+            "-ctv",
+            "f16",
         ]);
 
         // Load mmproj only when multimodal features are enabled.
@@ -234,9 +286,11 @@ impl LlamaManager {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
         crate::job_object::register(&mut child);
-        
+
         // Wait for port response — poll until ready or child exits
         let start = Instant::now();
         let timeout = std::time::Duration::from_secs(90);
@@ -249,18 +303,27 @@ impl LlamaManager {
             // Check if child process exited
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    let _ = self.app.emit("brain:llama-error", format!("llama-server exited with status {:?}", status));
+                    let _ = self.app.emit(
+                        "brain:llama-error",
+                        format!("llama-server exited with status {:?}", status),
+                    );
                     return Err(format!("llama-server exited with status {:?}", status));
                 }
                 _ => {}
             }
             if start.elapsed() > timeout {
-                let _ = self.app.emit("brain:llama-error", "llama-server startup timed out after 90s".to_string());
+                let _ = self.app.emit(
+                    "brain:llama-error",
+                    "llama-server startup timed out after 90s".to_string(),
+                );
                 return Err("llama-server failed to start within 90 seconds. Check the model files and VRAM availability.".to_string());
             }
             let elapsed = start.elapsed().as_secs_f64();
             if elapsed >= 10.0 {
-                info!("[LlamaManager] Still waiting for llama-server ({:.0}s elapsed)...", elapsed);
+                info!(
+                    "[LlamaManager] Still waiting for llama-server ({:.0}s elapsed)...",
+                    elapsed
+                );
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
@@ -278,26 +341,32 @@ impl LlamaManager {
         tauri::async_runtime::spawn(async move {
             let result = manager.download_all_files().await;
             manager.downloading.store(false, Ordering::SeqCst);
-            
+
             match result {
                 Ok(_) => {
-                    let _ = manager.app.emit("llama-download-state", DownloadProgressPayload {
-                        status: "completed".to_string(),
-                        file: "".to_string(),
-                        percentage: 100.0,
-                        speed_mbps: 0.0,
-                        error: None,
-                    });
+                    let _ = manager.app.emit(
+                        "llama-download-state",
+                        DownloadProgressPayload {
+                            status: "completed".to_string(),
+                            file: "".to_string(),
+                            percentage: 100.0,
+                            speed_mbps: 0.0,
+                            error: None,
+                        },
+                    );
                 }
                 Err(e) => {
                     error!("[LlamaManager] Download failed: {}", e);
-                    let _ = manager.app.emit("llama-download-state", DownloadProgressPayload {
-                        status: "error".to_string(),
-                        file: "".to_string(),
-                        percentage: 0.0,
-                        speed_mbps: 0.0,
-                        error: Some(e),
-                    });
+                    let _ = manager.app.emit(
+                        "llama-download-state",
+                        DownloadProgressPayload {
+                            status: "error".to_string(),
+                            file: "".to_string(),
+                            percentage: 0.0,
+                            speed_mbps: 0.0,
+                            error: Some(e),
+                        },
+                    );
                 }
             }
         });
@@ -316,21 +385,31 @@ impl LlamaManager {
         for &(name, url) in files {
             let dest_path = models_dir.join(name);
             if dest_path.exists() {
-                info!("[LlamaManager] File {} already exists, skipping download.", name);
+                info!(
+                    "[LlamaManager] File {} already exists, skipping download.",
+                    name
+                );
                 continue;
             }
 
             info!("[LlamaManager] Downloading {} from {}", name, url);
-            let response = client.get(url).send().await
+            let response = client
+                .get(url)
+                .send()
+                .await
                 .map_err(|e| format!("Failed to initiate download for {}: {}", name, e))?;
 
             if !response.status().is_success() {
-                return Err(format!("Server returned HTTP {} for {}", response.status(), name));
+                return Err(format!(
+                    "Server returned HTTP {} for {}",
+                    response.status(),
+                    name
+                ));
             }
 
             let total_size = response.content_length().unwrap_or(0);
             let mut stream = response.bytes_stream();
-            
+
             let partial_path = models_dir.join(format!("{}.partial", name));
             let mut file = File::create(&partial_path)
                 .map_err(|e| format!("Failed to create partial file for {}: {}", name, e))?;
@@ -340,10 +419,11 @@ impl LlamaManager {
             let mut last_emit = Instant::now();
 
             while let Some(chunk_result) = stream.next().await {
-                let chunk = chunk_result.map_err(|e| format!("Stream error during download of {}: {}", name, e))?;
+                let chunk = chunk_result
+                    .map_err(|e| format!("Stream error during download of {}: {}", name, e))?;
                 file.write_all(&chunk)
                     .map_err(|e| format!("Failed to write chunk to disk for {}: {}", name, e))?;
-                
+
                 downloaded += chunk.len() as u64;
 
                 // Emit progress every 300ms to avoid spamming Tauri events
@@ -362,13 +442,16 @@ impl LlamaManager {
                         0.0
                     };
 
-                    let _ = self.app.emit("llama-download-state", DownloadProgressPayload {
-                        status: "downloading".to_string(),
-                        file: name.to_string(),
-                        percentage,
-                        speed_mbps: speed,
-                        error: None,
-                    });
+                    let _ = self.app.emit(
+                        "llama-download-state",
+                        DownloadProgressPayload {
+                            status: "downloading".to_string(),
+                            file: name.to_string(),
+                            percentage,
+                            speed_mbps: speed,
+                            error: None,
+                        },
+                    );
                 }
             }
 
@@ -376,7 +459,7 @@ impl LlamaManager {
             drop(file);
             fs::rename(&partial_path, &dest_path)
                 .map_err(|e| format!("Failed to finalize downloaded file {}: {}", name, e))?;
-            
+
             info!("[LlamaManager] Completed download of {}", name);
         }
 
@@ -400,7 +483,7 @@ impl LlamaManager {
             .timeout(std::time::Duration::from_millis(500))
             .build()
             .unwrap_or_default();
-        
+
         let url = format!("http://127.0.0.1:{}/health", port);
         match client.get(&url).send().await {
             Ok(resp) => resp.status().is_success(),

@@ -12,9 +12,21 @@ import { commands } from "@/bindings";
 import type { TtsConfig, TtsEngine, Voice } from "@/bindings";
 import { ExternalLink, Terminal, Upload } from "lucide-react";
 
-const ENGINES: TtsEngine[] = ["piper", "kokoro", "kitten", "pocket", "sapi", "openai", "elevenlabs", "cartesia"];
+const ENGINES: TtsEngine[] = [
+  "piper",
+  "kokoro",
+  "kitten",
+  "pocket",
+  "sapi",
+  "openai",
+  "elevenlabs",
+  "cartesia",
+];
 
-const ENGINE_BADGES: Record<string, ("offline" | "free" | "cloud" | "paid" | "freemium")[]> = {
+const ENGINE_BADGES: Record<
+  string,
+  ("offline" | "free" | "cloud" | "paid" | "freemium")[]
+> = {
   piper: ["offline", "free"],
   kokoro: ["offline", "free"],
   kitten: ["offline", "free"],
@@ -53,7 +65,10 @@ export const SpeechSettings: React.FC = () => {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [speaking, setSpeaking] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
   const [importingVoice, setImportingVoice] = useState(false);
 
   const tts = settings?.tts;
@@ -120,11 +135,19 @@ export const SpeechSettings: React.FC = () => {
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await commands.ttsSpeak("Hello, this is a test of the S2B2S speech engine. If you can hear this clearly, the engine is working correctly.");
+      const result = await commands.ttsSpeak(
+        "Hello, this is a test of the S2B2S speech engine. If you can hear this clearly, the engine is working correctly.",
+      );
       if (result.status === "ok") {
-        setTestResult({ success: true, message: "Engine test completed successfully." });
+        setTestResult({
+          success: true,
+          message: "Engine test completed successfully.",
+        });
       } else {
-        setTestResult({ success: false, message: result.error || "Test failed" });
+        setTestResult({
+          success: false,
+          message: result.error || "Test failed",
+        });
       }
     } catch (err) {
       setTestResult({ success: false, message: String(err) });
@@ -157,10 +180,18 @@ export const SpeechSettings: React.FC = () => {
   };
 
   const getEngineLink = (engine: string): string | null => {
-    try { return t(`settings.speech.engine.links.${engine}`, "") || null; } catch { return null; }
+    try {
+      return t(`settings.speech.engine.links.${engine}`, "") || null;
+    } catch {
+      return null;
+    }
   };
   const getEngineLinkLabel = (engine: string): string | null => {
-    try { return t(`settings.speech.engine.links.${engine}Label`, ""); } catch { return ""; }
+    try {
+      return t(`settings.speech.engine.links.${engine}Label`, "");
+    } catch {
+      return "";
+    }
   };
 
   const isLocalEngine = (engine: string) =>
@@ -188,7 +219,10 @@ export const SpeechSettings: React.FC = () => {
               label: t(`settings.speech.engine.options.${engine}`),
             }))}
             selectedValue={tts.engine}
-            onSelect={(value) => { update({ engine: value as TtsEngine }); setTestResult(null); }}
+            onSelect={(value) => {
+              update({ engine: value as TtsEngine });
+              setTestResult(null);
+            }}
           />
         </SettingContainer>
 
@@ -271,7 +305,9 @@ export const SpeechSettings: React.FC = () => {
         />
         <ToggleSwitch
           checked={tts.tts_shorten_first_chunk ?? true}
-          onChange={(tts_shorten_first_chunk) => update({ tts_shorten_first_chunk })}
+          onChange={(tts_shorten_first_chunk) =>
+            update({ tts_shorten_first_chunk })
+          }
           label={t("settings.speech.fastFirstSentence.label")}
           description={t("settings.speech.fastFirstSentence.description")}
           grouped
@@ -293,13 +329,23 @@ export const SpeechSettings: React.FC = () => {
                 disabled={!tts.enabled || testing}
                 onClick={handleTestEngine}
               >
-                {testing ? t("settings.speech.testEngine.testing") : t("settings.speech.testEngine.button")}
+                {testing
+                  ? t("settings.speech.testEngine.testing")
+                  : t("settings.speech.testEngine.button")}
               </Button>
             </div>
             {testResult && (
-              <div className={`p-2 rounded text-xs border ${testResult.success ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
-                {testResult.success ? t("settings.speech.testEngine.engineWorking") : t("settings.speech.testEngine.engineFailed")}
-                {testResult.message && <div className="text-[10px] text-text/40 mt-0.5">{testResult.message}</div>}
+              <div
+                className={`p-2 rounded text-xs border ${testResult.success ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}
+              >
+                {testResult.success
+                  ? t("settings.speech.testEngine.engineWorking")
+                  : t("settings.speech.testEngine.engineFailed")}
+                {testResult.message && (
+                  <div className="text-[10px] text-text/40 mt-0.5">
+                    {testResult.message}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -312,7 +358,9 @@ export const SpeechSettings: React.FC = () => {
           <div className="border border-mid-gray/20 rounded-md">
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-text/50">
               <Terminal size={13} className="shrink-0" />
-              <span className="font-medium">{t("settings.speech.commandPreview.title")}</span>
+              <span className="font-medium">
+                {t("settings.speech.commandPreview.title")}
+              </span>
             </div>
             <div className="border-t border-mid-gray/10 px-3 py-2.5">
               <pre className="bg-mid-gray/10 text-text/60 overflow-x-auto rounded px-3 py-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
@@ -417,7 +465,9 @@ export const SpeechSettings: React.FC = () => {
             {engineSupportsSpeed(greeting.engine) && (
               <Slider
                 value={greeting.speed ?? 1}
-                onChange={(speed) => update({ greeting: { ...greeting, speed } })}
+                onChange={(speed) =>
+                  update({ greeting: { ...greeting, speed } })
+                }
                 min={0.5}
                 max={2}
                 step={0.05}

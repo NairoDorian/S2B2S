@@ -45,9 +45,7 @@ export const Dialog: React.FC<DialogProps> = ({
             <p className="text-sm text-text/55 mt-1">{description}</p>
           )}
         </div>
-        <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
-          {children}
-        </div>
+        <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">{children}</div>
         {footer && (
           <div className="px-6 py-4 border-t border-mid-gray/15 flex items-center gap-3">
             {footer}

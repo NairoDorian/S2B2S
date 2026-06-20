@@ -50,8 +50,11 @@ Send the image as a **base64 data URI** in the content array:
     {
       "role": "user",
       "content": [
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo..."}},
-        {"type": "text", "text": "Describe this image in detail."}
+        {
+          "type": "image_url",
+          "image_url": { "url": "data:image/png;base64,iVBORw0KGgo..." }
+        },
+        { "type": "text", "text": "Describe this image in detail." }
       ]
     }
   ],
@@ -99,7 +102,8 @@ $r.choices[0].message.content
 
 **Input:** Portrait photo of a man smiling, glasses, patterned shirt
 **Output:**
-> *"This is a portrait photograph of a man with dark hair, smiling, and wearing glasses and a patterned shirt against a dark background. He appears to be middle-aged. He is wearing rectangular eyeglasses with dark frames. He has small earrings visible. He is wearing a dark, possibly purple or maroon, collared, button-up shirt with a subtle geometric pattern."*
+
+> _"This is a portrait photograph of a man with dark hair, smiling, and wearing glasses and a patterned shirt against a dark background. He appears to be middle-aged. He is wearing rectangular eyeglasses with dark frames. He has small earrings visible. He is wearing a dark, possibly purple or maroon, collared, button-up shirt with a subtle geometric pattern."_
 
 ---
 
@@ -117,8 +121,11 @@ Send the audio as **raw base64** (NOT as a data URI — the `data:audio/wav;base
     {
       "role": "user",
       "content": [
-        {"type": "input_audio", "input_audio": {"data": "UklGRiQAAABXQVZFZm10...", "format": "wav"}},
-        {"type": "text", "text": "Transcribe this audio. What is being said?"}
+        {
+          "type": "input_audio",
+          "input_audio": { "data": "UklGRiQAAABXQVZFZm10...", "format": "wav" }
+        },
+        { "type": "text", "text": "Transcribe this audio. What is being said?" }
       ]
     }
   ],
@@ -161,7 +168,8 @@ $r.choices[0].message.content
 
 **Input:** WAV file saying "Test one one."
 **Output:**
-> *"Test one one."*
+
+> _"Test one one."_
 
 ---
 
@@ -177,9 +185,9 @@ $r.choices[0].message.content
 
 ## Common Errors & Fixes
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `413 Payload Too Large` | Image too big (>10 MB) | Resize image before sending |
-| `Failed to load image or audio file` | Invalid data URI format | Use raw base64 for audio; use `data:image/...` for images |
-| `input_audio.format must be either 'wav' or 'mp3'` | Missing `format` field | Add `"format": "wav"` to input_audio |
-| `Failed to initialize the context: Gemma4Assistant requires ctx_other` | Normal during memory fitting | Ignore — server handles it automatically |
+| Error                                                                  | Cause                        | Fix                                                       |
+| ---------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------- |
+| `413 Payload Too Large`                                                | Image too big (>10 MB)       | Resize image before sending                               |
+| `Failed to load image or audio file`                                   | Invalid data URI format      | Use raw base64 for audio; use `data:image/...` for images |
+| `input_audio.format must be either 'wav' or 'mp3'`                     | Missing `format` field       | Add `"format": "wav"` to input_audio                      |
+| `Failed to initialize the context: Gemma4Assistant requires ctx_other` | Normal during memory fitting | Ignore — server handles it automatically                  |

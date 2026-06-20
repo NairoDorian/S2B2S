@@ -47,8 +47,7 @@ pub fn show_brain_overlay(app: &AppHandle) {
         {
             use windows::Win32::Foundation::HWND;
             use windows::Win32::UI::WindowsAndMessaging::{
-                SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-                SWP_SHOWWINDOW,
+                SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
             };
             if let Ok(raw_hwnd) = window.hwnd() {
                 let hwnd = HWND(raw_hwnd.0);
@@ -56,7 +55,10 @@ pub fn show_brain_overlay(app: &AppHandle) {
                     let _ = SetWindowPos(
                         hwnd,
                         Some(HWND_TOPMOST),
-                        0, 0, 0, 0,
+                        0,
+                        0,
+                        0,
+                        0,
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
                     );
                 }

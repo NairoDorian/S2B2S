@@ -23,19 +23,52 @@ const VOICE_LANGUAGE_MAP: &[(&str, &str, &[&str])] = &[
 
 /// Known voice IDs (54 total).
 const KNOWN_VOICES: &[&str] = &[
-    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore",
-    "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
-    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx", "am_puck", "am_santa",
-    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
-    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_heart",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
+    "bm_lewis",
     "ef_dora",
     "ff_siwis",
-    "hf_alpha", "hf_beta",
-    "if_sara", "if_nicola",
-    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro",
+    "hf_alpha",
+    "hf_beta",
+    "if_sara",
+    "if_nicola",
+    "jf_alpha",
+    "jf_gongitsune",
+    "jf_nezumi",
+    "jf_tebukuro",
     "pf_dora",
-    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
-    "zm_yunjian", "zm_yunxia", "zm_yunyang",
+    "zf_xiaobei",
+    "zf_xiaoni",
+    "zf_xiaoxiao",
+    "zf_xiaoyi",
+    "zm_yunjian",
+    "zm_yunxia",
+    "zm_yunyang",
 ];
 
 #[allow(dead_code)]
@@ -97,11 +130,21 @@ impl KokoroBackend {
 
         let search_paths: Vec<Option<std::path::PathBuf>> = vec![
             // 1. Project-root: S2B2S/models/TTS/kokoro/ (canonical dev location)
-            Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("models").join("TTS").join("kokoro")),
+            Some(
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join("models")
+                    .join("TTS")
+                    .join("kokoro"),
+            ),
             // 2. CWD-based: models/TTS/kokoro/ (running from project root)
-            std::env::current_dir().ok().map(|d| d.join("models").join("TTS").join("kokoro")),
+            std::env::current_dir()
+                .ok()
+                .map(|d| d.join("models").join("TTS").join("kokoro")),
             // 3. CWD-based: models/kokoro/ (legacy compat)
-            std::env::current_dir().ok().map(|d| d.join("models").join("kokoro")),
+            std::env::current_dir()
+                .ok()
+                .map(|d| d.join("models").join("kokoro")),
             // 4. src-tauri local: CARGO_MANIFEST_DIR/kokoro/ (legacy)
             Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("kokoro")),
         ];
@@ -172,11 +215,7 @@ impl TtsBackend for KokoroBackend {
         };
 
         let script_args = Self::kokoro_model_args();
-        let handle = local_tts_server::ensure_running(
-            "kokoro",
-            "python".to_string(),
-            script_args,
-        )?;
+        let handle = local_tts_server::ensure_running("kokoro", "python".to_string(), script_args)?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
         // The Kokoro server maps length_scale → playback speed as `speed = 1/length_scale`,

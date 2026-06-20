@@ -16,8 +16,8 @@ use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
 use crate::tts::sanitize::sanitize_text;
 use crate::tts::{TtsBackend, Voice};
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -58,7 +58,11 @@ impl TtsManager {
             )),
             TtsEngine::Kokoro => Ok(Box::new(KokoroBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Kitten => Ok(Box::new(KittenBackend::new(cfg.voice.clone(), cfg.speed))),
-            TtsEngine::Pocket => Ok(Box::new(PocketBackend::new(self.app.clone(), cfg.voice.clone(), cfg.speed))),
+            TtsEngine::Pocket => Ok(Box::new(PocketBackend::new(
+                self.app.clone(),
+                cfg.voice.clone(),
+                cfg.speed,
+            ))),
             TtsEngine::Sapi => Ok(Box::new(SapiBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Openai => Ok(Box::new(
                 crate::tts::backends::openai::OpenAiTtsBackend::new(cfg.openai.clone()),
@@ -240,7 +244,12 @@ impl TtsManager {
                             last_space = Some(idx);
                         }
                     } else if last_space.map_or(true, |s| idx > s) {
-                        if word_count == 0 || t[..idx].chars().last().map_or(true, |prev| prev.is_whitespace()) {
+                        if word_count == 0
+                            || t[..idx]
+                                .chars()
+                                .last()
+                                .map_or(true, |prev| prev.is_whitespace())
+                        {
                             word_count += 1;
                             if word_count >= 12 {
                                 return Some(idx + c.len_utf8());
@@ -296,10 +305,14 @@ impl TtsManager {
             frags
         } else {
             let mut pagination_cfg = cfg.pagination.clone();
-            if let Some(telemetry) = self.app.try_state::<Arc<crate::tts::telemetry::Telemetry>>() {
+            if let Some(telemetry) = self
+                .app
+                .try_state::<Arc<crate::tts::telemetry::Telemetry>>()
+            {
                 let current_engine_name = format!("{:?}", cfg.engine).to_lowercase();
                 let key = format!("{}:{}", current_engine_name, cfg.voice);
-                let adaptive_size = telemetry.adaptive_fragment_size(&key, pagination_cfg.fragment_size as usize);
+                let adaptive_size =
+                    telemetry.adaptive_fragment_size(&key, pagination_cfg.fragment_size as usize);
                 pagination_cfg.fragment_size = adaptive_size as u32;
             }
             paginate_text(&sanitized, &pagination_cfg)
@@ -330,7 +343,9 @@ impl TtsManager {
                             return;
                         }
                         let frag_synth_ms = frag_synth_start.elapsed().as_millis() as u64;
-                        if let Some(telemetry) = app.try_state::<Arc<crate::tts::telemetry::Telemetry>>() {
+                        if let Some(telemetry) =
+                            app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
+                        {
                             let key = format!("{}:{}", engine_name, voice);
                             telemetry.record(&key, frag.text.len(), frag_synth_ms);
                         }
@@ -354,7 +369,8 @@ impl TtsManager {
                         if !first_audio_emitted {
                             first_audio_emitted = true;
                             let ttfa_ms = synth_start.elapsed().as_millis() as u64;
-                            let _ = app.emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
+                            let _ =
+                                app.emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
                         }
                     }
                     Err(e) => {
@@ -364,7 +380,10 @@ impl TtsManager {
                 }
             }
             let synth_total_ms = synth_start.elapsed().as_millis() as u64;
-            let _ = app.emit("tts:synth-done", serde_json::json!({ "ms": synth_total_ms }));
+            let _ = app.emit(
+                "tts:synth-done",
+                serde_json::json!({ "ms": synth_total_ms }),
+            );
 
             // Save TTS entry to history with cached audio file
             if !all_chunks.is_empty() {
@@ -447,11 +466,14 @@ impl TtsManager {
                             if gen_counter.load(Ordering::SeqCst) == gen {
                                 player.append(bytes);
                                 let synth_ms = synth_start.elapsed().as_millis() as u64;
-                                if let Some(telemetry) = app.try_state::<Arc<crate::tts::telemetry::Telemetry>>() {
+                                if let Some(telemetry) =
+                                    app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
+                                {
                                     let key = format!("{}:{}", engine_name, voice);
                                     telemetry.record(&key, text.len(), synth_ms);
                                 }
-                                let _ = app.emit("tts:synth-done", serde_json::json!({ "ms": synth_ms }));
+                                let _ = app
+                                    .emit("tts:synth-done", serde_json::json!({ "ms": synth_ms }));
                                 let _ = app.emit("tts:playing-changed", true);
                             }
                         }
