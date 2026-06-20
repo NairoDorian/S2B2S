@@ -1,5 +1,6 @@
 mod actions;
 mod active_app;
+pub mod job_object;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -633,44 +634,36 @@ pub fn run(cli_args: CliArgs) {
 
             // Create main window programmatically so we can set data_directory
             // for portable mode (redirects WebView2 cache to portable Data dir).
-            // A "main" window may already exist if a tauri config declares one
-            // (app.windows) — creating it twice would error, and any error here
-            // aborts the whole app (the setup hook runs inside
-            // applicationDidFinishLaunching, where panics cannot unwind).
-            if app.get_webview_window("main").is_none() {
-                // Dev builds (productName ends with "Dev") get a distinct window
-                // title so the window can't be mistaken for a production build.
-                let window_title = if app.package_info().name.ends_with("Dev") {
-                    "S2B2S Dev"
-                } else {
-                    "S2B2S"
-                };
-                let mut win_builder = tauri::WebviewWindowBuilder::new(
-                    app,
-                    "main",
-                    tauri::WebviewUrl::App("/".into()),
-                )
-                .title(window_title)
-                .inner_size(680.0, 570.0)
-                .min_inner_size(680.0, 570.0)
-                .resizable(true)
-                .maximizable(false)
-                .visible(false);
-
-                if let Some(data_dir) = portable::data_dir() {
-                    win_builder = win_builder.data_directory(data_dir.join("webview"));
-                }
-
-                let main_win = win_builder.build()?;
-                crate::webview_hardening::disable_browser_accelerator_keys(&main_win);
+            // Dev builds (productName ends with "Dev") get a distinct window
+            // title so the window can't be mistaken for a production build.
+            let window_title = if app.package_info().name.ends_with("Dev") {
+                "S2B2S Dev"
             } else {
-                log::warn!(
-                    "Webview window 'main' already exists (declared in tauri config?); skipping programmatic creation"
-                );
-                if let Some(main_win) = app.get_webview_window("main") {
-                    crate::webview_hardening::disable_browser_accelerator_keys(&main_win);
-                }
+                "S2B2S"
+            };
+            let mut win_builder = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("/".into()),
+            )
+            .title(window_title)
+            .inner_size(680.0, 570.0)
+            .min_inner_size(680.0, 570.0)
+            .resizable(true)
+            .maximizable(false)
+            .visible(true);
+
+            if let Some(data_dir) = portable::data_dir() {
+                win_builder = win_builder.data_directory(data_dir.join("webview"));
             }
+
+            let main_window_created = if let Ok(main_win) = win_builder.build() {
+                crate::webview_hardening::disable_browser_accelerator_keys(&main_win);
+                true
+            } else {
+                log::error!("Failed to build main window — continuing without it");
+                false
+            };
 
             if let Err(e) = crypto::initialize(app.handle()) {
                 log::error!("Failed to initialize cryptography module: {}", e);
@@ -816,17 +809,30 @@ pub fn run(cli_args: CliArgs) {
                 tray::set_tray_visibility(&app_handle, false);
             }
 
-            // Show main window only if not starting hidden.
+            // Window starts visible. Hide it if configured to start hidden
+            // AND a tray icon is available (so the user can reopen later).
             // CLI --start-hidden flag overrides the setting.
-            // But if permission onboarding is required, always show the window.
-            let should_hide = settings.start_hidden || cli_args.start_hidden;
-            let should_force_show = should_force_show_permissions_window(&app_handle);
+            // If permission onboarding is required, keep it visible regardless.
+            if main_window_created {
+                let should_hide = settings.start_hidden || cli_args.start_hidden;
+                let should_force_show = should_force_show_permissions_window(&app_handle);
+                let tray_available = settings.show_tray_icon && !cli_args.no_tray;
 
-            // If start_hidden but tray is disabled, we must show the window
-            // anyway. Without a tray icon, the dock is the only way back in.
-            let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-            if should_force_show || !should_hide || !tray_available {
-                show_main_window(&app_handle);
+                if should_hide && tray_available && !should_force_show {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.hide();
+                    }
+                }
+            }
+
+            // If tray is not available and main window failed, log a clear error
+            if !main_window_created {
+                let tray_available = settings.show_tray_icon && !cli_args.no_tray;
+                if !tray_available {
+                    log::error!(
+                        "No main window and no tray icon — app is completely inaccessible"
+                    );
+                }
             }
 
             Ok(())

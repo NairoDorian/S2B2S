@@ -102,7 +102,7 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">Vision Component</span>
-        <span className="font-medium text-text">Enabled (mmproj-F16)</span>
+        <span className="font-medium text-text">Disabled by default</span>
       </div>
       <div>
         <span className="text-mid-gray block">Execution Engine</span>

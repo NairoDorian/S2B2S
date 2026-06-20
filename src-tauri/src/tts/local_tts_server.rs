@@ -350,6 +350,8 @@ fn spawn_start_thread(
             }
         };
 
+        crate::job_object::register(&mut child);
+
         if let Some(stdout) = child.stdout.take() {
             let engine_name = engine.clone();
             std::thread::spawn(move || {

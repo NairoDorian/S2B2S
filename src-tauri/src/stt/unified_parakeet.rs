@@ -58,6 +58,7 @@ impl UnifiedParakeetServer {
         let mut child = cmd
             .spawn()
             .context("Failed to spawn unified parakeet server")?;
+        crate::job_object::register(&mut child);
 
         // Drain stdout/stderr in background threads
         if let Some(stdout) = child.stdout.take() {

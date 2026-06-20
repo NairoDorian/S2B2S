@@ -5,6 +5,34 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] — 2026-06-20: Piper CUDA, Warmup Prompt, Loading Animation & Process Cleanup
+
+> **Piper CUDA GPU inference, configurable Brain warmup prompt, interactive loading animation, and Windows Job Object process cleanup.** Fixed multiple startup/reliability issues: app invisibility on start-hidden, premature brain:llama-ready event during warmup, and test panel metrics race condition. Replaced TTS venv setup with uv-based approach following correct piper→onnxruntime-gpu install order. Added Windows Job Object to auto-kill child processes on crash.
+
+### Added
+
+- **Windows Job Object** (`job_object.rs`): Creates a job with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assigns all spawned child processes (Piper, Kokoro, Kitten, Pocket, llama-server, STT server) to it — OS auto-terminates them if the app crashes or exits without cleanup (`lib.rs:877-883`, `piper_server.rs:377`, `local_tts_server.rs:354`, `llama_manager.rs:238`, `unified_parakeet.rs:62`). gated with `#[cfg(windows)]`, no-op on other platforms.
+- **Configurable warmup prompt** (`settings.rs`): `BrainConfig.warmup_prompt` field with `#[serde(default = "default_warmup_prompt")]` defaulting to `"Count from 1 to 10"`.
+- **`scripts/setup_venv_uv.ps1`**: Fast uv-based venv setup script. Installs piper-tts last, then replaces CPU onnxruntime with GPU onnxruntime + NVIDIA CUDA PyPI DLL packages. Auto-detects uv or falls back to standard pip.
+
+### Changed
+
+- **Piper CUDA default enabled** (`settings.rs`): `PiperConfig::cuda` default changed from `false` to `true`.
+- **`setup_tts_venv.ps1`**: Install order corrected to match CopySpeak approach — piper-tts first (pulls CPU onnxruntime), then uninstall CPU onnxruntime, install GPU onnxruntime, install `nvidia-*` CUDA DLL packages, with final force-reinstall override. Added uv auto-detection + `ensurepip` fallback for uv-created venvs.
+- **Brain warmup lifecycle** (`brain/manager.rs`, `llama_manager.rs`): Removed premature `brain:llama-ready` from early-return paths in `ensure_server_running()`. Added second `brain:llama-loading` emission after server start so frontend stays on "loading" through warmup inference.
+- **App window visibility** (`lib.rs`): Removed `app.get_webview_window("main").is_none()` guard. `win_builder.build()` failure is now non-fatal (log + continue). Window starts `.visible(true)` then conditionally `.hide()` if `start_hidden` + tray available.
+- **Loading animation** (`HerLoading.tsx`): Interactive press-and-hold with correct 240-frame easing curve. `step += 1` on hold, `step -= 4` on release. Centered canvas. Click or any keypress triggers full animation.
+- **Test panel metrics** (`BrainSettings.tsx`): Added `done` flag + 100ms wait after `brainAsk()` before `unlisten()` to capture `brain:done` event from Tauri 2's post-command queue.
+- **Llama MTP log** (`llama_manager.rs`): Removed misleading `(n=13)` from startup log — actual value is `--spec-draft-n-max 2`.
+- **Vision Component UI labels** (`BrainSettings.tsx`, `PostProcessingSettings.tsx`): Changed from `"Enabled (mmproj-F16)"` to `"Disabled by default"`.
+- **Regenerated TypeScript bindings** (`src/bindings.ts`): After `warmup_prompt` field addition.
+
+### Fixed
+
+- **App invisibility on start-hidden**: Window starts visible then hides — avoids unreliable `.show()` on never-visible Windows windows.
+- **Premature `brain:llama-ready`**: Only fires after warmup inference completes, not when server process starts responding.
+- **Test panel metrics race**: `unlisten()` called too early dropped the listener before `brain:done` event processed, causing client-side fallback estimation.
+
 ## [0.1.2] — 2026-06-20: Storage Encryption & Security Improvements
 
 > **Storage Encryption & Security Improvements.** Added transparent at-rest encryption for settings credentials and the transcription history database using the OS-native keyring with robust fallback to a local master key file.

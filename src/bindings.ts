@@ -401,6 +401,8 @@ export type BrainConfig = {
 	 *  Instructs the model to answer conversationally for listening.
 	 */
 	speakable_output_prompt?: string,
+	/**  Dummy prompt sent to warm up the Brain model when it loads into VRAM. */
+	warmup_prompt?: string,
 	/**  Conversation mode: push_to_talk | toggle | hands_free */
 	conversation_mode?: string,
 	/**  Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms) */

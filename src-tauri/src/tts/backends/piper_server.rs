@@ -373,6 +373,8 @@ fn spawn_start_thread(
             }
         };
 
+        crate::job_object::register(&mut child);
+
         // Drain stdout in background
         if let Some(stdout) = child.stdout.take() {
             std::thread::spawn(move || {

@@ -34,13 +34,23 @@ Write-Host "[1/5] Using Python: $( & $PythonCmd --version 2>&1 )" -ForegroundCol
 # Create venv
 if (-not (Test-Path $VenvDir)) {
     Write-Host "[2/5] Creating virtual environment at: $VenvDir" -ForegroundColor Yellow
-    & $PythonCmd -m venv $VenvDir
+    $UseUv = $null -ne (Get-Command uv -ErrorAction SilentlyContinue)
+    if ($UseUv) {
+        & uv venv --python 3.12 $VenvDir 2>&1
+    } else {
+        & $PythonCmd -m venv $VenvDir
+    }
 } else {
     Write-Host "[2/5] Virtual environment already exists at: $VenvDir" -ForegroundColor Yellow
 }
 
 # Activate venv and get paths
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+# Ensure pip is available (uv venvs don't include pip by default)
+if (-not (Test-Path (Join-Path $VenvDir "Scripts\pip.exe"))) {
+    Write-Host "[3/5] Installing pip..." -ForegroundColor Yellow
+    & $VenvPython -m ensurepip --upgrade --quiet 2>&1
+}
 $VenvPip = Join-Path $VenvDir "Scripts\pip.exe"
 
 if (-not $SkipPipUpgrade) {
@@ -51,9 +61,21 @@ if (-not $SkipPipUpgrade) {
 # Install TTS engines
 Write-Host "[4/5] Installing TTS engine packages..." -ForegroundColor Yellow
 
-# Piper TTS (with HTTP server support)
+# Piper TTS (with HTTP server support) — installs CPU onnxruntime as dependency
 Write-Host "  -> piper-tts[http]" -ForegroundColor Gray
 & $VenvPip install "piper-tts[http]" --quiet
+
+# Remove CPU onnxruntime that piper-tts pulled in (conflicts with GPU version)
+Write-Host "  -> removing conflicting CPU onnxruntime" -ForegroundColor Gray
+& $VenvPip uninstall onnxruntime -y --quiet 2>$null
+
+# Install onnxruntime-gpu so Piper uses CUDA execution provider
+Write-Host "  -> onnxruntime-gpu>=1.26.0, sentencepiece" -ForegroundColor Gray
+& $VenvPip install "onnxruntime-gpu>=1.26.0" sentencepiece --quiet
+
+# NVIDIA CUDA runtime packages from PyPI so onnxruntime-gpu finds the DLLs
+Write-Host "  -> nvidia CUDA runtime packages (cu12)" -ForegroundColor Gray
+& $VenvPip install nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nvjitlink-cu12 --quiet
 
 # Kokoro TTS
 Write-Host "  -> kokoro-tts" -ForegroundColor Gray
@@ -71,10 +93,6 @@ Write-Host "  -> kittentts (from wheel)" -ForegroundColor Gray
 Write-Host "  -> soundfile, numpy" -ForegroundColor Gray
 & $VenvPip install soundfile numpy --quiet
 
-# STT: Unified Parakeet ONNX runtime (1.26+)
-Write-Host "  -> onnxruntime>=1.26.0, sentencepiece" -ForegroundColor Gray
-& $VenvPip install "onnxruntime>=1.26.0" sentencepiece --quiet
-
 # STT: Nemotron (sherpa-onnx)
 Write-Host "  -> sherpa-onnx" -ForegroundColor Gray
 & $VenvPip install sherpa-onnx --quiet
@@ -82,6 +100,12 @@ Write-Host "  -> sherpa-onnx" -ForegroundColor Gray
 # Pocket-specific dependencies (PyTorch for CPU)
 Write-Host "  -> torch (CPU)" -ForegroundColor Gray
 & $VenvPip install torch --quiet
+
+# Final: ensure onnxruntime-gpu is installed (other deps may have pulled CPU onnxruntime)
+Write-Host "  -> onnxruntime-gpu (final override)" -ForegroundColor Gray
+& $VenvPip install --force-reinstall "onnxruntime-gpu>=1.26.0" --quiet
+# Remove any leftover CPU onnxruntime
+& $VenvPip uninstall onnxruntime -y --quiet 2>$null
 
 Write-Host "[5/5] Setup complete!" -ForegroundColor Green
 Write-Host ""

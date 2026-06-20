@@ -181,7 +181,7 @@ impl LlamaManager {
         let multimodal_enabled = settings.brain.multimodal_audio_enabled
             || settings.brain.multimodal_image_enabled;
 
-        info!("[LlamaManager] Spawning llama-server on port {} with MTP (n=13)...", port);
+        info!("[LlamaManager] Spawning llama-server on port {} with MTP...", port);
         let _ = self.app.emit("brain:llama-loading", ());
         
         let mut cmd = Command::new(&server_bin);
@@ -190,7 +190,7 @@ impl LlamaManager {
         // but on short prompts it's pure overhead from the Hadamard FWHT transform.
         cmd.env("LLAMA_ATTN_ROT_DISABLE", "1");
 
-        // Base args matching the user's optimal benchmark config (b9630, n=13, 216 tok/s)
+        // Base args
         cmd.args(&[
             "-m", &model_path.to_string_lossy(),
             "--port", &port.to_string(),
@@ -235,6 +235,7 @@ impl LlamaManager {
         }
 
         let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn llama-server: {}", e))?;
+        crate::job_object::register(&mut child);
         
         // Wait for port response — poll until ready or child exits
         let start = Instant::now();

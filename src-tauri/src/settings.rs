@@ -216,7 +216,7 @@ impl Default for PiperConfig {
         Self {
             python_path: "python".to_string(),
             data_dir: String::new(),
-            cuda: false,
+            cuda: true,
         }
     }
 }
@@ -547,6 +547,9 @@ pub struct BrainConfig {
     /// Instructs the model to answer conversationally for listening.
     #[serde(default = "default_speakable_output_prompt")]
     pub speakable_output_prompt: String,
+    /// Dummy prompt sent to warm up the Brain model when it loads into VRAM.
+    #[serde(default = "default_warmup_prompt")]
+    pub warmup_prompt: String,
     /// Conversation mode: push_to_talk | toggle | hands_free
     #[serde(default = "default_conversation_mode")]
     pub conversation_mode: String,
@@ -575,6 +578,10 @@ fn default_speakable_output_prompt() -> String {
 
 fn default_conversation_mode() -> String {
     "push_to_talk".to_string()
+}
+
+fn default_warmup_prompt() -> String {
+    "Count from 1 to 10".to_string()
 }
 
 fn default_endpoint_preset() -> String {
@@ -633,6 +640,7 @@ impl Default for BrainConfig {
             context_turns: 20,
             read_aloud: true,
             speakable_output_prompt: default_speakable_output_prompt(),
+            warmup_prompt: default_warmup_prompt(),
             conversation_mode: default_conversation_mode(),
             endpoint_preset: default_endpoint_preset(),
             headphone_mode: false,

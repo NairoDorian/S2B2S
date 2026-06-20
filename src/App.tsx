@@ -60,7 +60,7 @@ function App() {
     const interval = setInterval(() => {
       const elapsed = (Date.now() - loadingStartRef.current) / 1000;
       const simProgress = Math.min(0.85, elapsed / 3.0);
-      setLoadingProgress((prev) => Math.max(prev, simProgress));
+      setLoadingProgress(simProgress);
     }, 50);
     return () => clearInterval(interval);
   }, [showLoadingScreen]);
@@ -181,6 +181,7 @@ function App() {
   };
 
   const checkOnboardingStatus = async () => {
+    let targetStep: OnboardingStep = "done";
     try {
       // Check if they have any models available
       const result = await commands.hasAnyModelsAvailable();
@@ -199,8 +200,7 @@ function App() {
             ]);
             if (!hasAccessibility || !hasMicrophone) {
               await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
-              return;
+              targetStep = "accessibility";
             }
           } catch (e) {
             console.warn("Failed to check macOS permissions:", e);
@@ -217,25 +217,25 @@ function App() {
               microphoneStatus.overall_access === "denied"
             ) {
               await revealMainWindowForPermissions();
-              setOnboardingStep("accessibility");
-              return;
+              targetStep = "accessibility";
             }
           } catch (e) {
             console.warn("Failed to check Windows microphone permissions:", e);
             // If we can't check, proceed to main app and let them fix it there
           }
         }
-
-        setOnboardingStep("done");
       } else {
         // New user - start full onboarding
         setIsReturningUser(false);
-        setOnboardingStep("accessibility");
+        targetStep = "accessibility";
       }
     } catch (error) {
       console.error("Failed to check onboarding status:", error);
-      setOnboardingStep("accessibility");
+      targetStep = "accessibility";
     }
+
+    setOnboardingStep(targetStep);
+
     // Ensure loading screen lasts at least 3 seconds
     const elapsed = Date.now() - loadingStartRef.current;
     const remaining = Math.max(0, 3000 - elapsed);

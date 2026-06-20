@@ -264,17 +264,31 @@ impl BrainManager {
             return Ok(());
         }
 
-        // Ensure llama.cpp server is running before warmup
+        // Ensure llama.cpp server is running before warmup.
         if cfg.provider_id == "llama_cpp" {
             let _ = self.app.emit("brain:llama-loading", ());
             if let Some(llama_manager) = self.app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
                 llama_manager.ensure_server_running().await?;
             }
+            // ensure_server_running may fire brain:llama-ready when spawning
+            // fresh — override so status stays "loading" through warmup.
+            let _ = self.app.emit("brain:llama-loading", ());
         }
 
+        let warmup_text = if cfg.warmup_prompt.trim().is_empty() {
+            // No warmup configured — jump straight to ready
+            if cfg.provider_id == "llama_cpp" {
+                let _ = self.app.emit("brain:llama-ready", ());
+            }
+            return Ok(());
+        } else {
+            &cfg.warmup_prompt
+        };
+
+        log::info!("[Startup] Warming up AI Brain with: {:?}", warmup_text);
         let messages = vec![ChatMessage {
             role: "user".into(),
-            content: MessageContent::text("Count from 1 to 3"),
+            content: MessageContent::text(warmup_text),
         }];
 
         // Create a standalone abort flag for warmup

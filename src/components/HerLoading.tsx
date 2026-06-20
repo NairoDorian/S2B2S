@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 const LENGTH = 30;
@@ -6,32 +6,29 @@ const RADIUS = 5.6;
 const PI2 = Math.PI * 2;
 const CANVAS_SIZE = 500;
 
-function buildCurve(): THREE.CatmullRomCurve3 {
-  const points: THREE.Vector3[] = [];
-  const segments = 400;
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    let x = LENGTH * Math.sin(PI2 * t);
-    let y = RADIUS * Math.cos(PI2 * 3 * t);
-    let tt = (t % 0.25) / 0.25;
-    tt = (t % 0.25) - (2 * (1 - tt) * tt * -0.0185 + tt * tt * 0.25);
-    if (Math.floor(t / 0.25) === 0 || Math.floor(t / 0.25) === 2) {
-      tt *= -1;
+class HerCurve extends THREE.Curve<THREE.Vector3> {
+  getPoint(percent: number, optionalTarget = new THREE.Vector3()): THREE.Vector3 {
+    const x = LENGTH * Math.sin(PI2 * percent);
+    const y = RADIUS * Math.cos(PI2 * 3 * percent);
+    let t = (percent % 0.25) / 0.25;
+    t = (percent % 0.25) - (2 * (1 - t) * t * -0.0185 + t * t * 0.25);
+    if (Math.floor(percent / 0.25) === 0 || Math.floor(percent / 0.25) === 2) {
+      t *= -1;
     }
-    let z = RADIUS * Math.sin(PI2 * 2 * (t - tt));
-    points.push(new THREE.Vector3(x, y, z));
+    const z = RADIUS * Math.sin(PI2 * 2 * (percent - t));
+    return optionalTarget.set(x, y, z);
   }
-  return new THREE.CatmullRomCurve3(points, true);
 }
 
 interface HerLoadingProps {
   onEnter?: () => void;
-  progress: number; // 0..1 — when it reaches 1 the enter animation plays
+  progress: number;
 }
 
 export function HerLoading({ onEnter, progress }: HerLoadingProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const sceneData = useRef<{
+  const infoRef = useRef<HTMLParagraphElement>(null);
+  const sceneRef = useRef<{
     camera: THREE.PerspectiveCamera;
     scene: THREE.Scene;
     renderer: THREE.WebGLRenderer;
@@ -40,15 +37,11 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
     ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
     ringcover: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   } | null>(null);
-  const anim = useRef({
-    step: 0,
-    entered: false,
-    finished: false,
-  });
+  const animRef = useRef({ step: 0, toend: false, finished: false });
   const onEnterRef = useRef(onEnter);
   onEnterRef.current = onEnter;
 
-  const initScene = useCallback(() => {
+  useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
@@ -59,12 +52,10 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
     const group = new THREE.Group();
     scene.add(group);
 
-    const curve = buildCurve();
+    const curve = new HerCurve();
     const tubeGeo = new THREE.TubeGeometry(curve, 200, 1.1, 2, true);
     const meshMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      transparent: true,
-      opacity: 1,
     });
     const mesh = new THREE.Mesh(tubeGeo, meshMat);
     group.add(mesh);
@@ -106,43 +97,43 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
       group.add(plain);
     }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(CANVAS_SIZE, CANVAS_SIZE);
-    renderer.setClearColor(0x000000, 0);
+    renderer.setClearColor(0x000000);
 
     el.appendChild(renderer.domElement);
 
-    sceneData.current = {
-      camera,
-      scene,
-      renderer,
-      group,
-      mesh,
-      ring,
-      ringcover,
+    sceneRef.current = { camera, scene, renderer, group, mesh, ring, ringcover };
+
+    return () => {
+      renderer.dispose();
+      if (renderer.domElement.parentElement) {
+        renderer.domElement.parentElement.removeChild(renderer.domElement);
+      }
+      sceneRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    initScene();
+    const a = animRef.current;
+
+    function trigger() { a.toend = true; }
+
+    document.addEventListener("click", trigger);
+    document.addEventListener("touchstart", trigger);
+    document.addEventListener("keydown", trigger);
+
     return () => {
-      const data = sceneData.current;
-      if (data) {
-        data.renderer.dispose();
-        if (data.renderer.domElement.parentElement) {
-          data.renderer.domElement.parentElement.removeChild(
-            data.renderer.domElement,
-          );
-        }
-        sceneData.current = null;
-      }
+      document.removeEventListener("click", trigger);
+      document.removeEventListener("touchstart", trigger);
+      document.removeEventListener("keydown", trigger);
     };
-  }, [initScene]);
+  }, []);
 
   useEffect(() => {
     let rafId: number;
-    const a = anim.current;
+    const a = animRef.current;
 
     function easing(t: number, b: number, c: number, d: number): number {
       t /= d / 2;
@@ -152,18 +143,14 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
     }
 
     function animate() {
-      const d = sceneData.current;
+      const d = sceneRef.current;
       if (!d) {
         rafId = requestAnimationFrame(animate);
         return;
       }
 
       if (!a.finished) {
-        a.step = Math.max(
-          0,
-          Math.min(240, a.entered ? a.step + 4 : a.step - 6),
-        );
-
+        a.step = Math.max(0, Math.min(240, a.toend ? a.step + 1 : a.step - 4));
         const acceleration = easing(a.step, 0, 1, 240);
 
         if (acceleration > 0.35) {
@@ -175,20 +162,12 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
           d.ringcover.material.opacity = fadeP;
           d.ring.material.opacity = fadeP;
           d.ring.scale.x = d.ring.scale.y = 0.9 + 0.1 * fadeP;
-        } else {
-          d.group.rotation.y = 0;
-          d.group.position.z = 0;
-          d.mesh.material.opacity = 1;
-          d.ringcover.material.opacity = 0;
-          d.ring.material.opacity = 0;
         }
 
         d.mesh.rotation.x += 0.035 + acceleration;
 
-        if (a.entered && acceleration >= 1) {
+        if (acceleration >= 1) {
           a.finished = true;
-          rafId = requestAnimationFrame(animate);
-          return;
         }
       }
 
@@ -206,17 +185,25 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
     return () => cancelAnimationFrame(rafId);
   }, []);
 
-  useEffect(() => {
-    if (progress >= 1 && !anim.current.entered) {
-      anim.current.entered = true;
-    }
-  }, [progress]);
-
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 flex items-center justify-center bg-black z-50"
-      style={{ overflow: "hidden" }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{
+          background: "#000",
+          overflow: "hidden",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+        }}
+      />
+      <p
+        ref={infoRef}
+        className="fixed bottom-0 left-0 right-0 z-50 text-center text-xs leading-8"
+        style={{ color: "#ccc" }}
+      >
+        Click or press any key to enter
+      </p>
+    </>
   );
 }

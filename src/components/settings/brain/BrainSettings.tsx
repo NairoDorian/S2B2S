@@ -96,11 +96,11 @@ const LlamaStatusCard: React.FC = () => {
       </div>
       <div>
         <span className="text-mid-gray block">MTP Acceleration</span>
-        <span className="font-medium text-text">Enabled (n=13, ~216 tok/s)</span>
+        <span className="font-medium text-text">Enabled</span>
       </div>
       <div>
         <span className="text-mid-gray block">Vision Component</span>
-        <span className="font-medium text-text">Enabled (mmproj-F16)</span>
+        <span className="font-medium text-text">Disabled by default</span>
       </div>
       <div>
         <span className="text-mid-gray block">Execution Engine</span>
@@ -142,8 +142,10 @@ export const BrainSettings: React.FC = () => {
     setTestMetrics({});
 
     const startTime = performance.now();
-    // Capture server metrics from brain:done event
+    // Capture server metrics from brain:done event.
+    // Keep listener alive until we get metrics or a reasonable timeout.
     let capturedMetrics: { tps?: number; ms?: number } = {};
+    let done = false;
     const unlistenPromise = listen<{ tokens_per_sec?: number; predicted_ms?: number }>(
       "brain:done",
       (event) => {
@@ -153,11 +155,19 @@ export const BrainSettings: React.FC = () => {
             tps: p.tokens_per_sec,
             ms: p.predicted_ms ?? undefined,
           };
+          done = true;
         }
       },
     );
 
     const result = await commands.brainAsk(t("settings.brain.test.prompt"));
+
+    // Wait briefly for the brain:done event to arrive (it's emitted in Rust
+    // during the command but queued after the response in Tauri's IPC).
+    if (!done) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
     void unlistenPromise.then((fn) => fn());
 
     if (result.status === "ok") {
@@ -360,6 +370,19 @@ export const BrainSettings: React.FC = () => {
             rows={4}
             value={brain.system_prompt}
             onChange={(e) => update({ system_prompt: e.target.value })}
+          />
+        </SettingContainer>
+        <SettingContainer
+          title="Warmup Prompt"
+          description="Dummy prompt sent to warm up the model when it loads into VRAM. Leave empty to skip warmup."
+          grouped
+          layout="stacked"
+        >
+          <Textarea
+            variant="compact"
+            rows={2}
+            value={brain.warmup_prompt ?? ""}
+            onChange={(e) => update({ warmup_prompt: e.target.value })}
           />
         </SettingContainer>
         <Slider

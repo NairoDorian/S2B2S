@@ -59,8 +59,9 @@ pip install "https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kitte
 echo "  -> soundfile, numpy"
 pip install soundfile numpy --quiet
 
-# STT: Unified Parakeet ONNX runtime (1.26+)
+# STT: Unified Parakeet + Piper TTS — ONNX Runtime
 echo "  -> onnxruntime>=1.26.0, sentencepiece"
+# NOTE: On Windows the .ps1 script installs onnxruntime-gpu for CUDA
 pip install "onnxruntime>=1.26.0" sentencepiece --quiet
 
 # STT: Nemotron (sherpa-onnx)
