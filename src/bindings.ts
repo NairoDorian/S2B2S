@@ -414,7 +414,7 @@ export type BrainConfig = {
 	/**  Auto-rearm mic after reply in hands-free mode */
 	auto_listen?: boolean,
 	/**
-	 *  Send the MP3 audio recording as `input_audio` to the multimodal Brain model
+	 *  Send the WAV audio recording as `input_audio` to the multimodal Brain model
 	 *  (Gemma 4 supports native audio transcription as an extra STT pass).
 	 */
 	multimodal_audio_enabled?: boolean,

@@ -24,6 +24,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Settings Store Persistence** (`settings.rs`): Added `store.save()` calls immediately after setting key-value pairs in the settings store. This ensures settings updates (such as toggling Brain STT off/on) are immediately persisted to the disk and properly picked up by all threads and shortcuts without reverting or getting stuck.
 - **Piper CUDA DLL path discovery** (`piper_server.rs`): `get_nvidia_dll_paths` used `nvidia.__file__` which is `None` for namespace packages. Switched to `nvidia.__path__[0]` with dynamic `bin`/`bin/x86_64` discovery, fixing `CUDAExecutionProvider` init.
 - **Build broken by windows-core version mismatch** (`webview_hardening.rs`): Added `windows-core-061` alias to fix `ICoreWebView2Settings.cast<>()` across two versions of `windows-core` in the dependency tree.
 - **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.

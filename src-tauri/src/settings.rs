@@ -2077,6 +2077,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                     debug!("Settings updated with new bindings");
                     let encrypted = encrypt_settings_keys(settings.clone());
                     store.set("settings", serde_json::to_value(&encrypted).unwrap());
+                    let _ = store.save();
                 }
 
                 settings
@@ -2087,6 +2088,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                 let default_settings = get_default_settings();
                 let encrypted = encrypt_settings_keys(default_settings.clone());
                 store.set("settings", serde_json::to_value(&encrypted).unwrap());
+                let _ = store.save();
                 default_settings
             }
         }
@@ -2094,6 +2096,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         let default_settings = get_default_settings();
         let encrypted = encrypt_settings_keys(default_settings.clone());
         store.set("settings", serde_json::to_value(&encrypted).unwrap());
+        let _ = store.save();
         default_settings
     };
 
@@ -2103,6 +2106,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     if changed {
         let encrypted = encrypt_settings_keys(settings.clone());
         store.set("settings", serde_json::to_value(&encrypted).unwrap());
+        let _ = store.save();
     }
 
     settings
@@ -2120,12 +2124,14 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
                 let default_settings = get_default_settings();
                 let encrypted = encrypt_settings_keys(default_settings.clone());
                 store.set("settings", serde_json::to_value(&encrypted).unwrap());
+                let _ = store.save();
                 default_settings
             })
     } else {
         let default_settings = get_default_settings();
         let encrypted = encrypt_settings_keys(default_settings.clone());
         store.set("settings", serde_json::to_value(&encrypted).unwrap());
+        let _ = store.save();
         default_settings
     };
 
@@ -2168,6 +2174,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     if updated {
         let encrypted = encrypt_settings_keys(settings.clone());
         store.set("settings", serde_json::to_value(&encrypted).unwrap());
+        let _ = store.save();
     }
 
     settings
@@ -2180,6 +2187,7 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
 
     let encrypted = encrypt_settings_keys(settings);
     store.set("settings", serde_json::to_value(&encrypted).unwrap());
+    let _ = store.save();
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
