@@ -1,6 +1,6 @@
 [package]
 name = "s2b2s"
-version = "0.1.3"
+version = "0.1.4"
 description = "S2B2S - SpeechToBrainToSpeech"
 authors = ["NairoDorian"]
 edition = "2021"

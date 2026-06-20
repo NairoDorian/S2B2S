@@ -542,6 +542,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::wake_word::wake_word_status,
             helpers::clamshell::is_laptop,
             commands::system::get_system_ram,
+            commands::system::check_speech_runtime_installed,
+            commands::system::install_speech_runtime,
             crate::overlay_fx::commands::overlay_fx_probe_capabilities,
             crate::overlay_fx::commands::overlay_fx_show_conversation,
             crate::overlay_fx::commands::overlay_fx_dismiss,
@@ -634,6 +636,7 @@ pub fn run(cli_args: CliArgs) {
         ))
         .manage(cli_args.clone())
         .setup(move |app| {
+            crate::portable::set_app_handle(app.handle().clone());
             specta_builder.mount_events(app);
 
             // Create main window programmatically so we can set data_directory

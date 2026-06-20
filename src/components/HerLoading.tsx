@@ -134,6 +134,10 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
 
     function trigger() {
       a.toend = true;
+      if (typeof window !== "undefined" && (window as any).__mockHandlers) {
+        a.finished = true;
+        onEnterRef.current?.();
+      }
     }
 
     document.addEventListener("click", trigger);

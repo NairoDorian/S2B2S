@@ -8,6 +8,76 @@ use tauri::Manager;
 /// (settings, models, recordings, database, logs) is stored in a `Data/`
 /// directory alongside the executable instead of `%APPDATA%`.
 static PORTABLE_DATA_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+/// Store the global AppHandle for path resolution and system scripts invocation.
+pub fn set_app_handle(handle: tauri::AppHandle) {
+    let _ = APP_HANDLE.set(handle);
+}
+
+/// Retrieve a copy of the global AppHandle if initialized.
+pub fn get_app_handle() -> Option<tauri::AppHandle> {
+    APP_HANDLE.get().cloned()
+}
+
+/// Resolve the path to the Python executable inside the S2B2S venv.
+/// Priority: project venv > app_data venv > system Python fallback.
+pub fn resolve_venv_python() -> PathBuf {
+    let exe_name = if cfg!(windows) { "python.exe" } else { "python3" };
+    let venv_python = if cfg!(windows) {
+        std::path::Path::new("venv").join("Scripts").join(exe_name)
+    } else {
+        std::path::Path::new("venv").join("bin").join(exe_name)
+    };
+
+    // 1. Project root venv (dev mode)
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let project_venv = PathBuf::from(manifest_dir).join("..").join(&venv_python);
+        if project_venv.exists() {
+            log::info!("[Venv] Using project venv Python: {}", project_venv.display());
+            return project_venv;
+        }
+    }
+
+    // 2. Current directory venv (alternate dev mode)
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_venv = cwd.join("..").join(&venv_python);
+        if cwd_venv.exists() {
+            return cwd_venv;
+        }
+        let cwd_venv2 = cwd.join(&venv_python);
+        if cwd_venv2.exists() {
+            return cwd_venv2;
+        }
+    }
+
+    // 3. App data venv (installed builds)
+    if let Some(app) = APP_HANDLE.get() {
+        if let Ok(data_dir) = app_data_dir(app) {
+            let app_venv = data_dir.join(&venv_python);
+            if app_venv.exists() {
+                log::info!("[Venv] Using app data venv Python: {}", app_venv.display());
+                return app_venv;
+            }
+        }
+    } else if let Some(data_dir) = data_dir() {
+        // Fallback for portable data dir if handle not set yet
+        let app_venv = data_dir.join(&venv_python);
+        if app_venv.exists() {
+            log::info!("[Venv] Using app data venv Python: {}", app_venv.display());
+            return app_venv;
+        }
+    }
+
+    // 4. System Python fallback
+    let fallback = if cfg!(windows) { "python" } else { "python3" };
+    log::info!(
+        "[Venv] No venv found, falling back to system Python: {}",
+        fallback
+    );
+    PathBuf::from(fallback)
+}
+
 
 /// Detect portable mode by looking for a `portable` marker file next to the exe.
 /// Must be called once at startup before Tauri initializes.

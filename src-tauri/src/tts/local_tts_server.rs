@@ -12,52 +12,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 /// Resolve the path to the Python executable inside the S2B2S venv.
 /// Priority: project venv > app_data venv > system Python.
 pub(crate) fn resolve_venv_python() -> String {
-    let venv_python = if cfg!(windows) {
-        "venv/Scripts/python.exe"
-    } else {
-        "venv/bin/python"
-    };
-
-    // 1. Project root venv (dev mode): CARGO_MANIFEST_DIR/../venv/
-    let project_venv = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join(venv_python);
-    if project_venv.exists() {
-        log::info!(
-            "[Venv] Using project venv Python: {}",
-            project_venv.display()
-        );
-        return project_venv.to_string_lossy().to_string();
-    }
-
-    // 2. Current directory venv (alternate dev mode)
-    if let Ok(cwd) = std::env::current_dir() {
-        let cwd_venv = cwd.join("..").join(venv_python);
-        if cwd_venv.exists() {
-            return cwd_venv.to_string_lossy().to_string();
-        }
-        let cwd_venv2 = cwd.join(venv_python);
-        if cwd_venv2.exists() {
-            return cwd_venv2.to_string_lossy().to_string();
-        }
-    }
-
-    // 3. App data venv (installed builds)
-    if let Some(data_dir) = crate::portable::data_dir() {
-        let app_venv = data_dir.join(venv_python);
-        if app_venv.exists() {
-            log::info!("[Venv] Using app data venv Python: {}", app_venv.display());
-            return app_venv.to_string_lossy().to_string();
-        }
-    }
-
-    // 4. System Python fallback
-    let fallback = if cfg!(windows) { "python" } else { "python3" };
-    log::info!(
-        "[Venv] No venv found, falling back to system Python: {}",
-        fallback
-    );
-    fallback.to_string()
+    crate::portable::resolve_venv_python().to_string_lossy().to_string()
 }
 
 /// Resolve the local TTS models directory (S2B2S/models/TTS/) for HuggingFace cache

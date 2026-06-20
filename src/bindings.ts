@@ -258,6 +258,8 @@ export const commands = {
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
 	getSystemRam: () => typedError<SystemRamInfo, string>(__TAURI_INVOKE("get_system_ram")),
+	checkSpeechRuntimeInstalled: () => __TAURI_INVOKE<boolean>("check_speech_runtime_installed"),
+	installSpeechRuntime: () => typedError<null, string>(__TAURI_INVOKE("install_speech_runtime")),
 	/**  Probe the current machine's overlay capabilities (WebGPU, Vulkan, cursor position, etc.). */
 	overlayFxProbeCapabilities: () => __TAURI_INVOKE<OverlayCapabilities>("overlay_fx_probe_capabilities"),
 	/**  Show the brain overlay at the cursor position and begin conversation. */

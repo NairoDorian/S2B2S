@@ -222,36 +222,7 @@ impl Drop for UnifiedParakeetServer {
 }
 
 fn resolve_venv_python() -> Result<String> {
-    let exe_name = if cfg!(windows) {
-        "python.exe"
-    } else {
-        "python3"
-    };
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-    let project_venv = manifest_dir.parent().unwrap().join("venv");
-    let venv_python = if cfg!(windows) {
-        project_venv.join("Scripts").join(exe_name)
-    } else {
-        project_venv.join("bin").join(exe_name)
-    };
-    if venv_python.exists() {
-        return Ok(venv_python.to_string_lossy().to_string());
-    }
-
-    if let Some(data_dir) = portable::data_dir() {
-        let app_venv = if cfg!(windows) {
-            data_dir.join("venv").join("Scripts").join(exe_name)
-        } else {
-            data_dir.join("venv").join("bin").join(exe_name)
-        };
-        if app_venv.exists() {
-            return Ok(app_venv.to_string_lossy().to_string());
-        }
-    }
-
-    let sys_python = if cfg!(windows) { "python" } else { "python3" };
-    Ok(sys_python.to_string())
+    Ok(crate::portable::resolve_venv_python().to_string_lossy().to_string())
 }
 
 fn resolve_server_script() -> Result<PathBuf> {

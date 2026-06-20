@@ -5,35 +5,35 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.1.4] — 2026-06-20: Phase 0 Documentation & CI Workflow Cleanup
+## [0.1.4] — 2026-06-20: CI Consolidation, Standalone Speech Runtime & Playwright E2E Tests
 
-> **Phase 0 Cleanup.** Consolidated documentation sprawl, established a single status dashboard (`STATUS.md`), made project roadmap claims honest, and optimized CI configurations.
+> **CI consolidation, standalone speech runtime, panic auditing, and Playwright E2E tests.** Consolidated documentation sprawl, established a single status dashboard (`STATUS.md`), optimized CI configurations, implemented onboarding-time portable Python/uv speech runtime provisioning, audited and converted Rust panics to safe errors, and created comprehensive mock Tauri IPC E2E tests.
 
 ### Added
 
+- **Onboarding Python Runtime Installer**: Standalone setup scripts (`scripts/install-speech-runtime.ps1` for Windows, `scripts/install-speech-runtime.sh` for macOS/Linux) to provision a portable speech environment (portable `uv` + relocatable Python 3.12.13 + local `venv/` dependency setup) during onboarding.
+- **Playwright E2E Testing**: Custom mock Tauri IPC layer (`tests/helpers/tauri-mock.ts`) to enable headless test execution. Created spec suites for the core pipelines: Onboarding (`tests/specs/onboarding.spec.ts`), Dictation HUD (`tests/specs/dictation.spec.ts`), and Conversation Tab (`tests/specs/conversation.spec.ts`).
 - **`STATUS.md`**: Single source of truth status, scorecard, and roadmap for S2B2S.
-- **`docs/vision.md`**: Consolidated conceptual specifications for overlays, 3D avatar animations, screen understanding, and conversation mode 2.0.
-- **`docs/android.md`**: Consolidated Android porting and companion PWA plans.
-- **`docs/references.md`**: Consolidated link indexes and mobile AI libraries.
-- **`.github/workflows/ci.yml`**: Unified CI workflow running lint checks, translation checker, TypeScript compiler, and Rust unit tests.
-- **`.github/workflows/build-main.yml`**: Full cross-platform package build on pushes to `main`.
-- **`.github/workflows/build-test.yml`**: Manual build workflow for test runs across any branch, tag, or PR.
+- **`docs/`**: Consolidated conceptual specifications (`docs/vision.md`), Android companion plans (`docs/android.md`), and dev references (`docs/references.md`).
+- **Unified GitHub Actions**: Unified lint, typecheck, translation, and unit test CI workflow (`.github/workflows/ci.yml`) and package builds (`build-main.yml`, `build-test.yml`).
 
 ### Changed
 
-- **`README.md`**: Restored transparency by honestly labeling translation completeness and the wgpu overlay stub, and pointing references to `STATUS.md`.
-- **`AGENTS.md`**: Merged development commands, environment setup details, and style guidelines from `CRUSH.md`.
-- **`BUILD.md`**: Merged pre-compiled `llama.cpp` integration details from `LLAMA_CPP.md`.
-- **`CONTRIBUTING.md`**: Merged translation contributor guidelines from `CONTRIBUTING_TRANSLATIONS.md`.
-- **`CLAUDE.md`**: Simplified to a 2-line pointer directing assistants to `AGENTS.md`.
-- **`HerLoading.tsx`**: Added explicit constructor call to `HerCurve` subclass to resolve a Three.js v0.184 TypeScript compiler warning.
-- **`.gitignore`**: Added `S2B2S_repomix*.txt` to prevent committing massive codebase text snapshots.
+- **Onboarding UI**: Modified `Onboarding.tsx` to execute and display installation progress of the portable speech runtime.
+- **Rust Backend Panic Audit**: Converted potential panics (`unwrap()` and `expect()` calls) into handled `Result` boundaries in `audio_toolkit/audio/recorder.rs`, `tts/player.rs`, `clipboard.rs`, and command handlers.
+- **WebGL Easing & Bypass**: Added automated skips in `HerLoading.tsx` for headless runs to eliminate test flakiness.
+- **`README.md` & docs**: Fixed obsolete links, corrected translation completeness metrics, and pointed roadmap references to `STATUS.md`.
+- **Developer docs & guidelines**: Merged guidelines, dev commands, and setup instructions into `AGENTS.md`, `BUILD.md`, and `CONTRIBUTING.md`.
+
+### Fixed
+
+- **Mock Model Onboarding Hook**: Ensured mock handlers in `tauri-mock.ts` emit `model-download-complete` and updated `model-state-changed` events, and handle `set_active_model` commands.
+- **Playwright strict locator violations**: Refined main layout selectors to prevent strict mode errors on sidebar lookups.
+- **App spec console errors**: Wrapped generic dev server spec runs with mock Tauri IPC structures to prevent OS-plugin platform errors.
 
 ### Removed
 
-- **Obsolete files**: `improvement-plan.md`, `AIVORELAY_INSPIRED_IMPROVEMENTS.md`, `S2B2S_REVIEW.md`, `reference_github_links.md`, `S2B2S_ANDROID_COMPANION.md`, `android-port-plan.md`, `S2B2S_repomix.txt`, `S2B2S_repomix_annotated.txt`, `CRUSH.md`, `CONTRIBUTING_TRANSLATIONS.md`, `LLAMA_CPP.md`.
-- **Obsolete directories**: `analysys/`, `futuristic_analysis/`, `references_comparative_analysis_md/`.
-- **Obsolete workflows**: `.github/workflows/code-quality.yml`, `.github/workflows/test.yml`, `.github/workflows/build-test.yml` (replaced), `.github/workflows/main-build.yml` (replaced), `.github/workflows/pr-test-build.yml` (replaced).
+- **Obsolete files & directories**: Cleaned up `CRUSH.md`, `LLAMA_CPP.md`, `CONTRIBUTING_TRANSLATIONS.md`, `android-port-plan.md`, `S2B2S_REVIEW.md`, `reference_github_links.md`, `analysys/`, `futuristic_analysis/`, and duplicate workflow definitions.
 
 ---
 
