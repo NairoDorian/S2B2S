@@ -5,6 +5,17 @@ All notable changes to S2B2S are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] — 2026-06-20: Storage Encryption & Security Improvements
+
+> **Storage Encryption & Security Improvements.** Added transparent at-rest encryption for settings credentials and the transcription history database using the OS-native keyring with robust fallback to a local master key file.
+
+### Added
+
+- **OS Keyring Integration** (`crypto.rs`): Added `keyring`, `aes-gcm`, and `aead` crates to secure the master key via Windows Credential Manager / macOS Keychain / Linux Secret Service.
+- **Robust Key Fallback** (`crypto.rs`): Automatically falls back to a user-restricted local file (`.master_key`) in the app data directory if OS keyring access fails or is blocked, ensuring no-crash startup.
+- **Transparent Settings Encryption** (`settings.rs`): Added transparent at-rest AES-256-GCM encryption for critical API keys (OpenAI, ElevenLabs, Cartesia, and post-processing/brain providers) when persisting to `settings_store.json`. Exposes decrypted plaintext in-memory for frontend IPC communication.
+- **Database transcription text encryption** (`history.rs`): Transparently encrypts `transcription_text` and `post_processed_text` columns using AES-256-GCM before writing to `history.db`, and decrypts them on SQL queries.
+
 ## [0.1.1] — 2026-06-19: Parler Integration & CUDA Fix
 
 > **Parler fork feature port.** Integrated post-process actions system (LLMModel + PostProcessAction CRUD), action-based shortcut bindings (`ppa_<id>`), trigger key selection (1-9), history action re-processing, and action icon system (28 Lucide icons). Backend: settings migration, shortcut scoping, WAL journal mode, batch DB deletes, startup timeout. Frontend: action management dialog, reusable Dialog component, macOS permissions helper.

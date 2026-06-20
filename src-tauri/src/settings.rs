@@ -139,6 +139,8 @@ pub struct PostProcessProvider {
     #[serde(default)]
     pub allow_base_url_edit: bool,
     #[serde(default)]
+    pub allow_insecure_http: bool,
+    #[serde(default)]
     pub models_endpoint: Option<String>,
     #[serde(default)]
     pub supports_structured_output: bool,
@@ -1117,6 +1119,46 @@ pub struct AppSettings {
     /// results with stateful RNNT decoder. When disabled, uses offline /transcribe.
     #[serde(default = "default_parakeet_streaming_enabled")]
     pub parakeet_streaming_enabled: bool,
+    #[serde(default)]
+    pub control_server_token: Option<String>,
+    #[serde(default)]
+    pub recording_auto_stop_enabled: bool,
+    #[serde(default = "default_recording_auto_stop_timeout_seconds")]
+    pub recording_auto_stop_timeout_seconds: u32,
+    #[serde(default)]
+    pub recording_auto_stop_paste: bool,
+    #[serde(default)]
+    pub text_replacement_decapitalize_after_edit_key_enabled: bool,
+    #[serde(default = "default_text_replacement_decapitalize_after_edit_key")]
+    pub text_replacement_decapitalize_after_edit_key: String,
+    #[serde(default)]
+    pub text_replacement_decapitalize_after_edit_secondary_key_enabled: bool,
+    #[serde(default = "default_text_replacement_decapitalize_after_edit_secondary_key")]
+    pub text_replacement_decapitalize_after_edit_secondary_key: String,
+    #[serde(default = "default_text_replacement_decapitalize_timeout_ms")]
+    pub text_replacement_decapitalize_timeout_ms: u32,
+    #[serde(default = "default_text_replacement_decapitalize_standard_post_recording_monitor_ms")]
+    pub text_replacement_decapitalize_standard_post_recording_monitor_ms: u32,
+}
+
+fn default_recording_auto_stop_timeout_seconds() -> u32 {
+    1800
+}
+
+fn default_text_replacement_decapitalize_after_edit_key() -> String {
+    "backspace".to_string()
+}
+
+fn default_text_replacement_decapitalize_after_edit_secondary_key() -> String {
+    "delete".to_string()
+}
+
+fn default_text_replacement_decapitalize_timeout_ms() -> u32 {
+    5000
+}
+
+fn default_text_replacement_decapitalize_standard_post_recording_monitor_ms() -> u32 {
+    5000
 }
 
 fn default_long_audio_threshold_seconds() -> f64 {
@@ -1239,6 +1281,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "OpenAI".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
         },
@@ -1247,6 +1290,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Z.AI".to_string(),
             base_url: "https://api.z.ai/api/paas/v4".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
         },
@@ -1255,6 +1299,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Google Gemini".to_string(),
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
         },
@@ -1263,6 +1308,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Google AI Studio".to_string(),
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai/".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: false,
         },
@@ -1271,6 +1317,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "OpenRouter".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
         },
@@ -1279,6 +1326,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Anthropic".to_string(),
             base_url: "https://api.anthropic.com/v1".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: false,
         },
@@ -1287,6 +1335,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Groq".to_string(),
             base_url: "https://api.groq.com/openai/v1".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: false,
         },
@@ -1295,6 +1344,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Cerebras".to_string(),
             base_url: "https://api.cerebras.ai/v1".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
         },
@@ -1311,6 +1361,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             label: "Apple Intelligence".to_string(),
             base_url: "apple-intelligence://local".to_string(),
             allow_base_url_edit: false,
+            allow_insecure_http: false,
             models_endpoint: None,
             supports_structured_output: true,
         });
@@ -1322,6 +1373,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         label: "AWS Bedrock (Mantle)".to_string(),
         base_url: "https://bedrock-mantle.us-east-1.api.aws/v1".to_string(),
         allow_base_url_edit: false,
+        allow_insecure_http: false,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: true,
     });
@@ -1332,6 +1384,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         label: "Llama.cpp (Local)".to_string(),
         base_url: "http://localhost:8001/v1".to_string(),
         allow_base_url_edit: true,
+        allow_insecure_http: true,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: true,
     });
@@ -1342,6 +1395,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         label: "Custom".to_string(),
         base_url: "http://localhost:11434/v1".to_string(),
         allow_base_url_edit: true,
+        allow_insecure_http: true,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: false,
     });
@@ -1803,6 +1857,16 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_models: Vec::new(),
         multi_stt_prompt: default_multi_stt_prompt(),
         parakeet_streaming_enabled: default_parakeet_streaming_enabled(),
+        control_server_token: None,
+        recording_auto_stop_enabled: false,
+        recording_auto_stop_timeout_seconds: default_recording_auto_stop_timeout_seconds(),
+        recording_auto_stop_paste: false,
+        text_replacement_decapitalize_after_edit_key_enabled: false,
+        text_replacement_decapitalize_after_edit_key: default_text_replacement_decapitalize_after_edit_key(),
+        text_replacement_decapitalize_after_edit_secondary_key_enabled: false,
+        text_replacement_decapitalize_after_edit_secondary_key: default_text_replacement_decapitalize_after_edit_secondary_key(),
+        text_replacement_decapitalize_timeout_ms: default_text_replacement_decapitalize_timeout_ms(),
+        text_replacement_decapitalize_standard_post_recording_monitor_ms: default_text_replacement_decapitalize_standard_post_recording_monitor_ms(),
     }
 }
 
@@ -1849,6 +1913,72 @@ impl AppSettings {
     }
 }
 
+fn encrypt_settings_keys(mut settings: AppSettings) -> AppSettings {
+    if !settings.tts.openai.api_key.is_empty() && !settings.tts.openai.api_key.starts_with("enc:v1:") {
+        if let Ok(enc) = crate::crypto::encrypt_str(&settings.tts.openai.api_key) {
+            settings.tts.openai.api_key = enc;
+        }
+    }
+    if !settings.tts.elevenlabs.api_key.is_empty() && !settings.tts.elevenlabs.api_key.starts_with("enc:v1:") {
+        if let Ok(enc) = crate::crypto::encrypt_str(&settings.tts.elevenlabs.api_key) {
+            settings.tts.elevenlabs.api_key = enc;
+        }
+    }
+    if !settings.tts.cartesia.api_key.is_empty() && !settings.tts.cartesia.api_key.starts_with("enc:v1:") {
+        if let Ok(enc) = crate::crypto::encrypt_str(&settings.tts.cartesia.api_key) {
+            settings.tts.cartesia.api_key = enc;
+        }
+    }
+    for (_, val) in settings.post_process_api_keys.0.iter_mut() {
+        if !val.is_empty() && !val.starts_with("enc:v1:") {
+            if let Ok(enc) = crate::crypto::encrypt_str(val) {
+                *val = enc;
+            }
+        }
+    }
+    for (_, val) in settings.brain.api_keys.0.iter_mut() {
+        if !val.is_empty() && !val.starts_with("enc:v1:") {
+            if let Ok(enc) = crate::crypto::encrypt_str(val) {
+                *val = enc;
+            }
+        }
+    }
+    settings
+}
+
+fn decrypt_settings_keys(mut settings: AppSettings) -> AppSettings {
+    if settings.tts.openai.api_key.starts_with("enc:v1:") {
+        if let Ok(dec) = crate::crypto::decrypt_str(&settings.tts.openai.api_key) {
+            settings.tts.openai.api_key = dec;
+        }
+    }
+    if settings.tts.elevenlabs.api_key.starts_with("enc:v1:") {
+        if let Ok(dec) = crate::crypto::decrypt_str(&settings.tts.elevenlabs.api_key) {
+            settings.tts.elevenlabs.api_key = dec;
+        }
+    }
+    if settings.tts.cartesia.api_key.starts_with("enc:v1:") {
+        if let Ok(dec) = crate::crypto::decrypt_str(&settings.tts.cartesia.api_key) {
+            settings.tts.cartesia.api_key = dec;
+        }
+    }
+    for (_, val) in settings.post_process_api_keys.0.iter_mut() {
+        if val.starts_with("enc:v1:") {
+            if let Ok(dec) = crate::crypto::decrypt_str(val) {
+                *val = dec;
+            }
+        }
+    }
+    for (_, val) in settings.brain.api_keys.0.iter_mut() {
+        if val.starts_with("enc:v1:") {
+            if let Ok(dec) = crate::crypto::decrypt_str(val) {
+                *val = dec;
+            }
+        }
+    }
+    settings
+}
+
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     // Initialize store
     let store = app
@@ -1860,6 +1990,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         match serde_json::from_value::<AppSettings>(settings_value) {
             Ok(mut settings) => {
                 debug!("Found existing settings: {:?}", settings);
+                settings = decrypt_settings_keys(settings);
                 let default_settings = get_default_settings();
                 let mut updated = false;
 
@@ -1876,7 +2007,8 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
 
                 if updated {
                     debug!("Settings updated with new bindings");
-                    store.set("settings", serde_json::to_value(&settings).unwrap());
+                    let encrypted = encrypt_settings_keys(settings.clone());
+                    store.set("settings", serde_json::to_value(&encrypted).unwrap());
                 }
 
                 settings
@@ -1885,13 +2017,15 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                 warn!("Failed to parse settings: {}", e);
                 // Fall back to default settings if parsing fails
                 let default_settings = get_default_settings();
-                store.set("settings", serde_json::to_value(&default_settings).unwrap());
+                let encrypted = encrypt_settings_keys(default_settings.clone());
+                store.set("settings", serde_json::to_value(&encrypted).unwrap());
                 default_settings
             }
         }
     } else {
         let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
+        let encrypted = encrypt_settings_keys(default_settings.clone());
+        store.set("settings", serde_json::to_value(&encrypted).unwrap());
         default_settings
     };
 
@@ -1899,7 +2033,8 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     changed |= ensure_post_process_actions(&mut settings);
     changed |= ensure_action_bindings(&mut settings);
     if changed {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+        let encrypted = encrypt_settings_keys(settings.clone());
+        store.set("settings", serde_json::to_value(&encrypted).unwrap());
     }
 
     settings
@@ -1911,18 +2046,32 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         .expect("Failed to initialize store");
 
     let mut settings = if let Some(settings_value) = store.get("settings") {
-        serde_json::from_value::<AppSettings>(settings_value).unwrap_or_else(|_| {
-            let default_settings = get_default_settings();
-            store.set("settings", serde_json::to_value(&default_settings).unwrap());
-            default_settings
-        })
+        serde_json::from_value::<AppSettings>(settings_value)
+            .map(|s| decrypt_settings_keys(s))
+            .unwrap_or_else(|_| {
+                let default_settings = get_default_settings();
+                let encrypted = encrypt_settings_keys(default_settings.clone());
+                store.set("settings", serde_json::to_value(&encrypted).unwrap());
+                default_settings
+            })
     } else {
         let default_settings = get_default_settings();
-        store.set("settings", serde_json::to_value(&default_settings).unwrap());
+        let encrypted = encrypt_settings_keys(default_settings.clone());
+        store.set("settings", serde_json::to_value(&encrypted).unwrap());
         default_settings
     };
 
     let mut updated = false;
+
+    if settings.control_server_token.is_none() {
+        let mut token_bytes = [0u8; 16];
+        if getrandom::getrandom(&mut token_bytes).is_ok() {
+            let token = token_bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            log::info!("Generated control server token: {}", token);
+            settings.control_server_token = Some(token);
+            updated = true;
+        }
+    }
 
     let default_bindings = get_default_settings().bindings;
     for (key, value) in default_bindings {
@@ -1946,7 +2095,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     }
 
     if updated {
-        store.set("settings", serde_json::to_value(&settings).unwrap());
+        let encrypted = encrypt_settings_keys(settings.clone());
+        store.set("settings", serde_json::to_value(&encrypted).unwrap());
     }
 
     settings
@@ -1957,7 +2107,8 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
         .expect("Failed to initialize store");
 
-    store.set("settings", serde_json::to_value(&settings).unwrap());
+    let encrypted = encrypt_settings_keys(settings);
+    store.set("settings", serde_json::to_value(&encrypted).unwrap());
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {

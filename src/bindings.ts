@@ -79,6 +79,13 @@ export const commands = {
 	 *  stays responsive — see also the startup pre-warm in `lib.rs`.
 	 */
 	getAvailableAccelerators: () => __TAURI_INVOKE<AvailableAccelerators>("get_available_accelerators"),
+	changeTextReplacementDecapitalizeAfterEditKeyEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_text_replacement_decapitalize_after_edit_key_enabled_setting", { enabled })),
+	changeTextReplacementDecapitalizeAfterEditKeySetting: (key: string) => typedError<null, string>(__TAURI_INVOKE("change_text_replacement_decapitalize_after_edit_key_setting", { key })),
+	changeTextReplacementDecapitalizeAfterEditSecondaryKeyEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_text_replacement_decapitalize_after_edit_secondary_key_enabled_setting", { enabled })),
+	changeTextReplacementDecapitalizeAfterEditSecondaryKeySetting: (key: string) => typedError<null, string>(__TAURI_INVOKE("change_text_replacement_decapitalize_after_edit_secondary_key_setting", { key })),
+	changeTextReplacementDecapitalizeTimeoutMsSetting: (timeoutMs: number) => typedError<null, string>(__TAURI_INVOKE("change_text_replacement_decapitalize_timeout_ms_setting", { timeoutMs })),
+	changeTextReplacementDecapitalizeStandardPostRecordingMonitorMsSetting: (timeoutMs: number) => typedError<null, string>(__TAURI_INVOKE("change_text_replacement_decapitalize_standard_post_recording_monitor_ms_setting", { timeoutMs })),
+	getTextReplacementDecapitalizeOverlayState: () => __TAURI_INVOKE<DecapitalizeOverlayStateResponse>("get_text_replacement_decapitalize_overlay_state"),
 	/**  Start key recording mode */
 	startKeyListenerRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_key_listener_recording", { bindingId })),
 	/**  Stop key recording mode */
@@ -343,6 +350,16 @@ export type AppSettings = {
 	 *  results with stateful RNNT decoder. When disabled, uses offline /transcribe.
 	 */
 	parakeet_streaming_enabled?: boolean,
+	control_server_token?: string | null,
+	recording_auto_stop_enabled?: boolean,
+	recording_auto_stop_timeout_seconds?: number,
+	recording_auto_stop_paste?: boolean,
+	text_replacement_decapitalize_after_edit_key_enabled?: boolean,
+	text_replacement_decapitalize_after_edit_key?: string,
+	text_replacement_decapitalize_after_edit_secondary_key_enabled?: boolean,
+	text_replacement_decapitalize_after_edit_secondary_key?: string,
+	text_replacement_decapitalize_timeout_ms?: number,
+	text_replacement_decapitalize_standard_post_recording_monitor_ms?: number,
 };
 
 export type AudioDevice = {
@@ -418,6 +435,11 @@ export type ClipboardHandling = "dont_modify" | "copy_to_clipboard";
 export type CustomSounds = {
 	start: boolean,
 	stop: boolean,
+};
+
+export type DecapitalizeOverlayStateResponse = {
+	decapitalize_eligible: boolean,
+	decapitalize_armed: boolean,
 };
 
 export type DiscoveredServer = {
@@ -681,6 +703,7 @@ export type PostProcessProvider = {
 	label: string,
 	base_url: string,
 	allow_base_url_edit?: boolean,
+	allow_insecure_http?: boolean,
 	models_endpoint?: string | null,
 	supports_structured_output?: boolean,
 };

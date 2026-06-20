@@ -38,6 +38,7 @@ impl Drop for FinishGuard {
         if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
             c.notify_processing_finished();
         }
+        crate::recording_session::exit_processing(&self.0);
     }
 }
 
@@ -69,7 +70,26 @@ fn build_system_prompt(prompt_template: &str) -> String {
     prompt_template.replace("${output}", "").trim().to_string()
 }
 
-async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, transcription: &str) -> Option<String> {
+async fn post_process_transcription(
+    app: &AppHandle,
+    settings: &AppSettings,
+    transcription: &str,
+    operation_id: Option<u64>,
+) -> Option<String> {
+    let check_cancelled = || {
+        if let (Some(tracker), Some(op_id)) = (app.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>(), operation_id) {
+            if tracker.is_cancelled(op_id) {
+                debug!("LLM post-processing operation {} was cancelled, aborting.", op_id);
+                return true;
+            }
+        }
+        false
+    };
+
+    if check_cancelled() {
+        return None;
+    }
+
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
@@ -158,6 +178,10 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
         _ => (None, None),
     };
 
+    if check_cancelled() {
+        return None;
+    }
+
     if provider.supports_structured_output {
         debug!("Using structured outputs for provider '{}'", provider.id);
 
@@ -176,11 +200,17 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
                 }
 
                 let token_limit = model.trim().parse::<i32>().unwrap_or(0);
-                return match apple_intelligence::process_text_with_system_prompt(
+                let result = apple_intelligence::process_text_with_system_prompt(
                     &system_prompt,
                     &user_content,
                     token_limit,
-                ) {
+                );
+
+                if check_cancelled() {
+                    return None;
+                }
+
+                return match result {
                     Ok(result) => {
                         if result.trim().is_empty() {
                             debug!("Apple Intelligence returned an empty response");
@@ -221,7 +251,7 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
             "additionalProperties": false
         });
 
-        match crate::llm_client::send_chat_completion_with_schema(
+        let completion_res = crate::llm_client::send_chat_completion_with_schema(
             &provider,
             api_key.clone(),
             &model,
@@ -231,8 +261,13 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
             reasoning_effort.clone(),
             reasoning.clone(),
         )
-        .await
-        {
+        .await;
+
+        if check_cancelled() {
+            return None;
+        }
+
+        match completion_res {
             Ok(Some(content)) => {
                 // Parse the JSON response to extract the transcription field
                 match serde_json::from_str::<serde_json::Value>(&content) {
@@ -279,7 +314,11 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
     let processed_prompt = prompt.replace("${output}", transcription);
     debug!("Processed prompt length: {} chars", processed_prompt.len());
 
-    match crate::llm_client::send_chat_completion(
+    if check_cancelled() {
+        return None;
+    }
+
+    let completion_res = crate::llm_client::send_chat_completion(
         &provider,
         api_key,
         &model,
@@ -287,8 +326,13 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
         reasoning_effort,
         reasoning,
     )
-    .await
-    {
+    .await;
+
+    if check_cancelled() {
+        return None;
+    }
+
+    match completion_res {
         Ok(Some(content)) => {
             let content = strip_invisible_chars(&content);
             debug!(
@@ -321,6 +365,7 @@ pub(crate) async fn run_post_process_action(
     settings: &AppSettings,
     text: &str,
     action: &PostProcessAction,
+    operation_id: Option<u64>,
 ) -> Option<String> {
     let model = action
         .llm_model_id
@@ -331,7 +376,6 @@ pub(crate) async fn run_post_process_action(
     match model {
         Some(model) => {
             // Reuse the existing process_action logic by building a temporary prompt config
-            let temp_settings = settings.clone();
             // This routes through the existing LLM client with the saved model's provider
             if model.provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
                 debug!("Apple Intelligence provider selected for action, routing through legacy path");
@@ -343,6 +387,7 @@ pub(crate) async fn run_post_process_action(
                 &action.prompt,
                 Some(&model.model),
                 Some(&model.provider_id),
+                operation_id,
             )
             .await
         }
@@ -352,7 +397,7 @@ pub(crate) async fn run_post_process_action(
                 "No saved language model found for action '{}'; falling back to legacy config",
                 action.id
             );
-            post_process_transcription_with_action(app, settings, text, &action.prompt).await
+            post_process_transcription_with_action(app, settings, text, &action.prompt, operation_id).await
         }
     }
 }
@@ -363,7 +408,22 @@ async fn post_process_transcription_with_action(
     settings: &AppSettings,
     transcription: &str,
     action_prompt: &str,
+    operation_id: Option<u64>,
 ) -> Option<String> {
+    let check_cancelled = || {
+        if let (Some(tracker), Some(op_id)) = (app.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>(), operation_id) {
+            if tracker.is_cancelled(op_id) {
+                debug!("LLM action post-processing operation {} was cancelled, aborting.", op_id);
+                return true;
+            }
+        }
+        false
+    };
+
+    if check_cancelled() {
+        return None;
+    }
+
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
@@ -398,7 +458,11 @@ async fn post_process_transcription_with_action(
         provider.id, model
     );
 
-    match crate::llm_client::send_chat_completion(
+    if check_cancelled() {
+        return None;
+    }
+
+    let completion_res = crate::llm_client::send_chat_completion(
         &provider,
         api_key,
         &model,
@@ -406,8 +470,13 @@ async fn post_process_transcription_with_action(
         None,
         None,
     )
-    .await
-    {
+    .await;
+
+    if check_cancelled() {
+        return None;
+    }
+
+    match completion_res {
         Ok(Some(content)) => {
             let content = strip_invisible_chars(&content);
             debug!("Legacy post-processing succeeded. Output length: {} chars", content.len());
@@ -433,7 +502,22 @@ async fn process_action(
     prompt_template: &str,
     model: Option<&str>,
     provider_id: Option<&str>,
+    operation_id: Option<u64>,
 ) -> Option<String> {
+    let check_cancelled = || {
+        if let (Some(tracker), Some(op_id)) = (app.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>(), operation_id) {
+            if tracker.is_cancelled(op_id) {
+                debug!("LLM action operation {} was cancelled, aborting.", op_id);
+                return true;
+            }
+        }
+        false
+    };
+
+    if check_cancelled() {
+        return None;
+    }
+
     let provider = match provider_id {
         Some(pid) => settings.post_process_provider(pid).cloned(),
         None => settings.active_post_process_provider().cloned(),
@@ -478,6 +562,10 @@ async fn process_action(
     let processed_prompt = prompt_template.replace("${output}", text);
     let system_prompt = prompt_template.replace("${output}", "").trim().to_string();
 
+    if check_cancelled() {
+        return None;
+    }
+
     if provider.supports_structured_output {
         let json_schema = serde_json::json!({
             "type": "object",
@@ -491,7 +579,7 @@ async fn process_action(
             "additionalProperties": false
         });
 
-        match crate::llm_client::send_chat_completion_with_schema(
+        let completion_res = crate::llm_client::send_chat_completion_with_schema(
             &provider,
             api_key.clone(),
             &model_str,
@@ -501,8 +589,13 @@ async fn process_action(
             None,
             None,
         )
-        .await
-        {
+        .await;
+
+        if check_cancelled() {
+            return None;
+        }
+
+        match completion_res {
             Ok(Some(content)) => {
                 match serde_json::from_str::<serde_json::Value>(&content) {
                     Ok(json) => {
@@ -521,7 +614,11 @@ async fn process_action(
         }
     }
 
-    match crate::llm_client::send_chat_completion(
+    if check_cancelled() {
+        return None;
+    }
+
+    let completion_res = crate::llm_client::send_chat_completion(
         &provider,
         api_key,
         &model_str,
@@ -529,8 +626,13 @@ async fn process_action(
         None,
         None,
     )
-    .await
-    {
+    .await;
+
+    if check_cancelled() {
+        return None;
+    }
+
+    match completion_res {
         Ok(Some(content)) => Some(strip_invisible_chars(&content)),
         Ok(None) => None,
         Err(e) => {
@@ -594,6 +696,7 @@ pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
     post_process: bool,
+    operation_id: Option<u64>,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
@@ -620,7 +723,7 @@ pub(crate) async fn process_transcription_output(
         let settings = get_settings(app);
         if let Some(action) = settings.post_process_action(&action_id) {
             if let Some(processed_text) =
-                run_post_process_action(app, &settings, &final_text, action).await
+                run_post_process_action(app, &settings, &final_text, action, operation_id).await
             {
                 post_processed_text = Some(processed_text.clone());
                 post_process_prompt = Some(action.prompt.clone());
@@ -628,7 +731,7 @@ pub(crate) async fn process_transcription_output(
             }
         }
     } else if post_process {
-        if let Some(processed_text) = post_process_transcription(app, &settings, &final_text).await {
+        if let Some(processed_text) = post_process_transcription(app, &settings, &final_text, operation_id).await {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
@@ -658,6 +761,27 @@ impl ShortcutAction for TranscribeAction {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
+        // Check if there is already an active session
+        {
+            let state = app.state::<crate::recording_session::ManagedSessionState>();
+            let mut session_state = state.lock().unwrap();
+            if !matches!(&*session_state, crate::recording_session::SessionState::Idle) {
+                warn!("TranscribeAction::start called but session is not idle (state is {:?})", *session_state);
+                return;
+            }
+
+            let session = std::sync::Arc::new(crate::recording_session::RecordingSession::new_with_resources(
+                app,
+                true, // will register cancel
+                true, // will apply mute
+            ));
+
+            *session_state = crate::recording_session::SessionState::Recording {
+                session: std::sync::Arc::clone(&session),
+                binding_id: binding_id.to_string(),
+            };
+        }
+
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
@@ -686,8 +810,6 @@ impl ShortcutAction for TranscribeAction {
             debug!("Always-on mode: Playing audio feedback immediately");
             let rm_clone = Arc::clone(&rm);
             let app_clone = app.clone();
-            // The blocking helper exits immediately if audio feedback is disabled,
-            // so we can always reuse this thread to ensure mute happens right after playback.
             std::thread::spawn(move || {
                 play_feedback_sound_blocking(&app_clone, SoundType::Start);
                 rm_clone.apply_mute();
@@ -699,20 +821,16 @@ impl ShortcutAction for TranscribeAction {
             }
         } else {
             // On-demand mode: Start recording first, then play audio feedback, then apply mute
-            // This allows the microphone to be activated before playing the sound
             debug!("On-demand mode: Starting recording first, then audio feedback");
             let recording_start_time = Instant::now();
             match rm.try_start_recording(&binding_id) {
                 Ok(()) => {
                     debug!("Recording started in {:?}", recording_start_time.elapsed());
-                    // Small delay to ensure microphone stream is active
                     let app_clone = app.clone();
                     let rm_clone = Arc::clone(&rm);
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(100));
                         debug!("Handling delayed audio feedback/mute sequence");
-                        // Helper handles disabled audio feedback by returning early, so we reuse it
-                        // to keep mute sequencing consistent in every mode.
                         play_feedback_sound_blocking(&app_clone, SoundType::Start);
                         rm_clone.apply_mute();
                     });
@@ -725,11 +843,21 @@ impl ShortcutAction for TranscribeAction {
         }
 
         if recording_error.is_none() {
-            // Dynamically register the cancel shortcut in a separate task to avoid deadlock
-            shortcut::register_cancel_shortcut(app);
+            // Dynamically register the cancel shortcut via the session guard
+            if let crate::recording_session::SessionState::Recording { session, .. } = &*app.state::<crate::recording_session::ManagedSessionState>().lock().unwrap() {
+                session.register_cancel_shortcut();
+            }
+
+            let settings = get_settings(app);
+            if settings.text_replacement_decapitalize_after_edit_key_enabled {
+                crate::text_replacement_decapitalize::promote_pending_realtime_trigger_to_standard_output();
+            }
+
+            crate::recording_auto_stop::start_auto_stop_timer(app, &binding_id);
         } else {
             // Starting failed (for example due to blocked microphone permissions).
-            // Revert UI state so we don't stay stuck in the recording overlay.
+            // Revert UI state and reset the session state to Idle
+            let _ = crate::recording_session::take_session(app);
             utils::hide_recording_overlay(app);
             change_tray_icon(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
@@ -757,8 +885,29 @@ impl ShortcutAction for TranscribeAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
-        // Unregister the cancel shortcut when transcription stops
-        shortcut::unregister_cancel_shortcut(app);
+        let session = match crate::recording_session::take_session_if_matches(app, binding_id) {
+            Some(s) => s,
+            None => {
+                debug!("TranscribeAction::stop called but no matching active session found for: {}", binding_id);
+                return;
+            }
+        };
+
+        // Transition to Processing state
+        {
+            let state = app.state::<crate::recording_session::ManagedSessionState>();
+            let mut session_state = state.lock().unwrap();
+            *session_state = crate::recording_session::SessionState::Processing { binding_id: binding_id.to_string() };
+        }
+
+        let settings = get_settings(app);
+        if settings.text_replacement_decapitalize_after_edit_key_enabled {
+            crate::text_replacement_decapitalize::begin_standard_post_recording_monitor(
+                settings.text_replacement_decapitalize_standard_post_recording_monitor_ms,
+            );
+        }
+
+        session.finish(); // Releases resources like cancel shortcut and mute
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
@@ -770,9 +919,6 @@ impl ShortcutAction for TranscribeAction {
 
         change_tray_icon(app, TrayIconState::Transcribing);
         show_transcribing_overlay(app);
-
-        // Unmute before playing audio feedback so the stop sound is audible
-        rm.remove_mute();
 
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);
@@ -865,6 +1011,17 @@ impl ShortcutAction for TranscribeAction {
                                 transcription
                             );
 
+                            let check_cancelled = || {
+                                let state = ah.state::<crate::recording_session::ManagedSessionState>();
+                                let session_state = state.lock().unwrap();
+                                !matches!(&*session_state, crate::recording_session::SessionState::Processing { binding_id: ref bid } if bid == &binding_id)
+                            };
+
+                            if check_cancelled() {
+                                debug!("Transcription completed but session is no longer in Processing state. Aborting.");
+                                return;
+                            }
+
                             if route_to_brain {
                                 // S2B2S conversation loop: persist the raw transcript,
                                 // then hand it to the Brain, which streams the reply
@@ -874,7 +1031,13 @@ impl ShortcutAction for TranscribeAction {
 
                                 let processed = if use_post_process {
                                     show_processing_overlay(&ah);
-                                    process_transcription_output(&ah, &transcription, true).await
+                                    let op_id = ah.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>().map(|t| t.start_operation());
+                                    let res = process_transcription_output(&ah, &transcription, true, op_id).await;
+                                    if check_cancelled() {
+                                        debug!("Post-processing completed but session is no longer in Processing state. Aborting.");
+                                        return;
+                                    }
+                                    res
                                 } else {
                                     let mut final_text = transcription.to_string();
                                     if let Some(converted_text) =
@@ -974,9 +1137,15 @@ impl ShortcutAction for TranscribeAction {
                             if post_process {
                                 show_processing_overlay(&ah);
                             }
+                            let op_id = ah.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>().map(|t| t.start_operation());
                             let processed =
-                                process_transcription_output(&ah, &transcription, post_process)
+                                process_transcription_output(&ah, &transcription, post_process, op_id)
                                     .await;
+
+                            if check_cancelled() {
+                                debug!("Post-processing completed but session is no longer in Processing state. Aborting.");
+                                return;
+                            }
 
                             // Save to history if WAV was saved
                             if wav_saved {

@@ -86,7 +86,10 @@ fn handle_connection(mut stream: TcpStream, app: AppHandle) {
         }
     };
 
-    let response = match read_result.and_then(|()| parse_request(&buffer)) {
+    let settings = crate::settings::get_settings(&app);
+    let expected_token = settings.control_server_token.clone();
+
+    let response = match read_result.and_then(|()| parse_request(&buffer, expected_token.as_deref())) {
         Ok(ControlRequest::Health) => http_response(200, "OK", r#"{"ok":true,"app":"S2B2S"}"#),
         Ok(ControlRequest::PiperStatus) => {
             let status = piper_server::get_piper_server_status();
@@ -179,17 +182,70 @@ fn content_length(headers: &str) -> Option<usize> {
         .and_then(|(_, value)| value.trim().parse::<usize>().ok())
 }
 
-fn parse_request(buffer: &[u8]) -> Result<ControlRequest, (u16, String)> {
+fn timing_safe_compare(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
+fn get_header_value(headers: &str, name: &str) -> Option<String> {
+    headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(k, _)| k.trim().eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.trim().to_string())
+}
+
+fn parse_request(buffer: &[u8], expected_token: Option<&str>) -> Result<ControlRequest, (u16, String)> {
     let header_end = find_header_end(buffer).ok_or((400, "missing HTTP headers".to_string()))?;
     let headers = String::from_utf8_lossy(&buffer[..header_end]);
 
     let mut lines = headers.lines();
     let request_line = lines.next().unwrap_or_default();
 
-    if request_line.starts_with("GET /health ") {
+    // CSRF / Origin Checks
+    if let Some(sec_fetch_site) = get_header_value(&headers, "sec-fetch-site") {
+        if sec_fetch_site.eq_ignore_ascii_case("cross-site") {
+            log::warn!("[Control] Rejected request with Sec-Fetch-Site: cross-site");
+            return Err((403, "Forbidden: cross-site request blocked".to_string()));
+        }
+    }
+
+    let is_health = request_line.starts_with("GET /health ");
+    let is_piper_status = request_line.starts_with("GET /piper-status ");
+
+    if !is_health && !is_piper_status {
+        // Enforce token authentication for speak, brain, command
+        let auth_header = get_header_value(&headers, "authorization")
+            .or_else(|| get_header_value(&headers, "x-s2b2s-token"));
+
+        let authenticated = match (auth_header, expected_token) {
+            (Some(auth), Some(expected)) => {
+                let token_candidate = if auth.starts_with("Bearer ") {
+                    auth.trim_start_matches("Bearer ").trim()
+                } else {
+                    auth.trim()
+                };
+                timing_safe_compare(token_candidate.as_bytes(), expected.as_bytes())
+            }
+            _ => false,
+        };
+
+        if !authenticated {
+            log::warn!("[Control] Unauthorized request to {}", request_line.split_whitespace().next().unwrap_or(""));
+            return Err((401, "Unauthorized: missing or invalid token".to_string()));
+        }
+    }
+
+    if is_health {
         return Ok(ControlRequest::Health);
     }
-    if request_line.starts_with("GET /piper-status ") {
+    if is_piper_status {
         return Ok(ControlRequest::PiperStatus);
     }
 

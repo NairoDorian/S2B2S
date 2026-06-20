@@ -17,6 +17,12 @@ pub use crate::tray::*;
 pub fn cancel_current_operation(app: &AppHandle) {
     info!("Initiating operation cancellation...");
 
+    // Cancel the auto-stop timer
+    crate::recording_auto_stop::cancel_auto_stop_timer(app);
+
+    // Reset the active recording session state
+    let _ = crate::recording_session::take_session(app);
+
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);
 
@@ -24,6 +30,16 @@ pub fn cancel_current_operation(app: &AppHandle) {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     let recording_was_active = audio_manager.is_recording();
     audio_manager.cancel_recording();
+
+    // Cancel any in-flight LLM/post-processing requests
+    if let Some(llm_tracker) = app.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>() {
+        llm_tracker.cancel();
+    }
+
+    // Abort any ongoing Brain conversation response
+    if let Some(brain_manager) = app.try_state::<Arc<crate::brain::manager::BrainManager>>() {
+        brain_manager.abort();
+    }
 
     // Update tray icon and hide overlay
     change_tray_icon(app, crate::tray::TrayIconState::Idle);

@@ -528,8 +528,15 @@ impl TranscriptionManager {
         }
 
         // Validate selected language against the model's supported languages.
+        // If the language is "os_input", resolve it dynamically from active OS input source.
         // If the language isn't supported, fall back to "auto" to prevent errors.
-        let validated_language = if settings.selected_language == "auto" {
+        let resolved_language = if settings.selected_language == "os_input" {
+            crate::input_source::get_language_from_input_source().unwrap_or_else(|| "auto".to_string())
+        } else {
+            settings.selected_language.clone()
+        };
+
+        let validated_language = if resolved_language == "auto" {
             "auto".to_string()
         } else {
             let is_supported = self
@@ -539,16 +546,16 @@ impl TranscriptionManager {
                     info.supported_languages.is_empty()
                         || info
                             .supported_languages
-                            .contains(&settings.selected_language)
+                            .contains(&resolved_language)
                 })
                 .unwrap_or(true);
 
             if is_supported {
-                settings.selected_language.clone()
+                resolved_language
             } else {
                 warn!(
-                    "Language '{}' not supported by current model, falling back to auto-detect",
-                    settings.selected_language
+                    "Language '{}' (resolved from OS input layout) not supported by current model, falling back to auto-detect",
+                    resolved_language
                 );
                 "auto".to_string()
             }

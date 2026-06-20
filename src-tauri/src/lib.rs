@@ -8,6 +8,7 @@ mod brain;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod crypto;
 mod control_server;
 mod crash_logging;
 mod helpers;
@@ -21,6 +22,14 @@ pub mod portable;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod url_security;
+mod webview_hardening;
+mod temp_artifacts;
+mod recording_session;
+mod llm_operation;
+mod recording_auto_stop;
+mod input_source;
+mod text_replacement_decapitalize;
 mod stt;
 mod transcription_coordinator;
 mod tray;
@@ -407,6 +416,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_parakeet_streaming_setting,
             shortcut::change_whisper_gpu_device,
             shortcut::get_available_accelerators,
+            shortcut::change_text_replacement_decapitalize_after_edit_key_enabled_setting,
+            shortcut::change_text_replacement_decapitalize_after_edit_key_setting,
+            shortcut::change_text_replacement_decapitalize_after_edit_secondary_key_enabled_setting,
+            shortcut::change_text_replacement_decapitalize_after_edit_secondary_key_setting,
+            shortcut::change_text_replacement_decapitalize_timeout_ms_setting,
+            shortcut::change_text_replacement_decapitalize_standard_post_recording_monitor_ms_setting,
+            shortcut::get_text_replacement_decapitalize_overlay_state,
             shortcut::key_listener::start_key_listener_recording,
             shortcut::key_listener::stop_key_listener_recording,
             trigger_update_check,
@@ -645,11 +661,19 @@ pub fn run(cli_args: CliArgs) {
                     win_builder = win_builder.data_directory(data_dir.join("webview"));
                 }
 
-                win_builder.build()?;
+                let main_win = win_builder.build()?;
+                crate::webview_hardening::disable_browser_accelerator_keys(&main_win);
             } else {
                 log::warn!(
                     "Webview window 'main' already exists (declared in tauri config?); skipping programmatic creation"
                 );
+                if let Some(main_win) = app.get_webview_window("main") {
+                    crate::webview_hardening::disable_browser_accelerator_keys(&main_win);
+                }
+            }
+
+            if let Err(e) = crypto::initialize(app.handle()) {
+                log::error!("Failed to initialize cryptography module: {}", e);
             }
 
             let mut settings = get_settings(app.handle());
@@ -673,6 +697,9 @@ pub fn run(cli_args: CliArgs) {
 
             app.manage(actions::ActiveActionState(std::sync::Mutex::new(None)));
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
+            app.manage(recording_session::ManagedSessionState::default());
+            app.manage(recording_auto_stop::new_managed_state());
+            app.manage(std::sync::Arc::new(crate::llm_operation::LlmOperationTracker::new()));
 
             // (TTS telemetry is registered above as `Arc<Telemetry>` — the bare
             // `Telemetry` that used to be managed here was a dead duplicate with a

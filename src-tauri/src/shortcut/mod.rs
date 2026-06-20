@@ -34,6 +34,9 @@ use crate::tray;
 pub fn init_shortcuts(app: &AppHandle) {
     let user_settings = settings::load_or_create_app_settings(app);
 
+    // Initialize the passive rdev listener for decapitalization monitoring
+    crate::text_replacement_decapitalize::init_rdev_listener(app.clone());
+
     // Check which implementation to use
     match user_settings.keyboard_implementation {
         KeyboardImplementation::Tauri => {
@@ -1397,3 +1400,114 @@ pub async fn get_available_accelerators() -> crate::managers::transcription::Ava
         .await
         .expect("get_available_accelerators panicked")
 }
+
+const MIN_DECAPITALIZE_TIMEOUT_MS: u32 = 100;
+const MAX_DECAPITALIZE_TIMEOUT_MS: u32 = 60_000;
+const MIN_DECAPITALIZE_STANDARD_POST_MONITOR_MS: u32 = 0;
+const MAX_DECAPITALIZE_STANDARD_POST_MONITOR_MS: u32 = 60_000;
+
+fn clamp_decapitalize_timeout_ms(value: u32) -> u32 {
+    value.clamp(MIN_DECAPITALIZE_TIMEOUT_MS, MAX_DECAPITALIZE_TIMEOUT_MS)
+}
+
+fn clamp_decapitalize_standard_post_monitor_ms(value: u32) -> u32 {
+    value.clamp(
+        MIN_DECAPITALIZE_STANDARD_POST_MONITOR_MS,
+        MAX_DECAPITALIZE_STANDARD_POST_MONITOR_MS,
+    )
+}
+
+#[derive(Serialize, Type)]
+pub struct DecapitalizeOverlayStateResponse {
+    pub decapitalize_eligible: bool,
+    pub decapitalize_armed: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_text_replacement_decapitalize_after_edit_key_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.text_replacement_decapitalize_after_edit_key_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_text_replacement_decapitalize_after_edit_key_setting(
+    app: AppHandle,
+    key: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.text_replacement_decapitalize_after_edit_key = key;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_text_replacement_decapitalize_after_edit_secondary_key_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.text_replacement_decapitalize_after_edit_secondary_key_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_text_replacement_decapitalize_after_edit_secondary_key_setting(
+    app: AppHandle,
+    key: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.text_replacement_decapitalize_after_edit_secondary_key = key;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_text_replacement_decapitalize_timeout_ms_setting(
+    app: AppHandle,
+    timeout_ms: u32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.text_replacement_decapitalize_timeout_ms = clamp_decapitalize_timeout_ms(timeout_ms);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_text_replacement_decapitalize_standard_post_recording_monitor_ms_setting(
+    app: AppHandle,
+    timeout_ms: u32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.text_replacement_decapitalize_standard_post_recording_monitor_ms =
+        clamp_decapitalize_standard_post_monitor_ms(timeout_ms);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_text_replacement_decapitalize_overlay_state(
+    app: AppHandle,
+) -> DecapitalizeOverlayStateResponse {
+    let settings = settings::get_settings(&app);
+    let indicator = crate::text_replacement_decapitalize::indicator_state(
+        settings.text_replacement_decapitalize_after_edit_key_enabled,
+    );
+    DecapitalizeOverlayStateResponse {
+        decapitalize_eligible: indicator.eligible,
+        decapitalize_armed: indicator.armed,
+    }
+}
+

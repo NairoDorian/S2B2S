@@ -1,0 +1,529 @@
+// Adapted from AivoRelay (MaxITService/AIVORelay), MIT License.
+// Source: src-tauri/src/text_replacement_decapitalize.rs — Smart Decapitalization State Machine (2026-06-19).
+
+use std::sync::Mutex;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IndicatorState {
+    pub eligible: bool,
+    pub armed: bool,
+}
+
+#[derive(Default)]
+struct DecapitalizeState {
+    realtime_trigger_until: Option<Instant>,
+    standard_monitor_until: Option<Instant>,
+    standard_output_armed: bool,
+}
+
+static DECAPITALIZE_STATE: LazyLock<Mutex<DecapitalizeState>> =
+    LazyLock::new(|| Mutex::new(DecapitalizeState::default()));
+
+#[derive(Clone, Copy)]
+enum ApplyMode {
+    RealtimeChunk,
+    StandardOutput,
+}
+
+impl DecapitalizeState {
+    fn arm_after_edit(&mut self, timeout_ms: u32, arm_standard_output: bool, now: Instant) {
+        let timeout = Duration::from_millis(timeout_ms.max(1) as u64);
+        self.realtime_trigger_until = Some(now + timeout);
+        if arm_standard_output || self.cleanup_expired_standard_monitor(now) {
+            self.standard_output_armed = true;
+        }
+    }
+
+    fn begin_standard_monitor(&mut self, window_ms: u32, now: Instant) {
+        self.standard_monitor_until = if window_ms == 0 {
+            None
+        } else {
+            Some(now + Duration::from_millis(window_ms.max(1) as u64))
+        };
+    }
+
+    fn promote_realtime_trigger_to_standard_output(&mut self, now: Instant) -> bool {
+        if self.cleanup_expired_realtime_trigger(now) {
+            self.standard_output_armed = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn cleanup_expired_realtime_trigger(&mut self, now: Instant) -> bool {
+        match self.realtime_trigger_until {
+            Some(deadline) if now <= deadline => true,
+            Some(_) => {
+                self.realtime_trigger_until = None;
+                false
+            }
+            None => false,
+        }
+    }
+
+    fn cleanup_expired_standard_monitor(&mut self, now: Instant) -> bool {
+        match self.standard_monitor_until {
+            Some(deadline) if now <= deadline => true,
+            Some(_) => {
+                self.standard_monitor_until = None;
+                false
+            }
+            None => false,
+        }
+    }
+
+    fn is_trigger_pending(&mut self, mode: ApplyMode, now: Instant) -> bool {
+        let mut pending = self.cleanup_expired_realtime_trigger(now);
+        if matches!(mode, ApplyMode::StandardOutput) {
+            let _ = self.cleanup_expired_standard_monitor(now);
+            pending |= self.standard_output_armed;
+        }
+        pending
+    }
+
+    fn consume(&mut self, mode: ApplyMode) {
+        self.realtime_trigger_until = None;
+        if matches!(mode, ApplyMode::StandardOutput) {
+            self.standard_output_armed = false;
+            self.standard_monitor_until = None;
+        }
+    }
+
+    fn any_trigger_armed(&mut self, now: Instant) -> bool {
+        self.cleanup_expired_realtime_trigger(now) || self.standard_output_armed
+    }
+}
+
+/// Arms a one-shot decapitalize trigger for the next matching chunk.
+///
+/// `arm_standard_output` should be true for standard/non-live dictation so a
+/// delayed final transcription can still consume the trigger. The post-stop
+/// monitor window can also arm standard output after recording has stopped.
+pub fn mark_edit_key_pressed(timeout_ms: u32, arm_standard_output: bool) {
+    let now = Instant::now();
+    if let Ok(mut state) = DECAPITALIZE_STATE.lock() {
+        state.arm_after_edit(timeout_ms, arm_standard_output, now);
+    }
+}
+
+/// Arms a limited post-recording monitor window for standard STT.
+/// During this window, pressing the monitored key marks the next standard output
+/// as eligible for decapitalization (one-shot).
+pub fn begin_standard_post_recording_monitor(window_ms: u32) {
+    if let Ok(mut state) = DECAPITALIZE_STATE.lock() {
+        state.begin_standard_monitor(window_ms, Instant::now());
+    }
+}
+
+/// Standard STT records first and emits text later. If the user pressed the
+/// edit key shortly before starting the recording, latch that pending trigger
+/// so it stays visible and applies to the eventual final output.
+pub fn promote_pending_realtime_trigger_to_standard_output() -> bool {
+    let now = Instant::now();
+    let Ok(mut state) = DECAPITALIZE_STATE.lock() else {
+        return false;
+    };
+
+    state.promote_realtime_trigger_to_standard_output(now)
+}
+
+/// Realtime/chunk mode: only uses the immediate timeout-based trigger.
+pub fn maybe_decapitalize_next_chunk_realtime(text: &str) -> String {
+    maybe_transform_next_chunk_impl(text, ApplyMode::RealtimeChunk, true)
+}
+
+/// Preview/interim mode: shows the next chunk as decapitalized without consuming
+/// the one-shot trigger yet. The trigger is still consumed by the next finalized
+/// realtime chunk or standard output.
+pub fn preview_decapitalize_next_chunk_realtime(text: &str) -> String {
+    maybe_transform_next_chunk_impl(text, ApplyMode::RealtimeChunk, false)
+}
+
+/// Standard STT mode: uses both immediate trigger and post-recording monitor trigger.
+pub fn maybe_decapitalize_next_chunk_standard(text: &str) -> String {
+    maybe_transform_next_chunk_impl(text, ApplyMode::StandardOutput, true)
+}
+
+/// Returns true when any decapitalize trigger is armed (realtime or standard).
+/// Expired realtime timeout state is cleaned up on read.
+pub fn is_any_trigger_armed_now() -> bool {
+    let now = Instant::now();
+    let Ok(mut state) = DECAPITALIZE_STATE.lock() else {
+        return false;
+    };
+
+    state.any_trigger_armed(now)
+}
+
+pub fn indicator_state(enabled: bool) -> IndicatorState {
+    IndicatorState {
+        eligible: enabled,
+        armed: enabled && is_any_trigger_armed_now(),
+    }
+}
+
+fn maybe_transform_next_chunk_impl(text: &str, mode: ApplyMode, consume: bool) -> String {
+    if text.is_empty() || !is_trigger_pending(mode) {
+        return text.to_string();
+    }
+
+    let Some((idx, ch)) = find_first_alphabetic_char(text) else {
+        return text.to_string();
+    };
+
+    if !ch.is_uppercase() {
+        return text.to_string();
+    }
+
+    let lowered = ch.to_lowercase().to_string();
+    if lowered == ch.to_string() {
+        return text.to_string();
+    }
+
+    if consume {
+        consume_trigger(mode);
+    }
+
+    let end = idx + ch.len_utf8();
+    let mut out = String::with_capacity(text.len() - ch.len_utf8() + lowered.len());
+    out.push_str(&text[..idx]);
+    out.push_str(&lowered);
+    out.push_str(&text[end..]);
+    out
+}
+
+fn is_trigger_pending(mode: ApplyMode) -> bool {
+    let now = Instant::now();
+    let Ok(mut state) = DECAPITALIZE_STATE.lock() else {
+        return false;
+    };
+
+    state.is_trigger_pending(mode, now)
+}
+
+fn consume_trigger(mode: ApplyMode) {
+    if let Ok(mut state) = DECAPITALIZE_STATE.lock() {
+        state.consume(mode);
+    }
+}
+
+fn find_first_alphabetic_char(text: &str) -> Option<(usize, char)> {
+    text.char_indices().find(|(_, ch)| ch.is_alphabetic())
+}
+
+use std::sync::OnceLock;
+use tauri::{AppHandle, Manager};
+use rdev::Key;
+
+static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+/// Initialize the passive rdev listener thread once.
+pub fn init_rdev_listener(app: AppHandle) {
+    if APP_HANDLE.set(app.clone()).is_err() {
+        return; // Already initialized
+    }
+
+    std::thread::spawn(move || {
+        log::info!("Starting rdev passive key listener for decapitalization monitoring");
+        if let Err(e) = rdev::listen(move |event| {
+            if let rdev::EventType::KeyPress(key) = event.event_type {
+                if let Some(app) = APP_HANDLE.get() {
+                    let settings = crate::settings::get_settings(app);
+                    if !settings.text_replacement_decapitalize_after_edit_key_enabled {
+                        return;
+                    }
+
+                    let is_primary = string_to_rdev_key(&settings.text_replacement_decapitalize_after_edit_key)
+                        .map(|k| k == key)
+                        .unwrap_or(false);
+
+                    let is_secondary = settings.text_replacement_decapitalize_after_edit_secondary_key_enabled
+                        && string_to_rdev_key(&settings.text_replacement_decapitalize_after_edit_secondary_key)
+                            .map(|k| k == key)
+                            .unwrap_or(false);
+
+                    if is_primary || is_secondary {
+                        let timeout_ms = settings.text_replacement_decapitalize_timeout_ms;
+                        let arm_standard_output = should_arm_standard_output_for_decapitalize(app);
+                        mark_edit_key_pressed(timeout_ms, arm_standard_output);
+                    }
+                }
+            }
+        }) {
+            log::error!("Error in rdev key listener: {:?}", e);
+        }
+    });
+}
+
+fn should_arm_standard_output_for_decapitalize(app: &AppHandle) -> bool {
+    let state = app.state::<crate::recording_session::ManagedSessionState>();
+    let Ok(state_guard) = state.lock() else {
+        return false;
+    };
+
+    match &*state_guard {
+        crate::recording_session::SessionState::Recording { binding_id, .. } => {
+            binding_id == "transcribe" || binding_id.starts_with("transcribe_")
+        }
+        _ => false,
+    }
+}
+
+fn string_to_rdev_key(s: &str) -> Option<Key> {
+    let s = s.to_lowercase();
+    let s = s.trim();
+
+    match s {
+        "caps lock" | "capslock" | "caps" => Some(Key::CapsLock),
+        "space" | "spacebar" => Some(Key::Space),
+        "enter" | "return" => Some(Key::Return),
+        "tab" => Some(Key::Tab),
+        "backspace" | "back" => Some(Key::Backspace),
+        "escape" | "esc" => Some(Key::Escape),
+        "delete" | "del" => Some(Key::Delete),
+        "insert" | "ins" => Some(Key::Insert),
+        "home" => Some(Key::Home),
+        "end" => Some(Key::End),
+        "pageup" | "page up" | "pgup" => Some(Key::PageUp),
+        "pagedown" | "page down" | "pgdn" => Some(Key::PageDown),
+        "up" | "arrowup" => Some(Key::UpArrow),
+        "down" | "arrowdown" => Some(Key::DownArrow),
+        "left" | "arrowleft" => Some(Key::LeftArrow),
+        "right" | "arrowright" => Some(Key::RightArrow),
+        "a" => Some(Key::KeyA),
+        "b" => Some(Key::KeyB),
+        "c" => Some(Key::KeyC),
+        "d" => Some(Key::KeyD),
+        "e" => Some(Key::KeyE),
+        "f" => Some(Key::KeyF),
+        "g" => Some(Key::KeyG),
+        "h" => Some(Key::KeyH),
+        "i" => Some(Key::KeyI),
+        "j" => Some(Key::KeyJ),
+        "k" => Some(Key::KeyK),
+        "l" => Some(Key::KeyL),
+        "m" => Some(Key::KeyM),
+        "n" => Some(Key::KeyN),
+        "o" => Some(Key::KeyO),
+        "p" => Some(Key::KeyP),
+        "q" => Some(Key::KeyQ),
+        "r" => Some(Key::KeyR),
+        "s" => Some(Key::KeyS),
+        "t" => Some(Key::KeyT),
+        "u" => Some(Key::KeyU),
+        "v" => Some(Key::KeyV),
+        "w" => Some(Key::KeyW),
+        "x" => Some(Key::KeyX),
+        "y" => Some(Key::KeyY),
+        "z" => Some(Key::KeyZ),
+        "0" => Some(Key::Num0),
+        "1" => Some(Key::Num1),
+        "2" => Some(Key::Num2),
+        "3" => Some(Key::Num3),
+        "4" => Some(Key::Num4),
+        "5" => Some(Key::Num5),
+        "6" => Some(Key::Num6),
+        "7" => Some(Key::Num7),
+        "8" => Some(Key::Num8),
+        "9" => Some(Key::Num9),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::LazyLock;
+
+    static TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    fn reset_global_state() {
+        *DECAPITALIZE_STATE.lock().unwrap() = DecapitalizeState::default();
+    }
+
+    #[test]
+    fn arm_after_edit_sets_realtime_deadline_and_optionally_standard_output() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState::default();
+
+        state.arm_after_edit(250, true, now);
+
+        assert!(state.realtime_trigger_until.is_some());
+        assert!(state.standard_output_armed);
+    }
+
+    #[test]
+    fn arm_after_edit_uses_active_monitor_to_arm_standard_output() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState {
+            standard_monitor_until: Some(now + Duration::from_millis(500)),
+            ..Default::default()
+        };
+
+        state.arm_after_edit(100, false, now);
+
+        assert!(state.standard_output_armed);
+    }
+
+    #[test]
+    fn begin_standard_monitor_zero_window_disables_monitor() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState::default();
+
+        state.begin_standard_monitor(0, now);
+
+        assert_eq!(state.standard_monitor_until, None);
+    }
+
+    #[test]
+    fn cleanup_expired_realtime_trigger_clears_expired_deadline() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState {
+            realtime_trigger_until: Some(now - Duration::from_millis(1)),
+            ..Default::default()
+        };
+
+        assert!(!state.cleanup_expired_realtime_trigger(now));
+        assert_eq!(state.realtime_trigger_until, None);
+    }
+
+    #[test]
+    fn cleanup_expired_standard_monitor_clears_expired_deadline() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState {
+            standard_monitor_until: Some(now - Duration::from_millis(1)),
+            ..Default::default()
+        };
+
+        assert!(!state.cleanup_expired_standard_monitor(now));
+        assert_eq!(state.standard_monitor_until, None);
+    }
+
+    #[test]
+    fn is_trigger_pending_for_standard_output_includes_armed_output_flag() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState {
+            standard_output_armed: true,
+            ..Default::default()
+        };
+
+        assert!(state.is_trigger_pending(ApplyMode::StandardOutput, now));
+        assert!(!state.is_trigger_pending(ApplyMode::RealtimeChunk, now));
+    }
+
+    #[test]
+    fn consume_standard_output_clears_all_standard_state() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState {
+            realtime_trigger_until: Some(now + Duration::from_millis(100)),
+            standard_monitor_until: Some(now + Duration::from_millis(100)),
+            standard_output_armed: true,
+        };
+
+        state.consume(ApplyMode::StandardOutput);
+
+        assert_eq!(state.realtime_trigger_until, None);
+        assert_eq!(state.standard_monitor_until, None);
+        assert!(!state.standard_output_armed);
+    }
+
+    #[test]
+    fn find_first_alphabetic_char_skips_punctuation_and_space() {
+        assert_eq!(find_first_alphabetic_char("  ...Hello"), Some((5, 'H')));
+        assert_eq!(find_first_alphabetic_char("1234"), None);
+    }
+
+    #[test]
+    fn realtime_preview_does_not_consume_trigger_until_finalized_chunk() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        reset_global_state();
+
+        mark_edit_key_pressed(500, false);
+
+        assert_eq!(preview_decapitalize_next_chunk_realtime(" Hello"), " hello");
+        assert!(is_any_trigger_armed_now());
+        assert_eq!(maybe_decapitalize_next_chunk_realtime(" Hello"), " hello");
+        assert!(!is_any_trigger_armed_now());
+
+        reset_global_state();
+    }
+
+    #[test]
+    fn standard_monitor_allows_edit_key_to_arm_standard_output() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        reset_global_state();
+
+        begin_standard_post_recording_monitor(500);
+        mark_edit_key_pressed(500, false);
+
+        assert_eq!(maybe_decapitalize_next_chunk_standard(" World"), " world");
+        assert!(!is_any_trigger_armed_now());
+
+        reset_global_state();
+    }
+
+    #[test]
+    fn standard_recording_start_latches_pending_realtime_trigger() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        reset_global_state();
+
+        mark_edit_key_pressed(500, false);
+
+        assert!(promote_pending_realtime_trigger_to_standard_output());
+        assert!(is_any_trigger_armed_now());
+        assert_eq!(maybe_decapitalize_next_chunk_standard(" Hello"), " hello");
+        assert!(!is_any_trigger_armed_now());
+
+        reset_global_state();
+    }
+
+    #[test]
+    fn standard_recording_start_does_not_latch_expired_realtime_trigger() {
+        let now = Instant::now();
+        let mut state = DecapitalizeState {
+            realtime_trigger_until: Some(now - Duration::from_millis(1)),
+            ..Default::default()
+        };
+
+        assert!(!state.promote_realtime_trigger_to_standard_output(now));
+        assert!(!state.standard_output_armed);
+        assert_eq!(state.realtime_trigger_until, None);
+    }
+
+    #[test]
+    fn indicator_state_reports_disabled_as_unarmed() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        reset_global_state();
+        mark_edit_key_pressed(500, false);
+
+        let disabled = indicator_state(false);
+        let enabled = indicator_state(true);
+
+        assert!(!disabled.eligible);
+        assert!(!disabled.armed);
+        assert!(enabled.eligible);
+        assert!(enabled.armed);
+
+        reset_global_state();
+    }
+
+    #[test]
+    fn maybe_transform_next_chunk_impl_preserves_lowercase_and_non_alpha_inputs() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        reset_global_state();
+
+        assert_eq!(
+            maybe_transform_next_chunk_impl(" already lower", ApplyMode::RealtimeChunk, false),
+            " already lower"
+        );
+        assert_eq!(
+            maybe_transform_next_chunk_impl("...123", ApplyMode::RealtimeChunk, false),
+            "...123"
+        );
+
+        reset_global_state();
+    }
+}

@@ -148,7 +148,7 @@ pub async fn send_chat_completion_with_schema(
     reasoning_effort: Option<String>,
     reasoning: Option<ReasoningConfig>,
 ) -> Result<Option<String>, String> {
-    let base_url = provider.base_url.trim_end_matches('/');
+    let base_url = crate::url_security::canonical_llm_provider_base_url(provider)?;
     let url = format!("{}/chat/completions", base_url);
 
     debug!("Sending chat completion request to: {}", url);
@@ -226,7 +226,7 @@ pub async fn fetch_models(
     provider: &PostProcessProvider,
     api_key: String,
 ) -> Result<Vec<String>, String> {
-    let base_url = provider.base_url.trim_end_matches('/');
+    let base_url = crate::url_security::canonical_llm_provider_base_url(provider)?;
     let url = format!("{}/models", base_url);
 
     debug!("Fetching models from: {}", url);

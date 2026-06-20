@@ -32,7 +32,8 @@ pub fn create_brain_overlay(app: &AppHandle) -> Result<(), Box<dyn std::error::E
         builder = builder.data_directory(data_dir.join("webview"));
     }
 
-    let _window = builder.build()?;
+    let window = builder.build()?;
+    crate::webview_hardening::disable_browser_accelerator_keys(&window);
 
     log::debug!("Brain overlay window created (hidden)");
     Ok(())

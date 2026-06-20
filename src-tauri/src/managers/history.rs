@@ -227,14 +227,29 @@ impl HistoryManager {
     }
 
     fn map_history_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
+        let raw_transcription: String = row.get("transcription_text")?;
+        let decrypted_transcription = crate::crypto::decrypt_str(&raw_transcription)
+            .unwrap_or_else(|e| {
+                log::error!("Failed to decrypt transcription: {}", e);
+                raw_transcription
+            });
+
+        let raw_post_processed: Option<String> = row.get("post_processed_text")?;
+        let decrypted_post_processed = raw_post_processed.map(|txt| {
+            crate::crypto::decrypt_str(&txt).unwrap_or_else(|e| {
+                log::error!("Failed to decrypt post-processed text: {}", e);
+                txt
+            })
+        });
+
         Ok(HistoryEntry {
             id: row.get("id")?,
             file_name: row.get("file_name")?,
             timestamp: row.get("timestamp")?,
             saved: row.get("saved")?,
             title: row.get("title")?,
-            transcription_text: row.get("transcription_text")?,
-            post_processed_text: row.get("post_processed_text")?,
+            transcription_text: decrypted_transcription,
+            post_processed_text: decrypted_post_processed,
             post_process_prompt: row.get("post_process_prompt")?,
             post_process_requested: row.get("post_process_requested")?,
             entry_type: row.get("entry_type")?,
@@ -266,6 +281,19 @@ impl HistoryManager {
         let timestamp = Utc::now().timestamp();
         let title = self.format_timestamp_title(timestamp);
 
+        let enc_transcription = crate::crypto::encrypt_str(&transcription_text)
+            .unwrap_or_else(|e| {
+                log::error!("Failed to encrypt transcription: {}", e);
+                transcription_text.clone()
+            });
+
+        let enc_post_processed = post_processed_text.as_ref().map(|txt| {
+            crate::crypto::encrypt_str(txt).unwrap_or_else(|e| {
+                log::error!("Failed to encrypt post-processed text: {}", e);
+                txt.clone()
+            })
+        });
+
         let conn = self.get_connection()?;
         conn.execute(
             "INSERT INTO transcription_history (
@@ -287,8 +315,8 @@ impl HistoryManager {
                 timestamp,
                 false,
                 &title,
-                &transcription_text,
-                &post_processed_text,
+                &enc_transcription,
+                &enc_post_processed,
                 &post_process_prompt,
                 post_process_requested,
                 &entry_type,
@@ -342,6 +370,19 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
     ) -> Result<HistoryEntry> {
+        let enc_transcription = crate::crypto::encrypt_str(&transcription_text)
+            .unwrap_or_else(|e| {
+                log::error!("Failed to encrypt transcription: {}", e);
+                transcription_text.clone()
+            });
+
+        let enc_post_processed = post_processed_text.as_ref().map(|txt| {
+            crate::crypto::encrypt_str(txt).unwrap_or_else(|e| {
+                log::error!("Failed to encrypt post-processed text: {}", e);
+                txt.clone()
+            })
+        });
+
         let conn = self.get_connection()?;
         let updated = conn.execute(
             "UPDATE transcription_history
@@ -350,8 +391,8 @@ impl HistoryManager {
                  post_process_prompt = ?3
              WHERE id = ?4",
             params![
-                transcription_text,
-                post_processed_text,
+                enc_transcription,
+                enc_post_processed,
                 post_process_prompt,
                 id
             ],

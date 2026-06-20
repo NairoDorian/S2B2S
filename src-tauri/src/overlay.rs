@@ -256,7 +256,7 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
 pub fn create_recording_overlay(app_handle: &AppHandle) {
     let settings = settings::get_settings(app_handle);
     let cfg = &settings.overlay_window;
-    let use_os_native = cfg.mode == OverlayMode::OsNative;
+    let _use_os_native = cfg.mode == OverlayMode::OsNative;
 
     // On Linux (Wayland), monitor detection often fails, but we don't need exact coordinates
     // for Layer Shell as we use anchors. On other platforms, we require a monitor.
@@ -298,8 +298,9 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     #[allow(unused_variables)]
     match builder.build() {
         Ok(window) => {
+            crate::webview_hardening::disable_browser_accelerator_keys(&window);
             #[cfg(target_os = "linux")]
-            if use_os_native {
+            if _use_os_native {
                 // Try to initialize GTK layer shell, ignore errors if compositor doesn't support it
                 if init_gtk_layer_shell(&window) {
                     debug!("GTK layer shell initialized for overlay window");
@@ -346,7 +347,10 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
         .visible(false);
 
         match builder.build() {
-            Ok(_) => debug!("Recording overlay (Tauri mode) created (hidden)"),
+            Ok(window) => {
+                crate::webview_hardening::disable_browser_accelerator_keys(&window);
+                debug!("Recording overlay (Tauri mode) created (hidden)");
+            }
             Err(e) => log::error!("Failed to create Tauri-mode overlay: {}", e),
         }
         return;
