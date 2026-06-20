@@ -154,6 +154,18 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Keep NVIDIA CUDA runtime packages for safety (ensures DLLs are available at runtime)
+Run-UvPip "nvidia CUDA runtime packages" @(
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cublas-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-nvjitlink-cu12"
+)
+
 # Final safety check: ensure CPU onnxruntime has not been re-added
 Write-Host "Verifying final GPU configuration..." -ForegroundColor Gray
 & $UvExe pip uninstall --python $VenvPython onnxruntime --yes --quiet 2>&1 | Out-Null

@@ -160,6 +160,17 @@ if [ "$IS_LINUX_CUDA" = true ]; then
         --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" \
         onnxruntime-gpu
     
+    # Keep NVIDIA CUDA runtime packages for safety (ensures DLLs are available at runtime)
+    run_uv_pip "nvidia CUDA runtime packages" \
+        "nvidia-cuda-runtime-cu12" \
+        "nvidia-cudnn-cu12" \
+        "nvidia-cublas-cu12" \
+        "nvidia-cufft-cu12" \
+        "nvidia-curand-cu12" \
+        "nvidia-cusolver-cu12" \
+        "nvidia-cusparse-cu12" \
+        "nvidia-nvjitlink-cu12"
+    
     # Final safety check: ensure CPU onnxruntime has not been re-added
     "$UV_EXE" pip uninstall --python "$VENV_PYTHON" onnxruntime --yes --quiet || true
 else
