@@ -562,7 +562,7 @@ pub struct BrainConfig {
     /// Auto-rearm mic after reply in hands-free mode
     #[serde(default)]
     pub auto_listen: bool,
-    /// Send the MP3 audio recording as `input_audio` to the multimodal Brain model
+    /// Send the WAV audio recording as `input_audio` to the multimodal Brain model
     /// (Gemma 4 supports native audio transcription as an extra STT pass).
     #[serde(default)]
     pub multimodal_audio_enabled: bool,

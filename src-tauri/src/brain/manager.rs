@@ -56,7 +56,7 @@ impl BrainManager {
     }
 
     /// Ask the Brain with optional multimodal inputs.
-    /// - `audio_mp3_base64`: raw base64-encoded MP3 audio (for Gemma 4 native STT)
+    /// - `audio_wav_base64`: raw base64-encoded WAV audio (for Gemma 4 native STT)
     /// - `image_png_base64`: raw base64-encoded PNG screenshot (for vision)
     /// Content parts order follows Gemma 4 best practices:
     /// image → text → audio

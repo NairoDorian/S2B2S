@@ -18,6 +18,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Multimodal Audio Format Switch to WAV** (`actions.rs`, `continuous_voice.rs`, `manager.rs`): Switched multimodal audio transmission format from MP3 to WAV. This bypasses the CPU-heavy MP3 encoding step completely and sends raw WAV bytes, aligning with native gemma-4 multimodal ASR guidelines.
 - **Venv setup scripts** (`setup_venv_uv.ps1`, `setup_tts_venv.ps1`): Switch onnxruntime-gpu to CUDA 13 nightly feed with canonical nvidia package names; add coloredlogs/flatbuffers/packaging/protobuf/sympy build deps.
 
+### Removed
+
+- **MP3 Multimodal Encoding and LAME Dependency** (`Cargo.toml`, `Cargo.lock`, `utils.rs`, `mod.rs`): Removed `mp3lame-encoder` crate and all traces of `encode_mp3_bytes` helper, reverting fully to WAV transmission for multimodal Brain input.
+
 ### Fixed
 
 - **Piper CUDA DLL path discovery** (`piper_server.rs`): `get_nvidia_dll_paths` used `nvidia.__file__` which is `None` for namespace packages. Switched to `nvidia.__path__[0]` with dynamic `bin`/`bin/x86_64` discovery, fixing `CUDAExecutionProvider` init.

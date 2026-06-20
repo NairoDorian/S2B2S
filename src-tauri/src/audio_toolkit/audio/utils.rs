@@ -52,35 +52,6 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
     Ok(())
 }
 
-/// Encode f32 audio samples to MP3 bytes in memory (for multimodal Brain input).
-pub fn encode_mp3_bytes(samples: &[f32]) -> Result<Vec<u8>> {
-    use mp3lame_encoder::{Bitrate, Builder, FlushNoGap, MonoPcm, Quality};
-    let mut builder = Builder::new().ok_or_else(|| anyhow!("LAME builder failed"))?;
-    builder
-        .set_num_channels(1)
-        .map_err(|e| anyhow!("set_num_channels: {e}"))?;
-    builder
-        .set_sample_rate(16000)
-        .map_err(|e| anyhow!("set_sample_rate: {e}"))?;
-    builder
-        .set_brate(Bitrate::Kbps64)
-        .map_err(|e| anyhow!("set_brate: {e}"))?;
-    builder
-        .set_quality(Quality::Good)
-        .map_err(|e| anyhow!("set_quality: {e}"))?;
-    let mut encoder = builder.build().map_err(|e| anyhow!("LAME build: {e}"))?;
-
-    let mut mp3_out = Vec::new();
-    mp3_out.reserve(mp3lame_encoder::max_required_buffer_size(samples.len()));
-    encoder
-        .encode_to_vec(MonoPcm(samples), &mut mp3_out)
-        .map_err(|e| anyhow!("LAME encode: {e}"))?;
-    encoder
-        .flush_to_vec::<FlushNoGap>(&mut mp3_out)
-        .map_err(|e| anyhow!("LAME flush: {e}"))?;
-    Ok(mp3_out)
-}
-
 /// Encode f32 audio samples to WAV bytes in memory (for multimodal Brain input).
 pub fn encode_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
     let spec = WavSpec {

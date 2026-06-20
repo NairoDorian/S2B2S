@@ -86,7 +86,6 @@ tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "2.7.1"
 text-processing-rs = "0.2.2"
 base64 = "0.22"
-mp3lame-encoder = "0.2.4"
 getrandom = "0.2"
 keyring = "2.0.5"
 aes-gcm = "0.10.3"
