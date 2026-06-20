@@ -1167,30 +1167,30 @@ impl ShortcutAction for TranscribeAction {
                                             let result = if multimodal_audio {
                                                 if is_brain_only {
                                                     info!(
-                                                        "[Conversation] Brain-only transcription mode — encoding {} samples ({:.2}s) to MP3, bypassing STT, sending fixed prompt + audio to Gemma 4",
+                                                        "[Conversation] Brain-only transcription mode — encoding {} samples ({:.2}s) to WAV, bypassing STT, sending fixed prompt + audio to Gemma 4",
                                                         sample_count,
                                                         sample_count as f64 / 16000.0
                                                     );
                                                 } else {
                                                     info!(
-                                                        "[Conversation] Multimodal audio enabled — encoding {} samples ({:.2}s) to MP3 for Gemma 4",
+                                                        "[Conversation] Multimodal audio enabled — encoding {} samples ({:.2}s) to WAV for Gemma 4",
                                                         sample_count,
                                                         sample_count as f64 / 16000.0
                                                     );
                                                 }
-                                                let mp3_bytes =
+                                                let wav_bytes =
                                                     tokio::task::spawn_blocking(move || {
-                                                        crate::audio_toolkit::encode_mp3_bytes(
+                                                        crate::audio_toolkit::encode_wav_bytes(
                                                             &samples_for_brain,
                                                         )
                                                     })
                                                     .await;
-                                                match mp3_bytes {
+                                                match wav_bytes {
                                                     Ok(Ok(bytes)) => {
                                                         use base64::Engine;
                                                         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
                                                         info!(
-                                                            "[Conversation] MP3 encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
+                                                            "[Conversation] WAV encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
                                                             bytes.len(),
                                                             b64.len()
                                                         );
@@ -1202,11 +1202,11 @@ impl ShortcutAction for TranscribeAction {
                                                         .await
                                                     }
                                                     Ok(Err(e)) => {
-                                                        error!("Failed to encode MP3 for multimodal brain: {e}");
+                                                        error!("Failed to encode WAV for multimodal brain: {e}");
                                                         bm.ask(text_to_ask).await
                                                     }
                                                     Err(e) => {
-                                                        error!("spawn_blocking panicked for MP3 encoding: {e}");
+                                                        error!("spawn_blocking panicked for WAV encoding: {e}");
                                                         bm.ask(text_to_ask).await
                                                     }
                                                 }

@@ -63,12 +63,12 @@ impl BrainManager {
     pub async fn ask_multimodal(
         &self,
         text: String,
-        audio_mp3_base64: Option<String>,
+        audio_wav_base64: Option<String>,
         image_png_base64: Option<String>,
     ) -> Result<String, String> {
-        let has_audio = audio_mp3_base64.is_some();
+        let has_audio = audio_wav_base64.is_some();
         let has_image = image_png_base64.is_some();
-        let audio_size = audio_mp3_base64.as_ref().map(|b| b.len()).unwrap_or(0);
+        let audio_size = audio_wav_base64.as_ref().map(|b| b.len()).unwrap_or(0);
         // Gemma 4: ~25 tokens per second of audio at 16kHz, ~640 samples per token
         // base64 ~4/3 expansion, 16-bit PCM = 2 bytes/sample
         let raw_bytes_est = audio_size * 3 / 4;
@@ -135,7 +135,7 @@ impl BrainManager {
             let start = history.len().saturating_sub(keep);
             messages.extend(history[start..].iter().cloned());
         }
-        let has_multimodal = audio_mp3_base64.is_some() || image_png_base64.is_some();
+        let has_multimodal = audio_wav_base64.is_some() || image_png_base64.is_some();
         if has_multimodal {
             let mut parts = Vec::new();
             // Image goes before text (Gemma 4 best practice)
@@ -149,11 +149,11 @@ impl BrainManager {
             // Text in the middle
             parts.push(ContentPart::Text { text: text.clone() });
             // Audio goes after text (Gemma 4 best practice for ASR)
-            if let Some(ref audio_b64) = audio_mp3_base64 {
+            if let Some(ref audio_b64) = audio_wav_base64 {
                 parts.push(ContentPart::InputAudio {
                     input_audio: crate::brain::client::InputAudio {
                         data: audio_b64.clone(),
-                        format: "mp3".to_string(),
+                        format: "wav".to_string(),
                     },
                 });
             }

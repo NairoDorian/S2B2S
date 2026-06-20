@@ -144,24 +144,24 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
                 .expect("samples_for_brain should be Some when multimodal_audio is true");
             if is_brain_only {
                 log::info!(
-                    "[ContinuousVoice] Brain-only transcription mode — encoding {} samples ({:.2}s) to MP3, bypassing STT, sending fixed prompt + audio to Gemma 4",
+                    "[ContinuousVoice] Brain-only transcription mode — encoding {} samples ({:.2}s) to WAV, bypassing STT, sending fixed prompt + audio to Gemma 4",
                     samples.len(),
                     samples.len() as f64 / 16000.0
                 );
             } else {
                 log::info!(
-                    "[ContinuousVoice] Multimodal audio enabled — encoding {} samples ({:.2}s) to MP3 for Gemma 4",
+                    "[ContinuousVoice] Multimodal audio enabled — encoding {} samples ({:.2}s) to WAV for Gemma 4",
                     samples.len(),
                     samples.len() as f64 / 16000.0
                 );
             }
-            match crate::audio_toolkit::encode_mp3_bytes(&samples) {
-                Ok(mp3_bytes) => {
+            match crate::audio_toolkit::encode_wav_bytes(&samples) {
+                Ok(wav_bytes) => {
                     use base64::Engine;
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&mp3_bytes);
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&wav_bytes);
                     log::info!(
-                        "[ContinuousVoice] MP3 encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
-                        mp3_bytes.len(),
+                        "[ContinuousVoice] WAV encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
+                        wav_bytes.len(),
                         b64.len()
                     );
                     bm_clone
@@ -169,7 +169,7 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
                         .await
                 }
                 Err(e) => {
-                    log::error!("[ContinuousVoice] Failed to encode MP3 for multimodal brain: {e}");
+                    log::error!("[ContinuousVoice] Failed to encode WAV for multimodal brain: {e}");
                     bm_clone.ask(transcription_clone).await
                 }
             }
