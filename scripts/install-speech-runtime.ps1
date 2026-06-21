@@ -111,7 +111,7 @@ $env:VIRTUAL_ENV = $VenvDir
 function Run-UvPip([string]$Label, [string[]]$ArgsList) {
     Write-Host "Installing $Label..." -ForegroundColor Yellow
     # Pass --python explicitly to target our venv
-    & $UvExe pip install --python $VenvPython @ArgsList 2>&1 | Out-Host
+    & $UvExe pip install --python $VenvPython --no-cache --force-reinstall @ArgsList 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Failed to install $Label" -ForegroundColor Red
         exit 1
@@ -140,35 +140,35 @@ Run-UvPip "piper-tts" @("piper-tts[http]")
 Write-Host "Removing conflicting CPU onnxruntime (if any)..." -ForegroundColor Gray
 & $UvExe pip uninstall --python $VenvPython onnxruntime --yes --quiet 2>&1 | Out-Null
 
-# Install onnxruntime-gpu dependencies first (required by the CUDA 13 nightly build)
+# Install onnxruntime-gpu dependencies
 Run-UvPip "onnxruntime-gpu dependencies" @("coloredlogs", "flatbuffers", "numpy", "packaging", "protobuf", "sympy", "sentencepiece")
 
-# Install onnxruntime-gpu nightly for CUDA 13.3 from the Azure DevOps feed
-Write-Host "Installing onnxruntime-gpu (CUDA 13.3 nightly)..." -ForegroundColor Yellow
-& $UvExe pip install --python $VenvPython `
-    --pre `
-    --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" `
-    onnxruntime-gpu 2>&1 | Out-Host
+# Install onnxruntime-gpu from PyPI
+Write-Host "Installing onnxruntime-gpu..." -ForegroundColor Yellow
+& $UvExe pip install --python $VenvPython --no-cache --force-reinstall onnxruntime-gpu 2>&1 | Out-Host
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Failed to install onnxruntime-gpu from CUDA 13.3 nightly feed" -ForegroundColor Red
+    Write-Host "ERROR: Failed to install onnxruntime-gpu" -ForegroundColor Red
     exit 1
 }
 
-# Keep NVIDIA CUDA runtime packages for safety (ensures DLLs are available at runtime)
-Run-UvPip "nvidia CUDA runtime packages" @(
-    "nvidia-cuda-runtime-cu12",
-    "nvidia-cudnn-cu12",
-    "nvidia-cublas-cu12",
-    "nvidia-cufft-cu12",
-    "nvidia-curand-cu12",
-    "nvidia-cusolver-cu12",
-    "nvidia-cusparse-cu12",
-    "nvidia-nvjitlink-cu12"
+# Install NVIDIA CUDA 13 runtime DLLs (for piper child process PATH injection)
+Write-Host "Installing NVIDIA CUDA 13 runtime DLLs..." -ForegroundColor Yellow
+$cuda13Packages = @(
+    "nvidia-cuda-runtime"
+    "nvidia-cudnn-cu13"
+    "nvidia-cublas"
+    "nvidia-cufft"
+    "nvidia-cusolver"
+    "nvidia-cusparse"
+    "nvidia-nvjitlink"
 )
+foreach ($pkg in $cuda13Packages) {
+    Run-UvPip "$pkg" @($pkg)
+}
 
 # Final safety check: ensure CPU onnxruntime has not been re-added
 Write-Host "Verifying final GPU configuration..." -ForegroundColor Gray
-& $UvExe pip uninstall --python $VenvPython onnxruntime --yes --quiet 2>&1 | Out-Null
+&amp; $UvExe pip uninstall --python $VenvPython onnxruntime --yes --quiet 2>&1 | Out-Null
 
 # 6. Verify environment
 Write-Host "[5/5] Verifying environment and CUDA availability..." -ForegroundColor Yellow

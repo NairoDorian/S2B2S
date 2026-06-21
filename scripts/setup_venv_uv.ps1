@@ -42,13 +42,13 @@ Write-Host "[4/6] Installing packages..." -ForegroundColor Yellow
 
 function Install-Pkg([string]$Label, [string[]]$Packages) {
     Write-Host "  -> $Label" -ForegroundColor Gray
-    uv pip install @Packages 2>&1 | Out-Host
+    uv pip install --python $VenvPython --no-cache --force-reinstall @Packages 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-Host "  FAILED: $Label" -ForegroundColor Red; exit 1 }
 }
 
 function Uninstall-Pkg([string]$Label, [string]$Package) {
     Write-Host "  -> $Label" -ForegroundColor Gray
-    uv pip uninstall $Package --quiet 2>&1 | Out-Host
+    uv pip uninstall --python $VenvPython $Package --quiet 2>&1 | Out-Host
 }
 
 # ── Install non-piper deps first ──
@@ -68,30 +68,42 @@ Install-Pkg "coloredlogs, flatbuffers, packaging, protobuf, sympy" @("coloredlog
 # ── Remove CPU onnxruntime (pulled in by piper-tts) ──
 Uninstall-Pkg "removing CPU onnxruntime" "onnxruntime"
 
-# ── Install onnxruntime-gpu from CUDA 13 nightly feed ──
-Write-Host "  -> sentencepiece" -ForegroundColor Gray
-uv pip install sentencepiece 2>&1 | Out-Host
-Write-Host "  -> onnxruntime-gpu (CUDA 13 nightly)" -ForegroundColor Gray
-uv pip install --pre --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" onnxruntime-gpu 2>&1 | Out-Host
+# ── Install sentencepiece & onnxruntime-gpu (from PyPI) ──
+Install-Pkg "sentencepiece" @("sentencepiece")
+Install-Pkg "onnxruntime-gpu" @("onnxruntime-gpu")
 
-# ── Install NVIDIA CUDA 13 runtime libraries (canonical names) ──
-Install-Pkg "nvidia CUDA 13 runtime" @(
-    "nvidia-cuda-runtime",
-    "nvidia-cudnn-cu13",
-    "nvidia-cublas",
-    "nvidia-cufft",
-    "nvidia-curand",
-    "nvidia-cusolver",
-    "nvidia-cusparse",
+# ── Install NVIDIA CUDA 13 runtime DLLs (for piper child process PATH injection) ──
+$cuda13Packages = @(
+    "nvidia-cuda-runtime"
+    "nvidia-cudnn-cu13"
+    "nvidia-cublas"
+    "nvidia-cufft"
+    "nvidia-cusolver"
+    "nvidia-cusparse"
     "nvidia-nvjitlink"
 )
+foreach ($pkg in $cuda13Packages) {
+    Install-Pkg "$pkg" @($pkg)
+}
 
 # ── Final safety: purge any leftover CPU onnxruntime ──
 Write-Host "  -> onnxruntime (final purge)" -ForegroundColor Gray
-uv pip uninstall onnxruntime --quiet 2>&1 | Out-Host
+uv pip uninstall --python $VenvPython onnxruntime --quiet 2>&1 | Out-Host
 
 Write-Host "[5/6] Verifying CUDA..." -ForegroundColor Yellow
 $verify = & $VenvPython -c @"
+import os, glob, nvidia
+
+# --- DLL injection (mirrors get_nvidia_dll_paths in piper_server.rs) ---
+nvidia_dir = list(nvidia.__path__)[0]
+bin_dirs = glob.glob(os.path.join(nvidia_dir, '*', 'bin'))
+sub_dirs = glob.glob(os.path.join(nvidia_dir, '*', 'bin', '*'))
+all_dirs = [p for p in bin_dirs + sub_dirs if os.path.isdir(p)]
+print(f'NVIDIA DLL dirs: {len(all_dirs)}')
+for d in all_dirs:
+    print(f'  {d}')
+
+# --- ORT provider check ---
 import onnxruntime as ort
 print(f'ONNX Runtime: {ort.__version__}')
 print(f'Device: {ort.get_device()}')

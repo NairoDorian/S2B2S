@@ -114,7 +114,7 @@ run_uv_pip() {
     local label="$1"
     shift
     echo "Installing $label..."
-    "$UV_EXE" pip install --python "$VENV_PYTHON" "$@"
+    "$UV_EXE" pip install --python "$VENV_PYTHON" --no-cache --force-reinstall "$@"
 }
 
 # 5. Install Speech dependencies
@@ -143,34 +143,33 @@ if [ "$(uname -s)" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 if [ "$IS_LINUX_CUDA" = true ]; then
-    echo "NVIDIA GPU detected on Linux. Setting up GPU acceleration (CUDA 13.3 nightly)..."
+    echo "NVIDIA GPU detected on Linux. Setting up GPU acceleration..."
     
     # Remove conflicting CPU onnxruntime (pulled in by piper-tts)
     echo "Removing conflicting CPU onnxruntime..."
     "$UV_EXE" pip uninstall --python "$VENV_PYTHON" onnxruntime --yes --quiet || true
     
-    # Install onnxruntime-gpu dependencies first (required by the CUDA 13 nightly build)
+    # Install onnxruntime-gpu dependencies
     run_uv_pip "onnxruntime-gpu dependencies" \
         "coloredlogs" "flatbuffers" "numpy" "packaging" "protobuf" "sympy" "sentencepiece"
     
-    # Install onnxruntime-gpu nightly for CUDA 13.3 from the Azure DevOps feed
-    echo "Installing onnxruntime-gpu (CUDA 13.3 nightly)..."
-    "$UV_EXE" pip install --python "$VENV_PYTHON" \
-        --pre \
-        --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/" \
-        onnxruntime-gpu
+    # Install onnxruntime-gpu from PyPI
+    echo "Installing onnxruntime-gpu..."
+    "$UV_EXE" pip install --python "$VENV_PYTHON" --no-cache --force-reinstall onnxruntime-gpu
     
-    # Keep NVIDIA CUDA runtime packages for safety (ensures DLLs are available at runtime)
-    run_uv_pip "nvidia CUDA runtime packages" \
-        "nvidia-cuda-runtime-cu12" \
-        "nvidia-cudnn-cu12" \
-        "nvidia-cublas-cu12" \
-        "nvidia-cufft-cu12" \
-        "nvidia-curand-cu12" \
-        "nvidia-cusolver-cu12" \
-        "nvidia-cusparse-cu12" \
-        "nvidia-nvjitlink-cu12"
-    
+    # Install NVIDIA CUDA 13 runtime DLLs (for piper child process PATH injection)
+    echo "Installing NVIDIA CUDA 13 runtime DLLs..."
+    for pkg in \
+        "nvidia-cuda-runtime" \
+        "nvidia-cudnn-cu13" \
+        "nvidia-cublas" \
+        "nvidia-cufft" \
+        "nvidia-cusolver" \
+        "nvidia-cusparse" \
+        "nvidia-nvjitlink"; do
+        run_uv_pip "$pkg" "$pkg"
+    done
+
     # Final safety check: ensure CPU onnxruntime has not been re-added
     "$UV_EXE" pip uninstall --python "$VENV_PYTHON" onnxruntime --yes --quiet || true
 else

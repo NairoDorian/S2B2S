@@ -242,18 +242,23 @@ pub fn resolve_piper_voices_dir(app: Option<&tauri::AppHandle>) -> std::path::Pa
 }
 
 #[cfg(windows)]
-pub(crate) fn get_nvidia_dll_paths(command: &PythonCommand) -> Option<String> {
+pub(crate) fn get_nvidia_dll_paths(python_executable: &str) -> Option<String> {
     static NVIDIA_PATHS: OnceLock<Option<String>> = OnceLock::new();
     NVIDIA_PATHS
         .get_or_init(|| {
-            let mut cmd = Command::new(&command.executable);
-            cmd.args(&command.args);
-            cmd.args([
-                "-c",
-                "import os, nvidia; p = nvidia.__path__[0]; print(';'.join([os.path.join(p, d, 'bin', 'x86_64') if os.path.isdir(os.path.join(p, d, 'bin', 'x86_64')) else os.path.join(p, d, 'bin') for d in os.listdir(p) if os.path.isdir(os.path.join(p, d, 'bin')) or os.path.isdir(os.path.join(p, d, 'bin', 'x86_64'))]))"
-            ]);
-            cmd.creation_flags(CREATE_NO_WINDOW);
-            let output = cmd.output().ok()?;
+            let output = Command::new(python_executable)
+                .args([
+                    "-c",
+                    "import os, glob, nvidia; \
+                     nvidia_dir = list(nvidia.__path__)[0]; \
+                     bin_dirs = glob.glob(os.path.join(nvidia_dir, '*', 'bin')); \
+                     sub_dirs = glob.glob(os.path.join(nvidia_dir, '*', 'bin', '*')); \
+                     all_dirs = [p for p in bin_dirs + sub_dirs if os.path.isdir(p)]; \
+                     print(';'.join(all_dirs))"
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .ok()?;
 
             if output.status.success() {
                 let paths_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -351,7 +356,7 @@ fn spawn_start_thread(
         {
             cmd.creation_flags(CREATE_NO_WINDOW);
             if cuda {
-                if let Some(nvidia_paths) = get_nvidia_dll_paths(&command) {
+                if let Some(nvidia_paths) = get_nvidia_dll_paths(&command.executable) {
                     let current_path = get_expanded_path();
                     let new_path = format!("{};{}", nvidia_paths, current_path);
                     cmd.env("PATH", new_path);

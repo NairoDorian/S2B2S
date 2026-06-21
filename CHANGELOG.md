@@ -25,7 +25,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - **Settings Store Persistence** (`settings.rs`): Added `store.save()` calls immediately after setting key-value pairs in the settings store. This ensures settings updates (such as toggling Brain STT off/on) are immediately persisted to the disk and properly picked up by all threads and shortcuts without reverting or getting stuck.
-- **Piper CUDA DLL path discovery** (`piper_server.rs`): `get_nvidia_dll_paths` used `nvidia.__file__` which is `None` for namespace packages. Switched to `nvidia.__path__[0]` with dynamic `bin`/`bin/x86_64` discovery, fixing `CUDAExecutionProvider` init.
+- **Piper CUDA silent CPU fallback** (`piper_server.rs`, `setup_venv_uv.ps1`): Two bugs caused the piper child process to always fall back to CPU:
+  - `get_nvidia_dll_paths` passed `command.args` (`-u -m piper.http_server`) before the `-c` flag, so the Python one-liner for NVIDIA DLL discovery was never executed — only `piper.http_server` was invoked with `-c` as an argument to the module. Changed signature to `(python_executable: &str)` and dropped the module args.
+  - `setup_venv_uv.ps1` did not install the 7 `nvidia-*` CUDA runtime packages (`nvidia-cuda-runtime`, `nvidia-cudnn-cu13`, `nvidia-cublas`, etc.), so `import nvidia` failed entirely and no DLL paths were returned.
 - **Build broken by windows-core version mismatch** (`webview_hardening.rs`): Added `windows-core-061` alias to fix `ICoreWebView2Settings.cast<>()` across two versions of `windows-core` in the dependency tree.
 - **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.
 
