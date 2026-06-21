@@ -30,6 +30,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   - `setup_venv_uv.ps1` did not install the 7 `nvidia-*` CUDA runtime packages (`nvidia-cuda-runtime`, `nvidia-cudnn-cu13`, `nvidia-cublas`, etc.), so `import nvidia` failed entirely and no DLL paths were returned.
 - **Build broken by windows-core version mismatch** (`webview_hardening.rs`): Added `windows-core-061` alias to fix `ICoreWebView2Settings.cast<>()` across two versions of `windows-core` in the dependency tree.
 - **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.
+- **Conversation double scrollbar** (`App.tsx`, `ConversationView.tsx`): Removed nested `overflow-y-auto` containers that caused two stacked scrollbars when conversation mode was active. Outer content area now uses `overflow-hidden`; scrolling is managed per-section.
+- **Sidebar overflow** (`Sidebar.tsx`): Sections list now scrolls vertically when tabs exceed sidebar height (e.g. with debug mode enabled).
+
+### Changed
+
+- **UI layout scroll architecture** (`App.tsx`): Migrated from a single outer scroll container to per-section scroll management to prevent nested scrollbar bugs. Settings sections each have their own `overflow-y-auto` wrapper; conversation mode uses its internal message list scroll. `AccessibilityPermissions` is now shown in both paths.
+- **Sidebar scrollability** (`Sidebar.tsx`): Added `flex-1 overflow-y-auto` to the sections container and `overflow-hidden` to the sidebar wrapper. Logo image set to `shrink-0` to stay pinned at top.
+- **VRAM debug log verbosity** (`models.rs`): Commented out 10 `log::debug!` lines that fired every second during GPU VRAM polling (nvidia-smi, DXGI adapter enumeration, adapter details, selection summary). Kept `log::warn!`/`log::error!` lines for diagnostic visibility.
+- **STATUS.md audit** (`STATUS.md`): Updated from v0.1.3 audit to v0.1.4. Scorecard grades improved (Backend B→B+, Frontend B→B+, Docs B→A−, Nix C→C+). Phase 1 marked completed with 8 subtasks checked. God-file sizes updated to current line counts. Added Standalone Speech Runtime, Playwright E2E Tests, Panic Audit, Brain-Only STT Toggle to feature scorecard.
+- **README Quick Start** (`README.md`): Replaced manual Python venv setup steps with the standalone speech runtime commands (`install-speech-runtime.ps1`/`.sh`). Removed "Python 3.8+" prerequisite. Updated TTS Backends and Model Directory sections to reference portable provisioning.
 
 ## [0.1.4] — 2026-06-20: CI Consolidation, Standalone Speech Runtime & Playwright E2E Tests
 

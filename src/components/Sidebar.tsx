@@ -151,9 +151,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
   return (
-    <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
-      <img src={appIcon} alt="S2B2S" className="w-10 h-10 m-4" />
-      <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
+    <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2 overflow-hidden">
+      <img src={appIcon} alt="S2B2S" className="w-10 h-10 m-4 shrink-0" />
+      <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20 flex-1 overflow-y-auto">
         {availableSections.map((section) => {
           const Icon = section.icon;
           const isActive = activeSection === section.id;

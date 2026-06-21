@@ -24,7 +24,28 @@ type OnboardingStep = "accessibility" | "model" | "done";
 const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
     SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
-  return <ActiveComponent />;
+  // Conversation manages its own scroll (message list), other sections
+  // need their own scroll wrapper now that the outer container doesn't scroll.
+  if (section === "conversation") {
+    return (
+      <div className="h-full w-full flex flex-col">
+        <div className="shrink-0 px-4 pt-4">
+          <AccessibilityPermissions />
+        </div>
+        <div className="flex-1 min-h-0 px-4 pb-4">
+          <ActiveComponent />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="h-full w-full overflow-y-auto">
+      <div className="flex flex-col items-center p-4 gap-4">
+        <AccessibilityPermissions />
+        <ActiveComponent />
+      </div>
+    </div>
+  );
 };
 
 function App() {
@@ -297,14 +318,9 @@ function App() {
           activeSection={currentSection}
           onSectionChange={setCurrentSection}
         />
-        {/* Scrollable content area */}
+        {/* Content area — scrolling is managed per-section to avoid double scrollbars */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col items-center p-4 gap-4">
-              <AccessibilityPermissions />
-              {renderSettingsContent(currentSection)}
-            </div>
-          </div>
+          {renderSettingsContent(currentSection)}
         </div>
       </div>
       {/* Fixed footer at bottom */}

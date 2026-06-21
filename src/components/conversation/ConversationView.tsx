@@ -251,7 +251,7 @@ export const ConversationView: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col h-full min-h-[400px] space-y-3">
+    <div className="flex flex-col h-full min-h-0 space-y-3 overflow-hidden">
       {!brainEnabled && (
         <div className="px-4 py-3 rounded-lg border border-mid-gray/20 text-sm text-mid-gray">
           {t("conversation.disabledHint")}
