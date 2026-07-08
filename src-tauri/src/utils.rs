@@ -41,12 +41,16 @@ pub fn cancel_current_operation(app: &AppHandle) {
         brain_manager.abort();
     }
 
+    // Abandon any live streaming transcription
+    if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
+        tm.cancel_stream();
+    }>>>>>>> upstream/main
+
     // Update tray icon and hide overlay
     change_tray_icon(app, crate::tray::TrayIconState::Idle);
     hide_recording_overlay(app);
 
     // Unload model if immediate unload is enabled
-    let tm = app.state::<Arc<TranscriptionManager>>();
     tm.maybe_unload_immediately("cancellation");
 
     // Notify coordinator so it can keep lifecycle state coherent.

@@ -94,7 +94,6 @@ For detailed platform-specific build instructions, see [BUILD.md](BUILD.md).
 ## Architecture
 
 S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeScript frontend:
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Tauri App (single process)                    │
@@ -138,8 +137,7 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 │                       │  overlay.rs (recording/speaking overlay) ││
 │                       │  settings.rs (persistence)               ││
 │                       └──────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-```
+└─────────────────────────────────────────────────────────────────┘```
 
 ### Frontend (React)
 
@@ -423,7 +421,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines and 
 ---
 
 ## License & Attribution
-
 **S2B2S** — MIT License — see [LICENSE](LICENSE) file.
 
 Built on [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT). Uses Parakeet V3 (CC-BY-4.0), Silero VAD, Kokoro-82M (Apache 2.0), text-processing-rs (Apache 2.0), Piper TTS, transcribe-rs, and the excellent Tauri framework.
@@ -431,3 +428,10 @@ Built on [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT). Uses Parakee
 Inspired by and incorporating patterns from: AIVORelay by MaxITService (MIT), Parler by Melvynx (MIT), Parrot by Rishi Khare (MIT), CopySpeak by ilyaizen & NairoDorian (MIT). Concepts from Whispering (AGPL-3.0), TranscriptionSuite (GPL-3.0), and Parakeet-Realtime-Transcriber (concepts only).
 
 See [STATUS.md](STATUS.md) for the complete project status scorecard and [AGENTS.md](AGENTS.md) for AI assistant guidance.
+Handy is open-source software, but the Handy name, logo, icon, and brand assets are not open-source. Unofficial forks, rewrites, and redistributions must use their own branding and must not imply endorsement or affiliation.
+## Acknowledgments
+- **Whisper** by OpenAI for the speech recognition model
+- **ggml and transcribe.cpp** for amazing cross-platform speech-to-text inference/acceleration
+- **Silero** for great lightweight VAD
+- **Tauri** team for the excellent Rust-based app framework
+- **Community contributors** helping make Handy better

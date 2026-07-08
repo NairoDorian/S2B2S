@@ -1,12 +1,14 @@
+//! Portable mode support for S2B2S.
+//!
+//! When a file named `portable` exists next to the executable, all user data
+//! (settings, models, recordings, database, logs) is stored in a `Data/`
+//! directory alongside the executable instead of `%APPDATA%`.
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::Manager;
 
-/// Portable mode support for s2b2s.
-///
-/// When a file named `portable` exists next to the executable, all user data
-/// (settings, models, recordings, database, logs) is stored in a `Data/`
-/// directory alongside the executable instead of `%APPDATA%`.
+>>>>>>> upstream/main
 static PORTABLE_DATA_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 

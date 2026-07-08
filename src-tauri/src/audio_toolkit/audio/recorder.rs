@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::{
@@ -21,7 +21,10 @@ use crate::audio_toolkit::{
 use tauri::Emitter;
 
 enum Cmd {
-    Start,
+    /// Begin capturing. Carries the send timestamp so the consumer can log how
+    /// long the command sat in the channel (and how much audio was dropped
+    /// before it was seen).
+    Start(VadPolicy, Instant),
     Stop(mpsc::Sender<Vec<f32>>),
     Shutdown,
 }
@@ -31,12 +34,58 @@ enum AudioChunk {
     EndOfStream,
 }
 
+/// How 16 kHz mono frames should be filtered for one recording session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VadPolicy {
+    /// Bypass VAD and forward every frame.
+    Disabled,
+    /// Current offline-tuned VAD profile.
+    Offline,
+    /// VAD profile with a longer post-speech tail for streaming-capable models.
+    Streaming,
+}
+
+/// A single VAD engine plus the two hangover-tail lengths its smoothing wrapper
+/// should use. The offline and streaming policies are never active
+/// concurrently, so one detector is reconfigured per session (see `Cmd::Start`)
+/// rather than kept as two resident engines.
+#[derive(Clone)]
+struct VadConfig {
+    detector: Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>,
+    offline_hangover_frames: usize,
+    streaming_hangover_frames: usize,
+}
+
+impl VadConfig {
+    /// Post-speech hangover tail (in 30 ms frames) for the given policy.
+    /// `Disabled` never reaches the detector, so it maps to the offline value.
+    fn hangover_for(&self, policy: VadPolicy) -> usize {
+        match policy {
+            VadPolicy::Streaming => self.streaming_hangover_frames,
+            VadPolicy::Offline | VadPolicy::Disabled => self.offline_hangover_frames,
+        }
+    }
+}
+
+/// Callback invoked with each 16 kHz mono frame that passes the active capture
+/// policy while recording. Used to feed a live streaming transcription as audio arrives.
+pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
+
 pub struct AudioRecorder {
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker_handle: Option<std::thread::JoinHandle<()>>,
-    vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
+    vad: Option<VadConfig>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    audio_cb: Option<AudioFrameCallback>,
+    /// Preferred stream config cached per device name. The two HAL property
+    /// queries in `get_preferred_config` cost ~40-85ms per open (worse on
+    /// USB/Bluetooth), which lands on the keypress->capture path in on-demand
+    /// mode. Keyed by name so a system-default change misses naturally;
+    /// cleared whenever an open fails so a stale rate/format self-heals on the
+    /// caller's retry.
+    config_cache: Arc<Mutex<Option<(String, cpal::SupportedStreamConfig)>>>,
+    // S2B2S-specific fields
     pause_flag: Option<Arc<AtomicBool>>,
     noise_suppression_enabled: Option<Arc<AtomicBool>>,
     use_standalone_ns: bool,
@@ -54,6 +103,8 @@ impl AudioRecorder {
             worker_handle: None,
             vad: None,
             level_cb: None,
+            audio_cb: None,
+            config_cache: Arc::new(Mutex::new(None)),
             pause_flag: None,
             noise_suppression_enabled: None,
             use_standalone_ns: false,
@@ -64,8 +115,20 @@ impl AudioRecorder {
         })
     }
 
-    pub fn with_vad(mut self, vad: Box<dyn VoiceActivityDetector>) -> Self {
-        self.vad = Some(Arc::new(Mutex::new(vad)));
+    /// Attach a single VAD engine, reconfigured per session for the offline vs
+    /// streaming hangover tail. The two policies are mutually exclusive within a
+    /// recording, so one engine covers both instead of two resident instances.
+    pub fn with_vad(
+        mut self,
+        detector: Box<dyn VoiceActivityDetector>,
+        offline_hangover_frames: usize,
+        streaming_hangover_frames: usize,
+    ) -> Self {
+        self.vad = Some(VadConfig {
+            detector: Arc::new(Mutex::new(detector)),
+            offline_hangover_frames,
+            streaming_hangover_frames,
+        });
         self
     }
 
@@ -77,6 +140,19 @@ impl AudioRecorder {
         self
     }
 
+    /// Register a callback that receives real-time 16 kHz frames after the active
+    /// VAD policy has been applied. Frames arrive in real time, in order, on the
+    /// recorder's consumer thread — keep the callback cheap (e.g. forward to a
+    /// channel) so it never stalls capture.
+    pub fn with_audio_callback<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(&[f32]) + Send + Sync + 'static,
+    {
+        self.audio_cb = Some(Arc::new(cb));
+        self
+    }
+
+    // S2B2S-specific builder methods
     pub fn with_pause_flag(mut self, flag: Arc<AtomicBool>) -> Self {
         self.pause_flag = Some(flag);
         self
@@ -132,6 +208,10 @@ impl AudioRecorder {
         let vad = self.vad.clone();
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
+        // Move the optional real-time audio frame callback into the worker thread
+        let audio_cb = self.audio_cb.clone();
+        let config_cache = Arc::clone(&self.config_cache);
+        // S2B2S-specific state
         let pause_flag = self.pause_flag.clone();
         let noise_suppression_enabled = self.noise_suppression_enabled.clone();
         let use_standalone_ns = self.use_standalone_ns;
@@ -144,8 +224,21 @@ impl AudioRecorder {
             let stop_flag = Arc::new(AtomicBool::new(false));
             let stop_flag_for_stream = stop_flag.clone();
             let init_result = (|| -> Result<(cpal::Stream, u32), String> {
-                let config = AudioRecorder::get_preferred_config(&thread_device)
-                    .map_err(|e| format!("Failed to fetch preferred config: {e}"))?;
+                let config_started = Instant::now();
+                let device_name = thread_device.name().unwrap_or_default();
+                let cached_config = config_cache
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
+                    .map(|(_, cfg)| cfg.clone());
+                let config_was_cached = cached_config.is_some();
+                let config = match cached_config {
+                    Some(cfg) => cfg,
+                    None => AudioRecorder::get_preferred_config(&thread_device)
+                        .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
+                };
+                let config_elapsed = config_started.elapsed();
 
                 // cpal 0.17: SampleRate is now a `u32` alias (no tuple field).
                 let sample_rate = config.sample_rate();
@@ -162,6 +255,7 @@ impl AudioRecorder {
                     config.sample_format()
                 );
 
+                let build_started = Instant::now();
                 let stream = match config.sample_format() {
                     cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
                         &thread_device,
@@ -207,10 +301,25 @@ impl AudioRecorder {
                         return Err(format!("Unsupported sample format: {sample_format:?}"));
                     }
                 };
+                let build_elapsed = build_started.elapsed();
 
+                let play_started = Instant::now();
                 stream
                     .play()
                     .map_err(|e| format!("Failed to start microphone stream: {e}"))?;
+                log::debug!(
+                    "mic worker init: fetch_config={:?} (cached={}) build_stream={:?} play={:?}",
+                    config_elapsed,
+                    config_was_cached,
+                    build_elapsed,
+                    play_started.elapsed()
+                );
+
+                // The device accepted this config; remember it so the next
+                // open skips the HAL property queries entirely.
+                if !config_was_cached && !device_name.is_empty() {
+                    *config_cache.lock().unwrap() = Some((device_name, config));
+                }
 
                 Ok((stream, sample_rate))
             })();
@@ -218,6 +327,9 @@ impl AudioRecorder {
             match init_result {
                 Ok((stream, sample_rate)) => {
                     let _ = init_tx.send(Ok(()));
+                    // Timestamp for the play()-returned -> first-samples gap the
+                    // init handshake can't see (hardware dependent).
+                    let stream_running_at = Instant::now();
                     // Keep the stream alive while we process samples.
                     run_consumer(
                         sample_rate,
@@ -225,7 +337,9 @@ impl AudioRecorder {
                         sample_rx,
                         cmd_rx,
                         level_cb,
+                        audio_cb,
                         stop_flag,
+                        stream_running_at,
                         pause_flag,
                         noise_suppression_enabled,
                         use_standalone_ns,
@@ -237,6 +351,10 @@ impl AudioRecorder {
                     drop(stream);
                 }
                 Err(error_message) => {
+                    // A failed open may mean the cached config went stale
+                    // (device re-plugged, rate/format changed in the OS).
+                    // Drop it so the next attempt re-queries the device.
+                    *config_cache.lock().unwrap() = None;
                     log::error!("{error_message}");
                     let _ = init_tx.send(Err(error_message));
                 }
@@ -262,15 +380,15 @@ impl AudioRecorder {
             Err(recv_error) => {
                 let _ = worker.join();
                 Err(Box::new(Error::other(format!(
-                    "Failed to initialize microphone worker: {recv_error}",
+                    "Failed to initialize microphone worker: {recv_error}"
                 ))))
             }
         }
     }
 
-    pub fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start(&self, vad_policy: VadPolicy) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(tx) = &self.cmd_tx {
-            tx.send(Cmd::Start)?;
+            tx.send(Cmd::Start(vad_policy, Instant::now()))?;
         }
         Ok(())
     }
@@ -425,11 +543,14 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn run_consumer(
     in_sample_rate: u32,
-    vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
+    vad: Option<VadConfig>,
     sample_rx: mpsc::Receiver<AudioChunk>,
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    audio_cb: Option<AudioFrameCallback>,
     stop_flag: Arc<AtomicBool>,
+    stream_running_at: Instant,
+    // S2B2S-specific parameters
     pause_flag: Option<Arc<AtomicBool>>,
     noise_suppression_enabled: Option<Arc<AtomicBool>>,
     use_standalone_ns: bool,
@@ -451,7 +572,15 @@ fn run_consumer(
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
-    let mut silence_frames = 0;
+    let mut vad_policy = VadPolicy::Offline;
+    let mut silence_frames = 0usize;
+
+    // ---------- latency instrumentation ---------------------------------- //
+    // First-chunk arrival exposes the play()->samples-flowing gap; the
+    // first-captured log confirms capture begins with the chunk in flight
+    // when Cmd::Start lands.
+    let mut first_chunk_logged = false;
+    let mut awaiting_first_captured_chunk: Option<Instant> = None;
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -477,32 +606,154 @@ fn run_consumer(
     fn handle_frame(
         samples: &[f32],
         recording: bool,
-        vad: &Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
+        vad_policy: VadPolicy,
+        vad: &Option<VadConfig>,
+        audio_cb: &Option<AudioFrameCallback>,
         out_buf: &mut Vec<f32>,
     ) {
         if !recording {
             return;
         }
 
-        if let Some(vad_arc) = vad {
-            let mut det = vad_arc.lock().unwrap();
+        let mut emit = |buf: &[f32]| {
+            out_buf.extend_from_slice(buf);
+            if let Some(cb) = audio_cb {
+                cb(buf);
+            }
+        };
+
+        if vad_policy == VadPolicy::Disabled {
+            emit(samples);
+            return;
+        }
+
+        if let Some(cfg) = vad {
+            let mut det = cfg.detector.lock().unwrap();
             match det.push_frame(samples).unwrap_or(VadFrame::Speech(samples)) {
-                VadFrame::Speech(buf) => out_buf.extend_from_slice(buf),
+                VadFrame::Speech(buf) => emit(buf),
                 VadFrame::Noise => {}
             }
         } else {
-            out_buf.extend_from_slice(samples);
+            emit(samples);
         }
     }
 
-    while let Ok(c) = sample_rx.recv() {
-        let chunk = c;
+    // Runs until the stream closes and `recv` returns `Err`.
+    while let Ok(chunk) = sample_rx.recv() {
+        // Handle pending commands BEFORE the in-flight chunk so a Start
+        // captures it. Commands used to be polled after processing, which
+        // silently dropped one buffer period of audio (~10ms built-in, up to
+        // ~100ms on Bluetooth) at every recording start.
+        let mut pending = Some(chunk);
+        while let Ok(cmd) = cmd_rx.try_recv() {
+            match cmd {
+                Cmd::Start(policy, sent_at) => {
+                    log::debug!(
+                        "Cmd::Start processed {:?} after send; capture begins with the in-flight chunk",
+                        sent_at.elapsed()
+                    );
+                    awaiting_first_captured_chunk = Some(Instant::now());
+                    stop_flag.store(false, Ordering::Relaxed);
+                    vad_policy = policy;
+                    processed_samples.clear();
+                    recording = true;
+                    silence_frames = 0;
+                    visualizer.reset();
+                    frame_resampler.reset();
+                    // Reconfigure the single VAD engine for this session's policy
+                    // and clear its smoothing + recurrent state before it sees
+                    // any frames.
+                    if vad_policy != VadPolicy::Disabled {
+                        if let Some(cfg) = &vad {
+                            let mut det = cfg.detector.lock().unwrap();
+                            det.set_hangover_frames(cfg.hangover_for(vad_policy));
+                            det.reset();
+                        }
+                    }
+                }
+                Cmd::Stop(reply_tx) => {
+                    recording = false;
+                    stop_flag.store(true, Ordering::Relaxed);
 
-        let raw = match chunk {
-            AudioChunk::Samples(s) => s,
-            AudioChunk::EndOfStream => continue,
+                    // The chunk in hand arrived before the stop; it belongs to
+                    // the recording, so feed it ahead of the drain below.
+                    if let Some(AudioChunk::Samples(raw)) = pending.take() {
+                        frame_resampler.push(&raw, &mut |frame: &[f32]| {
+                            handle_frame(
+                                frame,
+                                true,
+                                vad_policy,
+                                &vad,
+                                &audio_cb,
+                                &mut processed_samples,
+                            )
+                        });
+                    }
+
+                    // Drain all remaining audio until the producer confirms end-of-stream.
+                    loop {
+                        match sample_rx.recv_timeout(Duration::from_secs(2)) {
+                            Ok(AudioChunk::Samples(remaining)) => {
+                                frame_resampler.push(&remaining, &mut |frame: &[f32]| {
+                                    handle_frame(
+                                        frame,
+                                        true,
+                                        vad_policy,
+                                        &vad,
+                                        &audio_cb,
+                                        &mut processed_samples,
+                                    )
+                                });
+                            }
+                            Ok(AudioChunk::EndOfStream) => break,
+                            Err(_) => {
+                                log::warn!("Timed out waiting for EndOfStream from audio callback");
+                                break;
+                            }
+                        }
+                    }
+
+                    frame_resampler.finish(&mut |frame: &[f32]| {
+                        handle_frame(
+                            frame,
+                            true,
+                            vad_policy,
+                            &vad,
+                            &audio_cb,
+                            &mut processed_samples,
+                        )
+                    });
+
+                    let _ = reply_tx.send(std::mem::take(&mut processed_samples));
+
+                    // Resume the audio callback so the consumer loop can continue
+                    // receiving chunks (important for always-on microphone mode).
+                    stop_flag.store(false, Ordering::Relaxed);
+                }
+                Cmd::Shutdown => {
+                    stop_flag.store(true, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
+
+        let raw = match pending.take() {
+            Some(AudioChunk::Samples(s)) => s,
+            // EndOfStream, or the chunk was consumed by a Stop above.
+            _ => continue,
         };
 
+        let chunk_ms = raw.len() as f64 * 1000.0 / in_sample_rate as f64;
+        if !first_chunk_logged {
+            first_chunk_logged = true;
+            log::debug!(
+                "first audio chunk arrived {:?} after stream start ({:.1}ms of audio)",
+                stream_running_at.elapsed(),
+                chunk_ms
+            );
+        }
+
+        // Check pause state (S2B2S continuous mode)
         let is_paused = pause_flag
             .as_ref()
             .map(|f| f.load(Ordering::Relaxed))
@@ -520,168 +771,141 @@ fn run_consumer(
             }
         }
 
-        // ---------- existing pipeline ------------------------------------ //
-        if !is_paused {
-            let is_continuous = continuous_mode
-                .as_ref()
-                .map(|f| f.load(Ordering::Relaxed))
-                .unwrap_or(false);
-            let is_continuous_paused = continuous_mode_paused
-                .as_ref()
-                .map(|f| f.load(Ordering::Relaxed))
-                .unwrap_or(false);
+        if is_paused {
+            continue;
+        }
 
-            if is_continuous && is_continuous_paused {
-                processed_samples.clear();
-                recording = false;
-                silence_frames = 0;
-                if let Some(v) = &vad {
-                    let mut det = v.lock().unwrap();
-                    det.reset();
+        // ---------- existing pipeline ------------------------------------ //
+        let is_continuous = continuous_mode
+            .as_ref()
+            .map(|f| f.load(Ordering::Relaxed))
+            .unwrap_or(false);
+        let is_continuous_paused = continuous_mode_paused
+            .as_ref()
+            .map(|f| f.load(Ordering::Relaxed))
+            .unwrap_or(false);
+
+        if is_continuous && is_continuous_paused {
+            processed_samples.clear();
+            recording = false;
+            silence_frames = 0;
+            if let Some(cfg) = &vad {
+                cfg.detector.lock().unwrap().reset();
+            }
+        }
+
+        frame_resampler.push(&raw, &mut |frame: &[f32]| {
+            // Apply noise suppression if enabled (S2B2S feature)
+            let ns_on = noise_suppression_enabled
+                .as_ref()
+                .map(|f| f.load(Ordering::Relaxed))
+                .unwrap_or(false);
+            let processed: Vec<f32> = if ns_on {
+                if let Some(ns) = &mut standalone_ns {
+                    let (denoised, _) = ns.process_16khz_frame(frame);
+                    denoised
+                } else {
+                    frame.to_vec()
+                }
+            } else {
+                frame.to_vec()
+            };
+
+            // Feed wake word detector if active (S2B2S feature)
+            if let Some(detector) = &wake_word_detector {
+                if detector.active.load(Ordering::SeqCst) {
+                    detector.feed_audio(&processed);
                 }
             }
 
-            frame_resampler.push(&raw, &mut |frame: &[f32]| {
-                let mut processed = frame.to_vec();
-                let ns_on = noise_suppression_enabled.as_ref()
-                    .map(|f| f.load(Ordering::Relaxed))
-                    .unwrap_or(false);
-                if ns_on {
-                    if let Some(ns) = &mut standalone_ns {
-                        let (denoised, _) = ns.process_16khz_frame(frame);
-                        processed = denoised;
-                    }
-                }
-
-                if let Some(detector) = &wake_word_detector {
-                    if detector.active.load(Ordering::SeqCst) {
-                        detector.feed_audio(&processed);
-                    }
-                }
-
-                if is_continuous {
-                    // Barge-in: when paused during TTS, VAD still runs to detect new user speech
-                    if is_continuous_paused {
-                        if let Some(v) = &vad {
-                            let mut det = v.lock().unwrap();
-                            if det.push_frame(&processed).unwrap_or(VadFrame::Noise).is_speech() {
-                                if !recording {
-                                    recording = true;
-                                    silence_frames = 0;
-                                    if let Some(app) = &app_handle {
-                                        let _ = app.emit("continuous-voice:speech-started", ());
-                                    }
+            if is_continuous {
+                // Continuous voice mode: barge-in + auto-segment
+                if is_continuous_paused {
+                    // Barge-in: VAD still runs to detect new user speech during TTS
+                    if let Some(cfg) = &vad {
+                        let mut det = cfg.detector.lock().unwrap();
+                        if det.push_frame(&processed).unwrap_or(VadFrame::Noise).is_speech() {
+                            if !recording {
+                                recording = true;
+                                silence_frames = 0;
+                                if let Some(app) = &app_handle {
+                                    let _ = app.emit("continuous-voice:speech-started", ());
                                 }
-                            } else if recording {
+                            }
+                        } else if recording {
+                            silence_frames += 1;
+                            if silence_frames >= 40 {
+                                recording = false;
+                                silence_frames = 0;
+                                if let Some(cfg2) = &vad {
+                                    cfg2.detector.lock().unwrap().reset();
+                                }
+                            }
+                        }
+                    }
+                } else if let Some(cfg) = &vad {
+                    let mut det = cfg.detector.lock().unwrap();
+                    match det
+                        .push_frame(&processed)
+                        .unwrap_or(VadFrame::Speech(&processed))
+                    {
+                        VadFrame::Speech(buf) => {
+                            if !recording {
+                                recording = true;
+                                processed_samples.clear();
+                                processed_samples.extend_from_slice(buf);
+                                if let Some(app) = &app_handle {
+                                    let _ = app.emit("continuous-voice:speech-started", ());
+                                }
+                            } else {
+                                processed_samples.extend_from_slice(buf);
+                            }
+                            silence_frames = 0;
+                        }
+                        VadFrame::Noise => {
+                            if recording {
                                 silence_frames += 1;
                                 if silence_frames >= 40 {
                                     recording = false;
-                                    silence_frames = 0;
-                                    // Don't process utterance — barge-in handler will do that
-                                    if let Some(v) = &vad {
-                                        v.lock().unwrap().reset();
+                                    if let Some(app) = &app_handle {
+                                        let _ = app.emit("continuous-voice:speech-ended", ());
                                     }
-                                }
-                            }
-                        }
-                    } else {
-                        if let Some(v) = &vad {
-                            let mut det = v.lock().unwrap();
-                            match det.push_frame(&processed).unwrap_or(VadFrame::Speech(&processed)) {
-                                VadFrame::Speech(buf) => {
-                                    if !recording {
-                                        recording = true;
-                                        processed_samples.clear();
-                                        processed_samples.extend_from_slice(buf);
-                                        if let Some(app) = &app_handle {
-                                            let _ = app.emit("continuous-voice:speech-started", ());
-                                        }
-                                    } else {
-                                        processed_samples.extend_from_slice(buf);
+                                    let samples = std::mem::take(&mut processed_samples);
+                                    if let Some(app) = &app_handle {
+                                        let app_clone = app.clone();
+                                        std::thread::spawn(move || {
+                                            if let Err(e) = crate::managers::continuous_voice::process_continuous_samples(&app_clone, samples) {
+                                                log::error!("Error in continuous voice pipeline: {}", e);
+                                            }
+                                        });
                                     }
                                     silence_frames = 0;
                                 }
-                                VadFrame::Noise => {
-                                    if recording {
-                                        silence_frames += 1;
-                                        if silence_frames >= 40 {
-                                            recording = false;
-                                            if let Some(app) = &app_handle {
-                                                let _ = app.emit("continuous-voice:speech-ended", ());
-                                            }
-                                            let samples = std::mem::take(&mut processed_samples);
-                                            if let Some(app) = &app_handle {
-                                                let app_clone = app.clone();
-                                                std::thread::spawn(move || {
-                                                    if let Err(e) = crate::managers::continuous_voice::process_continuous_samples(&app_clone, samples) {
-                                                        log::error!("Error in continuous voice pipeline: {}", e);
-                                                    }
-                                                });
-                                            }
-                                            silence_frames = 0;
-                                        }
-                                    }
-                                }
                             }
-                        } else {
-                            processed_samples.extend_from_slice(&processed);
                         }
                     }
                 } else {
-                    handle_frame(&processed, recording, &vad, &mut processed_samples);
+                    processed_samples.extend_from_slice(&processed);
                 }
-            });
-        }
+            } else {
+                handle_frame(
+                    &processed,
+                    recording,
+                    vad_policy,
+                    &vad,
+                    &audio_cb,
+                    &mut processed_samples,
+                );
+            }
+        });
 
-        // non-blocking check for a command
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            match cmd {
-                Cmd::Start => {
-                    stop_flag.store(false, Ordering::Relaxed);
-                    processed_samples.clear();
-                    recording = true;
-                    visualizer.reset();
-                    if let Some(v) = &vad {
-                        v.lock().unwrap().reset();
-                    }
-                }
-                Cmd::Stop(reply_tx) => {
-                    recording = false;
-                    stop_flag.store(true, Ordering::Relaxed);
-
-                    // Drain all remaining audio until the producer confirms end-of-stream.
-                    // The cpal callback sees the stop flag, sends EndOfStream, and goes
-                    // silent — guaranteeing every captured sample is in the channel
-                    // ahead of the sentinel.
-                    loop {
-                        match sample_rx.recv_timeout(Duration::from_secs(2)) {
-                            Ok(AudioChunk::Samples(remaining)) => {
-                                frame_resampler.push(&remaining, &mut |frame: &[f32]| {
-                                    handle_frame(frame, true, &vad, &mut processed_samples)
-                                });
-                            }
-                            Ok(AudioChunk::EndOfStream) => break,
-                            Err(_) => {
-                                log::warn!("Timed out waiting for EndOfStream from audio callback");
-                                break;
-                            }
-                        }
-                    }
-
-                    frame_resampler.finish(&mut |frame: &[f32]| {
-                        handle_frame(frame, true, &vad, &mut processed_samples)
-                    });
-
-                    let _ = reply_tx.send(std::mem::take(&mut processed_samples));
-
-                    // Resume the audio callback so the consumer loop can continue
-                    // receiving chunks (important for always-on microphone mode).
-                    stop_flag.store(false, Ordering::Relaxed);
-                }
-                Cmd::Shutdown => {
-                    stop_flag.store(true, Ordering::Relaxed);
-                    return;
-                }
+        if recording {
+            if let Some(started) = awaiting_first_captured_chunk.take() {
+                log::debug!(
+                    "first captured chunk ({:.1}ms of audio) processed {:?} after Cmd::Start",
+                    chunk_ms,
+                    started.elapsed()
+                );
             }
         }
     }

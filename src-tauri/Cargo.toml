@@ -76,8 +76,12 @@ nnnoiseless = { version = "0.5.2", default-features = false }
 tar = "0.4.46"
 flate2 = "1.1.9"
 sha2 = "0.11.0"
-transcribe-rs = { version = "0.3.11", features = ["whisper-cpp", "onnx"] }
-handy-keys = "0.2.4"
+# Whisper-family models run through transcribe-cpp (GGUF/ggml, native backends);
+# transcribe-rs is now ONNX-only (Parakeet, Moonshine, SenseVoice, GigaAM,
+# Canary, Cohere). Per-platform backend features are added in the target tables.
+transcribe-rs = { version = "0.3.8", features = ["onnx"] }
+transcribe-cpp = { version = "0.1.2", default-features = false }
+handy-keys = "0.3.0"
 ferrous-opencc = "0.4.0"
 clap = { version = "4.6.1", features = ["derive"] }
 specta = "=2.0.0-rc.25"
@@ -90,6 +94,9 @@ getrandom = "0.2"
 keyring = "2.0.5"
 aes-gcm = "0.10.3"
 aead = "0.5.2"
+hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
+  "tokio",
+] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"
@@ -104,7 +111,6 @@ tauri-plugin-updater = "2.10.1"
 windows-core-061 = { package = "windows-core", version = "0.61" }
 windows-core = "0.62.2"
 webview2-com = "0.38.2"
-transcribe-rs = { version = "0.3.11", features = ["ort-directml"] }
 windows = { version = "0.62.2", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
@@ -127,14 +133,32 @@ windows = { version = "0.62.2", features = [
 ] }
 winreg = "0.56"
 
+# Whisper backend per Windows arch.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+transcribe-cpp = { version = "0.1.2", default-features = false, features = [
+  "dynamic-backends",
+  "vulkan",
+] }
+
+[target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
+transcribe-cpp = { version = "0.1.2", default-features = false }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
-transcribe-rs = { version = "0.3.11", features = ["whisper-metal"] }
+transcribe-cpp = { version = "0.1.2", default-features = false, features = ["metal"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
 gtk = "0.18.2"
-transcribe-rs = { version = "0.3.11", features = ["whisper-vulkan"] }
+transcribe-cpp = { version = "0.1.2", default-features = false, features = [
+  "dynamic-backends",
+  "vulkan",
+] }
+
+[patch.crates-io]
+tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
+tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
+tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 
 [dev-dependencies]
 tempfile = "3"

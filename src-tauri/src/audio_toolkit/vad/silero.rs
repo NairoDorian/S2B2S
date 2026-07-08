@@ -54,6 +54,8 @@ impl VoiceActivityDetector for SileroVad {
     /// The trait's default `reset()` is a no-op, which left stale recurrent state
     /// from the previous utterance biasing the first ~100-300ms of the next one.
     fn reset(&mut self) {
+        // Clear the Silero LSTM hidden/cell state so a new session doesn't
+        // inherit recurrent context from the previous recording.
         self.engine.reset();
     }
 }

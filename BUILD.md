@@ -32,17 +32,36 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 #### Apple Silicon (M1/M2/M3/M4) — works out of the box with bundled ONNX Runtime.
 
 ### Windows
-
 - Microsoft C++ Build Tools or Visual Studio 2019/2022 with "Desktop development with C++" workload
 - WebView2 (included with Windows 11, available on Windows 10)
 - **Python 3.12** (for TTS engines — see [Python Version](#python-version) below)
 - **libclang.dll** (build-time dep for whisper-rs-sys bindgen):
-
+> [!IMPORTANT]
+> Windows' 260-character path limit can break the native build (the Vulkan
+> shader generator nests very deep). If `bun run tauri build` fails with
+> `MSB3491` / "path exceeds the OS max path limit", see
+> [Windows build fails with `MSB3491`](#windows-build-fails-with-msb3491--path-exceeds-260-characters)
+> in Troubleshooting.
+#### Linux
   The easiest way on a fresh machine:
-
   ```powershell
   winget install -e --id LLVM.LLVM
-  ```
+```bash
+  # Ubuntu/Debian
+  sudo apt update
+  sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
+  # Fedora/RHEL
+  sudo dnf groupinstall "Development Tools"
+  sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
+    spirv-headers-devel spirv-tools-devel glslang glslc \
+    gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
+    gtk-layer-shell gtk-layer-shell-devel \
+    cmake
+  # Arch Linux
+  sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
+    spirv-headers glslang shaderc \
+    gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
+    cmake  ```
 
   This installs LLVM and adds `libclang.dll` to PATH. No extra env vars needed.
 
@@ -186,8 +205,7 @@ This compiles a release binary and generates platform-specific bundles:
 
 When working on UI only (no Rust changes needed):
 
-```bash
-bun run dev       # Start Vite dev server on :1420
+```bashbun run dev       # Start Vite dev server on :1420
 bun run build     # Build frontend (TypeScript + Vite)
 bun run preview   # Preview built frontend
 ```
@@ -206,7 +224,6 @@ bun run format:backend    # cargo fmt only
 ```
 
 ---
-
 ## TypeScript Type Checking & Bindings
 
 ```bash
@@ -243,7 +260,6 @@ bun run check:translations
 ```bash
 bun run tauri build -- --bundles deb
 ```
-
 ### macOS cmake errors
 
 ```bash

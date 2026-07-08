@@ -322,7 +322,6 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 ```
 
 ### Technology Stack
-
 | Category            | Libraries                                                                                                                                                                        |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Framework**       | Tauri 2.x, React 19, TypeScript 6, Vite 8                                                                                                                                        |
@@ -340,7 +339,6 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **IPC**             | tauri-specta (typed bindings)                                                                                                                                                    |
 | **Shortcuts**       | rdev + Tauri global-shortcut                                                                                                                                                     |
 | **Build**           | Bun, Cargo (Rust stable, MSRV 1.87)                                                                                                                                              |
-
 ### Application Flow
 
 1. **Initialization:** App starts (optionally minimized to tray), loads settings, initializes managers (Audio, Model, TTS, Brain). Shows Her-style 3D loading animation.

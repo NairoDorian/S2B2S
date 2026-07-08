@@ -130,12 +130,13 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
     );
   }
 
-  const hContainer = grouped
-    ? "flex items-center justify-between px-4 p-2"
-    : "flex items-center justify-between px-4 p-2 rounded-lg border border-mid-gray/20";
+  // Horizontal layout (default)
+  const horizontalContainerClasses = grouped
+    ? "flex items-center justify-between min-h-12 px-4 p-2"
+    : "flex items-center justify-between min-h-12 px-4 p-2 rounded-lg border border-mid-gray/20";
 
   return (
-    <div className={hContainer}>
+    <div className={horizontalContainerClasses}>
       <div className="max-w-2/3">
         <div className="flex items-center gap-2">
           <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
