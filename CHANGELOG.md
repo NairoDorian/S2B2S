@@ -17,6 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **STT Pipeline Bypass** (`actions.rs`, `continuous_voice.rs`): Bypassed the local STT model execution in the conversation shortcut pipeline and continuous voice pipeline when `brain_only_transcription` is enabled.
 - **Multimodal Audio Format Switch to WAV** (`actions.rs`, `continuous_voice.rs`, `manager.rs`): Switched multimodal audio transmission format from MP3 to WAV. This bypasses the CPU-heavy MP3 encoding step completely and sends raw WAV bytes, aligning with native gemma-4 multimodal ASR guidelines.
 - **Venv setup scripts** (`setup_venv_uv.ps1`, `setup_tts_venv.ps1`): Switch onnxruntime-gpu to CUDA 13 nightly feed with canonical nvidia package names; add coloredlogs/flatbuffers/packaging/protobuf/sympy build deps.
+- **transcribe.cpp sourced from GitHub** (`src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`): The STT backend `transcribe-cpp` / `transcribe-cpp-sys` are now pulled directly from `https://github.com/handy-computer/transcribe.cpp` (`main`) via `[patch.crates-io]` instead of crates.io, so the build always tracks the latest upstream code. Cargo locks the resolved commit in `Cargo.lock`, so unchanged commits build from cache; run `cargo update -p transcribe-cpp -p transcribe-cpp-sys` to fetch newer commits. See `BUILD.md`.
 
 ### Removed
 
@@ -32,6 +33,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **llama.cpp server Remove button** (`manager.rs`): `list_downloaded_servers` used `splitn(2, '-')` on folder names like `cuda-13.3-b9741`, splitting on the first hyphen. Changed to `rsplit_once('-')` so backends with hyphens (e.g. `cuda-13.3`) parse correctly.
 - **Conversation double scrollbar** (`App.tsx`, `ConversationView.tsx`): Removed nested `overflow-y-auto` containers that caused two stacked scrollbars when conversation mode was active. Outer content area now uses `overflow-hidden`; scrolling is managed per-section.
 - **Sidebar overflow** (`Sidebar.tsx`): Sections list now scrolls vertically when tabs exceed sidebar height (e.g. with debug mode enabled).
+- **Vulkan build link failure (stale shader stubs)** (`BUILD.md`): After the Handy 0.9 source merge, `transcribe-cpp-sys` failed to link with `unresolved external symbol scale_f32_len` / `dequant_iq3_xxs_data`. The ggml Vulkan shader generator skips regeneration when its output `.cpp` already exists, so an interrupted or `glslc`-less first build left ~36-byte stub files that were reused by later incremental builds. Fix: `cargo clean -p transcribe-cpp-sys` (documented in `BUILD.md`) regenerates the shaders from source.
 
 ### Changed
 

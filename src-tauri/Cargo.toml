@@ -159,6 +159,13 @@ transcribe-cpp = { version = "0.1.2", default-features = false, features = [
 tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
+# Pull transcribe.cpp (STT backend) directly from its source repo so the build
+# always uses the latest code. Cargo caches the resolved git commit in
+# Cargo.lock, so unchanged commits build from cache (fast). Run
+# `cargo update -p transcribe-cpp -p transcribe-cpp-sys` to fetch newer commits.
+# See BUILD.md ("transcribe.cpp source") for details.
+transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
+transcribe-cpp-sys = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3"

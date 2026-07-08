@@ -175,6 +175,7 @@ All models, voices, and Brain GGUF files are organized under a master `models/` 
 | Crate                | Version | Purpose                                                 |
 | -------------------- | ------- | ------------------------------------------------------- |
 | `transcribe-rs`      | 0.3.11  | Local STT (Parakeet V3 + Whisper) with GPU acceleration |
+| `transcribe-cpp`     | git `main` | ggml-based STT backend (Whisper + 16+ families, Vulkan/CUDA/CPU); sourced from [handy-computer/transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) — see [BUILD.md](BUILD.md#transcribecpp-stt-backend--source--build-cache) |
 | `cpal`               | 0.17    | Cross-platform audio I/O                                |
 | `nnnoiseless`        | 0.5.2   | RNNoise-based noise suppression                         |
 | `vad-rs`             | —       | Silero VAD (ONNX)                                       |
@@ -431,7 +432,7 @@ See [STATUS.md](STATUS.md) for the complete project status scorecard and [AGENTS
 Handy is open-source software, but the Handy name, logo, icon, and brand assets are not open-source. Unofficial forks, rewrites, and redistributions must use their own branding and must not imply endorsement or affiliation.
 ## Acknowledgments
 - **Whisper** by OpenAI for the speech recognition model
-- **ggml and transcribe.cpp** for amazing cross-platform speech-to-text inference/acceleration
+- **[ggml](https://github.com/ggml-org/ggml)** and **[transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)** for amazing cross-platform speech-to-text inference/acceleration
 - **Silero** for great lightweight VAD
 - **Tauri** team for the excellent Rust-based app framework
 - **Community contributors** helping make Handy better

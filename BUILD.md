@@ -35,6 +35,7 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 - Microsoft C++ Build Tools or Visual Studio 2019/2022 with "Desktop development with C++" workload
 - WebView2 (included with Windows 11, available on Windows 10)
 - **Python 3.12** (for TTS engines — see [Python Version](#python-version) below)
+- **Vulkan SDK** (for the `transcribe.cpp` Vulkan STT backend): install from [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home). The installer adds `VulkanSDK\*\Bin` (containing `glslc.exe`) to `PATH`; `glslc` compiles the ggml Vulkan shaders at build time. If you build `tauri dev` from a plain shell, also set `VULKAN_SDK` (e.g. `set VULKAN_SDK=C:\VulkanSDK\1.4.350.0`). See [transcribe.cpp source](#transcribecpp-stt-backend--source--build-cache).
 - **libclang.dll** (build-time dep for whisper-rs-sys bindgen):
 > [!IMPORTANT]
 > Windows' 260-character path limit can break the native build (the Vulkan
@@ -326,6 +327,54 @@ S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub
 
 ---
 
+## transcribe.cpp (STT backend) — source & build cache
+
+Speech-to-text is performed by [`transcribe-cpp`](https://github.com/handy-computer/transcribe.cpp), a Rust/ggml wrapper around the `transcribe.cpp` C++ engine (Whisper-family + 16+ model families, Vulkan/CUDA/CPU backends). It is **pulled directly from its GitHub repository**, not from crates.io, so the build always tracks the latest upstream code:
+
+```toml
+# src-tauri/Cargo.toml  →  [patch.crates-io]
+transcribe-cpp    = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
+transcribe-cpp-sys = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
+```
+
+The `-sys` crate vendors the full C++ tree (ggml, `src/`, cmake) so Cargo can compile `libtranscribe` from source on any machine.
+
+### Caching — why repeat builds are fast
+
+Cargo resolves the `main` branch to an exact commit and records it in `Cargo.lock`. As long as that commit is unchanged, `transcribe-cpp-sys` is **not** recompiled and `bun run tauri dev` is fast on repeat runs (only your app crate + changed deps rebuild). The git checkout is cached under `CARGO_HOME`/registry, and the heavy C++ build output lives in `CARGO_TARGET_DIR` (use `set CARGO_TARGET_DIR=C:\bt` to keep it off the deep `src-tauri\target` path and avoid Windows' 260-char limit).
+
+### Pulling the latest upstream commits
+
+The `[patch]` points at the `main` tip, but Cargo only re-resolves a git dependency when asked — it caches the locked commit otherwise. To fetch newer `transcribe.cpp` commits and rebuild:
+
+```bash
+cargo update -p transcribe-cpp -p transcribe-cpp-sys
+bun run tauri dev
+```
+
+(`cargo update` refreshes everything.) If the upstream `main` moves, only `transcribe-cpp-sys` recompiles the C++; unchanged commits stay cached.
+
+### Known build failure: stale Vulkan shader stubs
+
+`transcribe-cpp-sys` builds the ggml Vulkan backend by generating SPIR-V from `.comp` shaders with `glslc`. The generator writes one generated `.cpp` per shader and **skips regeneration when the output file already exists**. If a prior build was interrupted or `glslc` was missing, you can be left with stale ~36-byte stub files (e.g. `scale.comp.cpp`, `dequant_iq3_xxs.comp.cpp`) containing no shader data. Linking then fails with:
+
+```
+ggml-vulkan.obj : error LNK2019: unresolved external symbol "unsigned __int64 const scale_f32_len"
+ggml-vulkan.obj : error LNK2019: unresolved external symbol "unsigned char const * const dequant_iq3_xxs_data"
+... fatal error LNK1120: 4 unresolved externals
+```
+
+**Fix:** force a clean rebuild of just that crate so the shaders regenerate from source (this recompiles the C++ once, then caches):
+
+```bash
+cargo clean -p transcribe-cpp-sys
+bun run tauri dev
+```
+
+This was the blocker after the Handy 0.9 source merge: the first build produced empty shader stubs, and incremental builds kept reusing them. A `cargo clean -p transcribe-cpp-sys` (or a full `cargo clean`) resolves it.
+
+---
+
 ## Environment Variables
 
 | Variable                           | Purpose                                               |
@@ -335,6 +384,8 @@ S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub
 | `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake errors on macOS                             |
 | `S2B2S_NO_GTK_LAYER_SHELL=1`       | Disable GTK layer shell on Linux (Wayland workaround) |
 | `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos        |
+| `VULKAN_SDK`                       | Path to the Vulkan SDK (e.g. `C:\VulkanSDK\1.4.350.0`); ensures `glslc` is found when building the `transcribe.cpp` Vulkan backend from a plain shell |
+| `CARGO_TARGET_DIR`                 | Redirect Cargo build output (e.g. `C:\bt`) to avoid the Windows 260-char path limit during the deep ggml shader generation |
 | `RUST_LOG`                         | Set Rust log level (e.g., `debug`, `trace`)           |
 
 ---
