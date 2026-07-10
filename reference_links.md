@@ -137,6 +137,14 @@ A curated, descriptive reference of open-source projects relevant to **[NairoDor
 - **State:** Last commit **2026-04-08** · Release: commits only (crate `0.3.x`)
 - **Links:** [GitHub](https://github.com/cjpais/transcribe-rs) · [crates.io](https://crates.io/crates/transcribe-rs)
 
+### handy-computer/transcribe.cpp — the "llama.cpp for speech-to-text"
+
+**GGML speech-to-text inference library in C/C++ with official Rust/Python/TS/Swift bindings** (Rust crate: `bindings/rust/transcribe-cpp`). Described as "llama.cpp for speech-to-text": it runs **16+ STT model families / 60+ variants** as GGUF on the `ggml` runtime, with Metal, Vulkan, and CUDA GPU backends plus a **tinyBLAS-accelerated CPU path**. Every model published under `handy-computer` on HF is **numerically verified and WER-tested** against its reference implementation. Notably carries model families S2B2S's `transcribe-rs` does *not* (e.g. **Qwen3-ASR 0.6B/1.7B, Voxtral mini/Realtime, Nemotron 3.5 ASR Streaming — 40 locales, Canary-Qwen 2.5B, Granite Speech 4/4.1, Cohere Transcribe, FunASR Nano, MedASR**). Ships a `transcribe-quantize` tool (F16/Q8_0/Q6_K/Q5_K_M/Q4_K_M) and a NeMo→GGUF converter.
+
+- **Why it matters for S2B2S:** a single GGUF-based engine that could back a *new* feature-gated STT backend alongside `transcribe-rs`, unlocking strong multilingual streaming (Nemotron 3.5, 40 locales), audio-LLM transcription/translation (Voxtral), and Qwen3-ASR — all with WER-verified quants and a drop-in Rust binding matching the Tauri stack.
+- **State:** Last commit **2026-07-08** · Release **v0.1.2** (2026-07-08, actively developed)
+- **Links:** [GitHub](https://github.com/handy-computer/transcribe.cpp) · [Rust binding](https://github.com/handy-computer/transcribe.cpp/tree/main/bindings/rust/transcribe-cpp) · [HF models](https://huggingface.co/handy-computer)
+
 ### KoljaB/RealtimeSTT
 
 **Python STT library for low-latency, always-listening apps:** VAD, fast transcription, optional realtime text updates, wake words, raw audio-stream access in a few lines. Default path uses `faster_whisper`; also ships native support for **Kroko/Banafo** (`kroko_onnx`) local streaming ASR. A common building block for DIY voice assistants.
@@ -321,6 +329,14 @@ A curated, descriptive reference of open-source projects relevant to **[NairoDor
 
 - **State:** Last commit **2026-06-05** · Release: commits only
 - **Links:** [GitHub](https://github.com/kyutai-labs/unmute) · [unmute.sh](https://unmute.sh) · models → [delayed-streams-modeling](https://github.com/kyutai-labs/delayed-streams-modeling)
+
+### huggingface/speech-to-speech — Hugging Face local voice agents
+
+**Low-latency, fully modular voice-agent pipeline (VAD → STT → LLM → TTS) exposed through an OpenAI Realtime-compatible WebSocket API** at `/v1/realtime`. Every stage is swappable: **Silero VAD v5**, **Parakeet TDT / Whisper / Faster-Whisper / Paraformer** STT, **OpenAI-compatible LLM** (hosted, vLLM, or llama.cpp — can pair with S2B2S's own llama.cpp server), and **Qwen3-TTS (GGML/mlx-audio), Kokoro-82M, Pocket TTS, ChatTTS, MMS** TTS. Ships four run modes — `realtime` (Realtime API), `local` (mic+speakers), `websocket` (raw 16 kHz PCM), and `socket` (TCP, model server + thin client) — plus **live partial transcription**, **server-VAD turn-taking with `interrupt_response` (barge-in)**, **tool/function calls**, and **automatic language detection** forwarded to the LLM. Runs in production as the conversation backend for thousands of Reachy Mini robots. The Realtime event set (`input_audio_buffer.append`, `session.update`, `response.cancel`, streaming transcription, audio deltas, tool calls) is the de-facto open standard S2B2S could implement to become a drop-in voice-agent server.
+
+- **Why it matters for S2B2S:** a reference architecture for (a) exposing S2B2S's existing VAD→STT→Brain→TTS pipeline as a standard OpenAI-Realtime server so any Realtime client (incl. the planned Android app) can connect; (b) a `socket` thin-client mode that maps directly onto the on-device-Android-via-desktop-brain split in `docs/android.md`; (c) adding Qwen3-TTS as a local TTS backend; (d) formalizing barge-in + tool-calling over a wire protocol.
+- **State:** Last commit **2026-06-12** · Release **v0.2.10** (2026-06-11, actively developed)
+- **Links:** [GitHub](https://github.com/huggingface/speech-to-speech) · [Realtime Engine README](https://github.com/huggingface/speech-to-speech/tree/main/src/speech_to_speech/api/openai_realtime) · [PyPI](https://pypi.org/project/speech-to-speech/)
 
 ---
 

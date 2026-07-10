@@ -85,6 +85,28 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
+const CANCELLATION_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
+
+async fn complete_unless_cancelled<F, C>(operation: F, is_cancelled: C) -> Option<F::Output>
+where
+    F: std::future::Future,
+    C: Fn() -> bool,
+{
+    tokio::pin!(operation);
+
+    loop {
+        if is_cancelled() {
+            return None;
+        }
+
+        if let Ok(result) =
+            tokio::time::timeout(CANCELLATION_POLL_INTERVAL, operation.as_mut()).await
+        {
+            return Some(result);
+        }
+    }
+}
+
 async fn post_process_transcription(
     app: &AppHandle,
     settings: &AppSettings,
@@ -766,6 +788,27 @@ fn resolve_effective_language(app: &AppHandle, settings: &AppSettings) -> String
     }
 }
 
+/// Resolve the language the Brain should reply in, mirroring the
+/// huggingface/speech-to-speech `--language auto` + `--enable_lang_prompt` flow.
+///
+/// - `brain.reply_language` set to a concrete BCP-47 code forces that reply language.
+/// - `"auto"` (default) defers to the effective STT language (the selected language,
+///   or the OS input source for `"os_input"`).
+/// - Returns `None` when no concrete hint applies (e.g. `en`, `auto`, `os_input`),
+///   letting the model infer the language from context.
+pub(crate) fn resolve_reply_language(app: &AppHandle, settings: &AppSettings) -> Option<String> {
+    let configured = settings.brain.reply_language.trim();
+    let lang = if configured.is_empty() || configured == "auto" {
+        resolve_effective_language(app, settings)
+    } else {
+        configured.to_string()
+    };
+    match lang.trim() {
+        "" | "auto" | "os_input" | "en" | "en-US" | "en-GB" => None,
+        other => Some(other.to_string()),
+    }
+}
+
 pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
@@ -1211,13 +1254,22 @@ impl ShortcutAction for TranscribeAction {
                                 let processed = if use_post_process {
                                     show_processing_overlay(&ah);
                                     let op_id = ah.try_state::<Arc<crate::llm_operation::LlmOperationTracker>>().map(|t| t.start_operation());
-                                    let res = process_transcription_output(
-                                        &ah,
-                                        &transcription,
-                                        true,
-                                        op_id,
+                                    let Some(res) = complete_unless_cancelled(
+                                        process_transcription_output(
+                                            &ah,
+                                            &transcription,
+                                            true,
+                                            op_id,
+                                        ),
+                                        || rm.was_cancelled_since(cancel_generation),
                                     )
-                                    .await;
+                                    .await
+                                    else {
+                                        debug!("Transcription operation cancelled during output handling");
+                                        utils::hide_recording_overlay(&ah);
+                                        change_tray_icon(&ah, TrayIconState::Idle);
+                                        return;
+                                    };
                                     if check_cancelled() {
                                         debug!("Post-processing completed but session is no longer in Processing state. Aborting.");
                                         return;
@@ -1225,8 +1277,10 @@ impl ShortcutAction for TranscribeAction {
                                     res
                                 } else {
                                     let mut final_text = transcription.to_string();
+                                    let effective_language =
+                                        crate::actions::resolve_effective_language(&ah, &settings);
                                     if let Some(converted_text) =
-                                        maybe_convert_chinese_variant(&settings, &transcription)
+                                        maybe_convert_chinese_variant(&effective_language, &transcription)
                                             .await
                                     {
                                         final_text = converted_text;
@@ -1292,11 +1346,16 @@ impl ShortcutAction for TranscribeAction {
                                     let multimodal_audio =
                                         is_brain_only || settings.brain.multimodal_audio_enabled;
 
+                                    // Forward the (effective) STT language so the Brain replies
+                                    // in the language it was spoken to (speech-to-speech lang_prompt).
+                                    let reply_language = resolve_reply_language(&ah, &settings);
+
                                     if let Some(bm) =
                                         ah.try_state::<Arc<crate::brain::manager::BrainManager>>()
                                     {
                                         let bm = bm.inner().clone();
                                         let text_to_ask = text_to_ask;
+                                        let reply_language = reply_language.clone();
                                         let sample_count = samples_for_brain.len();
                                         tauri::async_runtime::spawn(async move {
                                             let result = if multimodal_audio {
@@ -1333,6 +1392,7 @@ impl ShortcutAction for TranscribeAction {
                                                             text_to_ask,
                                                             Some(b64),
                                                             None,
+                                                            reply_language.clone(),
                                                         )
                                                         .await
                                                     }
@@ -1370,13 +1430,22 @@ impl ShortcutAction for TranscribeAction {
                             let op_id = ah
                                 .try_state::<Arc<crate::llm_operation::LlmOperationTracker>>()
                                 .map(|t| t.start_operation());
-                            let processed = process_transcription_output(
-                                &ah,
-                                &transcription,
-                                post_process,
-                                op_id,
+                            let Some(processed) = complete_unless_cancelled(
+                                process_transcription_output(
+                                    &ah,
+                                    &transcription,
+                                    post_process,
+                                    op_id,
+                                ),
+                                || rm.was_cancelled_since(cancel_generation),
                             )
-                            .await;
+                            .await
+                            else {
+                                debug!("Transcription operation cancelled during output handling");
+                                utils::hide_recording_overlay(&ah);
+                                change_tray_icon(&ah, TrayIconState::Idle);
+                                return;
+                            };
 
                             if check_cancelled() {
                                 debug!("Post-processing completed but session is no longer in Processing state. Aborting.");

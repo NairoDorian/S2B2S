@@ -52,12 +52,14 @@ impl BrainManager {
     /// Ask the Brain (text-only). Streams the reply; returns the full assistant text.
     /// Any previous in-flight turn is aborted first (barge-in semantics).
     pub async fn ask(&self, text: String) -> Result<String, String> {
-        self.ask_multimodal(text, None, None).await
+        self.ask_multimodal(text, None, None, None).await
     }
 
     /// Ask the Brain with optional multimodal inputs.
     /// - `audio_wav_base64`: raw base64-encoded WAV audio (for Gemma 4 native STT)
     /// - `image_png_base64`: raw base64-encoded PNG screenshot (for vision)
+    /// - `reply_language`: when `Some`, prepend a "respond in <language>" hint to the
+    ///   user turn (mirrors huggingface/speech-to-speech `--enable_lang_prompt`).
     /// Content parts order follows Gemma 4 best practices:
     /// image → text → audio
     pub async fn ask_multimodal(
@@ -65,6 +67,7 @@ impl BrainManager {
         text: String,
         audio_wav_base64: Option<String>,
         image_png_base64: Option<String>,
+        reply_language: Option<String>,
     ) -> Result<String, String> {
         let has_audio = audio_wav_base64.is_some();
         let has_image = image_png_base64.is_some();
@@ -135,6 +138,16 @@ impl BrainManager {
             let start = history.len().saturating_sub(keep);
             messages.extend(history[start..].iter().cloned());
         }
+        // Optional reply-language hint (huggingface/speech-to-speech `--enable_lang_prompt`).
+        // Prepended only to the model-facing user turn; conversation history keeps the
+        // original (unhinted) text so it stays clean.
+        let text_with_lang = match reply_language {
+            Some(ref lang) if !lang.trim().is_empty() && lang.trim() != "auto" => {
+                format!("Please respond in {}.\n\n{}", lang.trim(), text)
+            }
+            _ => text.clone(),
+        };
+
         let has_multimodal = audio_wav_base64.is_some() || image_png_base64.is_some();
         if has_multimodal {
             let mut parts = Vec::new();
@@ -147,7 +160,9 @@ impl BrainManager {
                 });
             }
             // Text in the middle
-            parts.push(ContentPart::Text { text: text.clone() });
+            parts.push(ContentPart::Text {
+                text: text_with_lang.clone(),
+            });
             // Audio goes after text (Gemma 4 best practice for ASR)
             if let Some(ref audio_b64) = audio_wav_base64 {
                 parts.push(ContentPart::InputAudio {
@@ -164,7 +179,7 @@ impl BrainManager {
         } else {
             messages.push(ChatMessage {
                 role: "user".into(),
-                content: MessageContent::text(text.clone()),
+                content: MessageContent::text(text_with_lang.clone()),
             });
         }
 

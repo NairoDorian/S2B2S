@@ -183,10 +183,12 @@ class KokoroHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b"empty text")
                 return
 
+            # Validate voice (copyspeak pattern)
             if voice not in AVAILABLE_VOICES:
                 print(
                     f"[kokoro_server] Unknown voice '{voice}', falling back to {DEFAULT_VOICE}",
-                    file=sys.stderr, flush=True,
+                    file=sys.stderr,
+                    flush=True,
                 )
                 voice = DEFAULT_VOICE
 
@@ -252,13 +254,16 @@ def main():
     else:
         USE_CLI_FALLBACK = True
         print(
-            "[kokoro_server] kokoro_tts not importable. "
-            "Falling back to CLI subprocess (model loads per-request).",
+            f"[kokoro_server] kokoro_tts not available; using CLI fallback. "
+            f"Model: {model_path or 'auto'}, Voices: {voices_path or 'auto'}",
             file=sys.stderr, flush=True,
         )
 
     server = HTTPServer((args.host, args.port), KokoroHandler)
-    print(f"[kokoro_server] Listening on http://{args.host}:{args.port}", file=sys.stderr, flush=True)
+    print(
+        f"[kokoro_server] Listening on http://{args.host}:{args.port}",
+        file=sys.stderr, flush=True,
+    )
 
     try:
         server.serve_forever()

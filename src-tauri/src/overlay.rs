@@ -26,6 +26,128 @@ use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 #[cfg(target_os = "linux")]
 use std::env;
 
+// --- macOS: CoreGraphics types for frontmost window detection ---
+#[cfg(target_os = "macos")]
+mod macos_monitor {
+    use core_foundation::{
+        base::{CFType, TCFType},
+        dictionary::CFDictionary,
+        number::CFNumber,
+        string::CFString,
+    };
+    use core_graphics::{
+        geometry::CGRect,
+        window::{
+            copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+            kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly,
+        },
+    };
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct LogicalRect {
+        pub x: f64,
+        pub y: f64,
+        pub width: f64,
+        pub height: f64,
+    }
+
+    /// Get the monitor containing the frontmost (key) non-desktop app window.
+    /// Returns None if no suitable window found (fallback to cursor).
+    pub fn get_monitor_with_focused_window(
+        app_handle: &tauri::AppHandle,
+    ) -> Option<tauri::Monitor> {
+        let window_infos = copy_window_info(
+            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+            kCGNullWindowID,
+        )?;
+
+        let layer_key = unsafe { CFString::wrap_under_get_rule(kCGWindowLayer) };
+        let bounds_key = unsafe { CFString::wrap_under_get_rule(kCGWindowBounds) };
+
+        for win_info_ref in window_infos.get_all_values() {
+            let win_info = unsafe {
+                CFDictionary::<CFString, CFType>::wrap_under_get_rule(
+                    win_info_ref as core_foundation::dictionary::CFDictionaryRef,
+                )
+            };
+
+            // Filter for normal app windows (layer == 0)
+            let layer = win_info
+                .find(&layer_key)
+                .and_then(|v| v.downcast::<CFNumber>())
+                .and_then(|v| v.to_i32());
+
+            if layer != Some(0) {
+                continue;
+            }
+
+            let bounds = win_info
+                .find(&bounds_key)
+                .and_then(|v| v.downcast::<CFDictionary>())
+                .and_then(|v| CGRect::from_dict_representation(&v));
+
+            let Some(bounds) = bounds else {
+                continue;
+            };
+
+            if bounds.size.width <= 1.0 || bounds.size.height <= 1.0 {
+                continue;
+            }
+
+            let rect = LogicalRect {
+                x: bounds.origin.x,
+                y: bounds.origin.y,
+                width: bounds.size.width,
+                height: bounds.size.height,
+            };
+
+            // Find monitor containing the window's center point
+            let center_x = rect.x + rect.width / 2.0;
+            let center_y = rect.y + rect.height / 2.0;
+
+            return get_monitor_containing_logical_point(app_handle, center_x, center_y);
+        }
+
+        None
+    }
+
+    fn get_monitor_containing_logical_point(
+        app_handle: &tauri::AppHandle,
+        x: f64,
+        y: f64,
+    ) -> Option<tauri::Monitor> {
+        if let Ok(monitors) = app_handle.available_monitors() {
+            for monitor in monitors {
+                let scale = monitor.scale_factor();
+                let pos = tauri::PhysicalPosition::new(
+                    (monitor.position().x as f64 / scale) as i32,
+                    (monitor.position().y as f64 / scale) as i32,
+                );
+                let size = tauri::PhysicalSize::new(
+                    (monitor.size().width as f64 / scale) as u32,
+                    (monitor.size().height as f64 / scale) as u32,
+                );
+                if is_point_within_monitor((x, y), &pos, &size) {
+                    return Some(monitor);
+                }
+            }
+        }
+        None
+    }
+
+    fn is_point_within_monitor(
+        point: (f64, f64),
+        monitor_pos: &tauri::PhysicalPosition<i32>,
+        monitor_size: &tauri::PhysicalSize<u32>,
+    ) -> bool {
+        let (px, py) = point;
+        px >= monitor_pos.x as f64
+            && px < (monitor_pos.x + monitor_size.width as i32) as f64
+            && py >= monitor_pos.y as f64
+            && py < (monitor_pos.y + monitor_size.height as i32) as f64
+    }
+}
+
 #[cfg(target_os = "macos")]
 tauri_panel! {
     panel!(RecordingOverlayPanel {
@@ -208,6 +330,15 @@ fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
         }
     }
 
+    // On macOS, also try to get the monitor from the frontmost app window
+    // (more reliable than cursor when cursor is off-screen or on a different display).
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(monitor) = macos_monitor::get_monitor_with_focused_window(app_handle) {
+            return Some(monitor);
+        }
+    }
+
     app_handle.primary_monitor().ok().flatten()
 }
 
@@ -258,9 +389,9 @@ fn calculate_overlay_position(
     let cfg = &settings.overlay_window;
 
     // Use overlay_window.position; fall back to legacy overlay_position for migration.
-    let position = if cfg.position == OverlayPosition::None {
+    let position = if cfg.position == OverlayPosition::Bottom {
         // Check legacy field for backward compat
-        if settings.overlay_position == OverlayPosition::None {
+        if settings.overlay_position == OverlayPosition::Bottom {
             OverlayPosition::Bottom
         } else {
             settings.overlay_position
@@ -275,7 +406,7 @@ fn calculate_overlay_position(
     let x = monitor_x + (monitor_width - overlay_w) / 2.0;
     let y = match position {
         OverlayPosition::Top => monitor_y + OVERLAY_TOP_OFFSET,
-        OverlayPosition::Bottom | OverlayPosition::None => {
+        OverlayPosition::Bottom => {
             monitor_y + monitor_height - overlay_h - OVERLAY_BOTTOM_OFFSET
         }
     };
@@ -442,8 +573,6 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     if settings.overlay_style == OverlayStyle::None {
         return;
     }
-        return;
-    }
 
     // Size the overlay for this state (compact vs. streaming), then position it.
     let (width, height) = overlay_dimensions(state);
@@ -501,7 +630,6 @@ pub fn show_paused_overlay(app_handle: &AppHandle) {
 /// Shows the larger streaming overlay that displays live transcription text
 pub fn show_streaming_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "streaming");
-}
 }
 
 /// Shows the transcribing overlay window

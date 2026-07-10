@@ -284,8 +284,24 @@ export const commands = {
 };
 
 /** Events */
+export type StreamPhase = "listening" | "working";
+
+export interface StreamTextEvent {
+	committed: string;
+	tentative: string;
+}
+
+export type StreamWorkKind = "transcribing" | "polishing";
+
+export interface StreamPhaseEvent {
+	phase: StreamPhase;
+	kind?: StreamWorkKind | null;
+}
+
 export const events = {
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
+	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
+	streamPhaseEvent: makeEvent<StreamPhaseEvent>("stream-phase-event"),
 };
 
 /* Types */

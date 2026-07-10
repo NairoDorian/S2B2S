@@ -60,6 +60,27 @@ pub async fn download_model(
     result
 }
 
+/// Whether any STT model is known to the app (built-in catalog or discovered).
+#[tauri::command]
+#[specta::specta]
+pub async fn has_any_models_available(
+    model_manager: State<'_, Arc<ModelManager>>,
+) -> Result<bool, String> {
+    Ok(!model_manager.get_available_models().is_empty())
+}
+
+/// Whether any STT model is already on disk (downloaded or discovered locally).
+#[tauri::command]
+#[specta::specta]
+pub async fn has_any_models_or_downloads(
+    model_manager: State<'_, Arc<ModelManager>>,
+) -> Result<bool, String> {
+    Ok(model_manager
+        .get_available_models()
+        .iter()
+        .any(|m| m.is_downloaded || m.is_downloading))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_model(

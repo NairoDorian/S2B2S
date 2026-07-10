@@ -678,6 +678,25 @@
       "recordingBuffer": {
         "title": "Extra Recording Buffer",
         "description": "Extra time (in milliseconds) to keep recording after you release the key, to capture trailing audio. 0 = no extra buffer."
+      },
+      "sessionToasts": {
+        "title": "Session Toast History {{count}}",
+        "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
+        "collapse": "Collapse toast history",
+        "expand": "Expand toast history",
+        "empty": "No toasts recorded this session. Errors and warnings will appear here automatically.",
+        "filteredEmpty": "All {{errorCount}} errors and {{warningCount}} warnings are currently hidden by the filters above.",
+        "filters": {
+          "errors": "Errors ({{count}})",
+          "errorsDescription": "Show error-level toasts",
+          "warnings": "Warnings ({{count}})",
+          "warningsDescription": "Show warning-level toasts"
+        },
+        "levels": {
+          "error": "Error",
+          "warning": "Warning"
+        },
+        "actionExecuted": "Action executed"
       }
     },
     "about": {

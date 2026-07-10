@@ -1,5 +1,6 @@
 use hound::WavWriter;
 use std::io::{self, Write};
+use std::path::Path;
 
 use s2b2s_app_lib::audio_toolkit::{
     audio::{list_input_devices, CpalDeviceInfo},
@@ -178,7 +179,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================");
     print_help();
 
-    let silero = SileroVad::new("./resources/models/silero_vad_v4.onnx", 0.5)?;
+    let vad_path = if std::path::Path::new("./resources/models/silero_vad_v5.onnx").exists() {
+        "./resources/models/silero_vad_v5.onnx"
+    } else {
+        "./resources/models/silero_vad_v4.onnx"
+    };
+    let silero = SileroVad::new(vad_path, 0.5)?;
     let smoothed_vad = SmoothedVad::new(
         Box::new(silero),
         VAD_PREFILL_FRAMES,

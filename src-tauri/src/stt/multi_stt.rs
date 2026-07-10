@@ -16,6 +16,7 @@ use tauri::AppHandle;
 use crate::managers::model::{EngineType, ModelInfo, ModelManager};
 use crate::settings::AppSettings;
 use crate::stt::unified_parakeet::UnifiedParakeetServer;
+use transcribe_cpp::{Model, ModelOptions, RunOptions};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -141,11 +142,12 @@ fn transcribe_single(
 ) -> Result<String> {
     match model_info.engine_type {
         EngineType::UnifiedParakeet => transcribe_python(audio, model_path, model_info),
-        EngineType::Whisper => transcribe_transcribe_rs(audio, model_path, |path| {
-            let mut engine = transcribe_rs::whisper_cpp::WhisperEngine::load(path)?;
-            let params = transcribe_rs::whisper_cpp::WhisperInferenceParams::default();
-            let r = engine.transcribe_with(audio, &params)?;
-            Ok(r.text)
+        EngineType::TranscribeCpp => transcribe_transcribe_rs(audio, model_path, |path| {
+            let model =
+                transcribe_cpp::Model::load_with(path, &transcribe_cpp::ModelOptions::default())?;
+            let mut session = model.session()?;
+            let transcript = session.run(audio, &transcribe_cpp::RunOptions::default())?;
+            Ok(transcript.text)
         }),
         EngineType::Parakeet => transcribe_transcribe_rs(audio, model_path, |path| {
             use transcribe_rs::onnx::parakeet::ParakeetModel;

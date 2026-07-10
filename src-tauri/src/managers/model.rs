@@ -221,7 +221,11 @@ impl ModelDescriptor {
             is_custom: false,
             supports_streaming: self.caps.supports_streaming.unwrap_or(false),
             supports_language_detection: self.caps.supports_language_detect.unwrap_or(false),
-        }
+                url: None,
+        sha256: None,
+        hf_repo: None,
+        hf_files: None,
+}
     }
 }
 
@@ -541,7 +545,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Parakeet Realtime EOU 120M v1 — FP32/FP32 (English, RNN-T with EOU detection)
@@ -577,7 +583,10 @@ impl ModelManager {
                     "vocab.txt".to_string(),
                     "config.json".to_string(),
                 ]),
-            },
+                    source: ModelSource::Local,
+        supports_language_detection: false,
+        supports_streaming: false,
+},
         );
 
         // Parakeet Realtime EOU 120M v1 — FP16/FP16 (English, RNN-T with EOU detection)
@@ -613,7 +622,10 @@ impl ModelManager {
                     "vocab.txt".to_string(),
                     "config.json".to_string(),
                 ]),
-            },
+                    source: ModelSource::Local,
+        supports_language_detection: false,
+        supports_streaming: false,
+},
         );
 
         // Parakeet Realtime EOU 120M v1 — FP32/INT8 (decoder-only INT8, exact parity)
@@ -650,7 +662,10 @@ impl ModelManager {
                     "vocab.txt".to_string(),
                     "config.json".to_string(),
                 ]),
-            },
+                    source: ModelSource::Local,
+        supports_language_detection: false,
+        supports_streaming: false,
+},
         );
 
         // Nemotron 3.5 ASR Streaming — INT8 sherpa-onnx (multilingual, streaming)
@@ -698,7 +713,10 @@ impl ModelManager {
                     "joiner.int8.onnx".to_string(),
                     "tokens.txt".to_string(),
                 ]),
-            },
+                    source: ModelSource::Local,
+        supports_language_detection: false,
+        supports_streaming: false,
+},
         );
 
         // Parakeet Unified EN 0.6B — sherpa-onnx streaming (INT8, 560ms, exported
@@ -736,7 +754,10 @@ impl ModelManager {
                     is_custom: false,
                     hf_repo: None, // exported locally, not on HF
                     hf_files: None,
-                },
+                        source: ModelSource::Local,
+        supports_language_detection: false,
+        supports_streaming: false,
+},
             );
         }
 
@@ -772,7 +793,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         available_models.insert(
@@ -807,7 +830,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         available_models.insert(
@@ -842,7 +867,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         available_models.insert(
@@ -878,7 +905,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Add NVIDIA Parakeet models (directory-based)
@@ -914,7 +943,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Parakeet V3 supported languages (25 EU languages + Russian/Ukrainian):
@@ -958,7 +989,9 @@ impl ModelManager {
                 hf_files: None,
                 supports_streaming: false,
                 supports_language_detection: true,
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Parakeet Unified EN 0.6B — fp32 variant (RNN-T, English only)
@@ -997,7 +1030,8 @@ impl ModelManager {
                 ]),
                 supports_streaming: true,
                 supports_language_detection: false,
-            },
+                    source: ModelSource::Local,
+},
         );
 
         // Parakeet Unified EN 0.6B — int8 variant (RNN-T, English only)
@@ -1033,7 +1067,8 @@ impl ModelManager {
                 ]),
                 supports_streaming: true,
                 supports_language_detection: false,
-            },
+                    source: ModelSource::Local,
+},
         );
 
         available_models.insert(
@@ -1068,7 +1103,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         available_models.insert(
@@ -1104,7 +1141,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         available_models.insert(
@@ -1140,7 +1179,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         available_models.insert(
@@ -1176,7 +1217,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // SenseVoice supported languages
@@ -1218,7 +1261,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // GigaAM v3 supported languages
@@ -1256,7 +1301,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Canary 180m Flash supported languages (4 languages)
@@ -1299,7 +1346,9 @@ impl ModelManager {
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Canary 1B v2 supported languages (25 EU languages)
@@ -1345,7 +1394,9 @@ impl ModelManager {
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         let cohere_languages: Vec<String> = vec![
@@ -1387,7 +1438,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Seed the bundled offline catalog before the on-disk scans, so a model
@@ -1922,7 +1975,9 @@ impl ModelManager {
                     supports_streaming: caps.supports_streaming,
                     supports_language_detection: caps.supports_language_detection,
 
-                },
+                        url: None,
+        sha256: None,
+},
             );
         }
 
@@ -2044,7 +2099,11 @@ impl ModelManager {
                         is_custom: false,
                         supports_streaming: caps.supports_streaming,
                         supports_language_detection: caps.supports_language_detection,
-                    },
+                            url: None,
+        sha256: None,
+        hf_repo: None,
+        hf_files: None,
+},
                 );
             }
         }
@@ -2136,7 +2195,7 @@ impl ModelManager {
                 model.is_downloading = true;
             }
         }
-        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancel_flag = CancellationToken::new();
         {
             let mut flags = self.cancel_flags.lock().unwrap();
             flags.insert(model_id.to_string(), cancel_flag.clone());
@@ -2160,7 +2219,7 @@ impl ModelManager {
         // Download each file
         let total_files = hf_files.len();
         for (i, file) in hf_files.iter().enumerate() {
-            if cancel_flag.load(Ordering::Relaxed) {
+            if cancel_flag.is_cancelled() {
                 let _ = fs::remove_dir_all(&temp_dir);
                 info!("HF download cancelled for: {}", model_id);
                 return Ok(());
@@ -2207,7 +2266,7 @@ impl ModelManager {
                 let mut out_file = std::fs::File::create(&partial)?;
 
                 while let Some(chunk) = stream.next().await {
-                    if cancel_flag.load(Ordering::Relaxed) {
+                    if cancel_flag.is_cancelled() {
                         drop(out_file);
                         let _ = fs::remove_file(&partial);
                         let _ = fs::remove_dir_all(&temp_dir);
@@ -3092,7 +3151,9 @@ mod tests {
                 // (Catalog GGUFs and on-disk probes derive this from metadata.)
                 supports_language_detection: true,
 
-            },
+                    url: None,
+        sha256: None,
+},
         );
 
         // Discover custom models

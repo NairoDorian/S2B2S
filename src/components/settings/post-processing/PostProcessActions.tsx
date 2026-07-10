@@ -198,7 +198,8 @@ const ActionDialog: React.FC<ActionDialogProps> = ({
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onOpenChange={onClose}
+      closeLabel={t("common.close")}
       title={
         action
           ? t("settings.postProcessing.actions.editTitle")

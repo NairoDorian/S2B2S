@@ -42,7 +42,7 @@ pub fn init_shortcuts(app: &AppHandle) {
         KeyboardImplementation::Tauri => {
             tauri_impl::init_shortcuts(app);
         }
-        KeyboardImplementation::KeyListener => {
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
             if let Err(e) = key_listener::init_shortcuts(app) {
                 error!("Failed to initialize key-listener shortcuts: {}", e);
                 // Fall back to Tauri implementation and persist this fallback
@@ -64,7 +64,7 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_cancel_shortcut(app),
-        KeyboardImplementation::KeyListener => key_listener::register_cancel_shortcut(app),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::register_cancel_shortcut(app),
     }
 }
 
@@ -73,7 +73,7 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_cancel_shortcut(app),
-        KeyboardImplementation::KeyListener => key_listener::unregister_cancel_shortcut(app),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::unregister_cancel_shortcut(app),
     }
 }
 
@@ -82,7 +82,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-        KeyboardImplementation::KeyListener => key_listener::register_shortcut(app, binding),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::register_shortcut(app, binding),
     }
 }
 
@@ -91,7 +91,7 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-        KeyboardImplementation::KeyListener => key_listener::unregister_shortcut(app, binding),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::unregister_shortcut(app, binding),
     }
 }
 
@@ -323,7 +323,7 @@ pub fn get_keyboard_implementation(app: AppHandle) -> String {
     let settings = settings::get_settings(&app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => "tauri".to_string(),
-        KeyboardImplementation::KeyListener => "key_listener".to_string(),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => "key_listener".to_string(),
     }
 }
 
@@ -338,7 +338,7 @@ fn validate_shortcut_for_implementation(
 ) -> Result<(), String> {
     match implementation {
         KeyboardImplementation::Tauri => tauri_impl::validate_shortcut(raw),
-        KeyboardImplementation::KeyListener => key_listener::validate_shortcut(raw),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::validate_shortcut(raw),
     }
 }
 
@@ -369,7 +369,7 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
 
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-            KeyboardImplementation::KeyListener => key_listener::unregister_shortcut(app, binding),
+            KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::unregister_shortcut(app, binding),
         };
 
         if let Err(e) = result {
@@ -437,7 +437,7 @@ fn register_all_shortcuts_for_implementation(
         // Register with the appropriate implementation
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-            KeyboardImplementation::KeyListener => key_listener::register_shortcut(app, binding),
+            KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::register_shortcut(app, binding),
         };
 
         if let Err(e) = result {
@@ -1409,7 +1409,7 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
     settings::write_settings(&app, settings);
 
     // Refresh the tray menu with the new language
-    tray::update_tray_menu(&app, &tray::TrayIconState::Idle, Some(&language));
+    tray::update_tray_menu(&app, Some(&language));
 
     Ok(())
 }

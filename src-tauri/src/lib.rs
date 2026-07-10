@@ -319,9 +319,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         .build(app_handle)
         .unwrap();
     app_handle.manage(tray);
+    app_handle.manage(tray::CurrentTrayIconState::new());
 
     // Initialize tray menu with idle state
-    utils::update_tray_menu(app_handle, &utils::TrayIconState::Idle, None);
+    tray::update_tray_menu(app_handle, None);
 
     // Apply show_tray_icon setting
     let settings = settings::get_settings(app_handle);
@@ -332,7 +333,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Refresh tray menu when model state changes
     let app_handle_for_listener = app_handle.clone();
     app_handle.listen("model-state-changed", move |_| {
-        tray::update_tray_menu(&app_handle_for_listener, &tray::TrayIconState::Idle, None);
+        tray::update_tray_menu(&app_handle_for_listener, None);
     });
 
     // Get the autostart manager and configure based on user setting
@@ -571,17 +572,6 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     0
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
-    // Detect portable mode before anything else
-    portable::init();
-
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
-
-    let specta_builder = Builder::<tauri::Wry>::new()
-
 /// Typed IPC surface (commands + events), shared by `run()` and the
 /// `export_bindings` test so ../src/bindings.ts can be regenerated headlessly
 /// via `cargo test export_bindings` (no GUI launch needed).
@@ -785,7 +775,7 @@ commands::models::rescan_local_models,
             managers::history::HistoryUpdatePayload,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
-        ]);
+        ])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1219,8 +1209,8 @@ pub fn run(cli_args: CliArgs) {
             }
             tauri::WindowEvent::ThemeChanged(theme) => {
                 log::info!("Theme changed to: {:?}", theme);
-                // Update tray icon to match new theme, maintaining idle state
-                utils::change_tray_icon(window.app_handle(), utils::TrayIconState::Idle);
+                // Re-apply the current tray state with the new theme's icon set
+                tray::refresh_tray_icon(window.app_handle());
             }
             _ => {}
         })

@@ -575,6 +575,16 @@ pub struct BrainConfig {
     /// and response using its native audio understanding.
     #[serde(default)]
     pub brain_only_transcription: bool,
+    /// Language the Brain should reply in. "auto" (default) mirrors the
+    /// huggingface/speech-to-speech `--language auto` + `--enable_lang_prompt`
+    /// behaviour: the conversation passes the effective STT language (the
+    /// selected language, or the OS input source for "os_input") so the model
+    /// replies in the same language it was spoken to. Set a concrete BCP-47
+    /// code (e.g. "es", "fr-FR") to force a fixed reply language regardless of
+    /// input. Large models usually infer the language from context; this hint
+    /// mainly helps smaller local models.
+    #[serde(default = "default_brain_reply_language")]
+    pub reply_language: String,
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -591,6 +601,10 @@ fn default_warmup_prompt() -> String {
 
 fn default_endpoint_preset() -> String {
     "balanced".to_string()
+}
+
+fn default_brain_reply_language() -> String {
+    "auto".to_string()
 }
 
 /// Fixed prompt sent to the multimodal Brain instead of STT transcription
@@ -661,6 +675,7 @@ impl Default for BrainConfig {
             multimodal_audio_enabled: true,
             multimodal_image_enabled: false,
             brain_only_transcription: false,
+            reply_language: default_brain_reply_language(),
         }
     }
 }
@@ -695,13 +710,8 @@ pub enum OverlayMode {
     /// Tauri `always_on_top(true)` + `transparent(true)` only — simpler, fewer deps.
     Tauri,
     /// Per-OS native window APIs (NSPanel, Win32 topmost, GTK layer-shell).
+    #[default]
     OsNative,
-}
-
-impl Default for OverlayMode {
-    fn default() -> Self {
-        OverlayMode::OsNative
-    }
 }
 
 /// Configuration for the recording overlay window (the pill shown during dictation/TTS).
@@ -1200,6 +1210,12 @@ pub struct AppSettings {
     pub vad_mode: String,
     #[serde(default = "default_rnnoise_voice_threshold")]
     pub rnnoise_voice_threshold: f64,
+    /// Silero VAD model major version to load: "v5" (default, preferred) or "v4".
+    /// Inspired by huggingface/speech-to-speech, which uses Silero VAD v5 for
+    /// more robust turn-taking. The loader falls back to v4 when the requested
+    /// file is missing, so installs that only have `silero_vad_v4.onnx` keep working.
+    #[serde(default = "default_silero_vad_version")]
+    pub silero_vad_version: String,
     #[serde(default)]
     pub llama_server: crate::llama_server::manager::LlamaServerConfig,
     /// Multi-STT: run multiple transcription models in parallel and merge results.
@@ -1278,6 +1294,10 @@ fn default_vad_mode() -> String {
 
 fn default_rnnoise_voice_threshold() -> f64 {
     0.2
+}
+
+fn default_silero_vad_version() -> String {
+    "v5".to_string()
 }
 
 fn default_multi_stt_prompt() -> String {
@@ -2000,6 +2020,7 @@ pub fn get_default_settings() -> AppSettings {
         noise_suppression_enabled: default_noise_suppression_enabled(),
         vad_mode: default_vad_mode(),
         rnnoise_voice_threshold: default_rnnoise_voice_threshold(),
+        silero_vad_version: default_silero_vad_version(),
         llama_server: crate::llama_server::manager::LlamaServerConfig::default(),
         multi_stt_enabled: false,
         multi_stt_models: Vec::new(),

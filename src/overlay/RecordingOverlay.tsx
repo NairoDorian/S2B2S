@@ -113,10 +113,13 @@ const RecordingOverlay: React.FC = () => {
       };
     };
 
-    const cleanup = setupEventListeners();
+    let cleanup: (() => void) | undefined;
+    setupEventListeners().then((fn) => {
+      cleanup = fn;
+    });
 
     return () => {
-      cleanup();
+      if (cleanup) cleanup();
     };
   }, []);
 

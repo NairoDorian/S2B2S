@@ -5,6 +5,7 @@ import { LogLevelSelector } from "./LogLevelSelector";
 import { LiveLogViewer } from "./LiveLogViewer";
 import { PasteDelay } from "./PasteDelay";
 import { RecordingBuffer } from "./RecordingBuffer";
+import { SessionToastHistory } from "./SessionToastHistory";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { AlwaysOnMicrophone } from "../AlwaysOnMicrophone";
 import { SoundPicker } from "../SoundPicker";
@@ -39,6 +40,7 @@ export const DebugSettings: React.FC = () => {
         <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
         <ClamshellMicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <LiveLogViewer descriptionMode="tooltip" grouped={true} />
+        <SessionToastHistory />
       </SettingsGroup>
 
       <LogViewer />

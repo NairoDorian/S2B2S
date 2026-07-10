@@ -19,6 +19,44 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 import { HerLoading } from "./components/HerLoading";
+import { useSessionToastStore } from "@/stores/sessionToastStore";
+
+type OnboardingStep = "accessibility" | "model" | "done";
+
+// Wrapper around sonner's toast to also track in session store
+const trackedToast = {
+  error: (message: string, options?: Parameters<typeof toast.error>[1]) => {
+    const result = toast.error(message, options);
+    useSessionToastStore.getState().addToast({
+      level: "error",
+      message: typeof message === "function" ? message() : message,
+      description: options?.description,
+      actionLabel: options?.action && typeof options.action === "object" && "label" in options.action
+        ? (options.action as { label?: React.ReactNode }).label
+        : undefined,
+    });
+    return result;
+  },
+  warning: (message: string, options?: Parameters<typeof toast.warning>[1]) => {
+    const result = toast.warning(message, options);
+    useSessionToastStore.getState().addToast({
+      level: "warning",
+      message: typeof message === "function" ? message() : message,
+      description: options?.description,
+      actionLabel: options?.action && typeof options.action === "object" && "label" in options.action
+        ? (options.action as { label?: React.ReactNode }).label
+        : undefined,
+    });
+    return result;
+  },
+  // Pass through other methods
+  success: toast.success,
+  info: toast.info,
+  loading: toast.loading,
+  promise: toast.promise,
+  dismiss: toast.dismiss,
+  remove: toast.remove,
+};
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
@@ -143,13 +181,13 @@ function App() {
         const description = t(platformKey, {
           defaultValue: t("errors.micPermissionDenied.generic"),
         });
-        toast.error(t("errors.micPermissionDeniedTitle"), { description });
+        trackedToast.error(t("errors.micPermissionDeniedTitle"), { description });
       } else if (error_type === "no_input_device") {
-        toast.error(t("errors.noInputDeviceTitle"), {
+        trackedToast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),
         });
       } else {
-        toast.error(
+        trackedToast.error(
           t("errors.recordingFailed", { error: detail ?? "Unknown error" }),
         );
       }
@@ -165,7 +203,7 @@ function App() {
   // so we show a localized, user-friendly message here instead of the raw error.
   useEffect(() => {
     const unlisten = listen("paste-error", () => {
-      toast.error(t("errors.pasteFailedTitle"), {
+      trackedToast.error(t("errors.pasteFailedTitle"), {
         description: t("errors.pasteFailed"),
       });
     });
@@ -178,7 +216,7 @@ function App() {
   // The payload is the backend error message (also logged to handy.log).
   useEffect(() => {
     const unlisten = listen<string>("transcription-error", (event) => {
-      toast.error(t("errors.transcriptionFailedTitle"), {
+      trackedToast.error(t("errors.transcriptionFailedTitle"), {
         description: event.payload,
       });
     });
@@ -191,15 +229,15 @@ function App() {
   useEffect(() => {
     const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
       if (event.payload.event_type === "loading_failed") {
-        toast.error(
-          t("errors.modelLoadFailed", {
+        const { useSessionToastStore } = await import("./stores/sessionToastStore");
+        useSessionToastStore.getState().addToast({
+          level: "error",
+          message: t("errors.modelLoadFailed", {
             model:
               event.payload.model_name || t("errors.modelLoadFailedUnknown"),
           }),
-          {
-            description: event.payload.error,
-          },
-        );
+          description: event.payload.error,
+        });
       }
     });
     return () => {

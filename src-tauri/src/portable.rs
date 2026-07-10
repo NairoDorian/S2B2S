@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tauri::Manager;
 
->>>>>>> upstream/main
 static PORTABLE_DATA_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 

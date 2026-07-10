@@ -125,6 +125,7 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     // Brain-only mode always requires multimodal audio
     let multimodal_audio = is_brain_only || multimodal_audio;
 
+    let reply_language = crate::actions::resolve_reply_language(&app, &settings);
     let app_clone = app.clone();
     let bm_clone = bm.clone();
     let transcription_clone = brain_text.clone();
@@ -165,7 +166,12 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
                         b64.len()
                     );
                     bm_clone
-                        .ask_multimodal(transcription_clone, Some(b64), None)
+                        .ask_multimodal(
+                            transcription_clone,
+                            Some(b64),
+                            None,
+                            reply_language.clone(),
+                        )
                         .await
                 }
                 Err(e) => {

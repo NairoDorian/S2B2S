@@ -146,6 +146,13 @@ if printf '%s\n' "${MODELS[@]}" | grep -qx "stt"; then
         "https://blob.handy.computer/silero_vad_v4.onnx" \
         "$STT_DIR/silero_vad/silero_vad_v4.onnx" \
         "Silero VAD v4 (~1.7 MB)"
+    # Silero VAD v5 (preferred by default since 2026-07; upgrade inspired by
+    # huggingface/speech-to-speech for more robust turn-taking). Best-effort:
+    # if the URL 404s the app transparently falls back to v4 at runtime.
+    download_file \
+        "https://huggingface.co/snakers4/silero-vad/resolve/main/files/silero_vad_v5.onnx" \
+        "$STT_DIR/silero_vad/silero_vad_v5.onnx" \
+        "Silero VAD v5 (~2.2 MB)"
 
     # Parakeet V3 (~600 MB)
     PARAKEET_TAR="$STT_DIR/parakeet-tdt-0.6b-v3-int8.tar.gz"
