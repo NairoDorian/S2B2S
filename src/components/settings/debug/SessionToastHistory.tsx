@@ -1,36 +1,15 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, AlertTriangle, X, ChevronUp, ChevronDown, Filter } from "lucide-react";
+import { AlertCircle, AlertTriangle, Filter } from "lucide-react";
 import { useSessionToastStore } from "@/stores/sessionToastStore";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { SettingsGroup } from "@/components/ui/SettingsGroup";
-
-const SESSION_TOAST_HISTORY_COLLAPSED_KEY = "sessionToastHistoryCollapsed";
+import { SettingContainer } from "@/components/ui/SettingContainer";
 
 export const SessionToastHistory: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { toasts, showErrors, showWarnings, setShowErrors, setShowWarnings } =
     useSessionToastStore();
-
-  const [isCollapsed, setIsCollapsed] = React.useState(() => {
-    try {
-      return window.localStorage.getItem(SESSION_TOAST_HISTORY_COLLAPSED_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
-
-  const updateCollapsed = useCallback((collapsed: boolean) => {
-    setIsCollapsed(collapsed);
-    try {
-      window.localStorage.setItem(
-        SESSION_TOAST_HISTORY_COLLAPSED_KEY,
-        collapsed ? "true" : "false",
-      );
-    } catch {
-      // UI preference only; keep the in-memory toggle working without storage.
-    }
-  }, []);
 
   const errorCount = toasts.filter((t) => t.level === "error").length;
   const warningCount = toasts.filter((t) => t.level === "warning").length;
@@ -59,16 +38,7 @@ export const SessionToastHistory: React.FC = () => {
   return (
     <SettingsGroup
       title={t("settings.debug.sessionToasts.title", { count: toasts.length })}
-      description={
-        isCollapsed
-          ? undefined
-          : t("settings.debug.sessionToasts.description")
-      }
-      collapsible={true}
-      collapsed={isCollapsed}
-      collapseLabel={t("settings.debug.sessionToasts.collapse")}
-      expandLabel={t("settings.debug.sessionToasts.expand")}
-      onCollapsedChange={updateCollapsed}
+      description={t("settings.debug.sessionToasts.description")}
     >
       <div className="flex items-center gap-3 mb-4">
         <Filter className="h-4 w-4 text-[#777]" aria-hidden="true" />
@@ -78,7 +48,12 @@ export const SessionToastHistory: React.FC = () => {
           descriptionMode="inline"
           grouped={true}
         >
-          <ToggleSwitch checked={showErrors} onChange={setShowErrors} />
+          <ToggleSwitch
+            checked={showErrors}
+            onChange={setShowErrors}
+            label={t("settings.debug.sessionToasts.filters.errors", { count: errorCount })}
+            description={t("settings.debug.sessionToasts.filters.errorsDescription")}
+          />
         </SettingContainer>
         <SettingContainer
           title={t("settings.debug.sessionToasts.filters.warnings", { count: warningCount })}
@@ -86,7 +61,12 @@ export const SessionToastHistory: React.FC = () => {
           descriptionMode="inline"
           grouped={true}
         >
-          <ToggleSwitch checked={showWarnings} onChange={setShowWarnings} />
+          <ToggleSwitch
+            checked={showWarnings}
+            onChange={setShowWarnings}
+            label={t("settings.debug.sessionToasts.filters.warnings", { count: warningCount })}
+            description={t("settings.debug.sessionToasts.filters.warningsDescription")}
+          />
         </SettingContainer>
       </div>
 

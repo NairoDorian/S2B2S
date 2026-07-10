@@ -111,7 +111,7 @@ impl TranscriptionCoordinator {
                             Ok(cmd) => cmd,
                             Err(mpsc::RecvTimeoutError::Timeout) => {
                                 if let Some(pending) = pending_release.take() {
-                                    if matches!(&stage, Stage::Recording(id) if id == &pending.binding_id)
+                                    if matches!(&stage, Stage::Recording { binding_id: id, .. } if id == &pending.binding_id)
                                     {
                                         stop(
                                             &app,
@@ -143,7 +143,7 @@ impl TranscriptionCoordinator {
                                 .as_ref()
                                 .map(|pending| pending.binding_id.as_str());
                             let recording_binding = match &stage {
-                                Stage::Recording(id) => Some(id.as_str()),
+                                Stage::Recording { binding_id: id, .. } => Some(id.as_str()),
                                 _ => None,
                             };
 

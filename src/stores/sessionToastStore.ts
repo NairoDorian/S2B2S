@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ReactNode } from "react";
 
 export type SessionToastLevel = "error" | "warning";
 
@@ -7,8 +8,8 @@ export interface SessionToastRecord {
   level: SessionToastLevel;
   shownAt: number;
   message: string;
-  description?: string;
-  actionLabel?: string;
+  description?: ReactNode;
+  actionLabel?: ReactNode;
 }
 
 type NewSessionToast = Omit<SessionToastRecord, "id" | "shownAt">;

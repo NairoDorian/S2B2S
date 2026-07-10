@@ -29,8 +29,11 @@ const trackedToast = {
     const result = toast.error(message, options);
     useSessionToastStore.getState().addToast({
       level: "error",
-      message: typeof message === "function" ? message() : message,
-      description: options?.description,
+      message,
+      description:
+        typeof options?.description === "function"
+          ? undefined
+          : options?.description,
       actionLabel: options?.action && typeof options.action === "object" && "label" in options.action
         ? (options.action as { label?: React.ReactNode }).label
         : undefined,
@@ -41,8 +44,11 @@ const trackedToast = {
     const result = toast.warning(message, options);
     useSessionToastStore.getState().addToast({
       level: "warning",
-      message: typeof message === "function" ? message() : message,
-      description: options?.description,
+      message,
+      description:
+        typeof options?.description === "function"
+          ? undefined
+          : options?.description,
       actionLabel: options?.action && typeof options.action === "object" && "label" in options.action
         ? (options.action as { label?: React.ReactNode }).label
         : undefined,
@@ -55,10 +61,8 @@ const trackedToast = {
   loading: toast.loading,
   promise: toast.promise,
   dismiss: toast.dismiss,
-  remove: toast.remove,
 };
 
-type OnboardingStep = "accessibility" | "model" | "done";
 
 const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
@@ -229,7 +233,6 @@ function App() {
   useEffect(() => {
     const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
       if (event.payload.event_type === "loading_failed") {
-        const { useSessionToastStore } = await import("./stores/sessionToastStore");
         useSessionToastStore.getState().addToast({
           level: "error",
           message: t("errors.modelLoadFailed", {
@@ -395,6 +398,7 @@ function App() {
         {/* Fixed footer at bottom */}
         <Footer />
       </div>
+    </div>
     );
   }
 
