@@ -11,6 +11,7 @@ export const commands = {
 	changeAudioFeedbackSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_setting", { enabled })),
 	changeAudioFeedbackVolumeSetting: (volume: number | null) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_volume_setting", { volume })),
 	changeSoundThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_sound_theme_setting", { theme })),
+	changeThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_theme_setting", { theme })),
 	changeStartHiddenSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_start_hidden_setting", { enabled })),
 	changeAutostartSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_autostart_setting", { enabled })),
 	changeTranslateToEnglishSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_translate_to_english_setting", { enabled })),
@@ -329,6 +330,7 @@ export type AppSettings = {
 	audio_feedback?: boolean;
 	audio_feedback_volume?: number | null;
 	sound_theme?: SoundTheme;
+	theme?: Theme;
 	start_hidden?: boolean;
 	autostart_enabled?: boolean;
 	update_checks_enabled?: boolean;
@@ -845,6 +847,8 @@ export type ShortcutBinding = {
 };
 
 export type SoundTheme = "marimba" | "pop" | "custom";
+
+export type Theme = "system" | "light" | "dark";
 
 export type SystemRamInfo = {
 	total_mb: number,
