@@ -311,7 +311,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                             log::error!("Failed to switch model via tray: {}", e);
                         }
                     }
-                    tray::update_tray_menu(&app_clone, &tray::TrayIconState::Idle, None);
+                    tray::update_tray_menu(&app_clone, None);
                 });
             }
             _ => {}
@@ -585,6 +585,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_audio_feedback_setting,
             shortcut::change_audio_feedback_volume_setting,
             shortcut::change_sound_theme_setting,
+            shortcut::change_theme_setting,
             shortcut::change_start_hidden_setting,
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,
@@ -973,6 +974,13 @@ pub fn run(cli_args: CliArgs) {
                 log::error!("Failed to initialize cryptography module: {}", e);
             }
             let mut settings = get_settings(app.handle());
+
+            // Apply the persisted appearance theme to the Windows title bar before
+            // the window is shown, so it matches the in-app palette without a flash
+            // of the wrong theme. On macOS/Linux, Tauri themes are app-wide and
+            // would also affect windows that intentionally keep the system theme.
+            #[cfg(target_os = "windows")]
+            shortcut::apply_window_theme(app.handle(), settings.theme);
 
             // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)
             if cli_args.debug {

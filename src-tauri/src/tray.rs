@@ -71,6 +71,16 @@ pub fn get_current_theme(app: &AppHandle) -> AppTheme {
             AppTheme::Dark
         }
     } else {
+        // On Windows the tray icon sits on the taskbar, which follows the
+        // *system* theme (SystemUsesLightTheme), not the app theme. With the
+        // "Custom" personalization mode the two can differ (e.g. dark taskbar
+        // + light apps), and the window theme would pick an icon that is
+        // invisible against the taskbar.
+        #[cfg(target_os = "windows")]
+        if let Some(theme) = windows_taskbar_theme() {
+            return theme;
+        }
+
         // On other platforms, map system theme to our app theme
         if let Some(main_window) = app.get_webview_window("main") {
             match main_window.theme().unwrap_or(Theme::Dark) {
@@ -179,7 +189,8 @@ fn version_label() -> String {
     }
 }
 
-pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&str>) {
+pub fn update_tray_menu(app: &AppHandle, locale: Option<&str>) {
+    let state = app.state::<CurrentTrayIconState>().get();
     let settings = settings::get_settings(app);
 
     let locale = locale.unwrap_or(&settings.app_language);
@@ -358,7 +369,7 @@ pub fn copy_last_transcript(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::last_transcript_text;
+    use super::{last_transcript_text, load_tray_icon};
     use crate::managers::history::HistoryEntry;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
@@ -389,5 +400,17 @@ mod tests {
     fn falls_back_to_raw_transcription() {
         let entry = build_entry("raw", None);
         assert_eq!(last_transcript_text(&entry), "raw");
+    }
+
+    #[test]
+    fn tray_icon_resolution_failure_is_returned_instead_of_panicking() {
+        assert!(load_tray_icon(Err(tauri::Error::UnknownPath)).is_err());
+    }
+
+    #[test]
+    fn tray_icon_returns_err_when_file_does_not_exist() {
+        let dir = tempfile::tempdir().expect("failed to create tempdir");
+        let missing = dir.path().join("does_not_exist.png");
+        assert!(load_tray_icon(Ok(missing)).is_err());
     }
 }

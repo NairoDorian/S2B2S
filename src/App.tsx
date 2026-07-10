@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
@@ -340,46 +340,69 @@ function App() {
     );
   }
 
-  if (onboardingStep === "accessibility") {
-    return <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />;
+  // Rendered once around every step below (including onboarding) so
+  // toast.error() calls surface to the user. sonner renders via a portal, so
+  // its position in the tree doesn't affect layout. Without this, errors during
+  // onboarding (e.g. a model download failing because blob.handy.computer is
+  // unreachable) are silently swallowed and the wizard just appears to "blink".
+  const toaster = (
+    <Toaster
+      theme="system"
+      toastOptions={{
+        unstyled: true,
+        classNames: {
+          toast:
+            "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
+          title: "font-medium",
+          description: "text-mid-gray",
+        },
+      }}
+    />
+  );
+
+  // Still checking onboarding status
+  if (onboardingStep === null) {
+    return null;
   }
 
-  if (onboardingStep === "model") {
-    return <Onboarding onModelSelected={handleModelSelected} />;
+  // Select the content for the current step. The Toaster is rendered once, in a
+  // stable wrapper around this node, so crossing between onboarding steps and
+  // the main app never remounts it (which would drop any in-flight toast).
+  let content: ReactNode;
+  if (onboardingStep === "accessibility") {
+    content = (
+      <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
+    );
+  } else if (onboardingStep === "model") {
+    content = <Onboarding onModelSelected={handleModelSelected} />;
+  } else {
+    content = (
+      <div
+        dir={direction}
+        className="h-screen flex flex-col select-none cursor-default"
+      >
+        <WhatsNewGate />
+        {/* Main content area that takes remaining space */}
+        <div className="flex-1 flex overflow-hidden">
+          <Sidebar
+            activeSection={currentSection}
+            onSectionChange={setCurrentSection}
+          />
+          {/* Content area — scrolling is managed per-section to avoid double scrollbars */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {renderSettingsContent(currentSection)}
+        </div>
+        {/* Fixed footer at bottom */}
+        <Footer />
+      </div>
+    );
   }
 
   return (
-    <div
-      dir={direction}
-      className="h-screen flex flex-col select-none cursor-default"
-    >
-      <Toaster
-        theme="system"
-        toastOptions={{
-          unstyled: true,
-          classNames: {
-            toast:
-              "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-            title: "font-medium",
-            description: "text-mid-gray",
-          },
-        }}
-      />
-      <WhatsNewGate />
-      {/* Main content area that takes remaining space */}
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar
-          activeSection={currentSection}
-          onSectionChange={setCurrentSection}
-        />
-        {/* Content area — scrolling is managed per-section to avoid double scrollbars */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {renderSettingsContent(currentSection)}
-        </div>
-      </div>
-      {/* Fixed footer at bottom */}
-      <Footer />
-    </div>
+    <>
+      {toaster}
+      {content}
+    </>
   );
 }
 
