@@ -50,12 +50,12 @@ serde_json = "1.0.150"
 rdev = { git = "https://github.com/rustdesk-org/rdev" }
 # Pinned to 0.17 (latest usable): rodio 0.22 requires cpal ^0.17, and a single
 # cpal version is mandatory because audio_feedback hands a cpal Device to rodio.
-cpal = "0.18"
+cpal = "0.17"
 anyhow = "1.0.103"
-rubato = "4.0.0"
+rubato = "3.0.0"
 # rubato 3.0 exposes audio I/O through these adapter crates (same version rubato uses).
-audioadapter = "4.0"
-audioadapter-buffers = "4.0"
+audioadapter = "3.0"
+audioadapter-buffers = "3.0"
 hound = "3.5.1"
 log = "0.4.33"
 env_filter = "2.0.0"

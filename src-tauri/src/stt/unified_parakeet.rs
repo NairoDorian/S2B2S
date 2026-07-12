@@ -91,10 +91,7 @@ impl UnifiedParakeetServer {
         }
 
         // Health check with exponential backoff — uses ureq (no tokio dependency)
-        let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .build();
-
+        let agent = ureq::agent();
         let health_url = format!("http://127.0.0.1:{}/health", port);
         let start = Instant::now();
         let mut backoff_ms = 100u64;
@@ -153,10 +150,10 @@ impl UnifiedParakeetServer {
         let resp = self
             .client
             .post(&url)
-            .send_bytes(&audio_bytes)
+            .send(audio_bytes.as_slice())
             .context("Failed to send audio to unified parakeet server")?;
 
-        let json: serde_json::Value = serde_json::from_reader(resp.into_reader())
+        let json: serde_json::Value = serde_json::from_reader(resp.into_body().as_reader())
             .context("Failed to parse unified parakeet server response")?;
 
         Ok(json["text"].as_str().unwrap_or("").to_string())
@@ -166,7 +163,7 @@ impl UnifiedParakeetServer {
         let url = format!("http://127.0.0.1:{}/stream_start", self.port);
         self.client
             .post(&url)
-            .send_bytes(&[])
+            .send_empty()
             .context("Failed to start stream on unified parakeet server")?;
         Ok(())
     }
@@ -178,10 +175,10 @@ impl UnifiedParakeetServer {
         let resp = self
             .client
             .post(&url)
-            .send_bytes(&audio_bytes)
+            .send(audio_bytes.as_slice())
             .context("Failed to feed audio to streaming decoder")?;
 
-        let json: serde_json::Value = serde_json::from_reader(resp.into_reader())?;
+        let json: serde_json::Value = serde_json::from_reader(resp.into_body().as_reader())?;
         let text = json["text"].as_str().unwrap_or("").to_string();
         let eou = json["eou"].as_bool().unwrap_or(false);
         Ok((text, eou))
@@ -194,10 +191,10 @@ impl UnifiedParakeetServer {
         let resp = self
             .client
             .post(&url)
-            .send_bytes(&audio_bytes)
+            .send(audio_bytes.as_slice())
             .context("Failed to finalise stream on unified parakeet server")?;
 
-        let json: serde_json::Value = serde_json::from_reader(resp.into_reader())?;
+        let json: serde_json::Value = serde_json::from_reader(resp.into_body().as_reader())?;
         let text = json["text"].as_str().unwrap_or("").to_string();
         let eou = json["eou"].as_bool().unwrap_or(false);
         Ok((text, eou))

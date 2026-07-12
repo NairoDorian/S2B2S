@@ -2232,7 +2232,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
     if settings.control_server_token.is_none() {
         let mut token_bytes = [0u8; 16];
-        if getrandom::getrandom(&mut token_bytes).is_ok() {
+        if getrandom::fill(&mut token_bytes).is_ok() {
             let token = token_bytes
                 .iter()
                 .map(|b| format!("{:02x}", b))
