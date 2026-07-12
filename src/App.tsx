@@ -394,10 +394,10 @@ function App() {
           {/* Content area — scrolling is managed per-section to avoid double scrollbars */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {renderSettingsContent(currentSection)}
+          </div>
         </div>
-        {/* Fixed footer at bottom */}
+        {/* Fixed footer at bottom — must be a child of the outer column, not the row above */}
         <Footer />
-      </div>
     </div>
     );
   }
