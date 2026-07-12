@@ -394,7 +394,7 @@ export const SpeechSettings: React.FC = () => {
           </SettingContainer>
           {voices.some((v) => v.language === "cloned") && (
             <div className="px-4 pb-3 text-[11px] text-text/40">
-              Cloned voices appear with 🎙️ prefix in the voice list.
+              {t("speech.clonedVoicesHint")}
             </div>
           )}
         </SettingsGroup>

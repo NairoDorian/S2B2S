@@ -24,21 +24,19 @@ import { useLlamaState } from "../../../hooks/useLlamaState";
 const LlamaDownloadPanel: React.FC<{
   llamaState: ReturnType<typeof useLlamaState>;
 }> = ({ llamaState }) => {
+  const { t } = useTranslation();
   return (
     <div className="p-5 rounded-lg border border-logo-primary/20 bg-gradient-to-br from-logo-primary/5 via-logo-primary/[0.02] to-transparent backdrop-blur-sm space-y-4">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <h4 className="text-sm font-semibold text-text flex items-center gap-2">
-            Local Gemma-4 Engine (Llama.cpp)
+            {t("llamaCpp.localGemma.title")}
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              Setup Required
+              {t("llamaCpp.localGemma.setupRequired")}
             </span>
           </h4>
           <p className="text-xs text-mid-gray max-w-xl">
-            To run the Brain locally, S2B2S compiles and executes llama.cpp on
-            your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL
-            model, draft model for Multi-Token Prediction, and vision projector
-            (total size ~2.2 GB).
+            {t("llamaCpp.localGemma.brainDescription")}
           </p>
         </div>
       </div>
@@ -58,7 +56,7 @@ const LlamaDownloadPanel: React.FC<{
                 : "Downloading models..."}
             </span>
             <span className="flex gap-2">
-              <span>{llamaState.downloadSpeed.toFixed(1)} MB/s</span>
+              <span>{t("llamaCpp.downloadSpeed", { speed: llamaState.downloadSpeed.toFixed(1) })}</span>
               <span className="text-logo-primary font-semibold">
                 {llamaState.downloadProgress.toFixed(1)}%
               </span>
@@ -77,7 +75,7 @@ const LlamaDownloadPanel: React.FC<{
           onClick={() => void llamaState.startDownload()}
           className="w-full justify-center py-2.5 font-medium shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_16px_rgba(168,85,247,0.25)] transition-all"
         >
-          Download Gemma-4 Local Suite (~2.2 GB)
+          {t("llamaCpp.localGemma.downloadButton")}
         </Button>
       )}
     </div>
@@ -85,35 +83,36 @@ const LlamaDownloadPanel: React.FC<{
 };
 
 const LlamaStatusCard: React.FC = () => {
+  const { t } = useTranslation();
   return (
     <div className="p-4 rounded-lg border border-green-500/10 bg-green-500/[0.02] backdrop-blur-sm grid grid-cols-2 gap-3 text-xs">
       <div className="col-span-2 border-b border-white/5 pb-2 mb-1 flex items-center justify-between">
         <span className="font-semibold text-text flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-          Local Gemma-4 Engine
+          {t("llamaCpp.localGemma.title")}
         </span>
         <span className="text-[10px] px-2 py-0.5 bg-green-500/15 text-green-400 font-bold rounded">
           ACTIVE
         </span>
       </div>
       <div>
-        <span className="text-mid-gray block">Model</span>
+        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.model")}</span>
         <span className="font-medium text-text">
-          Gemma-4-E2B-it-qat (UD-Q4_K_XL)
+          {t("llamaCpp.localGemma.status.modelValue")}
         </span>
       </div>
       <div>
-        <span className="text-mid-gray block">MTP Acceleration</span>
-        <span className="font-medium text-text">Enabled</span>
+        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.mtpAcceleration")}</span>
+        <span className="font-medium text-text">{t("llamaCpp.localGemma.status.mtpEnabled")}</span>
       </div>
       <div>
-        <span className="text-mid-gray block">Vision Component</span>
-        <span className="font-medium text-text">Disabled by default</span>
+        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.visionComponent")}</span>
+        <span className="font-medium text-text">{t("llamaCpp.localGemma.status.visionDisabled")}</span>
       </div>
       <div>
-        <span className="text-mid-gray block">Execution Engine</span>
+        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.executionEngine")}</span>
         <span className="font-medium text-text">
-          llama-server (Flash Attention)
+          {t("llamaCpp.localGemma.status.executionEngineValue")}
         </span>
       </div>
     </div>
@@ -486,10 +485,10 @@ export const BrainSettings: React.FC = () => {
                   testMetrics.totalMs != null) && (
                   <p className="text-[10px] text-text/30 font-mono flex gap-3">
                     {testMetrics.tokensPerSec != null && (
-                      <span>{testMetrics.tokensPerSec.toFixed(1)} t/s</span>
+                      <span>{t("conversation.metrics.tokensPerSec", { tps: testMetrics.tokensPerSec.toFixed(1) })}</span>
                     )}
                     {testMetrics.totalMs != null && (
-                      <span>🧠 {testMetrics.totalMs}ms</span>
+                      <span>{t("conversation.metrics.totalMs", { ms: testMetrics.totalMs })}</span>
                     )}
                   </p>
                 )}

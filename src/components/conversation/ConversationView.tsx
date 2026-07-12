@@ -361,16 +361,16 @@ export const ConversationView: React.FC = () => {
             {message.content}
             {message.role === "user" && message.sttMs != null && (
               <div className="mt-1.5 pt-1.5 border-t border-text/5 text-[10px] text-text/30 font-mono">
-                <span>🎤 {message.sttMs}ms</span>
+                <span>{t("conversation.metrics.sttMs", { ms: message.sttMs })}</span>
               </div>
             )}
             {message.role === "assistant" && (
               <div className="mt-1.5 pt-1.5 border-t border-text/5 flex gap-3 text-[10px] text-text/30 font-mono">
                 {message.tokensPerSec != null && (
-                  <span>{message.tokensPerSec.toFixed(1)} t/s</span>
+                  <span>{t("conversation.metrics.tokensPerSec", { tps: message.tokensPerSec.toFixed(1) })}</span>
                 )}
-                {message.totalMs != null && <span>🧠 {message.totalMs}ms</span>}
-                {message.ttsMs != null && <span>🔊 {message.ttsMs}ms</span>}
+                {message.totalMs != null && <span>{t("conversation.metrics.totalMs", { ms: message.totalMs })}</span>}
+                {message.ttsMs != null && <span>{t("conversation.metrics.ttsMs", { ms: message.ttsMs })}</span>}
               </div>
             )}
           </div>

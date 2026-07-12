@@ -133,19 +133,17 @@ const LlamaCppSettings: React.FC = () => {
         {/* GPU Detection */}
         <div className="p-4 rounded-lg border border-logo-primary/10 bg-logo-primary/[0.02]">
           <p className="text-sm text-text/80 mb-1">
-            Detected GPU preference:{" "}
+            {t("llamaCpp.gpuPreference")}{" "}
             <span className="font-semibold">
               {gpuType === "cuda"
-                ? "🟢 NVIDIA CUDA"
+                ? t("llamaCpp.gpu.cuda")
                 : gpuType === "vulkan"
-                  ? "🟡 Vulkan"
-                  : "⚪ CPU-only"}
+                  ? t("llamaCpp.gpu.vulkan")
+                  : t("llamaCpp.gpu.cpu")}
             </span>
           </p>
           <p className="text-xs text-mid-gray">
-            Pre-compiled llama.cpp server binaries are downloaded from GitHub
-            releases. Select a backend and download the server to enable local
-            LLM inference.
+            {t("llamaCpp.serverDescription")}
           </p>
         </div>
 
@@ -153,7 +151,7 @@ const LlamaCppSettings: React.FC = () => {
         {latestRelease && (
           <div className="space-y-2">
             <h4 className="text-sm font-semibold text-text">
-              Latest Release: {latestRelease.tag} ({latestRelease.name})
+              {t("llamaCpp.latestRelease", { tag: latestRelease.tag, name: latestRelease.name })}
             </h4>
             <div className="grid gap-2">
               {latestRelease.assets.map((asset) => {
@@ -192,8 +190,10 @@ const LlamaCppSettings: React.FC = () => {
                         )}
                       </div>
                       <p className="text-xs text-mid-gray mt-0.5">
-                        v{latestRelease.tag} ·{" "}
-                        {Math.round(asset.size_bytes / (1024 * 1024))} MB
+                        {t("llamaCpp.releaseMeta", {
+                          tag: latestRelease.tag,
+                          size: Math.round(asset.size_bytes / (1024 * 1024)),
+                        })}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
@@ -235,7 +235,7 @@ const LlamaCppSettings: React.FC = () => {
                             handleRemove(asset.backend, latestRelease.tag)
                           }
                         >
-                          Remove
+                        {t("llamaCpp.remove")}
                         </Button>
                       ) : (
                         <Button
@@ -261,7 +261,7 @@ const LlamaCppSettings: React.FC = () => {
         {servers.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-sm font-semibold text-text mt-4">
-              Installed Servers
+              {t("llamaCpp.installedServers")}
             </h4>
             <div className="grid gap-1">
               {servers.map((srv) => {
@@ -283,7 +283,7 @@ const LlamaCppSettings: React.FC = () => {
                       · {srv.release_tag}
                       {active && (
                         <span className="ml-2 text-green-400 font-semibold">
-                          (active)
+                          {t("llamaCpp.active")}
                         </span>
                       )}
                     </span>
@@ -295,7 +295,7 @@ const LlamaCppSettings: React.FC = () => {
                           }
                           className="text-logo-primary hover:underline"
                         >
-                          Use
+                          {t("llamaCpp.use")}
                         </button>
                       )}
                       <button
@@ -304,7 +304,7 @@ const LlamaCppSettings: React.FC = () => {
                         }
                         className="text-red-400 hover:underline"
                       >
-                        Remove
+                        {t("llamaCpp.remove")}
                       </button>
                     </div>
                   </div>
@@ -316,7 +316,7 @@ const LlamaCppSettings: React.FC = () => {
 
         {!latestRelease && !loading && (
           <p className="text-xs text-mid-gray">
-            No releases found. Check your internet connection.
+            {t("llamaCpp.noReleases")}
           </p>
         )}
 

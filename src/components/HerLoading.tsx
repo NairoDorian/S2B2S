@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { useTranslation } from "react-i18next";
 
 const LENGTH = 30;
 const RADIUS = 5.6;
@@ -32,6 +33,7 @@ interface HerLoadingProps {
 }
 
 export function HerLoading({ onEnter, progress }: HerLoadingProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const infoRef = useRef<HTMLParagraphElement>(null);
   const sceneRef = useRef<{
@@ -229,7 +231,7 @@ export function HerLoading({ onEnter, progress }: HerLoadingProps) {
         className="fixed bottom-0 left-0 right-0 z-50 text-center text-xs leading-8"
         style={{ color: "#ccc" }}
       >
-        Click or press any key to enter
+        {t("herLoading.enterHint")}
       </p>
     </>
   );

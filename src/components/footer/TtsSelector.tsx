@@ -312,7 +312,7 @@ const TtsSelector: React.FC = () => {
                   <span>{eng.label}</span>
                   {voiceCounts[eng.id] > 0 && (
                     <span className="text-[9px] text-text/30 ml-1">
-                      {voiceCounts[eng.id]} voices
+                      {t("footer.voicesCount", { count: voiceCounts[eng.id] })}
                     </span>
                   )}
                 </div>
