@@ -26,6 +26,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
     extractingModels,
     downloadProgress,
     downloadStats,
+    cancelDownload,
   } = useModelStore();
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -199,6 +200,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
 
     const success = await downloadModel(modelId);
     if (!success) {
+      setSelectedModelId(null);
+    }
+  };
+
+  const handleCancelDownload = async (modelId: string) => {
+    const success = await cancelDownload(modelId);
+    if (success) {
       setSelectedModelId(null);
     }
   };
@@ -447,6 +455,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
                   disabled={isBusy}
                   onSelect={handleDownloadModel}
                   onDownload={handleDownloadModel}
+                  onCancel={handleCancelDownload}
                   downloadProgress={getModelDownloadProgress(model.id)}
                   downloadSpeed={getModelDownloadSpeed(model.id)}
                   showRecommended={false}
@@ -461,6 +470,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
                   disabled={isBusy}
                   onSelect={handleDownloadModel}
                   onDownload={handleDownloadModel}
+                  onCancel={handleCancelDownload}
                   downloadProgress={getModelDownloadProgress(model.id)}
                   downloadSpeed={getModelDownloadSpeed(model.id)}
                   showRecommended={false}
@@ -495,6 +505,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
                     disabled={isBusy}
                     onSelect={handleDownloadModel}
                     onDownload={handleDownloadModel}
+                    onCancel={handleCancelDownload}
                     downloadProgress={getModelDownloadProgress(model.id)}
                     downloadSpeed={getModelDownloadSpeed(model.id)}
                     showRecommended={false}
