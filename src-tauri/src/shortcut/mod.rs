@@ -64,7 +64,9 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_cancel_shortcut(app),
-        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::register_cancel_shortcut(app),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+            key_listener::register_cancel_shortcut(app)
+        }
     }
 }
 
@@ -73,7 +75,9 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_cancel_shortcut(app),
-        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::unregister_cancel_shortcut(app),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+            key_listener::unregister_cancel_shortcut(app)
+        }
     }
 }
 
@@ -82,7 +86,9 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::register_shortcut(app, binding),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+            key_listener::register_shortcut(app, binding)
+        }
     }
 }
 
@@ -91,7 +97,9 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::unregister_shortcut(app, binding),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+            key_listener::unregister_shortcut(app, binding)
+        }
     }
 }
 
@@ -323,7 +331,9 @@ pub fn get_keyboard_implementation(app: AppHandle) -> String {
     let settings = settings::get_settings(&app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => "tauri".to_string(),
-        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => "key_listener".to_string(),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+            "key_listener".to_string()
+        }
     }
 }
 
@@ -338,7 +348,9 @@ fn validate_shortcut_for_implementation(
 ) -> Result<(), String> {
     match implementation {
         KeyboardImplementation::Tauri => tauri_impl::validate_shortcut(raw),
-        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::validate_shortcut(raw),
+        KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+            key_listener::validate_shortcut(raw)
+        }
     }
 }
 
@@ -369,7 +381,9 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
 
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
-            KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::unregister_shortcut(app, binding),
+            KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+                key_listener::unregister_shortcut(app, binding)
+            }
         };
 
         if let Err(e) = result {
@@ -437,7 +451,9 @@ fn register_all_shortcuts_for_implementation(
         // Register with the appropriate implementation
         let result = match implementation {
             KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-            KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => key_listener::register_shortcut(app, binding),
+            KeyboardImplementation::KeyListener | KeyboardImplementation::HandyKeys => {
+                key_listener::register_shortcut(app, binding)
+            }
         };
 
         if let Err(e) = result {
@@ -808,9 +824,9 @@ pub fn change_paste_delay_ms_setting(app: AppHandle, ms: u32) -> Result<(), Stri
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_paste_delay_after_ms_setting(app: AppHandle, ms: u64) -> Result<(), String> {
+pub fn change_paste_delay_after_ms_setting(app: AppHandle, ms: u32) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.paste_delay_after_ms = ms;
+    settings.paste_delay_after_ms = ms as u64;
     settings::write_settings(&app, settings);
     Ok(())
 }

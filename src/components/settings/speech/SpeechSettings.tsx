@@ -17,6 +17,7 @@ const ENGINES: TtsEngine[] = [
   "kokoro",
   "kitten",
   "pocket",
+  "qwen3",
   "sapi",
   "openai",
   "elevenlabs",
@@ -31,6 +32,7 @@ const ENGINE_BADGES: Record<
   kokoro: ["offline", "free"],
   kitten: ["offline", "free"],
   pocket: ["offline", "free"],
+  qwen3: ["offline", "free"],
   sapi: ["offline", "free"],
   openai: ["cloud", "paid"],
   elevenlabs: ["cloud", "freemium"],
@@ -195,7 +197,7 @@ export const SpeechSettings: React.FC = () => {
   };
 
   const isLocalEngine = (engine: string) =>
-    ["piper", "kokoro", "kitten", "pocket", "sapi"].includes(engine);
+    ["piper", "kokoro", "kitten", "pocket", "qwen3", "sapi"].includes(engine);
 
   return (
     <div className="space-y-6">
@@ -387,6 +389,53 @@ export const SpeechSettings: React.FC = () => {
               size="sm"
               disabled={importingVoice}
               onClick={handleCloneVoice}
+            >
+              <Upload size={14} className="mr-1" />
+              {importingVoice ? "Importing..." : "Select WAV File"}
+            </Button>
+          </SettingContainer>
+          {voices.some((v) => v.language === "cloned") && (
+            <div className="px-4 pb-3 text-[11px] text-text/40">
+              {t("speech.clonedVoicesHint")}
+            </div>
+          )}
+        </SettingsGroup>
+      )}
+
+      {/* Qwen3 Voice Cloning */}
+      {tts.engine === "qwen3" && (
+        <SettingsGroup title="Clone Voice (Qwen3-TTS)">
+          <SettingContainer
+            title="Import reference audio"
+            description="Select a 5-20 second WAV file of someone speaking clearly. Qwen3-TTS will clone that voice."
+            grouped
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={importingVoice}
+              onClick={async () => {
+                setImportingVoice(true);
+                try {
+                  const { open } = await import("@tauri-apps/plugin-dialog");
+                  const selected = await open({
+                    filters: [{ name: "WAV Audio", extensions: ["wav"] }],
+                    multiple: false,
+                  });
+                  if (selected && typeof selected === "string") {
+                    const result =
+                      await commands.qwen3ImportClonedVoice(selected);
+                    if (result.status === "ok") {
+                      await refreshVoices();
+                      update({ voice: result.data.id });
+                    }
+                  }
+                } catch (err) {
+                  console.error("Failed to import cloned voice:", err);
+                } finally {
+                  setImportingVoice(false);
+                }
+              }}
             >
               <Upload size={14} className="mr-1" />
               {importingVoice ? "Importing..." : "Select WAV File"}

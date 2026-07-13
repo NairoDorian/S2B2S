@@ -9,7 +9,6 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   LogLevel,
-  WhisperAcceleratorSetting,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   TtsConfig,
@@ -205,10 +204,8 @@ const settingUpdaters: {
     commands.changeOrtAcceleratorSetting(value as OrtAcceleratorSetting),
   parakeet_streaming_enabled: (value) =>
     commands.changeParakeetStreamingSetting(value as boolean),
-  whisper_gpu_device: (value) =>
-    commands.changeWhisperGpuDevice(value as number),
   transcribe_gpu_device: (value) =>
-    commands.changeTranscribeGpuDevice(value as number),
+    commands.changeWhisperGpuDevice(value as number),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
   tts: (value) => commands.changeTtsConfig(value as TtsConfig),

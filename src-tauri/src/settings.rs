@@ -194,6 +194,7 @@ pub enum TtsEngine {
     Kokoro,
     Kitten,
     Pocket,
+    Qwen3,
     Sapi,
     Openai,
     Elevenlabs,
@@ -1190,6 +1191,7 @@ pub struct AppSettings {
     #[specta(type = u32)]
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_delay_after_ms")]
+    #[specta(type = u32)]
     pub paste_delay_after_ms: u64,
     #[serde(default = "default_typing_tool")]
     pub typing_tool: TypingTool,
@@ -2199,13 +2201,17 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
     let mut updated = false;
     let mut settings = if let Some(settings_value) = store.get("settings") {
-        let (mut decrypted, salvaged) = match serde_json::from_value::<AppSettings>(settings_value.clone()) {
-            Ok(s) => (decrypt_settings_keys(s), false),
-            Err(e) => {
-                warn!("Failed to parse stored settings ({e}); salvaging valid fields");
-                (decrypt_settings_keys(salvage_settings(&settings_value)), true)
-            }
-        };
+        let (mut decrypted, salvaged) =
+            match serde_json::from_value::<AppSettings>(settings_value.clone()) {
+                Ok(s) => (decrypt_settings_keys(s), false),
+                Err(e) => {
+                    warn!("Failed to parse stored settings ({e}); salvaging valid fields");
+                    (
+                        decrypt_settings_keys(salvage_settings(&settings_value)),
+                        true,
+                    )
+                }
+            };
         if salvaged {
             updated = true;
         }
@@ -2216,7 +2222,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
         // Merge in any bindings added since this store was written.
         for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = decrypted.bindings.entry(key) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = decrypted.bindings.entry(key)
+            {
                 debug!("Adding missing binding: {}", entry.key());
                 entry.insert(value);
                 updated = true;

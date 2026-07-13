@@ -56,7 +56,11 @@ const LlamaDownloadPanel: React.FC<{
                 : "Downloading models..."}
             </span>
             <span className="flex gap-2">
-              <span>{t("llamaCpp.downloadSpeed", { speed: llamaState.downloadSpeed.toFixed(1) })}</span>
+              <span>
+                {t("llamaCpp.downloadSpeed", {
+                  speed: llamaState.downloadSpeed.toFixed(1),
+                })}
+              </span>
               <span className="text-logo-primary font-semibold">
                 {llamaState.downloadProgress.toFixed(1)}%
               </span>
@@ -96,21 +100,33 @@ const LlamaStatusCard: React.FC = () => {
         </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.model")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.model")}
+        </span>
         <span className="font-medium text-text">
           {t("llamaCpp.localGemma.status.modelValue")}
         </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.mtpAcceleration")}</span>
-        <span className="font-medium text-text">{t("llamaCpp.localGemma.status.mtpEnabled")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.mtpAcceleration")}
+        </span>
+        <span className="font-medium text-text">
+          {t("llamaCpp.localGemma.status.mtpEnabled")}
+        </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.visionComponent")}</span>
-        <span className="font-medium text-text">{t("llamaCpp.localGemma.status.visionDisabled")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.visionComponent")}
+        </span>
+        <span className="font-medium text-text">
+          {t("llamaCpp.localGemma.status.visionDisabled")}
+        </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.executionEngine")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.executionEngine")}
+        </span>
         <span className="font-medium text-text">
           {t("llamaCpp.localGemma.status.executionEngineValue")}
         </span>
@@ -485,10 +501,18 @@ export const BrainSettings: React.FC = () => {
                   testMetrics.totalMs != null) && (
                   <p className="text-[10px] text-text/30 font-mono flex gap-3">
                     {testMetrics.tokensPerSec != null && (
-                      <span>{t("conversation.metrics.tokensPerSec", { tps: testMetrics.tokensPerSec.toFixed(1) })}</span>
+                      <span>
+                        {t("conversation.metrics.tokensPerSec", {
+                          tps: testMetrics.tokensPerSec.toFixed(1),
+                        })}
+                      </span>
                     )}
                     {testMetrics.totalMs != null && (
-                      <span>{t("conversation.metrics.totalMs", { ms: testMetrics.totalMs })}</span>
+                      <span>
+                        {t("conversation.metrics.totalMs", {
+                          ms: testMetrics.totalMs,
+                        })}
+                      </span>
                     )}
                   </p>
                 )}

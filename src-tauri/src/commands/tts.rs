@@ -129,6 +129,7 @@ pub fn tts_unload_engine(app: AppHandle) -> Result<bool, String> {
         crate::settings::TtsEngine::Kokoro => crate::tts::local_tts_server::unload("kokoro"),
         crate::settings::TtsEngine::Kitten => crate::tts::local_tts_server::unload("kitten"),
         crate::settings::TtsEngine::Pocket => crate::tts::local_tts_server::unload("pocket"),
+        crate::settings::TtsEngine::Qwen3 => crate::tts::local_tts_server::unload("qwen3"),
         _ => false,
     };
     Ok(unloaded)
@@ -161,6 +162,22 @@ pub fn pocket_import_cloned_voice(
         return Err("Source file must be a .wav file".into());
     }
     crate::tts::backends::pocket::PocketBackend::import_cloned_voice(&app, source)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn qwen3_import_cloned_voice(
+    app: AppHandle,
+    source_path: String,
+) -> Result<crate::tts::Voice, String> {
+    let source = std::path::Path::new(&source_path);
+    if !source.exists() {
+        return Err("Source WAV file not found".into());
+    }
+    if source.extension().map(|e| e.to_str().unwrap_or("")) != Some("wav") {
+        return Err("Source file must be a .wav file".into());
+    }
+    crate::tts::backends::qwen3::Qwen3Backend::import_cloned_voice(&app, source)
 }
 
 /// Replace the whole TTS configuration (engine, voice, speed, volume, toggles).
@@ -208,6 +225,9 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
             crate::settings::TtsEngine::Pocket => {
                 crate::tts::local_tts_server::unload("pocket");
             }
+            crate::settings::TtsEngine::Qwen3 => {
+                crate::tts::local_tts_server::unload("qwen3");
+            }
             _ => {}
         }
 
@@ -245,6 +265,13 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
             crate::settings::TtsEngine::Pocket => {
                 crate::tts::local_tts_server::prewarm(
                     "pocket".to_string(),
+                    "python".to_string(),
+                    vec![],
+                );
+            }
+            crate::settings::TtsEngine::Qwen3 => {
+                crate::tts::local_tts_server::prewarm(
+                    "qwen3".to_string(),
                     "python".to_string(),
                     vec![],
                 );

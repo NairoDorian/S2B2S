@@ -102,6 +102,7 @@ const TtsSelector: React.FC = () => {
         "kokoro",
         "kitten",
         "pocket",
+        "qwen3",
         "sapi",
         "openai",
         "elevenlabs",
@@ -145,7 +146,7 @@ const TtsSelector: React.FC = () => {
   };
 
   const isLocalEngine = (engine: string) =>
-    ["piper", "kokoro", "kitten", "pocket", "sapi"].includes(engine);
+    ["piper", "kokoro", "kitten", "pocket", "qwen3", "sapi"].includes(engine);
 
   const getEngineStatusColor = (engine: string) => {
     const phase =
@@ -205,6 +206,7 @@ const TtsSelector: React.FC = () => {
       kokoro: "Kokoro",
       kitten: "Kitten",
       pocket: "Pocket",
+      qwen3: "Qwen3",
       sapi: "SAPI",
       openai: "OpenAI",
       elevenlabs: "ElevenLabs",
@@ -234,6 +236,7 @@ const TtsSelector: React.FC = () => {
     { id: "kokoro", label: "Kokoro (Local)" },
     { id: "kitten", label: "Kitten (Local)" },
     { id: "pocket", label: "Pocket (Local)" },
+    { id: "qwen3", label: "Qwen3 (Local)" },
     { id: "sapi", label: "SAPI (Local)" },
     { id: "openai", label: "OpenAI (Cloud)" },
     { id: "elevenlabs", label: "ElevenLabs (Cloud)" },

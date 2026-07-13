@@ -2,7 +2,7 @@
 
 **Local-first STT → Brain → TTS desktop app for Windows 11, macOS, and Linux. Dictate anywhere, read anything aloud, and talk naturally with a local AI — almost keyboard-free.**
 
-S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 8 backends (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory and 10 providers, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM/VRAM footer indicators, Pocket voice cloning, a full text normalization pipeline (ITN + TN + markdown stripping), and a brain overlay with 3D avatar.
+S2B2S is a cross-platform desktop application that combines speech-to-text (STT), a local or cloud "Brain" (LLM), and text-to-speech (TTS) into one unified voice-native experience. Built on the [Handy](https://github.com/cjpais/Handy) skeleton (MIT), S2B2S has evolved far beyond its origins — adding TTS read-aloud with 9 backends (Piper, Kokoro, Kitten, Pocket, Qwen3, SAPI, OpenAI, ElevenLabs, Cartesia) with RAM-persistent warm model lifecycle, a streaming LLM conversation mode with 20-turn memory and 10 providers, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading, per-message performance metrics (tokens/sec, STT/TTS latency), sentence streaming for fast time-to-first-audio, double-copy clipboard trigger, system RAM/VRAM footer indicators, Pocket/Qwen3 voice cloning, a full text normalization pipeline (ITN + TN + markdown stripping), and a brain overlay with 3D avatar.
 
 ---
 
@@ -94,7 +94,8 @@ For detailed platform-specific build instructions, see [BUILD.md](BUILD.md).
 ## Architecture
 
 S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeScript frontend:
-```
+
+````
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Tauri App (single process)                    │
 │                                                                   │
@@ -111,7 +112,8 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 │  └─────────────┘     │                                            ││
 │                       │  tts/ (Text-to-Speech subsystem)          ││
 │                       │   ├─ backends/ (Piper, Kokoro, Kitten,   ││
-│                       │   │   SAPI, OpenAI, ElevenLabs, Cartesia)││
+│                       │   │   Pocket, Qwen3, SAPI, OpenAI,       ││
+│                       │   │   ElevenLabs, Cartesia)              ││
 │                       │   ├─ manager.rs (orchestration)          ││
 │                       │   ├─ sanitize/ (ITN, TN, markdown strip) ││
 │                       │   ├─ pagination.rs / fragment_queue.rs   ││
@@ -157,15 +159,17 @@ S2B2S is built as a **Tauri 2 application** with a Rust backend and React/TypeSc
 
 ### Model Directory Structure
 
-```
+````
+
 models/
-├── STT/         # Speech-to-text (Parakeet V3, Silero VAD, Whisper)
-├── Brain/       # LLM models (llama.cpp GGUF)
-└── TTS/         # Text-to-speech engines
-    ├── kokoro/        # Kokoro-82M ONNX + voices
-    ├── piper-voices/  # Piper voice files (.onnx + .json)
-    ├── pocket/        # Pocket TTS (auto-downloaded)
-    └── kitten/        # Kitten TTS (auto-downloaded)
+├── STT/ # Speech-to-text (Parakeet V3, Silero VAD, Whisper)
+├── Brain/ # LLM models (llama.cpp GGUF)
+└── TTS/ # Text-to-speech engines
+├── kokoro/ # Kokoro-82M ONNX + voices
+├── piper-voices/ # Piper voice files (.onnx + .json)
+├── pocket/ # Pocket TTS (auto-downloaded)
+└── kitten/ # Kitten TTS (auto-downloaded)
+
 ```
 
 All models, voices, and Brain GGUF files are organized under a master `models/` folder with three category subdirectories. The app resolves paths project-local first (`S2B2S/models/`) and falls back to the OS app data directory for installed builds. A portable Python virtual environment is at `venv/` (provisioned by `scripts/install-speech-runtime.ps1`/`.sh`) and used by all local TTS engines.
@@ -211,27 +215,35 @@ S2B2S works fully offline with no configuration. The defaults are chosen for spe
 ### Dictation Pipeline
 
 ```
+
 Microphone → TripleVAD (RMS→RNNoise→Silero) → Parakeet V3 STT → ITN Normalization → Clipboard/Paste
+
 ```
 
 ### Conversation Pipeline (Speech → Brain → Speech)
 
 ```
+
 Microphone → TripleVAD → Parakeet V3 STT → ITN Normalization → LLM (Brain) → Markdown Strip → TN Normalization → TTS (Piper/Kokoro) → Speaker
+
 ```
 
 ### Read Aloud Pipeline
 
 ```
+
 Selected Text (or double-copy clipboard) → Markdown Strip → TN Normalization → TTS → Speaker
+
 ```
 
 ### Text Normalization Pipeline (5-Stage)
 
 ```
-Post-STT:  ITN (text-processing-rs) → Custom Words (fuzzy correction)
-Pre-TTS:   Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
-```
+
+Post-STT: ITN (text-processing-rs) → Custom Words (fuzzy correction)
+Pre-TTS: Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
+
+````
 
 | Pass                   | Direction         | Example Input            | Example Output                 |
 | ---------------------- | ----------------- | ------------------------ | ------------------------------ |
@@ -252,12 +264,13 @@ s2b2s --cancel                  # Cancel current operation
 s2b2s --start-hidden            # Start minimized to tray
 s2b2s --no-tray                 # Start without tray icon
 s2b2s --debug                   # Enable debug logging
-```
+````
 
 Unix signals (Linux/macOS):
-| Signal | Action |
-|--------|--------|
-| `SIGUSR2` | Toggle transcription |
+
+| Signal    | Action                                    |
+| --------- | ----------------------------------------- |
+| `SIGUSR2` | Toggle transcription                      |
 | `SIGUSR1` | Toggle transcription with post-processing |
 
 ---
@@ -274,11 +287,12 @@ Unix signals (Linux/macOS):
 ### Linux Notes
 
 **Text Input Tools:**
-| Display Server | Tool | Install |
-|---------------|------|---------|
-| X11 | `xdotool` | `sudo apt install xdotool` |
-| Wayland | `wtype` | `sudo apt install wtype` |
-| Both | `dotool` | `sudo apt install dotool` (+ `input` group) |
+
+| Display Server | Tool      | Install                                     |
+| -------------- | --------- | ------------------------------------------- |
+| X11            | `xdotool` | `sudo apt install xdotool`                  |
+| Wayland        | `wtype`   | `sudo apt install wtype`                    |
+| Both           | `dotool`  | `sudo apt install dotool` (+ `input` group) |
 
 ---
 
@@ -311,6 +325,7 @@ Unix signals (Linux/macOS):
 - Kokoro-82M: CPU-only, ~115 MB ONNX model. Runs via portable Python venv. 54 voices across 9 languages.
 - Kitten: CPU-only, ~25-80 MB ONNX models. Runs via portable Python venv. 8 English voices.
 - Pocket: CPU/GPU (PyTorch), ~100 MB. Runs via portable Python venv. 8 character voices + voice cloning from WAV.
+- Qwen3: CPU/GPU (GGML / C++). ~1.7 GB. Runs via native C++ compiled DLLs with CUDA acceleration. High-performance voice cloning and speech generation.
 - SAPI: Windows-only voice API. Fully implemented local fallback using windows-rs COM interop.
 - All local TTS engines use the project `venv/` — provisioned automatically during onboarding, no system Python required.
 - Cloud engines: Requires internet connection and API key.
@@ -324,7 +339,7 @@ S2B2S is the foundation of the SpeechToBrainToSpeech vision. The core STT → Br
 | Feature                                                                                                                                              | Status                                                            |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | STT dictation (Parakeet V3, Whisper, Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary, Cohere)                                                    | ✅ Complete                                                       |
-| TTS read-aloud (8 backends: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia)                                                       | ✅ Complete                                                       |
+| TTS read-aloud (9 backends: Piper, Kokoro, Kitten, Pocket, Qwen3, SAPI, OpenAI, ElevenLabs, Cartesia)                                                 | ✅ Complete                                                       |
 | Conversation mode with streaming LLM (10 providers: Ollama/LM Studio/llama.cpp/OpenAI/Anthropic/Gemini/Groq/Cerebras/OpenRouter/Z.ai/Bedrock/custom) | ✅ Complete                                                       |
 | Pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU VRAM offloading                                                                               | ✅ Complete                                                       |
 | Performance metrics (tokens/sec, STT/TTS latency, per-message timing)                                                                                | ✅ Complete                                                       |
@@ -422,6 +437,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines and 
 ---
 
 ## License & Attribution
+
 **S2B2S** — MIT License — see [LICENSE](LICENSE) file.
 
 Built on [Handy](https://github.com/cjpais/Handy) by CJ Pais (MIT). Uses Parakeet V3 (CC-BY-4.0), Silero VAD, Kokoro-82M (Apache 2.0), text-processing-rs (Apache 2.0), Piper TTS, transcribe-rs, and the excellent Tauri framework.
@@ -430,7 +446,9 @@ Inspired by and incorporating patterns from: AIVORelay by MaxITService (MIT), Pa
 
 See [STATUS.md](STATUS.md) for the complete project status scorecard and [AGENTS.md](AGENTS.md) for AI assistant guidance.
 Handy is open-source software, but the Handy name, logo, icon, and brand assets are not open-source. Unofficial forks, rewrites, and redistributions must use their own branding and must not imply endorsement or affiliation.
+
 ## Acknowledgments
+
 - **Whisper** by OpenAI for the speech recognition model
 - **[ggml](https://github.com/ggml-org/ggml)** and **[transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)** for amazing cross-platform speech-to-text inference/acceleration
 - **Silero** for great lightweight VAD

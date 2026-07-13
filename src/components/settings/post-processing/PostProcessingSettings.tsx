@@ -58,7 +58,11 @@ const LlamaDownloadPanel: React.FC<{
                 : "Downloading models..."}
             </span>
             <span className="flex gap-2">
-              <span>{t("llamaCpp.downloadSpeed", { speed: llamaState.downloadSpeed.toFixed(1) })}</span>
+              <span>
+                {t("llamaCpp.downloadSpeed", {
+                  speed: llamaState.downloadSpeed.toFixed(1),
+                })}
+              </span>
               <span className="text-logo-primary font-semibold">
                 {llamaState.downloadProgress.toFixed(1)}%
               </span>
@@ -98,21 +102,33 @@ const LlamaStatusCard: React.FC = () => {
         </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.model")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.model")}
+        </span>
         <span className="font-medium text-text">
           {t("llamaCpp.localGemma.status.modelValue")}
         </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.mtpAcceleration")}</span>
-        <span className="font-medium text-text">{t("llamaCpp.localGemma.status.mtpEnabledTokens")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.mtpAcceleration")}
+        </span>
+        <span className="font-medium text-text">
+          {t("llamaCpp.localGemma.status.mtpEnabledTokens")}
+        </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.visionComponent")}</span>
-        <span className="font-medium text-text">{t("llamaCpp.localGemma.status.visionDisabled")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.visionComponent")}
+        </span>
+        <span className="font-medium text-text">
+          {t("llamaCpp.localGemma.status.visionDisabled")}
+        </span>
       </div>
       <div>
-        <span className="text-mid-gray block">{t("llamaCpp.localGemma.status.executionEngine")}</span>
+        <span className="text-mid-gray block">
+          {t("llamaCpp.localGemma.status.executionEngine")}
+        </span>
         <span className="font-medium text-text">
           {t("llamaCpp.localGemma.status.executionEngineValue")}
         </span>

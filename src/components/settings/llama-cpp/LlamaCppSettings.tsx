@@ -151,7 +151,10 @@ const LlamaCppSettings: React.FC = () => {
         {latestRelease && (
           <div className="space-y-2">
             <h4 className="text-sm font-semibold text-text">
-              {t("llamaCpp.latestRelease", { tag: latestRelease.tag, name: latestRelease.name })}
+              {t("llamaCpp.latestRelease", {
+                tag: latestRelease.tag,
+                name: latestRelease.name,
+              })}
             </h4>
             <div className="grid gap-2">
               {latestRelease.assets.map((asset) => {
@@ -235,7 +238,7 @@ const LlamaCppSettings: React.FC = () => {
                             handleRemove(asset.backend, latestRelease.tag)
                           }
                         >
-                        {t("llamaCpp.remove")}
+                          {t("llamaCpp.remove")}
                         </Button>
                       ) : (
                         <Button
@@ -315,9 +318,7 @@ const LlamaCppSettings: React.FC = () => {
         )}
 
         {!latestRelease && !loading && (
-          <p className="text-xs text-mid-gray">
-            {t("llamaCpp.noReleases")}
-          </p>
+          <p className="text-xs text-mid-gray">{t("llamaCpp.noReleases")}</p>
         )}
 
         <Button

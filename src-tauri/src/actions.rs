@@ -108,8 +108,6 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-
-
 async fn post_process_transcription(
     app: &AppHandle,
     settings: &AppSettings,
@@ -1282,9 +1280,11 @@ impl ShortcutAction for TranscribeAction {
                                     let mut final_text = transcription.to_string();
                                     let effective_language =
                                         crate::actions::resolve_effective_language(&ah, &settings);
-                                    if let Some(converted_text) =
-                                        maybe_convert_chinese_variant(&effective_language, &transcription)
-                                            .await
+                                    if let Some(converted_text) = maybe_convert_chinese_variant(
+                                        &effective_language,
+                                        &transcription,
+                                    )
+                                    .await
                                     {
                                         final_text = converted_text;
                                     }

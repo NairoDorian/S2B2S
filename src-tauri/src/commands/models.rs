@@ -628,7 +628,7 @@ fn get_nvidia_vram_usage() -> Option<u64> {
         return None;
     }
     let used_mb: u64 = parts[0].parse().ok()?;
-                // log::debug!("[VRAM] nvidia-smi used: {} MB", used_mb);
+    // log::debug!("[VRAM] nvidia-smi used: {} MB", used_mb);
     Some(used_mb * 1024 * 1024)
 }
 

@@ -18,7 +18,10 @@
     "about": "À propos",
     "speech": "Speech",
     "brain": "Brain",
-    "conversation": "Conversation"
+    "conversation": "Conversation",
+    "llamaCpp": "Llama.cpp",
+    "overlayWindow": "Overlay Window",
+    "wgpuTrail": "WGPU Trail"
   },
   "onboarding": {
     "subtitle": "Pour commencer, choisissez un modèle de transcription",
@@ -124,6 +127,7 @@
   },
   "modelSelector": {
     "custom": "Personnalisé",
+    "legacy": "Hérité",
     "streaming": "Streaming",
     "active": "Actif",
     "switching": "Changement...",
@@ -143,39 +147,25 @@
     "noModelDownloadRequired": "Aucun Modèle - Téléchargement Requis",
     "deleteModel": "Supprimer {{modelName}}",
     "downloadSpeed": "{{speed}} Mo/s",
-    "capabilities": {
-      "languageSelection": "Prend en charge plusieurs langues d'entrée",
-      "languageCount": "{{total}} languages",
-      "translation": "Peut traduire en anglais",
-      "translate": "Traduire en anglais",
-      "singleLanguage": "Prend en charge uniquement cette langue",
-      "languageOnly": "{{language}} uniquement",
-      "streaming": "Affiche la transcription en direct pendant que vous parlez"
-    },
     "cancel": "Annuler",
     "cancelDownload": "Annuler le téléchargement",
-    "legacy": "Hérité"
+    "capabilities": {
+      "languageSelection": "Prend en charge plusieurs langues d'entrée",
+      "singleLanguage": "Prend en charge uniquement cette langue",
+      "languageCount": "{{total}} languages",
+      "languageOnly": "{{language}} uniquement",
+      "translation": "Peut traduire en anglais",
+      "translate": "Traduire en anglais",
+      "streaming": "Affiche la transcription en direct pendant que vous parlez"
+    }
   },
   "settings": {
     "modelSettings": {
-      "title": "Paramètres de {{model}}"
-    },
-    "models": {
-      "title": "Modèles de Transcription",
-      "description": "Sélectionnez un modèle de transcription ou téléchargez des modèles supplémentaires. Différents modèles offrent différents niveaux de précision et de vitesse.",
-      "deleteConfirm": "Êtes-vous sûr de vouloir supprimer {{modelName}} ? Vous devrez le télécharger à nouveau pour l'utiliser.",
-      "deleteActiveConfirm": "{{modelName}} est votre modèle actif. Le supprimer arrêtera les transcriptions jusqu'à ce que vous sélectionniez un nouveau modèle. Êtes-vous sûr ?",
-      "deleteTitle": "Supprimer le modèle",
-      "filters": {
-        "allLanguages": "Toutes les langues"
-      },
-      "noModelsMatch": "Aucun modèle ne correspond à ce filtre.",
-      "yourModels": "Modèles téléchargés",
-      "availableModels": "Disponibles au téléchargement",
-      "searchPlaceholder": "Rechercher des modèles par nom…",
-      "rescan": {
-        "label": "Réanalyser",
-        "tooltip": "Réanalyser pour détecter les modèles ajoutés au dossier des modèles ou au cache Hugging Face en dehors de Handy"
+      "title": "Paramètres de {{model}}",
+      "noSettingsNeeded": "This model works automatically with no configuration needed.",
+      "parakeetStreamingToggle": {
+        "label": "Streaming Mode",
+        "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
       }
     },
     "general": {
@@ -218,6 +208,24 @@
         "label": "Appuyer pour parler",
         "description": "Maintenez pour enregistrer, relâchez pour arrêter"
       }
+    },
+    "models": {
+      "title": "Modèles de Transcription",
+      "description": "Sélectionnez un modèle de transcription ou téléchargez des modèles supplémentaires. Différents modèles offrent différents niveaux de précision et de vitesse.",
+      "searchPlaceholder": "Rechercher des modèles par nom…",
+      "yourModels": "Modèles téléchargés",
+      "availableModels": "Disponibles au téléchargement",
+      "deleteConfirm": "Êtes-vous sûr de vouloir supprimer {{modelName}} ? Vous devrez le télécharger à nouveau pour l'utiliser.",
+      "deleteActiveConfirm": "{{modelName}} est votre modèle actif. Le supprimer arrêtera les transcriptions jusqu'à ce que vous sélectionniez un nouveau modèle. Êtes-vous sûr ?",
+      "deleteTitle": "Supprimer le modèle",
+      "filters": {
+        "allLanguages": "Toutes les langues"
+      },
+      "rescan": {
+        "label": "Réanalyser",
+        "tooltip": "Réanalyser pour détecter les modèles ajoutés au dossier des modèles ou au cache Hugging Face en dehors de Handy"
+      },
+      "noModelsMatch": "Aucun modèle ne correspond à ce filtre."
     },
     "sound": {
       "title": "Son",
@@ -302,6 +310,99 @@
           }
         }
       },
+      "overlayWindow": {
+        "title": "Overlay Window",
+        "description": "Customise how the recording and brain overlay windows appear and behave.",
+        "groups": {
+          "appearance": "Appearance",
+          "behavior": "Behaviour"
+        },
+        "mode": {
+          "title": "Overlay Mode",
+          "description": "Tauri: uses always-on-top + transparent window flags only (CopySpeak HUD style). OS Native: uses platform-specific APIs (NSPanel on macOS, HWND_TOPMOST on Windows, GTK layer-shell on Linux).",
+          "options": {
+            "tauri": "Tauri (alwaysOnTop only)",
+            "osNative": "OS Native (NSPanel / HWND_TOPMOST / layer-shell)"
+          }
+        },
+        "width": {
+          "title": "Width (px)",
+          "description": "Overlay pill width in logical pixels."
+        },
+        "height": {
+          "title": "Height (px)",
+          "description": "Overlay pill height in logical pixels."
+        },
+        "opacity": {
+          "title": "Background Opacity",
+          "description": "Opacity of the overlay background (0.0 = fully transparent, 1.0 = fully opaque)."
+        },
+        "cornerRadius": {
+          "title": "Corner Radius",
+          "description": "Roundness of the overlay corners in pixels (0 = square)."
+        },
+        "replyBubble": {
+          "title": "Reply Bubble",
+          "description": "Show a text bubble with the Brain's streaming reply next to the cursor during conversation."
+        },
+        "fadeMs": {
+          "title": "Fade-Out Duration (ms)",
+          "description": "How long the fade-out animation lasts before the overlay hides."
+        }
+      },
+      "wgpuTrail": {
+        "title": "Cursor Trail (WGPU)",
+        "description": "Native GPU cursor trail with spring physics, lazy-brush filtering, and click ripple. Requires Track B (wgpu overlay).",
+        "groups": {
+          "general": "General",
+          "physics": "Physics",
+          "appearance": "Appearance"
+        },
+        "enabled": {
+          "label": "Enable Cursor Trail",
+          "description": "Show a neon cursor trail rendered via native wgpu over your entire desktop."
+        },
+        "color": {
+          "title": "Trail Colour",
+          "description": "Hex colour for the trail (e.g. #7c3aed)."
+        },
+        "segments": {
+          "title": "Trail Segments",
+          "description": "Number of trail points in the spring chain. More = longer trail."
+        },
+        "spring": {
+          "title": "Spring Stiffness",
+          "description": "How strongly each trail point pulls toward the next (0.0–1.0)."
+        },
+        "friction": {
+          "title": "Friction / Damping",
+          "description": "How quickly trail velocity decays per frame (0.0–1.0)."
+        },
+        "width": {
+          "title": "Trail Width",
+          "description": "Base trail width in logical pixels at the head."
+        },
+        "taper": {
+          "title": "Width Taper Exponent",
+          "description": "How aggressively the trail thins toward the tail (e.g. 1.5)."
+        },
+        "glow": {
+          "title": "Glow Opacity",
+          "description": "Opacity of the 4-pass bloom glow layer (0.0–1.0)."
+        },
+        "lazyRadius": {
+          "title": "Lazy-Brush Radius",
+          "description": "Dead-zone radius in pixels before the trail follows the cursor."
+        },
+        "lazyFriction": {
+          "title": "Lazy-Brush Friction",
+          "description": "How much the lazy-brush resists fast movement (0.0–1.0)."
+        },
+        "clickRipple": {
+          "label": "Click Ripple",
+          "description": "Show an expanding ripple circle on mouse click."
+        }
+      },
       "pasteMethod": {
         "title": "Méthode de collage",
         "description": "Choisissez comment le texte est inséré. Direct : simule la frappe via l'entrée système. Aucun : ignore le collage, met uniquement à jour l'historique/presse-papiers.",
@@ -373,6 +474,8 @@
       }
     },
     "postProcessing": {
+      "title": "Post Process",
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
         "title": "Raccourci clavier"
       },
@@ -403,6 +506,36 @@
           "placeholderNoOptions": "Tapez un nom de modèle",
           "refreshModels": "Actualiser les modèles"
         }
+      },
+      "defaultShortcut": {
+        "title": "Default Shortcut",
+        "toggleLabel": "Enable default post-processing shortcut",
+        "toggleDescription": "When enabled, pressing the transcribe-with-post-processing hotkey applies the first action to the transcription."
+      },
+      "actions": {
+        "title": "Actions",
+        "description": "Create actions with custom prompts, icons, and trigger keys. Each action can be bound to a global shortcut.",
+        "newAction": "New Action",
+        "newTitle": "New Action",
+        "editTitle": "Edit Action",
+        "dialogSubtitle": "Configure what this action does and how to trigger it.",
+        "name": "Name",
+        "namePlaceholder": "e.g. Fix grammar",
+        "icon": "Icon",
+        "prompt": "Prompt",
+        "promptPlaceholder": "Enter instructions for the AI…",
+        "promptHint": "Use ${output} to reference the transcribed text in your prompt.",
+        "model": "Language Model",
+        "modelPlaceholder": "Select a saved model",
+        "noModels": "No saved language models yet. Add one in the Models tab.",
+        "triggerKey": "Trigger Key",
+        "shortcut": "Global Shortcut",
+        "shortcutAfterSave": "Save the action first to set a custom global shortcut.",
+        "noKey": "None",
+        "keyTaken": "Key {key} (in use)",
+        "empty": "Create your first action to start processing transcriptions with custom prompts.",
+        "emptyTitle": "No actions yet",
+        "noModelShort": "No model"
       },
       "prompts": {
         "title": "Prompt",
@@ -435,11 +568,19 @@
       "save": "Enregistrer la transcription",
       "unsave": "Retirer des favoris",
       "delete": "Supprimer l'entrée",
+      "deleteAll": "Delete All",
       "deleteError": "Échec de la suppression de l'entrée. Veuillez réessayer.",
       "retranscribe": "Re-transcrire",
       "retranscribeError": "Impossible de re-transcrire. Veuillez réessayer.",
       "transcribing": "Transcription en cours...",
-      "transcriptionFailed": "La transcription a échoué. Vous pouvez re-transcrire en utilisant l'icône de réessai."
+      "transcriptionFailed": "La transcription a échoué. Vous pouvez re-transcrire en utilisant l'icône de réessai.",
+      "processWith": "Process with action…",
+      "processError": "Failed to process entry with action.",
+      "processed": "Processed",
+      "retryTranscription": "Retry Transcription",
+      "regenerateSuccess": "History entry successfully regenerated!",
+      "regenerateError": "Failed to regenerate entry.",
+      "synthesizing": "Synthesizing audio…"
     },
     "debug": {
       "title": "Débogage",
@@ -465,6 +606,13 @@
       "updateChecks": {
         "label": "Vérifier les mises à jour",
         "description": "Vérifier automatiquement les nouvelles versions de S2B2S"
+      },
+      "whatsNewPreview": {
+        "title": "Aperçu des nouveautés",
+        "description": "Ouvrir la dernière note de version intégrée sans la marquer comme vue",
+        "button": "Aperçu",
+        "noNotes": "Aucune note de version intégrée trouvée",
+        "error": "Impossible d’afficher l’aperçu des notes de version"
       },
       "soundTheme": {
         "label": "Thème sonore",
@@ -531,12 +679,24 @@
         "title": "Tampon d'enregistrement supplémentaire",
         "description": "Temps supplémentaire (en millisecondes) pour continuer l'enregistrement après avoir relâché la touche, pour capturer l'audio restant. 0 = pas de tampon supplémentaire."
       },
-      "whatsNewPreview": {
-        "title": "Aperçu des nouveautés",
-        "description": "Ouvrir la dernière note de version intégrée sans la marquer comme vue",
-        "button": "Aperçu",
-        "noNotes": "Aucune note de version intégrée trouvée",
-        "error": "Impossible d’afficher l’aperçu des notes de version"
+      "sessionToasts": {
+        "title": "Session Toast History {{count}}",
+        "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
+        "collapse": "Collapse toast history",
+        "expand": "Expand toast history",
+        "empty": "No toasts recorded this session. Errors and warnings will appear here automatically.",
+        "filteredEmpty": "All {{errorCount}} errors and {{warningCount}} warnings are currently hidden by the filters above.",
+        "filters": {
+          "errors": "Errors ({{count}})",
+          "errorsDescription": "Show error-level toasts",
+          "warnings": "Warnings ({{count}})",
+          "warningsDescription": "Show warning-level toasts"
+        },
+        "levels": {
+          "error": "Error",
+          "warning": "Warning"
+        },
+        "actionExecuted": "Action executed"
       }
     },
     "about": {
@@ -544,6 +704,10 @@
       "version": {
         "title": "Version",
         "description": "Version actuelle de S2B2S"
+      },
+      "whatsNewUpdates": {
+        "label": "Afficher les nouveautés",
+        "description": "Afficher les notes de version après les mises à jour de Handy"
       },
       "appDataDirectory": {
         "title": "Emplacement des données de l'application",
@@ -596,10 +760,6 @@
           "description": "Inférence haute performance du modèle de reconnaissance vocale automatique Whisper d'OpenAI",
           "details": "Handy utilise ggml pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
         }
-      },
-      "whatsNewUpdates": {
-        "label": "Afficher les nouveautés",
-        "description": "Afficher les notes de version après les mises à jour de Handy"
       }
     },
     "speech": {
@@ -613,9 +773,50 @@
         "description": "Which text-to-speech engine synthesizes audio.",
         "options": {
           "piper": "Piper (local)",
+          "kokoro": "Kokoro (local)",
+          "kitten": "Kitten (local)",
+          "pocket": "Pocket (local)",
+          "qwen3": "Qwen3 (local)",
+          "sapi": "SAPI (local)",
           "openai": "OpenAI (cloud)",
           "elevenlabs": "ElevenLabs (cloud)",
           "cartesia": "Cartesia (cloud)"
+        },
+        "descriptions": {
+          "piper": "Local: Fast, lightweight neural TTS with 20+ English voices. Works fully offline — no account or internet required.",
+          "kokoro": "Local: High-quality offline TTS with natural-sounding voices and broad accent coverage. 54 voices across 9 languages.",
+          "kitten": "Local: Ultra-lightweight TTS (25-80MB) with 8 natural voices. CPU-optimized ONNX inference, no GPU required.",
+          "pocket": "Local: Compact offline TTS engine with 8 distinct character voices. Uses PyTorch/VITS architecture.",
+          "qwen3": "Local: High-quality multilingual offline TTS engine using CUDA Graph capture and In-Context Learning for voice cloning.",
+          "sapi": "Local: Built-in Windows speech synthesis. Zero download, always available as a fallback.",
+          "openai": "Cloud: High-quality natural voices via the OpenAI API. Requires an API key and internet connection.",
+          "elevenlabs": "Cloud: Premium AI voice synthesis with emotional range, 1000+ voices, and multilingual support.",
+          "cartesia": "Cloud: Low-latency, natural TTS powered by Sonic 3.5. Requires an API key and internet connection."
+        },
+        "links": {
+          "piper": "https://github.com/OHF-Voice/piper1-gpl",
+          "piperLabel": "Setup Guide",
+          "kokoro": "https://github.com/hexgrad/kokoro",
+          "kokoroLabel": "GitHub README",
+          "kitten": "https://github.com/KittenML/KittenTTS",
+          "kittenLabel": "GitHub",
+          "pocket": "",
+          "pocketLabel": "",
+          "qwen3": "https://github.com/andimarafioti/faster-qwen3-tts",
+          "qwen3Label": "GitHub",
+          "openai": "https://platform.openai.com/docs/guides/text-to-speech",
+          "openaiLabel": "API Docs",
+          "elevenlabs": "https://elevenlabs.io/docs/api-reference/text-to-speech",
+          "elevenlabsLabel": "API Docs",
+          "cartesia": "https://docs.cartesia.ai/get-started/overview",
+          "cartesiaLabel": "API Docs"
+        },
+        "badges": {
+          "offline": "Offline",
+          "free": "Free",
+          "cloud": "Cloud",
+          "paid": "Paid",
+          "freemium": "Freemium"
         }
       },
       "voice": {
@@ -637,6 +838,7 @@
         "speak": "Speak sample",
         "stop": "Stop"
       },
+      "playGreeting": "Play Greeting",
       "sampleText": "Hello! This is S2B2S speaking with the current voice settings.",
       "piperGroup": "Piper Engine",
       "piperPython": {
@@ -657,6 +859,20 @@
         "description": "Stop the warm TTS server and free its memory.",
         "button": "Unload now"
       },
+      "testEngine": {
+        "label": "Test Engine",
+        "description": "Run a short synthesis test to verify the engine is working.",
+        "testing": "Testing...",
+        "engineWorking": "Engine is working",
+        "engineFailed": "Engine test failed",
+        "button": "Test Now"
+      },
+      "commandPreview": {
+        "title": "Command Preview",
+        "placeholder": "The CLI command that will be executed for synthesis.",
+        "tempDirectory": "resolves to your system temp directory at runtime."
+      },
+      "reloadVoices": "Reload voices",
       "sanitizeGroup": "Text Cleanup",
       "sanitizeEnabled": {
         "label": "Clean text before speaking",
@@ -673,7 +889,46 @@
       "doubleCopy": {
         "label": "Double-copy to speak",
         "description": "Copy the same text twice within 1.5 seconds to read it aloud automatically (Windows only for now)."
-      }
+      },
+      "fastFirstSentence": {
+        "label": "Fast first sentence",
+        "description": "Split the first sentence at a clause boundary and play it immediately while the rest is still being synthesized. Dramatically reduces time-to-first-audio."
+      },
+      "greetingGroup": "Startup Greeting Settings",
+      "playGreetingToggle": {
+        "label": "Play Startup Greeting Audio",
+        "description": "Speak the warmup sentence aloud when the voice model finishes loading"
+      },
+      "greetingText": {
+        "label": "Greeting Text",
+        "description": "The greeting text spoken at startup",
+        "placeholder": "Enter greeting message..."
+      },
+      "greetingEngine": {
+        "label": "Greeting Engine",
+        "description": "The TTS engine used for the startup greeting"
+      },
+      "greetingVoice": {
+        "label": "Greeting Voice",
+        "description": "The voice used for the startup greeting"
+      },
+      "greetingSpeed": {
+        "label": "Greeting Speed",
+        "description": "Playback rate for the startup greeting"
+      },
+      "greetingNoiseScale": {
+        "label": "Noise Scale",
+        "description": "Speaking variability (Piper HTTP noise_scale). 0=monotone, 0.667=Piper default."
+      },
+      "greetingNoiseWScale": {
+        "label": "Noise W Scale",
+        "description": "Phoneme width variability (Piper HTTP noise_w_scale). 0=precise, 0.8=Piper default."
+      },
+      "repeatGreeting": {
+        "label": "Repeat Startup Greeting",
+        "description": "Play the startup greeting message out loud"
+      },
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
     },
     "brain": {
       "group": "Brain Connection",
@@ -719,6 +974,15 @@
     }
   },
   "footer": {
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
+    "voicesCount": "{{count}} voices",
+    "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "Recherche de mises à jour...",
     "updateAvailableShort": "Mise à jour disponible",
     "upToDate": "À jour",
@@ -730,6 +994,9 @@
     "portableUpdateTitle": "Mise à jour manuelle requise",
     "portableUpdateMessage": "Les installations portables ne peuvent pas être mises à jour automatiquement. Pour mettre à jour : téléchargez le dernier installateur NSIS depuis GitHub Releases, installez-le dans le même dossier, puis copiez votre dossier Data/ (paramètres, modèles, enregistrements) de l’ancienne version vers la nouvelle.",
     "portableUpdateButton": "Ouvrir GitHub Releases"
+  },
+  "whatsNew": {
+    "title": "Nouveautés de Handy v{{version}}"
   },
   "common": {
     "loading": "Chargement...",
@@ -791,9 +1058,99 @@
     "inputPlaceholder": "Type a message (Enter to send, Shift+Enter for a new line)",
     "send": "Send",
     "stop": "Stop",
-    "clear": "Clear"
+    "clear": "Clear",
+    "newConversation": "New conversation",
+    "readAloudOn": "Read replies aloud (ON)",
+    "readAloudOff": "Silent mode (OFF)",
+    "brainOnlyStt": "Brain STT",
+    "brainOnlySttTooltip": "Bypass STT models and use Brain AI for transcription",
+    "voiceListening": "Voice Mode: Listening...",
+    "voiceCapturing": "Voice Mode: Capturing Speech...",
+    "voiceProcessing": "Voice Mode: Processing speech...",
+    "voiceThinking": "Voice Mode: Brain is thinking...",
+    "voiceSpeaking": "Voice Mode: Assistant is speaking...",
+    "voiceMode": "Voice Mode",
+    "voiceModeOn": "Voice Mode ON",
+    "stopVoiceMode": "Exit Voice Mode",
+    "latency": {
+      "ep": "EP:{{ms}}ms",
+      "stt": "STT:{{ms}}ms",
+      "ttft": "Token:{{ms}}ms",
+      "ttfa": "Audio:{{ms}}ms"
+    },
+    "metrics": {
+      "sttMs": "🎤 {{ms}}ms",
+      "tokensPerSec": "{{tps}} t/s",
+      "totalMs": "🧠 {{ms}}ms",
+      "ttsMs": "🔊 {{ms}}ms"
+    }
   },
-  "whatsNew": {
-    "title": "Nouveautés de Handy v{{version}}"
+  "debug": {
+    "logViewer": {
+      "lastLines": "Last {{count}} Lines",
+      "autoRefresh": "Auto-refresh",
+      "refresh": "Refresh",
+      "copy": "Copy",
+      "clear": "Clear",
+      "newConversation": "New conversation",
+      "searchPlaceholder": "Search logs...",
+      "showing": "Showing {{filtered}} of {{total}} fetched log entries",
+      "levelFilter": "LogLevel Filter: {{level}}",
+      "noFilterMatch": "No log entries match your filter criteria.",
+      "noEntries": "No log entries generated yet."
+    }
+  },
+  "gpuVram": {
+    "diagnostics": "GPU VRAM Diagnostics",
+    "usage": "{{used}} MB / {{total}} MB ({{percentage}}%)",
+    "used": "Used: {{used}} MB",
+    "free": "Free: {{free}} MB"
+  },
+  "ui": {
+    "slider": {
+      "resetToDefault": "Reset to default"
+    }
+  },
+  "llamaCpp": {
+    "localGemma": {
+      "title": "Local Gemma-4 Engine (Llama.cpp)",
+      "setupRequired": "Setup Required",
+      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
+      "status": {
+        "model": "Model",
+        "modelValue": "Gemma-4-E2B-it-qat (UD-Q4_K_XL)",
+        "mtpAcceleration": "MTP Acceleration",
+        "mtpEnabled": "Enabled",
+        "mtpEnabledTokens": "Enabled (2 tokens/step)",
+        "visionComponent": "Vision Component",
+        "visionDisabled": "Disabled by default",
+        "executionEngine": "Execution Engine",
+        "executionEngineValue": "llama-server (Flash Attention)"
+      }
+    },
+    "downloadSpeed": "{{speed}} MB/s",
+    "gpuPreference": "Detected GPU preference:",
+    "gpu": {
+      "cuda": "🟢 NVIDIA CUDA",
+      "vulkan": "🟡 Vulkan",
+      "cpu": "⚪ CPU-only"
+    },
+    "serverDescription": "Pre-compiled llama.cpp server binaries are downloaded from GitHub releases. Select a backend and download the server to enable local LLM inference.",
+    "latestRelease": "Latest Release: {{tag}} ({{name}})",
+    "releaseMeta": "v{{tag}} · {{size}} MB",
+    "installedServers": "Installed Servers",
+    "active": "(active)",
+    "use": "Use",
+    "remove": "Remove",
+    "noReleases": "No releases found. Check your internet connection."
+  },
+  "shared": {
+    "downloading": "Downloading...",
+    "downloadingCount": "{{count}} downloading..."
+  },
+  "herLoading": {
+    "enterHint": "Click or press any key to enter"
   }
 }

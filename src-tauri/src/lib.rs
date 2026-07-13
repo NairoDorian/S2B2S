@@ -379,7 +379,6 @@ fn show_main_window_command(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-
 /// Headless one-shot transcription for the `--transcribe-file` / `--list-devices`
 /// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
@@ -734,6 +733,7 @@ commands::models::rescan_local_models,
             commands::tts::get_piper_server_status,
             commands::tts::get_local_tts_status,
             commands::tts::pocket_import_cloned_voice,
+            commands::tts::qwen3_import_cloned_voice,
             commands::tts::change_tts_config,
             commands::tts::tts_play_greeting,
             commands::tts::tts_save_to_file,
@@ -789,7 +789,6 @@ pub fn run(cli_args: CliArgs) {
     let console_filter = build_console_filter();
 
     let specta_builder = specta_builder();
-
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     if let Err(e) = specta_builder.export(Typescript::default(), "../src/bindings.ts") {
@@ -1133,6 +1132,19 @@ pub fn run(cli_args: CliArgs) {
                                 "[Startup] Pocket persistent server loaded successfully."
                             ),
                             Err(e) => log::error!("[Startup] Failed to auto-load Pocket: {}", e),
+                        }
+                    }
+                    if settings.tts.engine == crate::settings::TtsEngine::Qwen3 {
+                        log::info!("[Startup] Pre-warming Qwen3 TTS engine...");
+                        match crate::tts::local_tts_server::ensure_running(
+                            "qwen3",
+                            "python".to_string(),
+                            vec![],
+                        ) {
+                            Ok(_) => {
+                                log::info!("[Startup] Qwen3 persistent server loaded successfully.")
+                            }
+                            Err(e) => log::error!("[Startup] Failed to auto-load Qwen3: {}", e),
                         }
                     }
 

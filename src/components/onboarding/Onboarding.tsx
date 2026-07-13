@@ -415,28 +415,28 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
       </div>
 
       <div className="max-w-[600px] w-full mx-auto text-center flex-1 flex flex-col min-h-0">
-          <div className="space-y-6 pb-6">
-            {models.some((m: ModelInfo) => m.is_downloaded) && (
-              <div className="space-y-3">
-                <div className="text-left">
-                  <h2 className="text-sm font-medium text-text/60">
-                    {t("onboarding.existingModelsTitle")}
-                  </h2>
-                </div>
-                {models
-                  .filter((m: ModelInfo) => m.is_downloaded)
-                  .map((model: ModelInfo) => (
-                    <ModelCard
-                      key={model.id}
-                      model={model}
-                      status={getExistingModelStatus(model.id)}
-                      disabled={isBusy}
-                      onSelect={handleSelectExistingModel}
-                      showRecommended={false}
-                    />
-                  ))}
+        <div className="space-y-6 pb-6">
+          {models.some((m: ModelInfo) => m.is_downloaded) && (
+            <div className="space-y-3">
+              <div className="text-left">
+                <h2 className="text-sm font-medium text-text/60">
+                  {t("onboarding.existingModelsTitle")}
+                </h2>
               </div>
-            )}
+              {models
+                .filter((m: ModelInfo) => m.is_downloaded)
+                .map((model: ModelInfo) => (
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    status={getExistingModelStatus(model.id)}
+                    disabled={isBusy}
+                    onSelect={handleSelectExistingModel}
+                    showRecommended={false}
+                  />
+                ))}
+            </div>
+          )}
 
           {downloadable.length > 0 && (
             <div className="space-y-3">

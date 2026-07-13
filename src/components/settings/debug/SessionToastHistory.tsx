@@ -43,29 +43,45 @@ export const SessionToastHistory: React.FC = () => {
       <div className="flex items-center gap-3 mb-4">
         <Filter className="h-4 w-4 text-[#777]" aria-hidden="true" />
         <SettingContainer
-          title={t("settings.debug.sessionToasts.filters.errors", { count: errorCount })}
-          description={t("settings.debug.sessionToasts.filters.errorsDescription")}
+          title={t("settings.debug.sessionToasts.filters.errors", {
+            count: errorCount,
+          })}
+          description={t(
+            "settings.debug.sessionToasts.filters.errorsDescription",
+          )}
           descriptionMode="inline"
           grouped={true}
         >
           <ToggleSwitch
             checked={showErrors}
             onChange={setShowErrors}
-            label={t("settings.debug.sessionToasts.filters.errors", { count: errorCount })}
-            description={t("settings.debug.sessionToasts.filters.errorsDescription")}
+            label={t("settings.debug.sessionToasts.filters.errors", {
+              count: errorCount,
+            })}
+            description={t(
+              "settings.debug.sessionToasts.filters.errorsDescription",
+            )}
           />
         </SettingContainer>
         <SettingContainer
-          title={t("settings.debug.sessionToasts.filters.warnings", { count: warningCount })}
-          description={t("settings.debug.sessionToasts.filters.warningsDescription")}
+          title={t("settings.debug.sessionToasts.filters.warnings", {
+            count: warningCount,
+          })}
+          description={t(
+            "settings.debug.sessionToasts.filters.warningsDescription",
+          )}
           descriptionMode="inline"
           grouped={true}
         >
           <ToggleSwitch
             checked={showWarnings}
             onChange={setShowWarnings}
-            label={t("settings.debug.sessionToasts.filters.warnings", { count: warningCount })}
-            description={t("settings.debug.sessionToasts.filters.warningsDescription")}
+            label={t("settings.debug.sessionToasts.filters.warnings", {
+              count: warningCount,
+            })}
+            description={t(
+              "settings.debug.sessionToasts.filters.warningsDescription",
+            )}
           />
         </SettingContainer>
       </div>
@@ -76,7 +92,10 @@ export const SessionToastHistory: React.FC = () => {
         </div>
       ) : visibleToasts.length === 0 ? (
         <div className="px-6 py-5 text-sm text-[#a0a0a0]">
-          {t("settings.debug.sessionToasts.filteredEmpty", { errorCount, warningCount })}
+          {t("settings.debug.sessionToasts.filteredEmpty", {
+            errorCount,
+            warningCount,
+          })}
         </div>
       ) : (
         <div className="divide-y divide-white/[0.05]">
@@ -100,7 +119,9 @@ export const SessionToastHistory: React.FC = () => {
                           isError ? "text-red-300" : "text-yellow-300"
                         }`}
                       >
-                        {t(`settings.debug.sessionToasts.levels.${toast.level}`)}
+                        {t(
+                          `settings.debug.sessionToasts.levels.${toast.level}`,
+                        )}
                       </span>
                       <time
                         className="text-[11px] text-[#777]"
@@ -110,14 +131,20 @@ export const SessionToastHistory: React.FC = () => {
                       </time>
                     </div>
                     {toast.message && (
-                      <p className="text-sm text-white break-words">{toast.message}</p>
+                      <p className="text-sm text-white break-words">
+                        {toast.message}
+                      </p>
                     )}
                     {toast.description && (
-                      <p className="mt-1.5 text-sm text-[#aaa]">{toast.description}</p>
+                      <p className="mt-1.5 text-sm text-[#aaa]">
+                        {toast.description}
+                      </p>
                     )}
                     {toast.actionLabel && (
                       <span className="mt-2 inline-flex items-center gap-1.5 text-xs text-[#888]">
-                        <span className="px-1.5 py-0.5 rounded bg-white/5">{toast.actionLabel}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-white/5">
+                          {toast.actionLabel}
+                        </span>
                         {t("settings.debug.sessionToasts.actionExecuted")}
                       </span>
                     )}

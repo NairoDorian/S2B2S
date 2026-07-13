@@ -11,6 +11,7 @@ use crate::tts::backends::kitten::KittenBackend;
 use crate::tts::backends::kokoro::KokoroBackend;
 use crate::tts::backends::piper::{self, PiperBackend};
 use crate::tts::backends::pocket::PocketBackend;
+use crate::tts::backends::qwen3::Qwen3Backend;
 use crate::tts::backends::sapi::SapiBackend;
 use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
@@ -63,6 +64,11 @@ impl TtsManager {
                 cfg.voice.clone(),
                 cfg.speed,
             ))),
+            TtsEngine::Qwen3 => Ok(Box::new(Qwen3Backend::new(
+                self.app.clone(),
+                cfg.voice.clone(),
+                cfg.speed,
+            ))),
             TtsEngine::Sapi => Ok(Box::new(SapiBackend::new(cfg.voice.clone(), cfg.speed))),
             TtsEngine::Openai => Ok(Box::new(
                 crate::tts::backends::openai::OpenAiTtsBackend::new(cfg.openai.clone()),
@@ -85,6 +91,7 @@ impl TtsManager {
             TtsEngine::Kokoro => KokoroBackend::list_voices(),
             TtsEngine::Kitten => KittenBackend::list_voices(),
             TtsEngine::Pocket => PocketBackend::list_voices(&self.app),
+            TtsEngine::Qwen3 => Qwen3Backend::list_voices(&self.app),
             TtsEngine::Sapi => SapiBackend::list_voices(),
             TtsEngine::Openai => {
                 vec![

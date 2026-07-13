@@ -1116,7 +1116,6 @@ impl TranscriptionManager {
             tentative: tentative.to_string(),
         }
         .emit(&self.app_handle);
-
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
@@ -1414,10 +1413,7 @@ impl TranscriptionManager {
                                 }
 
                                 let (text, eou) = server.stream_feed(chunk).map_err(|e| {
-                                    anyhow::anyhow!(
-                                        "Unified Parakeet stream feed failed: {}",
-                                        e
-                                    )
+                                    anyhow::anyhow!("Unified Parakeet stream feed failed: {}", e)
                                 })?;
 
                                 if text != last_emitted && !text.is_empty() {
@@ -1434,13 +1430,13 @@ impl TranscriptionManager {
                                 anyhow::anyhow!("Unified Parakeet stream end failed: {}", e)
                             })?;
 
-                            let final_text =
-                                if _text.chars().count() > last_emitted.chars().count() {
-                                    let _ = app_handle.emit("transcription-partial", &_text);
-                                    _text
-                                } else {
-                                    last_emitted
-                                };
+                            let final_text = if _text.chars().count() > last_emitted.chars().count()
+                            {
+                                let _ = app_handle.emit("transcription-partial", &_text);
+                                _text
+                            } else {
+                                last_emitted
+                            };
 
                             Ok(final_text)
                         } else {

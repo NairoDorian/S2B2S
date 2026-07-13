@@ -136,12 +136,14 @@ impl EngineSlot {
 static KOKORO_SLOT: EngineSlot = EngineSlot::new();
 static KITTEN_SLOT: EngineSlot = EngineSlot::new();
 static POCKET_SLOT: EngineSlot = EngineSlot::new();
+static QWEN3_SLOT: EngineSlot = EngineSlot::new();
 
 fn slot_for(engine: &str) -> Option<&'static EngineSlot> {
     match engine {
         "kokoro" => Some(&KOKORO_SLOT),
         "kitten" => Some(&KITTEN_SLOT),
         "pocket" => Some(&POCKET_SLOT),
+        "qwen3" => Some(&QWEN3_SLOT),
         _ => None,
     }
 }
@@ -231,6 +233,7 @@ fn spawn_start_thread(
             "kokoro" => "kokoro_server.py",
             "kitten" => "kitten_server.py",
             "pocket" => "pocket_server.py",
+            "qwen3" => "qwen3_server.py",
             _ => {
                 log::warn!("[LocalServer] Unknown engine: {}", engine);
                 return;

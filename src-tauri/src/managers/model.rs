@@ -66,6 +66,7 @@ pub struct ModelInfo {
     pub source: ModelSource,
     pub url: Option<String>,
     pub sha256: Option<String>,
+    #[specta(type = u32)]
     pub size_mb: u64,
     pub is_downloaded: bool,
     pub is_downloading: bool,
@@ -221,11 +222,11 @@ impl ModelDescriptor {
             is_custom: false,
             supports_streaming: self.caps.supports_streaming.unwrap_or(false),
             supports_language_detection: self.caps.supports_language_detect.unwrap_or(false),
-                url: None,
-        sha256: None,
-        hf_repo: None,
-        hf_files: None,
-}
+            url: None,
+            sha256: None,
+            hf_repo: None,
+            hf_files: None,
+        }
     }
 }
 
@@ -545,9 +546,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Parakeet Realtime EOU 120M v1 — FP32/FP32 (English, RNN-T with EOU detection)
@@ -583,10 +584,10 @@ impl ModelManager {
                     "vocab.txt".to_string(),
                     "config.json".to_string(),
                 ]),
-                    source: ModelSource::Local,
-        supports_language_detection: false,
-        supports_streaming: false,
-},
+                source: ModelSource::Local,
+                supports_language_detection: false,
+                supports_streaming: false,
+            },
         );
 
         // Parakeet Realtime EOU 120M v1 — FP16/FP16 (English, RNN-T with EOU detection)
@@ -622,10 +623,10 @@ impl ModelManager {
                     "vocab.txt".to_string(),
                     "config.json".to_string(),
                 ]),
-                    source: ModelSource::Local,
-        supports_language_detection: false,
-        supports_streaming: false,
-},
+                source: ModelSource::Local,
+                supports_language_detection: false,
+                supports_streaming: false,
+            },
         );
 
         // Parakeet Realtime EOU 120M v1 — FP32/INT8 (decoder-only INT8, exact parity)
@@ -662,10 +663,10 @@ impl ModelManager {
                     "vocab.txt".to_string(),
                     "config.json".to_string(),
                 ]),
-                    source: ModelSource::Local,
-        supports_language_detection: false,
-        supports_streaming: false,
-},
+                source: ModelSource::Local,
+                supports_language_detection: false,
+                supports_streaming: false,
+            },
         );
 
         // Nemotron 3.5 ASR Streaming — INT8 sherpa-onnx (multilingual, streaming)
@@ -793,9 +794,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         available_models.insert(
@@ -830,9 +831,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         available_models.insert(
@@ -867,9 +868,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         available_models.insert(
@@ -905,9 +906,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Add NVIDIA Parakeet models (directory-based)
@@ -943,9 +944,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Parakeet V3 supported languages (25 EU languages + Russian/Ukrainian):
@@ -989,9 +990,9 @@ impl ModelManager {
                 hf_files: None,
                 supports_streaming: false,
                 supports_language_detection: true,
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Parakeet Unified EN 0.6B — fp32 variant (RNN-T, English only)
@@ -1030,8 +1031,8 @@ impl ModelManager {
                 ]),
                 supports_streaming: true,
                 supports_language_detection: false,
-                    source: ModelSource::Local,
-},
+                source: ModelSource::Local,
+            },
         );
 
         // Parakeet Unified EN 0.6B — int8 variant (RNN-T, English only)
@@ -1067,8 +1068,8 @@ impl ModelManager {
                 ]),
                 supports_streaming: true,
                 supports_language_detection: false,
-                    source: ModelSource::Local,
-},
+                source: ModelSource::Local,
+            },
         );
 
         available_models.insert(
@@ -1103,9 +1104,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         available_models.insert(
@@ -1141,9 +1142,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         available_models.insert(
@@ -1179,9 +1180,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         available_models.insert(
@@ -1217,9 +1218,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // SenseVoice supported languages
@@ -1261,9 +1262,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // GigaAM v3 supported languages
@@ -1301,9 +1302,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Canary 180m Flash supported languages (4 languages)
@@ -1346,9 +1347,9 @@ impl ModelManager {
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Canary 1B v2 supported languages (25 EU languages)
@@ -1394,9 +1395,9 @@ impl ModelManager {
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         let cohere_languages: Vec<String> = vec![
@@ -1438,9 +1439,9 @@ impl ModelManager {
                 supports_streaming: false,
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Seed the bundled offline catalog before the on-disk scans, so a model
@@ -1457,7 +1458,9 @@ impl ModelManager {
 
         // Also discover from project-local models dir if it exists
         if let Some(ref local_dir) = project_local_models_dir {
-            if let Err(e) = Self::discover_custom_transcribe_models(local_dir, &mut available_models) {
+            if let Err(e) =
+                Self::discover_custom_transcribe_models(local_dir, &mut available_models)
+            {
                 warn!(
                     "Failed to discover custom models from project-local dir: {}",
                     e
@@ -1975,9 +1978,9 @@ impl ModelManager {
                     supports_streaming: caps.supports_streaming,
                     supports_language_detection: caps.supports_language_detection,
 
-                        url: None,
-        sha256: None,
-},
+                    url: None,
+                    sha256: None,
+                },
             );
         }
 
@@ -2099,11 +2102,11 @@ impl ModelManager {
                         is_custom: false,
                         supports_streaming: caps.supports_streaming,
                         supports_language_detection: caps.supports_language_detection,
-                            url: None,
-        sha256: None,
-        hf_repo: None,
-        hf_files: None,
-},
+                        url: None,
+                        sha256: None,
+                        hf_repo: None,
+                        hf_files: None,
+                    },
                 );
             }
         }
@@ -3151,9 +3154,9 @@ mod tests {
                 // (Catalog GGUFs and on-disk probes derive this from metadata.)
                 supports_language_detection: true,
 
-                    url: None,
-        sha256: None,
-},
+                url: None,
+                sha256: None,
+            },
         );
 
         // Discover custom models

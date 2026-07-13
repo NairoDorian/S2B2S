@@ -94,8 +94,7 @@ pub fn encrypt(plaintext: &[u8]) -> Result<String, String> {
     let cipher = Aes256Gcm::new(key);
 
     let mut nonce_bytes = [0u8; 12];
-            getrandom::fill(&mut nonce_bytes)
-        .map_err(|e| format!("Nonce generation failed: {}", e))?;
+    getrandom::fill(&mut nonce_bytes).map_err(|e| format!("Nonce generation failed: {}", e))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ciphertext = cipher

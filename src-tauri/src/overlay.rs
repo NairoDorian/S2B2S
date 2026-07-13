@@ -406,9 +406,7 @@ fn calculate_overlay_position(
     let x = monitor_x + (monitor_width - overlay_w) / 2.0;
     let y = match position {
         OverlayPosition::Top => monitor_y + OVERLAY_TOP_OFFSET,
-        OverlayPosition::Bottom => {
-            monitor_y + monitor_height - overlay_h - OVERLAY_BOTTOM_OFFSET
-        }
+        OverlayPosition::Bottom => monitor_y + monitor_height - overlay_h - OVERLAY_BOTTOM_OFFSET,
     };
 
     Some((x, y))

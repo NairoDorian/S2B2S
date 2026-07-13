@@ -17,6 +17,7 @@
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
+    "sync:translations": "bun scripts/sync-translations.ts",
     "repomix": "repomix",
     "repomix:with-descriptions": "bun scripts/repomix-with-descriptions.ts",
     "postinstall": "bun scripts/check-nix-deps.ts"

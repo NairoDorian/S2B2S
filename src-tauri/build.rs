@@ -226,7 +226,7 @@ fn build_apple_intelligence_bridge() {
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
     let framework_path =
         Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
-    
+
     // HANDY_FORCE_AI_STUB=1 is an explicit escape hatch: force the stub even when
     // the active toolchain could build the real path.
     let force_stub = env::var("HANDY_FORCE_AI_STUB").as_deref() == Ok("1");

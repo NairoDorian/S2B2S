@@ -34,9 +34,12 @@ const trackedToast = {
         typeof options?.description === "function"
           ? undefined
           : options?.description,
-      actionLabel: options?.action && typeof options.action === "object" && "label" in options.action
-        ? (options.action as { label?: React.ReactNode }).label
-        : undefined,
+      actionLabel:
+        options?.action &&
+        typeof options.action === "object" &&
+        "label" in options.action
+          ? (options.action as { label?: React.ReactNode }).label
+          : undefined,
     });
     return result;
   },
@@ -49,9 +52,12 @@ const trackedToast = {
         typeof options?.description === "function"
           ? undefined
           : options?.description,
-      actionLabel: options?.action && typeof options.action === "object" && "label" in options.action
-        ? (options.action as { label?: React.ReactNode }).label
-        : undefined,
+      actionLabel:
+        options?.action &&
+        typeof options.action === "object" &&
+        "label" in options.action
+          ? (options.action as { label?: React.ReactNode }).label
+          : undefined,
     });
     return result;
   },
@@ -62,7 +68,6 @@ const trackedToast = {
   promise: toast.promise,
   dismiss: toast.dismiss,
 };
-
 
 const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
@@ -185,7 +190,9 @@ function App() {
         const description = t(platformKey, {
           defaultValue: t("errors.micPermissionDenied.generic"),
         });
-        trackedToast.error(t("errors.micPermissionDeniedTitle"), { description });
+        trackedToast.error(t("errors.micPermissionDeniedTitle"), {
+          description,
+        });
       } else if (error_type === "no_input_device") {
         trackedToast.error(t("errors.noInputDeviceTitle"), {
           description: t("errors.noInputDevice"),
@@ -398,7 +405,7 @@ function App() {
         </div>
         {/* Fixed footer at bottom — must be a child of the outer column, not the row above */}
         <Footer />
-    </div>
+      </div>
     );
   }
 

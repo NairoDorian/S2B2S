@@ -254,7 +254,7 @@ pub(crate) fn get_nvidia_dll_paths(python_executable: &str) -> Option<String> {
                      bin_dirs = glob.glob(os.path.join(nvidia_dir, '*', 'bin')); \
                      sub_dirs = glob.glob(os.path.join(nvidia_dir, '*', 'bin', '*')); \
                      all_dirs = [p for p in bin_dirs + sub_dirs if os.path.isdir(p)]; \
-                     print(';'.join(all_dirs))"
+                     print(';'.join(all_dirs))",
                 ])
                 .creation_flags(CREATE_NO_WINDOW)
                 .output()

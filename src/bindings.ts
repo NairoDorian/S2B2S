@@ -72,17 +72,15 @@ export const commands = {
 	/**  Get the current keyboard implementation */
 	getKeyboardImplementation: () => __TAURI_INVOKE<string>("get_keyboard_implementation"),
 	changeShowTrayIconSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_tray_icon_setting", { enabled })),
-	changeWhisperAcceleratorSetting: (accelerator: WhisperAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_whisper_accelerator_setting", { accelerator })),
 	changeTranscribeAcceleratorSetting: (accelerator: TranscribeAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_accelerator_setting", { accelerator })),
 	changeOrtAcceleratorSetting: (accelerator: OrtAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_ort_accelerator_setting", { accelerator })),
 	changeParakeetStreamingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_parakeet_streaming_setting", { enabled })),
 	changeWhisperGpuDevice: (device: number) => typedError<null, string>(__TAURI_INVOKE("change_whisper_gpu_device", { device })),
-	changeTranscribeGpuDevice: (device: number) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_gpu_device", { device })),
 	/**
 	 *  Return which accelerators and GPU devices are available for this build.
 	 * 
 	 *  First-call cost is dominated by enumerating GPU devices through the
-	 *  whisper.cpp Metal/Vulkan backend, which loads dynamic libraries and
+	 *  transcribe.cpp Metal/Vulkan backend, which loads dynamic libraries and
 	 *  probes hardware. Run it on the blocking pool so the webview thread
 	 *  stays responsive — see also the startup pre-warm in `lib.rs`.
 	 */
@@ -98,10 +96,6 @@ export const commands = {
 	startKeyListenerRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_key_listener_recording", { bindingId })),
 	/**  Stop key recording mode */
 	stopKeyListenerRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_key_listener_recording")),
-	/**  Start handy keys recording mode (upstream alias) */
-	startHandyKeysRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_handy_keys_recording", { bindingId })),
-	/**  Stop handy keys recording mode (upstream alias) */
-	stopHandyKeysRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_handy_keys_recording")),
 	triggerUpdateCheck: () => typedError<null, string>(__TAURI_INVOKE("trigger_update_check")),
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
@@ -109,8 +103,8 @@ export const commands = {
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
 	exportSettings: (path: string) => typedError<null, string>(__TAURI_INVOKE("export_settings", { path })),
 	importSettings: (path: string) => typedError<null, string>(__TAURI_INVOKE("import_settings", { path })),
-	getAppSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_app_settings")),
-	getDefaultSettings: () => typedError<AppSettings, string>(__TAURI_INVOKE("get_default_settings")),
+	getAppSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_app_settings")),
+	getDefaultSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_default_settings")),
 	getLogDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_log_dir_path")),
 	setLogLevel: (level: LogLevel) => typedError<null, string>(__TAURI_INVOKE("set_log_level", { level })),
 	getRecentLogs: (maxLines: number) => typedError<string, string>(__TAURI_INVOKE("get_recent_logs", { maxLines })),
@@ -140,9 +134,10 @@ export const commands = {
 	name: string,
 	description: string,
 	filename: string,
+	source: ModelSource,
 	url: string | null,
 	sha256: string | null,
-	size_mb: number | null,
+	size_mb: number,
 	is_downloaded: boolean,
 	is_downloading: boolean,
 	partial_size: number | null,
@@ -155,6 +150,8 @@ export const commands = {
 	supported_languages: string[],
 	supports_language_selection: boolean,
 	is_custom: boolean,
+	supports_streaming: boolean,
+	supports_language_detection: boolean,
 } | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
 	downloadModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model", { modelId })),
 	deleteModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("delete_model", { modelId })),
@@ -163,13 +160,16 @@ export const commands = {
 	getCurrentModel: () => typedError<string, string>(__TAURI_INVOKE("get_current_model")),
 	getTranscriptionModelStatus: () => typedError<string | null, string>(__TAURI_INVOKE("get_transcription_model_status")),
 	isModelLoading: () => typedError<boolean, string>(__TAURI_INVOKE("is_model_loading")),
+	/**  Whether any STT model is known to the app (built-in catalog or discovered). */
 	hasAnyModelsAvailable: () => typedError<boolean, string>(__TAURI_INVOKE("has_any_models_available")),
+	/**  Whether any STT model is already on disk (downloaded or discovered locally). */
 	hasAnyModelsOrDownloads: () => typedError<boolean, string>(__TAURI_INVOKE("has_any_models_or_downloads")),
+	getActiveGpuVramStatus: () => typedError<GpuVramStatus, string>(__TAURI_INVOKE("get_active_gpu_vram_status")),
 	/**
-	 *  Re-scan local sources (custom models dir + shared HF cache) for models added since launch.
+	 *  Re-scan local sources (custom models dir + shared HF cache) for models added
+	 *  since launch
 	 */
 	rescanLocalModels: () => typedError<null, string>(__TAURI_INVOKE("rescan_local_models")),
-	getActiveGpuVramStatus: () => typedError<GpuVramStatus, string>(__TAURI_INVOKE("get_active_gpu_vram_status")),
 	updateMicrophoneMode: (alwaysOn: boolean) => typedError<null, string>(__TAURI_INVOKE("update_microphone_mode", { alwaysOn })),
 	getMicrophoneMode: () => typedError<boolean, string>(__TAURI_INVOKE("get_microphone_mode")),
 	getWindowsMicrophonePermissionStatus: () => __TAURI_INVOKE<WindowsMicrophonePermissionStatus>("get_windows_microphone_permission_status"),
@@ -222,12 +222,13 @@ export const commands = {
 	ttsResume: () => typedError<null, string>(__TAURI_INVOKE("tts_resume")),
 	ttsIsPlaying: () => typedError<boolean, string>(__TAURI_INVOKE("tts_is_playing")),
 	/**  Enumerate available voices for a specific engine, or defaults to the configured engine. */
-	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "pocket" | "sapi" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
+	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
 	/**  Unload the warm TTS model/server (tray "Unload model" parity). */
 	ttsUnloadEngine: () => typedError<boolean, string>(__TAURI_INVOKE("tts_unload_engine")),
 	getPiperServerStatus: () => typedError<PiperServerStatus, string>(__TAURI_INVOKE("get_piper_server_status")),
 	getLocalTtsStatus: (engine: string) => typedError<string | null, string>(__TAURI_INVOKE("get_local_tts_status", { engine })),
 	pocketImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("pocket_import_cloned_voice", { sourcePath })),
+	qwen3ImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("qwen3_import_cloned_voice", { sourcePath })),
 	/**  Replace the whole TTS configuration (engine, voice, speed, volume, toggles). */
 	changeTtsConfig: (config: TtsConfig) => typedError<null, string>(__TAURI_INVOKE("change_tts_config", { config })),
 	/**  Play the startup greeting audio using customized greeting settings. */
@@ -285,153 +286,284 @@ export const commands = {
 };
 
 /** Events */
-export type StreamPhase = "listening" | "working";
-
-export interface StreamTextEvent {
-	committed: string;
-	tentative: string;
-}
-
-export type StreamWorkKind = "transcribing" | "polishing";
-
-export interface StreamPhaseEvent {
-	phase: StreamPhase;
-	kind?: StreamWorkKind | null;
-}
-
 export const events = {
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
+	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
-	streamPhaseEvent: makeEvent<StreamPhaseEvent>("stream-phase-event"),
 };
 
 /* Types */
+/**
+ *  The container-level `serde(default)` (backed by the `Default` impl below)
+ *  guarantees every field — including ones added in the future — falls back to
+ *  its `get_default_settings()` value when missing from a stored settings
+ *  object, so a partial store can never fail the whole load (#1619).
+ *  Field-level defaults below take precedence where present.
+ */
+export type AppSettings = AppSettings_Serialize | AppSettings_Deserialize;
 
 /**
- * The container-level `serde(default)` (backed by the `Default` impl below)
- * guarantees every field — including ones added in the future — falls back to
- * its `get_default_settings()` value when missing from a stored settings
- * object, so a partial store can never fail the whole load (#1619).
- * Field-level defaults below take precedence where present.
+ *  The container-level `serde(default)` (backed by the `Default` impl below)
+ *  guarantees every field — including ones added in the future — falls back to
+ *  its `get_default_settings()` value when missing from a stored settings
+ *  object, so a partial store can never fail the whole load (#1619).
+ *  Field-level defaults below take precedence where present.
  */
-export type AppSettings = {
+export type AppSettings_Deserialize = {
 	/**
-	 * Internal settings schema marker for one-time migrations. Fresh installs
-	 * start at the current version; existing stores missing this key are
-	 * treated as version 0 and migrated forward.
+	 *  Internal settings schema marker for one-time migrations. Fresh installs
+	 *  start at the current version; existing stores missing this key are
+	 *  treated as version 0 and migrated forward.
 	 */
-	settings_schema_version?: number;
+	settings_schema_version?: number,
 	/**
-	 * Defaults to empty on partial stores; the load path merges in the
-	 * default bindings for any missing keys before the settings are used.
+	 *  Defaults to empty on partial stores; the load path merges in the
+	 *  default bindings for any missing keys before the settings are used.
 	 */
-	bindings?: Partial<{ [key in string]: ShortcutBinding }>;
-	push_to_talk?: boolean;
-	audio_feedback?: boolean;
-	audio_feedback_volume?: number | null;
-	sound_theme?: SoundTheme;
-	theme?: Theme;
-	start_hidden?: boolean;
-	autostart_enabled?: boolean;
-	update_checks_enabled?: boolean;
-	show_whats_new_on_update?: boolean;
+	bindings?: { [key in string]: ShortcutBinding },
+	push_to_talk?: boolean,
+	audio_feedback?: boolean,
+	audio_feedback_volume?: number | null,
+	sound_theme?: SoundTheme,
+	start_hidden?: boolean,
+	autostart_enabled?: boolean,
+	update_checks_enabled?: boolean,
+	show_whats_new_on_update?: boolean,
 	/**
-	 * The app version whose What's New the user has already seen. Fresh installs
-	 * default to the current version (nothing is "new" to them). Existing users
-	 * upgrading from before this key existed are blanked by the migration so they
-	 * see the current release's notes — see `apply_settings_migrations`.
+	 *  The app version whose What's New the user has already seen. Fresh installs
+	 *  default to the current version (nothing is "new" to them). Existing users
+	 *  upgrading from before this key existed are blanked by the migration so they
+	 *  see the current release's notes — see `apply_settings_migrations`.
 	 */
-	whats_new_last_seen_version?: string;
-	selected_model?: string;
-	onboarding_completed?: boolean;
-	always_on_microphone?: boolean;
-	selected_microphone?: string | null;
-	clamshell_microphone?: string | null;
-	selected_output_device?: string | null;
-	translate_to_english?: boolean;
-	selected_language?: string;
-	overlay_position?: OverlayPosition;
+	whats_new_last_seen_version?: string,
+	selected_model?: string,
+	onboarding_completed?: boolean,
+	always_on_microphone?: boolean,
+	selected_microphone?: string | null,
+	clamshell_microphone?: string | null,
+	selected_output_device?: string | null,
+	translate_to_english?: boolean,
+	selected_language?: string,
+	overlay_position?: OverlayPosition_Deserialize,
 	/**  Overlay window behaviour + visual customization. */
-	overlay_window?: OverlayWindowConfig;
+	overlay_window?: OverlayWindowConfig_Deserialize,
 	/**  Native wgpu cursor trail + click ripple effects. */
-	wgpu_trail?: WgpuTrailConfig;
-	debug_mode?: boolean;
-	log_level?: LogLevel;
-	custom_words?: string[];
-	model_unload_timeout?: ModelUnloadTimeout;
-	word_correction_threshold?: number | null;
-	history_limit?: number;
-	recording_retention_period?: RecordingRetentionPeriod;
-	paste_method?: PasteMethod;
-	clipboard_handling?: ClipboardHandling;
-	auto_submit?: boolean;
-	auto_submit_key?: AutoSubmitKey;
-	post_process_enabled?: boolean;
-	post_process_provider_id?: string;
-	post_process_providers?: PostProcessProvider[];
-	post_process_api_keys?: SecretMap;
-	post_process_models?: { [key in string]: string };
-	post_process_prompts?: LLMPrompt[];
-	post_process_selected_prompt_id?: string | null;
-	llm_models?: LLMModel[];
-	post_process_actions?: PostProcessAction[];
-	post_process_actions_initialized?: boolean;
-	mute_while_recording?: boolean;
-	append_trailing_space?: boolean;
-	app_language?: string;
-	experimental_enabled?: boolean;
-	lazy_stream_close?: boolean;
-	keyboard_implementation?: KeyboardImplementation;
-	show_tray_icon?: boolean;
-	paste_delay_ms?: number;
-	paste_delay_after_ms?: number;
-	typing_tool?: TypingTool;
-	external_script_path?: string | null;
-	custom_filler_words?: string[] | null;
-	whisper_accelerator?: WhisperAcceleratorSetting;
-	transcribe_accelerator?: TranscribeAcceleratorSetting;
-	ort_accelerator?: OrtAcceleratorSetting;
-	whisper_gpu_device?: number;
-	transcribe_gpu_device?: number;
-	extra_recording_buffer_ms?: number;
-	vad_enabled?: boolean;
-	/**
-	 * Which recording overlay to show: None / Minimal / Live. Streaming mode is
-	 * not gated on this — that follows model capability. Migrated from the old
-	 * `overlay_position` (position `none` → style `None`).
-	 */
-	overlay_style?: OverlayStyle;
+	wgpu_trail?: WgpuTrailConfig,
+	debug_mode?: boolean,
+	log_level?: LogLevel,
+	custom_words?: string[],
+	model_unload_timeout?: ModelUnloadTimeout,
+	word_correction_threshold?: number | null,
+	history_limit?: number,
+	recording_retention_period?: RecordingRetentionPeriod,
+	paste_method?: PasteMethod,
+	clipboard_handling?: ClipboardHandling,
+	auto_submit?: boolean,
+	auto_submit_key?: AutoSubmitKey,
+	post_process_enabled?: boolean,
+	post_process_provider_id?: string,
+	post_process_providers?: PostProcessProvider[],
+	post_process_api_keys?: SecretMap,
+	post_process_models?: { [key in string]: string },
+	post_process_prompts?: LLMPrompt[],
+	post_process_selected_prompt_id?: string | null,
+	llm_models?: LLMModel[],
+	post_process_actions?: PostProcessAction[],
+	post_process_actions_initialized?: boolean,
+	mute_while_recording?: boolean,
+	append_trailing_space?: boolean,
+	app_language?: string,
+	theme?: Theme,
+	experimental_enabled?: boolean,
+	lazy_stream_close?: boolean,
+	keyboard_implementation?: KeyboardImplementation,
+	show_tray_icon?: boolean,
+	paste_delay_ms?: number,
+	paste_delay_after_ms?: number,
+	typing_tool?: TypingTool,
+	external_script_path?: string | null,
+	custom_filler_words?: string[] | null,
+	transcribe_accelerator?: TranscribeAcceleratorSetting,
+	ort_accelerator?: OrtAcceleratorSetting,
+	transcribe_gpu_device?: number,
+	extra_recording_buffer_ms?: number,
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
-	tts?: TtsConfig;
+	tts?: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
-	brain?: BrainConfig;
-	long_audio_model?: string | null;
-	long_audio_threshold_seconds?: number | null;
-	noise_suppression_enabled?: boolean;
-	vad_mode?: string;
-	rnnoise_voice_threshold?: number | null;
-	llama_server?: LlamaServerConfig;
+	brain?: BrainConfig,
+	long_audio_model?: string | null,
+	long_audio_threshold_seconds?: number | null,
+	noise_suppression_enabled?: boolean,
+	vad_mode?: string,
+	rnnoise_voice_threshold?: number | null,
+	/**
+	 *  Silero VAD model major version to load: "v5" (default, preferred) or "v4".
+	 *  Inspired by huggingface/speech-to-speech, which uses Silero VAD v5 for
+	 *  more robust turn-taking. The loader falls back to v4 when the requested
+	 *  file is missing, so installs that only have `silero_vad_v4.onnx` keep working.
+	 */
+	silero_vad_version?: string,
+	llama_server?: LlamaServerConfig,
 	/**  Multi-STT: run multiple transcription models in parallel and merge results. */
-	multi_stt_enabled?: boolean;
-	multi_stt_models?: string[];
+	multi_stt_enabled?: boolean,
+	multi_stt_models?: string[],
 	/**  Multi-STT post-processing prompt. {transcriptions} is replaced with the model results. */
-	multi_stt_prompt?: string;
+	multi_stt_prompt?: string,
 	/**
 	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
 	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
 	 *  results with stateful RNNT decoder. When disabled, uses offline /transcribe.
 	 */
-	parakeet_streaming_enabled?: boolean;
-	control_server_token?: string | null;
-	recording_auto_stop_enabled?: boolean;
-	recording_auto_stop_timeout_seconds?: number;
-	recording_auto_stop_paste?: boolean;
-	text_replacement_decapitalize_after_edit_key_enabled?: boolean;
-	text_replacement_decapitalize_after_edit_key?: string;
-	text_replacement_decapitalize_after_edit_secondary_key_enabled?: boolean;
-	text_replacement_decapitalize_after_edit_secondary_key?: string;
-	text_replacement_decapitalize_timeout_ms?: number;
-	text_replacement_decapitalize_standard_post_recording_monitor_ms?: number;
+	parakeet_streaming_enabled?: boolean,
+	control_server_token?: string | null,
+	recording_auto_stop_enabled?: boolean,
+	recording_auto_stop_timeout_seconds?: number,
+	recording_auto_stop_paste?: boolean,
+	text_replacement_decapitalize_after_edit_key_enabled?: boolean,
+	text_replacement_decapitalize_after_edit_key?: string,
+	text_replacement_decapitalize_after_edit_secondary_key_enabled?: boolean,
+	text_replacement_decapitalize_after_edit_secondary_key?: string,
+	text_replacement_decapitalize_timeout_ms?: number,
+	text_replacement_decapitalize_standard_post_recording_monitor_ms?: number,
+	vad_enabled?: boolean,
+	/**
+	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
+	 *  not gated on this — that follows model capability. Migrated from the old
+	 *  `overlay_position` (position `none` → style `None`).
+	 */
+	overlay_style?: OverlayStyle,
+};
+
+/**
+ *  The container-level `serde(default)` (backed by the `Default` impl below)
+ *  guarantees every field — including ones added in the future — falls back to
+ *  its `get_default_settings()` value when missing from a stored settings
+ *  object, so a partial store can never fail the whole load (#1619).
+ *  Field-level defaults below take precedence where present.
+ */
+export type AppSettings_Serialize = {
+	/**
+	 *  Internal settings schema marker for one-time migrations. Fresh installs
+	 *  start at the current version; existing stores missing this key are
+	 *  treated as version 0 and migrated forward.
+	 */
+	settings_schema_version: number,
+	/**
+	 *  Defaults to empty on partial stores; the load path merges in the
+	 *  default bindings for any missing keys before the settings are used.
+	 */
+	bindings: { [key in string]: ShortcutBinding },
+	push_to_talk: boolean,
+	audio_feedback: boolean,
+	audio_feedback_volume: number | null,
+	sound_theme: SoundTheme,
+	start_hidden: boolean,
+	autostart_enabled: boolean,
+	update_checks_enabled: boolean,
+	show_whats_new_on_update: boolean,
+	/**
+	 *  The app version whose What's New the user has already seen. Fresh installs
+	 *  default to the current version (nothing is "new" to them). Existing users
+	 *  upgrading from before this key existed are blanked by the migration so they
+	 *  see the current release's notes — see `apply_settings_migrations`.
+	 */
+	whats_new_last_seen_version: string,
+	selected_model: string,
+	onboarding_completed: boolean,
+	always_on_microphone: boolean,
+	selected_microphone: string | null,
+	clamshell_microphone: string | null,
+	selected_output_device: string | null,
+	translate_to_english: boolean,
+	selected_language: string,
+	overlay_position: OverlayPosition_Serialize,
+	/**  Overlay window behaviour + visual customization. */
+	overlay_window: OverlayWindowConfig_Serialize,
+	/**  Native wgpu cursor trail + click ripple effects. */
+	wgpu_trail: WgpuTrailConfig,
+	debug_mode: boolean,
+	log_level: LogLevel,
+	custom_words: string[],
+	model_unload_timeout: ModelUnloadTimeout,
+	word_correction_threshold: number | null,
+	history_limit: number,
+	recording_retention_period: RecordingRetentionPeriod,
+	paste_method: PasteMethod,
+	clipboard_handling: ClipboardHandling,
+	auto_submit: boolean,
+	auto_submit_key: AutoSubmitKey,
+	post_process_enabled: boolean,
+	post_process_provider_id: string,
+	post_process_providers: PostProcessProvider[],
+	post_process_api_keys: SecretMap,
+	post_process_models: { [key in string]: string },
+	post_process_prompts: LLMPrompt[],
+	post_process_selected_prompt_id: string | null,
+	llm_models: LLMModel[],
+	post_process_actions: PostProcessAction[],
+	post_process_actions_initialized: boolean,
+	mute_while_recording: boolean,
+	append_trailing_space: boolean,
+	app_language: string,
+	theme: Theme,
+	experimental_enabled: boolean,
+	lazy_stream_close: boolean,
+	keyboard_implementation: KeyboardImplementation,
+	show_tray_icon: boolean,
+	paste_delay_ms: number,
+	paste_delay_after_ms: number,
+	typing_tool: TypingTool,
+	external_script_path: string | null,
+	custom_filler_words: string[] | null,
+	transcribe_accelerator: TranscribeAcceleratorSetting,
+	ort_accelerator: OrtAcceleratorSetting,
+	transcribe_gpu_device: number,
+	extra_recording_buffer_ms: number,
+	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
+	tts: TtsConfig,
+	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
+	brain: BrainConfig,
+	long_audio_model: string | null,
+	long_audio_threshold_seconds: number | null,
+	noise_suppression_enabled: boolean,
+	vad_mode: string,
+	rnnoise_voice_threshold: number | null,
+	/**
+	 *  Silero VAD model major version to load: "v5" (default, preferred) or "v4".
+	 *  Inspired by huggingface/speech-to-speech, which uses Silero VAD v5 for
+	 *  more robust turn-taking. The loader falls back to v4 when the requested
+	 *  file is missing, so installs that only have `silero_vad_v4.onnx` keep working.
+	 */
+	silero_vad_version: string,
+	llama_server: LlamaServerConfig,
+	/**  Multi-STT: run multiple transcription models in parallel and merge results. */
+	multi_stt_enabled: boolean,
+	multi_stt_models: string[],
+	/**  Multi-STT post-processing prompt. {transcriptions} is replaced with the model results. */
+	multi_stt_prompt: string,
+	/**
+	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
+	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
+	 *  results with stateful RNNT decoder. When disabled, uses offline /transcribe.
+	 */
+	parakeet_streaming_enabled: boolean,
+	control_server_token: string | null,
+	recording_auto_stop_enabled: boolean,
+	recording_auto_stop_timeout_seconds: number,
+	recording_auto_stop_paste: boolean,
+	text_replacement_decapitalize_after_edit_key_enabled: boolean,
+	text_replacement_decapitalize_after_edit_key: string,
+	text_replacement_decapitalize_after_edit_secondary_key_enabled: boolean,
+	text_replacement_decapitalize_after_edit_secondary_key: string,
+	text_replacement_decapitalize_timeout_ms: number,
+	text_replacement_decapitalize_standard_post_recording_monitor_ms: number,
+	vad_enabled: boolean,
+	/**
+	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
+	 *  not gated on this — that follows model capability. Migrated from the old
+	 *  `overlay_position` (position `none` → style `None`).
+	 */
+	overlay_style: OverlayStyle,
 };
 
 export type AudioDevice = {
@@ -445,7 +577,6 @@ export type AudioFormat = "wav" | "mp3" | "ogg" | "flac";
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter";
 
 export type AvailableAccelerators = {
-	whisper: string[],
 	transcribe: string[],
 	ort: string[],
 	gpu_devices: GpuDeviceOption[],
@@ -500,6 +631,17 @@ export type BrainConfig = {
 	 *  and response using its native audio understanding.
 	 */
 	brain_only_transcription?: boolean,
+	/**
+	 *  Language the Brain should reply in. "auto" (default) mirrors the
+	 *  huggingface/speech-to-speech `--language auto` + `--enable_lang_prompt`
+	 *  behaviour: the conversation passes the effective STT language (the
+	 *  selected language, or the OS input source for "os_input") so the model
+	 *  replies in the same language it was spoken to. Set a concrete BCP-47
+	 *  code (e.g. "es", "fr-FR") to force a fixed reply language regardless of
+	 *  input. Large models usually infer the language from context; this hint
+	 *  mainly helps smaller local models.
+	 */
+	reply_language?: string,
 };
 
 export type CartesiaConfig = {
@@ -552,7 +694,13 @@ export type ElevenLabsConfig = {
 
 export type ElevenLabsOutputFormat = "mp3_44100_128" | "mp3_44100_192" | "mp3_44100_32" | "mp3_22050_32" | "pcm_44100" | "pcm_22050" | "pcm_16000" | "ogg_vorbis_44100" | "ogg_vorbis_22050" | "flac_44100" | "mulaw_8000";
 
-export type EngineType = "Whisper" | "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere" | "UnifiedParakeet";
+export type EngineType = 
+/**
+ *  Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
+ *  Voxtral, Qwen3-ASR, Nemotron, …). The architecture is auto-detected from
+ *  the file, so this one variant covers the whole transcribe-cpp family.
+ */
+"TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere" | "UnifiedParakeet";
 
 export type GpuDeviceOption = {
 	id: number,
@@ -605,7 +753,7 @@ export type ImplementationChangeResult = {
 	reset_bindings: string[],
 };
 
-export type KeyboardImplementation = "tauri" | "handy_keys" | "key_listener";
+export type KeyboardImplementation = "tauri" | "key_listener" | "handy_keys";
 
 /**
  *  A saved language model: a (provider, model) pair the user added in the
@@ -656,9 +804,10 @@ export type ModelInfo = {
 	name: string,
 	description: string,
 	filename: string,
+	source: ModelSource,
 	url: string | null,
 	sha256: string | null,
-	size_mb: number | null,
+	size_mb: number,
 	is_downloaded: boolean,
 	is_downloading: boolean,
 	partial_size: number | null,
@@ -671,9 +820,8 @@ export type ModelInfo = {
 	supported_languages: string[],
 	supports_language_selection: boolean,
 	is_custom: boolean,
-	source?: ModelSource,
-	supports_streaming?: boolean,
-	supports_language_detection?: boolean,
+	supports_streaming: boolean,
+	supports_language_detection: boolean,
 };
 
 export type ModelLoadStatus = {
@@ -682,31 +830,32 @@ export type ModelLoadStatus = {
 };
 
 /**
- * Where a model comes from and how it is obtained — the routing discriminant
- * for downloading and on-disk resolution.
+ *  Where a model comes from and how Handy obtains it — the routing discriminant
+ *  for downloading and on-disk resolution.
  */
-export type ModelSource =
+export type ModelSource = 
+/**  Direct HTTP download from a URL (current blob.handy.computer hosting). */
+({ Url: {
+	url: string,
+	/**  Expected SHA-256 for integrity verification; `None` skips it. */
+	sha256: string | null,
+} }) & { HuggingFace?: never } | 
 /**
- * Direct HTTP download from a URL (current blob.handy.computer hosting).
+ *  A file inside a Hugging Face Hub repo, fetched via hf-hub into the shared
+ *  HF cache (so other tools reuse it). The file within the repo is
+ *  [`ModelInfo::filename`].
  */
-{ Url: { url: string;
+({ HuggingFace: {
+	repo_id: string,
+	revision: string,
+} }) & { Url?: never } | 
 /**
- * Expected SHA-256 for integrity verification; `None` skips it.
+ *  Already present on disk — a user-provided custom model, or one discovered
+ *  in a shared cache. Nothing to download.
  */
-sha256: string | null } } |
-/**
- * A file inside a Hugging Face Hub repo, fetched via hf-hub into the shared
- * HF cache (so other tools reuse it). The file within the repo is
- * [`ModelInfo::filename`].
- */
-{ HuggingFace: { repo_id: string; revision: string } } |
-/**
- * Already present on disk — a user-provided custom model, or one discovered
- * in a shared cache. Nothing to download.
- */
-"Local"
+"Local";
 
-export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
+export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
 
 export type OpenAIConfig = {
 	api_key: string,
@@ -726,32 +875,35 @@ export type OverlayCapabilities = {
 	native_transparent: boolean,
 };
 
-/**
- *  Overlay approach: Tauri-only (CopySpeak HUD style — alwaysOnTop + transparent)
- *  or OS-native (NSPanel/Win32 HWND_TOPMOST/GTK layer-shell — Handy style).
- */
-export type OverlayMode =
+export type OverlayMode = 
 /**  Tauri `always_on_top(true)` + `transparent(true)` only — simpler, fewer deps. */
-"tauri" |
+"tauri" | 
 /**  Per-OS native window APIs (NSPanel, Win32 topmost, GTK layer-shell). */
 "os_native";
 
-export type OverlayPosition = "none" | "top" | "bottom";
+export type OverlayPosition = OverlayPosition_Serialize | OverlayPosition_Deserialize;
+
+export type OverlayPosition_Deserialize = "top" | "bottom" | "none";
+
+export type OverlayPosition_Serialize = "top" | "bottom";
 
 /**
- * Which recording overlay to display. `Minimal` and `Live` share one base
- * (the pill); `Live` grows into the panel that shows live transcription text.
- * `None` hides the overlay entirely. Decoupled from whether the model runs in
- * streaming mode (that is driven purely by model capability).
+ *  Which recording overlay to display. `Minimal` and `Live` share one base
+ *  (the pill); `Live` grows into the panel that shows live transcription text.
+ *  `None` hides the overlay entirely. Decoupled from whether the model runs in
+ *  streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live";
 
 /**  Configuration for the recording overlay window (the pill shown during dictation/TTS). */
-export type OverlayWindowConfig = {
+export type OverlayWindowConfig = OverlayWindowConfig_Serialize | OverlayWindowConfig_Deserialize;
+
+/**  Configuration for the recording overlay window (the pill shown during dictation/TTS). */
+export type OverlayWindowConfig_Deserialize = {
 	/**  Which overlay approach to use. */
 	mode?: OverlayMode,
 	/**  Position on screen. */
-	position?: OverlayPosition,
+	position?: OverlayPosition_Deserialize,
 	/**  Overlay width in logical pixels. */
 	width?: number,
 	/**  Overlay height in logical pixels. */
@@ -764,6 +916,26 @@ export type OverlayWindowConfig = {
 	reply_bubble?: boolean,
 	/**  Fade-out time in milliseconds. */
 	fade_ms?: number,
+};
+
+/**  Configuration for the recording overlay window (the pill shown during dictation/TTS). */
+export type OverlayWindowConfig_Serialize = {
+	/**  Which overlay approach to use. */
+	mode: OverlayMode,
+	/**  Position on screen. */
+	position: OverlayPosition_Serialize,
+	/**  Overlay width in logical pixels. */
+	width: number,
+	/**  Overlay height in logical pixels. */
+	height: number,
+	/**  Overlay background opacity (0.0–1.0). */
+	opacity: number | null,
+	/**  Round the corners with this radius (0 = square). */
+	corner_radius: number | null,
+	/**  Show a text reply bubble next to the cursor during Brain conversation. */
+	reply_bubble: boolean,
+	/**  Fade-out time in milliseconds. */
+	fade_ms: number,
 };
 
 export type PaginatedHistory = {
@@ -825,7 +997,7 @@ export type PostProcessProvider = {
 	supports_structured_output?: boolean,
 };
 
-export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3" | "days3" | "weeks2" | "months3";
+export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";
 
 /**  Pre-TTS text sanitization toggles (markdown stripping + speech normalization). */
 export type SanitizationConfig = {
@@ -848,13 +1020,60 @@ export type ShortcutBinding = {
 
 export type SoundTheme = "marimba" | "pop" | "custom";
 
-export type Theme = "system" | "light" | "dark";
+/**  Phase of the streaming overlay card, emitted to drive its UI state. */
+export type StreamPhase = 
+/**
+ *  Receiving audio / live text (or waiting for the stream to begin). Rust
+ *  does not emit this today; the frontend starts in this phase and Rust only
+ *  emits transitions away from it.
+ */
+"listening" | 
+/**  Finalizing or post-processing — show a spinner. */
+"working";
+
+/**  Emitted to switch the streaming overlay to a working spinner. */
+export type StreamPhaseEvent = StreamPhaseEvent_Serialize | StreamPhaseEvent_Deserialize;
+
+/**  Emitted to switch the streaming overlay to a working spinner. */
+export type StreamPhaseEvent_Deserialize = {
+	phase: StreamPhase,
+	/**  Present only when `phase` is `Working`. */
+	kind: StreamWorkKind | null,
+};
+
+/**  Emitted to switch the streaming overlay to a working spinner. */
+export type StreamPhaseEvent_Serialize = {
+	phase: StreamPhase,
+	/**  Present only when `phase` is `Working`. */
+	kind?: StreamWorkKind | null,
+};
+
+/**
+ *  Live transcription snapshot emitted to the overlay during a streaming run.
+ *  `committed` is the append-only, flicker-free prefix; `tentative` is the
+ *  volatile suffix the model may still rewrite.
+ */
+export type StreamTextEvent = {
+	committed: string,
+	tentative: string,
+};
+
+/**  Semantic kind of "working" phase, used to localize the spinner label. */
+export type StreamWorkKind = "transcribing" | "polishing";
 
 export type SystemRamInfo = {
 	total_mb: number,
 	used_mb: number,
 	free_mb: number,
 };
+
+/**
+ *  UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
+ *  and `Dark` force one of the two palettes Handy already ships.
+ */
+export type Theme = "system" | "light" | "dark";
+
+export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
 
 /**  Text-to-speech ("Read Anywhere" / CopySpeak) configuration. */
 export type TtsConfig = {
@@ -891,7 +1110,7 @@ export type TtsConfig = {
 };
 
 /**  Which TTS engine synthesizes speech. */
-export type TtsEngine = "piper" | "kokoro" | "kitten" | "pocket" | "sapi" | "openai" | "elevenlabs" | "cartesia";
+export type TtsEngine = "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia";
 
 export type TtsGreetingConfig = {
 	text?: string,
@@ -947,10 +1166,6 @@ export type WgpuTrailConfig = {
 	click_ripple?: boolean,
 };
 
-export type WhisperAcceleratorSetting = "auto" | "cpu" | "gpu";
-
-export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
-
 export type WindowsMicrophonePermissionStatus = {
 	supported: boolean,
 	overall_access: PermissionAccess,
@@ -989,3 +1204,4 @@ function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deseria
 
     return Object.assign(fn, base);
 }
+

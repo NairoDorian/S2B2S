@@ -119,7 +119,8 @@ impl FrameResampler {
                 None
             }
         }
-    }    fn emit_frames(&mut self, mut data: &[f32], emit: &mut impl FnMut(&[f32])) {
+    }
+    fn emit_frames(&mut self, mut data: &[f32], emit: &mut impl FnMut(&[f32])) {
         while !data.is_empty() {
             let space = self.frame_samples - self.pending.len();
             let take = space.min(data.len());

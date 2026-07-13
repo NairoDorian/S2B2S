@@ -26,8 +26,10 @@ const VAD_THRESHOLD: f32 = 0.3;
 /// robust turn-taking. Prefers the version selected in `settings.silero_vad_version`
 /// (default "v5") and falls back to `silero_vad_v4.onnx` when the requested file is
 /// missing, so installs that only have the v4 model keep working.
-fn resolve_silero_vad_path(app_handle: &tauri::AppHandle, version: &str) ->
-    Result<PathBuf, anyhow::Error> {
+fn resolve_silero_vad_path(
+    app_handle: &tauri::AppHandle,
+    version: &str,
+) -> Result<PathBuf, anyhow::Error> {
     let candidates: &[&str] = match version {
         "v5" => &[
             "resources/models/silero_vad_v5.onnx",

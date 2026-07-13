@@ -26,7 +26,10 @@ function parseConflicts(text) {
   for (const line of lines) {
     if (/^<<<<<<< /.test(line)) {
       if (current.lines.length > 0) {
-        segments.push({ type: current.type, content: current.lines.join("\n") });
+        segments.push({
+          type: current.type,
+          content: current.lines.join("\n"),
+        });
       }
       current = { type: "ours", lines: [] };
     } else if (/^=======$/.test(line)) {
@@ -55,21 +58,23 @@ function resolveDocConflict(ours, theirs) {
   // If theirs has extra paragraphs not in ours, append them
   const oursLines = ours.trim().split("\n");
   const theirsLines = theirs.trim().split("\n");
-  
+
   if (!ours.trim()) return theirs;
   if (!theirs.trim()) return ours;
-  
-  // Check if theirs is just a simpler version of ours (ours is superset) 
+
+  // Check if theirs is just a simpler version of ours (ours is superset)
   // → keep ours
   if (oursLines.length >= theirsLines.length) {
     return ours;
   }
-  
+
   // Theirs has more lines - check if it adds something genuinely new
   // Find theirs lines that don't appear in ours
-  const oursSet = new Set(oursLines.map(l => l.trim()).filter(l => l));
-  const newTheirsLines = theirsLines.filter(l => l.trim() && !oursSet.has(l.trim()));
-  
+  const oursSet = new Set(oursLines.map((l) => l.trim()).filter((l) => l));
+  const newTheirsLines = theirsLines.filter(
+    (l) => l.trim() && !oursSet.has(l.trim()),
+  );
+
   if (newTheirsLines.length > 0) {
     // Return ours + new content from theirs
     return ours + "\n" + newTheirsLines.join("\n");
@@ -88,11 +93,16 @@ function resolveDocFile(text) {
       result += "###OURS###" + seg.content + "###END_OURS###";
     } else if (seg.type === "theirs") {
       // Find last OURS marker and replace with resolved
-      const oursMatch = result.match(/###OURS###([\s\S]*?)###END_OURS###(?![\s\S]*###OURS###)/);
+      const oursMatch = result.match(
+        /###OURS###([\s\S]*?)###END_OURS###(?![\s\S]*###OURS###)/,
+      );
       if (oursMatch) {
         const oursContent = oursMatch[1];
         const resolved = resolveDocConflict(oursContent, seg.content);
-        result = result.replace(/###OURS###[\s\S]*?###END_OURS###(?![\s\S]*###OURS###)/, resolved);
+        result = result.replace(
+          /###OURS###[\s\S]*?###END_OURS###(?![\s\S]*###OURS###)/,
+          resolved,
+        );
       } else {
         result += seg.content;
       }
@@ -110,14 +120,19 @@ function resolveDocFile(text) {
  * both sides' keys are included (union).
  */
 function deepMerge(ours, theirs) {
-  if (typeof ours !== "object" || typeof theirs !== "object" || ours === null || theirs === null) {
+  if (
+    typeof ours !== "object" ||
+    typeof theirs !== "object" ||
+    ours === null ||
+    theirs === null
+  ) {
     // Upstream (theirs) wins on scalar conflicts
     return theirs !== undefined ? theirs : ours;
   }
   if (Array.isArray(ours) || Array.isArray(theirs)) {
     return theirs !== undefined ? theirs : ours;
   }
-  
+
   const result = { ...ours };
   for (const key of Object.keys(theirs)) {
     if (key in result) {
@@ -138,10 +153,10 @@ function deepMerge(ours, theirs) {
 function resolveJsonFile(text) {
   // Collect all ours and theirs segments
   const segments = parseConflicts(text);
-  
+
   let oursText = "";
   let theirsText = "";
-  
+
   for (const seg of segments) {
     if (seg.type === "common") {
       oursText += seg.content;
@@ -152,7 +167,7 @@ function resolveJsonFile(text) {
       theirsText += seg.content;
     }
   }
-  
+
   // Try parsing both sides
   let oursObj, theirsObj;
   try {
@@ -166,14 +181,14 @@ function resolveJsonFile(text) {
       return theirsText;
     }
   }
-  
+
   try {
     theirsObj = JSON.parse(theirsText);
   } catch (e) {
     console.warn(`  Warning: Could not parse 'theirs' JSON: ${e.message}`);
     return JSON.stringify(oursObj, null, 2);
   }
-  
+
   const merged = deepMerge(oursObj, theirsObj);
   return JSON.stringify(merged, null, 2);
 }
@@ -186,14 +201,14 @@ function processFile(filePath, type) {
     console.log(`  [SKIP] No conflicts: ${filePath}`);
     return false;
   }
-  
+
   let resolved;
   if (type === "json") {
     resolved = resolveJsonFile(text);
   } else {
     resolved = resolveDocFile(text);
   }
-  
+
   // Write with CRLF on Windows to match existing files
   const withCRLF = resolved.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
   writeFileSync(filePath, withCRLF, "utf8");
@@ -204,7 +219,28 @@ function processFile(filePath, type) {
 
 const docFiles = ["AGENTS.md", "BUILD.md", "README.md"];
 const localeRoot = join(ROOT, "src", "i18n", "locales");
-const localeDirs = ["ar", "bg", "cs", "de", "en", "es", "fr", "he", "it", "ja", "ko", "pl", "pt", "ru", "sv", "tr", "uk", "vi", "zh", "zh-TW"];
+const localeDirs = [
+  "ar",
+  "bg",
+  "cs",
+  "de",
+  "en",
+  "es",
+  "fr",
+  "he",
+  "it",
+  "ja",
+  "ko",
+  "pl",
+  "pt",
+  "ru",
+  "sv",
+  "tr",
+  "uk",
+  "vi",
+  "zh",
+  "zh-TW",
+];
 
 console.log("=== Resolving doc files ===");
 const stagedFiles = [];
@@ -232,7 +268,7 @@ for (const locale of localeDirs) {
 
 console.log("\n=== Staging resolved files ===");
 if (stagedFiles.length > 0) {
-  const fileList = stagedFiles.map(f => `"${f}"`).join(" ");
+  const fileList = stagedFiles.map((f) => `"${f}"`).join(" ");
   try {
     execSync(`git add ${fileList}`, { cwd: ROOT, stdio: "pipe" });
     console.log(`Staged ${stagedFiles.length} files.`);
@@ -266,6 +302,8 @@ for (const fp of stagedFiles) {
 if (allClean) {
   console.log("\n✅ All files resolved and staged successfully!");
 } else {
-  console.error("\n❌ Some files still have conflict markers — manual review needed.");
+  console.error(
+    "\n❌ Some files still have conflict markers — manual review needed.",
+  );
   process.exit(1);
 }
