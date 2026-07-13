@@ -133,6 +133,9 @@ Run-UvPip "torch (CPU)" @("torch", "--index-url", "https://download.pytorch.org/
 # Install soundfile and numpy
 Run-UvPip "soundfile & numpy" @("soundfile", "numpy")
 
+# Install faster-qwen3-tts from GitHub directly
+Run-UvPip "faster-qwen3-tts (GitHub)" @("git+https://github.com/andimarafioti/faster-qwen3-tts.git")
+
 # Install piper-tts (which pulls CPU onnxruntime)
 Run-UvPip "piper-tts" @("piper-tts[http]")
 

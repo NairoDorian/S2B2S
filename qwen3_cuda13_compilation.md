@@ -101,3 +101,28 @@ venv\Scripts\python.exe -c "from qwentts_cpp import QwenLibrary; print(QwenLibra
 venv\Scripts\python.exe -c "from faster_qwen3_tts import FasterQwen3TTS"
 # Output: Success (Exit Code 0)
 ```
+
+---
+
+## 4. Critical Architectural Findings
+
+### Finding A: The ICL Phoneme Bleed Artifact
+* **The Issue**: In In-Context Learning (ICL) voice cloning mode, text and codec token embeddings are summed positionally across the length of the reference audio. The final prefill position matches the very last token of the reference wave. Consequently, the first generated word begins conditioning on whatever acoustic consonant or phoneme cluster the reference ends on (e.g. producing an unintended "thumbs" or "comes" sound).
+* **The Fix**: S2B2S's wrapper automatically appends **0.5 seconds of PCM silence** to the reference audio before building the generation prompt context. This flushes the acoustic state cleanly, eliminating phoneme bleed.
+
+### Finding B: K-Quants CUDA Constraint
+* **The Issue**: The custom row-getting kernels (`getrows.cu`) inside `qwentts.cpp`'s GPU backend do not implement k-quantizations (like `Q4_K_M` or `Q5_K_M` which mixed-quantize layers using `Q6_K`). Loading a `Q4_K_M` model on CUDA results in a GPU kernel crash:
+  ```
+  unsupported src0 type: q6_K
+  ```
+* **The Fix**: S2B2S utilizes uniform `Q8_0` (`quant="Q8"`) quantization instead. `Q8_0` uses regular block sizes and is fully compatible with the compiled CUDA row-getting kernels.
+
+---
+
+## 5. Automated Build Setup Script
+
+Advanced users can automate the entire clone, patch, native compile, and local venv packaging workflow by running:
+```powershell
+.\scripts\compile-qwen3-ggml.ps1
+```
+This script handles the configuration, Windows binding file injection, MSVC C++ Release compilation, and editable installs automatically.
