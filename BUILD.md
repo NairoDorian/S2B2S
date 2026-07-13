@@ -32,45 +32,50 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 #### Apple Silicon (M1/M2/M3/M4) — works out of the box with bundled ONNX Runtime.
 
 ### Windows
+
 - Microsoft C++ Build Tools or Visual Studio 2019/2022 with "Desktop development with C++" workload
 - WebView2 (included with Windows 11, available on Windows 10)
 - **Python 3.12** (for TTS engines — see [Python Version](#python-version) below)
 - **Vulkan SDK** (for the `transcribe.cpp` Vulkan STT backend): install from [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home). The installer adds `VulkanSDK\*\Bin` (containing `glslc.exe`) to `PATH`; `glslc` compiles the ggml Vulkan shaders at build time. If you build `tauri dev` from a plain shell, also set `VULKAN_SDK` (e.g. `set VULKAN_SDK=C:\VulkanSDK\1.4.350.0`). See [transcribe.cpp source](#transcribecpp-stt-backend--source--build-cache).
 - **libclang.dll** (build-time dep for whisper-rs-sys bindgen):
+
 > [!IMPORTANT]
 > Windows' 260-character path limit can break the native build (the Vulkan
 > shader generator nests very deep). If `bun run tauri build` fails with
 > `MSB3491` / "path exceeds the OS max path limit", see
 > [Windows build fails with `MSB3491`](#windows-build-fails-with-msb3491--path-exceeds-260-characters)
 > in Troubleshooting.
+
 #### Linux
-  The easiest way on a fresh machine:
-  ```powershell
-  winget install -e --id LLVM.LLVM
+
+The easiest way on a fresh machine:
+
+````powershell
+winget install -e --id LLVM.LLVM
 ```bash
-  # Ubuntu/Debian
-  sudo apt update
-  sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
-  # Fedora/RHEL
-  sudo dnf groupinstall "Development Tools"
-  sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
-    spirv-headers-devel spirv-tools-devel glslang glslc \
-    gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
-    gtk-layer-shell gtk-layer-shell-devel \
-    cmake
-  # Arch Linux
-  sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
-    spirv-headers glslang shaderc \
-    gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
-    cmake  ```
+# Ubuntu/Debian
+sudo apt update
+sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
+# Fedora/RHEL
+sudo dnf groupinstall "Development Tools"
+sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
+  spirv-headers-devel spirv-tools-devel glslang glslc \
+  gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
+  gtk-layer-shell gtk-layer-shell-devel \
+  cmake
+# Arch Linux
+sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
+  spirv-headers glslang shaderc \
+  gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
+  cmake  ```
 
-  This installs LLVM and adds `libclang.dll` to PATH. No extra env vars needed.
+This installs LLVM and adds `libclang.dll` to PATH. No extra env vars needed.
 
-  Or run the helper script for guided install:
+Or run the helper script for guided install:
 
-  ```powershell
-  .\scripts\download-libclang.ps1
-  ```
+```powershell
+.\scripts\download-libclang.ps1
+````
 
 - Install deps: `bun install` pulls JS deps; Rust deps via `cargo`
 
@@ -172,13 +177,14 @@ curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.compute
 ```
 
 **Model sources:**
-| Model | Size | Source |
-|-------|------|--------|
-| Silero VAD v4 | ~1.7 MB | blob.handy.computer |
-| Parakeet V3 (STT) | ~600 MB | blob.handy.computer |
-| Kokoro-82M (TTS) | ~330 MB | HuggingFace hexgrad/Kokoro-82M |
-| Piper en_US voices | ~30-70 MB each | HuggingFace rhasspy/piper-voices |
-| Pocket TTS | ~100 MB | Auto-downloaded by pocket-tts package |
+
+| Model              | Size           | Source                                |
+| ------------------ | -------------- | ------------------------------------- |
+| Silero VAD v4      | ~1.7 MB        | blob.handy.computer                   |
+| Parakeet V3 (STT)  | ~600 MB        | blob.handy.computer                   |
+| Kokoro-82M (TTS)   | ~330 MB        | HuggingFace hexgrad/Kokoro-82M        |
+| Piper en_US voices | ~30-70 MB each | HuggingFace rhasspy/piper-voices      |
+| Pocket TTS         | ~100 MB        | Auto-downloaded by pocket-tts package |
 
 ### 5. Start Dev Server
 
@@ -225,6 +231,7 @@ bun run format:backend    # cargo fmt only
 ```
 
 ---
+
 ## TypeScript Type Checking & Bindings
 
 ```bash
@@ -261,6 +268,7 @@ bun run check:translations
 ```bash
 bun run tauri build -- --bundles deb
 ```
+
 ### macOS cmake errors
 
 ```bash
@@ -327,6 +335,77 @@ S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub
 
 ---
 
+## Qwen3-TTS GGML C++ Backend Local Compilation (Windows 11 + CUDA 13.3)
+
+Since prebuilt wheels for `qwentts-cpp-python` on PyPI and Hugging Face are built exclusively for Linux (`manylinux_2_39_x86_64`), running the GGML/C++ backend for Qwen3-TTS on Windows 11 requires a local compilation of `qwentts.cpp` and patching of the Python ctypes wrapper.
+
+### 1. Prerequisites (Windows)
+- Visual Studio 2022/2025 Community or Build Tools with C++ Desktop Development.
+- **NVIDIA CUDA Toolkit v13.3** (or v12.x) with `nvcc` available in your PATH.
+- S2B2S python virtual environment (`venv`) set up.
+
+### 2. Steps to Compile and Install
+
+1. **Clone the Repositories**:
+   In a directory next to the `S2B2S` folder, clone the native C++ library and its submodules, along with the Python ctypes wrapper:
+   ```powershell
+   git clone https://github.com/ServeurpersoCom/qwentts.cpp
+   cd qwentts.cpp
+   git submodule update --init --recursive
+   cd ..
+   git clone https://github.com/andimarafioti/qwentts-cpp-python
+   ```
+
+2. **Configure and Compile the C++ Shared Library**:
+   Run CMake to generate build files with shared library and CUDA support, then compile in Release mode:
+   ```powershell
+   cd qwentts.cpp
+   cmake -S . -B build -DGGML_CUDA=ON -DQWEN_SHARED=ON
+   cmake --build build --config Release -j
+   ```
+   This generates `qwen.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-cuda.dll`, and `ggml.dll` under `build\Release\`.
+
+3. **Patch Wrapper for Windows DLL Dependency Loading**:
+   Windows requires explicit pre-loading of `ggml-cuda.dll` and dynamic directory lookup for internal Python virtual environment CUDA dependencies.
+   Update `src/qwentts_cpp/_binding.py` in the `qwentts-cpp-python` folder:
+   - Add `"ggml-cuda.dll"` to the `_dependency_names()` returned list on Windows:
+     ```python
+     if sys.platform == "win32":
+         return ("ggml-base.dll", "ggml-cpu.dll", "ggml-cuda.dll", "ggml.dll")
+     ```
+   - Inject the dynamic NVIDIA/CUDA directory loaders inside `_load_cdll` to allow the loader to locate system CUDA DLLs and `venv` site-package DLLs:
+     ```python
+     if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+         self._dll_dir_handle = os.add_dll_directory(lib_dir)
+         # Add system CUDA Toolkit bin folder
+         cuda_path = os.environ.get("CUDA_PATH")
+         if cuda_path:
+             os.add_dll_directory(os.path.join(cuda_path, "bin"))
+         # Discover venv's internal nvidia runtime dlls
+         for path_dir in sys.path:
+             nvidia_dir = os.path.join(path_dir, "nvidia")
+             if os.path.isdir(nvidia_dir):
+                 # Glob bin directories and call os.add_dll_directory()
+     ```
+
+4. **Copy Compiled DLLs and Install Wrapper**:
+   Inside `qwentts-cpp-python`, copy the native binaries and install the wrapper inside the S2B2S venv using `uv`:
+   ```powershell
+   # Copy DLLs
+   ..\S2B2S\venv\Scripts\python.exe scripts\build_native.py --skip-build --build-dir ..\qwentts.cpp\build
+   
+   # Install locally in editable mode
+   uv pip install -e . --python ..\S2B2S\venv
+   ```
+
+5. **Install `faster-qwen3-tts[ggml]`**:
+   Run the installation inside `S2B2S` using `uv` to link it against your locally compiled, compatible `qwentts-cpp-python` dependency:
+   ```powershell
+   uv pip install "faster-qwen3-tts[ggml]" --python venv
+   ```
+
+---
+
 ## transcribe.cpp (STT backend) — source & build cache
 
 Speech-to-text is performed by [`transcribe-cpp`](https://github.com/handy-computer/transcribe.cpp), a Rust/ggml wrapper around the `transcribe.cpp` C++ engine (Whisper-family + 16+ model families, Vulkan/CUDA/CPU backends). It is **pulled directly from its GitHub repository**, not from crates.io, so the build always tracks the latest upstream code:
@@ -377,16 +456,16 @@ This was the blocker after the Handy 0.9 source merge: the first build produced 
 
 ## Environment Variables
 
-| Variable                           | Purpose                                               |
-| ---------------------------------- | ----------------------------------------------------- |
-| `ORT_LIB_LOCATION`                 | Path to ONNX Runtime library (Intel Mac only)         |
-| `ORT_PREFER_DYNAMIC_LINK=1`        | Use dynamic linking for ONNX Runtime (Intel Mac only) |
-| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake errors on macOS                             |
-| `S2B2S_NO_GTK_LAYER_SHELL=1`       | Disable GTK layer shell on Linux (Wayland workaround) |
-| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos        |
+| Variable                           | Purpose                                                                                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ORT_LIB_LOCATION`                 | Path to ONNX Runtime library (Intel Mac only)                                                                                                         |
+| `ORT_PREFER_DYNAMIC_LINK=1`        | Use dynamic linking for ONNX Runtime (Intel Mac only)                                                                                                 |
+| `CMAKE_POLICY_VERSION_MINIMUM=3.5` | Fix cmake errors on macOS                                                                                                                             |
+| `S2B2S_NO_GTK_LAYER_SHELL=1`       | Disable GTK layer shell on Linux (Wayland workaround)                                                                                                 |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos                                                                                                        |
 | `VULKAN_SDK`                       | Path to the Vulkan SDK (e.g. `C:\VulkanSDK\1.4.350.0`); ensures `glslc` is found when building the `transcribe.cpp` Vulkan backend from a plain shell |
-| `CARGO_TARGET_DIR`                 | Redirect Cargo build output (e.g. `C:\bt`) to avoid the Windows 260-char path limit during the deep ggml shader generation |
-| `RUST_LOG`                         | Set Rust log level (e.g., `debug`, `trace`)           |
+| `CARGO_TARGET_DIR`                 | Redirect Cargo build output (e.g. `C:\bt`) to avoid the Windows 260-char path limit during the deep ggml shader generation                            |
+| `RUST_LOG`                         | Set Rust log level (e.g., `debug`, `trace`)                                                                                                           |
 
 ---
 

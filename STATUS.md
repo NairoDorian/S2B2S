@@ -1,27 +1,27 @@
 # S2B2S Project Status, Scorecard & Roadmap
 
-This document serves as the **single source of truth** for what is completed, partially done, stubbed, or planned in S2B2S. Last updated at version **0.1.4**.
+This document serves as the **single source of truth** for what is completed, partially done, stubbed, or planned in S2B2S. Last updated at version **0.1.5**.
 
 ---
 
-## 1. Feature Scorecard (v0.1.4 Audit)
+## 1. Feature Scorecard (v0.1.5 Audit & Cleanup)
 
-| Area                            | Status     | Notes                                                                                                            |
-| ------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Core STT→Brain→TTS loop**     | ✅ Done    | Real, wired, thoughtfully layered and robust.                                                                    |
-| **Dictation Pipeline**          | ✅ Done    | Mic → VAD → STT → Normalizer → Paste.                                                                            |
-| **TripleVAD Engine**            | ✅ Done    | RMS → RNNoise → Silero ONNX.                                                                                     |
-| **TTS Engine & Warm Lifecycle** | ✅ Done    | 8 backends (5 local, 3 cloud). WarmEngine trait/lifecycle is clean.                                              |
-| **pre-compiled llama.cpp**      | ✅ Done    | Auto-downloads releases, auto-starts, auto-detects CUDA/Vulkan/CPU.                                              |
-| **Standalone Speech Runtime**   | ✅ Done    | Portable uv + Python 3.12 provisioned during onboarding via install-speech-runtime scripts.                       |
-| **i18n Multi-Language**         | 🟡 Partial | 20 languages supported, but only English has all 663 keys. All other 19 languages have 477 keys (~72% complete). |
-| **Streaming STT**               | 🟡 Partial | Works via Python server but has chunk boundary token edges. Not default.                                         |
-| **Continuous Voice Mode**       | 🟡 Partial | Real hands-free conversation with barge-in support, but limited echo cancellation.                               |
-| **Wake Word Engine**            | 🟡 Partial | VAD-energy based. Keyword spotting (KWS) requires Static/Dynamic CRT resolution.                                 |
-| **Playwright E2E Tests**        | ✅ Done    | Onboarding, dictation, and conversation pipelines covered with mock Tauri IPC layer.                              |
-| **Panic Audit (hot paths)**     | ✅ Done    | Converted unwraps in audio recording, clipboard, IPC boundaries, and command handlers.                           |
-| **Brain-Only STT Toggle**       | ✅ Done    | Inline switch in ConversationView to bypass local STT and feed audio directly to multimodal Brain.               |
-| **Native WGPU Overlay**         | 🔴 Stub    | Track B (`overlay_fx/native/mod.rs`) is a pure placeholder logging a line.                                       |
+| Area                            | Status     | Notes                                                                                                        |
+| ------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
+| **Core STT→Brain→TTS loop**     | ✅ Done    | Real, wired, thoughtfully layered and robust.                                                                |
+| **Dictation Pipeline**          | ✅ Done    | Mic → VAD → STT → Normalizer → Paste.                                                                        |
+| **TripleVAD Engine**            | ✅ Done    | RMS → RNNoise → Silero ONNX.                                                                                 |
+| **TTS Engine & Warm Lifecycle** | ✅ Done    | 9 backends (6 local, 3 cloud). Added local Qwen3-TTS engine with GGML C++ CUDA 13.3 support. |
+| **pre-compiled llama.cpp**      | ✅ Done    | Auto-downloads releases, auto-starts, auto-detects CUDA/Vulkan/CPU.                                          |
+| **Standalone Speech Runtime**   | ✅ Done    | Portable uv + Python 3.12 provisioned during onboarding via install-speech-runtime scripts.                  |
+| **i18n Multi-Language**         | ✅ Done    | 20 languages supported, all synchronized with 724 keys (English fallback values for new keys).               |
+| **Streaming STT**               | 🟡 Partial | Works via Python server but has chunk boundary token edges. Not default.                                     |
+| **Continuous Voice Mode**       | 🟡 Partial | Real hands-free conversation with barge-in support, but limited echo cancellation.                           |
+| **Wake Word Engine**            | 🟡 Partial | VAD-energy based. Keyword spotting (KWS) requires Static/Dynamic CRT resolution.                             |
+| **Playwright E2E Tests**        | ✅ Done    | Onboarding, dictation, and conversation pipelines covered with mock Tauri IPC layer.                         |
+| **Panic Audit (hot paths)**     | ✅ Done    | Converted unwraps in audio recording, clipboard, IPC boundaries, and command handlers.                       |
+| **Brain-Only STT Toggle**       | ✅ Done    | Inline switch in ConversationView to bypass local STT and feed audio directly to multimodal Brain.           |
+| **Native WGPU Overlay**         | 🟡 Shelved | Track B (`overlay_fx/native/mod.rs`) is kept as a stub; native overlay feature is shelved for Tauri overlay. |
 
 ---
 
@@ -72,8 +72,10 @@ This document serves as the **single source of truth** for what is completed, pa
 
 ### Phase 2 — Sweep the Partials
 
-- [ ] **Native WGPU Overlay (Track B)**: Either implement the native renderer fully (via WebGPU cursor references) or delete the placeholder and keep only the Tauri overlay.
-- [ ] **i18n Sync**: Machine-translate and sync the missing 186 keys across all 19 non-English languages and add translation gate checks to CI.
+- [x] **Native WGPU Overlay (Track B)**: Shelved in favor of Track A (Tauri overlay) to reduce binary size and complexity.
+- [x] **i18n Sync**: Fully synchronized all 19 non-English translation keys (724 keys matched) with CI gate checks passing.
+- [x] **De-sprawl / Project Cleanup**: Removed obsolete scratch/experiment folders (gemma, temp ONNX, 0.1.3 review, and stale descriptions).
+- [x] **Qwen3-TTS GGML Backend**: Compiled native C++ `qwentts.cpp` shared libraries for Windows 11 with CUDA 13.3 support, resolved ctypes DLL loading dependencies, and integrated the `qwen3` engine option in settings.
 - [ ] **Streaming STT**: Stabilize chunk-boundary token generation or label as experimental.
 
 ### Phase 3 — Reduce the Maintenance Surface

@@ -163,12 +163,13 @@ src-tauri/src/
 │   ├── status.rs           # Engine status reporting
 │   ├── telemetry.rs        # Per-engine performance tracking
 │   ├── backends/
-│   │   ├── mod.rs          # Backend module declarations (8 backends: piper, kokoro, kitten, pocket, sapi, openai, elevenlabs, cartesia; plus piper_server manager helper)
+│   │   ├── mod.rs          # Backend module declarations (9 backends: piper, kokoro, kitten, pocket, qwen3, sapi, openai, elevenlabs, cartesia; plus piper_server manager helper)
 │   │   ├── piper.rs        # Piper HTTP client
 │   │   ├── piper_server.rs # Piper persistent server lifecycle
 │   │   ├── kokoro.rs       # Kokoro-82M ONNX TTS (persistent HTTP server)
 │   │   ├── kitten.rs       # Kitten TTS (persistent HTTP server)
 │   │   ├── pocket.rs        # Pocket TTS (persistent HTTP server, voice cloning)
+│   │   ├── qwen3.rs        # Qwen3-TTS (persistent HTTP server, voice cloning & design)
 │   │   ├── sapi.rs         # Windows SAPI fallback (fully implemented via COM interop)
 │   │   ├── openai.rs       # OpenAI TTS cloud
 │   │   ├── elevenlabs.rs   # ElevenLabs TTS cloud
@@ -322,6 +323,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 ```
 
 ### Technology Stack
+
 | Category            | Libraries                                                                                                                                                                        |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Framework**       | Tauri 2.x, React 19, TypeScript 6, Vite 8                                                                                                                                        |
@@ -339,6 +341,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 | **IPC**             | tauri-specta (typed bindings)                                                                                                                                                    |
 | **Shortcuts**       | rdev + Tauri global-shortcut                                                                                                                                                     |
 | **Build**           | Bun, Cargo (Rust stable, MSRV 1.87)                                                                                                                                              |
+
 ### Application Flow
 
 1. **Initialization:** App starts (optionally minimized to tray), loads settings, initializes managers (Audio, Model, TTS, Brain). Shows Her-style 3D loading animation.
@@ -346,7 +349,7 @@ Pre-TTS:  Markdown strip (regex) → TN (text-processing-rs) → Regex Cleanup
 3. **Dictation:** Global shortcut triggers audio recording with TripleVAD filtering → Parakeet V3 transcription → ITN normalization → paste at cursor.
 4. **Read Aloud:** Global shortcut reads selected text (or double-copy clipboard trigger) → markdown stripping → TN normalization → TTS playback with streaming gapless playback.
 5. **Conversation:** Global shortcut starts recording → transcribe → send to Brain (LLM) → stream reply tokens → sentence splitter → TTS reads each sentence aloud with barge-in support.
-6. **TTS Engine Selection:** 8 backends available (Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia). Engine lifecycle managed by `piper_server.rs` and the unified `local_tts_server.rs` pattern (Kokoro, Kitten, Pocket share the same server lifecycle). The `WarmEngine` trait is implemented by all local backends (Piper, Kokoro, Kitten, Pocket) but the orchestration layer calls server utilities directly.
+6. **TTS Engine Selection:** 9 backends available (Piper, Kokoro, Kitten, Pocket, Qwen3, SAPI, OpenAI, ElevenLabs, Cartesia). Engine lifecycle managed by `piper_server.rs` and the unified `local_tts_server.rs` pattern (Kokoro, Kitten, Pocket, Qwen3 share the same server lifecycle). The `WarmEngine` trait is implemented by all local backends (Piper, Kokoro, Kitten, Pocket, Qwen3) but the orchestration layer calls server utilities directly.
 
 ### Settings System
 
@@ -355,7 +358,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - **Keyboard shortcuts**: configurable for push-to-talk, speak-selection, conversation, cancel
 - **Audio devices**: microphone/output selection
 - **STT model**: Parakeet V3, Whisper (Small/Medium/Turbo/Large), Moonshine, Nemotron 3.5, SenseVoice, GigaAM, Canary (180M/1B), Cohere, Parakeet Unified streaming, Parakeet EOU 120M
-- **TTS engine**: Piper, Kokoro, Kitten, Pocket, SAPI, OpenAI, ElevenLabs, Cartesia — voice, speed, volume per engine
+- **TTS engine**: Piper, Kokoro, Kitten, Pocket, Qwen3, SAPI, OpenAI, ElevenLabs, Cartesia — voice, speed, volume per engine
 - **Brain**: Ollama/LM Studio endpoint, model, system prompt, memory, read-aloud toggle
 - **VAD mode**: TripleVAD/Silero with tunable RNNoise threshold (0.05–0.9)
 - **Text pipeline**: ITN/TN/markdown-strip toggles per stage
