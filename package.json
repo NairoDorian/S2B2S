@@ -20,6 +20,7 @@
     "sync:translations": "bun scripts/sync-translations.ts",
     "repomix": "repomix",
     "repomix:with-descriptions": "bun scripts/repomix-with-descriptions.ts",
+    "update:all": "bun scripts/update-all-deps.ts",
     "postinstall": "bun scripts/check-nix-deps.ts"
   },
   "dependencies": {
