@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   AudioLines,
   Check,
+  CircuitBoard,
+  Cpu,
   Download,
   Globe,
   HardDrive,
@@ -166,9 +168,27 @@ const ModelCard: React.FC<ModelCardProps> = ({
         <div className="flex flex-col items-start flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h3
-              className={`text-base font-semibold text-text ${isClickable ? "group-hover:text-logo-primary" : ""} transition-colors`}
+              className={`text-base font-semibold text-text ${isClickable ? "group-hover:text-logo-primary" : ""} transition-colors flex items-center gap-1.5`}
             >
-              {displayName}
+              <span>{displayName}</span>
+              <span className="inline-flex items-center gap-1 text-text/40 text-xs font-normal">
+                <span
+                  title={t(
+                    "modelSelector.cpuSupportedTooltip",
+                    "CPU supported",
+                  )}
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                </span>
+                <span
+                  title={t(
+                    "modelSelector.gpuSupportedTooltip",
+                    "GPU supported",
+                  )}
+                >
+                  <CircuitBoard className="w-3.5 h-3.5" />
+                </span>
+              </span>
             </h3>
             {showRecommended && model.is_recommended && (
               <Badge variant="primary">{t("onboarding.recommended")}</Badge>

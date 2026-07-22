@@ -11,7 +11,7 @@ This document serves as the **single source of truth** for what is completed, pa
 | **Core STT→Brain→TTS loop**     | ✅ Done    | Real, wired, thoughtfully layered and robust.                                                                |
 | **Dictation Pipeline**          | ✅ Done    | Mic → VAD → STT → Normalizer → Paste.                                                                        |
 | **TripleVAD Engine**            | ✅ Done    | RMS → RNNoise → Silero ONNX.                                                                                 |
-| **TTS Engine & Warm Lifecycle** | ✅ Done    | 9 backends (6 local, 3 cloud). Added local Qwen3-TTS engine with GGML C++ CUDA 13.3 support. |
+| **TTS Engine & Warm Lifecycle** | ✅ Done    | 9 backends (6 local, 3 cloud). Added local Qwen3-TTS engine with GGML C++ CUDA 13.3 support.                 |
 | **pre-compiled llama.cpp**      | ✅ Done    | Auto-downloads releases, auto-starts, auto-detects CUDA/Vulkan/CPU.                                          |
 | **Standalone Speech Runtime**   | ✅ Done    | Portable uv + Python 3.12 provisioned during onboarding via install-speech-runtime scripts.                  |
 | **i18n Multi-Language**         | ✅ Done    | 20 languages supported, all synchronized with 724 keys (English fallback values for new keys).               |

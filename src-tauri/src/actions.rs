@@ -909,9 +909,15 @@ impl ShortcutAction for TranscribeAction {
                 ),
             );
 
+            let operation_id = crate::session_manager::next_operation_id();
+            let captured_settings = get_settings(app);
             *session_state = crate::recording_session::SessionState::Recording {
                 session: std::sync::Arc::clone(&session),
                 binding_id: binding_id.to_string(),
+                operation_id,
+                started_at: Instant::now(),
+                captured_profile_id: None,
+                captured_settings,
             };
         }
 
@@ -1084,8 +1090,15 @@ impl ShortcutAction for TranscribeAction {
         {
             let state = app.state::<crate::recording_session::ManagedSessionState>();
             let mut session_state = state.lock().unwrap();
+            let operation_id = match &*session_state {
+                crate::recording_session::SessionState::Recording { operation_id, .. } => {
+                    *operation_id
+                }
+                _ => crate::session_manager::next_operation_id(),
+            };
             *session_state = crate::recording_session::SessionState::Processing {
                 binding_id: binding_id.to_string(),
+                operation_id,
             };
         }
 
@@ -1237,7 +1250,7 @@ impl ShortcutAction for TranscribeAction {
                                 let state =
                                     ah.state::<crate::recording_session::ManagedSessionState>();
                                 let session_state = state.lock().unwrap();
-                                !matches!(&*session_state, crate::recording_session::SessionState::Processing { binding_id: ref bid } if bid == &binding_id)
+                                !matches!(&*session_state, crate::recording_session::SessionState::Processing { binding_id: ref bid, .. } if bid == &binding_id)
                             };
 
                             if check_cancelled() {

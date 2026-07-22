@@ -4,15 +4,7 @@ use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const QWEN3_VOICES: &[&str] = &[
-    "aiden",
-    "serena",
-    "vivian",
-    "uncle_fu",
-    "ryan",
-    "ono_anna",
-    "sohee",
-    "eric",
-    "dylan",
+    "aiden", "serena", "vivian", "uncle_fu", "ryan", "ono_anna", "sohee", "eric", "dylan",
 ];
 
 const CLONED_VOICES_DIR: &str = "TTS/qwen3-cloned-voices";

@@ -151,6 +151,7 @@ export const commands = {
 	supports_language_selection: boolean,
 	is_custom: boolean,
 	supports_streaming: boolean,
+	native_streaming_latency_kind: NativeStreamingLatencyKind | null,
 	supports_language_detection: boolean,
 } | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
 	downloadModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model", { modelId })),
@@ -277,6 +278,11 @@ export const commands = {
 	getSystemRam: () => typedError<SystemRamInfo, string>(__TAURI_INVOKE("get_system_ram")),
 	checkSpeechRuntimeInstalled: () => __TAURI_INVOKE<boolean>("check_speech_runtime_installed"),
 	installSpeechRuntime: () => typedError<null, string>(__TAURI_INVOKE("install_speech_runtime")),
+	changeNativeStreamingLiveOutputModelSetting: (modelId: string, enabled: boolean) => typedError<boolean, string>(__TAURI_INVOKE("change_native_streaming_live_output_model_setting", { modelId, enabled })),
+	changeNativeStreamingShowInterimLongerSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_native_streaming_show_interim_longer_setting", { enabled })),
+	changeNativeStreamingLatencyPresetSetting: (modelId: string, preset: NativeStreamingLatencyPreset) => typedError<null, string>(__TAURI_INVOKE("change_native_streaming_latency_preset_setting", { modelId, preset })),
+	getDevConsoleLogLevel: () => __TAURI_INVOKE<LogLevel>("get_dev_console_log_level"),
+	setDevConsoleLogLevel: (level: LogLevel) => __TAURI_INVOKE<void>("set_dev_console_log_level", { level }),
 	/**  Probe the current machine's overlay capabilities (WebGPU, Vulkan, cursor position, etc.). */
 	overlayFxProbeCapabilities: () => __TAURI_INVOKE<OverlayCapabilities>("overlay_fx_probe_capabilities"),
 	/**  Show the brain overlay at the cursor position and begin conversation. */
@@ -387,6 +393,9 @@ export type AppSettings_Deserialize = {
 	ort_accelerator?: OrtAcceleratorSetting,
 	transcribe_gpu_device?: number,
 	extra_recording_buffer_ms?: number,
+	native_streaming_live_output_models?: string[],
+	native_streaming_show_interim_longer?: boolean,
+	native_streaming_latency_presets?: { [key in string]: NativeStreamingLatencyPreset },
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
 	tts?: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
@@ -519,6 +528,9 @@ export type AppSettings_Serialize = {
 	ort_accelerator: OrtAcceleratorSetting,
 	transcribe_gpu_device: number,
 	extra_recording_buffer_ms: number,
+	native_streaming_live_output_models: string[],
+	native_streaming_show_interim_longer: boolean,
+	native_streaming_latency_presets: { [key in string]: NativeStreamingLatencyPreset },
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
 	tts: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
@@ -821,6 +833,7 @@ export type ModelInfo = {
 	supports_language_selection: boolean,
 	is_custom: boolean,
 	supports_streaming: boolean,
+	native_streaming_latency_kind: NativeStreamingLatencyKind | null,
 	supports_language_detection: boolean,
 };
 
@@ -856,6 +869,10 @@ export type ModelSource =
 "Local";
 
 export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
+
+export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cache_aware" | "nemotron_speech_cache_aware";
+
+export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "accurate";
 
 export type OpenAIConfig = {
 	api_key: string,

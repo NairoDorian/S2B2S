@@ -813,3 +813,75 @@ pub fn get_active_gpu_vram_status() -> Result<GpuVramStatus, String> {
         })
     }
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_native_streaming_live_output_model_setting(
+    app: AppHandle,
+    model_id: String,
+    enabled: bool,
+) -> Result<bool, String> {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return Err("A model ID is required for native streaming live output".to_string());
+    }
+
+    let mut settings = get_settings(&app);
+    let preview_was_disabled = false;
+    settings
+        .native_streaming_live_output_models
+        .retain(|configured_model_id| configured_model_id != model_id);
+    if enabled {
+        settings
+            .native_streaming_live_output_models
+            .push(model_id.to_string());
+    }
+    write_settings(&app, settings);
+    Ok(preview_was_disabled)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_native_streaming_show_interim_longer_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.native_streaming_show_interim_longer = enabled;
+    write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_native_streaming_latency_preset_setting(
+    app: AppHandle,
+    model_id: String,
+    preset: crate::settings::NativeStreamingLatencyPreset,
+) -> Result<(), String> {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return Err("A model ID is required for native streaming latency".to_string());
+    }
+
+    let model_manager = app.state::<Arc<ModelManager>>();
+    let model = model_manager
+        .get_model_info(model_id)
+        .ok_or_else(|| format!("Unknown model ID: {model_id}"))?;
+    if model.native_streaming_latency_kind.is_none() {
+        return Err(format!(
+            "Model '{model_id}' does not support configurable native streaming latency"
+        ));
+    }
+
+    let mut settings = get_settings(&app);
+    if preset == crate::settings::NativeStreamingLatencyPreset::Accurate {
+        settings.native_streaming_latency_presets.remove(model_id);
+    } else {
+        settings
+            .native_streaming_latency_presets
+            .insert(model_id.to_string(), preset);
+    }
+    write_settings(&app, settings);
+    Ok(())
+}

@@ -1034,6 +1034,20 @@ pub enum OrtAcceleratorSetting {
     Rocm,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeStreamingLatencyPreset {
+    Fastest,
+    Fast,
+    Balanced,
+    #[default]
+    Accurate,
+}
+
+fn default_native_streaming_show_interim_longer() -> bool {
+    true
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub(crate) struct SecretMap(HashMap<String, String>);
@@ -1208,6 +1222,12 @@ pub struct AppSettings {
     #[serde(default)]
     #[specta(type = u32)]
     pub extra_recording_buffer_ms: u64,
+    #[serde(default)]
+    pub native_streaming_live_output_models: Vec<String>,
+    #[serde(default = "default_native_streaming_show_interim_longer")]
+    pub native_streaming_show_interim_longer: bool,
+    #[serde(default)]
+    pub native_streaming_latency_presets: HashMap<String, NativeStreamingLatencyPreset>,
     /// Text-to-speech ("Read Anywhere" / CopySpeak) settings.
     #[serde(default)]
     pub tts: TtsConfig,
@@ -2032,6 +2052,9 @@ pub fn get_default_settings() -> AppSettings {
         ort_accelerator: OrtAcceleratorSetting::default(),
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
+        native_streaming_live_output_models: Vec::new(),
+        native_streaming_show_interim_longer: default_native_streaming_show_interim_longer(),
+        native_streaming_latency_presets: HashMap::new(),
         tts: TtsConfig::default(),
         brain: BrainConfig::default(),
         long_audio_model: None,

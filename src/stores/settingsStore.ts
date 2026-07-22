@@ -15,6 +15,7 @@ import type {
   BrainConfig,
 } from "@/bindings";
 import { commands } from "@/bindings";
+import { invalidateModelDownloadActivationIntent } from "@/lib/modelDownloadActivation";
 
 interface SettingsStore {
   settings: Settings | null;
@@ -345,6 +346,9 @@ export const useSettingsStore = create<SettingsStore>()(
       setUpdating(updateKey, true);
 
       try {
+        if (key === "selected_model") {
+          invalidateModelDownloadActivationIntent();
+        }
         set((state) => ({
           settings: state.settings ? { ...state.settings, [key]: value } : null,
         }));

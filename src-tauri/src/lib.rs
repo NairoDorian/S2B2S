@@ -26,6 +26,7 @@ mod overlay_fx;
 pub mod portable;
 mod recording_auto_stop;
 mod recording_session;
+mod session_manager;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -78,6 +79,27 @@ pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u
 /// paths or transcribed text) onto the frontend event bus. Synced at startup
 /// and whenever debug mode is toggled (see `shortcut::change_debug_mode_setting`).
 pub static WEBVIEW_LOG_STREAMING: AtomicBool = AtomicBool::new(false);
+
+#[cfg(debug_assertions)]
+pub static DEV_CONSOLE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Info as u8);
+
+#[cfg(debug_assertions)]
+pub(crate) fn dev_console_log_level() -> settings::LogLevel {
+    match level_filter_from_u8(DEV_CONSOLE_LOG_LEVEL.load(Ordering::Relaxed)) {
+        log::LevelFilter::Trace => settings::LogLevel::Trace,
+        log::LevelFilter::Debug => settings::LogLevel::Debug,
+        log::LevelFilter::Info => settings::LogLevel::Info,
+        log::LevelFilter::Warn => settings::LogLevel::Warn,
+        log::LevelFilter::Error | log::LevelFilter::Off => settings::LogLevel::Error,
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn set_dev_console_log_level(level: settings::LogLevel) {
+    let tauri_log_level: tauri_plugin_log::LogLevel = level.into();
+    let log_level: log::Level = tauri_log_level.into();
+    DEV_CONSOLE_LOG_LEVEL.store(log_level.to_level_filter() as u8, Ordering::Relaxed);
+}
 
 fn level_filter_from_u8(value: u8) -> log::LevelFilter {
     match value {
@@ -835,6 +857,11 @@ commands::models::rescan_local_models,
             commands::system::get_system_ram,
             commands::system::check_speech_runtime_installed,
             commands::system::install_speech_runtime,
+            commands::models::change_native_streaming_live_output_model_setting,
+            commands::models::change_native_streaming_show_interim_longer_setting,
+            commands::models::change_native_streaming_latency_preset_setting,
+            commands::get_dev_console_log_level,
+            commands::set_dev_console_log_level,
             crate::overlay_fx::commands::overlay_fx_probe_capabilities,
             crate::overlay_fx::commands::overlay_fx_show_conversation,
             crate::overlay_fx::commands::overlay_fx_dismiss,

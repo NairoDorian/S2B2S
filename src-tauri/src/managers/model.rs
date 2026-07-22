@@ -38,6 +38,28 @@ pub enum EngineType {
     UnifiedParakeet,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeStreamingLatencyKind {
+    ParakeetBuffered,
+    #[serde(rename = "nemotron_3_5_cache_aware")]
+    Nemotron35CacheAware,
+    NemotronSpeechCacheAware,
+}
+
+pub fn native_streaming_latency_kind(hint: &str) -> Option<NativeStreamingLatencyKind> {
+    let hint = hint.to_ascii_lowercase();
+    if hint.contains("parakeet-unified") {
+        Some(NativeStreamingLatencyKind::ParakeetBuffered)
+    } else if hint.contains("nemotron-3.5-asr-streaming") {
+        Some(NativeStreamingLatencyKind::Nemotron35CacheAware)
+    } else if hint.contains("nemotron-speech-streaming") {
+        Some(NativeStreamingLatencyKind::NemotronSpeechCacheAware)
+    } else {
+        None
+    }
+}
+
 /// Where a model comes from and how Handy obtains it — the routing discriminant
 /// for downloading and on-disk resolution.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -89,6 +111,7 @@ pub struct ModelInfo {
     #[specta(skip)]
     pub hf_files: Option<Vec<String>>,
     pub supports_streaming: bool, // Whether this model supports live streaming preview (transcribe-cpp)
+    pub native_streaming_latency_kind: Option<NativeStreamingLatencyKind>,
     pub supports_language_detection: bool, // Whether the model can auto-detect language (gates the "Auto" option)
 }
 
@@ -221,6 +244,7 @@ impl ModelDescriptor {
             // custom files (those bypass the descriptor and set this directly).
             is_custom: false,
             supports_streaming: self.caps.supports_streaming.unwrap_or(false),
+            native_streaming_latency_kind: native_streaming_latency_kind(&self.id),
             supports_language_detection: self.caps.supports_language_detect.unwrap_or(false),
             url: None,
             sha256: None,
@@ -544,6 +568,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -587,6 +612,7 @@ impl ModelManager {
                 source: ModelSource::Local,
                 supports_language_detection: false,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -626,6 +652,7 @@ impl ModelManager {
                 source: ModelSource::Local,
                 supports_language_detection: false,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -666,6 +693,7 @@ impl ModelManager {
                 source: ModelSource::Local,
                 supports_language_detection: false,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -717,6 +745,7 @@ impl ModelManager {
                     source: ModelSource::Local,
         supports_language_detection: false,
         supports_streaming: false,
+        native_streaming_latency_kind: None,
 },
         );
 
@@ -758,6 +787,7 @@ impl ModelManager {
                         source: ModelSource::Local,
         supports_language_detection: false,
         supports_streaming: false,
+        native_streaming_latency_kind: None,
 },
             );
         }
@@ -792,6 +822,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -829,6 +860,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -866,6 +898,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -904,6 +937,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -942,6 +976,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -989,6 +1024,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
                 url: None,
                 sha256: None,
@@ -1031,6 +1067,7 @@ impl ModelManager {
                 ]),
                 supports_streaming: true,
                 supports_language_detection: false,
+                native_streaming_latency_kind: None,
                 source: ModelSource::Local,
             },
         );
@@ -1068,6 +1105,7 @@ impl ModelManager {
                 ]),
                 supports_streaming: true,
                 supports_language_detection: false,
+                native_streaming_latency_kind: None,
                 source: ModelSource::Local,
             },
         );
@@ -1102,6 +1140,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1140,6 +1179,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1178,6 +1218,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1216,6 +1257,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1260,6 +1302,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1300,6 +1343,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1346,6 +1390,7 @@ impl ModelManager {
                 supports_streaming: false,
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
+                native_streaming_latency_kind: None,
 
                 url: None,
                 sha256: None,
@@ -1394,6 +1439,7 @@ impl ModelManager {
                 supports_streaming: false,
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
+                native_streaming_latency_kind: None,
 
                 url: None,
                 sha256: None,
@@ -1437,6 +1483,7 @@ impl ModelManager {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 supports_language_detection: true,
 
                 url: None,
@@ -1955,7 +2002,7 @@ impl ModelManager {
             available_models.insert(
                 model_id.clone(),
                 ModelInfo {
-                    id: model_id,
+                    id: model_id.clone(),
                     name: display_name,
                     description: "Not officially supported".to_string(),
                     filename,
@@ -1976,6 +2023,7 @@ impl ModelManager {
                     hf_repo: None,
                     hf_files: None,
                     supports_streaming: caps.supports_streaming,
+                    native_streaming_latency_kind: native_streaming_latency_kind(&model_id),
                     supports_language_detection: caps.supports_language_detection,
 
                     url: None,
@@ -2079,7 +2127,7 @@ impl ModelManager {
                 available_models.insert(
                     model_id.clone(),
                     ModelInfo {
-                        id: model_id,
+                        id: model_id.clone(),
                         name: display,
                         description: format!("From Hugging Face cache: {}", repo_id),
                         filename: fname,
@@ -2101,6 +2149,7 @@ impl ModelManager {
                         supports_language_selection: caps.supports_language_selection,
                         is_custom: false,
                         supports_streaming: caps.supports_streaming,
+                        native_streaming_latency_kind: native_streaming_latency_kind(&model_id),
                         supports_language_detection: caps.supports_language_detection,
                         url: None,
                         sha256: None,
@@ -3153,6 +3202,7 @@ mod tests {
                 hf_repo: None,
                 hf_files: None,
                 supports_streaming: false,
+                native_streaming_latency_kind: None,
                 // Legacy entry: preserve the historical "Auto offered" behavior.
                 // (Catalog GGUFs and on-disk probes derive this from metadata.)
                 supports_language_detection: true,

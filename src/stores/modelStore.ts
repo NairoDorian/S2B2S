@@ -7,6 +7,11 @@ import { produce } from "immer";
 import { listen } from "@tauri-apps/api/event";
 import { commands, type ModelInfo } from "@/bindings";
 import { toast } from "sonner";
+import {
+  beginModelDownloadActivationIntent,
+  cancelModelDownloadActivationIntent,
+  invalidateModelDownloadActivationIntent,
+} from "@/lib/modelDownloadActivation";
 
 interface DownloadProgress {
   model_id: string;
@@ -147,6 +152,7 @@ export const useModelStore = create<ModelsStore>()(
 
     selectModel: async (modelId: string) => {
       try {
+        invalidateModelDownloadActivationIntent();
         set({ error: null });
         const result = await commands.setActiveModel(modelId);
         if (result.status === "ok") {
@@ -165,6 +171,7 @@ export const useModelStore = create<ModelsStore>()(
     downloadModel: async (modelId: string) => {
       try {
         set({ error: null });
+        await beginModelDownloadActivationIntent(modelId);
         set(
           produce((state) => {
             state.downloadingModels[modelId] = true;
@@ -178,9 +185,7 @@ export const useModelStore = create<ModelsStore>()(
         );
         const result = await commands.downloadModel(modelId);
         if (result.status !== "ok") {
-          // Fallback cleanup in case the model-download-failed event was not received
-          // (e.g. listener not yet registered). The event handler is a no-op if it
-          // arrives after this cleanup since deleting missing keys is safe.
+          cancelModelDownloadActivationIntent(modelId);
           set(
             produce((state) => {
               delete state.downloadingModels[modelId];
@@ -191,8 +196,7 @@ export const useModelStore = create<ModelsStore>()(
         }
         return result.status === "ok";
       } catch {
-        // model-download-failed event won't fire for JS exceptions (e.g. IPC error),
-        // so clean up state here to avoid a stuck progress spinner.
+        cancelModelDownloadActivationIntent(modelId);
         set(
           produce((state) => {
             delete state.downloadingModels[modelId];
@@ -207,6 +211,7 @@ export const useModelStore = create<ModelsStore>()(
     cancelDownload: async (modelId: string) => {
       try {
         set({ error: null });
+        cancelModelDownloadActivationIntent(modelId);
         const result = await commands.cancelDownload(modelId);
         if (result.status === "ok") {
           set(

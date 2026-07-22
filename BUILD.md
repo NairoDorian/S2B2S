@@ -341,6 +341,7 @@ S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub
 Since prebuilt wheels for `qwentts-cpp-python` on PyPI and Hugging Face are built exclusively for Linux (`manylinux_2_39_x86_64`), running the GGML/C++ backend for Qwen3-TTS on Windows 11 requires a local compilation of `qwentts.cpp` and patching of the Python ctypes wrapper.
 
 ### 1. Prerequisites (Windows)
+
 - Visual Studio 2022/2025 Community or Build Tools with C++ Desktop Development.
 - **NVIDIA CUDA Toolkit v13.3** (or v12.x) with `nvcc` available in your PATH.
 - S2B2S python virtual environment (`venv`) set up.
@@ -349,6 +350,7 @@ Since prebuilt wheels for `qwentts-cpp-python` on PyPI and Hugging Face are buil
 
 1. **Clone the Repositories**:
    In a directory next to the `S2B2S` folder, clone the native C++ library and its submodules, along with the Python ctypes wrapper:
+
    ```powershell
    git clone https://github.com/ServeurpersoCom/qwentts.cpp
    cd qwentts.cpp
@@ -359,11 +361,13 @@ Since prebuilt wheels for `qwentts-cpp-python` on PyPI and Hugging Face are buil
 
 2. **Configure and Compile the C++ Shared Library**:
    Run CMake to generate build files with shared library and CUDA support, then compile in Release mode:
+
    ```powershell
    cd qwentts.cpp
    cmake -S . -B build -DGGML_CUDA=ON -DQWEN_SHARED=ON
    cmake --build build --config Release -j
    ```
+
    This generates `qwen.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-cuda.dll`, and `ggml.dll` under `build\Release\`.
 
 3. **Patch Wrapper for Windows DLL Dependency Loading**:
@@ -391,10 +395,11 @@ Since prebuilt wheels for `qwentts-cpp-python` on PyPI and Hugging Face are buil
 
 4. **Copy Compiled DLLs and Install Wrapper**:
    Inside `qwentts-cpp-python`, copy the native binaries and install the wrapper inside the S2B2S venv using `uv`:
+
    ```powershell
    # Copy DLLs
    ..\S2B2S\venv\Scripts\python.exe scripts\build_native.py --skip-build --build-dir ..\qwentts.cpp\build
-   
+
    # Install locally in editable mode
    uv pip install -e . --python ..\S2B2S\venv
    ```

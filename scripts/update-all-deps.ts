@@ -35,7 +35,12 @@ function logStep(stepNum: number, title: string) {
   console.log("─".repeat(60));
 }
 
-function runCmd(cmd: string, cwd: string = projectRoot, label?: string, allowFail = false) {
+function runCmd(
+  cmd: string,
+  cwd: string = projectRoot,
+  label?: string,
+  allowFail = false,
+) {
   if (label) {
     console.log(`${YELLOW}➜ Executing:${RESET} ${label} (${cmd})`);
   } else {
@@ -47,7 +52,9 @@ function runCmd(cmd: string, cwd: string = projectRoot, label?: string, allowFai
     return true;
   } catch (error: any) {
     if (allowFail) {
-      console.log(`${YELLOW}⚠️ Optional command failed (non-critical):${RESET} ${cmd}`);
+      console.log(
+        `${YELLOW}⚠️ Optional command failed (non-critical):${RESET} ${cmd}`,
+      );
       return true;
     }
     console.error(`${RED}✘ Command failed:${RESET} ${cmd}`);
@@ -90,8 +97,12 @@ if (existsSync(venvPy)) {
   const pyOk = runCmd(pyCmd, projectRoot, "Python venv Upgrade", true);
   if (!pyOk) hasErrors = true;
 } else {
-  console.log(`${YELLOW}ℹ Python venv not found at ${venvPy}. Skipping Python package updates.${RESET}`);
-  console.log(`${YELLOW}  (Run .\\scripts\\setup_tts_venv.ps1 or bash scripts/setup_tts_venv.sh to set up venv)${RESET}`);
+  console.log(
+    `${YELLOW}ℹ Python venv not found at ${venvPy}. Skipping Python package updates.${RESET}`,
+  );
+  console.log(
+    `${YELLOW}  (Run .\\scripts\\setup_tts_venv.ps1 or bash scripts/setup_tts_venv.sh to set up venv)${RESET}`,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -104,23 +115,43 @@ const tscOk = runCmd("bunx tsc --noEmit", projectRoot, "TypeScript Check");
 if (!tscOk) hasErrors = true;
 
 console.log(`\n${CYAN}2/3 Verifying i18n Translations...${RESET}`);
-const i18nOk = runCmd("bun scripts/check-translations.ts", projectRoot, "Translation Check");
+const i18nOk = runCmd(
+  "bun scripts/check-translations.ts",
+  projectRoot,
+  "Translation Check",
+);
 if (!i18nOk) hasErrors = true;
 
-console.log(`\n${CYAN}3/3 Regenerating Specta Bindings & Rust Compilation Check...${RESET}`);
-const testOk = runCmd("cargo test export_bindings", srcTauriDir, "Rust Specta Export & Compilation");
+console.log(
+  `\n${CYAN}3/3 Regenerating Specta Bindings & Rust Compilation Check...${RESET}`,
+);
+const testOk = runCmd(
+  "cargo test export_bindings",
+  srcTauriDir,
+  "Rust Specta Export & Compilation",
+);
 if (!testOk) hasErrors = true;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────
-console.log(`\n${BOLD}${CYAN}════════════════════════════════════════════════════════════${RESET}`);
+console.log(
+  `\n${BOLD}${CYAN}════════════════════════════════════════════════════════════${RESET}`,
+);
 if (!hasErrors) {
-  console.log(`${BOLD}${GREEN}🎉 ALL DEPENDENCIES UPDATED & VERIFIED SUCCESSFULLY! 🎉${RESET}`);
-  console.log(`${GREEN}Your project is fully up-to-date across Bun, Cargo, and Python.${RESET}`);
+  console.log(
+    `${BOLD}${GREEN}🎉 ALL DEPENDENCIES UPDATED & VERIFIED SUCCESSFULLY! 🎉${RESET}`,
+  );
+  console.log(
+    `${GREEN}Your project is fully up-to-date across Bun, Cargo, and Python.${RESET}`,
+  );
 } else {
   console.log(`${BOLD}${RED}⚠️ UPDATE COMPLETED WITH WARNINGS/ERRORS.${RESET}`);
-  console.log(`${YELLOW}Please inspect the log output above for details.${RESET}`);
+  console.log(
+    `${YELLOW}Please inspect the log output above for details.${RESET}`,
+  );
   process.exit(1);
 }
-console.log(`${BOLD}${CYAN}════════════════════════════════════════════════════════════${RESET}\n`);
+console.log(
+  `${BOLD}${CYAN}════════════════════════════════════════════════════════════${RESET}\n`,
+);

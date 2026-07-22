@@ -25,6 +25,32 @@ pub fn cancel_operation(app: AppHandle) {
     cancel_current_operation(&app);
 }
 
+#[specta::specta]
+#[tauri::command]
+pub fn get_dev_console_log_level() -> LogLevel {
+    #[cfg(debug_assertions)]
+    {
+        crate::dev_console_log_level()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        LogLevel::Info
+    }
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn set_dev_console_log_level(level: LogLevel) {
+    #[cfg(debug_assertions)]
+    {
+        crate::set_dev_console_log_level(level);
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = level;
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn is_portable() -> bool {
