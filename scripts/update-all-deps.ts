@@ -35,7 +35,7 @@ function logStep(stepNum: number, title: string) {
   console.log("─".repeat(60));
 }
 
-function runCmd(cmd: string, cwd: string = projectRoot, label?: string) {
+function runCmd(cmd: string, cwd: string = projectRoot, label?: string, allowFail = false) {
   if (label) {
     console.log(`${YELLOW}➜ Executing:${RESET} ${label} (${cmd})`);
   } else {
@@ -46,6 +46,10 @@ function runCmd(cmd: string, cwd: string = projectRoot, label?: string) {
     console.log(`${GREEN}✔ Succeeded!${RESET}`);
     return true;
   } catch (error: any) {
+    if (allowFail) {
+      console.log(`${YELLOW}⚠️ Optional command failed (non-critical):${RESET} ${cmd}`);
+      return true;
+    }
     console.error(`${RED}✘ Command failed:${RESET} ${cmd}`);
     return false;
   }
@@ -83,7 +87,7 @@ const venvPy = isWin
 
 if (existsSync(venvPy)) {
   const pyCmd = `"${venvPy}" -m pip install --upgrade piper-tts kokoro-tts pocket-tts kittentts torch numpy soundfile`;
-  const pyOk = runCmd(pyCmd, projectRoot, "Python venv Upgrade");
+  const pyOk = runCmd(pyCmd, projectRoot, "Python venv Upgrade", true);
   if (!pyOk) hasErrors = true;
 } else {
   console.log(`${YELLOW}ℹ Python venv not found at ${venvPy}. Skipping Python package updates.${RESET}`);
