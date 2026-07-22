@@ -26,7 +26,7 @@ import { useOsType } from "@/hooks/useOsType";
 import { useSettings } from "@/hooks/useSettings";
 import { getActionIcon } from "@/lib/constants/actionIcons";
 import { formatDateTime } from "@/utils/dateFormat";
-import { AudioPlayer } from "../../ui/AudioPlayer";
+import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
 
 const IconButton: React.FC<{
@@ -377,21 +377,23 @@ export const HistorySettings: React.FC = () => {
   } else {
     content = (
       <>
-        <div className="divide-y divide-mid-gray/20">
-          {entries.map((entry) => (
-            <HistoryEntryComponent
-              key={entry.id}
-              entry={entry}
-              onToggleSaved={() => toggleSaved(entry.id)}
-              onCopyText={() => copyToClipboard(entry.transcription_text)}
-              getAudioUrl={getAudioUrl}
-              deleteAudio={deleteAudioEntry}
-              regenerateEntry={regenerateHistoryEntry}
-              isSelected={selectedIds.includes(entry.id)}
-              onToggleSelect={() => handleToggleSelect(entry.id)}
-            />
-          ))}
-        </div>
+        <AudioPlayerGroup>
+          <div className="divide-y divide-mid-gray/20">
+            {entries.map((entry) => (
+              <HistoryEntryComponent
+                key={entry.id}
+                entry={entry}
+                onToggleSaved={() => toggleSaved(entry.id)}
+                onCopyText={() => copyToClipboard(entry.transcription_text)}
+                getAudioUrl={getAudioUrl}
+                deleteAudio={deleteAudioEntry}
+                regenerateEntry={regenerateHistoryEntry}
+                isSelected={selectedIds.includes(entry.id)}
+                onToggleSelect={() => handleToggleSelect(entry.id)}
+              />
+            ))}
+          </div>
+        </AudioPlayerGroup>
         {/* Sentinel for infinite scroll */}
         <div ref={sentinelRef} className="h-1" />
       </>

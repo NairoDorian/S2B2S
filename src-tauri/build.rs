@@ -10,13 +10,16 @@ fn main() {
     // Linux ships transcribe-cpp as a shared libtranscribe + loadable ggml
     // backend modules (the `dynamic-backends` posture in Cargo.toml). Bake an
     // $ORIGIN-relative rpath into the `handy` binary so it finds libtranscribe
-    // next to it in the package — AppImage `usr/bin/handy` -> `usr/lib`, and
-    // deb/rpm `/usr/bin/handy` -> `/usr/lib`. transcribe's
+    // next to it in the package — deb/rpm install into the app-private
+    // `/usr/lib/Handy` (the dir tauri already uses for resources; keeps
+    // Handy's libs out of the ldconfig-scanned `/usr/lib`, issue #1639) while
+    // the AppImage keeps them in `usr/lib` (linuxdeploy's layout), hence both
+    // entries. transcribe's
     // init_backends_default() then loads the ggml modules co-located there.
     // (Windows resolves DLLs from the exe directory, so it needs no rpath;
     // macOS links transcribe-cpp statically via the `metal` feature.)
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Handy:$ORIGIN/../lib");
     }
 
     // Stage transcribe-cpp's shared runtime libraries (and the dlopen'd ggml
@@ -84,6 +87,24 @@ fn embed_test_manifest() {
         // CVTRES duplicate resource error CVT1100.
         println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
     }
+}
+
+/// Split a versioned ELF shared-library name into (stem, version depth):
+/// `libfoo.so` -> ("libfoo", 0), `libfoo.so.0` -> ("libfoo", 1),
+/// `libfoo.so.0.1.3` -> ("libfoo", 3). Returns None for names that aren't a
+/// `.so` optionally followed by dot-separated numeric components.
+#[allow(dead_code)]
+fn split_versioned_so(name: &str) -> Option<(&str, usize)> {
+    let idx = name.find(".so")?;
+    let (stem, rest) = (&name[..idx], &name[idx + 3..]);
+    if rest.is_empty() {
+        return Some((stem, 0));
+    }
+    let comps: Vec<&str> = rest.strip_prefix('.')?.split('.').collect();
+    comps
+        .iter()
+        .all(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
+        .then_some((stem, comps.len()))
 }
 
 /// Generate tray menu translations from frontend locale files.

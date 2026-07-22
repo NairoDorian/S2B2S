@@ -212,7 +212,8 @@ This compiles a release binary and generates platform-specific bundles:
 
 When working on UI only (no Rust changes needed):
 
-```bashbun run dev       # Start Vite dev server on :1420
+```bash
+bun run dev       # Start Vite dev server on :1420
 bun run build     # Build frontend (TypeScript + Vite)
 bun run preview   # Preview built frontend
 ```

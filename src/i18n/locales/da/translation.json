@@ -1,21 +1,21 @@
 {
   "tray": {
-    "settings": "Einstellungen...",
-    "checkUpdates": "Nach Updates suchen...",
-    "copyLastTranscript": "Letzte Transkription kopieren",
-    "unloadModel": "Modell entladen",
-    "model": "Modell",
-    "quit": "Beenden",
-    "cancel": "Abbrechen"
+    "settings": "Indstillinger...",
+    "checkUpdates": "Tjek for opdateringer...",
+    "copyLastTranscript": "Kopiér seneste transskription",
+    "unloadModel": "Frigør model",
+    "model": "Model",
+    "quit": "Afslut",
+    "cancel": "Annuller"
   },
   "sidebar": {
-    "general": "Allgemein",
-    "models": "Modelle",
-    "advanced": "Erweitert",
-    "postProcessing": "Nachbearbeitung",
-    "history": "Verlauf",
-    "debug": "Debug",
-    "about": "Info",
+    "general": "Generelt",
+    "models": "Modeller",
+    "advanced": "Avanceret",
+    "postProcessing": "Efterbehandling",
+    "history": "Historik",
+    "debug": "Fejlfinding",
+    "about": "Om",
     "speech": "Speech",
     "brain": "Brain",
     "conversation": "Conversation",
@@ -24,144 +24,144 @@
     "wgpuTrail": "WGPU Trail"
   },
   "onboarding": {
-    "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",
-    "existingModelsTitle": "Kompatible Modelle",
-    "downloadModelsTitle": "Verfügbar zum Download",
-    "showAllModels": "Alle {{total}} Modelle anzeigen",
-    "showFewerModels": "Weniger Modelle anzeigen",
-    "recommended": "Empfohlen",
-    "customModelDescription": "Nicht offiziell unterstützt",
+    "subtitle": "For at komme i gang skal du vælge en transskriptionsmodel",
+    "existingModelsTitle": "Kompatible modeller",
+    "downloadModelsTitle": "Tilgængelig til download",
+    "showAllModels": "Vis alle {{total}} modeller",
+    "showFewerModels": "Vis færre modeller",
+    "recommended": "Anbefalet",
+    "customModelDescription": "Ikke officielt understøttet",
     "modelCard": {
-      "accuracy": "Genauigkeit",
-      "speed": "Geschwindigkeit"
+      "accuracy": "nøjagtighed",
+      "speed": "hastighed"
     },
     "models": {
       "small": {
         "name": "Whisper Small",
-        "description": "Schnell und recht genau."
+        "description": "Hurtig og ret nøjagtig."
       },
       "medium": {
         "name": "Whisper Medium",
-        "description": "Gute Genauigkeit, mittlere Geschwindigkeit"
+        "description": "God nøjagtighed, middel hastighed"
       },
       "turbo": {
         "name": "Whisper Turbo",
-        "description": "Ausgewogene Genauigkeit und Geschwindigkeit."
+        "description": "Afbalanceret nøjagtighed og hastighed."
       },
       "large": {
         "name": "Whisper Large",
-        "description": "Gute Genauigkeit, aber langsam."
+        "description": "God nøjagtighed, men langsom."
       },
       "parakeet-tdt-0.6b-v2": {
         "name": "Parakeet V2",
-        "description": "Nur Englisch. Das beste Modell für englischsprachige Nutzer."
+        "description": "Kun engelsk. Den bedste model for engelsktalende."
       },
       "parakeet-tdt-0.6b-v3": {
         "name": "Parakeet V3",
-        "description": "Schnell und genau"
+        "description": "Hurtig og nøjagtig"
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Sehr schnell, nur Englisch. Verarbeitet Akzente gut."
+        "description": "Meget hurtig, kun engelsk. Håndterer accenter godt."
       },
       "moonshine-tiny-streaming-en": {
         "name": "Moonshine V2 Tiny",
-        "description": "Ultraschnell, nur Englisch"
+        "description": "Ultrahurtig, kun engelsk"
       },
       "moonshine-small-streaming-en": {
         "name": "Moonshine V2 Small",
-        "description": "Schnell, nur Englisch. Gute Balance zwischen Geschwindigkeit und Genauigkeit."
+        "description": "Hurtig, kun engelsk. God balance mellem hastighed og nøjagtighed."
       },
       "moonshine-medium-streaming-en": {
         "name": "Moonshine V2 Medium",
-        "description": "Nur Englisch. Hohe Qualität."
+        "description": "Kun engelsk. Høj kvalitet."
       },
       "breeze-asr": {
         "name": "Breeze ASR",
-        "description": "Optimiert für taiwanesisches Mandarin. Unterstützung für Code-Switching."
+        "description": "Optimeret til taiwansk mandarin. Understøtter kodeskift."
       },
       "sense-voice-int8": {
         "name": "SenseVoice",
-        "description": "Sehr schnell. Chinesisch, Englisch, Japanisch, Koreanisch, Kantonesisch."
+        "description": "Meget hurtig. Kinesisk, engelsk, japansk, koreansk, kantonesisk."
       },
       "gigaam-v3-e2e-ctc": {
         "name": "GigaAM v3",
-        "description": "Russische Spracherkennung. Schnell und präzise."
+        "description": "Russisk talegenkendelse. Hurtig og nøjagtig."
       },
       "canary-180m-flash": {
         "name": "Canary 180M Flash",
-        "description": "Sehr schnell. Englisch, Deutsch, Spanisch, Französisch. Unterstützt Übersetzung."
+        "description": "Meget hurtig. Engelsk, tysk, spansk, fransk. Understøtter oversættelse."
       },
       "canary-1b-v2": {
         "name": "Canary 1B v2",
-        "description": "Genaue mehrsprachige Erkennung. 25 europäische Sprachen. Unterstützt Übersetzung."
+        "description": "Nøjagtig, flersproget. 25 europæiske sprog. Understøtter oversættelse."
       },
       "cohere-int8": {
         "name": "Cohere",
-        "description": "Ein großes, langsameres, aber sehr genaues mehrsprachiges Modell."
+        "description": "En stor, langsommere, men meget nøjagtig flersproget model."
       }
     },
     "errors": {
-      "selectModel": "Modellauswahl fehlgeschlagen"
+      "selectModel": "Kunne ikke vælge model"
     },
     "permissions": {
-      "title": "Berechtigungen erforderlich",
-      "description": "S2B2S benötigt einige Berechtigungen, um richtig zu funktionieren.",
+      "title": "Tilladelser påkrævet",
+      "description": "Handy har brug for et par tilladelser for at fungere korrekt.",
       "microphone": {
-        "title": "Mikrofonzugriff",
-        "description": "Erforderlich, um deine Stimme für die Transkription zu hören."
+        "title": "Mikrofonadgang",
+        "description": "Påkrævet for at høre din stemme til transskription."
       },
       "accessibility": {
-        "title": "Bedienungshilfen-Zugriff",
-        "description": "Erforderlich, um transkribierten Text in deine Anwendungen einzugeben."
+        "title": "Tilgængelighedsadgang",
+        "description": "Påkrævet for at skrive den transskriberede tekst ind i dine programmer."
       },
-      "grant": "Berechtigung erteilen",
-      "granted": "Erteilt",
-      "waiting": "Warten...",
-      "allGranted": "Alles bereit!",
+      "grant": "Giv tilladelse",
+      "granted": "Givet",
+      "waiting": "Venter...",
+      "allGranted": "Alt er klar!",
       "errors": {
-        "checkFailed": "Berechtigungsprüfung fehlgeschlagen. Bitte erneut versuchen.",
-        "requestFailed": "Berechtigungsanfrage fehlgeschlagen. Bitte erneut versuchen."
+        "checkFailed": "Kunne ikke tjekke tilladelser. Prøv igen.",
+        "requestFailed": "Kunne ikke anmode om tilladelse. Prøv igen."
       }
     }
   },
   "modelSelector": {
-    "custom": "Benutzerdefiniert",
-    "legacy": "Veraltet",
+    "custom": "Brugerdefineret",
+    "legacy": "Forældet",
     "streaming": "Streaming",
     "active": "Aktiv",
-    "switching": "Wechseln...",
-    "noModelsAvailable": "Keine Modelle verfügbar",
-    "verifying": "Überprüfung von {{modelName}}...",
-    "verifyingGeneric": "Überprüfung...",
-    "extracting": "Entpacke {{modelName}}...",
-    "extractingMultiple": "Entpacke {{count}} Modelle...",
-    "extractingGeneric": "Wird entpackt...",
-    "downloading": "Herunterladen {{percentage}}%",
-    "downloadingMultiple": "Lade {{count}} Modelle herunter...",
-    "modelReady": "Modell bereit",
-    "loading": "Lade {{modelName}}...",
-    "loadingGeneric": "Wird geladen...",
-    "modelError": "Modellfehler",
-    "modelUnloaded": "Modell entladen",
-    "noModelDownloadRequired": "Kein Modell - Download erforderlich",
-    "deleteModel": "{{modelName}} löschen",
+    "switching": "Skifter...",
+    "noModelsAvailable": "Ingen modeller tilgængelige",
+    "verifying": "Verificerer {{modelName}}...",
+    "verifyingGeneric": "Verificerer...",
+    "extracting": "Udpakker {{modelName}}...",
+    "extractingMultiple": "Udpakker {{count}} modeller...",
+    "extractingGeneric": "Udpakker...",
+    "downloading": "Downloader {{percentage}}%",
+    "downloadingMultiple": "Downloader {{count}} modeller...",
+    "modelReady": "Model klar",
+    "loading": "Indlæser {{modelName}}...",
+    "loadingGeneric": "Indlæser...",
+    "modelError": "Modelfejl",
+    "modelUnloaded": "Model frigjort",
+    "noModelDownloadRequired": "Ingen model - download påkrævet",
+    "deleteModel": "Slet {{modelName}}",
     "downloadSpeed": "{{speed}} MB/s",
-    "cancel": "Cancel",
-    "cancelDownload": "Download abbrechen",
+    "cancel": "Annuller",
+    "cancelDownload": "Annuller download",
     "capabilities": {
-      "languageSelection": "Unterstützt mehrere Eingabesprachen",
-      "singleLanguage": "Unterstützt nur diese Sprache",
-      "languageCount": "{{total}} Sprachen",
-      "languageOnly": "Nur {{language}}",
-      "translation": "Kann ins Englische übersetzen",
-      "translate": "Ins Englische übersetzen",
-      "streaming": "Zeigt die Transkription live während des Sprechens an"
+      "languageSelection": "Understøtter flere inputsprog",
+      "singleLanguage": "Understøtter kun dette sprog",
+      "languageCount": "{{total}} sprog",
+      "languageOnly": "Kun {{language}}",
+      "translation": "Kan oversætte til engelsk",
+      "translate": "Oversæt",
+      "streaming": "Viser live transskription, mens du taler"
     }
   },
   "settings": {
     "modelSettings": {
-      "title": "{{model}}-Einstellungen",
+      "title": "{{model}}-indstillinger",
       "noSettingsNeeded": "This model works automatically with no configuration needed.",
       "parakeetStreamingToggle": {
         "label": "Streaming Mode",
@@ -169,144 +169,144 @@
       }
     },
     "general": {
-      "title": "Allgemein",
+      "title": "Generelt",
       "shortcut": {
-        "title": "S2B2S-Tastenkürzel",
-        "description": "Tastenkürzel für die Sprachaufnahme konfigurieren",
-        "loading": "Tastenkürzel werden geladen...",
-        "none": "Keine Tastenkürzel konfiguriert",
-        "notFound": "Tastenkürzel nicht gefunden",
-        "pressKeys": "Tasten drücken...",
+        "title": "Handy-genveje",
+        "description": "Konfigurer tastaturgenveje til at udløse tale-til-tekst-optagelse",
+        "loading": "Indlæser genveje...",
+        "none": "Ingen genveje konfigureret",
+        "notFound": "Genvej ikke fundet",
+        "pressKeys": "Tryk på ønskede taster...",
         "bindings": {
           "transcribe": {
-            "name": "Transkriptions-Tastenkürzel",
-            "description": "Das Tastenkürzel zum Aufnehmen und Transkribieren deiner Stimme."
+            "name": "Transskriptionsgenvej",
+            "description": "Tastaturgenvejen til at optage og transskribere din stemme."
           },
           "cancel": {
-            "name": "Abbrechen-Tastenkürzel",
-            "description": "Das Tastenkürzel zum Abbrechen der aktuellen Aufnahme."
+            "name": "Annulleringsgenvej",
+            "description": "Tastaturgenvejen til at annullere den aktuelle optagelse."
           },
           "transcribe_with_post_process": {
-            "name": "Nachbearbeitungs-Tastenkürzel",
-            "description": "Optional: Ein dediziertes Tastenkürzel, das immer die KI-Nachbearbeitung auf deine Transkription anwendet."
+            "name": "Genvej til efterbehandling",
+            "description": "Valgfrit: En dedikeret genvej, der altid anvender AI-efterbehandling på din transskription."
           }
         },
         "errors": {
-          "restore": "Ursprüngliches Tastenkürzel konnte nicht wiederhergestellt werden",
-          "set": "Tastenkürzel konnte nicht gesetzt werden: {{error}}",
-          "reset": "Tastenkürzel konnte nicht auf Originalwert zurückgesetzt werden"
+          "restore": "Kunne ikke gendanne den oprindelige genvej",
+          "set": "Kunne ikke indstille genvej: {{error}}",
+          "reset": "Kunne ikke nulstille genvej til oprindelig indstilling"
         }
       },
       "language": {
-        "title": "Sprache",
-        "description": "Wähle die Sprache für die Spracherkennung. Auto erkennt die Sprache automatisch, die Auswahl einer bestimmten Sprache kann die Genauigkeit verbessern.",
-        "searchPlaceholder": "Sprachen suchen...",
-        "noResults": "Keine Sprachen gefunden",
+        "title": "Sprog",
+        "description": "Vælg sproget til talegenkendelse. Auto tyder automatisk sproget, mens valg af et specifikt sprog kan forbedre nøjagtigheden for det pågældende sprog.",
+        "searchPlaceholder": "Søg efter sprog...",
+        "noResults": "Ingen sprog fundet",
         "auto": "Auto"
       },
       "pushToTalk": {
-        "label": "Push-to-Talk",
-        "description": "Gedrückt halten zum Aufnehmen, loslassen zum Stoppen"
+        "label": "Tryk-for-at-tale",
+        "description": "Hold nede for at optage, slip for at stoppe"
       }
     },
     "models": {
-      "title": "Transkriptionsmodelle",
-      "description": "Wähle ein Transkriptionsmodell aus oder lade zusätzliche Modelle herunter. Verschiedene Modelle bieten unterschiedliche Genauigkeits- und Geschwindigkeitsstufen.",
-      "searchPlaceholder": "Modelle nach Namen suchen…",
-      "yourModels": "Heruntergeladene Modelle",
-      "availableModels": "Zum Download verfügbar",
-      "deleteConfirm": "Bist du sicher, dass du {{modelName}} löschen möchtest? Du musst es erneut herunterladen, um es zu verwenden.",
-      "deleteActiveConfirm": "{{modelName}} ist dein aktives Modell. Das Löschen stoppt Transkriptionen, bis du ein neues Modell auswählst. Bist du sicher?",
-      "deleteTitle": "Modell löschen",
+      "title": "Transskriptionsmodeller",
+      "description": "Vælg en transskriptionsmodel, eller download flere modeller. Forskellige modeller tilbyder varierende niveauer af nøjagtighed og hastighed.",
+      "searchPlaceholder": "Søg efter modeller ved navn…",
+      "yourModels": "Downloadede modeller",
+      "availableModels": "Tilgængelig til download",
+      "deleteConfirm": "Er du sikker på, at du vil slette {{modelName}}? Du skal downloade den igen for at bruge den.",
+      "deleteActiveConfirm": "{{modelName}} er din aktive model. Sletning af den vil stoppe transskriptioner, indtil du vælger en ny model. Er du sikker?",
+      "deleteTitle": "Slet model",
       "filters": {
-        "allLanguages": "Alle Sprachen"
+        "allLanguages": "Alle sprog"
       },
       "rescan": {
-        "label": "Neu scannen",
-        "tooltip": "Erneut nach Modellen scannen, die außerhalb von Handy zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
+        "label": "Søg igen",
+        "tooltip": "Søg igen efter modeller, der er tilføjet til modelmappen eller Hugging Face-cachen uden for Handy"
       },
-      "noModelsMatch": "Keine Modelle entsprechen diesem Filter."
+      "noModelsMatch": "Ingen modeller matcher dette filter."
     },
     "sound": {
-      "title": "Ton",
+      "title": "Lyd",
       "microphone": {
         "title": "Mikrofon",
-        "description": "Bevorzugtes Mikrofon auswählen",
-        "placeholder": "Mikrofon auswählen...",
-        "loading": "Wird geladen..."
+        "description": "Vælg din foretrukne mikrofonenhed",
+        "placeholder": "Vælg mikrofon...",
+        "loading": "Indlæser..."
       },
       "audioFeedback": {
-        "label": "Audio-Feedback",
-        "description": "Ton bei Start und Ende der Aufnahme abspielen"
+        "label": "Lydfeedback",
+        "description": "Afspil lyd, når optagelse starter og stopper"
       },
       "outputDevice": {
-        "title": "Ausgabegerät",
-        "description": "Bevorzugtes Audioausgabegerät für Feedback-Töne auswählen",
-        "placeholder": "Ausgabegerät auswählen...",
-        "loading": "Wird geladen..."
+        "title": "Outputenhed",
+        "description": "Vælg din foretrukne lydoutputenhed til feedbacklyde",
+        "placeholder": "Vælg outputenhed...",
+        "loading": "Indlæser..."
       },
       "volume": {
-        "title": "Lautstärke",
-        "description": "Lautstärke der Audio-Feedback-Töne anpassen"
+        "title": "Lydstyrke",
+        "description": "Juster lydstyrken for lydfeedback"
       }
     },
     "advanced": {
       "groups": {
         "app": "App",
-        "output": "Ausgabe",
-        "transcription": "Transkription",
-        "history": "Verlauf",
-        "experimental": "Experimentell"
+        "output": "Output",
+        "transcription": "Transskription",
+        "history": "Historik",
+        "experimental": "Eksperimentel"
       },
       "experimentalToggle": {
-        "label": "Experimentelle Funktionen",
-        "description": "Experimentelle Funktionen aktivieren, die sich noch in Entwicklung befinden."
+        "label": "Eksperimentelle funktioner",
+        "description": "Aktivér eksperimentelle funktioner, der stadig er under udvikling."
       },
       "lazyStreamClose": {
-        "label": "Mikrofon zwischen Transkriptionen offen halten",
-        "description": "Hält den Mikrofon-Stream nach dem Aufnahmestopp 30 Sekunden lang offen, um die Latenz bei aufeinanderfolgenden Transkriptionen zu verringern. Kann die Bluetooth-Audioqualität beeinträchtigen."
+        "label": "Hold mikrofon åben mellem transskriptioner",
+        "description": "Holder mikrofonstrømmen åben i 30 sekunder, efter at optagelsen stopper, hvilket reducerer ventetid ved transskriptioner lige efter hinanden. Kan forringe Bluetooth-lydkvaliteten, mens den er aktiv."
       },
       "acceleration": {
         "transcribe": {
-          "title": "Whisper-Beschleunigung",
-          "description": "Hardwarebeschleunigung für Whisper-Modelle. Automatisch nutzt GPU falls verfügbar (Metal auf macOS, Vulkan auf Windows/Linux)."
+          "title": "transcribe.cpp-acceleration",
+          "description": "Hardwareacceleration til transcribe.cpp-modeller (Whisper-familien). Auto bruger GPU, hvis tilgængelig (Metal på macOS, Vulkan på Windows/Linux)."
         },
         "ort": {
-          "title": "ONNX-Beschleunigung",
-          "description": "Hardwarebeschleunigung für ONNX-Modelle (Parakeet, Canary, Moonshine usw.). DirectML unter Windows ist experimentell. Modelle können bei der Transkription fehlschlagen."
+          "title": "ONNX-acceleration",
+          "description": "Hardwareacceleration til ONNX-modeller (Parakeet, Canary, Moonshine osv.). DirectML på Windows er eksperimentelt. Modeller kan fejle under transskription."
         },
         "gpuDevice": {
           "auto": "Auto"
         }
       },
       "startHidden": {
-        "label": "Versteckt starten",
-        "description": "In den Systembereich starten, ohne das Fenster zu öffnen."
+        "label": "Start skjult",
+        "description": "Vis på meddelelsesområdet uden at åbne vinduet."
       },
       "autostart": {
-        "label": "Beim Start ausführen",
-        "description": "S2B2S automatisch beim Anmelden starten."
+        "label": "Start ved opstart",
+        "description": "Start Handy automatisk, når du logger ind på din computer."
       },
       "showTrayIcon": {
-        "label": "Taskleistensymbol anzeigen",
-        "description": "Das S2B2S-Symbol in der Taskleiste anzeigen."
+        "label": "Vis proceslinjeikon",
+        "description": "Vis Handy-ikonet i meddelelsesområdet."
       },
       "overlay": {
         "style": {
           "title": "Overlay",
-          "description": "Wähle das Aufnahme-Overlay: „Keine“ blendet es aus, „Minimal“ zeigt ein kompaktes Element, „Live“ zeigt die Transkription in Echtzeit während des Sprechens an (nur für streamingfähige Modelle – suche nach dem Streaming-Badge in der Modellauswahl). Unter Linux wird „Keine“ empfohlen.",
+          "description": "Vælg optagelses-overlay: Ingen skjuler det, Minimal viser en kompakt pille, Live viser transskription i realtid, mens du taler (kun modeller med streaming-understøttelse — se efter Streaming-mærket i modelvælgeren). På Linux anbefales 'Ingen'.",
           "options": {
-            "none": "Keine",
+            "none": "Ingen",
             "minimal": "Minimal",
             "live": "Live"
           }
         },
         "position": {
-          "title": "Overlay-Position",
-          "description": "Visuelles Feedback-Overlay während Aufnahme und Transkription anzeigen. Unter Linux wird 'Keine' empfohlen.",
+          "title": "Overlay-placering",
+          "description": "Hvor overlayet vises på skærmen under optagelse og transskription.",
           "options": {
-            "bottom": "Unten",
-            "top": "Oben"
+            "bottom": "Bund",
+            "top": "Top"
           }
         }
       },
@@ -404,38 +404,38 @@
         }
       },
       "pasteMethod": {
-        "title": "Einfügemethode",
-        "description": "Wähle, wie Text eingefügt wird. Direkt: simuliert Tippen über Systemeingabe. Keine: überspringt Einfügen, aktualisiert nur Verlauf/Zwischenablage.",
+        "title": "Indsætningsmetode",
+        "description": "Vælg, hvordan tekst indsættes. Direkte: simulerer tastetryk via systeminput. Ingen: springer indsætning over, opdaterer kun historik/udklipsholder.",
         "options": {
-          "clipboard": "Zwischenablage ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "Zwischenablage (Strg+Umschalt+V)",
-          "clipboardShiftInsert": "Zwischenablage (Umschalt+Einfg)",
-          "direct": "Direkt",
-          "none": "Keine",
-          "externalScript": "Externes Skript"
+          "clipboard": "Udklipsholder ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "Udklipsholder (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "Udklipsholder (Shift+Insert)",
+          "direct": "Direkte",
+          "none": "Ingen",
+          "externalScript": "Eksternt script"
         },
-        "externalScriptPlaceholder": "/pfad/zu/ihrem/skript.sh"
+        "externalScriptPlaceholder": "/sti/til/dit/script.sh"
       },
       "typingTool": {
-        "title": "Eingabetool",
-        "description": "Wähle, welches Linux-Eingabetool für die Direkt-Einfügen-Methode verwendet werden soll. Auto erkennt und verwendet automatisch das beste verfügbare Tool für dein System.",
+        "title": "Skriveværktøj",
+        "description": "Vælg hvilket Linux-skriveværktøj der skal bruges til Direkte indsætningsmetode. Auto registrerer og bruger automatisk det bedste tilgængelige værktøj til dit system.",
         "options": {
-          "auto": "Auto (Empfohlen)"
+          "auto": "Auto (anbefalet)"
         }
       },
       "clipboardHandling": {
-        "title": "Zwischenablage-Verhalten",
-        "description": "Zwischenablage nicht ändern bewahrt den aktuellen Inhalt nach der Transkription. In Zwischenablage kopieren hinterlässt das Transkriptionsergebnis in der Zwischenablage.",
+        "title": "Håndtering af udklipsholder",
+        "description": "Rør ikke ved udklipsholder bevarer dit nuværende udklipsholderindhold efter transskription. Kopiér til udklipsholder efterlader transskriptionsresultatet i din udklipsholder efter indsætning.",
         "options": {
-          "dontModify": "Zwischenablage nicht ändern",
-          "copyToClipboard": "In Zwischenablage kopieren"
+          "dontModify": "Rør ikke ved udklipsholder",
+          "copyToClipboard": "Kopiér til udklipsholder"
         }
       },
       "autoSubmit": {
-        "title": "Automatisch absenden",
-        "description": "Sendet nach dem Einfügen von Text automatisch die ausgewählte Tastenkombination. Cmd+Enter gilt für macOS, während Windows/Linux Super+Enter verwenden.",
+        "title": "Automatisk indsendelse",
+        "description": "Send automatisk den valgte tastekombination efter tekstindsættelse. Cmd+Enter gælder på macOS, mens Windows/Linux bruger Super+Enter.",
         "options": {
-          "off": "Aus",
+          "off": "Fra",
           "enter": "Enter",
           "cmdEnter": "Cmd+Enter",
           "superEnter": "Super+Enter",
@@ -443,68 +443,68 @@
         }
       },
       "translateToEnglish": {
-        "label": "Ins Englische übersetzen",
-        "description": "Sprache aus anderen Sprachen automatisch während der Transkription ins Englische übersetzen."
+        "label": "Oversæt til engelsk",
+        "description": "Oversæt automatisk tale fra andre sprog til engelsk under transskription."
       },
       "modelUnload": {
-        "title": "Modell entladen",
-        "description": "GPU/CPU-Speicher automatisch freigeben, wenn das Modell für die angegebene Zeit nicht verwendet wurde",
+        "title": "Frigør model",
+        "description": "Frigør automatisk GPU-/CPU-hukommelse, når modellen ikke har været brugt i den angivne tid",
         "options": {
-          "never": "Nie",
-          "immediately": "Sofort",
-          "min2": "Nach 2 Minuten",
-          "min5": "Nach 5 Minuten",
-          "min10": "Nach 10 Minuten",
-          "min15": "Nach 15 Minuten",
-          "hour1": "Nach 1 Stunde",
-          "sec15": "Nach 15 Sekunden (Debug)"
+          "never": "Aldrig",
+          "immediately": "Med det samme",
+          "min2": "Efter 2 minutter",
+          "min5": "Efter 5 minutter",
+          "min10": "Efter 10 minutter",
+          "min15": "Efter 15 minutter",
+          "hour1": "Efter 1 time",
+          "sec15": "Efter 15 sekunder (fejlfinding)"
         }
       },
       "customWords": {
-        "title": "Benutzerdefinierte Wörter",
-        "description": "Hilf unterstützten Modellen, Namen und Fachbegriffe zu erkennen. Die unscharfe Korrektur ist derzeit auf Wörter mit den Buchstaben A–Z und Zahlen beschränkt.",
-        "placeholder": "Wort hinzufügen",
-        "add": "Hinzufügen",
-        "remove": "{{word}} entfernen",
-        "duplicate": "\"{{word}}\" existiert bereits"
+        "title": "Brugerdefinerede ord",
+        "description": "Hjælp understøttede modeller med at genkende navne og specialiserede udtryk. Fuzzy-korrektion er i øjeblikket begrænset til ord, der bruger A-Z og tal.",
+        "placeholder": "Tilføj et ord",
+        "add": "Tilføj",
+        "remove": "Fjern {{word}}",
+        "duplicate": "\"{{word}}\" findes allerede"
       },
       "voiceActivityDetection": {
-        "title": "Sprachaktivitätserkennung (VAD)",
-        "description": "Filtert Stille aus Aufnahmen. Streamingfähige Modelle verwenden ein längeres VAD-Ende; das Deaktivieren von VAD nimmt Rohaudio auf."
+        "title": "Stemmeaktivitetsdetektion",
+        "description": "Filtrer stilhed fra optagelser. Streaming-modeller bruger en længere VAD-hale; deaktivering af VAD optager rå lyd."
       }
     },
     "postProcessing": {
       "title": "Post Process",
       "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
-        "title": "Tastenkürzel"
+        "title": "Genvejstast"
       },
       "api": {
         "title": "API (OpenAI-kompatibel)",
         "provider": {
-          "title": "Anbieter",
-          "description": "Wähle einen OpenAI-kompatiblen Anbieter."
+          "title": "Udbyder",
+          "description": "Vælg en OpenAI-kompatibel udbyder."
         },
         "appleIntelligence": {
-          "unavailable": "Apple Intelligence ist auf diesem Gerät nicht verfügbar. Erfordert einen Apple Silicon Mac mit macOS Tahoe (26.0) oder neuer und aktiviertem Apple Intelligence in den Systemeinstellungen."
+          "unavailable": "Apple Intelligence er ikke tilgængelig på denne enhed. Kræver en Apple Silicon Mac med macOS Tahoe (26.0) eller nyere med Apple Intelligence aktiveret i Systemindstillinger."
         },
         "baseUrl": {
           "title": "Basis-URL",
-          "description": "API-Basis-URL für den ausgewählten Anbieter. Nur der benutzerdefinierte Anbieter kann bearbeitet werden.",
+          "description": "API-basis-URL for den valgte udbyder. Kun den brugerdefinerede udbyder kan redigeres.",
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
-          "title": "API-Schlüssel",
-          "description": "API-Schlüssel für den ausgewählten Anbieter.",
+          "title": "API-nøgle",
+          "description": "API-nøgle til den valgte udbyder.",
           "placeholder": "sk-..."
         },
         "model": {
-          "title": "Modell",
-          "descriptionCustom": "Gib die Modellkennung an, die von deinem benutzerdefinierten Endpunkt erwartet wird.",
-          "descriptionDefault": "Wähle ein Modell des ausgewählten Anbieters.",
-          "placeholderWithOptions": "Modell suchen oder auswählen",
-          "placeholderNoOptions": "Modellnamen eingeben",
-          "refreshModels": "Modelle aktualisieren"
+          "title": "Model",
+          "descriptionCustom": "Angiv den modelidentifikator, som det brugerdefinerede endpoint forventer.",
+          "descriptionDefault": "Vælg en model, der udbydes af den valgte udbyder.",
+          "placeholderWithOptions": "Søg eller vælg en model",
+          "placeholderNoOptions": "Skriv et modelnavn",
+          "refreshModels": "Opdater modeller"
         }
       },
       "defaultShortcut": {
@@ -540,40 +540,40 @@
       "prompts": {
         "title": "Prompt",
         "selectedPrompt": {
-          "title": "Ausgewählter Prompt",
-          "description": "Wähle eine Vorlage zur Verfeinerung von Transkriptionen oder erstelle eine neue. Verwende ${output} im Prompt-Text, um auf das erfasste Transkript zu verweisen."
+          "title": "Valgt prompt",
+          "description": "Vælg en skabelon til at forfine transskriptioner, eller opret en ny. Brug ${output} i promptteksten for at referere til den fangede transskription."
         },
-        "noPrompts": "Keine Prompts verfügbar",
-        "selectPrompt": "Prompt auswählen",
-        "createNew": "Neuen Prompt erstellen",
-        "promptLabel": "Prompt-Name",
-        "promptLabelPlaceholder": "Prompt-Namen eingeben",
-        "promptInstructions": "Prompt-Anweisungen",
-        "promptInstructionsPlaceholder": "Schreibe die Anweisungen, die nach der Transkription ausgeführt werden sollen. Beispiel: Verbessere Grammatik und Klarheit für folgenden Text: ${output}",
-        "promptTip": "Tipp: Verwende <code>${output}</code>, um den transkribierten Text in deinen Prompt einzufügen.",
-        "updatePrompt": "Prompt aktualisieren",
-        "deletePrompt": "Prompt löschen",
-        "createPrompt": "Prompt erstellen",
-        "cancel": "Abbrechen",
-        "selectToEdit": "Wähle oben einen Prompt aus, um dessen Details anzuzeigen und zu bearbeiten.",
-        "createFirst": "Klicke oben auf 'Neuen Prompt erstellen', um deinen ersten Nachbearbeitungs-Prompt zu erstellen."
+        "noPrompts": "Ingen prompts tilgængelige",
+        "selectPrompt": "Vælg en prompt",
+        "createNew": "Opret ny prompt",
+        "promptLabel": "Promptnavn",
+        "promptLabelPlaceholder": "Indtast promptnavn",
+        "promptInstructions": "Promptinstruktioner",
+        "promptInstructionsPlaceholder": "Skriv de instruktioner, der skal køres efter transskription. Eksempel: Forbedr grammatik og klarhed for følgende tekst: ${output}",
+        "promptTip": "Tip: Brug <code>${output}</code> til at indsætte den transskriberede tekst i din prompt.",
+        "updatePrompt": "Opdater prompt",
+        "deletePrompt": "Slet prompt",
+        "createPrompt": "Opret prompt",
+        "cancel": "Annuller",
+        "selectToEdit": "Vælg en prompt ovenfor for at se og redigere dens detaljer.",
+        "createFirst": "Klik på 'Opret ny prompt' ovenfor for at oprette din første efterbehandlingsprompt."
       }
     },
     "history": {
-      "title": "Verlauf",
-      "openFolder": "Aufnahmeordner öffnen",
-      "loading": "Verlauf wird geladen...",
-      "empty": "Noch keine Transkriptionen. Starte eine Aufnahme, um deinen Verlauf aufzubauen!",
-      "copyToClipboard": "Transkription in Zwischenablage kopieren",
-      "save": "Transkription speichern",
-      "unsave": "Aus Gespeicherten entfernen",
-      "delete": "Eintrag löschen",
+      "title": "Historik",
+      "openFolder": "Åbn optagelsesmappe",
+      "loading": "Indlæser historik...",
+      "empty": "Ingen transskriptioner endnu. Start optagelse for at opbygge din historik!",
+      "copyToClipboard": "Kopiér transskription til udklipsholder",
+      "save": "Gem transskription",
+      "unsave": "Fjern fra gemte",
+      "delete": "Slet post",
       "deleteAll": "Delete All",
-      "deleteError": "Eintrag konnte nicht gelöscht werden. Bitte versuche es erneut.",
-      "retranscribe": "Erneut transkribieren",
-      "retranscribeError": "Erneute Transkription fehlgeschlagen. Bitte versuche es erneut.",
-      "transcribing": "Transkribiere...",
-      "transcriptionFailed": "Transkription fehlgeschlagen. Du kannst über das Wiederholen-Symbol erneut transkribieren.",
+      "deleteError": "Kunne ikke slette posten. Prøv igen.",
+      "retranscribe": "Transskribér igen",
+      "retranscribeError": "Kunne ikke transskribere igen. Prøv igen.",
+      "transcribing": "Transskriberer...",
+      "transcriptionFailed": "Transskription mislykkedes. Du kan transskribere igen ved hjælp af genforsøgsikonet.",
       "processWith": "Process with action…",
       "processError": "Failed to process entry with action.",
       "processed": "Processed",
@@ -583,101 +583,101 @@
       "synthesizing": "Synthesizing audio…"
     },
     "debug": {
-      "title": "Debug",
+      "title": "Fejlfinding",
       "logDirectory": {
-        "title": "Log-Verzeichnis",
-        "description": "Speicherort der Log-Dateien"
+        "title": "Logmappe",
+        "description": "Placering af logfiler"
       },
       "logLevel": {
-        "title": "Log-Level",
-        "description": "Ausführlichkeit der Protokollierung festlegen"
+        "title": "Logniveau",
+        "description": "Detaljeringsgrad for logning"
       },
       "liveLogs": {
-        "title": "Live-Logs",
-        "description": "Anwendungs-Logs in Echtzeit anzeigen, um Probleme zu diagnostizieren, ohne die Log-Datei zu öffnen. Es werden nur Logs angezeigt, die ausgegeben werden, während dieses Feld geöffnet ist; berücksichtigt die obige Log-Level-Einstellung.",
+        "title": "Live logs",
+        "description": "Stream applikationslogs i realtid for at diagnosticere problemer uden at åbne logfilen. Kun logs udsendt, mens dette panel er åbent, vises; respekterer indstillingen Logniveau ovenfor.",
         "live": "Live",
-        "paused": "Pausiert",
-        "pause": "Pausieren",
-        "resume": "Fortsetzen",
-        "copied": "Kopiert",
-        "lineCount": "{{count}} Zeilen",
-        "empty": "Warte auf Logs … Einträge erscheinen hier, sobald die App sie ausgibt."
+        "paused": "På pause",
+        "pause": "Pause",
+        "resume": "Genoptag",
+        "copied": "Kopieret",
+        "lineCount": "{{count}} linjer",
+        "empty": "Venter på logs… Poster vises her, når appen udsender dem."
       },
       "updateChecks": {
-        "label": "Nach Updates suchen",
-        "description": "Automatisch nach neuen Versionen von S2B2S suchen"
+        "label": "Tjek for opdateringer",
+        "description": "Tjek automatisk for nye versioner af Handy"
       },
       "whatsNewPreview": {
-        "title": "Vorschau der Neuerungen",
-        "description": "Die neuesten gebündelten Versionshinweise öffnen, ohne sie als gesehen zu markieren",
-        "button": "Vorschau",
-        "noNotes": "Keine gebündelten Versionshinweise gefunden",
-        "error": "Versionshinweise konnten nicht angezeigt werden"
+        "title": "Forhåndsvisning af nyheder",
+        "description": "Åbn de seneste medfølgende udgivelsesnoter uden at markere dem som set",
+        "button": "Forhåndsvisning",
+        "noNotes": "Ingen medfølgende udgivelsesnoter fundet",
+        "error": "Kunne ikke forhåndsvise udgivelsesnoter"
       },
       "soundTheme": {
-        "label": "Sound-Thema",
-        "description": "Sound-Thema für Aufnahme-Start und -Stop-Feedback auswählen"
+        "label": "Lydtema",
+        "description": "Vælg et lydtema til feedback ved start og stop af optagelse"
       },
       "wordCorrectionThreshold": {
-        "title": "Wortkorrektur-Schwelle",
-        "description": "Empfindlichkeit für benutzerdefinierte Wortkorrekturen"
+        "title": "Tærskel for ordkorrektion",
+        "description": "Følsomhed for brugerdefinerede ordkorrektioner"
       },
       "historyLimit": {
-        "title": "Verlaufslimit",
-        "description": "Maximale Anzahl der Verlaufseinträge",
-        "entries": "Einträge"
+        "title": "Historikgrænse",
+        "description": "Maksimalt antal historikposter, der skal beholdes",
+        "entries": "poster"
       },
       "recordingRetention": {
-        "title": "Aufnahmen automatisch löschen",
-        "description": "Alte Aufnahmen automatisch löschen, um Speicherplatz zu sparen",
-        "never": "Nie",
-        "preserveLimit": "Neueste {{count}} behalten",
-        "days3": "Nach 3 Tagen",
-        "weeks2": "Nach 2 Wochen",
-        "months3": "Nach 3 Monaten",
-        "placeholder": "Aufbewahrungszeitraum auswählen..."
+        "title": "Automatisk sletning af optagelser",
+        "description": "Slet automatisk gamle optagelser for at spare plads",
+        "never": "Aldrig",
+        "preserveLimit": "Behold de seneste {{count}}",
+        "days3": "Efter 3 dage",
+        "weeks2": "Efter 2 uger",
+        "months3": "Efter 3 måneder",
+        "placeholder": "Vælg opbevaringsperiode..."
       },
       "alwaysOnMicrophone": {
-        "label": "Mikrofon immer aktiv",
-        "description": "Mikrofon für schnellere Reaktion aktiv halten"
+        "label": "Altid aktiv mikrofon",
+        "description": "Hold mikrofonen aktiv for hurtigere reaktion"
       },
       "clamshellMicrophone": {
-        "title": "Clamshell-Mikrofon",
-        "description": "Mikrofon bei geschlossenem Laptop-Deckel"
+        "title": "Clamshell-mikrofon",
+        "description": "Mikrofon, der skal bruges, når den bærbares låg er lukket"
       },
       "postProcessingToggle": {
-        "label": "Nachbearbeitung",
-        "description": "KI-gestützte Textverfeinerung nach der Transkription aktivieren"
+        "label": "Efterbehandling",
+        "description": "Aktivér AI-drevet tekstforbedring efter transskription"
       },
       "muteWhileRecording": {
-        "label": "Während Aufnahme stummschalten",
-        "description": "Systemaudio während der Aufnahme stummschalten"
+        "label": "Mute under optagelse",
+        "description": "Sluk for systemlyd under optagelse"
       },
       "appendTrailingSpace": {
-        "label": "Leerzeichen anhängen",
-        "description": "Leerzeichen nach eingefügter Transkription hinzufügen"
+        "label": "Tilføj efterfølgende mellemrum",
+        "description": "Tilføj et mellemrum efter indsat transskription"
       },
       "keyboardImplementation": {
-        "title": "Tastatur-Implementierung",
-        "description": "Wähle das Backend für Tastaturkürzel.",
-        "bindingsReset": "Tastaturkürzel waren inkompatibel und wurden auf die Standardwerte zurückgesetzt"
+        "title": "Tastaturimplementering",
+        "description": "Vælg backend til tastaturgenveje.",
+        "bindingsReset": "Tastaturgenveje var inkompatible og blev nulstillet til standard"
       },
       "paths": {
-        "appData": "App-Daten:",
-        "models": "Modelle:",
-        "settings": "Einstellungen:"
+        "appData": "Appdata:",
+        "models": "Modeller:",
+        "settings": "Indstillinger:"
       },
       "pasteDelay": {
-        "title": "Einfügeverzögerung (vorher)",
-        "description": "Verzögerung (in Millisekunden) nach dem Kopieren des Textes, bevor der Einfüge-Tastendruck gesendet wird. Erhöhe den Wert, wenn nichts eingefügt wird."
+        "title": "Forsinkelse af indsættelse (før)",
+        "description": "Forsinkelse (i millisekunder) efter kopiering af tekst, før tastetrykket for indsætning sendes. Øg, hvis intet bliver indsat."
       },
       "pasteDelayAfter": {
-        "title": "Einfügeverzögerung (nachher)",
-        "description": "Verzögerung (in Millisekunden) nach dem Einfüge-Tastendruck, bevor deine vorherige Zwischenablage wiederhergestellt wird. Erhöhe den Wert, wenn der alte Inhalt der Zwischenablage statt der Transkription eingefügt wird."
+        "title": "Forsinkelse af indsættelse (efter)",
+        "description": "Forsinkelse (i millisekunder) efter tastetrykket for indsætning, før din tidligere udklipsholder gendannes. Øg, hvis dit gamle udklipsholderindhold bliver indsat i stedet for transskriptionen."
       },
       "recordingBuffer": {
-        "title": "Zusätzlicher Aufnahmepuffer",
-        "description": "Zusätzliche Zeit (in Millisekunden), um nach dem Loslassen der Taste weiter aufzunehmen, um nachlaufendes Audio zu erfassen. 0 = kein zusätzlicher Puffer."
+        "title": "Ekstra optagelsesbuffer",
+        "description": "Ekstra tid (i millisekunder) til at fortsætte optagelsen, efter du slipper tasten, for at fange efterfølgende lyd. 0 = ingen ekstra buffer."
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -700,31 +700,31 @@
       }
     },
     "about": {
-      "title": "Info",
+      "title": "Om",
       "version": {
         "title": "Version",
-        "description": "Aktuelle Version von S2B2S"
+        "description": "Nuværende version af Handy"
       },
       "whatsNewUpdates": {
-        "label": "Neuerungen anzeigen",
-        "description": "Versionshinweise nach Handy-Updates anzeigen"
+        "label": "Vis nyheder",
+        "description": "Vis udgivelsesnoter, efter Handy opdateres"
       },
       "appDataDirectory": {
-        "title": "App-Datenverzeichnis",
-        "description": "Speicherort der S2B2S-Daten"
+        "title": "Appdatamappe",
+        "description": "Placering, hvor Handy gemmer sine data"
       },
       "sourceCode": {
-        "title": "Quellcode",
-        "description": "Quellcode ansehen und beitragen",
-        "button": "Auf GitHub ansehen"
+        "title": "Kildekode",
+        "description": "Se kildekode og bidrag",
+        "button": "Vis på GitHub"
       },
       "supportDevelopment": {
-        "title": "Entwicklung unterstützen",
-        "description": "Hilf uns, S2B2S weiterzuentwickeln",
-        "button": "Spenden"
+        "title": "Støt udviklingen",
+        "description": "Hjælp os med at fortsætte udviklingen af Handy",
+        "button": "Donér"
       },
       "acknowledgments": {
-        "title": "Danksagungen",
+        "title": "Anerkendelser",
         "forkLineage": {
           "title": "Project Lineage & Forks",
           "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
@@ -757,8 +757,8 @@
         },
         "ggml": {
           "title": "ggml",
-          "description": "Hochleistungs-Inferenz des Whisper-Spracherkennungsmodells von OpenAI",
-          "details": "Handy verwendet ggml für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
+          "description": "Højtydende tensor-bibliotek til maskinlæringsinferens på enheden",
+          "details": "Handys lokale tale-til-tekst funktionalitet er bygget på transcribe.cpp og ggml. Tak for det fantastiske arbejde af Georgi Gerganov og bidragyderne."
         }
       }
     },
@@ -983,70 +983,70 @@
     "ttsEngine": "Speech Engine",
     "voicesCount": "{{count}} voices",
     "downloadingModel": "Downloading {{model}}...",
-    "checkingUpdates": "Suche nach Updates...",
-    "updateAvailableShort": "Update verfügbar",
-    "upToDate": "Aktuell",
-    "updateCheckingDisabled": "Update-Prüfung deaktiviert",
-    "downloading": "Wird heruntergeladen... {{progress}}%",
-    "installing": "Wird installiert...",
-    "preparing": "Wird vorbereitet...",
-    "checkForUpdates": "Nach Updates suchen",
-    "portableUpdateTitle": "Manuelles Update erforderlich",
-    "portableUpdateMessage": "Portable Installationen können nicht automatisch aktualisiert werden. Zum Aktualisieren: Lade den neuesten NSIS-Installer von GitHub Releases herunter, installiere ihn im selben Ordner und kopiere dann deinen Data/-Ordner (Einstellungen, Modelle, Aufnahmen) von der alten Version in die neue.",
-    "portableUpdateButton": "GitHub Releases öffnen"
+    "checkingUpdates": "Tjekker for opdateringer...",
+    "updateAvailableShort": "Opdatering tilgængelig",
+    "upToDate": "Opdateret",
+    "updateCheckingDisabled": "Tjek for opdateringer deaktiveret",
+    "downloading": "Downloader... {{progress}}%",
+    "installing": "Installerer...",
+    "preparing": "Forbereder...",
+    "checkForUpdates": "Tjek for opdateringer",
+    "portableUpdateTitle": "Manuel opdatering påkrævet",
+    "portableUpdateMessage": "Flytbare installationer kan ikke opdateres automatisk. For at opdatere: download den nyeste NSIS-installer fra GitHub Releases, installer den i den samme mappe, og kopiér derefter din Data/-mappe (indstillinger, modeller, optagelser) fra den gamle version til den nye.",
+    "portableUpdateButton": "Åbn GitHub Releases"
   },
   "whatsNew": {
-    "title": "Neu in Handy v{{version}}"
+    "title": "Nyt i Handy v{{version}}"
   },
   "common": {
-    "loading": "Wird geladen...",
-    "delete": "Löschen",
-    "close": "Schließen",
-    "open": "Öffnen",
-    "copy": "Kopieren",
-    "clear": "Leeren",
-    "noOptionsFound": "Keine Optionen gefunden"
+    "loading": "Indlæser...",
+    "delete": "Slet",
+    "close": "Luk",
+    "open": "Åbn",
+    "copy": "Kopiér",
+    "clear": "Ryd",
+    "noOptionsFound": "Ingen muligheder fundet"
   },
   "accessibility": {
-    "permissionsRequired": "Bedienungshilfen-Berechtigungen erforderlich",
-    "permissionsDescription": "Handy benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
-    "openSettings": "Systemeinstellungen öffnen",
-    "dismiss": "Schließen"
+    "permissionsRequired": "Accessibility Permissions Required",
+    "permissionsDescription": "Handy har brug for tilgængelighedstilladelser for at skrive den transskriberede tekst.",
+    "openSettings": "Åbn systemindstillinger",
+    "dismiss": "Dismiss"
   },
   "errors": {
-    "loadDirectory": "Fehler beim Laden des Verzeichnisses: {{error}}",
-    "micPermissionDeniedTitle": "Mikrofonzugriff verweigert",
+    "loadDirectory": "Fejl ved indlæsning af mappe: {{error}}",
+    "micPermissionDeniedTitle": "Mikrofonadgang nægtet",
     "micPermissionDenied": {
-      "generic": "Der Mikrofonzugriff wurde vom Betriebssystem verweigert. Bitte erteile die Mikrofonberechtigung in deinen Systemeinstellungen.",
-      "windows": "Aktiviere den Mikrofonzugriff unter Einstellungen → Datenschutz und Sicherheit → Mikrofon (einschließlich Desktop-App-Zugriff).",
-      "macos": "Erteile den Mikrofonzugriff in Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon.",
-      "linux": "Erteile den Mikrofonzugriff in den Sound- oder Datenschutzeinstellungen deines Systems."
+      "generic": "Mikrofonadgang blev nægtet af operativsystemet. Giv venligst mikrofontilladelse i dine systemindstillinger.",
+      "windows": "Aktivér mikrofonadgang under Indstillinger → Privatliv og sikkerhed → Mikrofon (inklusive adgang for skrivebordsapps).",
+      "macos": "Giv mikrofonadgang under Systemindstillinger → Privatliv og sikkerhed → Mikrofon.",
+      "linux": "Giv mikrofonadgang i dit systems lyd- eller privatlivsindstillinger."
     },
-    "noInputDeviceTitle": "Kein Mikrofon gefunden",
-    "noInputDevice": "Es wurde kein Audio-Eingabegerät erkannt. Bitte schließe ein Mikrofon oder Headset an und versuche es erneut.",
-    "recordingFailed": "Aufnahme konnte nicht gestartet werden: {{error}}",
-    "modelLoadFailed": "Modell konnte nicht geladen werden: {{model}}",
-    "modelLoadFailedUnknown": "unbekanntes Modell",
-    "pasteFailedTitle": "Text konnte nicht eingefügt werden",
-    "pasteFailed": "Der Text konnte nicht in die aktive Anwendung eingefügt werden.",
-    "transcriptionFailedTitle": "Transkription fehlgeschlagen"
+    "noInputDeviceTitle": "Ingen mikrofon fundet",
+    "noInputDevice": "Ingen lydinputenhed blev registreret. Tilslut en mikrofon eller et headset, og prøv igen.",
+    "recordingFailed": "Kunne ikke starte optagelse: {{error}}",
+    "modelLoadFailed": "Kunne ikke indlæse model: {{model}}",
+    "modelLoadFailedUnknown": "ukendt model",
+    "pasteFailedTitle": "Kunne ikke indsætte tekst",
+    "pasteFailed": "Teksten kunne ikke indsættes i det aktive program.",
+    "transcriptionFailedTitle": "Transskription mislykkedes"
   },
   "appLanguage": {
-    "title": "Anwendungssprache",
-    "description": "Sprache der S2B2S-Oberfläche ändern"
+    "title": "Applikationssprog",
+    "description": "Skift sproget for Handy-grænsefladen"
   },
   "theme": {
-    "title": "Anwendungsdesign",
-    "description": "Wählen Sie, ob Handy dem Systemthema folgt oder hell bzw. dunkel bleibt",
+    "title": "Applikationstema",
+    "description": "Vælg om Handy skal følge dit systemtema eller forblive lyst eller mørkt",
     "options": {
       "system": "System",
-      "light": "Hell",
-      "dark": "Dunkel"
+      "light": "Lys",
+      "dark": "Mørk"
     }
   },
   "overlay": {
-    "transcribing": "Transkribiere...",
-    "processing": "Verarbeite...",
+    "transcribing": "Transskriberer...",
+    "processing": "Behandler...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
   },
