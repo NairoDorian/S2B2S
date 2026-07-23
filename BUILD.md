@@ -365,7 +365,7 @@ uv pip install "faster-qwen3-tts>=0.3.0" "qwen-tts>=0.1.1" "transformers>=4.57,<
 
 ## Repository Auto-Sync & Pre-Commit Routine
 
-To keep S2B2S synchronized with upstream repositories ([`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts), [`handy-computer/transcribe.cpp`](https://github.com/handy-computer/transcribe.cpp), and workspace sibling projects), run the repository sync command before making commits:
+To keep S2B2S synchronized with upstream dependency repositories ([`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts) and [`handy-computer/transcribe.cpp`](https://github.com/handy-computer/transcribe.cpp)), run the repository sync command before making commits:
 
 ```bash
 bun run sync:repos
@@ -375,7 +375,7 @@ bun run sync:repos
 
 Before committing and pushing any changes:
 
-1. `bun run sync:repos` — Pulls latest commits for `faster-qwen3-tts`, `transcribe-cpp`, and workspace sibling repositories.
+1. `bun run sync:repos` — Pulls latest commits for `faster-qwen3-tts` and `transcribe-cpp` git dependencies.
 2. `bun run repomix` — Regenerates the repomix codebase pack.
 3. `bunx tsc --noEmit` & `bun run lint:fix` — Runs TypeScript type check and ESLint auto-fixes.
 4. `bun run format` & `cargo test` — Formats frontend/backend code and runs test suite.

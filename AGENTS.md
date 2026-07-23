@@ -82,7 +82,7 @@ curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.compute
 Before committing and pushing any changes, always run this routine:
 
 ```bash
-bun run sync:repos     # Sync faster-qwen3-tts, transcribe.cpp, and git repos to latest commits
+bun run sync:repos     # Sync faster-qwen3-tts, transcribe.cpp, and git dependencies to latest commits
 bun run repomix        # Regenerate repomix codebase pack
 bunx tsc --noEmit      # TypeScript type checking
 bun run lint:fix       # ESLint auto-fix
