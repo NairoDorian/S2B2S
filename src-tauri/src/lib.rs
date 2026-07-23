@@ -240,6 +240,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // CopySpeak double-copy trigger (idles cheaply while disabled).
     crate::tts::clipboard_watch::start(app_handle.clone());
 
+    // Open the feedback output once at startup rather than racing a fresh
+    // output stream against microphone shutdown for every cue.
+    audio_feedback::init(app_handle);
+
     // Set AppHandle for persistent Piper server status emissions.
     crate::tts::backends::piper_server::set_app_handle(app_handle.clone());
     crate::tts::local_tts_server::set_local_tts_app_handle(app_handle.clone());
@@ -672,6 +676,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::reset_binding,
             shortcut::change_ptt_setting,
             shortcut::change_audio_feedback_setting,
+            shortcut::change_result_ready_audio_feedback_setting,
             shortcut::change_audio_feedback_volume_setting,
             shortcut::change_sound_theme_setting,
             shortcut::change_theme_setting,

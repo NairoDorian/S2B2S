@@ -1403,6 +1403,47 @@
       "recommended_rank": null
     },
     {
+      "id": "handy-computer/moonshine-tiny-gguf",
+      "slug": "moonshine-tiny",
+      "name": "Moonshine Tiny",
+      "architecture": "moonshine",
+      "family": "moonshine",
+      "parameters": "27M",
+      "description": "English speech-to-text.",
+      "base_model": "UsefulSensors/moonshine-tiny",
+      "license": "mit",
+      "language_count": 1,
+      "languages": ["en"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": false,
+        "timestamps": "none"
+      },
+      "speed_score": 100,
+      "accuracy_score": 74,
+      "files": [
+        {
+          "filename": "moonshine-tiny-Q8_0.gguf",
+          "quant": "Q8_0",
+          "size_bytes": 35466912
+        },
+        {
+          "filename": "moonshine-tiny-F16.gguf",
+          "quant": "F16",
+          "size_bytes": 59244192
+        },
+        {
+          "filename": "moonshine-tiny-F32.gguf",
+          "quant": "F32",
+          "size_bytes": 109969056
+        }
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
       "id": "handy-computer/moonshine-streaming-tiny-gguf",
       "slug": "moonshine-streaming-tiny",
       "name": "Moonshine Streaming Tiny",
@@ -1444,17 +1485,17 @@
       "recommended_rank": null
     },
     {
-      "id": "handy-computer/moonshine-tiny-gguf",
-      "slug": "moonshine-tiny",
-      "name": "Moonshine Tiny",
+      "id": "handy-computer/moonshine-tiny-vi-gguf",
+      "slug": "moonshine-tiny-vi",
+      "name": "Moonshine Tiny (Vietnamese)",
       "architecture": "moonshine",
       "family": "moonshine",
       "parameters": "27M",
-      "description": "English speech-to-text.",
-      "base_model": "UsefulSensors/moonshine-tiny",
+      "description": "Vietnamese speech-to-text.",
+      "base_model": "UsefulSensors/moonshine-tiny-vi",
       "license": "mit",
       "language_count": 1,
-      "languages": ["en"],
+      "languages": ["vi"],
       "capabilities": {
         "streaming": false,
         "translate": false,
@@ -1462,22 +1503,145 @@
         "timestamps": "none"
       },
       "speed_score": 100,
-      "accuracy_score": 74,
+      "accuracy_score": 42,
       "files": [
         {
-          "filename": "moonshine-tiny-Q8_0.gguf",
+          "filename": "moonshine-tiny-vi-Q8_0.gguf",
           "quant": "Q8_0",
-          "size_bytes": 35466912
+          "size_bytes": 35466944
         },
         {
-          "filename": "moonshine-tiny-F16.gguf",
+          "filename": "moonshine-tiny-vi-F16.gguf",
           "quant": "F16",
-          "size_bytes": 59244192
+          "size_bytes": 59244224
         },
         {
-          "filename": "moonshine-tiny-F32.gguf",
+          "filename": "moonshine-tiny-vi-F32.gguf",
           "quant": "F32",
-          "size_bytes": 109969056
+          "size_bytes": 109969088
+        }
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
+      "id": "handy-computer/moonshine-tiny-uk-gguf",
+      "slug": "moonshine-tiny-uk",
+      "name": "Moonshine Tiny (Ukrainian)",
+      "architecture": "moonshine",
+      "family": "moonshine",
+      "parameters": "27M",
+      "description": "Ukrainian speech-to-text.",
+      "base_model": "UsefulSensors/moonshine-tiny-uk",
+      "license": "mit",
+      "language_count": 1,
+      "languages": ["uk"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": false,
+        "timestamps": "none"
+      },
+      "speed_score": 100,
+      "accuracy_score": 28,
+      "files": [
+        {
+          "filename": "moonshine-tiny-uk-Q8_0.gguf",
+          "quant": "Q8_0",
+          "size_bytes": 35466944
+        },
+        {
+          "filename": "moonshine-tiny-uk-F16.gguf",
+          "quant": "F16",
+          "size_bytes": 59244224
+        },
+        {
+          "filename": "moonshine-tiny-uk-F32.gguf",
+          "quant": "F32",
+          "size_bytes": 109969088
+        }
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
+      "id": "handy-computer/moonshine-tiny-ko-gguf",
+      "slug": "moonshine-tiny-ko",
+      "name": "Moonshine Tiny (Korean)",
+      "architecture": "moonshine",
+      "family": "moonshine",
+      "parameters": "27M",
+      "description": "Korean speech-to-text.",
+      "base_model": "UsefulSensors/moonshine-tiny-ko",
+      "license": "mit",
+      "language_count": 1,
+      "languages": ["ko"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": false,
+        "timestamps": "none"
+      },
+      "speed_score": 100,
+      "accuracy_score": 55,
+      "files": [
+        {
+          "filename": "moonshine-tiny-ko-Q8_0.gguf",
+          "quant": "Q8_0",
+          "size_bytes": 35466944
+        },
+        {
+          "filename": "moonshine-tiny-ko-F16.gguf",
+          "quant": "F16",
+          "size_bytes": 59244224
+        },
+        {
+          "filename": "moonshine-tiny-ko-F32.gguf",
+          "quant": "F32",
+          "size_bytes": 109969088
+        }
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
+      "id": "handy-computer/moonshine-tiny-zh-gguf",
+      "slug": "moonshine-tiny-zh",
+      "name": "Moonshine Tiny (Chinese)",
+      "architecture": "moonshine",
+      "family": "moonshine",
+      "parameters": "27M",
+      "description": "Chinese speech-to-text.",
+      "base_model": "UsefulSensors/moonshine-tiny-zh",
+      "license": "mit",
+      "language_count": 1,
+      "languages": ["zh"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": false,
+        "timestamps": "none"
+      },
+      "speed_score": 100,
+      "accuracy_score": 40,
+      "files": [
+        {
+          "filename": "moonshine-tiny-zh-Q8_0.gguf",
+          "quant": "Q8_0",
+          "size_bytes": 35466944
+        },
+        {
+          "filename": "moonshine-tiny-zh-F16.gguf",
+          "quant": "F16",
+          "size_bytes": 59244224
+        },
+        {
+          "filename": "moonshine-tiny-zh-F32.gguf",
+          "quant": "F32",
+          "size_bytes": 109969088
         }
       ],
       "default_quant": "Q8_0",
@@ -1558,170 +1722,6 @@
         },
         {
           "filename": "moonshine-tiny-ja-F32.gguf",
-          "quant": "F32",
-          "size_bytes": 109969088
-        }
-      ],
-      "default_quant": "Q8_0",
-      "recommended": false,
-      "recommended_rank": null
-    },
-    {
-      "id": "handy-computer/moonshine-tiny-ko-gguf",
-      "slug": "moonshine-tiny-ko",
-      "name": "Moonshine Tiny (Korean)",
-      "architecture": "moonshine",
-      "family": "moonshine",
-      "parameters": "27M",
-      "description": "Korean speech-to-text.",
-      "base_model": "UsefulSensors/moonshine-tiny-ko",
-      "license": "mit",
-      "language_count": 1,
-      "languages": ["ko"],
-      "capabilities": {
-        "streaming": false,
-        "translate": false,
-        "lang_detect": false,
-        "timestamps": "none"
-      },
-      "speed_score": 100,
-      "accuracy_score": 55,
-      "files": [
-        {
-          "filename": "moonshine-tiny-ko-Q8_0.gguf",
-          "quant": "Q8_0",
-          "size_bytes": 35466944
-        },
-        {
-          "filename": "moonshine-tiny-ko-F16.gguf",
-          "quant": "F16",
-          "size_bytes": 59244224
-        },
-        {
-          "filename": "moonshine-tiny-ko-F32.gguf",
-          "quant": "F32",
-          "size_bytes": 109969088
-        }
-      ],
-      "default_quant": "Q8_0",
-      "recommended": false,
-      "recommended_rank": null
-    },
-    {
-      "id": "handy-computer/moonshine-tiny-uk-gguf",
-      "slug": "moonshine-tiny-uk",
-      "name": "Moonshine Tiny (Ukrainian)",
-      "architecture": "moonshine",
-      "family": "moonshine",
-      "parameters": "27M",
-      "description": "Ukrainian speech-to-text.",
-      "base_model": "UsefulSensors/moonshine-tiny-uk",
-      "license": "mit",
-      "language_count": 1,
-      "languages": ["uk"],
-      "capabilities": {
-        "streaming": false,
-        "translate": false,
-        "lang_detect": false,
-        "timestamps": "none"
-      },
-      "speed_score": 100,
-      "accuracy_score": 28,
-      "files": [
-        {
-          "filename": "moonshine-tiny-uk-Q8_0.gguf",
-          "quant": "Q8_0",
-          "size_bytes": 35466944
-        },
-        {
-          "filename": "moonshine-tiny-uk-F16.gguf",
-          "quant": "F16",
-          "size_bytes": 59244224
-        },
-        {
-          "filename": "moonshine-tiny-uk-F32.gguf",
-          "quant": "F32",
-          "size_bytes": 109969088
-        }
-      ],
-      "default_quant": "Q8_0",
-      "recommended": false,
-      "recommended_rank": null
-    },
-    {
-      "id": "handy-computer/moonshine-tiny-vi-gguf",
-      "slug": "moonshine-tiny-vi",
-      "name": "Moonshine Tiny (Vietnamese)",
-      "architecture": "moonshine",
-      "family": "moonshine",
-      "parameters": "27M",
-      "description": "Vietnamese speech-to-text.",
-      "base_model": "UsefulSensors/moonshine-tiny-vi",
-      "license": "mit",
-      "language_count": 1,
-      "languages": ["vi"],
-      "capabilities": {
-        "streaming": false,
-        "translate": false,
-        "lang_detect": false,
-        "timestamps": "none"
-      },
-      "speed_score": 100,
-      "accuracy_score": 42,
-      "files": [
-        {
-          "filename": "moonshine-tiny-vi-Q8_0.gguf",
-          "quant": "Q8_0",
-          "size_bytes": 35466944
-        },
-        {
-          "filename": "moonshine-tiny-vi-F16.gguf",
-          "quant": "F16",
-          "size_bytes": 59244224
-        },
-        {
-          "filename": "moonshine-tiny-vi-F32.gguf",
-          "quant": "F32",
-          "size_bytes": 109969088
-        }
-      ],
-      "default_quant": "Q8_0",
-      "recommended": false,
-      "recommended_rank": null
-    },
-    {
-      "id": "handy-computer/moonshine-tiny-zh-gguf",
-      "slug": "moonshine-tiny-zh",
-      "name": "Moonshine Tiny (Chinese)",
-      "architecture": "moonshine",
-      "family": "moonshine",
-      "parameters": "27M",
-      "description": "Chinese speech-to-text.",
-      "base_model": "UsefulSensors/moonshine-tiny-zh",
-      "license": "mit",
-      "language_count": 1,
-      "languages": ["zh"],
-      "capabilities": {
-        "streaming": false,
-        "translate": false,
-        "lang_detect": false,
-        "timestamps": "none"
-      },
-      "speed_score": 100,
-      "accuracy_score": 40,
-      "files": [
-        {
-          "filename": "moonshine-tiny-zh-Q8_0.gguf",
-          "quant": "Q8_0",
-          "size_bytes": 35466944
-        },
-        {
-          "filename": "moonshine-tiny-zh-F16.gguf",
-          "quant": "F16",
-          "size_bytes": 59244224
-        },
-        {
-          "filename": "moonshine-tiny-zh-F32.gguf",
           "quant": "F32",
           "size_bytes": 109969088
         }
@@ -1813,47 +1813,6 @@
       "recommended_rank": null
     },
     {
-      "id": "handy-computer/moonshine-base-ja-gguf",
-      "slug": "moonshine-base-ja",
-      "name": "Moonshine Base (Japanese)",
-      "architecture": "moonshine",
-      "family": "moonshine",
-      "parameters": "62M",
-      "description": "Japanese speech-to-text.",
-      "base_model": "UsefulSensors/moonshine-base-ja",
-      "license": "mit",
-      "language_count": 1,
-      "languages": ["ja"],
-      "capabilities": {
-        "streaming": false,
-        "translate": false,
-        "lang_detect": false,
-        "timestamps": "none"
-      },
-      "speed_score": 99,
-      "accuracy_score": 50,
-      "files": [
-        {
-          "filename": "moonshine-base-ja-Q8_0.gguf",
-          "quant": "Q8_0",
-          "size_bytes": 77476480
-        },
-        {
-          "filename": "moonshine-base-ja-F16.gguf",
-          "quant": "F16",
-          "size_bytes": 131789440
-        },
-        {
-          "filename": "moonshine-base-ja-F32.gguf",
-          "quant": "F32",
-          "size_bytes": 247657088
-        }
-      ],
-      "default_quant": "Q8_0",
-      "recommended": false,
-      "recommended_rank": null
-    },
-    {
       "id": "handy-computer/moonshine-base-ko-gguf",
       "slug": "moonshine-base-ko",
       "name": "Moonshine Base (Korean)",
@@ -1929,6 +1888,47 @@
           "filename": "moonshine-base-uk-F32.gguf",
           "quant": "F32",
           "size_bytes": 247657120
+        }
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
+      "id": "handy-computer/moonshine-base-ja-gguf",
+      "slug": "moonshine-base-ja",
+      "name": "Moonshine Base (Japanese)",
+      "architecture": "moonshine",
+      "family": "moonshine",
+      "parameters": "62M",
+      "description": "Japanese speech-to-text.",
+      "base_model": "UsefulSensors/moonshine-base-ja",
+      "license": "mit",
+      "language_count": 1,
+      "languages": ["ja"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": false,
+        "timestamps": "none"
+      },
+      "speed_score": 99,
+      "accuracy_score": 50,
+      "files": [
+        {
+          "filename": "moonshine-base-ja-Q8_0.gguf",
+          "quant": "Q8_0",
+          "size_bytes": 77476480
+        },
+        {
+          "filename": "moonshine-base-ja-F16.gguf",
+          "quant": "F16",
+          "size_bytes": 131789440
+        },
+        {
+          "filename": "moonshine-base-ja-F32.gguf",
+          "quant": "F32",
+          "size_bytes": 247657088
         }
       ],
       "default_quant": "Q8_0",
@@ -3282,14 +3282,14 @@
       "architecture": "whisper",
       "family": "whisper",
       "parameters": "809M",
-      "description": "100-language speech-to-text with auto language detection, segment-level timestamps.",
+      "description": "100-language speech-to-text with translation, auto language detection, segment-level timestamps.",
       "base_model": "openai/whisper-large-v3-turbo",
       "license": "apache-2.0",
       "language_count": 100,
       "languages": ["en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue"],
       "capabilities": {
         "streaming": false,
-        "translate": false,
+        "translate": true,
         "lang_detect": true,
         "timestamps": "segment"
       },
@@ -3327,17 +3327,17 @@
       "recommended_rank": null
     },
     {
-      "id": "handy-computer/Breeze-ASR-25-gguf",
-      "slug": "Breeze-ASR-25",
-      "name": "Breeze-ASR-25",
+      "id": "handy-computer/whisper-large-v3-gguf",
+      "slug": "whisper-large-v3",
+      "name": "Whisper Large v3",
       "architecture": "whisper",
       "family": "whisper",
       "parameters": "1.5B",
-      "description": "Optimized for Taiwanese Mandarin. Code-switching support.",
-      "base_model": "MediaTek-Research/Breeze-ASR-25",
+      "description": "100-language speech-to-text with translation, auto language detection, segment-level timestamps.",
+      "base_model": "openai/whisper-large-v3",
       "license": "apache-2.0",
-      "language_count": 2,
-      "languages": ["zh", "en"],
+      "language_count": 100,
+      "languages": ["en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue"],
       "capabilities": {
         "streaming": false,
         "translate": true,
@@ -3345,37 +3345,32 @@
         "timestamps": "segment"
       },
       "speed_score": 23,
-      "accuracy_score": 86,
+      "accuracy_score": 89,
       "files": [
         {
-          "filename": "Breeze-ASR-25-Q4_K_M.gguf",
+          "filename": "whisper-large-v3-Q4_K_M.gguf",
           "quant": "Q4_K_M",
-          "size_bytes": 996526080
+          "size_bytes": 997303008
         },
         {
-          "filename": "Breeze-ASR-25-Q5_K_M.gguf",
+          "filename": "whisper-large-v3-Q5_K_M.gguf",
           "quant": "Q5_K_M",
-          "size_bytes": 1160366080
+          "size_bytes": 1161143008
         },
         {
-          "filename": "Breeze-ASR-25-Q6_K.gguf",
+          "filename": "whisper-large-v3-Q6_K.gguf",
           "quant": "Q6_K",
-          "size_bytes": 1296353280
+          "size_bytes": 1297130208
         },
         {
-          "filename": "Breeze-ASR-25-Q8_0.gguf",
+          "filename": "whisper-large-v3-Q8_0.gguf",
           "quant": "Q8_0",
-          "size_bytes": 1667964224
+          "size_bytes": 1668741440
         },
         {
-          "filename": "Breeze-ASR-25-BF16.gguf",
-          "quant": "BF16",
-          "size_bytes": 3096013408
-        },
-        {
-          "filename": "Breeze-ASR-25-F16.gguf",
+          "filename": "whisper-large-v3-F16.gguf",
           "quant": "F16",
-          "size_bytes": 3106458208
+          "size_bytes": 3107236640
         }
       ],
       "default_quant": "Q5_K_M",
@@ -3495,17 +3490,17 @@
       "recommended_rank": null
     },
     {
-      "id": "handy-computer/whisper-large-v3-gguf",
-      "slug": "whisper-large-v3",
-      "name": "Whisper Large v3",
+      "id": "handy-computer/Breeze-ASR-25-gguf",
+      "slug": "Breeze-ASR-25",
+      "name": "Breeze-ASR-25",
       "architecture": "whisper",
       "family": "whisper",
       "parameters": "1.5B",
-      "description": "100-language speech-to-text with translation, auto language detection, segment-level timestamps.",
-      "base_model": "openai/whisper-large-v3",
+      "description": "Optimized for Taiwanese Mandarin. Code-switching support.",
+      "base_model": "MediaTek-Research/Breeze-ASR-25",
       "license": "apache-2.0",
-      "language_count": 100,
-      "languages": ["en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue"],
+      "language_count": 2,
+      "languages": ["zh", "en"],
       "capabilities": {
         "streaming": false,
         "translate": true,
@@ -3513,32 +3508,37 @@
         "timestamps": "segment"
       },
       "speed_score": 23,
-      "accuracy_score": 89,
+      "accuracy_score": 86,
       "files": [
         {
-          "filename": "whisper-large-v3-Q4_K_M.gguf",
+          "filename": "Breeze-ASR-25-Q4_K_M.gguf",
           "quant": "Q4_K_M",
-          "size_bytes": 997303008
+          "size_bytes": 996526080
         },
         {
-          "filename": "whisper-large-v3-Q5_K_M.gguf",
+          "filename": "Breeze-ASR-25-Q5_K_M.gguf",
           "quant": "Q5_K_M",
-          "size_bytes": 1161143008
+          "size_bytes": 1160366080
         },
         {
-          "filename": "whisper-large-v3-Q6_K.gguf",
+          "filename": "Breeze-ASR-25-Q6_K.gguf",
           "quant": "Q6_K",
-          "size_bytes": 1297130208
+          "size_bytes": 1296353280
         },
         {
-          "filename": "whisper-large-v3-Q8_0.gguf",
+          "filename": "Breeze-ASR-25-Q8_0.gguf",
           "quant": "Q8_0",
-          "size_bytes": 1668741440
+          "size_bytes": 1667964224
         },
         {
-          "filename": "whisper-large-v3-F16.gguf",
+          "filename": "Breeze-ASR-25-BF16.gguf",
+          "quant": "BF16",
+          "size_bytes": 3096013408
+        },
+        {
+          "filename": "Breeze-ASR-25-F16.gguf",
           "quant": "F16",
-          "size_bytes": 3107236640
+          "size_bytes": 3106458208
         }
       ],
       "default_quant": "Q5_K_M",

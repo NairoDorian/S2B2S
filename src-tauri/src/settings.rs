@@ -1098,6 +1098,8 @@ pub struct AppSettings {
     pub push_to_talk: bool,
     #[serde(default)]
     pub audio_feedback: bool,
+    #[serde(default)]
+    pub result_ready_audio_feedback: bool,
     #[serde(default = "default_audio_feedback_volume")]
     pub audio_feedback_volume: f32,
     #[serde(default = "default_sound_theme")]
@@ -1996,6 +1998,7 @@ pub fn get_default_settings() -> AppSettings {
         bindings,
         push_to_talk: default_push_to_talk(),
         audio_feedback: false,
+        result_ready_audio_feedback: false,
         audio_feedback_volume: default_audio_feedback_volume(),
         sound_theme: default_sound_theme(),
         start_hidden: default_start_hidden(),
