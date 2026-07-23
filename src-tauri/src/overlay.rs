@@ -562,6 +562,15 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     .focused(false)
     .visible(false);
 
+    #[cfg(target_os = "windows")]
+    if let Ok(runtime) = crate::webview_runtime::config(app_handle) {
+        builder = builder.data_directory(runtime.data_directory);
+        if let Some(browser_args) = runtime.additional_browser_args {
+            builder = builder.additional_browser_args(&browser_args);
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
     if let Some(data_dir) = crate::portable::data_dir() {
         builder = builder.data_directory(data_dir.join("webview"));
     }

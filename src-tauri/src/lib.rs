@@ -41,6 +41,7 @@ mod url_security;
 mod utils;
 mod wake_word;
 mod webview_hardening;
+mod webview_runtime;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -1057,6 +1058,15 @@ pub fn run(cli_args: CliArgs) {
                     .maximizable(false)
                     .visible(true);
 
+            #[cfg(target_os = "windows")]
+            if let Ok(runtime) = webview_runtime::config(app.handle()) {
+                win_builder = win_builder.data_directory(runtime.data_directory);
+                if let Some(browser_args) = runtime.additional_browser_args {
+                    win_builder = win_builder.additional_browser_args(&browser_args);
+                }
+            }
+
+            #[cfg(not(target_os = "windows"))]
             if let Some(data_dir) = portable::data_dir() {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
             }
