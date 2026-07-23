@@ -6,22 +6,22 @@ This document serves as the **single source of truth** for what is completed, pa
 
 ## 1. Feature Scorecard (v0.1.5 Audit & Cleanup)
 
-| Area                            | Status     | Notes                                                                                                        |
-| ------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
-| **Core STT→Brain→TTS loop**     | ✅ Done    | Real, wired, thoughtfully layered and robust.                                                                |
-| **Dictation Pipeline**          | ✅ Done    | Mic → VAD → STT → Normalizer → Paste.                                                                        |
-| **TripleVAD Engine**            | ✅ Done    | RMS → RNNoise → Silero ONNX.                                                                                 |
-| **TTS Engine & Warm Lifecycle** | ✅ Done    | 9 backends (6 local, 3 cloud). Added local Qwen3-TTS engine with GGML C++ CUDA 13.3 support.                 |
-| **pre-compiled llama.cpp**      | ✅ Done    | Auto-downloads releases, auto-starts, auto-detects CUDA/Vulkan/CPU.                                          |
-| **Standalone Speech Runtime**   | ✅ Done    | Portable uv + Python 3.12 provisioned during onboarding via install-speech-runtime scripts.                  |
-| **i18n Multi-Language**         | ✅ Done    | 20 languages supported, all synchronized with 724 keys (English fallback values for new keys).               |
-| **Streaming STT**               | 🟡 Partial | Works via Python server but has chunk boundary token edges. Not default.                                     |
-| **Continuous Voice Mode**       | 🟡 Partial | Real hands-free conversation with barge-in support, but limited echo cancellation.                           |
-| **Wake Word Engine**            | 🟡 Partial | VAD-energy based. Keyword spotting (KWS) requires Static/Dynamic CRT resolution.                             |
-| **Playwright E2E Tests**        | ✅ Done    | Onboarding, dictation, and conversation pipelines covered with mock Tauri IPC layer.                         |
-| **Panic Audit (hot paths)**     | ✅ Done    | Converted unwraps in audio recording, clipboard, IPC boundaries, and command handlers.                       |
-| **Brain-Only STT Toggle**       | ✅ Done    | Inline switch in ConversationView to bypass local STT and feed audio directly to multimodal Brain.           |
-| **Native WGPU Overlay**         | 🟡 Shelved | Track B (`overlay_fx/native/mod.rs`) is kept as a stub; native overlay feature is shelved for Tauri overlay. |
+| Area                            | Status     | Notes                                                                                                          |
+| ------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| **Core STT→Brain→TTS loop**     | ✅ Done    | Real, wired, thoughtfully layered and robust.                                                                  |
+| **Dictation Pipeline**          | ✅ Done    | Mic → VAD → STT → Normalizer → Paste.                                                                          |
+| **TripleVAD Engine**            | ✅ Done    | RMS → RNNoise → Silero ONNX.                                                                                   |
+| **TTS Engine & Warm Lifecycle** | ✅ Done    | 9 backends (6 local, 3 cloud). Added local Qwen3-TTS engine with faster-qwen3-tts PyTorch CUDA Graphs support. |
+| **pre-compiled llama.cpp**      | ✅ Done    | Auto-downloads releases, auto-starts, auto-detects CUDA/Vulkan/CPU.                                            |
+| **Standalone Speech Runtime**   | ✅ Done    | Portable uv + Python 3.12 provisioned during onboarding via install-speech-runtime scripts.                    |
+| **i18n Multi-Language**         | ✅ Done    | 20 languages supported, all synchronized with 724 keys (English fallback values for new keys).                 |
+| **Streaming STT**               | 🟡 Partial | Works via Python server but has chunk boundary token edges. Not default.                                       |
+| **Continuous Voice Mode**       | 🟡 Partial | Real hands-free conversation with barge-in support, but limited echo cancellation.                             |
+| **Wake Word Engine**            | 🟡 Partial | VAD-energy based. Keyword spotting (KWS) requires Static/Dynamic CRT resolution.                               |
+| **Playwright E2E Tests**        | ✅ Done    | Onboarding, dictation, and conversation pipelines covered with mock Tauri IPC layer.                           |
+| **Panic Audit (hot paths)**     | ✅ Done    | Converted unwraps in audio recording, clipboard, IPC boundaries, and command handlers.                         |
+| **Brain-Only STT Toggle**       | ✅ Done    | Inline switch in ConversationView to bypass local STT and feed audio directly to multimodal Brain.             |
+| **Native WGPU Overlay**         | 🟡 Shelved | Track B (`overlay_fx/native/mod.rs`) is kept as a stub; native overlay feature is shelved for Tauri overlay.   |
 
 ---
 

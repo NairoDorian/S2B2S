@@ -9,6 +9,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Qwen3-TTS PyTorch CUDA Graphs Integration** (`qwen3_server.py`, `qwen3.rs`): Replaced legacy GGML C++ prototype with [`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts) powered by PyTorch `torch.cuda.CUDAGraph` capture. Provides 6–10x inference speedup (~0.08 Real-Time Factor) on NVIDIA GeForce RTX 4070 / CUDA GPUs, supporting CustomVoice (12 speakers), Voice Cloning, Voice Design, and streaming token output.
+- **Repository Dependency Auto-Sync Tooling** (`scripts/sync-all-repos.ps1`, `package.json`): Added `bun run sync:repos` command and script to automatically fetch and pull the latest commits for `faster-qwen3-tts` and `transcribe.cpp` Rust crates.
+- **Standardized Pre-Commit Routine** (`AGENTS.md`, `BUILD.md`, `CONTRIBUTING.md`, `README.md`): Defined and documented a mandatory 6-step pre-commit routine (`bun run sync:repos`, `bun run repomix`, `bunx tsc --noEmit`, `bun run lint:fix`, `bun run format`, `cargo test`) to ensure code quality, dependency alignment, and documentation audit prior to every git commit.
+
+### Changed
+
+- **Python 3.12 `uv` Toolchain & Resolution Fix** (`setup_venv_uv.ps1`, `install-speech-runtime.ps1`): Provisioned CPython 3.12.13 via `uv`. Installed `transformers>=4.57`, `qwen-tts`, and `faster-qwen3-tts` with `--no-deps` after modern `librosa>=0.10.0` and `numba>=0.59.0` wheels are in place, eliminating legacy `llvmlite==0.36.0` build failures on Python 3.12.
 - **Brain-Only STT Toggle in Conversation View** (`ConversationView.tsx`, `translation.json`): Added an inline switch next to the Voice Mode button to toggle Brain-only STT, bypassing local STT models and feeding raw audio directly to the multimodal Brain. Added corresponding English translation keys.
 
 ### Changed

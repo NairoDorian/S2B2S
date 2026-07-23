@@ -79,12 +79,13 @@ CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 # Build for production
 bun run tauri build
 
-# Regenerate typed bindings (frontend ↔ backend)
-cargo test export_bindings
-
-# Lint & Format
-bun run lint
-bun run format
+# 5. Pre-Commit Routine (Run before every commit & push)
+bun run sync:repos     # Sync faster-qwen3-tts and transcribe.cpp git dependencies
+bun run repomix        # Regenerate repomix codebase pack
+bunx tsc --noEmit      # TypeScript type check
+bun run lint:fix       # ESLint auto-fix
+bun run format         # Prettier + cargo fmt
+cargo test             # Run Rust tests
 ```
 
 For detailed platform-specific build instructions, see [BUILD.md](BUILD.md).
@@ -203,7 +204,7 @@ S2B2S works fully offline with no configuration. The defaults are chosen for spe
 | **STT**               | **Parakeet TDT 0.6B V3** (auto language, 25 langs, CPU-fast)                                                 | Whisper (Small/Medium/Turbo/Large), Moonshine                                                                           |
 | **VAD**               | **TripleVAD** (RMS→RNNoise→Silero)                                                                           | Silero only, Push-to-talk                                                                                               |
 | **Noise Suppression** | RNNoise (toggleable, triple mode default)                                                                    | Off                                                                                                                     |
-| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)                                                         | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), SAPI, OpenAI, ElevenLabs, Cartesia                          |
+| **TTS**               | **Piper** persistent HTTP server (speed-first, warm)                                                         | Kokoro-82M (quality-first), Kitten, Pocket (voice cloning), Qwen3-TTS (PyTorch CUDA Graphs), SAPI, OpenAI, ElevenLabs, Cartesia |
 | **Brain**             | **llama.cpp** (pre-compiled CUDA/Vulkan/CPU) / **Ollama** auto-detected (`:11434`) / **LM Studio** (`:1234`) | 9 other providers: OpenAI, Anthropic, Gemini, Groq, Cerebras, OpenRouter, Z.ai, AWS Bedrock, Apple Intelligence (macOS) |
 | **Storage**           | SQLite (rusqlite + migrations)                                                                               | —                                                                                                                       |
 | **Secrets**           | OS keychain (Windows Credential Manager, macOS Keychain)                                                     | —                                                                                                                       |

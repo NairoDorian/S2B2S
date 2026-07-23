@@ -77,18 +77,30 @@ bun scripts/check-deps.ts
 # Minimal (VAD only):
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
-**Pre-Commit Routine (REQUIRED BEFORE COMMIT & PUSH):**
+**Pre-Commit Routine (MANDATORY BEFORE EVERY COMMIT & PUSH):**
 
-Before committing and pushing any changes, always run this routine:
+Before committing and pushing any changes, always run this complete routine:
 
 ```bash
-bun run sync:repos     # Sync faster-qwen3-tts, transcribe.cpp, and git dependencies to latest commits
-bun run repomix        # Regenerate repomix codebase pack
+# 1. Sync dependency git repositories (faster-qwen3-tts, transcribe.cpp)
+bun run sync:repos
+
+# 2. Audit documentation (.md files)
+#    Verify CHANGELOG.md, README.md, STATUS.md, BUILD.md reflect recent features/fixes.
+
+# 3. Check i18n translations
+bun run check:translations
+
+# 4. Regenerate repomix codebase pack
+bun run repomix
+
+# 5. Type check, lint, format & test
 bunx tsc --noEmit      # TypeScript type checking
 bun run lint:fix       # ESLint auto-fix
-bun run format         # Prettier + cargo fmt
-cargo test             # Run Rust tests
-````
+bun run format         # Prettier + cargo fmt code formatting
+cargo test             # Run Rust backend unit & integration tests
+```
+
 
 **Testing:**
 
@@ -516,3 +528,4 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 ## Troubleshooting
 
 See [README.md#troubleshooting](README.md#troubleshooting) for known issues and solutions.
+````
