@@ -56,8 +56,21 @@ Install-Pkg "kokoro-tts"           @("kokoro-tts")
 Install-Pkg "pocket-tts"           @("pocket-tts")
 Install-Pkg "kittentts (wheel)"    @("https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl")
 Install-Pkg "sherpa-onnx"          @("sherpa-onnx")
-Install-Pkg "torch (CPU)"          @("torch")
+Install-Pkg "torch"                @("torch")
 Install-Pkg "soundfile, numpy"     @("soundfile", "numpy")
+Install-Pkg "librosa, numba"       @("librosa>=0.10.0", "numba>=0.59.0")
+Install-Pkg "transformers, hub"    @("transformers>=4.57,<5", "huggingface-hub>=0.36.0,<1.0", "accelerate")
+Install-Pkg "qwen-tts (--no-deps)" @("qwen-tts", "--no-deps")
+$LocalFasterQwen = Join-Path $ProjectRoot "..\faster-qwen3-tts"
+if (Test-Path $LocalFasterQwen) {
+    Write-Host "  -> Updating local faster-qwen3-tts to latest commit..." -ForegroundColor Yellow
+    git -C $LocalFasterQwen pull 2>&1 | Out-Host
+    Install-Pkg "faster-qwen3-tts (local editable)" @("--no-deps", "-e", $LocalFasterQwen)
+} else {
+    Install-Pkg "faster-qwen3-tts (latest GitHub)" @("--no-deps", "git+https://github.com/andimarafioti/faster-qwen3-tts.git")
+}
+
+
 
 # ── Install piper LAST (pulls CPU onnxruntime) ──
 Install-Pkg "piper-tts[http]"      @("piper-tts[http]")

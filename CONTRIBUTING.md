@@ -140,7 +140,16 @@ We use GitHub Discussions for feature requests. This keeps issues focused on bug
    - `test:` for test additions/changes
    - `chore:` for maintenance tasks
 5. **Keep your fork updated**: `git fetch upstream && git rebase upstream/main`
-6. **Push and create a Pull Request** — fill out the PR template completely
+6. **Execute Pre-Commit Routine** (Mandatory before committing & pushing):
+   ```bash
+   bun run sync:repos     # Sync faster-qwen3-tts, transcribe.cpp, and git dependencies to latest commits
+   bun run repomix        # Regenerate repomix codebase pack
+   bunx tsc --noEmit      # TypeScript type checking
+   bun run lint:fix       # ESLint auto-fix
+   bun run format         # Prettier + cargo fmt
+   cargo test             # Run Rust test suite
+   ```
+7. **Push and create a Pull Request** — fill out the PR template completely
 
 ### Code Style Guidelines
 

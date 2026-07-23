@@ -29,6 +29,18 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
+# Ensure faster-qwen3-tts is synced to the latest git commit
+$FasterQwenDir = Join-Path $repoRoot "..\faster-qwen3-tts"
+if (Test-Path $FasterQwenDir) {
+    Write-Host "[Build] Syncing faster-qwen3-tts to latest commit..." -ForegroundColor Yellow
+    git -C $FasterQwenDir pull 2>&1 | Out-Host
+    $VenvPython = Join-Path $repoRoot "venv\Scripts\python.exe"
+    if ((Test-Path $VenvPython) -and (Get-Command uv -ErrorAction SilentlyContinue)) {
+        uv pip install -e $FasterQwenDir --python $VenvPython --quiet 2>&1 | Out-Host
+    }
+}
+
+
 # Locate the VS developer prompt for the installed Visual Studio.
 $vsRoot = "C:\Program Files\Microsoft Visual Studio\18\Community"
 if (-not (Test-Path $vsRoot)) {

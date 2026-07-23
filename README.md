@@ -325,7 +325,7 @@ Unix signals (Linux/macOS):
 - Kokoro-82M: CPU-only, ~115 MB ONNX model. Runs via portable Python venv. 54 voices across 9 languages.
 - Kitten: CPU-only, ~25-80 MB ONNX models. Runs via portable Python venv. 8 English voices.
 - Pocket: CPU/GPU (PyTorch), ~100 MB. Runs via portable Python venv. 8 character voices + voice cloning from WAV.
-- Qwen3: CPU/GPU (GGML / C++). ~1.7 GB. Runs via native C++ compiled DLLs with CUDA acceleration. High-performance voice cloning and speech generation.
+- Qwen3: CUDA/CPU (PyTorch CUDA Graph via `faster-qwen3-tts`). ~1.7 GB. High-performance voice cloning, custom voices, and voice design with 6-10x CUDA speedup.
 - SAPI: Windows-only voice API. Fully implemented local fallback using windows-rs COM interop.
 - All local TTS engines use the project `venv/` — provisioned automatically during onboarding, no system Python required.
 - Cloud engines: Requires internet connection and API key.

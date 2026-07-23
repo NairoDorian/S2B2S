@@ -40,19 +40,20 @@ $ProjectRoot = Resolve-Path "$ScriptDir\.."
 
 # Default to all TTS models if no -Model specified
 if (-not $Model -or $Model.Count -eq 0) {
-    $Model = @("piper", "kokoro", "pocket", "kitten")
+    $Model = @("piper", "kokoro", "pocket", "kitten", "qwen3")
 }
 
 # Expand aliases
 $Expanded = @()
 foreach ($m in $Model) {
     switch ($m.ToLower()) {
-        "all"  { $Expanded += @("stt", "brain", "piper", "kokoro", "pocket", "kitten") }
-        "tts"  { $Expanded += @("piper", "kokoro", "pocket", "kitten") }
+        "all"  { $Expanded += @("stt", "brain", "piper", "kokoro", "pocket", "kitten", "qwen3") }
+        "tts"  { $Expanded += @("piper", "kokoro", "pocket", "kitten", "qwen3") }
         default { $Expanded += $m }
     }
 }
 $Model = $Expanded | Select-Object -Unique
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 $TotalDownloaded = 0
@@ -298,6 +299,22 @@ if ($Model -contains "kitten") {
     Write-Host "  NOTE: Kitten TTS model files are auto-downloaded by the" -ForegroundColor Gray
     Write-Host "        kittentts Python package on first use." -ForegroundColor Gray
 }
+
+# --- Qwen3 TTS ---
+if ($Model -contains "qwen3") {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  Qwen3 TTS -> $TtsDir\Qwen\" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+
+    $qwenDir = Join-Path $TtsDir "Qwen"
+    Ensure-Dir $qwenDir
+
+    Write-Host "  NOTE: Qwen3 TTS model files (Qwen3-TTS-12Hz-1.7B-CustomVoice) are auto-downloaded" -ForegroundColor Gray
+    Write-Host "        from HuggingFace Hub on first use or via huggingface-cli snapshot_download." -ForegroundColor Gray
+    Write-Host "        HF_HOME is set to: $TtsDir" -ForegroundColor Gray
+}
+
 
 # ── Summary ───────────────────────────────────────────────────────────────
 Write-Host ""

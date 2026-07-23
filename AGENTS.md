@@ -57,7 +57,7 @@ bun run build      # TypeScript + Vite build
 bun run preview    # Preview built frontend
 ```
 
-```bash
+````bash
 # Python 3.12 venv for TTS engines (Piper, Kokoro, Kitten, Pocket):
 #   Windows: .\scripts\setup_tts_venv.ps1
 #   macOS/Linux: bash scripts/setup_tts_venv.sh
@@ -77,9 +77,20 @@ bun scripts/check-deps.ts
 # Minimal (VAD only):
 mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
-```
+**Pre-Commit Routine (REQUIRED BEFORE COMMIT & PUSH):**
 
-**Linting and Formatting:**
+Before committing and pushing any changes, always run this routine:
+
+```bash
+bun run sync:repos     # Sync faster-qwen3-tts, transcribe.cpp, and git repos to latest commits
+bun run repomix        # Regenerate repomix codebase pack
+bunx tsc --noEmit      # TypeScript type checking
+bun run lint:fix       # ESLint auto-fix
+bun run format         # Prettier + cargo fmt
+cargo test             # Run Rust tests
+````
+
+**Testing:**
 
 ```bash
 bun run lint              # ESLint for frontend

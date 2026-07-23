@@ -336,79 +336,49 @@ S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub
 
 ---
 
-## Qwen3-TTS GGML C++ Backend Local Compilation (Windows 11 + CUDA 13.3)
+## Qwen3-TTS Backend (PyTorch CUDA Graph via `faster-qwen3-tts`)
 
-Since prebuilt wheels for `qwentts-cpp-python` on PyPI and Hugging Face are built exclusively for Linux (`manylinux_2_39_x86_64`), running the GGML/C++ backend for Qwen3-TTS on Windows 11 requires a local compilation of `qwentts.cpp` and patching of the Python ctypes wrapper.
+Qwen3-TTS in S2B2S uses [`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts) powered by native **PyTorch CUDA Graph capture** (`torch.cuda.CUDAGraph`). This provides **6–10x inference speedup** on NVIDIA GPUs (CUDA 13.3 / 12.x) with zero manual C++ compilation required.
 
-### 1. Prerequisites (Windows)
+### 1. Setup via `uv` (Windows / macOS / Linux)
 
-- Visual Studio 2022/2025 Community or Build Tools with C++ Desktop Development.
-- **NVIDIA CUDA Toolkit v13.3** (or v12.x) with `nvcc` available in your PATH.
-- S2B2S python virtual environment (`venv`) set up.
+Run the automated venv setup script to install `faster-qwen3-tts` and `qwen-tts` inside the portable Python 3.12 `venv/`:
 
-### 2. Steps to Compile and Install
+```powershell
+powershell -ExecutionPolicy Bypass .\scripts\setup_venv_uv.ps1
+```
 
-1. **Clone the Repositories**:
-   In a directory next to the `S2B2S` folder, clone the native C++ library and its submodules, along with the Python ctypes wrapper:
+Or install manually via `uv`:
 
-   ```powershell
-   git clone https://github.com/ServeurpersoCom/qwentts.cpp
-   cd qwentts.cpp
-   git submodule update --init --recursive
-   cd ..
-   git clone https://github.com/andimarafioti/qwentts-cpp-python
-   ```
+```powershell
+uv pip install "faster-qwen3-tts>=0.3.0" "qwen-tts>=0.1.1" "transformers>=4.57,<5" --python venv
+```
 
-2. **Configure and Compile the C++ Shared Library**:
-   Run CMake to generate build files with shared library and CUDA support, then compile in Release mode:
+### 2. Architecture & Performance Notes
 
-   ```powershell
-   cd qwentts.cpp
-   cmake -S . -B build -DGGML_CUDA=ON -DQWEN_SHARED=ON
-   cmake --build build --config Release -j
-   ```
+- **PyTorch CUDA Graphs**: Captured automatically during server startup warmup (`_warmup(prefill_len=100)`).
+- **Supported Capabilities**: CustomVoice (12 speakers), Voice Cloning (reference WAV audio), Voice Design (prompt instruction), and Streaming synthesis.
+- **VRAM Requirements**: ~1.8 GB VRAM for 1.7B models, ~1.2 GB VRAM for 0.6B models.
+- **CPU Fallback**: Automatic graceful fallback to standard `qwen-tts` CPU inference on systems without an active NVIDIA CUDA GPU.
 
-   This generates `qwen.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-cuda.dll`, and `ggml.dll` under `build\Release\`.
+---
 
-3. **Patch Wrapper for Windows DLL Dependency Loading**:
-   Windows requires explicit pre-loading of `ggml-cuda.dll` and dynamic directory lookup for internal Python virtual environment CUDA dependencies.
-   Update `src/qwentts_cpp/_binding.py` in the `qwentts-cpp-python` folder:
-   - Add `"ggml-cuda.dll"` to the `_dependency_names()` returned list on Windows:
-     ```python
-     if sys.platform == "win32":
-         return ("ggml-base.dll", "ggml-cpu.dll", "ggml-cuda.dll", "ggml.dll")
-     ```
-   - Inject the dynamic NVIDIA/CUDA directory loaders inside `_load_cdll` to allow the loader to locate system CUDA DLLs and `venv` site-package DLLs:
-     ```python
-     if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
-         self._dll_dir_handle = os.add_dll_directory(lib_dir)
-         # Add system CUDA Toolkit bin folder
-         cuda_path = os.environ.get("CUDA_PATH")
-         if cuda_path:
-             os.add_dll_directory(os.path.join(cuda_path, "bin"))
-         # Discover venv's internal nvidia runtime dlls
-         for path_dir in sys.path:
-             nvidia_dir = os.path.join(path_dir, "nvidia")
-             if os.path.isdir(nvidia_dir):
-                 # Glob bin directories and call os.add_dll_directory()
-     ```
+## Repository Auto-Sync & Pre-Commit Routine
 
-4. **Copy Compiled DLLs and Install Wrapper**:
-   Inside `qwentts-cpp-python`, copy the native binaries and install the wrapper inside the S2B2S venv using `uv`:
+To keep S2B2S synchronized with upstream repositories ([`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts), [`handy-computer/transcribe.cpp`](https://github.com/handy-computer/transcribe.cpp), and workspace sibling projects), run the repository sync command before making commits:
 
-   ```powershell
-   # Copy DLLs
-   ..\S2B2S\venv\Scripts\python.exe scripts\build_native.py --skip-build --build-dir ..\qwentts.cpp\build
+```bash
+bun run sync:repos
+```
 
-   # Install locally in editable mode
-   uv pip install -e . --python ..\S2B2S\venv
-   ```
+### Mandatory Pre-Commit Routine
 
-5. **Install `faster-qwen3-tts[ggml]`**:
-   Run the installation inside `S2B2S` using `uv` to link it against your locally compiled, compatible `qwentts-cpp-python` dependency:
-   ```powershell
-   uv pip install "faster-qwen3-tts[ggml]" --python venv
-   ```
+Before committing and pushing any changes:
+
+1. `bun run sync:repos` — Pulls latest commits for `faster-qwen3-tts`, `transcribe-cpp`, and workspace sibling repositories.
+2. `bun run repomix` — Regenerates the repomix codebase pack.
+3. `bunx tsc --noEmit` & `bun run lint:fix` — Runs TypeScript type check and ESLint auto-fixes.
+4. `bun run format` & `cargo test` — Formats frontend/backend code and runs test suite.
 
 ---
 

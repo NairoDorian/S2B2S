@@ -56,8 +56,11 @@ def resolve_local_models_dir():
             return p
     return None
 
-def load_model(model_name=DEFAULT_MODEL, device="cuda", models_dir=None, backend="ggml"):
+def load_model(model_name=DEFAULT_MODEL, device="cuda", models_dir=None, backend="torch"):
     """Load Qwen3-TTS model via faster-qwen3-tts or qwentts_cpp once."""
+    if models_dir and os.path.isdir(models_dir):
+        os.environ.setdefault("HF_HOME", models_dir)
+
     if backend == "ggml":
         if QwenTTS is None:
             raise ImportError("qwentts_cpp package not found or fails to load. Please verify local compilation.")
@@ -80,7 +83,6 @@ def load_model(model_name=DEFAULT_MODEL, device="cuda", models_dir=None, backend
                         pass
         
         print(f"[qwen3_server] Initializing {model_name} (backend: ggml, quant: Q8_0, cache: {models_dir})...", flush=True)
-        # Note: We use quant="Q8" (Q8_0) since K-quants (like Q4_K_M) are not supported by qwentts.cpp CUDA row-getting kernels.
         model = QwenTTS.from_pretrained(
             model_name,
             quant="Q8",
@@ -88,29 +90,40 @@ def load_model(model_name=DEFAULT_MODEL, device="cuda", models_dir=None, backend
         )
         return model
 
+    # Torch / CUDA Graph backend via faster-qwen3-tts
     from faster_qwen3_tts import FasterQwen3TTS
-
-    if models_dir and os.path.isdir(models_dir):
-        os.environ.setdefault("HF_HOME", models_dir)
 
     dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
     print(f"[qwen3_server] Initializing {model_name} on {device} with {dtype} (backend: {backend})...", flush=True)
 
-    model = FasterQwen3TTS.from_pretrained(
-        model_name,
-        device=device,
-        dtype=dtype,
-        attn_implementation="eager",
-        backend=backend
-    )
+    if device == "cuda" and torch.cuda.is_available():
+        model = FasterQwen3TTS.from_pretrained(
+            model_name,
+            device=device,
+            dtype=dtype,
+            attn_implementation="eager",
+            backend="torch",
+            cache_dir=models_dir
+        )
 
-    # Try warm up
-    try:
-        model._warmup(prefill_len=100)
-    except Exception as e:
-        print(f"[qwen3_server] Warmup warning: {e}", flush=True)
+        # Warm up CUDA graphs
+        try:
+            model.warmup(prefill_len=100)
+        except Exception as e:
+            print(f"[qwen3_server] Warmup warning: {e}", flush=True)
 
-    return model
+
+        return model
+    else:
+        # CPU Fallback via standard qwen-tts Hugging Face model
+        from qwen_tts import Qwen3TTSModel
+        print(f"[qwen3_server] Initializing {model_name} on CPU fallback...", flush=True)
+        model = Qwen3TTSModel.from_pretrained(
+            model_name,
+            device_map="cpu",
+            torch_dtype=torch.float32,
+        )
+        return model
 
 def infer_model_type(model):
     """Detect whether this is a CustomVoice, VoiceDesign, or Base model."""
@@ -144,8 +157,9 @@ def get_supported_speakers(model):
         if callable(get_speakers):
             speakers = get_speakers()
             if speakers:
-                return [str(s) for s in speakers if s]
-    return ["Aiden", "Ashley", "Ben", "Cora", "Daniel", "Elsa", "Felix", "Grace", "Hale", "Iris", "Jack", "Katherine"]
+                return [str(s).lower() for s in speakers if s]
+    return ["aiden", "ashley", "ben", "cora", "daniel", "elsa", "felix", "grace", "hale", "iris", "jack", "katherine"]
+
 
 def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None):
     """Run inference, return WAV bytes."""
@@ -326,7 +340,7 @@ def main():
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model name (default: {DEFAULT_MODEL})")
     parser.add_argument("--device", default="cuda", help="Inference device (cuda / cpu)")
     parser.add_argument("--models-dir", default=None, help="Directory for storing downloaded models")
-    parser.add_argument("--backend", default="ggml", choices=["ggml", "torch"], help="Inference backend (default: ggml)")
+    parser.add_argument("--backend", default="torch", choices=["ggml", "torch"], help="Inference backend (default: torch)")
     args = parser.parse_args()
 
     global MODEL, AVAILABLE_VOICES, MODEL_TYPE

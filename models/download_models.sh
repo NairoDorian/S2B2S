@@ -54,18 +54,19 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Default to all TTS models if no --model specified
 if [ ${#MODELS[@]} -eq 0 ]; then
-    MODELS=("piper" "kokoro" "pocket" "kitten")
+    MODELS=("piper" "kokoro" "pocket" "kitten" "qwen3")
 fi
 
 # Expand "all" and "tts" aliases
 EXPANDED=()
 for m in "${MODELS[@]}"; do
     case "$m" in
-        all)   EXPANDED+=("stt" "brain" "piper" "kokoro" "pocket" "kitten") ;;
-        tts)   EXPANDED+=("piper" "kokoro" "pocket" "kitten") ;;
+        all)   EXPANDED+=("stt" "brain" "piper" "kokoro" "pocket" "kitten" "qwen3") ;;
+        tts)   EXPANDED+=("piper" "kokoro" "pocket" "kitten" "qwen3") ;;
         *)     EXPANDED+=("$m") ;;
     esac
 done
+
 MODELS=("${EXPANDED[@]}")
 
 # Deduplicate

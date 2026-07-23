@@ -18,6 +18,7 @@
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
     "sync:translations": "bun scripts/sync-translations.ts",
+    "sync:repos": "powershell -ExecutionPolicy Bypass ./scripts/sync-all-repos.ps1",
     "repomix": "repomix",
     "repomix:with-descriptions": "bun scripts/repomix-with-descriptions.ts",
     "update:all": "bun scripts/update-all-deps.ts",

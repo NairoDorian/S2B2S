@@ -4,7 +4,18 @@ use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const QWEN3_VOICES: &[&str] = &[
-    "aiden", "serena", "vivian", "uncle_fu", "ryan", "ono_anna", "sohee", "eric", "dylan",
+    "aiden",
+    "ashley",
+    "ben",
+    "cora",
+    "daniel",
+    "elsa",
+    "felix",
+    "grace",
+    "hale",
+    "iris",
+    "jack",
+    "katherine",
 ];
 
 const CLONED_VOICES_DIR: &str = "TTS/qwen3-cloned-voices";
@@ -102,7 +113,11 @@ impl Qwen3Backend {
 
 impl WarmEngine for Qwen3Backend {
     fn warm(&self) -> Result<(), String> {
-        let handle = local_tts_server::ensure_running("qwen3", "python".to_string(), vec![])?;
+        let handle = local_tts_server::ensure_running(
+            "qwen3",
+            "python".to_string(),
+            vec!["--backend".to_string(), "torch".to_string()],
+        )?;
         log::info!("[Qwen3] WarmEngine: server ready on port {}", handle.port);
         Ok(())
     }
@@ -137,7 +152,11 @@ impl TtsBackend for Qwen3Backend {
             voice
         };
 
-        let handle = local_tts_server::ensure_running("qwen3", "python".to_string(), vec![])?;
+        let handle = local_tts_server::ensure_running(
+            "qwen3",
+            "python".to_string(),
+            vec!["--backend".to_string(), "torch".to_string()],
+        )?;
 
         let url = format!("http://127.0.0.1:{}/", handle.port);
         let cloned_wav = cloned_voices_dir(&self.app).join(format!("{voice_to_use}.wav"));
