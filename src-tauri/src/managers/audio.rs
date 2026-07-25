@@ -22,39 +22,29 @@ const VAD_THRESHOLD: f32 = 0.3;
 
 /// Resolve the Silero VAD ONNX model path.
 ///
-/// Inspired by `huggingface/speech-to-speech`, which ships Silero VAD v5 for more
-/// robust turn-taking. Prefers the version selected in `settings.silero_vad_version`
-/// (default "v5") and falls back to `silero_vad_v4.onnx` when the requested file is
-/// missing, so installs that only have the v4 model keep working.
+/// S2B2S uses the latest Silero VAD model from the CDN. The blob.handy.computer
+/// CDN always serves the current release — see https://github.com/snakers4/silero-vad
+/// for version history. No code changes are needed for new VAD versions; only the
+/// CDN URL target needs updating by the maintainer.
 fn resolve_silero_vad_path(
     app_handle: &tauri::AppHandle,
-    version: &str,
 ) -> Result<PathBuf, anyhow::Error> {
-    let candidates: &[&str] = match version {
-        "v5" => &[
-            "resources/models/silero_vad_v5.onnx",
-            "resources/models/silero_vad_v4.onnx",
-        ],
-        _ => &["resources/models/silero_vad_v4.onnx"],
-    };
+    let rel = "resources/models/silero_vad.onnx";
+    let p = app_handle
+        .path()
+        .resolve(rel, tauri::path::BaseDirectory::Resource)
+        .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path {rel}: {e}"))?;
 
-    for rel in candidates {
-        let p = app_handle
-            .path()
-            .resolve(rel, tauri::path::BaseDirectory::Resource)
-            .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path {rel}: {e}"))?;
-        if p.exists() {
-            debug!("Using Silero VAD model: {rel:?}");
-            return Ok(p);
-        }
-        debug!("Silero VAD candidate not found: {rel:?}");
+    if p.exists() {
+        debug!("Using Silero VAD model: {rel:?}");
+        return Ok(p);
     }
 
-    // Fall back to the v4 path even if missing — the caller surfaces a clear error.
+    debug!("Silero VAD model not found at {rel:?}");
     app_handle
         .path()
         .resolve(
-            "resources/models/silero_vad_v4.onnx",
+            "resources/models/silero_vad.onnx",
             tauri::path::BaseDirectory::Resource,
         )
         .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))
@@ -568,8 +558,7 @@ impl AudioRecordingManager {
     pub fn preload_vad(&self) -> Result<(), anyhow::Error> {
         let mut recorder_opt = self.recorder.lock().unwrap();
         if recorder_opt.is_none() {
-            let settings = get_settings(&self.app_handle);
-            let vad_path = resolve_silero_vad_path(&self.app_handle, &settings.silero_vad_version)?;
+            let vad_path = resolve_silero_vad_path(&self.app_handle)?;
             *recorder_opt = Some(create_audio_recorder(
                 &vad_path,
                 &self.app_handle,

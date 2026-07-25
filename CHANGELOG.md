@@ -9,7 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Qwen3-TTS PyTorch CUDA Graphs Integration** (`qwen3_server.py`, `qwen3.rs`): Replaced legacy GGML C++ prototype with [`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts) powered by PyTorch `torch.cuda.CUDAGraph` capture. Provides 6–10x inference speedup (~0.08 Real-Time Factor) on NVIDIA GeForce RTX 4070 / CUDA GPUs, supporting CustomVoice (12 speakers), Voice Cloning, Voice Design, and streaming token output.
+- **Silero VAD now uses version-agnostic model** (`silero_vad.onnx`): Upgraded from hardcoded versioned files to a version-agnostic approach. The CDN at `blob.handy.computer/silero_vad.onnx` always serves the latest release from https://github.com/snakers4/silero-vad. No code changes needed for future VAD versions — only the CDN target is updated by the maintainer. Updated all download scripts, runtime resolution logic, CLI tooling, and documentation across `models/download_models.*`, `src-tauri/src/managers/audio.rs`, `src-tauri/src/settings.rs`, `src/bindings.ts`, and `src-tauri/src/audio_toolkit/bin/cli.rs`.
 - **Repository Dependency Auto-Sync Tooling** (`scripts/sync-all-repos.ps1`, `package.json`): Added `bun run sync:repos` command and script to automatically fetch and pull the latest commits for `faster-qwen3-tts` and `transcribe.cpp` Rust crates.
 - **Standardized Pre-Commit Routine** (`AGENTS.md`, `BUILD.md`, `CONTRIBUTING.md`, `README.md`): Defined and documented a mandatory 6-step pre-commit routine (`bun run sync:repos`, `bun run repomix`, `bunx tsc --noEmit`, `bun run lint:fix`, `bun run format`, `cargo test`) to ensure code quality, dependency alignment, and documentation audit prior to every git commit.
 

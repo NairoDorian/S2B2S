@@ -69,12 +69,12 @@ Both reinforce S2B2S's existing direction (cascaded VAD→STT→Brain→TTS, loc
 - `actions.rs` / `continuous_voice.rs` → resolve the effective STT language (`resolve_reply_language`) and pass it into the Brain. `auto` defers to the selected language / OS input source; a concrete code forces a fixed reply language; `en`/`auto`/`os_input` emit no hint.
   **Follow-up (deferred, needs engine support):** per-utterance detected language. Requires STT engines to _return_ a detected language from `transcribe()`; today `transcribe()` returns only `String`. Wire that through `TranscriptionManager` when the `transcribe-cpp`/Whisper engines expose detection.
 
-### WS-6 — Silero VAD v5 bump
+### WS-6 — Silero VAD latest
 
-**Source:** `huggingface/speech-to-speech` uses Silero VAD **v5**; S2B2S currently ships **v4** (`silero_vad_v4.onnx`).
-**Why:** v5 improves turn-taking robustness — directly benefits barge-in.
-**Target:** `src-tauri/src/audio_toolkit/vad/silero.rs` + `models/download_models.*` (fetch v5 onnx). Validate against `triple_vad.rs`.
-**Notes:** Keep v4 as a fallback behind a setting; cross-platform (ONNX Runtime).
+**Source:** `huggingface/speech-to-speech` uses the latest Silero VAD from the `snakers4/silero-vad` repo; S2B2S now uses a version-agnostic approach that always fetches the latest model from the CDN.
+**Why:** Ensures S2B2S always benefits from the newest VAD improvements without requiring code changes for each new release.
+**Target:** `src-tauri/src/audio_toolkit/vad/silero.rs` + `models/download_models.*` (fetch latest onnx). Validate against `triple_vad.rs`.
+**Notes:** Version-agnostic (`silero_vad.onnx`). Cross-platform (ONNX Runtime). The CDN `blob.handy.computer/silero_vad.onnx` is updated to serve the latest release.
 
 ### WS-7 — Wire-protocol tool/function calling (voice agents)
 
@@ -87,7 +87,7 @@ Both reinforce S2B2S's existing direction (cascaded VAD→STT→Brain→TTS, loc
 
 ## 3. Suggested sequencing
 
-1. **WS-6 (VAD v5)** — smallest, de-risks barge-in, no new deps.
+1. **WS-6 (latest VAD)** — smallest, de-risks barge-in, no new deps.
 2. **WS-4 (transcribe.cpp backend)** — high value (new models), isolated behind a feature flag.
 3. **WS-3 (Qwen3-TTS)** — adds a quality local TTS backend, follows existing pattern.
 4. **WS-1 (Realtime server)** — the architectural centerpiece; reuse WS-3/WS-4 engines.

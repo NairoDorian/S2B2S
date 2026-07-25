@@ -76,7 +76,7 @@ bun scripts/check-deps.ts
 
 # Minimal (VAD only):
 mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+curl -o src-tauri/resources/models/silero_vad.onnx https://blob.handy.computer/silero_vad.onnx
 **Pre-Commit Routine (MANDATORY BEFORE EVERY COMMIT & PUSH):**
 
 Before committing and pushing any changes, always run this complete routine:

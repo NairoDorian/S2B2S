@@ -34,7 +34,7 @@ To ensure smooth performance on typical mobile chipsets (e.g., Snapdragon 8 Gen 
 
 | Task      | Model                    | Size        | Precision   | Note                         |
 | --------- | ------------------------ | ----------- | ----------- | ---------------------------- |
-| **VAD**   | Silero VAD v4            | ~1.7 MB     | ONNX        | Low memory, fast             |
+| **VAD**   | Silero VAD latest        | ~2.5 MB     | ONNX        | Low memory, fast             |
 | **STT**   | Qwen3-ASR 0.5B / Whisper | ~150-300 MB | INT8        | Streaming audio to text      |
 | **Brain** | Gemma-4 2B (QAT)         | ~1.3 GB     | Q4_K_M GGUF | Speculative decoding enabled |
 | **TTS**   | Kokoro-82M / Piper       | ~80-150 MB  | ONNX / VITS | Multi-voice, offline         |

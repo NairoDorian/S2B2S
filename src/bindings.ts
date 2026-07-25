@@ -408,10 +408,9 @@ export type AppSettings_Deserialize = {
 	vad_mode?: string,
 	rnnoise_voice_threshold?: number | null,
 	/**
-	 *  Silero VAD model major version to load: "v5" (default, preferred) or "v4".
-	 *  Inspired by huggingface/speech-to-speech, which uses Silero VAD v5 for
-	 *  more robust turn-taking. The loader falls back to v4 when the requested
-	 *  file is missing, so installs that only have `silero_vad_v4.onnx` keep working.
+	 *  Silero VAD model path — managed automatically by the download scripts.
+	 *  Always uses the latest Silero VAD ONNX model from the CDN.
+	 *  See https://github.com/snakers4/silero-vad for version history.
 	 */
 	silero_vad_version?: string,
 	llama_server?: LlamaServerConfig,
@@ -544,10 +543,9 @@ export type AppSettings_Serialize = {
 	vad_mode: string,
 	rnnoise_voice_threshold: number | null,
 	/**
-	 *  Silero VAD model major version to load: "v5" (default, preferred) or "v4".
-	 *  Inspired by huggingface/speech-to-speech, which uses Silero VAD v5 for
-	 *  more robust turn-taking. The loader falls back to v4 when the requested
-	 *  file is missing, so installs that only have `silero_vad_v4.onnx` keep working.
+	 *  Silero VAD model path — managed automatically by the download scripts.
+	 *  Always uses the latest Silero VAD ONNX model from the CDN.
+	 *  See https://github.com/snakers4/silero-vad for version history.
 	 */
 	silero_vad_version: string,
 	llama_server: LlamaServerConfig,

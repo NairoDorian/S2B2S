@@ -173,14 +173,14 @@ For the minimal VAD model only (used in development):
 
 ```bash
 mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+curl -o src-tauri/resources/models/silero_vad.onnx https://blob.handy.computer/silero_vad.onnx
 ```
 
 **Model sources:**
 
 | Model              | Size           | Source                                |
 | ------------------ | -------------- | ------------------------------------- |
-| Silero VAD v4      | ~1.7 MB        | blob.handy.computer                   |
+| Silero VAD         | ~2.5 MB      | blob.handy.computer                   |
 | Parakeet V3 (STT)  | ~600 MB        | blob.handy.computer                   |
 | Kokoro-82M (TTS)   | ~330 MB        | HuggingFace hexgrad/Kokoro-82M        |
 | Piper en_US voices | ~30-70 MB each | HuggingFace rhasspy/piper-voices      |

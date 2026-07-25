@@ -1246,11 +1246,9 @@ pub struct AppSettings {
     pub vad_mode: String,
     #[serde(default = "default_rnnoise_voice_threshold")]
     pub rnnoise_voice_threshold: f64,
-    /// Silero VAD model major version to load: "v5" (default, preferred) or "v4".
-    /// Inspired by huggingface/speech-to-speech, which uses Silero VAD v5 for
-    /// more robust turn-taking. The loader falls back to v4 when the requested
-    /// file is missing, so installs that only have `silero_vad_v4.onnx` keep working.
-    #[serde(default = "default_silero_vad_version")]
+    /// Silero VAD model path (managed automatically by download scripts).
+    /// Always uses the latest Silero VAD ONNX model from the CDN.
+    #[serde(default)]
     pub silero_vad_version: String,
     #[serde(default)]
     pub llama_server: crate::llama_server::manager::LlamaServerConfig,
@@ -1333,7 +1331,7 @@ fn default_rnnoise_voice_threshold() -> f64 {
 }
 
 fn default_silero_vad_version() -> String {
-    "v5".to_string()
+    String::new()
 }
 
 fn default_multi_stt_prompt() -> String {

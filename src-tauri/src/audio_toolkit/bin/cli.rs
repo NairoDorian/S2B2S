@@ -179,11 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================");
     print_help();
 
-    let vad_path = if std::path::Path::new("./resources/models/silero_vad_v5.onnx").exists() {
-        "./resources/models/silero_vad_v5.onnx"
-    } else {
-        "./resources/models/silero_vad_v4.onnx"
-    };
+    let vad_path = "./resources/models/silero_vad.onnx";
     let silero = SileroVad::new(vad_path, 0.5)?;
     let smoothed_vad = SmoothedVad::new(
         Box::new(silero),
