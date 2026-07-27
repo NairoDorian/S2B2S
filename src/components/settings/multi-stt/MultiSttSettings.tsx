@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { type ModelInfo } from "@/bindings";
 
@@ -12,10 +12,75 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dropdown } from "@/components/ui/Dropdown";
+import {
+  getLanguageLabel,
+  SELECTABLE_LANGUAGES,
+  supportsLanguageCode,
+} from "@/lib/constants/languages";
 
 import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
+
+/** Inline language selector for an extra multi-STT model slot. */
+interface PerModelLanguageSelectorProps {
+  slot: 2 | 3;
+  modelId: string | null;
+  modelInfo: ModelInfo | undefined;
+}
+
+const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
+  slot,
+  modelId,
+  modelInfo,
+}) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting } = useSettings();
+  const settingKey = slot === 2 ? "multi_stt_language_model_2" : "multi_stt_language_model_3";
+  const currentLang = (getSetting(settingKey) as string | null) ?? null;
+
+  if (!modelId || !modelInfo) return null;
+
+  const supportsSelection = modelInfo.supports_language_selection;
+  const supportedLangs = modelInfo.supported_languages;
+
+  // Build lang options from the model's supported languages + auto
+  const langOptions = useMemo(() => {
+    if (!supportsSelection || supportedLangs.length === 0) return [];
+    const entries = SELECTABLE_LANGUAGES.filter(
+      (lang) => lang.value === "auto" || supportsLanguageCode(supportedLangs, lang.value),
+    );
+    return entries.map((lang) => ({ value: lang.value, label: lang.label }));
+  }, [supportsSelection, supportedLangs]);
+
+  // If the model does not support selection, show a disabled note
+  if (!supportsSelection) {
+    return (
+      <p className="text-xs text-mid-gray/50 italic mt-1 ml-1">
+        {t("multiStt.models.languageNotApplicable")}
+      </p>
+    );
+  }
+
+  // Show a language dropdown
+  return (
+    <div className="flex items-center gap-2 mt-2 ml-1">
+      <label className="text-xs text-mid-gray/70 whitespace-nowrap">
+        {slot === 2
+          ? t("multiStt.models.model2Language")
+          : t("multiStt.models.model3Language")}
+      </label>
+      <Dropdown
+        selectedValue={currentLang}
+        options={langOptions}
+        onSelect={(value) => updateSetting(settingKey, value || null)}
+        placeholder={getLanguageLabel("auto") ?? "Auto"}
+        disabled={langOptions.length === 0}
+        className="min-w-[140px]"
+      />
+    </div>
+  );
+};
 
 export const MultiSttSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -43,6 +108,14 @@ export const MultiSttSettings: React.FC = () => {
   const modelOptionsForSlot3 = downloadedModels
     .filter((m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel2)
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
+
+  const model2Info = multiSttModel2
+    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel2)
+    : undefined;
+
+  const model3Info = multiSttModel3
+    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)
+    : undefined;
 
   // Initialize draft from existing merge prompt
   useEffect(() => {
@@ -164,6 +237,11 @@ export const MultiSttSettings: React.FC = () => {
                     </Button>
                   )}
                 </div>
+                <PerModelLanguageSelector
+                  slot={2}
+                  modelId={multiSttModel2}
+                  modelInfo={model2Info}
+                />
               </SettingContainer>
 
               {/* Model 3 Selection */}
@@ -193,6 +271,11 @@ export const MultiSttSettings: React.FC = () => {
                     </Button>
                   )}
                 </div>
+                <PerModelLanguageSelector
+                  slot={3}
+                  modelId={multiSttModel3}
+                  modelInfo={model3Info}
+                />
               </SettingContainer>
             </div>
           </SettingsGroup>

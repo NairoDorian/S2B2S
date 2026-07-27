@@ -172,6 +172,10 @@ const settingUpdaters: {
     commands.changeMultiSttExtraModel(2, value as string | null),
   multi_stt_model_3: (value) =>
     commands.changeMultiSttExtraModel(3, value as string | null),
+  multi_stt_language_model_2: (value) =>
+    commands.changeMultiSttExtraModelLanguage(2, value as string | null),
+  multi_stt_language_model_3: (value) =>
+    commands.changeMultiSttExtraModelLanguage(3, value as string | null),
   multi_stt_merge_prompt: (value) =>
     commands.changeMultiSttMergePrompt(value as LLMPrompt | null),
   mic_idle_timeout_value: (value) =>

@@ -20,16 +20,16 @@ export const MicIdleTimeout: React.FC = () => {
   if (!lazyClose) return null;
 
   const unitOptions: { value: string; label: string }[] = [
-    { value: "seconds", label: t("settings.micIdleTimeout.seconds") },
-    { value: "minutes", label: t("settings.micIdleTimeout.minutes") },
+    { value: "seconds", label: t("settings.advanced.micIdleTimeout.seconds") },
+    { value: "minutes", label: t("settings.advanced.micIdleTimeout.minutes") },
   ];
 
   return (
-    <SettingsGroup title={t("settings.micIdleTimeout.title")}>
+    <SettingsGroup title={t("settings.advanced.micIdleTimeout.title")}>
       <div className="space-y-3 px-4 p-2">
         <SettingContainer
-          title={t("settings.micIdleTimeout.infiniteLabel")}
-          description={t("settings.micIdleTimeout.infiniteDescription")}
+          title={t("settings.advanced.micIdleTimeout.infiniteLabel")}
+          description={t("settings.advanced.micIdleTimeout.infiniteDescription")}
           descriptionMode="tooltip"
           grouped
         >
@@ -37,8 +37,8 @@ export const MicIdleTimeout: React.FC = () => {
             checked={infinite}
             onChange={(enabled) => updateSetting("mic_idle_infinite", enabled)}
             isUpdating={isUpdating("mic_idle_infinite")}
-            label={t("settings.micIdleTimeout.infiniteLabel")}
-            description={t("settings.micIdleTimeout.infiniteDescription")}
+            label={t("settings.advanced.micIdleTimeout.infiniteLabel")}
+            description={t("settings.advanced.micIdleTimeout.infiniteDescription")}
             descriptionMode="tooltip"
             grouped
           />
@@ -48,8 +48,8 @@ export const MicIdleTimeout: React.FC = () => {
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <SettingContainer
-                title={t("settings.micIdleTimeout.timeoutLabel")}
-                description={t("settings.micIdleTimeout.timeoutDescription")}
+                title={t("settings.advanced.micIdleTimeout.timeoutLabel")}
+                description={t("settings.advanced.micIdleTimeout.timeoutDescription")}
                 descriptionMode="tooltip"
                 layout="stacked"
                 grouped
@@ -70,8 +70,8 @@ export const MicIdleTimeout: React.FC = () => {
             </div>
             <div className="w-32">
               <SettingContainer
-                title={t("settings.micIdleTimeout.unitLabel")}
-                description={t("settings.micIdleTimeout.unitDescription")}
+                title={t("settings.advanced.micIdleTimeout.unitLabel")}
+                description={t("settings.advanced.micIdleTimeout.unitDescription")}
                 descriptionMode="tooltip"
                 grouped
               >

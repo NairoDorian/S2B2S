@@ -969,6 +969,23 @@ pub fn change_multi_stt_extra_model(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_multi_stt_extra_model_language(
+    app: AppHandle,
+    slot: u32,
+    language: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    match slot {
+        2 => settings.multi_stt_language_model_2 = language,
+        3 => settings.multi_stt_language_model_3 = language,
+        other => return Err(format!("Invalid extra model slot: {} (must be 2 or 3)", other)),
+    }
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_multi_stt_merge_prompt(
     app: AppHandle,
     prompt: Option<settings::LLMPrompt>,

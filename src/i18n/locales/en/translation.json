@@ -675,7 +675,12 @@
       "loadModel": "Load Model",
       "unloadModel": "Unload Model",
       "loadingModel": "Loading...",
-      "unloadingModel": "Unloading..."
+      "unloadingModel": "Unloading...",
+      "model2Language": "Language for Second Model",
+      "model3Language": "Language for Third Model",
+      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
+      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
+      "languageNotApplicable": "This model does not support language selection"
     },
       "mergePrompt": {
         "title": "Merge Prompt",

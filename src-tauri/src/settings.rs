@@ -480,6 +480,10 @@ pub struct AppSettings {
     #[serde(default)]
     pub multi_stt_model_3: Option<String>,
     #[serde(default)]
+    pub multi_stt_language_model_2: Option<String>,
+    #[serde(default)]
+    pub multi_stt_language_model_3: Option<String>,
+    #[serde(default)]
     pub multi_stt_merge_prompt: Option<LLMPrompt>,
     #[serde(default)]
     pub multi_stt_selected_merge_prompt_id: Option<String>,
@@ -948,6 +952,8 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_enabled: false,
         multi_stt_model_2: None,
         multi_stt_model_3: None,
+        multi_stt_language_model_2: None,
+        multi_stt_language_model_3: None,
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,
         mic_idle_timeout_value: default_mic_idle_timeout_value(),

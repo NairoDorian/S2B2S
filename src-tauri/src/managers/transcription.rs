@@ -1804,7 +1804,19 @@ impl TranscriptionManager {
 
         let st = std::time::Instant::now();
         let audio_len = audio.len();
-        let settings = get_settings(&self.app_handle);
+        let mut settings = get_settings(&self.app_handle);
+
+        // Override language with per-model preference if set
+        let model_language = if Some(model_id) == settings.multi_stt_model_2.as_deref() {
+            settings.multi_stt_language_model_2.clone()
+        } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
+            settings.multi_stt_language_model_3.clone()
+        } else {
+            None
+        };
+        if let Some(ref lang) = model_language {
+            settings.selected_language = lang.clone();
+        }
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(

@@ -628,6 +628,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_auto_submit_key_setting,
             shortcut::change_multi_stt_enabled_setting,
             shortcut::change_multi_stt_extra_model,
+            shortcut::change_multi_stt_extra_model_language,
             shortcut::change_multi_stt_merge_prompt,
             shortcut::change_mic_idle_timeout_settings,
             shortcut::change_post_process_enabled_setting,
