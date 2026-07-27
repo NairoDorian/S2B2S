@@ -39,19 +39,20 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
   const settingKey = slot === 2 ? "multi_stt_language_model_2" : "multi_stt_language_model_3";
   const currentLang = (getSetting(settingKey) as string | null) ?? null;
 
+  // Build lang options from the model's supported languages + auto
+  // NOTE: useMemo must be called BEFORE any early return (React hooks rule).
+  const langOptions = useMemo(() => {
+    if (!modelInfo || !modelId) return [];
+    if (!modelInfo.supports_language_selection || modelInfo.supported_languages.length === 0) return [];
+    const entries = SELECTABLE_LANGUAGES.filter(
+      (lang) => lang.value === "auto" || supportsLanguageCode(modelInfo.supported_languages, lang.value),
+    );
+    return entries.map((lang) => ({ value: lang.value, label: lang.label }));
+  }, [modelId, modelInfo]);
+
   if (!modelId || !modelInfo) return null;
 
   const supportsSelection = modelInfo.supports_language_selection;
-  const supportedLangs = modelInfo.supported_languages;
-
-  // Build lang options from the model's supported languages + auto
-  const langOptions = useMemo(() => {
-    if (!supportsSelection || supportedLangs.length === 0) return [];
-    const entries = SELECTABLE_LANGUAGES.filter(
-      (lang) => lang.value === "auto" || supportsLanguageCode(supportedLangs, lang.value),
-    );
-    return entries.map((lang) => ({ value: lang.value, label: lang.label }));
-  }, [supportsSelection, supportedLangs]);
 
   // If the model does not support selection, show a disabled note
   if (!supportsSelection) {
@@ -227,21 +228,30 @@ export const MultiSttSettings: React.FC = () => {
                     disabled={modelOptionsForSlot2.length === 0}
                     className="flex-1 min-w-0"
                   />
-                  {multiSttModel2 && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleModel2Select(null)}
-                    >
-                      {t("multiStt.models.unloadModel")}
-                    </Button>
-                  )}
                 </div>
                 <PerModelLanguageSelector
                   slot={2}
                   modelId={multiSttModel2}
                   modelInfo={model2Info}
                 />
+                {multiSttModel2 && model2Info?.supports_translation && (
+                  <div className="flex items-center gap-2 mt-1 ml-1">
+                    <ToggleSwitch
+                      checked={
+                        (getSetting("multi_stt_translate_model_2") as boolean) ??
+                        true
+                      }
+                      onChange={(enabled) =>
+                        updateSetting("multi_stt_translate_model_2", enabled)
+                      }
+                      isUpdating={isUpdating("multi_stt_translate_model_2")}
+                      label={t("multiStt.models.translateToEnglish")}
+                      description=""
+                      descriptionMode="tooltip"
+                      grouped={false}
+                    />
+                  </div>
+                )}
               </SettingContainer>
 
               {/* Model 3 Selection */}
@@ -267,7 +277,7 @@ export const MultiSttSettings: React.FC = () => {
                       size="sm"
                       onClick={() => handleModel3Select(null)}
                     >
-                      {t("multiStt.models.unloadModel")}
+                      {t("multiStt.models.disableModel")}
                     </Button>
                   )}
                 </div>
@@ -276,6 +286,24 @@ export const MultiSttSettings: React.FC = () => {
                   modelId={multiSttModel3}
                   modelInfo={model3Info}
                 />
+                {multiSttModel3 && model3Info?.supports_translation && (
+                  <div className="flex items-center gap-2 mt-1 ml-1">
+                    <ToggleSwitch
+                      checked={
+                        (getSetting("multi_stt_translate_model_3") as boolean) ??
+                        true
+                      }
+                      onChange={(enabled) =>
+                        updateSetting("multi_stt_translate_model_3", enabled)
+                      }
+                      isUpdating={isUpdating("multi_stt_translate_model_3")}
+                      label={t("multiStt.models.translateToEnglish")}
+                      description=""
+                      descriptionMode="tooltip"
+                      grouped={false}
+                    />
+                  </div>
+                )}
               </SettingContainer>
             </div>
           </SettingsGroup>

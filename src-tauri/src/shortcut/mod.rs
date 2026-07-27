@@ -998,6 +998,30 @@ pub fn change_multi_stt_merge_prompt(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_multi_stt_translate_model_2(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_translate_model_2 = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_translate_model_3(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_translate_model_3 = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_mic_idle_timeout_settings(
     app: AppHandle,
     value: u32,

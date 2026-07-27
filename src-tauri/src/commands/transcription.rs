@@ -38,3 +38,14 @@ pub fn unload_model_manually(
         .unload_model()
         .map_err(|e| format!("Failed to unload model: {}", e))
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn unload_extra_model(
+    transcription_manager: State<TranscriptionManager>,
+    model_id: String,
+) -> Result<(), String> {
+    transcription_manager
+        .unload_extra_model(&model_id)
+        .map_err(|e| format!("Failed to unload extra model: {}", e))
+}

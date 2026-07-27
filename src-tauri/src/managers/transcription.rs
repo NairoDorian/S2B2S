@@ -1194,12 +1194,12 @@ impl TranscriptionManager {
         // run extension and the fuzzy-correction skip are gated on
         // `model_is_whisper` instead, since non-whisper archs can advertise
         // the feature while rejecting the whisper-kind extension.
-        let mut model_takes_initial_prompt = false;
         // Whether the loaded model is actually whisper-family (arch string).
         // Non-whisper archs (e.g. Voxtral Small) can advertise
         // Feature::InitialPrompt yet reject the whisper-kind run extension
         // with INVALID_ARG, so the whisper extension must be gated on the
         // arch, not on the feature (see #1601).
+        let mut model_takes_initial_prompt = false;
         let mut model_is_whisper = false;
 
         // Perform transcription with the appropriate engine.
@@ -1818,6 +1818,18 @@ impl TranscriptionManager {
             settings.selected_language = lang.clone();
         }
 
+        // Override translation with per-model preference if set
+        let model_translate = if Some(model_id) == settings.multi_stt_model_2.as_deref() {
+            Some(settings.multi_stt_translate_model_2)
+        } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
+            Some(settings.multi_stt_translate_model_3)
+        } else {
+            None
+        };
+        if let Some(translate) = model_translate {
+            settings.translate_to_english = translate;
+        }
+
         let result = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(
                 &mut engine,
@@ -1972,7 +1984,7 @@ fn transcribe_with_engine(
             let caps = model.capabilities();
             let model_supports_translate = caps.supports_translate;
             let model_languages = caps.languages.clone();
-            let model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
+            let _model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
             let model_is_whisper = model.arch() == "whisper";
 
             let effective_language = effective_language_for_model(settings, model_manager, model_id);

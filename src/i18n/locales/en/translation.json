@@ -680,19 +680,21 @@
       "model3Language": "Language for Third Model",
       "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
       "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
-      "languageNotApplicable": "This model does not support language selection"
+      "languageNotApplicable": "This model does not support language selection",
+      "disableModel": "Disable",
+      "translateToEnglish": "Translate to English"
     },
-      "mergePrompt": {
-        "title": "Merge Prompt",
-        "description": "Configure how the multiple transcriptions are merged",
-        "promptName": "Prompt Name",
-        "promptNamePlaceholder": "e.g. Merge Prompt",
-        "promptLabel": "Merge Instructions",
-        "promptPlaceholder": "Enter instructions for merging the transcriptions...",
-        "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, and <code>{{output3}}</code> for the third model",
-        "savePrompt": "Save Merge Prompt",
-        "noPrompt": "Without a merge prompt, outputs will be concatenated"
-      },
+    "mergePrompt": {
+      "title": "Merge Prompt",
+      "description": "Configure how the multiple transcriptions are merged",
+      "promptName": "Prompt Name",
+      "promptNamePlaceholder": "e.g. Merge Prompt",
+      "promptLabel": "Merge Instructions",
+      "promptPlaceholder": "Enter instructions for merging the transcriptions...",
+      "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, and <code>{{output3}}</code> for the third model",
+      "savePrompt": "Save Merge Prompt",
+      "noPrompt": "Without a merge prompt, outputs will be concatenated"
+    },
     "status": {
       "title": "Model Status",
       "modelsLoaded": "Models loaded in memory",

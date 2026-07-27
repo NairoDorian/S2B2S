@@ -153,6 +153,8 @@ fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
         if let Ok(hwnd) = overlay_clone.hwnd() {
             unsafe {
                 // Force Z-order: make this window topmost without changing size/pos or stealing focus
+                // hwnd comes from tao (windows 0.61.3), cast to our windows 0.62.2 HWND
+                let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&hwnd);
                 let _ = SetWindowPos(
                     hwnd,
                     Some(HWND_TOPMOST),
@@ -335,6 +337,8 @@ fn place_windows_overlay(
         .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
 
     unsafe {
+        // hwnd comes from tao (windows 0.61.3), cast to our windows 0.62.2 HWND
+        let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&hwnd);
         SetWindowPos(
             hwnd,
             None,

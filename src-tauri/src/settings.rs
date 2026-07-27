@@ -484,6 +484,10 @@ pub struct AppSettings {
     #[serde(default)]
     pub multi_stt_language_model_3: Option<String>,
     #[serde(default)]
+    pub multi_stt_translate_model_2: bool,
+    #[serde(default)]
+    pub multi_stt_translate_model_3: bool,
+    #[serde(default)]
     pub multi_stt_merge_prompt: Option<LLMPrompt>,
     #[serde(default)]
     pub multi_stt_selected_merge_prompt_id: Option<String>,
@@ -500,7 +504,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 1;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -954,6 +958,8 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_model_3: None,
         multi_stt_language_model_2: None,
         multi_stt_language_model_3: None,
+        multi_stt_translate_model_2: true,
+        multi_stt_translate_model_3: true,
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,
         mic_idle_timeout_value: default_mic_idle_timeout_value(),
@@ -1142,6 +1148,19 @@ fn apply_settings_migrations(
         } else {
             OverlayStyle::Live
         };
+        updated = true;
+    }
+
+    // Migration schema version 1 → 2: add per-model translation settings
+    // for multi-STT extra models (default: translation ON).
+    if stored_schema_version < 2 {
+        if settings_value.get("multi_stt_translate_model_2").is_none() {
+            settings.multi_stt_translate_model_2 = true;
+        }
+        if settings_value.get("multi_stt_translate_model_3").is_none() {
+            settings.multi_stt_translate_model_3 = true;
+        }
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
 

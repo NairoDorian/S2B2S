@@ -85,7 +85,7 @@ tauri-plugin-single-instance = "2.4.3"
 tauri-plugin-updater = "2.10.1"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.2", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_LibraryLoader",

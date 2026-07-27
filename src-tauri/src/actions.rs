@@ -1023,37 +1023,6 @@ impl ShortcutAction for MultiSttAction {
         let settings = get_settings(app);
         let is_always_on = settings.always_on_microphone;
 
-        // Pre-load extra models in background
-        let tm_extra = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
-        let settings_for_extra = get_settings(app);
-        let extra_model_2 = settings_for_extra.multi_stt_model_2.clone();
-        let extra_model_3 = settings_for_extra.multi_stt_model_3.clone();
-        let app_for_extra = app.clone();
-
-        std::thread::spawn(move || {
-            // Load extra models in sequence to avoid VRAM contention
-            if let Some(ref model_id) = extra_model_2 {
-                info!("Multi-STT: loading extra model 2: {}", model_id);
-                match tm_extra.load_extra_model(model_id) {
-                    Ok(name) => info!("Multi-STT: extra model 2 '{}' loaded successfully", name),
-                    Err(e) => error!("Multi-STT: failed to load extra model 2 '{}': {}", model_id, e),
-                }
-            }
-            if let Some(ref model_id) = extra_model_3 {
-                info!("Multi-STT: loading extra model 3: {}", model_id);
-                match tm_extra.load_extra_model(model_id) {
-                    Ok(name) => info!("Multi-STT: extra model 3 '{}' loaded successfully", name),
-                    Err(e) => error!("Multi-STT: failed to load extra model 3 '{}': {}", model_id, e),
-                }
-            }
-
-            // Log currently loaded models
-            let loaded = tm_extra.get_extra_loaded_models();
-            if !loaded.is_empty() {
-                info!("Multi-STT: extra models loaded in memory: {:?}", loaded);
-            }
-        });
-
         // Start recording
         let selected_model_info = app
             .state::<Arc<ModelManager>>()
@@ -1169,7 +1138,7 @@ impl ShortcutAction for MultiSttAction {
             let _guard = FinishGuard(ah.clone());
             debug!("Multi-STT: Starting async transcription task for binding: {}", binding_id);
 
-            let stop_recording_time = Instant::now();
+            let _stop_recording_time = Instant::now();
             if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
                 debug!(
                     "Multi-STT: Recording stopped, sample count: {}",
@@ -1201,10 +1170,36 @@ impl ShortcutAction for MultiSttAction {
                     crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
                 });
 
-                // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
+                // === LOAD EXTRA MODELS SEQUENTIALLY (avoid VRAM spike) ===
                 let settings = get_settings(&ah);
                 let extra_model_2 = settings.multi_stt_model_2.clone();
                 let extra_model_3 = settings.multi_stt_model_3.clone();
+
+                if let Some(ref model_id) = extra_model_2 {
+                    if !tm.is_extra_model_loaded(model_id) {
+                        info!("Multi-STT: loading extra model 2: {}", model_id);
+                        match tm.load_extra_model(model_id) {
+                            Ok(name) => info!("Multi-STT: extra model 2 '{}' loaded successfully", name),
+                            Err(e) => error!("Multi-STT: failed to load extra model 2 '{}': {}", model_id, e),
+                        }
+                    } else {
+                        info!("Multi-STT: extra model 2 '{}' already loaded, skipping", model_id);
+                    }
+                }
+
+                if let Some(ref model_id) = extra_model_3 {
+                    if !tm.is_extra_model_loaded(model_id) {
+                        info!("Multi-STT: loading extra model 3: {}", model_id);
+                        match tm.load_extra_model(model_id) {
+                            Ok(name) => info!("Multi-STT: extra model 3 '{}' loaded successfully", name),
+                            Err(e) => error!("Multi-STT: failed to load extra model 3 '{}': {}", model_id, e),
+                        }
+                    } else {
+                        info!("Multi-STT: extra model 3 '{}' already loaded, skipping", model_id);
+                    }
+                }
+
+                // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
 
                 let tm1 = Arc::clone(&tm);
                 let tm2 = Arc::clone(&tm);
