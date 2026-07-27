@@ -30,6 +30,14 @@ export const commands = {
 	changeClipboardHandlingSetting: (handling: string) => typedError<null, string>(__TAURI_INVOKE("change_clipboard_handling_setting", { handling })),
 	changeAutoSubmitSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_auto_submit_setting", { enabled })),
 	changeAutoSubmitKeySetting: (key: string) => typedError<null, string>(__TAURI_INVOKE("change_auto_submit_key_setting", { key })),
+	changeMultiSttEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_enabled_setting", { enabled })),
+	changeMultiSttExtraModel: (slot: number, modelId: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model", { slot, modelId })),
+	changeMultiSttMergePrompt: (prompt: {
+	id: string,
+	name: string,
+	prompt: string,
+} | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_prompt", { prompt })),
+	changeMicIdleTimeoutSettings: (value: number, unit: MicIdleTimeoutUnit, infinite: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mic_idle_timeout_settings", { value, unit, infinite })),
 	changePostProcessEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_post_process_enabled_setting", { enabled })),
 	changeExperimentalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_experimental_enabled_setting", { enabled })),
 	changePostProcessBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl })),
@@ -280,6 +288,14 @@ export type AppSettings_Deserialize = {
 	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style?: OverlayStyle,
+	multi_stt_enabled?: boolean,
+	multi_stt_model_2?: string | null,
+	multi_stt_model_3?: string | null,
+	multi_stt_merge_prompt?: LLMPrompt | null,
+	multi_stt_selected_merge_prompt_id?: string | null,
+	mic_idle_timeout_value?: number,
+	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
+	mic_idle_infinite?: boolean,
 };
 
 /**
@@ -367,6 +383,14 @@ export type AppSettings_Serialize = {
 	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style: OverlayStyle,
+	multi_stt_enabled: boolean,
+	multi_stt_model_2: string | null,
+	multi_stt_model_3: string | null,
+	multi_stt_merge_prompt: LLMPrompt | null,
+	multi_stt_selected_merge_prompt_id: string | null,
+	mic_idle_timeout_value: number,
+	mic_idle_timeout_unit: MicIdleTimeoutUnit,
+	mic_idle_infinite: boolean,
 };
 
 export type AudioDevice = {
@@ -440,6 +464,8 @@ export type LLMPrompt = {
 };
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
+
+export type MicIdleTimeoutUnit = "seconds" | "minutes";
 
 export type ModelInfo = {
 	id: string,

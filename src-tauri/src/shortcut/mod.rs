@@ -397,6 +397,11 @@ fn register_all_shortcuts_for_implementation(
             continue;
         }
 
+        // Skip multi-stt shortcut when the feature is disabled
+        if id == "multi_stt_transcribe" && !current_settings.multi_stt_enabled {
+            continue;
+        }
+
         let mut binding = current_settings
             .bindings
             .get(id)
@@ -909,6 +914,83 @@ pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(),
         }
     };
     settings.auto_submit_key = parsed;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_enabled = enabled;
+    settings::write_settings(&app, settings.clone());
+
+    // Register or unregister the multi-stt shortcut
+    if let Some(binding) = settings
+        .bindings
+        .get("multi_stt_transcribe")
+        .cloned()
+    {
+        if enabled {
+            let _ = register_shortcut(&app, binding);
+        } else {
+            let _ = unregister_shortcut(&app, binding);
+        }
+    }
+
+    // Emit event for frontend
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "multi_stt_enabled",
+            "value": enabled
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_extra_model(
+    app: AppHandle,
+    slot: u32,
+    model_id: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    match slot {
+        2 => settings.multi_stt_model_2 = model_id,
+        3 => settings.multi_stt_model_3 = model_id,
+        other => return Err(format!("Invalid extra model slot: {} (must be 2 or 3)", other)),
+    }
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_merge_prompt(
+    app: AppHandle,
+    prompt: Option<settings::LLMPrompt>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_merge_prompt = prompt;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_mic_idle_timeout_settings(
+    app: AppHandle,
+    value: u32,
+    unit: settings::MicIdleTimeoutUnit,
+    infinite: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.mic_idle_timeout_value = value;
+    settings.mic_idle_timeout_unit = unit;
+    settings.mic_idle_infinite = infinite;
     settings::write_settings(&app, settings);
     Ok(())
 }

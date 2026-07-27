@@ -301,6 +301,14 @@ pub enum OrtAcceleratorSetting {
     Rocm,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MicIdleTimeoutUnit {
+    #[default]
+    Seconds,
+    Minutes,
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub(crate) struct SecretMap(HashMap<String, String>);
@@ -464,6 +472,24 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    // Multi STT settings
+    #[serde(default)]
+    pub multi_stt_enabled: bool,
+    #[serde(default)]
+    pub multi_stt_model_2: Option<String>,
+    #[serde(default)]
+    pub multi_stt_model_3: Option<String>,
+    #[serde(default)]
+    pub multi_stt_merge_prompt: Option<LLMPrompt>,
+    #[serde(default)]
+    pub multi_stt_selected_merge_prompt_id: Option<String>,
+    // Microphone idle timeout
+    #[serde(default = "default_mic_idle_timeout_value")]
+    pub mic_idle_timeout_value: u32,
+    #[serde(default)]
+    pub mic_idle_timeout_unit: MicIdleTimeoutUnit,
+    #[serde(default)]
+    pub mic_idle_infinite: bool,
 }
 
 fn default_model() -> String {
@@ -525,6 +551,10 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::None;
     #[cfg(not(target_os = "linux"))]
     return OverlayStyle::Live;
+}
+
+fn default_mic_idle_timeout_value() -> u32 {
+    30
 }
 
 fn default_vad_enabled() -> bool {
@@ -794,6 +824,15 @@ pub fn get_default_settings() -> AppSettings {
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let default_shortcut = "alt+space";
 
+    #[cfg(target_os = "windows")]
+    let default_multi_stt_shortcut = "ctrl+alt+space";
+    #[cfg(target_os = "macos")]
+    let default_multi_stt_shortcut = "option+alt+space";
+    #[cfg(target_os = "linux")]
+    let default_multi_stt_shortcut = "ctrl+alt+space";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let default_multi_stt_shortcut = "alt+shift+space";
+
     let mut bindings = HashMap::new();
     bindings.insert(
         "transcribe".to_string(),
@@ -833,6 +872,18 @@ pub fn get_default_settings() -> AppSettings {
             description: "Cancels the current recording.".to_string(),
             default_binding: "escape".to_string(),
             current_binding: "escape".to_string(),
+        },
+    );
+    bindings.insert(
+        "multi_stt_transcribe".to_string(),
+        ShortcutBinding {
+            id: "multi_stt_transcribe".to_string(),
+            name: "Multi STT Transcribe".to_string(),
+            description:
+                "Transcribes with multiple STT models simultaneously and merges the results."
+                    .to_string(),
+            default_binding: default_multi_stt_shortcut.to_string(),
+            current_binding: default_multi_stt_shortcut.to_string(),
         },
     );
 
@@ -894,6 +945,14 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         overlay_style: default_overlay_style(),
+        multi_stt_enabled: false,
+        multi_stt_model_2: None,
+        multi_stt_model_3: None,
+        multi_stt_merge_prompt: None,
+        multi_stt_selected_merge_prompt_id: None,
+        mic_idle_timeout_value: default_mic_idle_timeout_value(),
+        mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
+        mic_idle_infinite: false,
     }
 }
 

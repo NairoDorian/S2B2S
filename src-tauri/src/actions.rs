@@ -7,7 +7,10 @@ use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, OverlayStyle,
+    APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
@@ -15,7 +18,7 @@ use crate::utils::{
 };
 use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
@@ -901,6 +904,524 @@ impl ShortcutAction for TestAction {
     }
 }
 
+// ============================================================================
+// Multi STT Action
+// ============================================================================
+
+struct MultiSttAction;
+
+/// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}
+/// and sends to the LLM API (same provider as post-processing).
+async fn multi_stt_merge_transcriptions(
+    settings: &AppSettings,
+    output1: &str,
+    output2: &str,
+    output3: &str,
+) -> Option<String> {
+    let merge_prompt = match &settings.multi_stt_merge_prompt {
+        Some(p) => p.clone(),
+        None => {
+            debug!("Multi-STT merge skipped: no merge prompt configured");
+            return None;
+        }
+    };
+
+    if merge_prompt.prompt.trim().is_empty() {
+        debug!("Multi-STT merge skipped: merge prompt is empty");
+        return None;
+    }
+
+    // Replace placeholders
+    let prompt = merge_prompt
+        .prompt
+        .replace("${output}", output1)
+        .replace("${output1}", output1)
+        .replace("${output2}", output2)
+        .replace("${output3}", output3);
+
+    debug!("Multi-STT merge prompt prepared, length: {} chars", prompt.len());
+
+    let provider = match settings.active_post_process_provider().cloned() {
+        Some(provider) => provider,
+        None => {
+            debug!("Multi-STT merge skipped: no post-process provider configured");
+            return None;
+        }
+    };
+
+    let model = settings
+        .post_process_models
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    if model.trim().is_empty() {
+        debug!("Multi-STT merge skipped: no model configured for provider '{}'", provider.id);
+        return None;
+    }
+
+    let api_key = settings
+        .post_process_api_keys
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    debug!(
+        "Multi-STT merging with provider '{}' (model: {})",
+        provider.id, model
+    );
+
+    // Use legacy chat completion for merging
+    match crate::llm_client::send_chat_completion(
+        &provider,
+        api_key,
+        &model,
+        prompt,
+        None,  // reasoning_effort
+        None,  // reasoning
+    )
+    .await
+    {
+        Ok(Some(content)) => {
+            let content = content.trim().to_string();
+            debug!(
+                "Multi-STT merge succeeded. Output length: {} chars",
+                content.len()
+            );
+            Some(content)
+        }
+        Ok(None) => {
+            error!("Multi-STT merge: LLM API response has no content");
+            None
+        }
+        Err(e) => {
+            error!("Multi-STT merge failed for provider '{}': {}", provider.id, e);
+            None
+        }
+    }
+}
+
+impl ShortcutAction for MultiSttAction {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let start_time = Instant::now();
+        debug!("MultiSttAction::start called for binding: {}", binding_id);
+
+        // Load primary model
+        let tm = app.state::<Arc<TranscriptionManager>>();
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+
+        tm.initiate_model_load();
+        let rm_clone = Arc::clone(&rm);
+        std::thread::spawn(move || {
+            if let Err(e) = rm_clone.preload_vad() {
+                warn!("VAD pre-load failed: {}", e);
+            }
+        });
+
+        let binding_id = binding_id.to_string();
+        change_tray_icon(app, TrayIconState::Recording);
+        let settings = get_settings(app);
+        let is_always_on = settings.always_on_microphone;
+
+        // Pre-load extra models in background
+        let tm_extra = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+        let settings_for_extra = get_settings(app);
+        let extra_model_2 = settings_for_extra.multi_stt_model_2.clone();
+        let extra_model_3 = settings_for_extra.multi_stt_model_3.clone();
+        let app_for_extra = app.clone();
+
+        std::thread::spawn(move || {
+            // Load extra models in sequence to avoid VRAM contention
+            if let Some(ref model_id) = extra_model_2 {
+                info!("Multi-STT: loading extra model 2: {}", model_id);
+                match tm_extra.load_extra_model(model_id) {
+                    Ok(name) => info!("Multi-STT: extra model 2 '{}' loaded successfully", name),
+                    Err(e) => error!("Multi-STT: failed to load extra model 2 '{}': {}", model_id, e),
+                }
+            }
+            if let Some(ref model_id) = extra_model_3 {
+                info!("Multi-STT: loading extra model 3: {}", model_id);
+                match tm_extra.load_extra_model(model_id) {
+                    Ok(name) => info!("Multi-STT: extra model 3 '{}' loaded successfully", name),
+                    Err(e) => error!("Multi-STT: failed to load extra model 3 '{}': {}", model_id, e),
+                }
+            }
+
+            // Log currently loaded models
+            let loaded = tm_extra.get_extra_loaded_models();
+            if !loaded.is_empty() {
+                info!("Multi-STT: extra models loaded in memory: {:?}", loaded);
+            }
+        });
+
+        // Start recording
+        let selected_model_info = app
+            .state::<Arc<ModelManager>>()
+            .get_model_info(&settings.selected_model);
+
+        let model_supports_streaming = selected_model_info
+            .as_ref()
+            .map(|m| m.supports_streaming)
+            .unwrap_or(false);
+        let vad_policy = if !settings.vad_enabled {
+            VadPolicy::Disabled
+        } else if model_supports_streaming {
+            VadPolicy::Streaming
+        } else {
+            VadPolicy::Offline
+        };
+        if model_supports_streaming {
+            tm.start_stream();
+        }
+
+        match settings.overlay_style {
+            OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
+            OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
+            OverlayStyle::None => {}
+        }
+
+        let mut recording_error: Option<String> = None;
+        if is_always_on {
+            debug!("Multi-STT always-on mode: Playing audio feedback immediately");
+            let rm_clone = Arc::clone(&rm);
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                rm_clone.apply_mute();
+            });
+            if let Err(e) = rm.try_start_recording(&binding_id, vad_policy) {
+                recording_error = Some(e);
+            }
+        } else {
+            debug!("Multi-STT on-demand mode: Starting recording first, then audio feedback");
+            match rm.try_start_recording(&binding_id, vad_policy) {
+                Ok(()) => {
+                    let app_clone = app.clone();
+                    let rm_clone = Arc::clone(&rm);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                        rm_clone.apply_mute();
+                    });
+                }
+                Err(e) => recording_error = Some(e),
+            }
+        }
+
+        if recording_error.is_none() {
+            shortcut::register_cancel_shortcut(app);
+        } else {
+            tm.cancel_stream();
+            utils::hide_recording_overlay(app);
+            change_tray_icon(app, TrayIconState::Idle);
+            if let Some(err) = recording_error {
+                let error_type = if is_microphone_access_denied(&err) {
+                    "microphone_permission_denied"
+                } else if is_no_input_device_error(&err) {
+                    "no_input_device"
+                } else {
+                    "unknown"
+                };
+                let _ = app.emit(
+                    "recording-error",
+                    RecordingErrorEvent {
+                        error_type: error_type.to_string(),
+                        detail: Some(err),
+                    },
+                );
+            }
+        }
+
+        debug!(
+            "MultiSttAction::start completed in {:?}",
+            start_time.elapsed()
+        );
+    }
+
+    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        // Unregister cancel shortcut
+        shortcut::unregister_cancel_shortcut(app);
+
+        let stop_time = Instant::now();
+        debug!("MultiSttAction::stop called for binding: {}", binding_id);
+
+        let ah = app.clone();
+        let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+        let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
+
+        change_tray_icon(app, TrayIconState::Transcribing);
+        let style = get_settings(app).overlay_style;
+        let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
+        if use_streaming_overlay {
+            tm.emit_stream_working(StreamWorkKind::Transcribing);
+        } else {
+            show_transcribing_overlay(app);
+        }
+
+        rm.remove_mute();
+        play_feedback_sound(app, SoundType::Stop);
+
+        let binding_id = binding_id.to_string();
+        let cancel_generation = rm.cancel_generation();
+
+        tauri::async_runtime::spawn(async move {
+            let _guard = FinishGuard(ah.clone());
+            debug!("Multi-STT: Starting async transcription task for binding: {}", binding_id);
+
+            let stop_recording_time = Instant::now();
+            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
+                debug!(
+                    "Multi-STT: Recording stopped, sample count: {}",
+                    samples.len()
+                );
+
+                if rm.was_cancelled_since(cancel_generation) {
+                    debug!("Multi-STT: Cancelled after recording stop");
+                    tm.cancel_stream();
+                    utils::hide_recording_overlay(&ah);
+                    change_tray_icon(&ah, TrayIconState::Idle);
+                    return;
+                }
+
+                if samples.is_empty() {
+                    debug!("Multi-STT: Recording produced no audio samples");
+                    tm.cancel_stream();
+                    utils::hide_recording_overlay(&ah);
+                    change_tray_icon(&ah, TrayIconState::Idle);
+                    return;
+                }
+
+                // Save WAV concurrently
+                let wav_path = hm.recordings_dir()
+                    .join(format!("handy-multi-{}.wav", chrono::Utc::now().timestamp()));
+                let wav_for_save = wav_path.clone();
+                let samples_for_wav = samples.clone();
+                let _wav_handle = tauri::async_runtime::spawn_blocking(move || {
+                    crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
+                });
+
+                // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
+                let settings = get_settings(&ah);
+                let extra_model_2 = settings.multi_stt_model_2.clone();
+                let extra_model_3 = settings.multi_stt_model_3.clone();
+
+                let tm1 = Arc::clone(&tm);
+                let tm2 = Arc::clone(&tm);
+                let tm3 = Arc::clone(&tm);
+                let s1 = samples.clone();
+                let s2 = samples.clone();
+                let s3 = samples.clone();
+
+                let task1 = tokio::spawn(async move {
+                    match tm1.finalize_stream() {
+                        Ok(Some(text)) if !text.trim().is_empty() => {
+                            info!("Multi-STT: Model 1 (primary) transcription: '{}'", text);
+                            text
+                        }
+                        Ok(_) => match tm1.transcribe(s1) {
+                            Ok(text) => {
+                                info!("Multi-STT: Model 1 (primary) transcription: '{}'", text);
+                                text
+                            }
+                            Err(e) => {
+                                error!("Multi-STT: Model 1 transcription failed: {}", e);
+                                String::new()
+                            }
+                        },
+                        Err(err) => {
+                            error!("Multi-STT: Model 1 finalize failed: {}", err);
+                            String::new()
+                        }
+                    }
+                });
+
+                let task2 = if let Some(ref model_id) = extra_model_2 {
+                    let model_id = model_id.clone();
+                    Some(tokio::spawn(async move {
+                        if tm2.is_extra_model_loaded(&model_id) {
+                            match tm2.transcribe_with_extra(&model_id, s2) {
+                                Ok(text) => {
+                                    info!("Multi-STT: Model 2 '{}' transcription: '{}'", model_id, text);
+                                    text
+                                }
+                                Err(e) => {
+                                    error!("Multi-STT: Model 2 '{}' transcription failed: {}", model_id, e);
+                                    String::new()
+                                }
+                            }
+                        } else {
+                            warn!("Multi-STT: Model 2 '{}' not loaded, skipping", model_id);
+                            String::new()
+                        }
+                    }))
+                } else {
+                    None
+                };
+
+                let task3 = if let Some(ref model_id) = extra_model_3 {
+                    let model_id = model_id.clone();
+                    Some(tokio::spawn(async move {
+                        if tm3.is_extra_model_loaded(&model_id) {
+                            match tm3.transcribe_with_extra(&model_id, s3) {
+                                Ok(text) => {
+                                    info!("Multi-STT: Model 3 '{}' transcription: '{}'", model_id, text);
+                                    text
+                                }
+                                Err(e) => {
+                                    error!("Multi-STT: Model 3 '{}' transcription failed: {}", model_id, e);
+                                    String::new()
+                                }
+                            }
+                        } else {
+                            warn!("Multi-STT: Model 3 '{}' not loaded, skipping", model_id);
+                            String::new()
+                        }
+                    }))
+                } else {
+                    None
+                };
+
+                let output1 = task1.await.unwrap_or_else(|e| {
+                    error!("Multi-STT: Model 1 task failed: {}", e);
+                    String::new()
+                });
+                let output2 = match task2 {
+                    Some(t) => t.await.unwrap_or_else(|e| {
+                        error!("Multi-STT: Model 2 task failed: {}", e);
+                        String::new()
+                    }),
+                    None => String::new(),
+                };
+                let output3 = match task3 {
+                    Some(t) => t.await.unwrap_or_else(|e| {
+                        error!("Multi-STT: Model 3 task failed: {}", e);
+                        String::new()
+                    }),
+                    None => String::new(),
+                };
+
+                info!(
+                    "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars",
+                    output1.len(),
+                    output2.len(),
+                    output3.len()
+                );
+
+                // === MERGE TRANSCRIPTIONS ===
+                let settings_for_merge = get_settings(&ah);
+                let merged = if has_merge_prompt(&settings_for_merge) {
+                    if use_streaming_overlay {
+                        tm.emit_stream_working(StreamWorkKind::Polishing);
+                    } else {
+                        show_processing_overlay(&ah);
+                    }
+
+                    multi_stt_merge_transcriptions(
+                        &settings_for_merge,
+                        &output1,
+                        &output2,
+                        &output3,
+                    )
+                    .await
+                    .unwrap_or_else(|| {
+                        // Fallback: concatenate with newlines
+                        warn!("Multi-STT: Merge prompt failed or not configured, concatenating outputs");
+                        let mut combined = output1.clone();
+                        if !output2.is_empty() {
+                            if !combined.is_empty() { combined.push('\n'); }
+                            combined.push_str(&output2);
+                        }
+                        if !output3.is_empty() {
+                            if !combined.is_empty() { combined.push('\n'); }
+                            combined.push_str(&output3);
+                        }
+                        combined
+                    })
+                } else {
+                    // No merge prompt: concatenate
+                    let mut combined = output1.clone();
+                    if !output2.is_empty() {
+                        if !combined.is_empty() { combined.push('\n'); }
+                        combined.push_str(&output2);
+                    }
+                    if !output3.is_empty() {
+                        if !combined.is_empty() { combined.push('\n'); }
+                        combined.push_str(&output3);
+                    }
+                    combined
+                };
+
+                // Save to history
+                let multi_transcript = format!(
+                    "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\n=== Merged ===\n{}",
+                    settings.selected_model, output1,
+                    settings.multi_stt_model_2.as_deref().unwrap_or("none"), output2,
+                    settings.multi_stt_model_3.as_deref().unwrap_or("none"), output3,
+                    merged
+                );
+
+                if let Err(err) = hm.save_entry(
+                    format!("handy-multi-{}.wav", chrono::Utc::now().timestamp()),
+                    multi_transcript,
+                    true,
+                    Some(merged.clone()),
+                    settings.multi_stt_merge_prompt.as_ref().map(|p| p.prompt.clone()),
+                ) {
+                    error!("Failed to save multi-STT history entry: {}", err);
+                }
+
+                // Paste merged result
+                if merged.is_empty() {
+                    utils::hide_recording_overlay(&ah);
+                    change_tray_icon(&ah, TrayIconState::Idle);
+                } else {
+                    let ah_clone = ah.clone();
+                    let final_text = merged;
+                    let rm_for_paste = Arc::clone(&rm);
+                    ah.run_on_main_thread(move || {
+                        if rm_for_paste.was_cancelled_since(cancel_generation) {
+                            debug!("Multi-STT: Cancelled before paste");
+                            utils::hide_recording_overlay(&ah_clone);
+                            change_tray_icon(&ah_clone, TrayIconState::Idle);
+                            return;
+                        }
+                        match utils::paste(final_text, ah_clone.clone()) {
+                            Ok(()) => debug!("Multi-STT: Text pasted successfully"),
+                            Err(e) => {
+                                error!("Multi-STT: Failed to paste transcription: {}", e);
+                                let _ = ah_clone.emit("paste-error", ());
+                            }
+                        }
+                        utils::hide_recording_overlay(&ah_clone);
+                        change_tray_icon(&ah_clone, TrayIconState::Idle);
+                    })
+                    .unwrap_or_else(|e| {
+                        error!("Multi-STT: Failed to run paste on main thread: {:?}", e);
+                        utils::hide_recording_overlay(&ah);
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    });
+                }
+            } else {
+                debug!("Multi-STT: No samples retrieved from recording stop");
+                tm.cancel_stream();
+                utils::hide_recording_overlay(&ah);
+                change_tray_icon(&ah, TrayIconState::Idle);
+            }
+        });
+
+        debug!(
+            "MultiSttAction::stop completed in {:?}",
+            stop_time.elapsed()
+        );
+    }
+}
+
+fn has_merge_prompt(settings: &AppSettings) -> bool {
+    settings.multi_stt_merge_prompt.is_some()
+        && !settings.multi_stt_merge_prompt.as_ref().is_some_and(|p| p.prompt.trim().is_empty())
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -921,6 +1442,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "multi_stt_transcribe".to_string(),
+        Arc::new(MultiSttAction) as Arc<dyn ShortcutAction>,
     );
     map
 });
