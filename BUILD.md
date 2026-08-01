@@ -173,14 +173,14 @@ For the minimal VAD model only (used in development):
 
 ```bash
 mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad.onnx https://blob.handy.computer/silero_vad.onnx
+curl -o src-tauri/resources/models/silero_vad_v6.2.onnx https://blob.handy.computer/silero_vad_v6.2.onnx
 ```
 
 **Model sources:**
 
 | Model              | Size           | Source                                |
 | ------------------ | -------------- | ------------------------------------- |
-| Silero VAD         | ~2.5 MB      | blob.handy.computer                   |
+| Silero VAD         | ~2.5 MB        | blob.handy.computer                   |
 | Parakeet V3 (STT)  | ~600 MB        | blob.handy.computer                   |
 | Kokoro-82M (TTS)   | ~330 MB        | HuggingFace hexgrad/Kokoro-82M        |
 | Piper en_US voices | ~30-70 MB each | HuggingFace rhasspy/piper-voices      |
@@ -338,11 +338,11 @@ S2B2S integrates **pre-compiled `llama-server` binaries** from [llama.cpp GitHub
 
 ## Qwen3-TTS Backend (PyTorch CUDA Graph via `faster-qwen3-tts`)
 
-Qwen3-TTS in S2B2S uses [`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts) powered by native **PyTorch CUDA Graph capture** (`torch.cuda.CUDAGraph`). This provides **6–10x inference speedup** on NVIDIA GPUs (CUDA 13.3 / 12.x) with zero manual C++ compilation required.
+Qwen3-TTS in S2B2S uses [`andimarafioti/faster-qwen3-tts`](https://github.com/andimarafioti/faster-qwen3-tts) powered by native **PyTorch CUDA Graph capture** (`torch.cuda.CUDAGraph`) and PyTorch **CUDA 13.2 Nightly** builds. This provides **6–10x inference speedup** on NVIDIA GPUs (CUDA 13.3 / 13.2 / 12.x) with sub-200ms Time-To-First-Audio (TTFA).
 
 ### 1. Setup via `uv` (Windows / macOS / Linux)
 
-Run the automated venv setup script to install `faster-qwen3-tts` and `qwen-tts` inside the portable Python 3.12 `venv/`:
+Run the automated venv setup script to install `faster-qwen3-tts`, `qwen-tts`, `sox`, `soxr`, and PyTorch CUDA 13.2 Nightly inside the portable Python 3.12 `venv/`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass .\scripts\setup_venv_uv.ps1
@@ -351,15 +351,25 @@ powershell -ExecutionPolicy Bypass .\scripts\setup_venv_uv.ps1
 Or install manually via `uv`:
 
 ```powershell
-uv pip install "faster-qwen3-tts>=0.3.0" "qwen-tts>=0.1.1" "transformers>=4.57,<5" --python venv
+uv pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu132 --python venv
+uv pip install sox soxr "faster-qwen3-tts>=0.3.0" "qwen-tts>=0.1.1" "transformers>=4.57,<5" --python venv
 ```
 
-### 2. Architecture & Performance Notes
+### 2. Native C++ GGML CUDA 13.3 Compilation (Optional High-Performance Backend)
+
+To compile the native C++ GGML CUDA 13.3 shared libraries (`qwentts.cpp` and `qwentts-cpp-python` wrapper):
+
+```powershell
+powershell -ExecutionPolicy Bypass .\scripts\compile-qwen3-ggml.ps1
+```
+
+### 3. Architecture & Performance Notes
 
 - **PyTorch CUDA Graphs**: Captured automatically during server startup warmup (`_warmup(prefill_len=100)`).
 - **Supported Capabilities**: CustomVoice (12 speakers), Voice Cloning (reference WAV audio), Voice Design (prompt instruction), and Streaming synthesis.
 - **VRAM Requirements**: ~1.8 GB VRAM for 1.7B models, ~1.2 GB VRAM for 0.6B models.
-- **CPU Fallback**: Automatic graceful fallback to standard `qwen-tts` CPU inference on systems without an active NVIDIA CUDA GPU.
+- **Phoneme Bleed Mitigation**: Pre-appends 0.5s silence to reference audio in ICL mode to flush acoustic tokens cleanly.
+- **CPU Fallback**: Automatic graceful fallback to standard `qwen-tts` CPU inference (requires `sox` and `soxr`).
 
 ---
 

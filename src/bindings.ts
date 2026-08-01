@@ -408,9 +408,8 @@ export type AppSettings_Deserialize = {
 	vad_mode?: string,
 	rnnoise_voice_threshold?: number | null,
 	/**
-	 *  Silero VAD model path — managed automatically by the download scripts.
+	 *  Silero VAD model path (managed automatically by download scripts).
 	 *  Always uses the latest Silero VAD ONNX model from the CDN.
-	 *  See https://github.com/snakers4/silero-vad for version history.
 	 */
 	silero_vad_version?: string,
 	llama_server?: LlamaServerConfig,
@@ -543,9 +542,8 @@ export type AppSettings_Serialize = {
 	vad_mode: string,
 	rnnoise_voice_threshold: number | null,
 	/**
-	 *  Silero VAD model path — managed automatically by the download scripts.
+	 *  Silero VAD model path (managed automatically by download scripts).
 	 *  Always uses the latest Silero VAD ONNX model from the CDN.
-	 *  See https://github.com/snakers4/silero-vad for version history.
 	 */
 	silero_vad_version: string,
 	llama_server: LlamaServerConfig,

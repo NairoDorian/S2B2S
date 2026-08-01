@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Silero VAD Native ONNX Integration & Continuous Voice Pipeline** (`silero.rs`, `triple_vad.rs`, `recorder.rs`, `audio.rs`):
+  - Upgraded Silero VAD to native ONNX runtime (`ort`) supporting Silero VAD v6.2 / v6.2.1 ONNX models (`silero_vad.onnx`).
+  - Implemented 512-sample frame accumulator, 64-sample leading context buffer, and `[2, 1, 128]` state tensor updates so VAD state updates continuously on every audio frame.
+  - Fixed missing `app_handle`, `continuous_mode`, and `continuous_mode_paused` atomic flags on `AudioRecorder` inside `create_audio_recorder()` in `audio.rs`, resolving continuous voice speech detection and triggering `process_continuous_samples`.
+- **TTS Engine & Voice Selection Fixes** (`piper.rs`, `qwen3.rs`, `qwen3_server.py`, `SpeechSettings.tsx`):
+  - **Piper Voice Auto-Fallback** (`piper.rs`): Added pre-flight voice model validation and fallback in `PiperBackend::synthesize()`. If a voice from another engine is passed, Piper logs a warning and automatically falls back to an available Piper voice instead of failing.
+  - **Qwen3-TTS Case Preservation & Speaker Lookup** (`qwen3.rs`, `qwen3_server.py`): Updated Qwen3 TTS voice definitions and Python server (`qwen3_server.py`) to preserve Title Case speaker names (`"Aiden"`, `"Ashley"`, `"Cora"`, etc.) required by `faster_qwen3_tts`. Added case-insensitive lookup in `Qwen3Handler.do_POST`.
+  - **Speech Settings Voice Synchronization** (`SpeechSettings.tsx`): Updated engine selection dropdown `onSelect` and `refreshVoices()` to automatically validate and select a valid default voice when switching engines or refreshing available voices.
+
 ### Added
 
 - **Silero VAD now uses version-agnostic model** (`silero_vad.onnx`): Upgraded from hardcoded versioned files to a version-agnostic approach. The CDN at `blob.handy.computer/silero_vad.onnx` always serves the latest release from https://github.com/snakers4/silero-vad. No code changes needed for future VAD versions — only the CDN target is updated by the maintainer. Updated all download scripts, runtime resolution logic, CLI tooling, and documentation across `models/download_models.*`, `src-tauri/src/managers/audio.rs`, `src-tauri/src/settings.rs`, `src/bindings.ts`, and `src-tauri/src/audio_toolkit/bin/cli.rs`.
@@ -15,7 +26,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Python 3.12 `uv` Toolchain & Resolution Fix** (`setup_venv_uv.ps1`, `install-speech-runtime.ps1`): Provisioned CPython 3.12.13 via `uv`. Installed `transformers>=4.57`, `qwen-tts`, and `faster-qwen3-tts` with `--no-deps` after modern `librosa>=0.10.0` and `numba>=0.59.0` wheels are in place, eliminating legacy `llvmlite==0.36.0` build failures on Python 3.12.
+- **Python 3.12 `uv` Toolchain & Qwen3-TTS CUDA 13.2 Resolution** (`setup_venv_uv.ps1`, `install-speech-runtime.ps1`, `qwen3_server.py`): Upgraded PyTorch to CUDA 13.2 Nightly (`torch==2.14.0.dev+cu132`) from `https://download.pytorch.org/whl/nightly/cu132` inside project `venv`. Added early Windows CUDA Toolkit 13.3 & `nvidia` venv DLL discovery (`os.add_dll_directory`) in `qwen3_server.py` prior to `import torch`. Added `sox` and `soxr` dependencies to prevent `ModuleNotFoundError: No module named 'sox'` during CPU fallback.
 - **Brain-Only STT Toggle in Conversation View** (`ConversationView.tsx`, `translation.json`): Added an inline switch next to the Voice Mode button to toggle Brain-only STT, bypassing local STT models and feeding raw audio directly to the multimodal Brain. Added corresponding English translation keys.
 
 ### Changed

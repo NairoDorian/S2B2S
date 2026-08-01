@@ -452,6 +452,6 @@ Handy is open-source software, but the Handy name, logo, icon, and brand assets 
 
 - **Whisper** by OpenAI for the speech recognition model
 - **[ggml](https://github.com/ggml-org/ggml)** and **[transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)** for amazing cross-platform speech-to-text inference/acceleration
-- **Silero** for great lightweight VAD
+- **Silero** for great lightweight VAD (v6.2 ONNX model sourced from [BricksDisplay/silero-vad-6.2](https://huggingface.co/BricksDisplay/silero-vad-6.2))
 - **Tauri** team for the excellent Rust-based app framework
 - **Community contributors** helping make Handy better

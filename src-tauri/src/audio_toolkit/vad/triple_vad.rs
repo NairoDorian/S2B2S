@@ -47,15 +47,12 @@ impl VoiceActivityDetector for TripleVad {
             );
         }
 
-        // Stage 1: Fast Screen (Amplitude/RMS VAD)
+        // Stage 1: RMS calculation
         let mut sum_sq = 0.0f32;
         for &sample in frame {
             sum_sq += sample * sample;
         }
         let rms = (sum_sq / frame.len() as f32).sqrt();
-        if rms < self.rms_threshold {
-            return Ok(VadFrame::Noise);
-        }
 
         // Stage 2: RNNoise Voice Probability / Denoising
         let ns_enabled = self.noise_suppression_enabled.load(Ordering::Relaxed);
@@ -70,14 +67,17 @@ impl VoiceActivityDetector for TripleVad {
             }
         }
 
-        // If RNNoise speech probability is too low, we classify it as noise
-        if voice_prob < self.voice_prob_threshold {
+        // Always feed Silero VAD on every frame so its RNN state, context buffer,
+        // and frame accumulator stay continuously synchronized with real-time audio.
+        self.temp_buf = processed_frame;
+        let silero_result = self.silero_vad.push_frame(&self.temp_buf)?;
+
+        // Filter output: if RMS or RNNoise fail, return Noise (but Silero state was updated above)
+        if rms < self.rms_threshold || voice_prob < self.voice_prob_threshold {
             return Ok(VadFrame::Noise);
         }
 
         // Stage 3: Silero VAD Confirmation
-        self.temp_buf = processed_frame;
-        let silero_result = self.silero_vad.push_frame(&self.temp_buf)?;
         if silero_result.is_speech() {
             Ok(VadFrame::Speech(&self.temp_buf))
         } else {

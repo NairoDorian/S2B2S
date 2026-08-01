@@ -147,32 +147,39 @@ impl TtsBackend for PiperBackend {
     fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String> {
         self.touch();
         piper_server::mark_synth();
-        let voice_to_use = if voice.trim().is_empty() {
+        let requested_voice = if voice.trim().is_empty() {
             "en_US-joe-medium"
         } else {
             voice
         };
 
         // R6: Pre-flight check — verify the voice model exists
-        let voice_stem = if voice_to_use.ends_with(".onnx") {
-            voice_to_use.trim_end_matches(".onnx").to_string()
+        let voice_stem = if requested_voice.ends_with(".onnx") {
+            requested_voice.trim_end_matches(".onnx").to_string()
         } else {
-            voice_to_use.to_string()
+            requested_voice.to_string()
         };
         let voices_dir = piper_server::resolve_piper_voices_dir(Some(&self.app));
         let model_path = voices_dir.join(format!("{}.onnx", voice_stem));
-        if !model_path.exists() && !std::path::Path::new(voice_to_use).exists() {
-            return Err(format!(
-                "Piper voice model not found: {voice_to_use}\n\n\
-                 Please place the .onnx and .onnx.json files in:\n  {}",
-                voices_dir.display()
-            ));
-        }
+
+        let voice_to_use = if model_path.exists() || std::path::Path::new(requested_voice).exists()
+        {
+            requested_voice.to_string()
+        } else {
+            let available = list_voices(&self.app);
+            if let Some(first) = available.first() {
+                log::warn!("[Piper] Voice '{requested_voice}' not found; falling back to available Piper voice '{first_id}'", first_id = first.id);
+                first.id.clone()
+            } else {
+                log::warn!("[Piper] Voice '{requested_voice}' not found; falling back to 'en_US-joe-medium'");
+                "en_US-joe-medium".to_string()
+            }
+        };
 
         // 1. Ensure server is running and get handle
         let handle = piper_server::ensure_running(voice_to_use.to_string(), self.cuda)?;
 
-        let url = format!("http://127.0.0.1:{}/", handle.port);
+        let url = format!("http://127.0.0.1:{}/synthesize", handle.port);
 
         // R1: Map speed correctly: length_scale = 1.0 / speed
         let mut body = serde_json::json!({

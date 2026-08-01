@@ -89,8 +89,14 @@ export const SpeechSettings: React.FC = () => {
     const result = await commands.ttsGetVoices(null);
     if (result.status === "ok") {
       setVoices(result.data);
+      if (result.data.length > 0 && tts) {
+        const exists = result.data.some((v) => v.id === tts.voice);
+        if (!exists) {
+          updateSetting("tts", { ...tts, voice: result.data[0].id });
+        }
+      }
     }
-  }, []);
+  }, [tts, updateSetting]);
 
   const refreshGreetingVoices = useCallback(async () => {
     if (!tts) return;
@@ -221,9 +227,18 @@ export const SpeechSettings: React.FC = () => {
               label: t(`settings.speech.engine.options.${engine}`),
             }))}
             selectedValue={tts.engine}
-            onSelect={(value) => {
-              update({ engine: value as TtsEngine });
+            onSelect={async (value) => {
+              const newEngine = value as TtsEngine;
               setTestResult(null);
+              const result = await commands.ttsGetVoices(newEngine);
+              let newVoice = tts.voice;
+              if (result.status === "ok" && result.data.length > 0) {
+                const exists = result.data.some((v) => v.id === tts.voice);
+                if (!exists) {
+                  newVoice = result.data[0].id;
+                }
+              }
+              update({ engine: newEngine, voice: newVoice });
             }}
           />
         </SettingContainer>

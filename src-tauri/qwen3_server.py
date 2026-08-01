@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import glob
 import io
 import json
 import os
@@ -20,6 +21,41 @@ import traceback
 import wave
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import numpy as np
+
+# Inject CUDA Toolkit & venv NVIDIA DLL directories on Windows before importing torch
+if sys.platform == "win32":
+    cuda_path = os.environ.get("CUDA_PATH")
+    if cuda_path:
+        cuda_bin = os.path.join(cuda_path, "bin")
+        if os.path.isdir(cuda_bin) and hasattr(os, "add_dll_directory"):
+            try:
+                os.add_dll_directory(cuda_bin)
+            except Exception:
+                pass
+            os.environ["PATH"] = cuda_bin + os.path.pathsep + os.environ.get("PATH", "")
+
+    standard_cuda = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin"
+    if os.path.isdir(standard_cuda) and hasattr(os, "add_dll_directory"):
+        try:
+            os.add_dll_directory(standard_cuda)
+        except Exception:
+            pass
+        os.environ["PATH"] = standard_cuda + os.path.pathsep + os.environ.get("PATH", "")
+
+    for path_dir in sys.path:
+        nvidia_dir = os.path.join(path_dir, "nvidia")
+        if os.path.isdir(nvidia_dir):
+            bin_dirs = glob.glob(os.path.join(nvidia_dir, "*", "bin"))
+            sub_dirs = glob.glob(os.path.join(nvidia_dir, "*", "bin", "*"))
+            for d in bin_dirs + sub_dirs:
+                if os.path.isdir(d):
+                    if hasattr(os, "add_dll_directory"):
+                        try:
+                            os.add_dll_directory(d)
+                        except Exception:
+                            pass
+                    os.environ["PATH"] = d + os.path.pathsep + os.environ.get("PATH", "")
+
 import torch
 
 try:
@@ -30,7 +66,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 DEFAULT_VOICE = "Aiden"
 DEFAULT_REF_TEXT = "I'm confused why some people have super short timelines, yet at the same time are bullish on scaling up reinforcement learning atop LLMs."
 SAMPLE_RATE = 24000
@@ -116,7 +152,16 @@ def load_model(model_name=DEFAULT_MODEL, device="cuda", models_dir=None, backend
         return model
     else:
         # CPU Fallback via standard qwen-tts Hugging Face model
-        from qwen_tts import Qwen3TTSModel
+        try:
+            from qwen_tts import Qwen3TTSModel
+        except ImportError as e:
+            if "sox" in str(e):
+                raise ImportError(
+                    "qwen-tts CPU fallback failed because 'sox' is missing. "
+                    "Please run `uv pip install sox soxr` in your virtual environment."
+                ) from e
+            raise
+
         print(f"[qwen3_server] Initializing {model_name} on CPU fallback...", flush=True)
         model = Qwen3TTSModel.from_pretrained(
             model_name,
@@ -157,8 +202,8 @@ def get_supported_speakers(model):
         if callable(get_speakers):
             speakers = get_speakers()
             if speakers:
-                return [str(s).lower() for s in speakers if s]
-    return ["aiden", "ashley", "ben", "cora", "daniel", "elsa", "felix", "grace", "hale", "iris", "jack", "katherine"]
+                return [str(s) for s in speakers if s]
+    return ["Aiden", "Ashley", "Ben", "Cora", "Daniel", "Elsa", "Felix", "Grace", "Hale", "Iris", "Jack", "Katherine"]
 
 
 def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None):
@@ -306,9 +351,13 @@ class Qwen3Handler(BaseHTTPRequestHandler):
                 return
 
             # Check if voice is supported (or if cloning is requested via voice_wav)
-            if not voice_wav and AVAILABLE_VOICES and voice not in AVAILABLE_VOICES:
-                print(f"[qwen3_server] Unknown voice '{voice}', falling back to {DEFAULT_VOICE}", file=sys.stderr, flush=True)
-                voice = DEFAULT_VOICE
+            if not voice_wav and AVAILABLE_VOICES:
+                voice_lookup = {str(v).lower(): str(v) for v in AVAILABLE_VOICES}
+                if voice.lower() in voice_lookup:
+                    voice = voice_lookup[voice.lower()]
+                else:
+                    print(f"[qwen3_server] Unknown voice '{voice}', falling back to {DEFAULT_VOICE}", file=sys.stderr, flush=True)
+                    voice = DEFAULT_VOICE
 
             wav_bytes = synthesize(
                 text=text,

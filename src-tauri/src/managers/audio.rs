@@ -22,32 +22,51 @@ const VAD_THRESHOLD: f32 = 0.3;
 
 /// Resolve the Silero VAD ONNX model path.
 ///
-/// S2B2S uses the latest Silero VAD model from the CDN. The blob.handy.computer
-/// CDN always serves the current release — see https://github.com/snakers4/silero-vad
-/// for version history. No code changes are needed for new VAD versions; only the
-/// CDN URL target needs updating by the maintainer.
-fn resolve_silero_vad_path(
-    app_handle: &tauri::AppHandle,
-) -> Result<PathBuf, anyhow::Error> {
-    let rel = "resources/models/silero_vad.onnx";
-    let p = app_handle
-        .path()
-        .resolve(rel, tauri::path::BaseDirectory::Resource)
-        .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path {rel}: {e}"))?;
+/// Preference order: v6.2 (newest, best accuracy) → v4 → legacy name.
+/// The `SileroVad` struct auto-detects which model is loaded and uses the
+/// correct ONNX tensor API, so any of these files will work correctly.
+fn resolve_silero_vad_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, anyhow::Error> {
+    let candidates = [
+        "resources/models/silero_vad_v6.2.onnx",
+        "resources/models/silero_vad_v4.onnx",
+        "resources/models/silero_vad.onnx",
+    ];
 
-    if p.exists() {
-        debug!("Using Silero VAD model: {rel:?}");
-        return Ok(p);
+    for rel in candidates {
+        if let Ok(p) = app_handle
+            .path()
+            .resolve(rel, tauri::path::BaseDirectory::Resource)
+        {
+            if p.exists() {
+                info!("Using Silero VAD model: {:?}", p);
+                return Ok(p);
+            }
+        }
     }
 
-    debug!("Silero VAD model not found at {rel:?}");
+    if let Ok(app_dir) = app_handle.path().app_data_dir() {
+        let local_path = app_dir
+            .join("models")
+            .join("STT")
+            .join("silero_vad")
+            .join("silero_vad.onnx");
+        if local_path.exists() {
+            info!("Using local Silero VAD model: {:?}", local_path);
+            return Ok(local_path);
+        }
+    }
+
+    let project_fallback = PathBuf::from("models/STT/silero_vad/silero_vad.onnx");
+    if project_fallback.exists() {
+        info!("Using fallback Silero VAD model: {:?}", project_fallback);
+        return Ok(project_fallback);
+    }
+
+    let primary = candidates[0];
     app_handle
         .path()
-        .resolve(
-            "resources/models/silero_vad.onnx",
-            tauri::path::BaseDirectory::Resource,
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))
+        .resolve(primary, tauri::path::BaseDirectory::Resource)
+        .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {}", e))
 }
 
 fn set_mute(mute: bool) {
@@ -293,6 +312,8 @@ fn create_audio_recorder(
     vad_path: &Path,
     app_handle: &tauri::AppHandle,
     stream_router: Arc<StreamRouter>,
+    continuous_mode: Arc<AtomicBool>,
+    continuous_mode_paused: Arc<AtomicBool>,
 ) -> Result<AudioRecorder, anyhow::Error> {
     let settings = get_settings(app_handle);
     let silero = SileroVad::new(vad_path, VAD_THRESHOLD)
@@ -320,11 +341,13 @@ fn create_audio_recorder(
 
     let mut recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
+        .with_app_handle(app_handle.clone())
         .with_vad(
             Box::new(smoothed_vad),
             VAD_OFFLINE_HANGOVER_FRAMES,
             VAD_STREAMING_HANGOVER_FRAMES,
         )
+        .with_continuous_mode(continuous_mode, continuous_mode_paused)
         .with_level_callback({
             let app_handle = app_handle.clone();
             move |levels| {
@@ -558,12 +581,17 @@ impl AudioRecordingManager {
     pub fn preload_vad(&self) -> Result<(), anyhow::Error> {
         let mut recorder_opt = self.recorder.lock().unwrap();
         if recorder_opt.is_none() {
+            info!("Preloading Silero VAD model...");
             let vad_path = resolve_silero_vad_path(&self.app_handle)?;
+            info!("Loading Silero VAD model: {}", vad_path.display());
             *recorder_opt = Some(create_audio_recorder(
                 &vad_path,
                 &self.app_handle,
                 Arc::clone(&self.stream_router),
+                Arc::clone(&self.continuous_mode),
+                Arc::clone(&self.continuous_mode_paused),
             )?);
+            info!("Silero VAD model preloaded successfully");
         }
         Ok(())
     }

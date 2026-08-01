@@ -127,13 +127,14 @@ Run-UvPip "pocket-tts" @("pocket-tts")
 Run-UvPip "kittentts" @("https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl")
 Run-UvPip "sherpa-onnx" @("sherpa-onnx")
 
-# Install CPU PyTorch to keep it lightweight for pocket-tts voice cloning
-Run-UvPip "torch (CPU)" @("torch", "--index-url", "https://download.pytorch.org/whl/cpu")
+# Install CUDA PyTorch for fast GPU inference & CUDA Graphs (pocket-tts, faster-qwen3-tts)
+Run-UvPip "torch (CUDA 13.2 Nightly)" @("--pre", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/nightly/cu132")
 
-# Install soundfile and numpy
-Run-UvPip "soundfile & numpy" @("soundfile", "numpy")
+# Install soundfile, sox, and numpy (2.4.x for Numba)
+Run-UvPip "soundfile, sox, & numpy" @("soundfile", "sox", "soxr", "numpy>=2.4.0,<2.5.0")
 
-# Install faster-qwen3-tts from GitHub directly
+# Install qwen-tts and faster-qwen3-tts
+Run-UvPip "qwen-tts" @("qwen-tts", "--no-deps")
 Run-UvPip "faster-qwen3-tts (GitHub)" @("git+https://github.com/andimarafioti/faster-qwen3-tts.git")
 
 # Install piper-tts (which pulls CPU onnxruntime)

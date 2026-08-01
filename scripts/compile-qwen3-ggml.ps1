@@ -59,12 +59,9 @@ if (-not (Test-Path $FasterRepoDir)) {
     Write-Host "faster-qwen3-tts folder already exists." -ForegroundColor Green
 }
 
-# 5. Compile C++ libraries natively
-Write-Host "Configuring and compiling qwentts.cpp with CUDA support..." -ForegroundColor Yellow
+# 5. Compile C++ libraries natively (incremental build cached)
+Write-Host "Configuring and compiling qwentts.cpp with CUDA support (cached)..." -ForegroundColor Yellow
 cd $CppRepoDir
-if (Test-Path "build") {
-    Remove-Item -Recurse -Force "build"
-}
 & cmake -S . -B build -DGGML_CUDA=ON -DQWEN_SHARED=ON
 & cmake --build build --config Release -j
 
@@ -92,11 +89,10 @@ cd $WrapperRepoDir
 & $VenvPython scripts/build_native.py --skip-build --build-dir $CppRepoDir\build
 
 # 8. Install packages inside S2B2S venv
-Write-Host "Installing qwentts-cpp-python in S2B2S venv..." -ForegroundColor Yellow
+Write-Host "Installing sox, soxr, qwentts-cpp-python, and faster-qwen3-tts in S2B2S venv..." -ForegroundColor Yellow
 cd $S2B2S_Dir
+& $UvExe pip install sox soxr --python $VenvPython
 & $UvExe pip install -e $WrapperRepoDir --python $VenvPython
-
-Write-Host "Installing faster-qwen3-tts in S2B2S venv..." -ForegroundColor Yellow
-& $UvExe pip install -e $FasterRepoDir --python $VenvPython
+& $UvExe pip install --no-deps -e $FasterRepoDir --python $VenvPython
 
 Write-Host "Native Qwen3-TTS compile and install completed successfully!" -ForegroundColor Green

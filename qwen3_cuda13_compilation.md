@@ -133,6 +133,14 @@ venv\Scripts\python.exe -c "from faster_qwen3_tts import FasterQwen3TTS"
   ```
 - **The Fix**: S2B2S utilizes uniform `Q8_0` (`quant="Q8"`) quantization instead. `Q8_0` uses regular block sizes and is fully compatible with the compiled CUDA row-getting kernels.
 
+### Finding C: PyTorch CUDA 13.2 Nightly & DLL Resolution
+
+- **The Issue**: On Windows 11 with CUDA 13.3 Toolkit installed, standard PyTorch CPU packages or PyPI default wheels can fail to initialize CUDA (`torch.cuda.is_available() == False`) when spawned via subprocesses if `PATH` / `os.add_dll_directory()` does not contain CUDA Toolkit or venv NVIDIA DLL paths.
+- **The Fix**:
+  1. Install PyTorch CUDA 13.2 Nightly (`torch==2.14.0.dev+cu132`) from `https://download.pytorch.org/whl/nightly/cu132` inside `venv`.
+  2. In `src-tauri/qwen3_server.py`, execute early Windows DLL discovery (`os.add_dll_directory` and prepending `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin` and `venv\Lib\site-packages\nvidia\*\bin` to `PATH`) _before_ importing `torch`.
+  3. Include `sox` and `soxr` packages in `venv` setup scripts to ensure CPU fallback imports (`qwen_tts`) resolve without missing module exceptions.
+
 ---
 
 ## 5. Automated Build Setup Script

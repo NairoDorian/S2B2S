@@ -828,6 +828,7 @@ fn run_consumer(
                             if !recording {
                                 recording = true;
                                 silence_frames = 0;
+                                log::info!("[ContinuousVoice Barge-in] VAD detected user speech start during TTS!");
                                 if let Some(app) = &app_handle {
                                     let _ = app.emit("continuous-voice:speech-started", ());
                                 }
@@ -847,13 +848,14 @@ fn run_consumer(
                     let mut det = cfg.detector.lock().unwrap();
                     match det
                         .push_frame(&processed)
-                        .unwrap_or(VadFrame::Speech(&processed))
+                        .unwrap_or(VadFrame::Noise)
                     {
                         VadFrame::Speech(buf) => {
                             if !recording {
                                 recording = true;
                                 processed_samples.clear();
                                 processed_samples.extend_from_slice(buf);
+                                log::info!("[ContinuousVoice] VAD detected speech START!");
                                 if let Some(app) = &app_handle {
                                     let _ = app.emit("continuous-voice:speech-started", ());
                                 }
@@ -867,6 +869,12 @@ fn run_consumer(
                                 silence_frames += 1;
                                 if silence_frames >= 40 {
                                     recording = false;
+                                    let duration_secs = processed_samples.len() as f64 / 16000.0;
+                                    log::info!(
+                                        "[ContinuousVoice] VAD detected speech END! Captured {} samples ({:.2}s)",
+                                        processed_samples.len(),
+                                        duration_secs
+                                    );
                                     if let Some(app) = &app_handle {
                                         let _ = app.emit("continuous-voice:speech-ended", ());
                                     }

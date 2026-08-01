@@ -273,7 +273,7 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
                 crate::tts::local_tts_server::prewarm(
                     "qwen3".to_string(),
                     "python".to_string(),
-                    vec![],
+                    crate::tts::backends::qwen3::server_args(),
                 );
             }
             _ => {}

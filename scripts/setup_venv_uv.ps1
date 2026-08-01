@@ -56,8 +56,9 @@ Install-Pkg "kokoro-tts"           @("kokoro-tts")
 Install-Pkg "pocket-tts"           @("pocket-tts")
 Install-Pkg "kittentts (wheel)"    @("https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl")
 Install-Pkg "sherpa-onnx"          @("sherpa-onnx")
-Install-Pkg "torch"                @("torch")
-Install-Pkg "soundfile, numpy"     @("soundfile", "numpy")
+Install-Pkg "torch (CUDA 13.2 Nightly)" @("--pre", "torch", "torchvision", "torchaudio", "--index-url", "https://download.pytorch.org/whl/nightly/cu132")
+Install-Pkg "soundfile, numpy (2.4.x)" @("soundfile", "numpy>=2.4.0,<2.5.0")
+Install-Pkg "sox, soxr"            @("sox", "soxr")
 Install-Pkg "librosa, numba"       @("librosa>=0.10.0", "numba>=0.59.0")
 Install-Pkg "transformers, hub"    @("transformers>=4.57,<5", "huggingface-hub>=0.36.0,<1.0", "accelerate")
 Install-Pkg "qwen-tts (--no-deps)" @("qwen-tts", "--no-deps")
@@ -68,6 +69,10 @@ if (Test-Path $LocalFasterQwen) {
     Install-Pkg "faster-qwen3-tts (local editable)" @("--no-deps", "-e", $LocalFasterQwen)
 } else {
     Install-Pkg "faster-qwen3-tts (latest GitHub)" @("--no-deps", "git+https://github.com/andimarafioti/faster-qwen3-tts.git")
+}
+$LocalQwenCpp = Join-Path $ProjectRoot "..\qwentts-cpp-python"
+if (Test-Path $LocalQwenCpp) {
+    Install-Pkg "qwentts-cpp-python (local editable)" @("--no-deps", "-e", $LocalQwenCpp)
 }
 
 

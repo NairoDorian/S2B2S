@@ -126,12 +126,11 @@ if ($Model -contains "stt") {
     $SttDir = Join-Path $Path "STT"
     Ensure-Dir (Join-Path $SttDir "silero_vad")
 
-    # Silero VAD — latest version (~2.5 MB). The CDN always serves the current
-    # release; see https://github.com/snakers4/silero-vad for version history.
+    # Silero VAD v6.2.1 (~2.3 MB).
     Download-File `
-        -Url "https://blob.handy.computer/silero_vad.onnx" `
+        -Url "https://blob.handy.computer/silero_vad_v6.2.onnx" `
         -DestPath (Join-Path $SttDir "silero_vad\silero_vad.onnx") `
-        -Description "Silero VAD latest (~2.5 MB)"
+        -Description "Silero VAD v6.2 (~2.3 MB)"
 
     # Parakeet V3 (~600 MB)
     $parakeetTar = Join-Path $SttDir "parakeet-tdt-0.6b-v3-int8.tar.gz"

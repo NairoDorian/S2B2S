@@ -61,6 +61,9 @@ log = "*"
 env_filter = "*"
 tokio = "*"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
+# Direct deps for native Silero v6.x ONNX engine (already transitive via vad-rs / transcribe-rs)
+ort = { version = "=2.0.0-rc.12", features = [] }
+ndarray = { version = "=0.17.2" }
 enigo = "*"
 rodio = "0.22"
 reqwest = { version = "*", features = ["json", "stream", "blocking"] }

@@ -140,14 +140,13 @@ if printf '%s\n' "${MODELS[@]}" | grep -qx "stt"; then
     echo "  STT Models -> $MODELS_PATH/STT/"
     echo "============================================================"
 
-    # Silero VAD — latest version (~2.5 MB). The CDN always serves the current
-    # release; see https://github.com/snakers4/silero-vad for version history.
+    # Silero VAD v6.2.1 (~2.3 MB).
     STT_DIR="$MODELS_PATH/STT"
     mkdir_p "$STT_DIR/silero_vad"
     download_file \
-        "https://blob.handy.computer/silero_vad.onnx" \
+        "https://blob.handy.computer/silero_vad_v6.2.onnx" \
         "$STT_DIR/silero_vad/silero_vad.onnx" \
-        "Silero VAD latest (~2.5 MB)"
+        "Silero VAD v6.2 (~2.3 MB)"
 
     # Parakeet V3 (~600 MB)
     PARAKEET_TAR="$STT_DIR/parakeet-tdt-0.6b-v3-int8.tar.gz"
