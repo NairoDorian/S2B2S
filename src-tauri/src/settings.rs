@@ -1297,7 +1297,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 1;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -1844,11 +1844,13 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
-    // Multi-STT: default shortcut follows the post-process pattern.
+    // Multi-STT: its own shortcut, deliberately distinct from
+    // `transcribe_with_post_process` (ctrl+shift+space) so both can be
+    // registered at the same time.
     #[cfg(target_os = "macos")]
-    let default_multi_stt_shortcut = "option+shift+space";
+    let default_multi_stt_shortcut = "cmd+option+shift+space";
     #[cfg(not(target_os = "macos"))]
-    let default_multi_stt_shortcut = "ctrl+shift+space";
+    let default_multi_stt_shortcut = "ctrl+alt+shift+space";
 
     bindings.insert(
         "multi_stt_transcribe".to_string(),
@@ -2348,6 +2350,38 @@ fn apply_settings_migrations(
         updated = true;
     }
 
+    if stored_schema_version < 2 {
+        // The multi-STT shortcut used to default to the same binding as
+        // transcribe-with-post-processing (ctrl+shift+space), so the second one
+        // always failed to register. Reset multi-STT to its new unique default
+        // when it still collides with the post-processing binding.
+        let multi_stt = settings
+            .bindings
+            .get("multi_stt_transcribe")
+            .map(|b| b.current_binding.clone())
+            .unwrap_or_default();
+        let post_process = settings
+            .bindings
+            .get("transcribe_with_post_process")
+            .map(|b| b.current_binding.clone())
+            .unwrap_or_default();
+        if !multi_stt.is_empty() && multi_stt == post_process {
+            #[cfg(target_os = "macos")]
+            let fresh = "cmd+option+shift+space";
+            #[cfg(not(target_os = "macos"))]
+            let fresh = "ctrl+alt+shift+space";
+            if let Some(binding) = settings.bindings.get_mut("multi_stt_transcribe") {
+                binding.current_binding = fresh.to_string();
+                log::info!(
+                    "[Settings] Multi-STT shortcut collided with post-processing; reset to '{}'",
+                    fresh
+                );
+            }
+        }
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
+
     // One-time overlay migration (only while the new key is absent): the retired
     // overlay_position `none` meant "hide the overlay" → OverlayStyle::None; any
     // other position had it visible → Live. The position enum no longer has a
@@ -2436,9 +2470,11 @@ mod tests {
     #[test]
     fn frozen_v0_9_store_parses_strictly_without_migration() {
         // Note "log_level": 2 — the legacy numeric format, kept deliberately.
+        // `settings_schema_version` is stamped to the current version: this is
+        // the store's post-migration state (schema-1 stores migrate once).
         let stored: serde_json::Value = serde_json::from_str(
             r##"{
-            "settings_schema_version": 1,
+            "settings_schema_version": 2,
             "bindings": {
                 "transcribe": {
                     "id": "transcribe",
@@ -2541,6 +2577,66 @@ mod tests {
 
         // A current-format store must not be rewritten on every read.
         assert!(!apply_settings_migrations(&mut settings, &stored));
+    }
+
+    /// Schema-1 stores where the multi-STT shortcut collides with
+    /// transcribe-with-post-processing get the multi-STT binding reset once to
+    /// its new unique default, and are stamped to the current schema version.
+    #[test]
+    fn multi_stt_shortcut_collision_resets_to_unique_default() {
+        let stored: serde_json::Value = serde_json::from_str(
+            r##"{
+            "settings_schema_version": 1,
+            "bindings": {
+                "transcribe_with_post_process": {
+                    "id": "transcribe_with_post_process",
+                    "name": "Transcribe with Post-Processing",
+                    "description": "",
+                    "default_binding": "ctrl+shift+space",
+                    "current_binding": "ctrl+shift+space"
+                },
+                "multi_stt_transcribe": {
+                    "id": "multi_stt_transcribe",
+                    "name": "Multi-STT Transcribe",
+                    "description": "",
+                    "default_binding": "ctrl+shift+space",
+                    "current_binding": "ctrl+shift+space"
+                }
+            },
+            "onboarding_completed": true,
+            "whats_new_last_seen_version": "0.9.0",
+            "overlay_style": "live",
+            "transcribe_gpu_device": -1
+        }"##,
+        )
+        .expect("fixture is valid JSON");
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("schema-1 store parses");
+
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_ne!(
+            settings.bindings["multi_stt_transcribe"].current_binding,
+            settings.bindings["transcribe_with_post_process"].current_binding
+        );
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(
+            settings.bindings["multi_stt_transcribe"].current_binding,
+            "ctrl+alt+shift+space"
+        );
+
+        // Idempotent: a second pass over the migrated store is a no-op.
+        let stored_after = serde_json::to_value(&settings).expect("serialize");
+        let mut settings_after: AppSettings =
+            serde_json::from_value(stored_after.clone()).expect("re-parse");
+        assert!(!apply_settings_migrations(
+            &mut settings_after,
+            &stored_after
+        ));
     }
 
     #[test]

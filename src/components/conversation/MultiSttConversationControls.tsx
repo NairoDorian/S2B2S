@@ -79,9 +79,22 @@ export const MultiSttConversationControls: React.FC = () => {
 
   const handleModelSelect = async (slot: 2 | 3, value: string | null) => {
     const key = slot === 2 ? "multi_stt_model_2" : "multi_stt_model_3";
+    const otherKey = slot === 2 ? "multi_stt_model_3" : "multi_stt_model_2";
+    const previous = getSetting(key) as string | null;
+    const otherSlot = getSetting(otherKey) as string | null;
+
     await updateSetting(key, value);
     if (enabled && value) {
       preloadExtras();
+    }
+    // Free the VRAM of the model this slot replaced — unless it is still
+    // configured in the other slot.
+    if (previous && previous !== value && previous !== otherSlot) {
+      void commands
+        .unloadExtraModel(previous)
+        .catch((err) =>
+          console.error("Failed to unload replaced multi-STT model:", err),
+        );
     }
   };
 
@@ -156,7 +169,7 @@ export const MultiSttConversationControls: React.FC = () => {
                 checked={gemma4Enabled}
                 onChange={(e) => void handleToggleGemma4(e.target.checked)}
               />
-              <div className="relative w-8 h-4.5 h-[18px] bg-mid-gray/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-orange-400/80 mr-1"></div>
+              <div className="relative w-8 h-[18px] bg-mid-gray/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-orange-400/80 mr-1"></div>
               <Brain size={12} className="mr-1 inline-block" />
               <span>{t("multiStt.gemma4.label")}</span>
             </label>
