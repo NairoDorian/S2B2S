@@ -44,5 +44,7 @@ jobs:
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
       upload-artifacts: true
-      sign-binaries: true
+      # Verification builds on push are unsigned — code signing needs the
+      # repo secrets and happens only in release.yml (workflow_dispatch).
+      sign-binaries: false
     secrets: inherit

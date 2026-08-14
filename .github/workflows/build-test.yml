@@ -53,7 +53,9 @@ jobs:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      sign-binaries: true
+      # Test builds are unsigned — code signing needs the repo secrets and
+      # happens only in release.yml (workflow_dispatch).
+      sign-binaries: false
       asset-prefix: ${{ inputs.asset_prefix }}
       upload-artifacts: true
       is-debug-build: ${{ contains(matrix.args, '--debug') }}

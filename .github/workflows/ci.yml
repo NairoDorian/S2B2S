@@ -52,6 +52,18 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
+      # .cargo/config.toml wraps rustc + CMake compilers with sccache.
+      - name: Install sccache (Rust/C++ compiler cache)
+        run: |
+          set -euo pipefail
+          VERSION="0.17.0"
+          curl -L --fail --retry 3 -o sccache.tgz \
+            "https://github.com/mozilla/sccache/releases/download/v${VERSION}/sccache-v${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          tar xzf sccache.tgz
+          mkdir -p "$HOME/.cargo/bin"
+          cp "sccache-v${VERSION}-x86_64-unknown-linux-musl/sccache" "$HOME/.cargo/bin/"
+          chmod +x "$HOME/.cargo/bin/sccache"
+
       # transcribe-cpp compiles ggml-vulkan on Linux (dynamic-backends +
       # vulkan features), which needs a Vulkan SDK (glslc) at build time.
       - name: Install Vulkan SDK
