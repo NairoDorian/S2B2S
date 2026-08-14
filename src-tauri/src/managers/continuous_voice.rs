@@ -171,6 +171,7 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
                             Some(b64),
                             None,
                             reply_language.clone(),
+                            Vec::new(),
                         )
                         .await
                 }

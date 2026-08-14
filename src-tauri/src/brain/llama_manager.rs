@@ -1,5 +1,7 @@
 use futures_util::StreamExt;
 use log::{error, info};
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
@@ -18,12 +20,44 @@ struct DownloadProgressPayload {
     error: Option<String>,
 }
 
+/// Public snapshot of the local llama.cpp server state.
+/// Emitted on the typed `llama-server-status` event whenever the server
+/// starts, finishes loading, gets restarted (e.g. mmproj upgrade) or stops.
+#[derive(Serialize, Deserialize, Clone, Debug, Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct LlamaServerStatus {
+    /// Whether the llama.cpp server is currently running and responding.
+    pub running: bool,
+    /// "stopped" | "loading" | "ready"
+    pub state: String,
+    /// Display name of the loaded model (llama.cpp alias).
+    pub model: Option<String>,
+    /// Whether the multimodal projector (mmproj) was loaded.
+    pub mmproj_loaded: bool,
+    /// Compute backend of the running server: "cuda" | "vulkan" | "cpu".
+    pub backend: String,
+    /// Port the server is listening on.
+    pub port: Option<u16>,
+}
+
+/// Internal bookkeeping for the server we spawned (or detected as running).
+#[derive(Clone)]
+struct ServerState {
+    model: String,
+    mmproj_loaded: bool,
+    backend: String,
+    port: u16,
+}
+
 pub struct LlamaManager {
     app: AppHandle,
     child: Mutex<Option<std::process::Child>>,
     downloading: Arc<AtomicBool>,
     /// Serializes server startup so concurrent callers don't spawn duplicates.
     start_lock: tokio::sync::Mutex<()>,
+    /// Cached details of the currently-running server, so status queries and
+    /// mmproj-upgrade decisions don't need to probe the process.
+    server_state: Mutex<Option<ServerState>>,
 }
 
 impl Drop for LlamaManager {
@@ -45,6 +79,7 @@ impl LlamaManager {
             child: Mutex::new(None),
             downloading: Arc::new(AtomicBool::new(false)),
             start_lock: tokio::sync::Mutex::new(()),
+            server_state: Mutex::new(None),
         }
     }
 
@@ -80,9 +115,34 @@ impl LlamaManager {
             // Don't block on wait() — the Drop impl ensures cleanup,
             // and child.wait() can hang if the process is stuck.
         }
+        *self.server_state.lock().unwrap() = None;
+        let _ = self.app.emit(
+            "llama-server-status",
+            LlamaServerStatus {
+                running: false,
+                state: "stopped".to_string(),
+                model: None,
+                mmproj_loaded: false,
+                backend: "".to_string(),
+                port: None,
+            },
+        );
     }
 
+    /// Ensure the llama.cpp server is running for plain text inference
+    /// (Brain conversation, post-processing, merge without audio, …).
     pub async fn ensure_server_running(&self) -> Result<(), String> {
+        self.ensure_server_running_with(false).await
+    }
+
+    /// Ensure the llama.cpp server is running, upgrading to an mmproj-enabled
+    /// (multimodal) instance when `mmproj_required` is true and the current
+    /// server was started text-only.
+    ///
+    /// Shared by every consumer of the local brain model:
+    ///   - text-only  (conversation, warmup, post-processing, merge)      → mmproj_required = false
+    ///   - multimodal (audio/image conversation, Gemma 4 STT, audio merge) → mmproj_required = true
+    pub async fn ensure_server_running_with(&self, mmproj_required: bool) -> Result<(), String> {
         let settings = crate::settings::get_settings(&self.app);
         let provider = settings
             .brain
@@ -97,24 +157,46 @@ impl LlamaManager {
 
         // Check if responding
         if self.is_port_responding(port).await {
+            let needs_mmproj_upgrade = {
+                let state = self.server_state.lock().unwrap();
+                match state.as_ref() {
+                    // We own the server (state was cached by a previous spawn):
+                    // restart only if it is text-only but multimodal is required.
+                    Some(s) => mmproj_required && !s.mmproj_loaded,
+                    // External/unmanaged server on the same port: leave it alone.
+                    None => false,
+                }
+            };
+            if !needs_mmproj_upgrade {
+                info!(
+                    "[LlamaManager] llama-server is already running on port {}",
+                    port
+                );
+                return Ok(());
+            }
             info!(
-                "[LlamaManager] llama-server is already running on port {}",
-                port
+                "[LlamaManager] llama-server is text-only but multimodal input is required — restarting with mmproj"
             );
-            return Ok(());
         }
 
         // Serialize startup so concurrent callers (warmup, brain_ask, fetch_models, the
-        // converse shortcut, …) don't each spawn a duplicate llama-server and leak the
-        // first child handle. Held across the spawn+poll below (tokio mutex is await-safe).
+        // converse shortcut, multi-STT merge, …) don't each spawn a duplicate llama-server
+        // and leak the first child handle. Held across the spawn+poll below (tokio mutex is await-safe).
         let _start_guard = self.start_lock.lock().await;
         // Double-checked: another caller may have brought the server up while we waited.
-        if self.is_port_responding(port).await {
+        let already_running_with_correct_mode = {
+            let state = self.server_state.lock().unwrap();
+            match state.as_ref() {
+                Some(s) => !(mmproj_required && !s.mmproj_loaded),
+                None => false,
+            }
+        };
+        if already_running_with_correct_mode && self.is_port_responding(port).await {
             info!("[LlamaManager] llama-server was started by a concurrent caller; reusing it");
             return Ok(());
         }
 
-        // Kill any old handle just in case
+        // Kill any old handle just in case (also handles the mmproj-upgrade restart)
         self.stop();
 
         // Check if models exist
@@ -158,6 +240,13 @@ impl LlamaManager {
             .to_lowercase()
             .contains("vulkan");
         let is_gpu_build = is_cuda_build || is_vulkan_build;
+        let backend = if is_cuda_build {
+            "cuda"
+        } else if is_vulkan_build {
+            "vulkan"
+        } else {
+            "cpu"
+        };
         info!(
             "[LlamaManager] CUDA build: {}, Vulkan build: {}",
             is_cuda_build, is_vulkan_build
@@ -168,16 +257,29 @@ impl LlamaManager {
         let mmproj_path = models_dir.join("mmproj-F16.gguf");
         let draft_path = models_dir.join("mtp-gemma-4-E2B-it.gguf");
 
-        // Check if multimodal features are enabled (audio/image input, Gemma 4 ASR, or multimodal merge)
+        // Load mmproj when multimodal features are enabled (audio/image input,
+        // Gemma 4 ASR, multimodal merge) OR when this caller requires it.
         let settings = crate::settings::get_settings(&self.app);
         let multimodal_enabled = settings.brain.multimodal_audio_enabled
             || settings.brain.multimodal_image_enabled
             || settings.multi_stt_gemma4_enabled
-            || (settings.multi_stt_use_llama_merge && settings.multi_stt_merge_include_audio);
+            || (settings.multi_stt_use_llama_merge && settings.multi_stt_merge_include_audio)
+            || mmproj_required;
 
         info!(
             "[LlamaManager] Spawning llama-server on port {} with MTP...",
             port
+        );
+        let _ = self.app.emit(
+            "llama-server-status",
+            LlamaServerStatus {
+                running: false,
+                state: "loading".to_string(),
+                model: Some("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf".to_string()),
+                mmproj_loaded: multimodal_enabled,
+                backend: backend.to_string(),
+                port: Some(port),
+            },
         );
         let _ = self.app.emit("brain:llama-loading", ());
 
@@ -253,14 +355,45 @@ impl LlamaManager {
         // Wait for port response — poll until ready or child exits
         let start = Instant::now();
         let timeout = std::time::Duration::from_secs(90);
+        let model_alias = "unsloth/gemma-4-e2b-it-qat-GGUF".to_string();
         loop {
             if self.is_port_responding(port).await {
                 info!("[LlamaManager] llama-server started successfully and is responding. (took {:.1}s)", start.elapsed().as_secs_f64());
+                {
+                    *self.server_state.lock().unwrap() = Some(ServerState {
+                        model: model_alias.clone(),
+                        mmproj_loaded: multimodal_enabled,
+                        backend: backend.to_string(),
+                        port,
+                    });
+                }
+                let _ = self.app.emit(
+                    "llama-server-status",
+                    LlamaServerStatus {
+                        running: true,
+                        state: "ready".to_string(),
+                        model: Some(model_alias.clone()),
+                        mmproj_loaded: multimodal_enabled,
+                        backend: backend.to_string(),
+                        port: Some(port),
+                    },
+                );
                 let _ = self.app.emit("brain:llama-ready", ());
                 break;
             }
             // Check if child process exited
             if let Ok(Some(status)) = child.try_wait() {
+                let _ = self.app.emit(
+                    "llama-server-status",
+                    LlamaServerStatus {
+                        running: false,
+                        state: "error".to_string(),
+                        model: None,
+                        mmproj_loaded: false,
+                        backend: backend.to_string(),
+                        port: Some(port),
+                    },
+                );
                 let _ = self.app.emit(
                     "brain:llama-error",
                     format!("llama-server exited with status {:?}", status),
@@ -268,6 +401,17 @@ impl LlamaManager {
                 return Err(format!("llama-server exited with status {:?}", status));
             }
             if start.elapsed() > timeout {
+                let _ = self.app.emit(
+                    "llama-server-status",
+                    LlamaServerStatus {
+                        running: false,
+                        state: "error".to_string(),
+                        model: None,
+                        mmproj_loaded: false,
+                        backend: backend.to_string(),
+                        port: Some(port),
+                    },
+                );
                 let _ = self.app.emit(
                     "brain:llama-error",
                     "llama-server startup timed out after 90s".to_string(),
@@ -286,6 +430,62 @@ impl LlamaManager {
 
         *self.child.lock().unwrap() = Some(child);
         Ok(())
+    }
+
+    /// Snapshot the current server state for the UI (footer Brain indicator).
+    /// Works whether the server was spawned by us or detected externally.
+    pub async fn status(&self) -> LlamaServerStatus {
+        let settings = crate::settings::get_settings(&self.app);
+        let provider = settings.brain.active_provider();
+
+        // Only meaningful when the active brain provider is the local server.
+        if !provider.as_ref().is_some_and(|p| p.id == "llama_cpp") {
+            return LlamaServerStatus {
+                running: false,
+                state: "stopped".to_string(),
+                model: None,
+                mmproj_loaded: false,
+                backend: "".to_string(),
+                port: None,
+            };
+        }
+
+        let port = provider
+            .as_ref()
+            .map(|p| self.get_server_port(&p.base_url))
+            .unwrap_or(8001);
+
+        let responding = self.is_port_responding(port).await;
+        let cached = self.server_state.lock().unwrap().clone();
+
+        match (responding, cached) {
+            (true, Some(state)) => LlamaServerStatus {
+                running: true,
+                state: "ready".to_string(),
+                model: Some(state.model),
+                mmproj_loaded: state.mmproj_loaded,
+                backend: state.backend,
+                port: Some(state.port),
+            },
+            (true, None) => LlamaServerStatus {
+                // Server on our port, but not started by this app instance
+                // (external llama-server or stale process).
+                running: true,
+                state: "ready".to_string(),
+                model: None,
+                mmproj_loaded: false,
+                backend: "".to_string(),
+                port: Some(port),
+            },
+            (false, _) => LlamaServerStatus {
+                running: false,
+                state: "stopped".to_string(),
+                model: None,
+                mmproj_loaded: false,
+                backend: "".to_string(),
+                port: None,
+            },
+        }
     }
 
     pub fn start_download_in_background(self: Arc<Self>) {

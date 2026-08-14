@@ -119,7 +119,26 @@ pub fn is_multi_stt_active(settings: &AppSettings) -> bool {
             || settings.multi_stt_gemma4_enabled)
 }
 
-/// Entry point from actions.rs: run multi-STT and return a single merged text.
+/// Result of a multi-STT pass: the LLM-merged consensus text plus the
+/// individual per-model transcripts (model id, text), so downstream consumers
+/// (e.g. the multimodal Brain) can fuse them with the raw audio themselves.
+#[derive(Clone, Debug)]
+pub struct MultiSttOutcome {
+    pub merged: String,
+    pub transcripts: Vec<(String, String)>,
+}
+
+/// Human-friendly short label for a model id (last path segment, no extension).
+pub fn short_model_label(id: &str) -> String {
+    let name = id.rsplit('/').next().unwrap_or(id);
+    name.strip_suffix(".gguf")
+        .or_else(|| name.strip_suffix(".onnx"))
+        .unwrap_or(name)
+        .to_string()
+}
+
+/// Entry point from actions.rs: run multi-STT and return a single merged text
+/// plus the individual per-model transcripts.
 ///
 /// `output1` is the primary model's transcription (already produced by the
 /// TranscriptionManager). `audio` is the raw f32 mono samples at 16 kHz.
@@ -134,7 +153,7 @@ pub async fn transcribe_parallel(
     settings: &AppSettings,
     model_manager: &Arc<ModelManager>,
     app_handle: &AppHandle,
-) -> Result<String> {
+) -> Result<MultiSttOutcome> {
     let mut results: Vec<(String, String)> = Vec::new();
     results.push((settings.selected_model.clone(), output1.clone()));
 
@@ -169,7 +188,10 @@ pub async fn transcribe_parallel(
     }
 
     if results.len() == 1 {
-        return Ok(results[0].1.clone());
+        return Ok(MultiSttOutcome {
+            merged: results[0].1.clone(),
+            transcripts: results,
+        });
     }
 
     // Log the individual results
@@ -179,7 +201,10 @@ pub async fn transcribe_parallel(
 
     // Try LLM merge
     match merge_transcriptions(settings, &results, Some(&audio), app_handle).await {
-        Some(merged) if !merged.is_empty() => Ok(merged),
+        Some(merged) if !merged.is_empty() => Ok(MultiSttOutcome {
+            merged,
+            transcripts: results,
+        }),
         _ => {
             warn!("Multi-STT merge skipped or returned empty; falling back to longest result");
             // Fallback: pick the longest transcript — the best proxy for
@@ -189,7 +214,10 @@ pub async fn transcribe_parallel(
                 .max_by_key(|(_, text)| text.chars().count())
                 .map(|(_, text)| text.clone())
                 .unwrap_or_default();
-            Ok(best)
+            Ok(MultiSttOutcome {
+                merged: best,
+                transcripts: results,
+            })
         }
     }
 }
@@ -522,7 +550,7 @@ pub async fn transcribe_with_gemma4(
             warn!("Multi-STT: Gemma 4 ASR requested but multimodal_audio_enabled is false; enabling temporarily");
         }
         llama_manager
-            .ensure_server_running()
+            .ensure_server_running_with(true)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to start llama.cpp server: {}", e))?;
     }
@@ -633,8 +661,11 @@ async fn merge_with_llama_cpp(
             }
         };
 
-    // Ensure the server is running
-    if let Err(e) = llama_manager.ensure_server_running().await {
+    // Ensure the server is running (with mmproj when the merge includes audio)
+    if let Err(e) = llama_manager
+        .ensure_server_running_with(settings.multi_stt_merge_include_audio)
+        .await
+    {
         warn!("Multi-STT llama.cpp merge: server not running: {}", e);
         return None;
     }

@@ -7,6 +7,7 @@ import {
   History,
   Info,
   MessagesSquare,
+  Package,
   Sparkles,
   Cpu,
   Volume2,
@@ -29,6 +30,7 @@ import {
   BrainSettings,
   LlamaCppSettings,
   MultiSttSettings,
+  PythonEnvSettings,
   OverlayWindowSettings,
 } from "./settings";
 import { ConversationView } from "./conversation/ConversationView";
@@ -67,6 +69,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.models",
     icon: Cpu,
     component: ModelsSettings,
+    enabled: () => true,
+  },
+  pythonEnv: {
+    labelKey: "sidebar.pythonEnv",
+    icon: Package,
+    component: PythonEnvSettings,
     enabled: () => true,
   },
   advanced: {

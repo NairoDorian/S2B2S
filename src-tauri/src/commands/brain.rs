@@ -252,3 +252,15 @@ pub fn is_llama_downloading(
 ) -> Result<bool, String> {
     Ok(llama_manager.is_downloading())
 }
+
+/// Snapshot the local llama.cpp server status (running/loading/stopped,
+/// loaded model, mmproj state, compute backend, port).
+/// Used by the footer Brain indicator so it reflects the server state no
+/// matter which feature (conversation, post-processing, multi-STT) started it.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_brain_server_status(
+    llama_manager: State<'_, Arc<crate::brain::llama_manager::LlamaManager>>,
+) -> Result<crate::brain::llama_manager::LlamaServerStatus, String> {
+    Ok(llama_manager.status().await)
+}

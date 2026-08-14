@@ -22,7 +22,8 @@
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
     "overlayWindow": "Overlay Window",
-    "multiStt": "Multi STT"
+    "multiStt": "Multi STT",
+    "pythonEnv": "Python Env"
   },
   "onboarding": {
     "subtitle": "请选择一个转录模型以开始使用",

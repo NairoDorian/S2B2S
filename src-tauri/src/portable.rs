@@ -86,6 +86,40 @@ pub fn resolve_venv_python() -> PathBuf {
     PathBuf::from(fallback)
 }
 
+/// Return the canonical venv directory path (does NOT require it to exist).
+///
+/// Priority (same as `resolve_venv_python`):
+///   1. Project root `venv/` — dev mode (CARGO_MANIFEST_DIR/../venv)
+///   2. Current working directory `venv/`
+///   3. App data directory `venv/`
+///   4. Fallback: `venv/` relative to CWD
+pub fn get_venv_dir() -> PathBuf {
+    // 1. Project root venv (dev mode, CARGO_MANIFEST_DIR is set at compile time)
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let project_venv = PathBuf::from(manifest_dir).join("..").join("venv");
+        // Return even if it doesn't exist so callers know where to create it.
+        return project_venv;
+    }
+
+    // 2. Current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        return cwd.join("venv");
+    }
+
+    // 3. App data directory
+    if let Some(app) = APP_HANDLE.get() {
+        if let Ok(data_dir) = app_data_dir(app) {
+            return data_dir.join("venv");
+        }
+    }
+    if let Some(data_dir) = data_dir() {
+        return data_dir.join("venv");
+    }
+
+    // 4. Last-resort relative path
+    PathBuf::from("venv")
+}
+
 /// Detect portable mode by looking for a `portable` marker file next to the exe.
 /// Must be called once at startup before Tauri initializes.
 pub fn init() {

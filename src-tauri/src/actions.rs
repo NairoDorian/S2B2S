@@ -1219,6 +1219,9 @@ impl ShortcutAction for TranscribeAction {
                     // and merge results via LLM post-processing.
                     let transcription_time = Instant::now();
                     let settings = get_settings(&ah);
+                    // Individual per-model transcripts from multi-STT; forwarded to
+                    // the multimodal Brain so Gemma 4 can fuse them with the audio.
+                    let mut multi_stt_transcripts: Vec<(String, String)> = Vec::new();
                     let transcription_result = if route_to_brain
                         && settings.brain.brain_only_transcription
                     {
@@ -1234,7 +1237,7 @@ impl ShortcutAction for TranscribeAction {
                             Err(err) => Err(err),
                         };
                         let primary_text = primary_result.unwrap_or_default();
-                        multi_stt::transcribe_parallel(
+                        match multi_stt::transcribe_parallel(
                             samples.clone(),
                             primary_text,
                             &settings,
@@ -1242,6 +1245,13 @@ impl ShortcutAction for TranscribeAction {
                             &ah,
                         )
                         .await
+                        {
+                            Ok(outcome) => {
+                                multi_stt_transcripts = outcome.transcripts;
+                                Ok(outcome.merged)
+                            }
+                            Err(e) => Err(e),
+                        }
                     } else {
                         // Transcribe concurrently with WAV save. If a live stream was
                         // running, finalize it and use its text; otherwise batch-transcribe the samples.
@@ -1417,6 +1427,13 @@ impl ShortcutAction for TranscribeAction {
                                         let bm = bm.inner().clone();
                                         let reply_language = reply_language.clone();
                                         let sample_count = samples_for_brain.len();
+                                        // Forward multi-STT transcripts to the Brain so
+                                        // Gemma 4 fuses them with the raw audio itself.
+                                        let stt_sources = if is_brain_only {
+                                            Vec::new()
+                                        } else {
+                                            multi_stt_transcripts.clone()
+                                        };
                                         tauri::async_runtime::spawn(async move {
                                             let result = if multimodal_audio {
                                                 if is_brain_only {
@@ -1453,21 +1470,43 @@ impl ShortcutAction for TranscribeAction {
                                                             Some(b64),
                                                             None,
                                                             reply_language.clone(),
+                                                            stt_sources.clone(),
                                                         )
                                                         .await
                                                     }
                                                     Ok(Err(e)) => {
                                                         error!("Failed to encode WAV for multimodal brain: {e}");
-                                                        bm.ask(text_to_ask).await
+                                                        bm.ask_multimodal(
+                                                            text_to_ask,
+                                                            None,
+                                                            None,
+                                                            reply_language.clone(),
+                                                            stt_sources.clone(),
+                                                        )
+                                                        .await
                                                     }
                                                     Err(e) => {
                                                         error!("spawn_blocking panicked for WAV encoding: {e}");
-                                                        bm.ask(text_to_ask).await
+                                                        bm.ask_multimodal(
+                                                            text_to_ask,
+                                                            None,
+                                                            None,
+                                                            reply_language.clone(),
+                                                            stt_sources.clone(),
+                                                        )
+                                                        .await
                                                     }
                                                 }
                                             } else {
                                                 info!("[Conversation] Multimodal audio disabled — text-only ask");
-                                                bm.ask(text_to_ask).await
+                                                bm.ask_multimodal(
+                                                    text_to_ask,
+                                                    None,
+                                                    None,
+                                                    reply_language.clone(),
+                                                    stt_sources.clone(),
+                                                )
+                                                .await
                                             };
                                             if let Err(e) = result {
                                                 error!("Brain ask failed: {e}");

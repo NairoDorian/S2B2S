@@ -52,7 +52,8 @@ impl BrainManager {
     /// Ask the Brain (text-only). Streams the reply; returns the full assistant text.
     /// Any previous in-flight turn is aborted first (barge-in semantics).
     pub async fn ask(&self, text: String) -> Result<String, String> {
-        self.ask_multimodal(text, None, None, None).await
+        self.ask_multimodal(text, None, None, None, Vec::new())
+            .await
     }
 
     /// Ask the Brain with optional multimodal inputs.
@@ -60,6 +61,10 @@ impl BrainManager {
     /// - `image_png_base64`: raw base64-encoded PNG screenshot (for vision)
     /// - `reply_language`: when `Some`, prepend a "respond in <language>" hint to the
     ///   user turn (mirrors huggingface/speech-to-speech `--enable_lang_prompt`).
+    /// - `stt_sources`: individual (model_id, transcript) pairs produced by multi-STT.
+    ///   When non-empty, they are listed in the model-facing user message so the
+    ///   multimodal Brain can fuse them with the raw audio itself. Conversation
+    ///   history always stores only the clean `text` (not the sources block).
     ///
     /// Content parts order follows Gemma 4 best practices:
     /// `image → text → audio`
@@ -69,6 +74,7 @@ impl BrainManager {
         audio_wav_base64: Option<String>,
         image_png_base64: Option<String>,
         reply_language: Option<String>,
+        stt_sources: Vec<(String, String)>,
     ) -> Result<String, String> {
         let has_audio = audio_wav_base64.is_some();
         let has_image = image_png_base64.is_some();
@@ -81,9 +87,15 @@ impl BrainManager {
         let audio_seconds = sample_count_est as f64 / 16000.0;
         let text_tokens_est = text.len() / 4; // rough: ~4 chars per token
         info!(
-            "[BrainManager::ask_multimodal] has_audio={}, has_image={}, audio_base64_size={}, text_len={} — est. {:.1}s audio ≈ {} tokens + {} text tokens = {} total",
-            has_audio, has_image, audio_size, text.len(),
-            audio_seconds, audio_tokens_est, text_tokens_est,
+            "[BrainManager::ask_multimodal] has_audio={}, has_image={}, audio_base64_size={}, text_len={}, stt_sources={} — est. {:.1}s audio ≈ {} tokens + {} text tokens = {} total",
+            has_audio,
+            has_image,
+            audio_size,
+            text.len(),
+            stt_sources.len(),
+            audio_seconds,
+            audio_tokens_est,
+            text_tokens_est,
             audio_tokens_est + text_tokens_est
         );
 
@@ -104,7 +116,10 @@ impl BrainManager {
                 .app
                 .try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
             {
-                llama_manager.ensure_server_running().await?;
+                // Audio/image turns require the multimodal projector (mmproj).
+                llama_manager
+                    .ensure_server_running_with(has_audio || has_image)
+                    .await?;
             }
         }
         let text = text.trim().to_string();
@@ -150,6 +165,30 @@ impl BrainManager {
         };
 
         let has_multimodal = audio_wav_base64.is_some() || image_png_base64.is_some();
+
+        // Multi-STT sources: list the individual transcripts in the model-facing
+        // user turn so the Brain (Gemma 4 multimodal) can fuse them with the raw
+        // audio itself. Conversation history keeps only the clean `text`.
+        let user_text_for_model = if stt_sources.is_empty() {
+            text_with_lang.clone()
+        } else {
+            let mut block = String::new();
+            for (i, (model_id, t)) in stt_sources.iter().enumerate() {
+                block.push_str(&format!(
+                    "{}. {}: \"{}\"\n",
+                    i + 1,
+                    crate::stt::multi_stt::short_model_label(model_id),
+                    t.trim()
+                ));
+            }
+            format!(
+                "{} STT models transcribed the user's speech. Use the raw audio (when present) and these transcripts to resolve the most accurate reading of what the user said:\n\n{}\nUser request:\n{}",
+                stt_sources.len(),
+                block,
+                text_with_lang
+            )
+        };
+
         if has_multimodal {
             let mut parts = Vec::new();
             // Image goes before text (Gemma 4 best practice)
@@ -162,7 +201,7 @@ impl BrainManager {
             }
             // Text in the middle
             parts.push(ContentPart::Text {
-                text: text_with_lang.clone(),
+                text: user_text_for_model.clone(),
             });
             // Audio goes after text (Gemma 4 best practice for ASR)
             if let Some(ref audio_b64) = audio_wav_base64 {
@@ -180,7 +219,7 @@ impl BrainManager {
         } else {
             messages.push(ChatMessage {
                 role: "user".into(),
-                content: MessageContent::text(text_with_lang.clone()),
+                content: MessageContent::text(user_text_for_model.clone()),
             });
         }
 
@@ -311,24 +350,19 @@ impl BrainManager {
         }
 
         // Ensure llama.cpp server is running before warmup.
+        // The LlamaManager emits typed `llama-server-status` events itself,
+        // so the footer Brain indicator reflects the true server state.
         if cfg.provider_id == "llama_cpp" {
-            let _ = self.app.emit("brain:llama-loading", ());
             if let Some(llama_manager) = self
                 .app
                 .try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
             {
                 llama_manager.ensure_server_running().await?;
             }
-            // ensure_server_running may fire brain:llama-ready when spawning
-            // fresh — override so status stays "loading" through warmup.
-            let _ = self.app.emit("brain:llama-loading", ());
         }
 
         let warmup_text = if cfg.warmup_prompt.trim().is_empty() {
             // No warmup configured — jump straight to ready
-            if cfg.provider_id == "llama_cpp" {
-                let _ = self.app.emit("brain:llama-ready", ());
-            }
             return Ok(());
         } else {
             &cfg.warmup_prompt
@@ -360,16 +394,10 @@ impl BrainManager {
         match result {
             Ok(BrainResult { .. }) => {
                 log::info!("[Startup] Silent Brain warm up stream completed successfully.");
-                if cfg.provider_id == "llama_cpp" {
-                    let _ = self.app.emit("brain:llama-ready", ());
-                }
                 Ok(())
             }
             Err(e) => {
                 log::error!("[Startup] Brain warm up stream failed: {}", e);
-                if cfg.provider_id == "llama_cpp" {
-                    let _ = self.app.emit("brain:llama-error", &e);
-                }
                 Err(e)
             }
         }

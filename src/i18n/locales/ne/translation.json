@@ -22,7 +22,8 @@
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
     "overlayWindow": "Overlay Window",
-    "multiStt": "Multi STT"
+    "multiStt": "Multi STT",
+    "pythonEnv": "Python Env"
   },
   "onboarding": {
     "subtitle": "सुरु गर्न, एउटा ट्रान्सक्रिप्सन मोडेल छान्नुहोस्",

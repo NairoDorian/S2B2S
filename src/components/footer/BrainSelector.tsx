@@ -1,25 +1,59 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
+import { commands, events, type LlamaServerStatus } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
 import appIcon from "../../assets/icon.png";
 
-type BrainStatus = "disabled" | "loading" | "ready";
+type BrainStatus = "disabled" | "loading" | "ready" | "stopped";
 
 const BrainSelector: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, setBrainProvider } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
-  const [llamaStatus, setLlamaStatus] = useState<BrainStatus>("disabled");
+  const [llamaServer, setLlamaServer] = useState<LlamaServerStatus | null>(
+    null,
+  );
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const brain = settings?.brain;
 
-  const deriveStatus = useCallback(() => {
+  // Keep the footer in sync with the llama.cpp server no matter which feature
+  // started it (conversation, post-processing, multi-STT merge/Gemma 4 STT).
+  useEffect(() => {
+    const refresh = () => {
+      void commands
+        .getBrainServerStatus()
+        .then((res) => {
+          if (res.status === "ok") setLlamaServer(res.data);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch brain server status:", err);
+        });
+    };
+
+    void refresh();
+    // Poll as a safety net for state changes made outside this window
+    // (e.g. the server gets killed externally or by another command).
+    const interval = setInterval(refresh, 5000);
+
+    const unlisten = events.llamaServerStatus.listen((event) => {
+      setLlamaServer(event.payload);
+    });
+
+    return () => {
+      clearInterval(interval);
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const deriveStatus = useCallback((): BrainStatus => {
     if (!brain?.enabled) return "disabled";
     if (brain.provider_id !== "llama_cpp") return "ready";
-    return llamaStatus === "disabled" ? "loading" : llamaStatus;
-  }, [brain?.enabled, brain?.provider_id, llamaStatus]);
+    if (!llamaServer) return "loading";
+    if (llamaServer.state === "loading") return "loading";
+    if (llamaServer.running) return "ready";
+    return "stopped";
+  }, [brain?.enabled, brain?.provider_id, llamaServer]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -32,23 +66,6 @@ const BrainSelector: React.FC = () => {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    const unlistenLoading = listen("brain:llama-loading", () => {
-      setLlamaStatus("loading");
-    });
-    const unlistenReady = listen("brain:llama-ready", () => {
-      setLlamaStatus("ready");
-    });
-    const unlistenError = listen<string>("brain:llama-error", () => {
-      setLlamaStatus("ready");
-    });
-    return () => {
-      void unlistenLoading.then((fn) => fn());
-      void unlistenReady.then((fn) => fn());
-      void unlistenError.then((fn) => fn());
-    };
   }, []);
 
   if (!brain) return null;
@@ -64,6 +81,25 @@ const BrainSelector: React.FC = () => {
   // Display-friendly model name
   const displayModel =
     brain.provider_id === "llama_cpp" ? "Gemma-4 2B (Local)" : rawModel;
+
+  // Rich status line for the local server: model + mmproj + backend.
+  const llamaDetails = (() => {
+    if (brain.provider_id !== "llama_cpp") return null;
+    const server = llamaServer;
+    if (!server || !server.running) return null;
+    const model = server.model ? server.model.split("/").pop() : "";
+    const backendLabel = server.backend ? server.backend.toUpperCase() : "";
+    const mmprojLabel = server.mmprojLoaded ? " + mmproj" : "";
+    return `${model}${mmprojLabel}${backendLabel ? ` · ${backendLabel}` : ""}`;
+  })();
+
+  const tooltip = !brain.enabled
+    ? "Brain Disabled"
+    : status === "loading"
+      ? `Brain: Loading llama.cpp model...${llamaDetails ? ` (${llamaDetails})` : ""}`
+      : status === "stopped"
+        ? "Brain: llama.cpp server not running"
+        : `Brain: ${providerLabel}${llamaDetails ? ` (${llamaDetails})` : displayModel ? ` (${displayModel})` : ""}`;
 
   const handleToggleEnabled = async () => {
     await updateSetting("brain", {
@@ -83,13 +119,7 @@ const BrainSelector: React.FC = () => {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 hover:text-text/80 transition-colors cursor-pointer text-xs focus:outline-none"
-        title={
-          brain.enabled
-            ? status === "loading"
-              ? "Brain: Loading llama.cpp model..."
-              : `Brain: ${providerLabel}${displayModel ? ` (${displayModel})` : ""}`
-            : "Brain Disabled"
-        }
+        title={tooltip}
       >
         <span className="flex items-center gap-1.5">
           <img
@@ -98,6 +128,13 @@ const BrainSelector: React.FC = () => {
             className="w-3.5 h-3.5 object-contain"
           />
           <span className="font-medium">{t("footer.brain")}</span>
+          {brain.provider_id === "llama_cpp" &&
+            llamaServer?.running &&
+            llamaServer.mmprojLoaded && (
+              <span className="text-[9px] font-semibold text-logo-primary bg-logo-primary/10 rounded px-1 py-px">
+                mmproj
+              </span>
+            )}
         </span>
         <div
           className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
@@ -105,7 +142,9 @@ const BrainSelector: React.FC = () => {
               ? "bg-orange-400 animate-pulse"
               : status === "ready"
                 ? "bg-green-400"
-                : "bg-mid-gray/40"
+                : status === "stopped"
+                  ? "bg-yellow-500"
+                  : "bg-mid-gray/40"
           }`}
         />
         <svg
@@ -130,9 +169,17 @@ const BrainSelector: React.FC = () => {
               <span className="font-semibold text-text/80">
                 {t("footer.brainTitle")}
               </span>
-              {brain.enabled && displayModel && (
+              {brain.enabled && (
                 <span className="text-[10px] text-text/50 font-normal truncate max-w-44">
-                  {displayModel}
+                  {brain.provider_id === "llama_cpp"
+                    ? llamaDetails || displayModel
+                    : displayModel}
+                </span>
+              )}
+              {brain.provider_id === "llama_cpp" && llamaServer?.running && (
+                <span className="text-[10px] text-text/40 font-normal truncate max-w-44">
+                  {llamaServer.backend.toUpperCase()}
+                  {llamaServer.mmprojLoaded ? " · mmproj" : " · text-only"}
                 </span>
               )}
             </div>

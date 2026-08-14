@@ -164,9 +164,12 @@ export const MultiSttSettings: React.FC = () => {
   );
   const primaryModelId = currentModel;
 
+  // Each slot's options keep its own current selection (so the Dropdown can
+  // display the selected model's name) and exclude the primary model and the
+  // model chosen in the other slot (no duplicate selections).
   const modelOptionsForSlot2 = downloadedModels
     .filter(
-      (m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel2,
+      (m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel3,
     )
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
 
@@ -176,12 +179,14 @@ export const MultiSttSettings: React.FC = () => {
     )
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
 
+  // Resolve model info/names against the full catalog so names stay correct
+  // even if a selected model is no longer downloaded.
   const model2Info = multiSttModel2
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel2)
+    ? models.find((m: ModelInfo) => m.id === multiSttModel2)
     : undefined;
 
   const model3Info = multiSttModel3
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)
+    ? models.find((m: ModelInfo) => m.id === multiSttModel3)
     : undefined;
 
   useEffect(() => {
@@ -227,17 +232,17 @@ export const MultiSttSettings: React.FC = () => {
   };
 
   const primaryModelName = primaryModelId
-    ? downloadedModels.find((m: ModelInfo) => m.id === primaryModelId)?.name ||
+    ? models.find((m: ModelInfo) => m.id === primaryModelId)?.name ||
       primaryModelId
     : t("multiStt.models.noPrimaryModel");
 
   const selectedModel2Name = multiSttModel2
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel2)?.name ||
+    ? models.find((m: ModelInfo) => m.id === multiSttModel2)?.name ||
       multiSttModel2
     : null;
 
   const selectedModel3Name = multiSttModel3
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)?.name ||
+    ? models.find((m: ModelInfo) => m.id === multiSttModel3)?.name ||
       multiSttModel3
     : null;
 

@@ -22,7 +22,8 @@
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
     "overlayWindow": "Overlay Window",
-    "multiStt": "Multi STT"
+    "multiStt": "Multi STT",
+    "pythonEnv": "Python Env"
   },
   "onboarding": {
     "subtitle": "Pro začátek vyberte model pro přepis",

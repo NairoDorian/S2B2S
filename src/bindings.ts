@@ -278,6 +278,13 @@ export const commands = {
 	downloadLlamaModels: () => typedError<null, string>(__TAURI_INVOKE("download_llama_models")),
 	getLlamaModelsStatus: () => typedError<boolean, string>(__TAURI_INVOKE("get_llama_models_status")),
 	isLlamaDownloading: () => typedError<boolean, string>(__TAURI_INVOKE("is_llama_downloading")),
+	/**
+	 *  Snapshot the local llama.cpp server status (running/loading/stopped,
+	 *  loaded model, mmproj state, compute backend, port).
+	 *  Used by the footer Brain indicator so it reflects the server state no
+	 *  matter which feature (conversation, post-processing, multi-STT) started it.
+	 */
+	getBrainServerStatus: () => typedError<LlamaServerStatus, string>(__TAURI_INVOKE("get_brain_server_status")),
 	fetchLlamaReleases: () => typedError<LlamaRelease[], string>(__TAURI_INVOKE("fetch_llama_releases")),
 	downloadLlamaServer: (backend: string, releaseTag: string, downloadUrl: string) => typedError<null, string>(__TAURI_INVOKE("download_llama_server", { backend, releaseTag, downloadUrl })),
 	getDownloadedLlamaServers: () => typedError<DownloadedServer[], string>(__TAURI_INVOKE("get_downloaded_llama_servers")),
@@ -310,11 +317,42 @@ export const commands = {
 	overlayFxShowConversation: () => typedError<null, string>(__TAURI_INVOKE("overlay_fx_show_conversation")),
 	/**  Hide the brain overlay and end the conversation. */
 	overlayFxDismiss: () => typedError<null, string>(__TAURI_INVOKE("overlay_fx_dismiss")),
+	/**  Return a full snapshot of the Python environment (synchronous, quick). */
+	getPythonEnvStatus: () => __TAURI_INVOKE<PythonEnvStatus>("get_python_env_status"),
+	/**  Check a single backend's install status. */
+	checkBackendStatus: (backendId: string) => __TAURI_INVOKE<BackendStatus>("check_backend_status", { backendId }),
+	/**
+	 *  Install `uv` if not already present, streaming progress events.
+	 *  Returns the uv version string on success.
+	 */
+	installUv: () => typedError<string, string>(__TAURI_INVOKE("install_uv")),
+	/**
+	 *  Create (or recreate) the shared venv using Python 3.12.
+	 *  Streams installation progress via `python-env-progress` events.
+	 */
+	createPythonVenv: () => typedError<null, string>(__TAURI_INVOKE("create_python_venv")),
+	/**
+	 *  Install packages for a single backend.
+	 *  `gpu` chooses CUDA 13 onnxruntime / CUDA torch vs CPU-only.
+	 */
+	setupBackend: (backendId: string, gpu: boolean) => typedError<null, string>(__TAURI_INVOKE("setup_backend", { backendId, gpu })),
+	/**  Install all TTS + STT backends in one shot. */
+	setupAllBackends: (gpu: boolean) => typedError<null, string>(__TAURI_INVOKE("setup_all_backends", { gpu })),
+	/**
+	 *  Full GPU setup: create fresh venv + install everything with CUDA 13 support.
+	 *  Equivalent to running `scripts/setup_venv_uv.ps1` manually.
+	 */
+	fullGpuSetup: () => typedError<null, string>(__TAURI_INVOKE("full_gpu_setup")),
+	/**  Open the venv directory in the system file manager. */
+	openVenvFolder: () => typedError<null, string>(__TAURI_INVOKE("open_venv_folder")),
 };
 
 /** Events */
 export const events = {
+	envProgressEvent: makeEvent<EnvProgressEvent>("env-progress-event"),
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
+	llamaServerStatus: makeEvent<LlamaServerStatus>("llama-server-status"),
+	pythonEnvStatus: makeEvent<PythonEnvStatus>("python-env-status"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
 };
@@ -669,6 +707,20 @@ export type AvailableAccelerators = {
 	gpu_devices: GpuDeviceOption[],
 };
 
+export type BackendCategory = "tts" | "stt";
+
+/**  Status of one TTS / STT backend. */
+export type BackendStatus = {
+	/**  Short identifier, e.g. "piper", "kokoro", "kitten". */
+	id: string,
+	/**  Human-readable label. */
+	label: string,
+	/**  Whether the required Python packages are importable. */
+	installed: boolean,
+	/**  Category for grouping in the UI. */
+	category: BackendCategory,
+};
+
 export type BindingResponse = {
 	success: boolean,
 	binding: ShortcutBinding | null,
@@ -789,6 +841,16 @@ export type EngineType =
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere" | "UnifiedParakeet";
 
+/**  Payload emitted on the `python-env-progress` event. */
+export type EnvProgressEvent = {
+	/**  Short identifier of the operation context (e.g. "uv", "kokoro", "venv"). */
+	context: string,
+	/**  The log line text. */
+	line: string,
+	/**  Severity: "info", "warn", "error". */
+	level: string,
+};
+
 export type GpuDeviceOption = {
 	id: number,
 	name: string,
@@ -889,6 +951,26 @@ export type LlamaRelease = {
 export type LlamaServerConfig = {
 	backend: string,
 	release_tag: string,
+};
+
+/**
+ *  Public snapshot of the local llama.cpp server state.
+ *  Emitted on the typed `llama-server-status` event whenever the server
+ *  starts, finishes loading, gets restarted (e.g. mmproj upgrade) or stops.
+ */
+export type LlamaServerStatus = {
+	/**  Whether the llama.cpp server is currently running and responding. */
+	running: boolean,
+	/**  "stopped" | "loading" | "ready" */
+	state: string,
+	/**  Display name of the loaded model (llama.cpp alias). */
+	model: string | null,
+	/**  Whether the multimodal projector (mmproj) was loaded. */
+	mmprojLoaded: boolean,
+	/**  Compute backend of the running server: "cuda" | "vulkan" | "cpu". */
+	backend: string,
+	/**  Port the server is listening on. */
+	port: number | null,
 };
 
 export type LlmServerInfo = {
@@ -1099,6 +1181,20 @@ export type PostProcessProvider = {
 	allow_insecure_http?: boolean,
 	models_endpoint?: string | null,
 	supports_structured_output?: boolean,
+};
+
+/**  Overall status of the Python environment. */
+export type PythonEnvStatus = {
+	/**  `uv` version string, e.g. "uv 0.7.12", or `None` if not installed. */
+	uv_version: string | null,
+	/**  Python version inside the venv, e.g. "3.12.8", or `None`. */
+	python_version: string | null,
+	/**  Absolute path to the venv directory. */
+	venv_path: string,
+	/**  Whether the venv directory exists. */
+	venv_exists: boolean,
+	/**  Per-backend installation status. */
+	backends: BackendStatus[],
 };
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";

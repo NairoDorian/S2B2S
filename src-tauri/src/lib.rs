@@ -27,6 +27,7 @@ mod overlay;
 mod overlay_fx;
 mod paste_tx;
 pub mod portable;
+pub mod python_env;
 mod recording_auto_stop;
 mod recording_session;
 mod secure_input;
@@ -857,6 +858,7 @@ commands::models::rescan_local_models,
             commands::brain::download_llama_models,
             commands::brain::get_llama_models_status,
             commands::brain::is_llama_downloading,
+            commands::brain::get_brain_server_status,
             commands::llama_server::fetch_llama_releases,
             commands::llama_server::download_llama_server,
             commands::llama_server::get_downloaded_llama_servers,
@@ -882,12 +884,23 @@ commands::models::rescan_local_models,
             crate::overlay_fx::commands::overlay_fx_probe_capabilities,
             crate::overlay_fx::commands::overlay_fx_show_conversation,
             crate::overlay_fx::commands::overlay_fx_dismiss,
+            commands::python_env::get_python_env_status,
+            commands::python_env::check_backend_status,
+            commands::python_env::install_uv,
+            commands::python_env::create_python_venv,
+            commands::python_env::setup_backend,
+            commands::python_env::setup_all_backends,
+            commands::python_env::full_gpu_setup,
+            commands::python_env::open_venv_folder,
         ])
 
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
+            python_env::EnvProgressEvent,
+            python_env::PythonEnvStatus,
+            brain::llama_manager::LlamaServerStatus,
         ])
 }
 
