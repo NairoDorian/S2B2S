@@ -16,7 +16,8 @@
     "postProcessing": "Efterbearbetning",
     "history": "Historik",
     "debug": "Felsökning",
-    "about": "Om"
+    "about": "Om",
+    "multiStt": "Multi STT"
   },
   "onboarding": {
     "subtitle": "För att komma igång, välj en transkriptionsmodell",

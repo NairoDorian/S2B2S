@@ -195,11 +195,23 @@ const settingUpdaters: {
   multi_stt_merge_prompt: (value) =>
     commands.changeMultiSttMergePrompt(value as LLMPrompt | null),
   mic_idle_timeout_value: (value) =>
-    commands.changeMicIdleTimeoutSettings(value as number, useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds", useSettingsStore.getState().settings?.mic_idle_infinite ?? false),
+    commands.changeMicIdleTimeoutSettings(
+      value as number,
+      useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
+      useSettingsStore.getState().settings?.mic_idle_infinite ?? false,
+    ),
   mic_idle_timeout_unit: (value) =>
-    commands.changeMicIdleTimeoutSettings(useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30, value as MicIdleTimeoutUnit, useSettingsStore.getState().settings?.mic_idle_infinite ?? false),
+    commands.changeMicIdleTimeoutSettings(
+      useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30,
+      value as MicIdleTimeoutUnit,
+      useSettingsStore.getState().settings?.mic_idle_infinite ?? false,
+    ),
   mic_idle_infinite: (value) =>
-    commands.changeMicIdleTimeoutSettings(useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30, useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds", value as boolean),
+    commands.changeMicIdleTimeoutSettings(
+      useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30,
+      useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
+      value as boolean,
+    ),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

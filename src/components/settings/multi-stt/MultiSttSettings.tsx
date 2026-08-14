@@ -36,16 +36,23 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
-  const settingKey = slot === 2 ? "multi_stt_language_model_2" : "multi_stt_language_model_3";
+  const settingKey =
+    slot === 2 ? "multi_stt_language_model_2" : "multi_stt_language_model_3";
   const currentLang = (getSetting(settingKey) as string | null) ?? null;
 
   // Build lang options from the model's supported languages + auto
   // NOTE: useMemo must be called BEFORE any early return (React hooks rule).
   const langOptions = useMemo(() => {
     if (!modelInfo || !modelId) return [];
-    if (!modelInfo.supports_language_selection || modelInfo.supported_languages.length === 0) return [];
+    if (
+      !modelInfo.supports_language_selection ||
+      modelInfo.supported_languages.length === 0
+    )
+      return [];
     const entries = SELECTABLE_LANGUAGES.filter(
-      (lang) => lang.value === "auto" || supportsLanguageCode(modelInfo.supported_languages, lang.value),
+      (lang) =>
+        lang.value === "auto" ||
+        supportsLanguageCode(modelInfo.supported_languages, lang.value),
     );
     return entries.map((lang) => ({ value: lang.value, label: lang.label }));
   }, [modelId, modelInfo]);
@@ -103,11 +110,15 @@ export const MultiSttSettings: React.FC = () => {
   const primaryModelId = currentModel;
 
   const modelOptionsForSlot2 = downloadedModels
-    .filter((m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel3)
+    .filter(
+      (m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel3,
+    )
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
 
   const modelOptionsForSlot3 = downloadedModels
-    .filter((m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel2)
+    .filter(
+      (m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel2,
+    )
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
 
   const model2Info = multiSttModel2
@@ -238,8 +249,9 @@ export const MultiSttSettings: React.FC = () => {
                   <div className="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
                       checked={
-                        (getSetting("multi_stt_translate_model_2") as boolean) ??
-                        true
+                        (getSetting(
+                          "multi_stt_translate_model_2",
+                        ) as boolean) ?? true
                       }
                       onChange={(enabled) =>
                         updateSetting("multi_stt_translate_model_2", enabled)
@@ -290,8 +302,9 @@ export const MultiSttSettings: React.FC = () => {
                   <div className="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
                       checked={
-                        (getSetting("multi_stt_translate_model_3") as boolean) ??
-                        true
+                        (getSetting(
+                          "multi_stt_translate_model_3",
+                        ) as boolean) ?? true
                       }
                       onChange={(enabled) =>
                         updateSetting("multi_stt_translate_model_3", enabled)
@@ -344,9 +357,7 @@ export const MultiSttSettings: React.FC = () => {
                   <Textarea
                     value={draftText}
                     onChange={(e) => setDraftText(e.target.value)}
-                    placeholder={t(
-                      "multiStt.mergePrompt.promptPlaceholder",
-                    )}
+                    placeholder={t("multiStt.mergePrompt.promptPlaceholder")}
                   />
                   <p className="text-xs text-mid-gray/70">
                     <Trans
@@ -366,10 +377,7 @@ export const MultiSttSettings: React.FC = () => {
                     onClick={handleSaveMergePrompt}
                     variant="primary"
                     size="md"
-                    disabled={
-                      !draftName.trim() ||
-                      !draftText.trim()
-                    }
+                    disabled={!draftName.trim() || !draftText.trim()}
                   >
                     {t("multiStt.mergePrompt.savePrompt")}
                   </Button>

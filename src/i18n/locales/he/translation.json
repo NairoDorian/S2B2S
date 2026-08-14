@@ -16,7 +16,8 @@
     "postProcessing": "עיבוד משלים",
     "history": "היסטוריה",
     "debug": "ניפוי שגיאות",
-    "about": "אודות"
+    "about": "אודות",
+    "multiStt": "Multi STT"
   },
   "onboarding": {
     "subtitle": "כדי להתחיל, בחר מודל תמלול",

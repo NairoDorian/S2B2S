@@ -138,8 +138,8 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 [patch.crates-io]
 tao = { git = "https://github.com/cjpais/tao" }
 tao-macros = { git = "https://github.com/cjpais/tao" }
-transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
-transcribe-cpp-sys = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
+transcribe-cpp = { path = "crates/transcribe.cpp/bindings/rust/transcribe-cpp" }
+transcribe-cpp-sys = { path = "crates/transcribe.cpp" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
