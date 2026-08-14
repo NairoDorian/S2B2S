@@ -88,7 +88,7 @@ pub async fn setup_backend(app: AppHandle, backend_id: String, gpu: bool) -> Res
     let uv = python_env::find_uv()
         .ok_or_else(|| "uv is not installed. Install it first.".to_string())?;
 
-    if !python_env::venv_dir().exists() {
+    if !python_env::venv_is_valid() {
         python_env::create_venv(&app, &uv)?;
     }
 
@@ -107,7 +107,7 @@ pub async fn setup_all_backends(app: AppHandle, gpu: bool) -> Result<(), String>
     let uv = python_env::find_uv()
         .ok_or_else(|| "uv is not installed. Install it first.".to_string())?;
 
-    if !python_env::venv_dir().exists() {
+    if !python_env::venv_is_valid() {
         python_env::create_venv(&app, &uv)?;
     }
 

@@ -168,6 +168,7 @@
       "balanced": "Balanced (~560ms)",
       "accurate": "Accurate (Full)",
       "appliesNextRecording": "Applies from the next recording.",
+      "downloadToApply": "The model needs to be downloaded — downloading {{model}} now so the new latency preset can take effect.",
       "cpuWarning": "This mode can lag on CPU.",
       "presets": {
         "fastest": "Fastest (~80–160ms)",
@@ -245,7 +246,11 @@
         "label": "Сканиране отново",
         "tooltip": "Сканиране отново за модели, добавени в папката с модели или кеша на Hugging Face извън Handy"
       },
-      "noModelsMatch": "Няма модели, отговарящи на този филтър."
+      "noModelsMatch": "Няма модели, отговарящи на този филтър.",
+      "quants": "Quantizations",
+      "quantDownload": "Download {{quant}} ({{size}})",
+      "quantSelect": "Use {{quant}}",
+      "latencyConfigurable": "Streaming latency configurable: Fastest · Fast · Balanced · Accurate (Model settings)"
     },
     "sound": {
       "title": "Звук",

@@ -264,3 +264,18 @@ pub async fn get_brain_server_status(
 ) -> Result<crate::brain::llama_manager::LlamaServerStatus, String> {
     Ok(llama_manager.status().await)
 }
+
+/// Pre-warm the local llama.cpp server so a feature that needs the Brain is
+/// instantly ready. `mmproj` selects whether the multimodal projector is
+/// loaded (Gemma 4 audio/image input, multi-STT Gemma 4 STT / audio merge).
+/// Safe to call from any settings toggle; it reuses a running server and only
+/// upgrades it when mmproj is required.
+#[tauri::command]
+#[specta::specta]
+pub async fn warm_brain_server(app: AppHandle, mmproj: bool) -> Result<(), String> {
+    if let Some(llama_manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
+        llama_manager.ensure_server_running_with(mmproj).await
+    } else {
+        Err("LlamaManager not initialized".to_string())
+    }
+}

@@ -5,6 +5,7 @@ import { useModelStore } from "@/stores/modelStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import type { ModelInfo, NativeStreamingLatencyPreset } from "@/bindings";
 import { commands } from "@/bindings";
+import { toast } from "sonner";
 
 const PRESETS: NativeStreamingLatencyPreset[] = [
   "fastest",
@@ -29,7 +30,8 @@ export const NativeStreamingLatencySelector: React.FC<
   descriptionMode = "tooltip",
 }) => {
   const { t } = useTranslation();
-  const { currentModel, models } = useModelStore();
+  const { currentModel, models, downloadModel, isModelDownloading } =
+    useModelStore();
   const { settings, refreshSettings } = useSettingsStore();
 
   const activeModelId = propModelId || currentModel;
@@ -93,8 +95,34 @@ export const NativeStreamingLatencySelector: React.FC<
         targetPreset,
       );
       await refreshSettings();
+
+      // Make sure the right model is actually available: if the selected
+      // streaming model (e.g. Nemotron) isn't downloaded yet, download it now
+      // so the new latency preset can take effect. It auto-selects on completion.
+      if (
+        activeModelInfo &&
+        !activeModelInfo.is_downloaded &&
+        !activeModelInfo.is_downloading &&
+        !isModelDownloading(activeModelId)
+      ) {
+        toast.info(
+          t(
+            "modelSelector.nativeStreamingLatency.downloadToApply",
+            "The model needs to be downloaded — downloading {{model}} now so the new latency preset can take effect.",
+            { model: activeModelInfo.name },
+          ),
+        );
+        await downloadModel(activeModelId);
+      }
     },
-    [activeModelId, refreshSettings],
+    [
+      activeModelId,
+      activeModelInfo,
+      refreshSettings,
+      downloadModel,
+      isModelDownloading,
+      t,
+    ],
   );
 
   if (!activeModelId || !activeModelInfo || !supportsLatency) {

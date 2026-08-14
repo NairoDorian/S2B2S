@@ -4,9 +4,103 @@ use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
 use log::error;
+use serde::Serialize;
+use specta::Type;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
+
+/// One quantization of a catalog model, ready for a one-click download.
+#[derive(Serialize, Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct QuantVariant {
+    /// e.g. "Q4_K_M", "Q8_0", "F16"
+    pub quant: String,
+    pub filename: String,
+    /// Registry-style id ("{repo_id}/{filename}") — pass to download.
+    pub model_id: String,
+    /// Approximate download size in MB.
+    #[specta(type = u32)]
+    pub size_mb: u64,
+    /// Whether this is the quant the catalog surfaces by default.
+    pub is_default: bool,
+}
+
+/// Every quantization the catalog offers for a model family (from the
+/// handy-computer Hugging Face repos compiled into the binary), so the
+/// download menu can list them all — sizes included — instead of only the
+/// default quant.
+#[tauri::command]
+#[specta::specta]
+pub fn get_model_quant_variants(model_id: String) -> Result<Vec<QuantVariant>, String> {
+    let catalog = &crate::catalog::CATALOG;
+    let descriptor = catalog
+        .iter()
+        .find(|d| d.id == model_id)
+        .or_else(|| {
+            let (repo, _) = model_id.rsplit_once('/')?;
+            catalog.iter().find(|d| {
+                matches!(
+                    &d.source,
+                    crate::managers::model::ModelSource::HuggingFace {
+                        repo_id: r,
+                        ..
+                    } if r == repo
+                )
+            })
+        })
+        .ok_or_else(|| format!("Not a catalog model: {model_id}"))?;
+
+    let repo_id = match &descriptor.source {
+        crate::managers::model::ModelSource::HuggingFace { repo_id, .. } => repo_id.clone(),
+        _ => return Err(format!("Model '{model_id}' has no HF repo")),
+    };
+    let default_file = crate::managers::model::default_quant_file(
+        &descriptor.files,
+        descriptor.default_quant.as_deref(),
+    );
+
+    Ok(descriptor
+        .files
+        .iter()
+        .map(|f| QuantVariant {
+            quant: f.quant.clone(),
+            filename: f.filename.clone(),
+            model_id: format!("{}/{}", repo_id, f.filename),
+            size_mb: f.size_bytes / (1024 * 1024),
+            is_default: default_file
+                .map(|d| d.filename == f.filename)
+                .unwrap_or(false),
+        })
+        .collect())
+}
+
+/// Download one specific quantization of a catalog model (e.g. the Q4_K_M
+/// variant of Nemotron). The variant is registered and downloaded through the
+/// same pipeline as the default quant — HF first, mirror fallback, verified
+/// against the catalog sha256, progress events included.
+#[tauri::command]
+#[specta::specta]
+pub async fn download_model_quant(
+    app_handle: AppHandle,
+    model_manager: State<'_, Arc<ModelManager>>,
+    model_id: String,
+) -> Result<(), String> {
+    let result = model_manager
+        .download_catalog_quant(&model_id)
+        .await
+        .map_err(|e| e.to_string());
+
+    if let Err(ref error) = result {
+        error!("Model quant download failed for {}: {}", model_id, error);
+        let _ = app_handle.emit(
+            "model-download-failed",
+            serde_json::json!({ "model_id": &model_id, "error": error }),
+        );
+    }
+
+    result
+}
 
 #[tauri::command]
 #[specta::specta]

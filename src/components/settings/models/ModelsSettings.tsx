@@ -19,6 +19,7 @@ import {
 } from "@/lib/constants/languages.ts";
 import type { ModelInfo } from "@/bindings";
 import { GpuVramMonitor } from "./GpuVramMonitor";
+import { ModelQuantPicker } from "./ModelQuantPicker";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -30,6 +31,10 @@ const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
 // advertise the download.
 const isLegacyModel = (model: ModelInfo): boolean =>
   typeof model.source === "object" && "Url" in model.source;
+
+// Catalog (handy-computer Hugging Face) models offer per-quant downloads.
+const isCatalogHfModel = (model: ModelInfo): boolean =>
+  typeof model.source === "object" && "HuggingFace" in model.source;
 
 export const ModelsSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -408,18 +413,20 @@ export const ModelsSettings: React.FC = () => {
             </div>
           </div>
           {downloadedModels.map((model: ModelInfo) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              status={getModelStatus(model.id)}
-              onSelect={handleModelSelect}
-              onDownload={handleModelDownload}
-              onDelete={handleModelDelete}
-              onCancel={handleModelCancel}
-              downloadProgress={getDownloadProgress(model.id)}
-              downloadSpeed={getDownloadSpeed(model.id)}
-              showRecommended={false}
-            />
+            <React.Fragment key={model.id}>
+              <ModelCard
+                model={model}
+                status={getModelStatus(model.id)}
+                onSelect={handleModelSelect}
+                onDownload={handleModelDownload}
+                onDelete={handleModelDelete}
+                onCancel={handleModelCancel}
+                downloadProgress={getDownloadProgress(model.id)}
+                downloadSpeed={getDownloadSpeed(model.id)}
+                showRecommended={false}
+              />
+              {isCatalogHfModel(model) && <ModelQuantPicker model={model} />}
+            </React.Fragment>
           ))}
         </div>
 
@@ -430,18 +437,20 @@ export const ModelsSettings: React.FC = () => {
               {t("settings.models.availableModels")}
             </h2>
             {availableModels.map((model: ModelInfo) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                status={getModelStatus(model.id)}
-                onSelect={handleModelSelect}
-                onDownload={handleModelDownload}
-                onDelete={handleModelDelete}
-                onCancel={handleModelCancel}
-                downloadProgress={getDownloadProgress(model.id)}
-                downloadSpeed={getDownloadSpeed(model.id)}
-                showRecommended={true}
-              />
+              <React.Fragment key={model.id}>
+                <ModelCard
+                  model={model}
+                  status={getModelStatus(model.id)}
+                  onSelect={handleModelSelect}
+                  onDownload={handleModelDownload}
+                  onDelete={handleModelDelete}
+                  onCancel={handleModelCancel}
+                  downloadProgress={getDownloadProgress(model.id)}
+                  downloadSpeed={getDownloadSpeed(model.id)}
+                  showRecommended={true}
+                />
+                {isCatalogHfModel(model) && <ModelQuantPicker model={model} />}
+              </React.Fragment>
             ))}
           </div>
         )}

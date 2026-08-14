@@ -168,6 +168,7 @@
       "balanced": "Balanced (~560ms)",
       "accurate": "Accurate (Full)",
       "appliesNextRecording": "Applies from the next recording.",
+      "downloadToApply": "The model needs to be downloaded — downloading {{model}} now so the new latency preset can take effect.",
       "cpuWarning": "This mode can lag on CPU.",
       "presets": {
         "fastest": "Fastest (~80–160ms)",
@@ -245,7 +246,11 @@
         "label": "फेरि स्क्यान गर्नुहोस्",
         "tooltip": "Handy बाहिरबाट मोडेल फोल्डर वा Hugging Face क्यासमा थपिएका मोडेलहरू फेरि स्क्यान गर्नुहोस्"
       },
-      "noModelsMatch": "यो फिल्टरसँग कुनै मोडेल मिल्दैन।"
+      "noModelsMatch": "यो फिल्टरसँग कुनै मोडेल मिल्दैन।",
+      "quants": "Quantizations",
+      "quantDownload": "Download {{quant}} ({{size}})",
+      "quantSelect": "Use {{quant}}",
+      "latencyConfigurable": "Streaming latency configurable: Fastest · Fast · Balanced · Accurate (Model settings)"
     },
     "sound": {
       "title": "साउन्ड",

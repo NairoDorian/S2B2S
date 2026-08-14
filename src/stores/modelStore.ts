@@ -48,6 +48,7 @@ interface ModelsStore {
   rescanLocalModels: () => Promise<void>;
   selectModel: (modelId: string) => Promise<boolean>;
   downloadModel: (modelId: string) => Promise<boolean>;
+  downloadModelQuant: (modelId: string) => Promise<boolean>;
   cancelDownload: (modelId: string) => Promise<boolean>;
   deleteModel: (modelId: string) => Promise<boolean>;
   getModelInfo: (modelId: string) => ModelInfo | undefined;
@@ -184,6 +185,46 @@ export const useModelStore = create<ModelsStore>()(
           }),
         );
         const result = await commands.downloadModel(modelId);
+        if (result.status !== "ok") {
+          cancelModelDownloadActivationIntent(modelId);
+          set(
+            produce((state) => {
+              delete state.downloadingModels[modelId];
+              delete state.downloadProgress[modelId];
+              delete state.downloadStats[modelId];
+            }),
+          );
+        }
+        return result.status === "ok";
+      } catch {
+        cancelModelDownloadActivationIntent(modelId);
+        set(
+          produce((state) => {
+            delete state.downloadingModels[modelId];
+            delete state.downloadProgress[modelId];
+            delete state.downloadStats[modelId];
+          }),
+        );
+        return false;
+      }
+    },
+
+    downloadModelQuant: async (modelId: string) => {
+      try {
+        set({ error: null });
+        await beginModelDownloadActivationIntent(modelId);
+        set(
+          produce((state) => {
+            state.downloadingModels[modelId] = true;
+            state.downloadProgress[modelId] = {
+              model_id: modelId,
+              downloaded: 0,
+              total: 0,
+              percentage: 0,
+            };
+          }),
+        );
+        const result = await commands.downloadModelQuant(modelId);
         if (result.status !== "ok") {
           cancelModelDownloadActivationIntent(modelId);
           set(

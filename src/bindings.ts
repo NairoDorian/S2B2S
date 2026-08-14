@@ -173,6 +173,20 @@ export const commands = {
 	supports_language_detection: boolean,
 } | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
 	downloadModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model", { modelId })),
+	/**
+	 *  Every quantization the catalog offers for a model family (from the
+	 *  handy-computer Hugging Face repos compiled into the binary), so the
+	 *  download menu can list them all — sizes included — instead of only the
+	 *  default quant.
+	 */
+	getModelQuantVariants: (modelId: string) => typedError<QuantVariant[], string>(__TAURI_INVOKE("get_model_quant_variants", { modelId })),
+	/**
+	 *  Download one specific quantization of a catalog model (e.g. the Q4_K_M
+	 *  variant of Nemotron). The variant is registered and downloaded through the
+	 *  same pipeline as the default quant — HF first, mirror fallback, verified
+	 *  against the catalog sha256, progress events included.
+	 */
+	downloadModelQuant: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model_quant", { modelId })),
 	deleteModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("delete_model", { modelId })),
 	cancelDownload: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("cancel_download", { modelId })),
 	setActiveModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("set_active_model", { modelId })),
@@ -219,6 +233,15 @@ export const commands = {
 	setLongAudioModel: (model: string | null) => __TAURI_INVOKE<void>("set_long_audio_model", { model }),
 	setLongAudioThreshold: (threshold: number | null) => __TAURI_INVOKE<void>("set_long_audio_threshold", { threshold }),
 	unloadExtraModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("unload_extra_model", { modelId })),
+	/**
+	 *  Load the configured multi-STT extra models (slots 2/3) into RAM/VRAM so the
+	 *  first multi-STT turn doesn't pay the model-load cost. Returns the display
+	 *  names of the models that were (or already are) loaded. Missing/un-downloaded
+	 *  models are skipped with a warning.
+	 */
+	preloadMultiSttModels: () => typedError<string[], string>(__TAURI_INVOKE("preload_multi_stt_models")),
+	/**  Unload every extra (multi-STT) engine to free RAM/VRAM. */
+	unloadAllExtraModels: () => typedError<null, string>(__TAURI_INVOKE("unload_all_extra_models")),
 	getHistoryEntries: (cursor: number | null, limit: number | null) => typedError<PaginatedHistory, string>(__TAURI_INVOKE("get_history_entries", { cursor, limit })),
 	toggleHistoryEntrySaved: (id: number) => typedError<null, string>(__TAURI_INVOKE("toggle_history_entry_saved", { id })),
 	getAudioFilePath: (fileName: string) => typedError<string, string>(__TAURI_INVOKE("get_audio_file_path", { fileName })),
@@ -285,6 +308,14 @@ export const commands = {
 	 *  matter which feature (conversation, post-processing, multi-STT) started it.
 	 */
 	getBrainServerStatus: () => typedError<LlamaServerStatus, string>(__TAURI_INVOKE("get_brain_server_status")),
+	/**
+	 *  Pre-warm the local llama.cpp server so a feature that needs the Brain is
+	 *  instantly ready. `mmproj` selects whether the multimodal projector is
+	 *  loaded (Gemma 4 audio/image input, multi-STT Gemma 4 STT / audio merge).
+	 *  Safe to call from any settings toggle; it reuses a running server and only
+	 *  upgrades it when mmproj is required.
+	 */
+	warmBrainServer: (mmproj: boolean) => typedError<null, string>(__TAURI_INVOKE("warm_brain_server", { mmproj })),
 	fetchLlamaReleases: () => typedError<LlamaRelease[], string>(__TAURI_INVOKE("fetch_llama_releases")),
 	downloadLlamaServer: (backend: string, releaseTag: string, downloadUrl: string) => typedError<null, string>(__TAURI_INVOKE("download_llama_server", { backend, releaseTag, downloadUrl })),
 	getDownloadedLlamaServers: () => typedError<DownloadedServer[], string>(__TAURI_INVOKE("get_downloaded_llama_servers")),
@@ -1195,6 +1226,19 @@ export type PythonEnvStatus = {
 	venv_exists: boolean,
 	/**  Per-backend installation status. */
 	backends: BackendStatus[],
+};
+
+/**  One quantization of a catalog model, ready for a one-click download. */
+export type QuantVariant = {
+	/**  e.g. "Q4_K_M", "Q8_0", "F16" */
+	quant: string,
+	filename: string,
+	/**  Registry-style id ("{repo_id}/{filename}") — pass to download. */
+	modelId: string,
+	/**  Approximate download size in MB. */
+	sizeMb: number,
+	/**  Whether this is the quant the catalog surfaces by default. */
+	isDefault: boolean,
 };
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";

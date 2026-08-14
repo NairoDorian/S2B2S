@@ -270,6 +270,14 @@ pub fn venv_dir() -> PathBuf {
     crate::portable::get_venv_dir()
 }
 
+/// Whether the venv looks like a *working* venv (has the `pyvenv.cfg` marker).
+/// A leftover hollow directory (only Scripts/, no Lib/, no cfg — e.g. after an
+/// interrupted recreation) reports false so callers recreate it safely.
+pub fn venv_is_valid() -> bool {
+    let venv = venv_dir();
+    venv.join("pyvenv.cfg").exists()
+}
+
 /// Python executable inside the venv (cross-platform).
 pub fn venv_python() -> PathBuf {
     let venv = venv_dir();
@@ -306,6 +314,11 @@ pub fn python_version_in_venv() -> Option<String> {
 }
 
 /// Create (or recreate) the venv using `uv venv --python 3.12`.
+///
+/// Safety: an existing venv is never deleted in place. It is renamed aside
+/// (`venv.old-<timestamp>`), the fresh venv is created, and the backup is only
+/// removed once creation succeeded — a failed run restores the old venv so
+/// installed packages can never be lost.
 pub fn create_venv(app: &tauri::AppHandle, uv: &str) -> Result<(), String> {
     let venv = venv_dir();
     emit_progress(
@@ -315,18 +328,60 @@ pub fn create_venv(app: &tauri::AppHandle, uv: &str) -> Result<(), String> {
         "info",
     );
 
-    // Remove stale venv if it exists
-    if venv.exists() {
-        emit_progress(app, "venv", "Removing existing venv…", "info");
-        std::fs::remove_dir_all(&venv).map_err(|e| format!("Failed to remove old venv: {e}"))?;
-    }
+    // Move an existing venv aside instead of deleting it.
+    let backup: Option<std::path::PathBuf> = if venv.exists() {
+        let backup = venv.with_extension(format!(
+            "old-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        ));
+        emit_progress(
+            app,
+            "venv",
+            &format!("Backing up existing venv to {}…", backup.display()),
+            "info",
+        );
+        std::fs::rename(&venv, &backup)
+            .map_err(|e| format!("Failed to move old venv aside: {e}"))?;
+        Some(backup)
+    } else {
+        None
+    };
 
     let mut cmd = make_cmd(uv);
-    cmd.args(["venv", "--python", "3.12", venv.to_str().unwrap_or("venv")]);
+    cmd.args([
+        "venv",
+        "--python",
+        "3.12",
+        "--allow-existing",
+        venv.to_str().unwrap_or("venv"),
+    ]);
 
-    run_streaming(app, "venv", cmd)?;
-    emit_progress(app, "venv", "✅ venv created with Python 3.12", "info");
-    Ok(())
+    let result = run_streaming(app, "venv", cmd);
+
+    match result {
+        Ok(()) => {
+            if let Some(ref backup) = backup {
+                // Fresh venv is live — drop the backup.
+                let _ = std::fs::remove_dir_all(backup);
+                emit_progress(app, "venv", "Removed previous venv backup", "info");
+            }
+            emit_progress(app, "venv", "✅ venv created with Python 3.12", "info");
+            Ok(())
+        }
+        Err(e) => {
+            // Creation failed — restore the previous venv so packages survive.
+            if let Some(ref backup) = backup {
+                if backup.exists() && !venv.exists() {
+                    let _ = std::fs::rename(backup, &venv);
+                    emit_progress(app, "venv", "Restored previous venv after failure", "warn");
+                }
+            }
+            Err(e)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +423,7 @@ fn backend_category(id: &str) -> BackendCategory {
 fn backend_import_check(id: &str) -> &'static str {
     match id {
         "piper" => "piper",
-        "kokoro" => "kokoro",
+        "kokoro" => "kokoro_tts",
         "kitten" => "kittentts",
         "pocket" => "pocket_tts",
         "qwen3" => "faster_qwen3_tts",
@@ -521,7 +576,7 @@ pub fn install_backend(
         }
 
         "kokoro" => {
-            uv_pip_install(app, "kokoro", uv, &["kokoro", "soundfile", "numpy"])?;
+            uv_pip_install(app, "kokoro", uv, &["kokoro-tts", "soundfile", "numpy"])?;
             if gpu {
                 install_cuda_runtime(app, uv)?;
             } else {
@@ -629,24 +684,151 @@ pub fn install_backend(
     Ok(())
 }
 
-/// Install all backends plus common deps (mirrors full `setup_venv_uv.ps1` run).
+/// One pip step for the "Install All" flow: mirrors `setup_venv_uv.ps1`'s
+/// Install-Pkg helper (force-reinstall, cached disabled, targeted at the venv).
+fn uv_pip_install_step(
+    app: &tauri::AppHandle,
+    uv: &str,
+    label: &str,
+    packages: &[&str],
+) -> Result<(), String> {
+    emit_progress(app, "all", &format!("→ {label}"), "info");
+    let python = venv_python();
+    let python_str = python.to_str().unwrap_or("python");
+
+    let mut cmd = make_cmd(uv);
+    cmd.arg("pip")
+        .arg("install")
+        .arg("--python")
+        .arg(python_str)
+        .arg("--no-cache")
+        .arg("--force-reinstall");
+    for pkg in packages {
+        cmd.arg(pkg);
+    }
+    run_streaming(app, "all", cmd)
+}
+
+/// Install all backends plus common deps in one go — the default "Install All"
+/// action. Mirrors `scripts/setup_venv_uv.ps1` exactly:
+///   1. STT/TTS backends in canonical order (kokoro → pocket → kitten → sherpa)
+///   2. torch (CUDA 13.2 nightly or CPU wheel)
+///   3. audio/ML base deps (soundfile, numpy, sox, librosa, transformers…)
+///   4. qwen-tts + faster-qwen3-tts (no deps)
+///   5. piper-tts LAST (it pulls CPU onnxruntime)
+///   6. CUDA runtime at the very end (GPU mode) or explicit CPU onnxruntime
 pub fn install_all_backends(app: &tauri::AppHandle, uv: &str, gpu: bool) -> Result<(), String> {
-    emit_progress(app, "all", "Installing common base packages…", "info");
-    uv_pip_install(
+    emit_progress(
         app,
         "all",
-        uv,
-        &["soundfile", "numpy>=2.4.0,<2.5.0", "click"],
-    )?;
+        &format!(
+            "Installing all backends in one go ({} mode) — CUDA at the end…",
+            if gpu { "GPU" } else { "CPU" }
+        ),
+        "info",
+    );
 
-    for id in all_backends() {
-        install_backend(app, id, uv, gpu)?;
+    // 1) Backends in the canonical order
+    uv_pip_install_step(app, uv, "kokoro-tts", &["kokoro-tts"])?;
+    uv_pip_install_step(app, uv, "pocket-tts", &["pocket-tts"])?;
+    uv_pip_install_step(
+        app,
+        uv,
+        "kittentts (wheel)",
+        &["https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl"],
+    )?;
+    uv_pip_install_step(app, uv, "sherpa-onnx", &["sherpa-onnx"])?;
+
+    // 2) torch — CUDA nightly or CPU wheel (one step, before piper)
+    if gpu {
+        uv_pip_install_step(
+            app,
+            uv,
+            "torch (CUDA 13.2 Nightly)",
+            &[
+                "--pre",
+                "torch",
+                "torchvision",
+                "torchaudio",
+                "--index-url",
+                "https://download.pytorch.org/whl/nightly/cu132",
+            ],
+        )?;
+    } else {
+        uv_pip_install_step(
+            app,
+            uv,
+            "torch (CPU)",
+            &[
+                "torch",
+                "torchvision",
+                "torchaudio",
+                "--index-url",
+                "https://download.pytorch.org/whl/cpu",
+            ],
+        )?;
     }
 
-    // Final safety purge of CPU onnxruntime if GPU mode
+    // 3) Audio & ML base deps
+    uv_pip_install_step(
+        app,
+        uv,
+        "soundfile, numpy 2.4.x",
+        &["soundfile", "numpy>=2.4.0,<2.5.0"],
+    )?;
+    uv_pip_install_step(app, uv, "sox, soxr", &["sox", "soxr"])?;
+    uv_pip_install_step(
+        app,
+        uv,
+        "librosa, numba",
+        &["librosa>=0.10.0", "numba>=0.59.0"],
+    )?;
+    uv_pip_install_step(
+        app,
+        uv,
+        "transformers, hub, accelerate",
+        &[
+            "transformers>=4.57,<5",
+            "huggingface-hub>=0.36.0,<1.0",
+            "accelerate",
+        ],
+    )?;
+
+    // 4) qwen-tts + faster-qwen3-tts (no deps)
+    uv_pip_install_step(app, uv, "qwen-tts (no deps)", &["--no-deps", "qwen-tts"])?;
+    uv_pip_install_step(
+        app,
+        uv,
+        "faster-qwen3-tts (no deps)",
+        &[
+            "--no-deps",
+            "git+https://github.com/andimarafioti/faster-qwen3-tts.git",
+        ],
+    )?;
+
+    // 5) piper LAST (pulls CPU onnxruntime), then build/runtime deps
+    uv_pip_install_step(app, uv, "piper-tts[http]", &["piper-tts[http]"])?;
+    uv_pip_install_step(
+        app,
+        uv,
+        "build/runtime deps",
+        &[
+            "coloredlogs",
+            "flatbuffers",
+            "packaging",
+            "protobuf",
+            "sympy",
+        ],
+    )?;
+    uv_pip_install_step(app, uv, "sentencepiece", &["sentencepiece"])?;
+
+    // 6) CUDA at the very end (GPU mode) — swap CPU onnxruntime for GPU + NVIDIA DLLs
     if gpu {
+        install_cuda_runtime(app, uv)?;
         emit_progress(app, "all", "Final purge of CPU onnxruntime…", "info");
         uv_pip_uninstall(uv, "onnxruntime");
+    } else {
+        uv_pip_install_step(app, uv, "onnxruntime (CPU)", &["onnxruntime"])?;
     }
 
     emit_progress(app, "all", "✅ All backends installed!", "info");

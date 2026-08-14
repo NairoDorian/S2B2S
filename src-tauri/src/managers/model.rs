@@ -2813,6 +2813,33 @@ impl ModelManager {
         }
     }
 
+    /// Download one specific quantization of a catalog model family.
+    /// `model_id` is the registry-style id `"{repo_id}/{filename}"`. The
+    /// variant's `ModelInfo` is synthesized from the bundled catalog (same
+    /// metadata as the default quant), registered so progress/cancel/status
+    /// plumbing sees it, and then downloaded through the normal pipeline
+    /// (HF cache first, mirror fallback, sha256-verified).
+    pub async fn download_catalog_quant(&self, model_id: &str) -> Result<()> {
+        let (repo_id, filename) = model_id
+            .rsplit_once('/')
+            .ok_or_else(|| anyhow::anyhow!("Invalid model id: {}", model_id))?;
+
+        let (descriptor, file) = crate::catalog::file_in_catalog(filename, Some(repo_id))
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' is not a catalog model", model_id))?;
+
+        let info = descriptor.to_model_info_for_file(file, &DiskStatus::default());
+
+        // Register so the download pipeline (progress events, cancel tokens,
+        // status updates) sees the variant; a failed download is pruned again
+        // by update_download_status (vanished alternates).
+        {
+            let mut models = self.available_models.lock().unwrap();
+            models.entry(model_id.to_string()).or_insert(info.clone());
+        }
+
+        self.download_model(model_id).await
+    }
+
     pub async fn download_model(&self, model_id: &str) -> Result<()> {
         let model_info = {
             let models = self.available_models.lock().unwrap();
@@ -2821,7 +2848,6 @@ impl ModelManager {
 
         let model_info =
             model_info.ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
-
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir

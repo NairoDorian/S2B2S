@@ -776,6 +776,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::models::get_available_models,
             commands::models::get_model_info,
             commands::models::download_model,
+            commands::models::get_model_quant_variants,
+            commands::models::download_model_quant,
             commands::models::delete_model,
             commands::models::cancel_download,
             commands::models::set_active_model,
@@ -818,6 +820,8 @@ commands::models::rescan_local_models,
             commands::transcription::set_long_audio_model,
             commands::transcription::set_long_audio_threshold,
             commands::transcription::unload_extra_model,
+            commands::transcription::preload_multi_stt_models,
+            commands::transcription::unload_all_extra_models,
             commands::history::get_history_entries,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
@@ -859,6 +863,7 @@ commands::models::rescan_local_models,
             commands::brain::get_llama_models_status,
             commands::brain::is_llama_downloading,
             commands::brain::get_brain_server_status,
+            commands::brain::warm_brain_server,
             commands::llama_server::fetch_llama_releases,
             commands::llama_server::download_llama_server,
             commands::llama_server::get_downloaded_llama_servers,
@@ -1306,7 +1311,7 @@ pub fn run(cli_args: CliArgs) {
 
             // 3. STT: Pre-load the transcription model
             {
-                let stt_handle = startup_app_handle;
+                let stt_handle = startup_app_handle.clone();
                 std::thread::spawn(move || {
                     log::info!("[Startup] Auto-loading STT model...");
                     if let Some(transcription_manager) = stt_handle
@@ -1316,6 +1321,47 @@ pub fn run(cli_args: CliArgs) {
                         transcription_manager.initiate_model_load();
                     }
                 });
+            }
+
+            // 4. Multi-STT: pre-load the 2nd/3rd extra models into RAM/VRAM
+            // when multi-STT is enabled so conversation turns start instantly.
+            {
+                let stt_handle = startup_app_handle.clone();
+                let settings_for_preload = crate::settings::get_settings(&stt_handle);
+                if crate::stt::multi_stt::is_multi_stt_active(&settings_for_preload) {
+                    std::thread::spawn(move || {
+                        log::info!("[Startup] Pre-loading multi-STT extra models...");
+                        if let Some(transcription_manager) = stt_handle
+                            .try_state::<Arc<crate::managers::transcription::TranscriptionManager>>(
+                            )
+                            .map(|s| s.inner().clone())
+                        {
+                            for model_id in [
+                                settings_for_preload.multi_stt_model_2.as_deref(),
+                                settings_for_preload.multi_stt_model_3.as_deref(),
+                            ]
+                            .into_iter()
+                            .flatten()
+                            {
+                                if transcription_manager.is_extra_model_loaded(model_id) {
+                                    continue;
+                                }
+                                match transcription_manager.load_extra_model(model_id) {
+                                    Ok(name) => log::info!(
+                                        "[Startup] Multi-STT extra model '{}' loaded ({})",
+                                        model_id,
+                                        name
+                                    ),
+                                    Err(e) => log::warn!(
+                                        "[Startup] Multi-STT extra model '{}' failed to load: {}",
+                                        model_id,
+                                        e
+                                    ),
+                                }
+                            }
+                        }
+                    });
+                }
             }
 
             // Hide tray icon if --no-tray was passed

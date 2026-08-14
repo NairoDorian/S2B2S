@@ -168,6 +168,7 @@
       "balanced": "Balanced (~560ms)",
       "accurate": "Accurate (Full)",
       "appliesNextRecording": "Applies from the next recording.",
+      "downloadToApply": "The model needs to be downloaded — downloading {{model}} now so the new latency preset can take effect.",
       "cpuWarning": "This mode can lag on CPU.",
       "presets": {
         "fastest": "Fastest (~80–160ms)",
@@ -245,7 +246,11 @@
         "label": "重新扫描",
         "tooltip": "重新扫描在 Handy 之外添加到模型文件夹或 Hugging Face 缓存中的模型"
       },
-      "noModelsMatch": "没有符合此筛选条件的模型。"
+      "noModelsMatch": "没有符合此筛选条件的模型。",
+      "quants": "Quantizations",
+      "quantDownload": "Download {{quant}} ({{size}})",
+      "quantSelect": "Use {{quant}}",
+      "latencyConfigurable": "Streaming latency configurable: Fastest · Fast · Balanced · Accurate (Model settings)"
     },
     "sound": {
       "title": "声音",

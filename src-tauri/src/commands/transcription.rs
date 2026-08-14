@@ -2,7 +2,8 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
 use serde::Serialize;
 use specta::Type;
-use tauri::{AppHandle, State};
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Serialize, Type)]
 pub struct ModelLoadStatus {
@@ -64,4 +65,54 @@ pub fn unload_extra_model(
     transcription_manager
         .unload_extra_model(&model_id)
         .map_err(|e| format!("Failed to unload extra model: {}", e))
+}
+
+/// Load the configured multi-STT extra models (slots 2/3) into RAM/VRAM so the
+/// first multi-STT turn doesn't pay the model-load cost. Returns the display
+/// names of the models that were (or already are) loaded. Missing/un-downloaded
+/// models are skipped with a warning.
+#[tauri::command]
+#[specta::specta]
+pub async fn preload_multi_stt_models(app: AppHandle) -> Result<Vec<String>, String> {
+    let settings = get_settings(&app);
+    let ids: Vec<String> = [
+        settings.multi_stt_model_2.clone(),
+        settings.multi_stt_model_3.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let tm = app.state::<Arc<TranscriptionManager>>().inner().clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut loaded = Vec::new();
+        for id in ids {
+            if tm.is_extra_model_loaded(&id) {
+                continue;
+            }
+            match tm.load_extra_model(&id) {
+                Ok(name) => {
+                    log::info!("[Multi-STT] Preloaded extra model '{}' into RAM/VRAM", id);
+                    loaded.push(name);
+                }
+                Err(e) => {
+                    log::warn!("[Multi-STT] Preload failed for '{}': {}", id, e);
+                }
+            }
+        }
+        loaded
+    })
+    .await
+    .map_err(|e| format!("Multi-STT preload task panicked: {e}"))
+}
+
+/// Unload every extra (multi-STT) engine to free RAM/VRAM.
+#[tauri::command]
+#[specta::specta]
+pub fn unload_all_extra_models(
+    transcription_manager: State<TranscriptionManager>,
+) -> Result<(), String> {
+    transcription_manager.unload_all_extra_models();
+    Ok(())
 }

@@ -6,6 +6,7 @@ import { Textarea } from "../ui/Textarea";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
 import { Mic, Volume2, VolumeX, Eraser, Brain } from "lucide-react";
+import { MultiSttConversationControls } from "./MultiSttConversationControls";
 
 interface Message {
   role: "user" | "assistant";
@@ -342,6 +343,11 @@ export const ConversationView: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Multi-STT controls for conversation mode: 2nd/3rd STT model slots,
+          Gemma 4 STT and audio-in-merge toggles. Always visible so users can
+          configure the conversation transcription pipeline. */}
+      <MultiSttConversationControls />
 
       <div className="flex-1 overflow-y-auto space-y-3 px-1">
         {messages.length === 0 && !streaming && !thinking && (
