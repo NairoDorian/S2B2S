@@ -36,10 +36,12 @@ impl OverlayState {
         }
     }
 
+    #[allow(dead_code)] // scaffolding: used once the cursor-follow loop is wired
     pub fn idle() -> Self {
         Self::new(OverlayPhase::Idle)
     }
 
+    #[allow(dead_code)] // scaffolding: used once the overlay lifecycle is wired
     pub fn hidden() -> Self {
         Self::new(OverlayPhase::Hidden)
     }
@@ -47,6 +49,7 @@ impl OverlayState {
 
 /// Payload for the cursor-follow position update (sent at ~30 Hz).
 #[derive(Clone, serde::Serialize, specta::Type)]
+#[allow(dead_code)] // scaffolding: emitted by the cursor-follow loop
 pub struct CursorPosition {
     pub x: f64,
     pub y: f64,
@@ -55,6 +58,7 @@ pub struct CursorPosition {
 
 /// Payload for the bubble append (streaming reply text).
 #[derive(Clone, serde::Serialize, specta::Type)]
+#[allow(dead_code)] // scaffolding: emitted by the brain bubble stream
 pub struct BubbleAppend {
     pub text: String,
     pub is_final: bool,

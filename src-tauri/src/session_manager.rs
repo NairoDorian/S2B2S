@@ -23,6 +23,7 @@ use tauri::{AppHandle, Manager};
 /// Represents the current state of the recording system.
 /// This is the single source of truth for whether we're recording or processing.
 #[derive(Debug)]
+#[allow(dead_code)] // snapshot fields are written on start, read by future async-ownership wiring
 pub enum SessionState {
     /// No recording or processing in progress
     Idle,
@@ -69,6 +70,7 @@ pub fn next_operation_id() -> u64 {
 /// Returns true while the recording/processing lifecycle still belongs to the
 /// expected operation. Cancel moves the state away from that operation, so
 /// async work can use this as a final ownership check before side effects.
+#[allow(dead_code)] // async ownership API: wiring pending
 pub fn is_operation_current(app: &AppHandle, expected_operation_id: u64) -> bool {
     let state = app.state::<ManagedSessionState>();
     let state_guard = lock_session_state(&state, "is_operation_current");
@@ -76,6 +78,7 @@ pub fn is_operation_current(app: &AppHandle, expected_operation_id: u64) -> bool
 }
 
 /// Returns the active operation for a binding while it is still recording.
+#[allow(dead_code)] // async ownership API: wiring pending
 pub fn recording_operation_id(app: &AppHandle, expected_binding_id: &str) -> Option<u64> {
     let state = app.state::<ManagedSessionState>();
     let state_guard = lock_session_state(&state, "recording_operation_id");
@@ -89,6 +92,7 @@ pub fn recording_operation_id(app: &AppHandle, expected_binding_id: &str) -> Opt
     }
 }
 
+#[allow(dead_code)] // async ownership API: wiring pending
 pub fn has_current_operation_for_binding(app: &AppHandle, expected_binding_id: &str) -> bool {
     let state = app.state::<ManagedSessionState>();
     let state_guard = lock_session_state(&state, "has_current_operation_for_binding");
@@ -325,6 +329,7 @@ pub fn exit_processing(app: &AppHandle) {
 
 /// Exits Processing only when it still belongs to the expected operation.
 /// Returns true when this caller owned and cleared the current Processing state.
+#[allow(dead_code)] // async ownership API: wiring pending
 pub fn exit_processing_if_matches(app: &AppHandle, expected_operation_id: u64) -> bool {
     let state = app.state::<ManagedSessionState>();
     let mut state_guard = lock_session_state(&state, "exit_processing_if_matches");

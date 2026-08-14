@@ -2,8 +2,11 @@
 //!
 //! Compute the screen position for the brain overlay bubble relative to the cursor,
 //! with quadrant-aware flipping so the bubble never goes off-screen.
+//!
+//! Not wired into the cursor-follow loop yet (Track A scaffolding).
+#![allow(dead_code)]
 
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{AppHandle, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use crate::input;
 

@@ -23,6 +23,7 @@ static DECAPITALIZE_STATE: LazyLock<Mutex<DecapitalizeState>> =
 
 #[derive(Clone, Copy)]
 enum ApplyMode {
+    #[allow(dead_code)] // realtime/chunk mode kept for the preview path wiring
     RealtimeChunk,
     StandardOutput,
 }
@@ -131,6 +132,7 @@ pub fn promote_pending_realtime_trigger_to_standard_output() -> bool {
 }
 
 /// Realtime/chunk mode: only uses the immediate timeout-based trigger.
+#[allow(dead_code)] // realtime preview path: wiring pending
 pub fn maybe_decapitalize_next_chunk_realtime(text: &str) -> String {
     maybe_transform_next_chunk_impl(text, ApplyMode::RealtimeChunk, true)
 }
@@ -138,6 +140,7 @@ pub fn maybe_decapitalize_next_chunk_realtime(text: &str) -> String {
 /// Preview/interim mode: shows the next chunk as decapitalized without consuming
 /// the one-shot trigger yet. The trigger is still consumed by the next finalized
 /// realtime chunk or standard output.
+#[allow(dead_code)] // realtime preview path: wiring pending
 pub fn preview_decapitalize_next_chunk_realtime(text: &str) -> String {
     maybe_transform_next_chunk_impl(text, ApplyMode::RealtimeChunk, false)
 }

@@ -245,7 +245,10 @@ impl AudioRecorder {
             let stop_flag_for_stream = stop_flag.clone();
             let init_result = (|| -> Result<(cpal::Stream, u32), String> {
                 let config_started = Instant::now();
-                let device_name = thread_device.name().unwrap_or_default();
+                let device_name = thread_device
+                    .description()
+                    .map(|desc| desc.name().to_string())
+                    .unwrap_or_default();
                 let cached_config = config_cache
                     .lock()
                     .unwrap()

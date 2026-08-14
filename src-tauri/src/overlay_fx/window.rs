@@ -84,6 +84,7 @@ pub fn hide_brain_overlay(app: &AppHandle) {
 }
 
 /// Check whether the brain overlay window exists.
+#[allow(dead_code)] // scaffolding: used by the future overlay lifecycle
 pub fn has_brain_overlay(app: &AppHandle) -> bool {
     app.get_webview_window(BRAIN_OVERLAY_LABEL).is_some()
 }

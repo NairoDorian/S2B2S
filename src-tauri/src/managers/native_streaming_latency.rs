@@ -1,3 +1,7 @@
+//! Native streaming latency presets — kept for wiring into streaming sessions
+//! (settings field `native_streaming_latency_presets` already exists).
+#![allow(dead_code)]
+
 use super::model::NativeStreamingLatencyKind;
 use crate::settings::NativeStreamingLatencyPreset;
 use log::warn;

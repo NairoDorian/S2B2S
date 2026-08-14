@@ -252,17 +252,14 @@ src-tauri/src/
 │   ├── unified_parakeet.rs # Parakeet Unified/EOU Python server lifecycle
 │   └── multi_stt.rs        # Parallel multi-model transcription
 │
-├── overlay_fx/             # GPU overlay system (cursor trail, brain overlay, wgpu)
+├── overlay_fx/             # GPU overlay system (brain overlay webview)
 │   ├── mod.rs              # Module declarations + capability probe
-│   ├── trail.rs            # Spring-friction chain physics + Catmull-Rom splines
 │   ├── window.rs           # Transparent brain overlay webview
 │   ├── cursor_follow.rs    # Cursor position polling (~30 Hz)
 │   ├── placement.rs        # Bubble anchor math with DPI scaling
 │   ├── events.rs           # OverlayPhase 8-state machine + typed events
 │   ├── capabilities.rs     # Per-OS GPU/cursor/layer-shell capability probe
-│   ├── commands.rs         # 3 Tauri IPC commands
-│   └── native/
-│       └── mod.rs          # ⚠️ Placeholder — wgpu surface integration pending
+│   └── commands.rs         # 3 Tauri IPC commands
 │
 └── shortcut/
     ├── mod.rs              # Shortcut manager
@@ -517,7 +514,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 | [BUILD.md](BUILD.md)                     | Platform-specific build instructions                                           |
 | [CONTRIBUTING.md](CONTRIBUTING.md)       | Contributor guidelines & translation contribution instructions                 |
 | [CHANGELOG.md](CHANGELOG.md)             | Version history                                                                |
-| [docs/vision.md](docs/vision.md)         | Long-term architecture vision (WGPU overlays, 3D avatar, screen understanding) |
+| [docs/vision.md](docs/vision.md)         | Long-term architecture vision (3D avatar, screen understanding) |
 | [docs/android.md](docs/android.md)       | Plan for on-device Android voice assistant port                                |
 | [docs/references.md](docs/references.md) | Curated list of STT, TTS, and voice-related GitHub links                       |
 | [reference_links.md](reference_links.md) | Main curated reference of 70+ open-source projects                             |

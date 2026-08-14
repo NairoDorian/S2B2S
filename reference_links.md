@@ -50,24 +50,6 @@ A curated, descriptive reference of open-source projects relevant to **[NairoDor
 - **State:** Last commit **2026-06-02** · Release: commits only (README shows v0.1.5)
 - **Links:** [GitHub](https://github.com/NairoDorian/copyspeak-tts)
 
-### NairoDorian/Cross_Platform_Rust_WebGPU_CursorFX — Cross-Platform CursorFX
-
-**GPU-accelerated cursor-effects overlay.** A transparent, fullscreen overlay that renders particle trails, click ripples, orbiting satellites, and glow around the cursor in real time.
-
-- **Why it's here:** Not a voice tool, but a proving ground for the same cross-platform desktop shell S2B2S uses ("1 program fits all"). WGSL shaders run particle/ripple/ribbon simulation on the GPU at display refresh (60–144 Hz+); a separate React panel controls settings live.
-- **Tech stack:** Tauri V2 + Bun + Vite 6 + React + TailwindCSS 4, **wgpu 24** (Metal/Vulkan/DX12). Windows 11 / macOS / Linux.
-- **State:** Last commit **2026-06-12** · Release: commits only
-- **Links:** [GitHub](https://github.com/NairoDorian/Cross_Platform_Rust_WebGPU_CursorFX)
-
-### NairoDorian/TD_Web_Trail — Web Trail V7
-
-**Physics-based cursor/touch trail that streams coordinates into TouchDesigner** in real time over a custom binary WebSocket protocol.
-
-- **Why it's here:** A low-latency, zero-dependency rendering + streaming experiment (spring-friction physics chain, dual-canvas bloom rendering, Bézier/Catmull-Rom curve modes, multi-touch ripples). Prior art for S2B2S's real-time overlay/visualization and binary-protocol plumbing (the kind of local socket transport a desktop↔mobile bridge would use).
-- **Tech stack:** Zero-dependency Bun.js WebSocket server + custom binary protocol; canvas rendering.
-- **State:** Last commit **2026-05-27** · Release: commits only
-- **Links:** [GitHub](https://github.com/NairoDorian/TD_Web_Trail)
-
 ---
 
 ## 2. STT / ASR — desktop apps (Handy lineage & friends)

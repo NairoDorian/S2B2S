@@ -98,7 +98,6 @@ export async function mockTauriIpc(page: Page) {
             selected_language: "en-US",
             overlay_position: "BottomRight",
             overlay_window: { enabled: true },
-            wgpu_trail: { enabled: false },
             debug_mode: false,
             log_level: "Info",
             custom_words: [],

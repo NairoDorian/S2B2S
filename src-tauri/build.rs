@@ -86,6 +86,12 @@ fn embed_test_manifest() {
         // already embeds the application manifest in the binary. This prevents
         // CVTRES duplicate resource error CVT1100.
         println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
+        // The bin's test harness receives /MANIFEST:NO (via -bins) alongside the
+        // generic /MANIFESTINPUT, so LINK emits LNK4075 ("ignoring
+        // '/MANIFESTINPUT' due to '/MANIFEST:NO'"). That is expected and harmless
+        // there: the bin (and its test harness) already get their manifest from
+        // tauri-build's resource.lib.
+        println!("cargo:rustc-link-arg=/IGNORE:4075");
     }
 }
 

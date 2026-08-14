@@ -10,7 +10,6 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{
     get_settings, AppSettings, OverlayStyle, PostProcessAction, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
-use crate::shortcut;
 use crate::stt::multi_stt;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{

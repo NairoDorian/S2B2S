@@ -4,7 +4,7 @@
 
 use crate::input;
 use crate::settings;
-use crate::settings::{OverlayMode, OverlayPosition, OverlayStyle, OverlayWindowConfig};
+use crate::settings::{OverlayMode, OverlayPosition, OverlayStyle};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
@@ -421,7 +421,6 @@ fn calculate_overlay_position(
     };
 
     let overlay_w = width;
-    let overlay_h = height;
 
     let x = monitor_x + (monitor_width - overlay_w) / 2.0;
     let y = match position {
@@ -691,7 +690,6 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
     // so the common overlay-disabled case never pays for a main-thread hop.
     let settings = settings::get_settings(app_handle);
-    let use_os_native = settings.overlay_window.mode == OverlayMode::OsNative;
     // Hide the overlay entirely when overlay_style is None (visibility owned by overlay_style).
     if settings.overlay_style == OverlayStyle::None {
         return;
@@ -763,9 +761,7 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
             };
             let pos_calc_elapsed = pos_started.elapsed() - set_pos_elapsed;
 
-            let show_started = std::time::Instant::now();
             let _ = overlay_window.show();
-            let show_elapsed = show_started.elapsed();
 
             // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
             #[cfg(target_os = "windows")]

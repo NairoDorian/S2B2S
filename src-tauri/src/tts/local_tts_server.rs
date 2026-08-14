@@ -87,7 +87,6 @@ pub struct ServerHandle {
 struct ActiveServer {
     child: Mutex<std::process::Child>,
     port: u16,
-    engine_name: String,
     client: reqwest::blocking::Client,
 }
 
@@ -103,7 +102,6 @@ enum ServerState {
     Starting {
         _generation: u64,
         config: StartingConfig,
-        stderr_tail: Arc<Mutex<Vec<String>>>,
     },
     Ready(Arc<ActiveServer>),
     /// A start attempt failed; the reason is surfaced to the caller so it returns
@@ -445,7 +443,6 @@ fn spawn_start_thread(
             *state = ServerState::Ready(Arc::new(ActiveServer {
                 child: Mutex::new(child),
                 port,
-                engine_name: engine.clone(),
                 client: get_synth_client().clone(),
             }));
             fail_guard.armed = false; // reached Ready — don't flip to Failed on drop
@@ -513,7 +510,6 @@ pub fn ensure_running(
             ServerState::Starting {
                 _generation: _,
                 config: starting_config,
-                stderr_tail: _,
             } => {
                 if starting_config.command == command
                     && starting_config.engine == engine
@@ -531,7 +527,6 @@ pub fn ensure_running(
                             engine: engine.to_string(),
                             script_args: script_args.clone(),
                         },
-                        stderr_tail: tail.clone(),
                     };
                     drop(state);
                     spawn_start_thread(
@@ -554,7 +549,6 @@ pub fn ensure_running(
                         engine: engine.to_string(),
                         script_args: script_args.clone(),
                     },
-                    stderr_tail: tail.clone(),
                 };
                 drop(state);
                 spawn_start_thread(

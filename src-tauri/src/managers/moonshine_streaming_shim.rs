@@ -1,3 +1,7 @@
+//! Moonshine streaming commit-policy shim — kept for wiring into streaming
+//! transcription once Moonshine streaming models are exposed to the pipeline.
+#![allow(dead_code)]
+
 use transcribe_cpp::{CommitPolicy, StreamOptions};
 
 const MOONSHINE_STREAMING_ARCHITECTURE: &str = "moonshine_streaming";

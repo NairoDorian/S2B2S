@@ -89,10 +89,6 @@ pub fn is_transcribe_binding(id: &str) -> bool {
         || id.starts_with(ACTION_BINDING_PREFIX)
 }
 
-pub fn is_action_binding(id: &str) -> bool {
-    id.starts_with(ACTION_BINDING_PREFIX)
-}
-
 impl TranscriptionCoordinator {
     pub fn new(app: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel();
@@ -293,10 +289,6 @@ fn emit_action_selected(app: &AppHandle, action: &PostProcessAction) {
             "icon": action.icon,
         }),
     );
-}
-
-fn emit_action_deselected(app: &AppHandle) {
-    let _ = app.emit("action-deselected", ());
 }
 
 fn start(app: &AppHandle, stage: &mut Stage, binding_id: &str, hotkey_string: &str) {

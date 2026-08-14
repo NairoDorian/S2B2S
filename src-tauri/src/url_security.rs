@@ -48,6 +48,7 @@ fn validate_network_base_url(
     }
 }
 
+#[allow(dead_code)] // covered by tests; used by endpoint validation once wired
 pub fn is_plain_http_url(input: &str) -> bool {
     parse_network_url(input, "URL")
         .map(|url| url.scheme() == "http")

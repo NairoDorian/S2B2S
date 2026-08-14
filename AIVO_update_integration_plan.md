@@ -1,6 +1,6 @@
 # AIVO Update Integration Plan for S2B2S
 
-This document outlines the detailed roadmap for integrating all major features, performance optimizations, guardrails, and UI enhancements introduced in **AIVORelay** (`MaxITService/AIVORelay` up to tag `v1.0.24`) into **S2B2S**, while preserving all of S2B2S's voice-native capabilities (9 TTS backends, Brain LLM, LlamaServer manager, 3D WGPU Brain overlay, continuous voice mode, and multi-language support).
+This document outlines the detailed roadmap for integrating all major features, performance optimizations, guardrails, and UI enhancements introduced in **AIVORelay** (`MaxITService/AIVORelay` up to tag `v1.0.24`) into **S2B2S**, while preserving all of S2B2S's voice-native capabilities (9 TTS backends, Brain LLM, LlamaServer manager, 3D Brain overlay, continuous voice mode, and multi-language support).
 
 ---
 

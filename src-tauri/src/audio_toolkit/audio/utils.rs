@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use hound::{WavReader, WavSpec, WavWriter};
 use log::debug;
 use serde::Serialize;

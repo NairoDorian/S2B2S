@@ -11,12 +11,12 @@ The overlay system is structured as a **two-track rendering architecture**:
 ```
 +---------------------------------------------------------------+
 |                       S2B2S Overlay                           |
-+------------------------------------+--------------------------+
-|  Track A: Tauri WebView Overlay    |  Track B: Native WGPU    |
-|  - HTML/JS/CSS rendering           |  - WGPU render pipeline  |
-|  - Rich UI, text rendering         |  - Physics-based trails  |
-|  - Translucent windows             |  - Ultra-low latency     |
-+------------------------------------+--------------------------+
++---------------------------------------------------------------+
+|  Track A: Tauri WebView Overlay                               |
+|  - HTML/JS/CSS rendering                                      |
+|  - Rich UI, text rendering                                    |
+|  - Translucent windows                                        |
++---------------------------------------------------------------+
 ```
 
 ### Track A: Tauri WebView Overlay (Current Default)
@@ -24,12 +24,6 @@ The overlay system is structured as a **two-track rendering architecture**:
 - **Implementation**: Transparent Webview windows (`always_on_top`, click-through using `set_ignore_cursor_events`).
 - **Use Case**: Renders text bubbles, markdown formatting, menus, and simple interactive UI controls.
 - **Platform Details**: Uses NSPanel styling on macOS, Win32 `HWND_TOPMOST` with `WS_EX_TRANSPARENT` on Windows, and GTK Layer Shell on Linux (Wayland/X11).
-
-### Track B: Native WGPU Overlay (Next Gen Track)
-
-- **Implementation**: Raw `wgpu` rendering directly onto a transparent OS window.
-- **Use Case**: Renders ultra-smooth particle effects, cursor trails, click ripples, and high-frequency animations at native monitor refresh rates with minimal CPU overhead.
-- **Vulkan/DX12 Fixes**: Incorporates fixes for GPU device selection (discrete over integrated) and guards against memory leaks on Windows (proactive memory limits and swapchain rebuilding).
 
 ---
 
@@ -91,7 +85,6 @@ Defines the interaction cycle of hands-free conversation with barge-in support.
 
 ### Phase A: Hardening & Infrastructure
 
-- [ ] Fix wgpu swapchain recreation on window resize (DPI scaling).
 - [ ] Implement robust click-through setting for Windows/macOS.
 - [ ] Package 3D Avatar assets cleanly in frontend build.
 

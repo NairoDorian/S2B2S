@@ -113,6 +113,7 @@ impl KokoroBackend {
             .collect()
     }
 
+    #[allow(dead_code)] // tested mapping; frontend voice selection uses it once wired
     pub fn voice_for_language(lang_code: &str) -> Option<&'static str> {
         for (code, _, prefixes) in VOICE_LANGUAGE_MAP {
             if *code == lang_code {

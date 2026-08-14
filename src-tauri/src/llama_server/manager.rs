@@ -375,13 +375,6 @@ impl LlamaServerManager {
         Ok(())
     }
 
-    /// Check if the configured server has GPU support
-    pub fn has_gpu_support(&self) -> bool {
-        let settings = crate::settings::get_settings(&self.app);
-        settings.llama_server.backend.starts_with("cuda")
-            || settings.llama_server.backend == "vulkan"
-    }
-
     /// Detect GPU type for UI
     pub fn detect_gpu(&self) -> String {
         detect_preferred_backend()

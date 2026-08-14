@@ -3,6 +3,9 @@
 //! Polls the global cursor position at ~30 Hz and repositions the overlay window. Handles
 //! quadrant flipping (so the bubble doesn't go off-screen), DPI scaling, and the freeze-on-speak
 //! rule (the bubble stays put while the avatar is speaking so the user can read).
+//!
+//! Not wired into the overlay lifecycle yet (Track A scaffolding).
+#![allow(dead_code)]
 
 use crate::overlay_fx::placement;
 use std::sync::atomic::{AtomicBool, Ordering};

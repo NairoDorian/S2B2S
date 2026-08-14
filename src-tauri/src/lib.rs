@@ -35,7 +35,6 @@ mod settings;
 mod shortcut;
 mod signal_handle;
 mod stt;
-mod temp_artifacts;
 mod text_replacement_decapitalize;
 mod transcription_coordinator;
 mod tray;

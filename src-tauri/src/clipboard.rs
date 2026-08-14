@@ -855,17 +855,6 @@ mod win_clipboard {
         entries: Vec<ClipboardEntry>,
     }
 
-    impl ClipboardBackup {
-        pub fn len(&self) -> usize {
-            self.entries.len()
-        }
-    }
-
-    pub struct RestoreStats {
-        pub restored_formats: usize,
-        pub failed_formats: usize,
-    }
-
     struct ClipboardEntry {
         format: u32,
         payload: ClipboardPayload,
@@ -1037,13 +1026,10 @@ mod win_clipboard {
     }
 
     /// Restore all backed-up clipboard formats
-    pub fn restore_all_formats(backup: ClipboardBackup) -> Result<RestoreStats, String> {
+    pub fn restore_all_formats(backup: ClipboardBackup) -> Result<(), String> {
         if backup.entries.is_empty() {
             debug!("No clipboard entries to restore");
-            return Ok(RestoreStats {
-                restored_formats: 0,
-                failed_formats: 0,
-            });
+            return Ok(());
         }
 
         let entries = backup.entries;
@@ -1062,27 +1048,19 @@ mod win_clipboard {
                 return Err("Failed to empty clipboard".into());
             }
 
-            let mut restored_formats = 0usize;
-            let mut failed_formats = 0usize;
-
             // Restore each format
             for entry in entries {
                 let format = entry.format;
                 if let Err(e) = write_entry(entry) {
-                    failed_formats += 1;
                     warn!("Failed to restore clipboard format {}: {}", format, e);
                 } else {
-                    restored_formats += 1;
                     debug!("Restored clipboard format {}", format);
                 }
             }
 
             let _ = CloseClipboard();
 
-            Ok(RestoreStats {
-                restored_formats,
-                failed_formats,
-            })
+            Ok(())
         }
     }
 

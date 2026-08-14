@@ -20,7 +20,7 @@
 
 use serde::Serialize;
 use specta::Type;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct SecureInputStatus {
@@ -127,6 +127,7 @@ mod imp {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
+    use tauri::Emitter;
 
     /// How often the monitor thread polls.
     const POLL_INTERVAL: Duration = Duration::from_secs(1);

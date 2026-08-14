@@ -36,11 +36,6 @@ Curated list of STT, TTS, and voice-related open-source projects referenced by t
 
 - <https://github.com/jamiepine/voicebox>
 
-## Utility / Other
-
-- <https://github.com/NairoDorian/Cross_Platform_Rust_WebGPU_CursorFX>
-- <https://github.com/NairoDorian/TD_Web_Trail>
-
 ---
 
 ## Android Section

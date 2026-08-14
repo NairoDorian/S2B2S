@@ -1266,7 +1266,7 @@ impl TranscriptionManager {
             );
         }
 
-        let mut model_takes_initial_prompt = false;
+        let model_takes_initial_prompt;
         let mut model_is_whisper = false;
 
         // Perform transcription with the appropriate engine.

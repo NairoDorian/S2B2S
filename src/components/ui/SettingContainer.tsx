@@ -13,7 +13,7 @@ interface SettingContainerProps {
 }
 
 const TooltipIcon: React.FC<{
-  tooltipRef: React.RefObject<HTMLDivElement | null>;
+  tooltipRef: React.RefObject<HTMLDivElement>;
   showTooltip: boolean;
   toggleTooltip: () => void;
   setShowTooltip: (v: boolean) => void;

@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const SCRIPT_NAME: &str = "unified_parakeet_server.py";
-const REQUEST_TIMEOUT_SECS: u64 = 120;
 
 pub struct UnifiedParakeetServer {
     process: Arc<Mutex<Option<Child>>>,
@@ -198,10 +197,6 @@ impl UnifiedParakeetServer {
         let text = json["text"].as_str().unwrap_or("").to_string();
         let eou = json["eou"].as_bool().unwrap_or(false);
         Ok((text, eou))
-    }
-
-    pub fn port(&self) -> u16 {
-        self.port
     }
 }
 

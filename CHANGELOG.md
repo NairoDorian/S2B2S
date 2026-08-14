@@ -178,7 +178,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased] — S2B2S v0.1.0 (Conversation Evolution)
 
-> **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), GPU overlay cursor trail physics, and 20-turn conversation memory.
+> **Status (June 14, 2026):** 8 TTS backends (5 local, 3 cloud) with RAM-persistent warm model lifecycle (WarmEngine trait is implemented by local backends, direct-managed in orchestrator), voice barge-in for natural conversation interruption, Pocket TTS voice cloning, sentence streaming with word-count fallback, project-local Python venv, Android companion roadmap, system RAM/VRAM footer indicators, pre-compiled llama.cpp CUDA/Vulkan/CPU server with GPU offloading and MTP speculative decoding (n=13, ~216 tok/s), multimodal brain pipeline (native audio + image input via Gemma 4), 10 LLM providers, 9 STT engine types, brain overlay with 3D avatar (8-phase state machine), and 20-turn conversation memory.
 
 ### Android Port Plan & Streaming Improvement Analysis (June 19, 2026)
 
@@ -222,8 +222,6 @@ Cross-checked S2B2S's hand-rolled Parakeet STT server against the proven `transc
 - **Continuous-voice barge-in race** — `is_playing()` was checked right after `ask()` returned, but TTS synthesis is async so it read false and the wait/barge-in block was skipped, making the assistant listen over its own speech. It now waits for the turn's terminal TTS event, which is race-free.
 - **Streaming RMS gate** — it skipped any chunk shorter than `CHUNK/4`, so the final (short) chunk of every utterance was dropped, truncating transcripts. Now only near-silent _middle_ chunks are skipped; the final chunk is always fed.
 - **EOU streaming decoder** — the server re-encoded the full buffer each chunk but continued the decoder state from the previous pass, corrupting tokens at chunk boundaries. It now decodes from frame 0 with a fresh predictor state, and the final result prefers whichever of the last partial / `stream_end` flush is longer.
-
-**UI.** Hid the **WgpuTrail** settings panel from the normal sidebar (gated behind debug mode) — it persisted config the backend can't yet render.
 
 ### Correctness & Concurrency Hardening (June 15, 2026)
 
@@ -298,7 +296,7 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **Unit Testing** — Created and verified backend test cases ensuring SAPI voice lists and text synthesis correctly return valid WAV file data starting with the `RIFF` header.
 - **Clarified `WarmEngine` Trait Status** — Corrected outdated claims that `WarmEngine` was dead code. Documented that it is fully implemented in `PiperBackend`, `KokoroBackend`, `KittenBackend`, and `PocketBackend`, but noted that the orchestrator layer currently calls lower-level lifecycle managers directly.
 - **Expanded STT Subsystem Documentation** — Added Canary, Cohere, SenseVoice, GigaAM, and Nemotron/UnifiedParakeet to the STT comparison tables and implementation descriptions (now documenting 9 STT engine types and 11 model variants).
-- **Added missing code mappings** — Documented `commands/system.rs` (cross-platform RAM retrieval command) and `overlay_fx/native/shader.wgsl` (WGPU trail shader).
+- **Added missing code mappings** — Documented `commands/system.rs` (cross-platform RAM retrieval command).
 
 ### Startup Optimization — Parallel Model Loading, No Timeouts
 
@@ -314,7 +312,7 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 
 ### Reference GitHub Links
 
-- **`reference_github_links.md`** — Curated list of 23 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, Cross_Platform_Rust_WebGPU_CursorFX, LocalAI, and TD_Web_Trail.
+- **`reference_github_links.md`** — Curated list of 23 STT, TTS, and voice-related open-source projects referenced by the S2B2S ecosystem. Includes Handy, Parler, AIVORelay, Parakeet, TranscriptionSuite, Whispering, speech-recognition (asrjs), transcribe-rs (cjpais), RealtimeSTT, onnx-asr, sherpa-onnx, speechbrain, copyspeak-tts, parrot, vox, pocket-tts-server, voirs, vibevoice-rs, TTS-Audio-Suite, voicebox, and LocalAI.
 
 ### Gemma 4 Reference Docs & Multimodal Brain Pipeline
 
@@ -343,11 +341,6 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **`S2B2S_repomix.txt`** / **`S2B2S_repomix_annotated.txt`** — Full and annotated Repomix codebase snapshots for AI context ingestion.
 - **`repomix-file-descriptions.md`** — Per-file descriptions of the entire S2B2S codebase (348+ documented files).
 
-### WGPU Native Overlay Shader
-
-- **`overlay_fx/native/mod.rs`** — New platform-native overlay module with WGPU render pipeline initialization, surface setup, and platform-agnostic shader compilation.
-- **`overlay_fx/native/shader.wgsl`** — WGSL compute/render shader for GPU-accelerated cursor trail effects (spring-friction physics, bloom glow, click ripple).
-
 ### Brain Overlay 3D Avatar
 
 - **`brain-overlay/avatar/Avatar3D.tsx`** — 3D avatar component using Three.js with phase-reactive animations (Idle/Listening/Thinking/Speaking), orbital particle effects, and GPU-accelerated rendering.
@@ -362,14 +355,12 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **sponsor-images/** — Removed deprecated sponsor image assets.
 - **models/TTS/** — Added Kitten TTS nano 0.8 pre-downloaded model files for offline first-run.
 
-### Overlay Architecture — Tauri/OS-Native Toggle + WGPU Trail Foundation
+### Overlay Architecture — Tauri/OS-Native Toggle
 
 - **`OverlayMode` toggle** — Settings → Overlay Window now lets users switch between `Tauri` mode (CopySpeak HUD style — `always_on_top` + `transparent` only) and `OsNative` mode (Handy style — NSPanel on macOS, Win32 `HWND_TOPMOST` on Windows, GTK layer-shell on Linux). Both modes share the same window label and event bus.
 - **`OverlayWindowConfig`** — New settings struct controlling mode, position, width/height, opacity, corner radius, reply bubble toggle, and fade-out duration. Persisted via `tauri-plugin-store` with serde defaults.
-- **`WgpuTrailConfig`** — New settings struct for the native GPU cursor trail: segments, spring stiffness (0.39), friction (0.5), width taper exponent (1.5), glow opacity, lazy-brush radius/friction, click ripple toggle. All with TD_Web_Trail–derived defaults.
 - **`overlay.rs` refactored** — `create_recording_overlay` (both macOS and non-macOS variants) now respects `OverlayMode`. In Tauri mode: macOS skips NSPanel and uses plain `WebviewWindowBuilder`; Linux skips GTK layer-shell init; Windows skips `force_overlay_topmost()`. `calculate_overlay_position` uses configurable dimensions from `OverlayWindowConfig`. `hide_recording_overlay` uses configurable `fade_ms`.
 - **`overlay_fx/` Rust module** — New crate-internal module at `src-tauri/src/overlay_fx/` containing:
-  - `trail.rs` — Spring-friction chain physics engine + Catmull-Rom spline interpolation, ported from `TD_Web_Trail`. Lazy-brush dead-zone filter with non-linear damping. Trail system with idle-sleep after 2s of no movement. Includes unit tests.
   - `window.rs` — `brain_overlay` window creation (transparent, click-through `set_ignore_cursor_events`, always-on-top). Show/hide helpers. Windows re-asserts topmost via `SetWindowPos`.
   - `cursor_follow.rs` — ~30 Hz cursor polling loop using `enigo` (already a dependency). Quadrant-aware bubble positioning.
   - `placement.rs` — `compute_bubble_anchor()` with DPI scaling and monitor-aware quadrant flipping.
@@ -381,10 +372,9 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
   - `main.tsx` — React 19 root with i18n support.
   - `BrainOverlayApp.tsx` — State-driven UI: avatar placeholder (72px circle with phase-dependent emoji) + streaming reply bubble (glassmorphism with live cursor blink). Listens to `overlay:state`, `overlay:append`, `overlay:clear` events.
 - **`vite.config.ts`** — Added `brain_overlay` entry to multi-page Rollup input.
-- **Settings frontend tabs** — Two new sidebar tabs registered in `SECTIONS_CONFIG`:
+- **Settings frontend tabs** — Overlay Window sidebar tab registered in `SECTIONS_CONFIG`:
   - **Overlay Window** (`Monitor` icon) — OverlayMode selector (Tauri/OS-Native dropdown) + Reply Bubble toggle.
-  - **WGPU Trail** (`Zap` icon) — Enable toggle + Click Ripple toggle.
-- **i18n keys** — 20+ new keys in `en/translation.json` under `settings.advanced.overlayWindow.*`, `settings.advanced.wgpuTrail.*`, and `sidebar.overlayWindow`/`sidebar.wgpuTrail`.
+- **i18n keys** — 20+ new keys in `en/translation.json` under `settings.advanced.overlayWindow.*` and `sidebar.overlayWindow`.
 - **Typed bindings regenerated** — All new structs and commands exported to `src/bindings.ts` via `cargo test export_bindings`.
 
 ### Futuristic Analysis — Transparent Overlay Vision Documents
@@ -392,14 +382,13 @@ A focused bug-fix sweep across the voice pipeline. Verified with `cargo check` (
 - **`futuristic_analysis/`** — 9 Markdown documents (00–08) analyzing the path from today's S2B2S to a full GPU transparent overlay with 3D avatar:
   - `00_README_START_HERE.md` — Master index, architecture overview, core principles.
   - `01_S2B2S_REVIEW.md` — Honest audit of current code: what works, what's missing.
-  - `02_REFERENCE_PROJECTS.md` — Deep read of `TD_Web_Trail` and `Cross_Platform_Rust_WebGPU_CursorFX` (both cloned at `../` for live reference). Exact techniques to lift, including the DX12 OOM / Vulkan+N.VAPI fix.
-  - `03_GPU_OVERLAY_ARCHITECTURE.md` — Two-track rendering (webview + native wgpu), per-OS technique matrix, DPI/click-through/perf budgets, failure ladder.
+  - `02_REFERENCE_PROJECTS.md` — Deep read of reference projects for the overlay architecture.
+  - `03_GPU_OVERLAY_ARCHITECTURE.md` — Per-OS technique matrix, DPI/click-through/perf budgets, failure ladder.
   - `04_CONVERSATION_MODE_2.md` — UX spec: state machine, event contract, reply bubble, quick actions, coexistence with recording pill.
   - `05_VISION_AND_SCREEN_UNDERSTANDING.md` — Screen capture (full + region), multimodal `ChatMessage` upgrade, cross-platform capture matrix, privacy invariants.
   - `06_AVATAR_SPEC.md` — 3D cybernetic avatar spec: 4 senses → pipeline signals map, Catmull-Rom visual language, skins system, reduced-motion accessibility.
   - `07_IMPLEMENTATION_ROADMAP.md` — 5-phase plan with file-level tasks, risk register, test matrix, performance targets.
   - `08_TRANSPARENT_OVERLAY_IMPL_PLAN.md` — Concrete code-level plan bridging analysis to actual patterns from the cloned reference repos.
-- **Reference repos cloned** — `Cross_Platform_Rust_WebGPU_CursorFX` (Tauri V2 + wgpu transparent overlay, Vulkan + NVAPI fix) and `TD_Web_Trail` (spring-friction chain physics, 4-pass neon glow, Catmull-Rom splines, idle-sleep optimization) now live at the root `AZ/` directory alongside S2B2S.
 
 ### Model Directory Restructure (STT / Brain / TTS)
 
@@ -827,13 +816,13 @@ Full codebase audit and documentation pass — read every source file, verified 
 
 ### Corrections Applied
 
-- **S2B2S_REVIEW.md** — Updated TTS backend count (8→9, added Pocket TTS row). Noted `WarmEngine` trait in `tts/status.rs` is dead code (no backend implements it). Noted TTS telemetry `record()` never called. Updated Brain subsystem: 10 LLM providers (not ~7). Added `brain-overlay/`, `overlay_fx/`, and `stt/` modules to file structure. Updated Known Issues with 5 new items (WarmEngine dead code, telemetry not wired, model definitions hardcoded, wgpu placeholder, fragment_queue.rs dead code). Added Evolution Documents section noting `futuristic_analysis/` supersedes `analysys/`.
+- **S2B2S_REVIEW.md** — Updated TTS backend count (8→9, added Pocket TTS row). Noted `WarmEngine` trait in `tts/status.rs` is dead code (no backend implements it). Noted TTS telemetry `record()` never called. Updated Brain subsystem: 10 LLM providers (not ~7). Added `brain-overlay/`, `overlay_fx/`, and `stt/` modules to file structure. Updated Known Issues with 5 new items (WarmEngine dead code, telemetry not wired, model definitions hardcoded, fragment_queue.rs dead code). Added Evolution Documents section noting `futuristic_analysis/` supersedes `analysys/`.
 - **README.md** — Updated TTS backend count (8→9), Brain provider count (3→10), STT engine types (3→10). Fixed "WarmEngine trait lifecycle" roadmap item to note it's defined but unimplemented. Added missing "Voice barge-in" roadmap item. Updated `reference_github_links.md` project count (21→23).
 - **AGENTS.md** — Fixed frontend tree: removed non-existent `src/lib/types.ts`, clarified `src/lib/types/events.ts`. Added `brain-overlay/` frontend entry. Added `stt/` and `overlay_fx/` backend entries. Updated TTS engine count, WarmEngine status note. Added `futuristic_analysis/` and `S2B2S_ANDROID_COMPANION.md` to Key Files Reference.
 - **CRUSH.md** — Removed orphaned `S2B2S_VOX_COMPARISON.md` reference (file never existed). Added full `futuristic_analysis/` directory with all 9 files. Noted `analysys/` superseded status. Added `stt/`, `overlay_fx/`, `brain-overlay/` to file structure.
 - **CHANGELOG.md** — Updated `reference_github_links.md` project count (21→23). This entry.
 - **CLAUDE.md** — Updated evolution plans reference to `futuristic_analysis/`, noted `analysys/` superseded status.
-- **repomix-file-descriptions.md** — Fixed `settings.rs` line count (1,600→1,800). Fixed `managers/transcription.rs` line count (886→996). Fixed `managers/model.rs` line count and noted 20+ hardcoded entries. Added `stt/` module entries. Added `overlay_fx/` module entries with placeholder note. Added `brain-overlay/` entries. Updated `tts/status.rs` and `tts/telemetry.rs` dead-code notes.
+- **repomix-file-descriptions.md** — Fixed `settings.rs` line count (1,600→1,800). Fixed `managers/transcription.rs` line count (886→996). Fixed `managers/model.rs` line count and noted 20+ hardcoded entries. Added `stt/` module entries. Added `brain-overlay/` entries. Updated `tts/status.rs` and `tts/telemetry.rs` dead-code notes.
 - **LICENSE** — Added NairoDorian copyright line for S2B2S-specific additions.
 - **repomix-file-descriptions.md** — Added `stt/` and `overlay_fx/` module descriptions, `brain-overlay/` entries.
 

@@ -21,8 +21,7 @@
     "brain": "Brain",
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
-    "overlayWindow": "Overlay Window",
-    "wgpuTrail": "WGPU Trail"
+    "overlayWindow": "Overlay Window"
   },
   "onboarding": {
     "subtitle": "시작하려면 음성 인식 모델을 선택하세요",
@@ -430,59 +429,6 @@
         "fadeMs": {
           "title": "Fade-Out Duration (ms)",
           "description": "How long the fade-out animation lasts before the overlay hides."
-        }
-      },
-      "wgpuTrail": {
-        "title": "Cursor Trail (WGPU)",
-        "description": "Native GPU cursor trail with spring physics, lazy-brush filtering, and click ripple. Requires Track B (wgpu overlay).",
-        "groups": {
-          "general": "General",
-          "physics": "Physics",
-          "appearance": "Appearance"
-        },
-        "enabled": {
-          "label": "Enable Cursor Trail",
-          "description": "Show a neon cursor trail rendered via native wgpu over your entire desktop."
-        },
-        "color": {
-          "title": "Trail Colour",
-          "description": "Hex colour for the trail (e.g. #7c3aed)."
-        },
-        "segments": {
-          "title": "Trail Segments",
-          "description": "Number of trail points in the spring chain. More = longer trail."
-        },
-        "spring": {
-          "title": "Spring Stiffness",
-          "description": "How strongly each trail point pulls toward the next (0.0–1.0)."
-        },
-        "friction": {
-          "title": "Friction / Damping",
-          "description": "How quickly trail velocity decays per frame (0.0–1.0)."
-        },
-        "width": {
-          "title": "Trail Width",
-          "description": "Base trail width in logical pixels at the head."
-        },
-        "taper": {
-          "title": "Width Taper Exponent",
-          "description": "How aggressively the trail thins toward the tail (e.g. 1.5)."
-        },
-        "glow": {
-          "title": "Glow Opacity",
-          "description": "Opacity of the 4-pass bloom glow layer (0.0–1.0)."
-        },
-        "lazyRadius": {
-          "title": "Lazy-Brush Radius",
-          "description": "Dead-zone radius in pixels before the trail follows the cursor."
-        },
-        "lazyFriction": {
-          "title": "Lazy-Brush Friction",
-          "description": "How much the lazy-brush resists fast movement (0.0–1.0)."
-        },
-        "clickRipple": {
-          "label": "Click Ripple",
-          "description": "Show an expanding ripple circle on mouse click."
         }
       }
     },

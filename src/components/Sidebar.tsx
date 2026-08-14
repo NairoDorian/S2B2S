@@ -12,7 +12,6 @@ import {
   Volume2,
   Terminal,
   Monitor,
-  Zap,
 } from "lucide-react";
 import S2B2SIcon from "./icons/S2B2SIcon";
 import appIcon from "../assets/icon.png";
@@ -29,7 +28,6 @@ import {
   BrainSettings,
   LlamaCppSettings,
   OverlayWindowSettings,
-  WgpuTrailSettings,
 } from "./settings";
 import { ConversationView } from "./conversation/ConversationView";
 
@@ -104,15 +102,6 @@ export const SECTIONS_CONFIG = {
     icon: Monitor,
     component: OverlayWindowSettings,
     enabled: () => true,
-  },
-  wgpuTrail: {
-    labelKey: "sidebar.wgpuTrail",
-    icon: Zap,
-    component: WgpuTrailSettings,
-    // Hidden from the normal UI until the native wgpu overlay renderer exists — the
-    // toggle currently persists config the backend can't render. Still reachable in
-    // debug mode for development.
-    enabled: (settings) => settings?.debug_mode ?? false,
   },
   postprocessing: {
     labelKey: "sidebar.postProcessing",

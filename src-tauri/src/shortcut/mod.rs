@@ -11,7 +11,6 @@
 
 mod handler;
 pub mod key_listener;
-pub use key_listener as handy_keys;
 pub mod tauri_impl;
 
 use log::{debug, error, info, warn};

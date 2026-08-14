@@ -778,90 +778,6 @@ impl Default for OverlayWindowConfig {
     }
 }
 
-/// Cursor trail / wgpu overlay effect configuration (CursorFX + TD_Web_Trail).
-#[derive(Serialize, Deserialize, Debug, Clone, Type)]
-pub struct WgpuTrailConfig {
-    /// Master enable for the native wgpu cursor trail.
-    #[serde(default)]
-    pub enabled: bool,
-    /// Trail colour as hex string (e.g. "#7c3aed").
-    #[serde(default = "default_trail_color")]
-    pub color: String,
-    /// Number of trail segments (chain length).
-    #[serde(default = "default_trail_segments")]
-    pub segments: u32,
-    /// Spring stiffness for the physics chain (0.0–1.0).
-    #[serde(default = "default_trail_spring")]
-    pub spring: f32,
-    /// Velocity friction / damping (0.0–1.0).
-    #[serde(default = "default_trail_friction")]
-    pub friction: f32,
-    /// Base trail width in logical pixels at the head.
-    #[serde(default = "default_trail_width")]
-    pub width: f32,
-    /// Width taper exponent (e.g. 1.5 = trail tapers toward tail).
-    #[serde(default = "default_trail_taper")]
-    pub taper: f32,
-    /// Opacity of the glow pass (0.0–1.0).
-    #[serde(default = "default_trail_glow")]
-    pub glow: f32,
-    /// Lazy-brush dead-zone radius in logical pixels.
-    #[serde(default = "default_trail_lazy_radius")]
-    pub lazy_radius: f32,
-    /// Lazy-brush friction factor (0.0–1.0).
-    #[serde(default = "default_trail_lazy_friction")]
-    pub lazy_friction: f32,
-    /// Enable cursor click ripple effect.
-    #[serde(default)]
-    pub click_ripple: bool,
-}
-
-fn default_trail_color() -> String {
-    "#7c3aed".to_string()
-}
-fn default_trail_segments() -> u32 {
-    50
-}
-fn default_trail_spring() -> f32 {
-    0.39
-}
-fn default_trail_friction() -> f32 {
-    0.5
-}
-fn default_trail_width() -> f32 {
-    3.0
-}
-fn default_trail_taper() -> f32 {
-    1.5
-}
-fn default_trail_glow() -> f32 {
-    0.6
-}
-fn default_trail_lazy_radius() -> f32 {
-    8.0
-}
-fn default_trail_lazy_friction() -> f32 {
-    0.4
-}
-
-impl Default for WgpuTrailConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            color: default_trail_color(),
-            segments: default_trail_segments(),
-            spring: default_trail_spring(),
-            friction: default_trail_friction(),
-            width: default_trail_width(),
-            taper: default_trail_taper(),
-            glow: default_trail_glow(),
-            lazy_radius: default_trail_lazy_radius(),
-            lazy_friction: default_trail_lazy_friction(),
-            click_ripple: false,
-        }
-    }
-}
-
 #[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
@@ -1143,9 +1059,6 @@ pub struct AppSettings {
     /// Overlay window behaviour + visual customization.
     #[serde(default)]
     pub overlay_window: OverlayWindowConfig,
-    /// Native wgpu cursor trail + click ripple effects.
-    #[serde(default)]
-    pub wgpu_trail: WgpuTrailConfig,
     #[serde(default = "default_debug_mode")]
     pub debug_mode: bool,
     #[serde(default = "default_log_level")]
@@ -2030,7 +1943,6 @@ pub fn get_default_settings() -> AppSettings {
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
         overlay_window: OverlayWindowConfig::default(),
-        wgpu_trail: WgpuTrailConfig::default(),
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),
@@ -2142,16 +2054,6 @@ impl AppSettings {
         self.post_process_actions
             .iter()
             .find(|action| action.id == id)
-    }
-
-    pub fn post_process_action_by_trigger_key(&self, key: u8) -> Option<&PostProcessAction> {
-        self.post_process_actions
-            .iter()
-            .find(|action| action.trigger_key == Some(key))
-    }
-
-    pub fn default_post_process_action(&self) -> Option<&PostProcessAction> {
-        self.post_process_actions.first()
     }
 }
 

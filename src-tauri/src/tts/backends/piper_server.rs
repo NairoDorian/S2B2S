@@ -60,7 +60,6 @@ pub enum ServerState {
     Starting {
         _generation: u64,
         config: StartingConfig,
-        stderr_tail: Arc<Mutex<Vec<String>>>,
     },
     Ready(Arc<ActiveServer>),
 }
@@ -651,7 +650,6 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
             ServerState::Starting {
                 _generation: _,
                 config: starting_config,
-                stderr_tail: _,
             } => {
                 if starting_config.command == command
                     && starting_config.data_dir == data_dir
@@ -673,7 +671,6 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
                             cuda,
                             voice: voice.clone(),
                         },
-                        stderr_tail: tail.clone(),
                     };
                     drop(state);
                     spawn_start_thread(
@@ -697,7 +694,6 @@ pub fn ensure_running(voice: String, cuda: bool) -> Result<ServerHandle, String>
                         cuda,
                         voice: voice.clone(),
                     },
-                    stderr_tail: tail.clone(),
                 };
                 drop(state);
                 spawn_start_thread(

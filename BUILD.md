@@ -479,7 +479,7 @@ S2B2S/
 │   │   ├── llama_server/  # Pre-compiled llama.cpp manager
 │   │   ├── audio_toolkit/ # Audio processing + VAD
 │   │   ├── stt/           # Python ONNX Runtime STT pipeline (Parakeet Unified)
-│   │   ├── overlay_fx/    # GPU overlay system (cursor trail, brain overlay)
+│   │   ├── overlay_fx/    # GPU overlay system (brain overlay webview)
 │   │   ├── commands/      # Tauri command handlers
 │   │   └── ...
 │   ├── resources/         # Static resources (models, icons)

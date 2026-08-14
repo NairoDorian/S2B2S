@@ -72,49 +72,6 @@ impl LlamaManager {
         self.downloading.load(Ordering::SeqCst)
     }
 
-    fn has_gpu_support(&self) -> bool {
-        if let Some(mgr) = self
-            .app
-            .try_state::<std::sync::Arc<crate::llama_server::manager::LlamaServerManager>>()
-        {
-            let gpu = mgr.has_gpu_support();
-            if gpu {
-                // Verify the actual server binary supports CUDA/Vulkan
-                match mgr.get_active_server_path() {
-                    Ok(path) => {
-                        let name = path.to_string_lossy().to_lowercase();
-                        if name.contains("cpu")
-                            && !name.contains("cuda")
-                            && !name.contains("vulkan")
-                        {
-                            info!("[LlamaManager] Server binary looks like CPU build ({:?}), disabling GPU offload despite config", path);
-                            return false;
-                        }
-                        // Check CUDA runtime availability
-                        if name.contains("cuda") {
-                            let cuda_ok = std::process::Command::new("nvidia-smi")
-                                .arg("--query-gpu=driver_version")
-                                .arg("--format=csv,noheader")
-                                .output()
-                                .is_ok()
-                                && std::process::Command::new("nvidia-smi").output().is_ok();
-                            if !cuda_ok {
-                                info!("[LlamaManager] nvidia-smi not available, CUDA offload disabled");
-                                return false;
-                            }
-                        }
-                        info!("[LlamaManager] Using server: {:?} (GPU={})", path, gpu);
-                        return gpu;
-                    }
-                    Err(_) => {}
-                }
-            }
-            gpu
-        } else {
-            false
-        }
-    }
-
     pub fn stop(&self) {
         let mut guard = self.child.lock().unwrap();
         if let Some(mut child) = guard.take() {

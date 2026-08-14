@@ -21,7 +21,6 @@ This document serves as the **single source of truth** for what is completed, pa
 | **Playwright E2E Tests**        | ✅ Done    | Onboarding, dictation, and conversation pipelines covered with mock Tauri IPC layer.                           |
 | **Panic Audit (hot paths)**     | ✅ Done    | Converted unwraps in audio recording, clipboard, IPC boundaries, and command handlers.                         |
 | **Brain-Only STT Toggle**       | ✅ Done    | Inline switch in ConversationView to bypass local STT and feed audio directly to multimodal Brain.             |
-| **Native WGPU Overlay**         | 🟡 Shelved | Track B (`overlay_fx/native/mod.rs`) is kept as a stub; native overlay feature is shelved for Tauri overlay.   |
 
 ---
 
@@ -44,7 +43,7 @@ This document serves as the **single source of truth** for what is completed, pa
 [Phase 1: Bulletproof Core] (Venv / Standalone Python choice, panic audit, onboarding, E2E tests)
         |
         v
-[Phase 2: Sweep the Partials] (Implement or formally shelve wgpu overlay, sync i18n translations)
+[Phase 2: Sweep the Partials] (Implement or formally shelve remaining partials, sync i18n translations)
         |
         v
 [Phase 3: Refactoring] (Split god-files like model.rs, settings.rs, shortcut/mod.rs)
@@ -72,7 +71,6 @@ This document serves as the **single source of truth** for what is completed, pa
 
 ### Phase 2 — Sweep the Partials
 
-- [x] **Native WGPU Overlay (Track B)**: Shelved in favor of Track A (Tauri overlay) to reduce binary size and complexity.
 - [x] **i18n Sync**: Fully synchronized all 19 non-English translation keys (724 keys matched) with CI gate checks passing.
 - [x] **De-sprawl / Project Cleanup**: Removed obsolete scratch/experiment folders (gemma, temp ONNX, 0.1.3 review, and stale descriptions).
 - [x] **Qwen3-TTS GGML Backend**: Compiled native C++ `qwentts.cpp` shared libraries for Windows 11 with CUDA 13.3 support, resolved ctypes DLL loading dependencies, and integrated the `qwen3` engine option in settings.

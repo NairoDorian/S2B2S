@@ -16,7 +16,6 @@ use tauri::AppHandle;
 use crate::managers::model::{EngineType, ModelInfo, ModelManager};
 use crate::settings::AppSettings;
 use crate::stt::unified_parakeet::UnifiedParakeetServer;
-use transcribe_cpp::{Model, ModelOptions, RunOptions};
 
 // ---------------------------------------------------------------------------
 // Public API

@@ -90,15 +90,17 @@ fn get_master_key() -> &'static [u8] {
 /// Encrypts bytes using AES-256-GCM. Returns a base64 string prefixed with "enc:v1:".
 pub fn encrypt(plaintext: &[u8]) -> Result<String, String> {
     let key_bytes = get_master_key();
-    let key = Key::<Aes256Gcm>::from_slice(key_bytes);
-    let cipher = Aes256Gcm::new(key);
+    let key = Key::<Aes256Gcm>::try_from(key_bytes)
+        .map_err(|_| "Master key has invalid length".to_string())?;
+    let cipher = Aes256Gcm::new(&key);
 
     let mut nonce_bytes = [0u8; 12];
     getrandom::fill(&mut nonce_bytes).map_err(|e| format!("Nonce generation failed: {}", e))?;
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes.as_slice())
+        .map_err(|_| "Nonce has invalid length".to_string())?;
 
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .map_err(|e| format!("Encryption failed: {}", e))?;
 
     // Format: [cipher_id: 1 byte (0x00 = AES-GCM-256)] + [nonce: 12 bytes] + [ciphertext + tag]
@@ -136,12 +138,13 @@ pub fn decrypt(ciphertext: &str) -> Result<Vec<u8>, String> {
     let encrypted_data = &payload[13..];
 
     let key_bytes = get_master_key();
-    let key = Key::<Aes256Gcm>::from_slice(key_bytes);
-    let cipher = Aes256Gcm::new(key);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let key = Key::<Aes256Gcm>::try_from(key_bytes)
+        .map_err(|_| "Master key has invalid length".to_string())?;
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Nonce::try_from(nonce_bytes).map_err(|_| "Nonce has invalid length".to_string())?;
 
     let plaintext = cipher
-        .decrypt(nonce, encrypted_data)
+        .decrypt(&nonce, encrypted_data)
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
     Ok(plaintext)

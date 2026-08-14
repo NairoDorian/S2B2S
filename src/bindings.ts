@@ -366,8 +366,6 @@ export type AppSettings_Deserialize = {
 	overlay_position?: OverlayPosition_Deserialize,
 	/**  Overlay window behaviour + visual customization. */
 	overlay_window?: OverlayWindowConfig_Deserialize,
-	/**  Native wgpu cursor trail + click ripple effects. */
-	wgpu_trail?: WgpuTrailConfig,
 	debug_mode?: boolean,
 	log_level?: LogLevel,
 	custom_words?: string[],
@@ -512,8 +510,6 @@ export type AppSettings_Serialize = {
 	overlay_position: OverlayPosition_Serialize,
 	/**  Overlay window behaviour + visual customization. */
 	overlay_window: OverlayWindowConfig_Serialize,
-	/**  Native wgpu cursor trail + click ripple effects. */
-	wgpu_trail: WgpuTrailConfig,
 	debug_mode: boolean,
 	log_level: LogLevel,
 	custom_words: string[],
@@ -1222,32 +1218,6 @@ export type WakeWordConfig = {
 	keyword: string,
 	threshold: number | null,
 	show_indicator: boolean,
-};
-
-/**  Cursor trail / wgpu overlay effect configuration (CursorFX + TD_Web_Trail). */
-export type WgpuTrailConfig = {
-	/**  Master enable for the native wgpu cursor trail. */
-	enabled?: boolean,
-	/**  Trail colour as hex string (e.g. "#7c3aed"). */
-	color?: string,
-	/**  Number of trail segments (chain length). */
-	segments?: number,
-	/**  Spring stiffness for the physics chain (0.0–1.0). */
-	spring?: number | null,
-	/**  Velocity friction / damping (0.0–1.0). */
-	friction?: number | null,
-	/**  Base trail width in logical pixels at the head. */
-	width?: number | null,
-	/**  Width taper exponent (e.g. 1.5 = trail tapers toward tail). */
-	taper?: number | null,
-	/**  Opacity of the glow pass (0.0–1.0). */
-	glow?: number | null,
-	/**  Lazy-brush dead-zone radius in logical pixels. */
-	lazy_radius?: number | null,
-	/**  Lazy-brush friction factor (0.0–1.0). */
-	lazy_friction?: number | null,
-	/**  Enable cursor click ripple effect. */
-	click_ripple?: boolean,
 };
 
 export type WindowsMicrophonePermissionStatus = {
