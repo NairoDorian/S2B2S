@@ -1,1 +1,24 @@
 [build]
+# sccache: shared compiler cache for rustc and C/C++ (transcribe-cpp-sys, aws-lc-sys, ring, etc.)
+# Must disable incremental compilation — sccache and incremental are mutually exclusive;
+# mixing them causes cache misses and corrupted artifacts.
+rustc-wrapper = "sccache"
+
+[profile.dev]
+# Disable Cargo's incremental compilation so sccache can fully cache every crate unit.
+# sccache provides better cache reuse across clean builds and dep updates than incremental.
+incremental = false
+
+[profile.dev.package."*"]
+# Compile all dependencies (not workspace crates) at opt-level 1 in dev builds:
+# - Much faster than opt-level 0 for heavy crates (transcribe-cpp, aws-lc-rs, ring)
+# - sccache caches the result, so the cost is paid once
+opt-level = 1
+
+[env]
+# Forward sccache to CMake-driven C/C++ builds (transcribe-cpp-sys, libsqlite3-sys, aws-lc-sys).
+# These launchers wrap cl.exe / clang-cl.exe and cache object files.
+CMAKE_C_COMPILER_LAUNCHER = "sccache"
+CMAKE_CXX_COMPILER_LAUNCHER = "sccache"
+# Disable MSVC incremental linking — incompatible with sccache C++ caching.
+CARGO_ENCODED_RUSTFLAGS = "-C link-arg=/INCREMENTAL:NO"

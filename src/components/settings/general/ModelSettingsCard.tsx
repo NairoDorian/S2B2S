@@ -4,6 +4,7 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { ParakeetStreamingToggle } from "../ParakeetStreamingToggle";
+import { NativeStreamingLatencySelector } from "../NativeStreamingLatencySelector";
 import { useModelStore } from "../../../stores/modelStore";
 import type { ModelInfo } from "@/bindings";
 import {
@@ -29,8 +30,12 @@ export const ModelSettingsCard: React.FC = () => {
     supportsLanguageSelection || supportsChineseOnlyScriptSelection;
   const supportsTranslation = currentModelInfo?.supports_translation ?? false;
   const isParakeetModel = currentModelInfo?.engine_type === "UnifiedParakeet";
+  const supportsLatency = !!currentModelInfo?.native_streaming_latency_kind;
   const hasAnySettings =
-    showLanguageSelector || supportsTranslation || isParakeetModel;
+    showLanguageSelector ||
+    supportsTranslation ||
+    isParakeetModel ||
+    supportsLatency;
 
   // Don't render anything if no model is selected or no settings available
   if (!currentModel || !currentModelInfo || !hasAnySettings) {
@@ -57,6 +62,12 @@ export const ModelSettingsCard: React.FC = () => {
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
       )}
       {isParakeetModel && <ParakeetStreamingToggle />}
+      {supportsLatency && (
+        <NativeStreamingLatencySelector
+          descriptionMode="tooltip"
+          grouped={true}
+        />
+      )}
     </SettingsGroup>
   );
 };

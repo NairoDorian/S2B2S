@@ -54,3 +54,14 @@ pub fn set_long_audio_threshold(app: AppHandle, threshold: f64) {
     settings.long_audio_threshold_seconds = threshold;
     write_settings(&app, settings);
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn unload_extra_model(
+    transcription_manager: State<TranscriptionManager>,
+    model_id: String,
+) -> Result<(), String> {
+    transcription_manager
+        .unload_extra_model(&model_id)
+        .map_err(|e| format!("Failed to unload extra model: {}", e))
+}

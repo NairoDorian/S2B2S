@@ -12,6 +12,7 @@ import {
   Volume2,
   Terminal,
   Monitor,
+  Layers,
 } from "lucide-react";
 import S2B2SIcon from "./icons/S2B2SIcon";
 import appIcon from "../assets/icon.png";
@@ -27,6 +28,7 @@ import {
   SpeechSettings,
   BrainSettings,
   LlamaCppSettings,
+  MultiSttSettings,
   OverlayWindowSettings,
 } from "./settings";
 import { ConversationView } from "./conversation/ConversationView";
@@ -107,6 +109,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.postProcessing",
     icon: Sparkles,
     component: PostProcessingSettings,
+    enabled: () => true,
+  },
+  multiStt: {
+    labelKey: "sidebar.multiStt",
+    icon: Layers,
+    component: MultiSttSettings,
     enabled: () => true,
   },
   debug: {

@@ -1,6 +1,7 @@
 # S2B2S Project Status, Scorecard & Roadmap
 
 This document serves as the **single source of truth** for what is completed, partially done, stubbed, or planned in S2B2S. Last updated at version **0.1.5**.
+For the active, sequential local-first engineering roadmap and agent takeover instructions, see **[`TAKEOVER.md`](TAKEOVER.md)**.
 
 ---
 

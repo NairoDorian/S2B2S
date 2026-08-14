@@ -269,6 +269,9 @@ pub fn resume_all_shortcuts(app: &AppHandle) {
         if id == "transcribe_with_post_process" && !settings.post_process_enabled {
             continue;
         }
+        if id == "multi_stt_transcribe" && !settings.multi_stt_enabled {
+            continue;
+        }
         if let Err(e) = register_shortcut(app, binding.clone()) {
             debug!("resume_all_shortcuts: could not register '{}': {}", id, e);
         }
@@ -468,6 +471,10 @@ fn register_all_shortcuts_for_implementation(
 
         // Skip post-processing shortcut when the feature is disabled
         if id == "transcribe_with_post_process" && !current_settings.post_process_enabled {
+            continue;
+        }
+        // Skip multi-STT shortcut when the feature is disabled
+        if id == "multi_stt_transcribe" && !current_settings.multi_stt_enabled {
             continue;
         }
 
@@ -1055,6 +1062,139 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
 pub fn change_experimental_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.experimental_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_enabled = enabled;
+    settings::write_settings(&app, settings.clone());
+
+    if let Some(binding) = settings.bindings.get("multi_stt_transcribe").cloned() {
+        if enabled {
+            let _ = register_shortcut(&app, binding);
+        } else {
+            let _ = unregister_shortcut(&app, binding);
+        }
+    }
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "multi_stt_enabled",
+            "value": enabled
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_extra_model(
+    app: AppHandle,
+    slot: u32,
+    model_id: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    match slot {
+        2 => settings.multi_stt_model_2 = model_id,
+        3 => settings.multi_stt_model_3 = model_id,
+        other => {
+            return Err(format!(
+                "Invalid extra model slot: {} (must be 2 or 3)",
+                other
+            ));
+        }
+    }
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_extra_model_language(
+    app: AppHandle,
+    slot: u32,
+    language: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    match slot {
+        2 => settings.multi_stt_language_model_2 = language,
+        3 => settings.multi_stt_language_model_3 = language,
+        other => {
+            return Err(format!(
+                "Invalid extra model slot: {} (must be 2 or 3)",
+                other
+            ));
+        }
+    }
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_merge_prompt(
+    app: AppHandle,
+    prompt: Option<settings::LLMPrompt>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_merge_prompt = prompt;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_translate_model_2 = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_translate_model_3(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_translate_model_3 = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_use_llama_merge_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_use_llama_merge = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_gemma4_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_gemma4_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_merge_include_audio_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_merge_include_audio = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }

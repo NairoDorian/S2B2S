@@ -528,6 +528,9 @@ mod imp {
                 if id == "transcribe_with_post_process" && !settings.post_process_enabled {
                     continue;
                 }
+                if id == "multi_stt_transcribe" && !settings.multi_stt_enabled {
+                    continue;
+                }
 
                 if register_fallback_binding(app, id, binding, &mut next) {
                     immune += 1;

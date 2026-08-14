@@ -21,7 +21,8 @@
     "brain": "Brain",
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
-    "overlayWindow": "Overlay Window"
+    "overlayWindow": "Overlay Window",
+    "multiStt": "Multi STT"
   },
   "onboarding": {
     "subtitle": "首先，請選擇一種模型",
@@ -127,6 +128,7 @@
   },
   "modelSelector": {
     "custom": "自訂",
+    "legacy": "舊版",
     "streaming": "串流",
     "active": "使用中",
     "switching": "切換中...",
@@ -157,7 +159,22 @@
       "translate": "翻譯為英語",
       "streaming": "在您說話時即時顯示轉錄"
     },
-    "legacy": "舊版"
+    "nativeStreamingLatency": {
+      "title": "Streaming Latency",
+      "description": "Choose how quickly this model responds. Faster modes reduce latency, while balanced and accurate modes give higher accuracy.",
+      "fastest": "Fastest (~80–160ms)",
+      "fast": "Fast (~160–320ms)",
+      "balanced": "Balanced (~560ms)",
+      "accurate": "Accurate (Full)",
+      "appliesNextRecording": "Applies from the next recording.",
+      "cpuWarning": "This mode can lag on CPU.",
+      "presets": {
+        "fastest": "Fastest (~80–160ms)",
+        "fast": "Fast (~160–320ms)",
+        "balanced": "Balanced (~560ms)",
+        "accurate": "Accurate (Full)"
+      }
+    }
   },
   "settings": {
     "modelSettings": {
@@ -212,6 +229,7 @@
     "models": {
       "title": "轉錄模型",
       "description": "選擇轉錄模型或下載其他模型。不同模型提供不同的準確度和速度",
+      "searchPlaceholder": "依名稱搜尋模型…",
       "yourModels": "已下載的模型",
       "availableModels": "可供下載",
       "deleteConfirm": "確定要刪除 {{modelName}} 嗎？刪除後須重新下載才能使用",
@@ -222,12 +240,11 @@
         "streaming": "篩選支援即時轉錄的模型",
         "translation": "篩選支援翻譯為英語的模型"
       },
-      "noModelsMatch": "沒有符合此篩選條件的模型",
-      "searchPlaceholder": "依名稱搜尋模型…",
       "rescan": {
         "label": "重新掃描",
         "tooltip": "重新掃描在 Handy 之外新增到模型資料夾或 Hugging Face 快取中的模型"
-      }
+      },
+      "noModelsMatch": "沒有符合此篩選條件的模型"
     },
     "sound": {
       "title": "聲音",
@@ -566,6 +583,13 @@
         "label": "檢查更新",
         "description": "自動檢查 S2B2S 的新版本"
       },
+      "whatsNewPreview": {
+        "title": "預覽新功能",
+        "description": "開啟最新內建版本資訊，且不標記為已看過",
+        "button": "預覽",
+        "noNotes": "找不到內建版本資訊",
+        "error": "無法預覽版本資訊"
+      },
       "soundTheme": {
         "label": "聲音主題",
         "description": "選擇錄製開始和停止回饋的聲音主題"
@@ -655,13 +679,6 @@
         "verdictNoEvents": "未擷取到任何事件——測試期間您有按鍵嗎？",
         "failed": "診斷失敗：{{error}}"
       },
-      "whatsNewPreview": {
-        "title": "預覽新功能",
-        "description": "開啟最新內建版本資訊，且不標記為已看過",
-        "button": "預覽",
-        "noNotes": "找不到內建版本資訊",
-        "error": "無法預覽版本資訊"
-      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
@@ -687,6 +704,10 @@
       "version": {
         "title": "版本",
         "description": "S2B2S 的目前版本"
+      },
+      "whatsNewUpdates": {
+        "label": "顯示新功能",
+        "description": "Handy 更新後顯示版本資訊"
       },
       "appDataDirectory": {
         "title": "應用程式資料目錄",
@@ -739,10 +760,6 @@
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
         }
-      },
-      "whatsNewUpdates": {
-        "label": "顯示新功能",
-        "description": "Handy 更新後顯示版本資訊"
       }
     },
     "speech": {
@@ -980,6 +997,69 @@
     "voicesCount": "{{count}} voices",
     "downloadingModel": "Downloading {{model}}..."
   },
+  "multiStt": {
+    "enabled": {
+      "label": "Multi-STT",
+      "description": "Run multiple transcription models in parallel and merge the results."
+    },
+    "shortcut": {
+      "title": "Multi-STT Shortcut"
+    },
+    "models": {
+      "title": "Model Slots",
+      "model2": "Secondary Model",
+      "model2Description": "An optional second STT model to transcribe alongside the primary.",
+      "model3": "Tertiary Model",
+      "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
+      "model2Language": "Language:",
+      "model3Language": "Language:",
+      "translateToEnglish": "Translate to English",
+      "notSelected": "Not selected",
+      "disableModel": "Disable",
+      "primaryModel": "Primary model: {{model}}",
+      "languageNotApplicable": "This model does not support language selection."
+    },
+    "mergeProvider": {
+      "title": "Merge Provider",
+      "useLlama": {
+        "label": "Use llama.cpp for merge",
+        "description": "When enabled, the LLM merge uses the local llama.cpp server (Gemma 4) instead of a cloud provider."
+      },
+      "includeAudio": {
+        "label": "Include audio in merge (Multimodal)",
+        "description": "Feeds the recorded audio alongside candidate transcriptions to the local Gemma 4 model (with mmproj) during the merge step."
+      }
+    },
+    "gemma4": {
+      "title": "Gemma 4 Multimodal STT",
+      "label": "Enable Gemma 4 2B STT",
+      "description": "Adds a 4th transcription source using Gemma 4 2B with mmproj and audio input via the llama.cpp server."
+    },
+    "mergePrompt": {
+      "title": "Merge Prompt",
+      "description": "LLM prompt used to merge transcriptions from all models.",
+      "promptName": "Prompt Name",
+      "promptLabel": "Prompt",
+      "promptNamePlaceholder": "e.g. Merge Specialist",
+      "promptPlaceholder": "${output}, ${output2}, ${output3} — merge these transcriptions into one accurate result...",
+      "promptTip": "Use ${output} for primary, ${output2} for secondary, ${output3} for tertiary.",
+      "savePrompt": "Save Prompt",
+      "resetDefault": "Reset to Default",
+      "clearPrompt": "Clear Prompt",
+      "noPrompt": "No merge prompt configured. Transcriptions will be concatenated as fallback."
+    },
+    "status": {
+      "title": "Status",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "tertiary": "Tertiary",
+      "gemma4": "Gemma 4",
+      "noModels": "No extra models selected."
+    }
+  },
+  "whatsNew": {
+    "title": "Handy v{{version}} 新功能"
+  },
   "common": {
     "loading": "載入中...",
     "delete": "刪除",
@@ -1031,9 +1111,6 @@
     "processing": "處理中...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
-  },
-  "whatsNew": {
-    "title": "Handy v{{version}} 新功能"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} 可能正在阻擋 1 個快捷鍵",

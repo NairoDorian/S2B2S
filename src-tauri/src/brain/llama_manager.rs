@@ -168,10 +168,12 @@ impl LlamaManager {
         let mmproj_path = models_dir.join("mmproj-F16.gguf");
         let draft_path = models_dir.join("mtp-gemma-4-E2B-it.gguf");
 
-        // Check if multimodal features are enabled (audio/image input)
+        // Check if multimodal features are enabled (audio/image input, Gemma 4 ASR, or multimodal merge)
         let settings = crate::settings::get_settings(&self.app);
-        let multimodal_enabled =
-            settings.brain.multimodal_audio_enabled || settings.brain.multimodal_image_enabled;
+        let multimodal_enabled = settings.brain.multimodal_audio_enabled
+            || settings.brain.multimodal_image_enabled
+            || settings.multi_stt_gemma4_enabled
+            || (settings.multi_stt_use_llama_merge && settings.multi_stt_merge_include_audio);
 
         info!(
             "[LlamaManager] Spawning llama-server on port {} with MTP...",

@@ -21,7 +21,8 @@
     "brain": "Brain",
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
-    "overlayWindow": "Overlay Window"
+    "overlayWindow": "Overlay Window",
+    "multiStt": "Multi STT"
   },
   "onboarding": {
     "subtitle": "Başlamak için bir transkripsiyon modeli seçin",
@@ -127,8 +128,10 @@
   },
   "modelSelector": {
     "custom": "Özel",
+    "legacy": "Eski",
     "streaming": "Akış",
     "active": "Aktif",
+    "switching": "Değiştiriliyor...",
     "noModelsAvailable": "Kullanılabilir model yok",
     "verifying": "{{modelName}} doğrulanıyor...",
     "verifyingGeneric": "Doğrulanıyor...",
@@ -144,20 +147,34 @@
     "modelUnloaded": "Model Boşaltıldı",
     "noModelDownloadRequired": "Model Yok – İndirme Gerekli",
     "deleteModel": "{{modelName}} Sil",
-    "switching": "Değiştiriliyor...",
     "downloadSpeed": "{{speed}} MB/s",
-    "capabilities": {
-      "languageSelection": "Birden fazla giriş dilini destekler",
-      "languageCount": "{{total}} languages",
-      "translation": "İngilizce'ye çevirebilir",
-      "translate": "İngilizce'ye çevir",
-      "singleLanguage": "Yalnızca bu dili destekler",
-      "languageOnly": "Yalnızca {{language}}",
-      "streaming": "Konuşurken canlı transkripsiyon gösterir"
-    },
     "cancel": "İptal",
     "cancelDownload": "İndirmeyi iptal et",
-    "legacy": "Eski"
+    "capabilities": {
+      "languageSelection": "Birden fazla giriş dilini destekler",
+      "singleLanguage": "Yalnızca bu dili destekler",
+      "languageCount": "{{total}} languages",
+      "languageOnly": "Yalnızca {{language}}",
+      "translation": "İngilizce'ye çevirebilir",
+      "translate": "İngilizce'ye çevir",
+      "streaming": "Konuşurken canlı transkripsiyon gösterir"
+    },
+    "nativeStreamingLatency": {
+      "title": "Streaming Latency",
+      "description": "Choose how quickly this model responds. Faster modes reduce latency, while balanced and accurate modes give higher accuracy.",
+      "fastest": "Fastest (~80–160ms)",
+      "fast": "Fast (~160–320ms)",
+      "balanced": "Balanced (~560ms)",
+      "accurate": "Accurate (Full)",
+      "appliesNextRecording": "Applies from the next recording.",
+      "cpuWarning": "This mode can lag on CPU.",
+      "presets": {
+        "fastest": "Fastest (~80–160ms)",
+        "fast": "Fast (~160–320ms)",
+        "balanced": "Balanced (~560ms)",
+        "accurate": "Accurate (Full)"
+      }
+    }
   },
   "settings": {
     "modelSettings": {
@@ -166,26 +183,6 @@
       "parakeetStreamingToggle": {
         "label": "Streaming Mode",
         "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
-      }
-    },
-    "models": {
-      "title": "Transkripsiyon Modelleri",
-      "description": "Bir transkripsiyon modeli seçin veya ek modeller indirin. Farklı modeller değişen doğruluk ve hız seviyeleri sunar.",
-      "deleteConfirm": "{{modelName}} modelini silmek istediğinizden emin misiniz? Kullanmak için tekrar indirmeniz gerekecek.",
-      "deleteActiveConfirm": "{{modelName}} aktif modelinizdir. Silmek, yeni bir model seçene kadar transkripsiyonları durduracaktır. Emin misiniz?",
-      "deleteTitle": "Modeli Sil",
-      "filters": {
-        "allLanguages": "Tüm Diller",
-        "streaming": "Canlı transkripsiyonu destekleyen modelleri filtrele",
-        "translation": "İngilizce'ye çeviriyi destekleyen modelleri filtrele"
-      },
-      "noModelsMatch": "Bu filtreyle eşleşen model yok.",
-      "yourModels": "İndirilen modeller",
-      "availableModels": "İndirilebilir",
-      "searchPlaceholder": "Modelleri ada göre ara…",
-      "rescan": {
-        "label": "Yeniden tara",
-        "tooltip": "Handy dışında modeller klasörüne veya Hugging Face önbelleğine eklenen modelleri yeniden tara"
       }
     },
     "general": {
@@ -228,6 +225,26 @@
         "label": "Bas Konuş",
         "description": "Kaydetmek için basılı tutun, durdurmak için bırakın"
       }
+    },
+    "models": {
+      "title": "Transkripsiyon Modelleri",
+      "description": "Bir transkripsiyon modeli seçin veya ek modeller indirin. Farklı modeller değişen doğruluk ve hız seviyeleri sunar.",
+      "searchPlaceholder": "Modelleri ada göre ara…",
+      "yourModels": "İndirilen modeller",
+      "availableModels": "İndirilebilir",
+      "deleteConfirm": "{{modelName}} modelini silmek istediğinizden emin misiniz? Kullanmak için tekrar indirmeniz gerekecek.",
+      "deleteActiveConfirm": "{{modelName}} aktif modelinizdir. Silmek, yeni bir model seçene kadar transkripsiyonları durduracaktır. Emin misiniz?",
+      "deleteTitle": "Modeli Sil",
+      "filters": {
+        "allLanguages": "Tüm Diller",
+        "streaming": "Canlı transkripsiyonu destekleyen modelleri filtrele",
+        "translation": "İngilizce'ye çeviriyi destekleyen modelleri filtrele"
+      },
+      "rescan": {
+        "label": "Yeniden tara",
+        "tooltip": "Handy dışında modeller klasörüne veya Hugging Face önbelleğine eklenen modelleri yeniden tara"
+      },
+      "noModelsMatch": "Bu filtreyle eşleşen model yok."
     },
     "sound": {
       "title": "Ses",
@@ -566,6 +583,13 @@
         "label": "Güncellemeleri Kontrol Et",
         "description": "S2B2S için yeni sürümleri otomatik olarak kontrol eder"
       },
+      "whatsNewPreview": {
+        "title": "Yenilikleri Önizle",
+        "description": "En son paketlenmiş sürüm notunu görüldü olarak işaretlemeden aç",
+        "button": "Önizle",
+        "noNotes": "Paketlenmiş sürüm notu bulunamadı",
+        "error": "Sürüm notları önizlenemedi"
+      },
       "soundTheme": {
         "label": "Ses Teması",
         "description": "Kayıt başlangıç ve bitişi için sesli geri bildirim temasını seçin"
@@ -655,13 +679,6 @@
         "verdictNoEvents": "Hiç olay yakalanmadı — test sırasında herhangi bir tuşa bastınız mı?",
         "failed": "Tanılama başarısız: {{error}}"
       },
-      "whatsNewPreview": {
-        "title": "Yenilikleri Önizle",
-        "description": "En son paketlenmiş sürüm notunu görüldü olarak işaretlemeden aç",
-        "button": "Önizle",
-        "noNotes": "Paketlenmiş sürüm notu bulunamadı",
-        "error": "Sürüm notları önizlenemedi"
-      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
@@ -687,6 +704,10 @@
       "version": {
         "title": "Sürüm",
         "description": "S2B2S'nin mevcut sürümü"
+      },
+      "whatsNewUpdates": {
+        "label": "Yenilikleri Göster",
+        "description": "Handy güncellemelerinden sonra sürüm notlarını göster"
       },
       "appDataDirectory": {
         "title": "Uygulama Veri Dizini",
@@ -739,10 +760,6 @@
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
         }
-      },
-      "whatsNewUpdates": {
-        "label": "Yenilikleri Göster",
-        "description": "Handy güncellemelerinden sonra sürüm notlarını göster"
       }
     },
     "speech": {
@@ -980,6 +997,69 @@
     "voicesCount": "{{count}} voices",
     "downloadingModel": "Downloading {{model}}..."
   },
+  "multiStt": {
+    "enabled": {
+      "label": "Multi-STT",
+      "description": "Run multiple transcription models in parallel and merge the results."
+    },
+    "shortcut": {
+      "title": "Multi-STT Shortcut"
+    },
+    "models": {
+      "title": "Model Slots",
+      "model2": "Secondary Model",
+      "model2Description": "An optional second STT model to transcribe alongside the primary.",
+      "model3": "Tertiary Model",
+      "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
+      "model2Language": "Language:",
+      "model3Language": "Language:",
+      "translateToEnglish": "Translate to English",
+      "notSelected": "Not selected",
+      "disableModel": "Disable",
+      "primaryModel": "Primary model: {{model}}",
+      "languageNotApplicable": "This model does not support language selection."
+    },
+    "mergeProvider": {
+      "title": "Merge Provider",
+      "useLlama": {
+        "label": "Use llama.cpp for merge",
+        "description": "When enabled, the LLM merge uses the local llama.cpp server (Gemma 4) instead of a cloud provider."
+      },
+      "includeAudio": {
+        "label": "Include audio in merge (Multimodal)",
+        "description": "Feeds the recorded audio alongside candidate transcriptions to the local Gemma 4 model (with mmproj) during the merge step."
+      }
+    },
+    "gemma4": {
+      "title": "Gemma 4 Multimodal STT",
+      "label": "Enable Gemma 4 2B STT",
+      "description": "Adds a 4th transcription source using Gemma 4 2B with mmproj and audio input via the llama.cpp server."
+    },
+    "mergePrompt": {
+      "title": "Merge Prompt",
+      "description": "LLM prompt used to merge transcriptions from all models.",
+      "promptName": "Prompt Name",
+      "promptLabel": "Prompt",
+      "promptNamePlaceholder": "e.g. Merge Specialist",
+      "promptPlaceholder": "${output}, ${output2}, ${output3} — merge these transcriptions into one accurate result...",
+      "promptTip": "Use ${output} for primary, ${output2} for secondary, ${output3} for tertiary.",
+      "savePrompt": "Save Prompt",
+      "resetDefault": "Reset to Default",
+      "clearPrompt": "Clear Prompt",
+      "noPrompt": "No merge prompt configured. Transcriptions will be concatenated as fallback."
+    },
+    "status": {
+      "title": "Status",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "tertiary": "Tertiary",
+      "gemma4": "Gemma 4",
+      "noModels": "No extra models selected."
+    }
+  },
+  "whatsNew": {
+    "title": "Handy v{{version}} yenilikleri"
+  },
   "common": {
     "loading": "Yükleniyor...",
     "delete": "Sil",
@@ -1031,9 +1111,6 @@
     "processing": "İşleniyor...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
-  },
-  "whatsNew": {
-    "title": "Handy v{{version}} yenilikleri"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} 1 kısayolu engelliyor olabilir",

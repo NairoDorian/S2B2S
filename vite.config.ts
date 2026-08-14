@@ -12,8 +12,8 @@ export default defineConfig(async () => ({
   // Path aliases
   resolve: {
     alias: {
-      "@": resolve(__dirname, "./src"),
-      "@/bindings": resolve(__dirname, "./src/bindings.ts"),
+      "@": resolve(import.meta.dirname, "./src"),
+      "@/bindings": resolve(import.meta.dirname, "./src/bindings.ts"),
     },
   },
 
@@ -21,9 +21,12 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        overlay: resolve(__dirname, "src/overlay/index.html"),
-        brain_overlay: resolve(__dirname, "src/brain-overlay/index.html"),
+        main: resolve(import.meta.dirname, "index.html"),
+        overlay: resolve(import.meta.dirname, "src/overlay/index.html"),
+        brain_overlay: resolve(
+          import.meta.dirname,
+          "src/brain-overlay/index.html",
+        ),
       },
     },
   },

@@ -1223,10 +1223,25 @@ impl ShortcutAction for TranscribeAction {
                         && settings.brain.brain_only_transcription
                     {
                         Ok("[STT Bypassed]".to_string())
-                    } else if settings.multi_stt_enabled && !settings.multi_stt_models.is_empty() {
+                    } else if multi_stt::is_multi_stt_active(&settings) {
+                        // Multi-STT: transcribe the primary model, then run extras
+                        // (model_2, model_3, optional Gemma 4) in parallel and merge.
                         let mm =
                             Arc::clone(&ah.state::<Arc<crate::managers::model::ModelManager>>());
-                        multi_stt::transcribe_parallel(samples.clone(), &settings, &mm, &ah)
+                        let primary_result = match tm.finalize_stream() {
+                            Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                            Ok(_) => tm.transcribe(samples.clone()),
+                            Err(err) => Err(err),
+                        };
+                        let primary_text = primary_result.unwrap_or_default();
+                        multi_stt::transcribe_parallel(
+                            samples.clone(),
+                            primary_text,
+                            &settings,
+                            &mm,
+                            &ah,
+                        )
+                        .await
                     } else {
                         // Transcribe concurrently with WAV save. If a live stream was
                         // running, finalize it and use its text; otherwise batch-transcribe the samples.
@@ -1736,6 +1751,13 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     let mut map = HashMap::new();
     map.insert(
         "transcribe".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: false,
+            route_to_brain: false,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "multi_stt_transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
             route_to_brain: false,

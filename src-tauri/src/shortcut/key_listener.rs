@@ -451,6 +451,9 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
         if id == "transcribe_with_post_process" && !user_settings.post_process_enabled {
             continue;
         }
+        if id == "multi_stt_transcribe" && !user_settings.multi_stt_enabled {
+            continue;
+        }
 
         let binding = user_settings
             .bindings

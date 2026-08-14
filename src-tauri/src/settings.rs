@@ -1179,11 +1179,38 @@ pub struct AppSettings {
     /// Multi-STT: run multiple transcription models in parallel and merge results.
     #[serde(default)]
     pub multi_stt_enabled: bool,
+    /// Optional secondary model slot (runs alongside the primary selected_model).
     #[serde(default)]
-    pub multi_stt_models: Vec<String>,
-    /// Multi-STT post-processing prompt. {transcriptions} is replaced with the model results.
-    #[serde(default = "default_multi_stt_prompt")]
-    pub multi_stt_prompt: String,
+    pub multi_stt_model_2: Option<String>,
+    /// Optional tertiary model slot.
+    #[serde(default)]
+    pub multi_stt_model_3: Option<String>,
+    /// Per-model language override for slot 2.
+    #[serde(default)]
+    pub multi_stt_language_model_2: Option<String>,
+    /// Per-model language override for slot 3.
+    #[serde(default)]
+    pub multi_stt_language_model_3: Option<String>,
+    /// Translate slot 2 output to English.
+    #[serde(default = "default_multi_stt_translate")]
+    pub multi_stt_translate_model_2: bool,
+    /// Translate slot 3 output to English.
+    #[serde(default = "default_multi_stt_translate")]
+    pub multi_stt_translate_model_3: bool,
+    /// LLM merge prompt for multi-STT. ${output}, ${output2}, ${output3} are replaced.
+    #[serde(default)]
+    pub multi_stt_merge_prompt: Option<LLMPrompt>,
+    #[serde(default)]
+    pub multi_stt_selected_merge_prompt_id: Option<String>,
+    /// When true, use the local llama.cpp server as the LLM merge provider instead of a cloud provider.
+    #[serde(default)]
+    pub multi_stt_use_llama_merge: bool,
+    /// When true, add a 4th transcription source using Gemma 4 2B multimodal (mmproj + audio).
+    #[serde(default)]
+    pub multi_stt_gemma4_enabled: bool,
+    /// When true, include the raw audio in the LLM merge step with the local llama.cpp server (Gemma 4 with mmproj).
+    #[serde(default)]
+    pub multi_stt_merge_include_audio: bool,
     /// Parakeet streaming toggle: when enabled, all UnifiedParakeet models
     /// (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
     /// results with stateful RNNT decoder. When disabled, uses offline /transcribe.
@@ -1258,8 +1285,8 @@ fn default_silero_vad_version() -> String {
     String::new()
 }
 
-fn default_multi_stt_prompt() -> String {
-    "You are a speech transcription corrector. Given multiple independent transcriptions of the same audio recording, produce the most accurate final transcription. Cross-reference the transcriptions to resolve disagreements. Fix obvious errors, remove repetitions, and ensure the output reads naturally.\n\nTranscriptions:\n{transcriptions}\n\nReturn only the corrected transcription text, nothing else.".to_string()
+fn default_multi_stt_translate() -> bool {
+    true
 }
 
 fn default_parakeet_streaming_enabled() -> bool {
@@ -1816,6 +1843,25 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_post_process_shortcut.to_string(),
         },
     );
+
+    // Multi-STT: default shortcut follows the post-process pattern.
+    #[cfg(target_os = "macos")]
+    let default_multi_stt_shortcut = "option+shift+space";
+    #[cfg(not(target_os = "macos"))]
+    let default_multi_stt_shortcut = "ctrl+shift+space";
+
+    bindings.insert(
+        "multi_stt_transcribe".to_string(),
+        ShortcutBinding {
+            id: "multi_stt_transcribe".to_string(),
+            name: "Multi-STT Transcribe".to_string(),
+            description:
+                "Transcribes using multiple speech models in parallel and merges the results."
+                    .to_string(),
+            default_binding: default_multi_stt_shortcut.to_string(),
+            current_binding: default_multi_stt_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {
@@ -1996,8 +2042,21 @@ pub fn get_default_settings() -> AppSettings {
         silero_vad_version: default_silero_vad_version(),
         llama_server: crate::llama_server::manager::LlamaServerConfig::default(),
         multi_stt_enabled: false,
-        multi_stt_models: Vec::new(),
-        multi_stt_prompt: default_multi_stt_prompt(),
+        multi_stt_model_2: None,
+        multi_stt_model_3: None,
+        multi_stt_language_model_2: None,
+        multi_stt_language_model_3: None,
+        multi_stt_translate_model_2: true,
+        multi_stt_translate_model_3: true,
+        multi_stt_merge_prompt: Some(LLMPrompt {
+            id: "merge_and_clean".to_string(),
+            name: "Merge and Clean".to_string(),
+            prompt: crate::stt::multi_stt::DEFAULT_MULTI_STT_MERGE_PROMPT.to_string(),
+        }),
+        multi_stt_selected_merge_prompt_id: Some("merge_and_clean".to_string()),
+        multi_stt_use_llama_merge: false,
+        multi_stt_gemma4_enabled: false,
+        multi_stt_merge_include_audio: false,
         parakeet_streaming_enabled: default_parakeet_streaming_enabled(),
         control_server_token: None,
         recording_auto_stop_enabled: false,
@@ -2183,7 +2242,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
 
     if settings.control_server_token.is_none() {
         let mut token_bytes = [0u8; 16];
-        if getrandom::fill(&mut token_bytes).is_ok() {
+        if getrandom::getrandom(&mut token_bytes).is_ok() {
             let token = token_bytes
                 .iter()
                 .map(|b| format!("{:02x}", b))

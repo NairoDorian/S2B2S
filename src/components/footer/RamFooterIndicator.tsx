@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { MemoryStick } from "lucide-react";
 import { commands, type SystemRamInfo } from "@/bindings";
 
 const formatMb = (mb: number): string => {
@@ -38,7 +39,7 @@ const RamFooterIndicator: React.FC = () => {
       <>
         <span className="text-mid-gray/30 select-none">|</span>
         <span className="flex items-center gap-1.5 text-xs text-mid-gray/40">
-          <span>🧠</span>
+          <MemoryStick className="w-3.5 h-3.5" />
           <span className="font-medium">RAM</span>
           <span className="tabular-nums">--</span>
         </span>
@@ -51,7 +52,7 @@ const RamFooterIndicator: React.FC = () => {
       <>
         <span className="text-mid-gray/30 select-none">|</span>
         <span className="flex items-center gap-1.5 text-xs text-mid-gray/40">
-          <span>🧠</span>
+          <MemoryStick className="w-3.5 h-3.5" />
           <span className="font-medium">RAM</span>
           <span className="tabular-nums animate-pulse">...</span>
         </span>
@@ -71,7 +72,7 @@ const RamFooterIndicator: React.FC = () => {
   };
 
   const tooltip = [
-    `🧠 System RAM`,
+    `System RAM`,
     `  Used: ${formatMb(status.used_mb)} / ${formatMb(status.total_mb)} (${percentage}%)`,
     `  Free: ${formatMb(status.free_mb)}`,
   ].join("\n");
@@ -85,7 +86,7 @@ const RamFooterIndicator: React.FC = () => {
         title={tooltip}
       >
         <span className="flex items-center gap-1">
-          <span>🧠</span>
+          <MemoryStick className="w-3.5 h-3.5" />
           <span className="font-medium">RAM</span>
         </span>
         <div className={`w-1.5 h-1.5 rounded-full ${getRamStatusColor()}`} />

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { useSettings } from "../../hooks/useSettings";
+import appIcon from "../../assets/icon.png";
 
 type BrainStatus = "disabled" | "loading" | "ready";
 
@@ -90,8 +91,12 @@ const BrainSelector: React.FC = () => {
             : "Brain Disabled"
         }
       >
-        <span className="flex items-center gap-1">
-          <span>🧠</span>
+        <span className="flex items-center gap-1.5">
+          <img
+            src={appIcon}
+            alt="Brain"
+            className="w-3.5 h-3.5 object-contain"
+          />
           <span className="font-medium">{t("footer.brain")}</span>
         </span>
         <div

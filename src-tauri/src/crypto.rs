@@ -55,7 +55,7 @@ pub fn initialize(app_handle: &AppHandle) -> Result<(), String> {
         None => {
             // Generate a new cryptographically secure 32-byte key
             let mut new_key = vec![0u8; 32];
-            getrandom::fill(&mut new_key)
+            getrandom::getrandom(&mut new_key)
                 .map_err(|e| format!("Random generation failed: {}", e))?;
             let password = base64::engine::general_purpose::STANDARD.encode(&new_key);
 
@@ -95,7 +95,8 @@ pub fn encrypt(plaintext: &[u8]) -> Result<String, String> {
     let cipher = Aes256Gcm::new(&key);
 
     let mut nonce_bytes = [0u8; 12];
-    getrandom::fill(&mut nonce_bytes).map_err(|e| format!("Nonce generation failed: {}", e))?;
+    getrandom::getrandom(&mut nonce_bytes)
+        .map_err(|e| format!("Nonce generation failed: {}", e))?;
     let nonce = Nonce::try_from(nonce_bytes.as_slice())
         .map_err(|_| "Nonce has invalid length".to_string())?;
 

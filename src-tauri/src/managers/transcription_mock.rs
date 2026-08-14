@@ -60,6 +60,28 @@ impl TranscriptionManager {
     pub fn transcribe(&self, _audio: Vec<f32>) -> Result<String> {
         Ok(String::new())
     }
+
+    pub fn load_extra_model(&self, _model_id: &str) -> Result<String> {
+        Ok(String::new())
+    }
+
+    pub fn unload_extra_model(&self, _model_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn is_extra_model_loaded(&self, _model_id: &str) -> bool {
+        false
+    }
+
+    pub fn get_extra_loaded_models(&self) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn unload_all_extra_models(&self) {}
+
+    pub fn transcribe_with_extra(&self, _model_id: &str, _audio: Vec<f32>) -> Result<String> {
+        Ok(String::new())
+    }
 }
 
 /// No-op in CI mock.

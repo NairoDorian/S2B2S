@@ -21,7 +21,8 @@
     "brain": "Brain",
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
-    "overlayWindow": "Overlay Window"
+    "overlayWindow": "Overlay Window",
+    "multiStt": "Multi STT"
   },
   "onboarding": {
     "subtitle": "Aby rozpocząć, wybierz model transkrypcji",
@@ -127,6 +128,7 @@
   },
   "modelSelector": {
     "custom": "Własny",
+    "legacy": "Przestarzałe",
     "streaming": "Streaming",
     "active": "Aktywny",
     "switching": "Przełączanie...",
@@ -146,18 +148,33 @@
     "noModelDownloadRequired": "Brak modelu – wymagane pobranie",
     "deleteModel": "Usuń {{modelName}}",
     "downloadSpeed": "{{speed}} MB/s",
-    "capabilities": {
-      "languageSelection": "Obsługuje wiele języków wejściowych",
-      "languageCount": "{{total}} languages",
-      "translation": "Może tłumaczyć na angielski",
-      "translate": "Tłumacz na angielski",
-      "singleLanguage": "Obsługuje tylko ten język",
-      "languageOnly": "Tylko {{language}}",
-      "streaming": "Pokazuje transkrypcję na żywo podczas mówienia"
-    },
     "cancel": "Anuluj",
     "cancelDownload": "Anuluj pobieranie",
-    "legacy": "Przestarzałe"
+    "capabilities": {
+      "languageSelection": "Obsługuje wiele języków wejściowych",
+      "singleLanguage": "Obsługuje tylko ten język",
+      "languageCount": "{{total}} languages",
+      "languageOnly": "Tylko {{language}}",
+      "translation": "Może tłumaczyć na angielski",
+      "translate": "Tłumacz na angielski",
+      "streaming": "Pokazuje transkrypcję na żywo podczas mówienia"
+    },
+    "nativeStreamingLatency": {
+      "title": "Streaming Latency",
+      "description": "Choose how quickly this model responds. Faster modes reduce latency, while balanced and accurate modes give higher accuracy.",
+      "fastest": "Fastest (~80–160ms)",
+      "fast": "Fast (~160–320ms)",
+      "balanced": "Balanced (~560ms)",
+      "accurate": "Accurate (Full)",
+      "appliesNextRecording": "Applies from the next recording.",
+      "cpuWarning": "This mode can lag on CPU.",
+      "presets": {
+        "fastest": "Fastest (~80–160ms)",
+        "fast": "Fast (~160–320ms)",
+        "balanced": "Balanced (~560ms)",
+        "accurate": "Accurate (Full)"
+      }
+    }
   },
   "settings": {
     "modelSettings": {
@@ -166,26 +183,6 @@
       "parakeetStreamingToggle": {
         "label": "Streaming Mode",
         "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
-      }
-    },
-    "models": {
-      "title": "Modele transkrypcji",
-      "description": "Wybierz model transkrypcji lub pobierz dodatkowe modele. Różne modele oferują różne poziomy dokładności i szybkości.",
-      "deleteConfirm": "Czy na pewno chcesz usunąć {{modelName}}? Będziesz musiał pobrać go ponownie, aby go użyć.",
-      "deleteActiveConfirm": "{{modelName}} jest Twoim aktywnym modelem. Usunięcie go zatrzyma transkrypcje, dopóki nie wybierzesz nowego modelu. Czy na pewno chcesz kontynuować?",
-      "deleteTitle": "Usuń model",
-      "filters": {
-        "allLanguages": "Wszystkie języki",
-        "streaming": "Filtruj modele obsługujące transkrypcję na żywo",
-        "translation": "Filtruj modele obsługujące tłumaczenie na język angielski"
-      },
-      "noModelsMatch": "Żadne modele nie pasują do tego filtra.",
-      "yourModels": "Pobrane modele",
-      "availableModels": "Dostępne do pobrania",
-      "searchPlaceholder": "Szukaj modeli według nazwy…",
-      "rescan": {
-        "label": "Skanuj ponownie",
-        "tooltip": "Skanuj ponownie w poszukiwaniu modeli dodanych do folderu modeli lub pamięci podręcznej Hugging Face poza Handy"
       }
     },
     "general": {
@@ -228,6 +225,26 @@
         "label": "Push To Talk",
         "description": "Przytrzymaj, aby nagrywać, puść, aby zatrzymać"
       }
+    },
+    "models": {
+      "title": "Modele transkrypcji",
+      "description": "Wybierz model transkrypcji lub pobierz dodatkowe modele. Różne modele oferują różne poziomy dokładności i szybkości.",
+      "searchPlaceholder": "Szukaj modeli według nazwy…",
+      "yourModels": "Pobrane modele",
+      "availableModels": "Dostępne do pobrania",
+      "deleteConfirm": "Czy na pewno chcesz usunąć {{modelName}}? Będziesz musiał pobrać go ponownie, aby go użyć.",
+      "deleteActiveConfirm": "{{modelName}} jest Twoim aktywnym modelem. Usunięcie go zatrzyma transkrypcje, dopóki nie wybierzesz nowego modelu. Czy na pewno chcesz kontynuować?",
+      "deleteTitle": "Usuń model",
+      "filters": {
+        "allLanguages": "Wszystkie języki",
+        "streaming": "Filtruj modele obsługujące transkrypcję na żywo",
+        "translation": "Filtruj modele obsługujące tłumaczenie na język angielski"
+      },
+      "rescan": {
+        "label": "Skanuj ponownie",
+        "tooltip": "Skanuj ponownie w poszukiwaniu modeli dodanych do folderu modeli lub pamięci podręcznej Hugging Face poza Handy"
+      },
+      "noModelsMatch": "Żadne modele nie pasują do tego filtra."
     },
     "sound": {
       "title": "Dźwięk",
@@ -566,6 +583,13 @@
         "label": "Sprawdzaj aktualizacje",
         "description": "Automatycznie sprawdzaj nowe wersje S2B2S"
       },
+      "whatsNewPreview": {
+        "title": "Podgląd nowości",
+        "description": "Otwórz najnowsze dołączone informacje o wydaniu bez oznaczania ich jako wyświetlone",
+        "button": "Podgląd",
+        "noNotes": "Nie znaleziono dołączonych informacji o wydaniu",
+        "error": "Nie udało się wyświetlić podglądu informacji o wydaniu"
+      },
       "soundTheme": {
         "label": "Motyw dźwiękowy",
         "description": "Wybierz motyw dźwiękowy dla informacji o rozpoczęciu i zakończeniu nagrywania"
@@ -655,13 +679,6 @@
         "verdictNoEvents": "Nie przechwycono żadnych zdarzeń — czy w trakcie testu naciśnięto jakieś klawisze?",
         "failed": "Diagnostyka nie powiodła się: {{error}}"
       },
-      "whatsNewPreview": {
-        "title": "Podgląd nowości",
-        "description": "Otwórz najnowsze dołączone informacje o wydaniu bez oznaczania ich jako wyświetlone",
-        "button": "Podgląd",
-        "noNotes": "Nie znaleziono dołączonych informacji o wydaniu",
-        "error": "Nie udało się wyświetlić podglądu informacji o wydaniu"
-      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
@@ -687,6 +704,10 @@
       "version": {
         "title": "Wersja",
         "description": "Aktualna wersja S2B2S"
+      },
+      "whatsNewUpdates": {
+        "label": "Pokaż nowości",
+        "description": "Pokazuj informacje o wydaniu po aktualizacjach Handy"
       },
       "appDataDirectory": {
         "title": "Katalog danych aplikacji",
@@ -739,10 +760,6 @@
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
         }
-      },
-      "whatsNewUpdates": {
-        "label": "Pokaż nowości",
-        "description": "Pokazuj informacje o wydaniu po aktualizacjach Handy"
       }
     },
     "speech": {
@@ -980,6 +997,69 @@
     "voicesCount": "{{count}} voices",
     "downloadingModel": "Downloading {{model}}..."
   },
+  "multiStt": {
+    "enabled": {
+      "label": "Multi-STT",
+      "description": "Run multiple transcription models in parallel and merge the results."
+    },
+    "shortcut": {
+      "title": "Multi-STT Shortcut"
+    },
+    "models": {
+      "title": "Model Slots",
+      "model2": "Secondary Model",
+      "model2Description": "An optional second STT model to transcribe alongside the primary.",
+      "model3": "Tertiary Model",
+      "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
+      "model2Language": "Language:",
+      "model3Language": "Language:",
+      "translateToEnglish": "Translate to English",
+      "notSelected": "Not selected",
+      "disableModel": "Disable",
+      "primaryModel": "Primary model: {{model}}",
+      "languageNotApplicable": "This model does not support language selection."
+    },
+    "mergeProvider": {
+      "title": "Merge Provider",
+      "useLlama": {
+        "label": "Use llama.cpp for merge",
+        "description": "When enabled, the LLM merge uses the local llama.cpp server (Gemma 4) instead of a cloud provider."
+      },
+      "includeAudio": {
+        "label": "Include audio in merge (Multimodal)",
+        "description": "Feeds the recorded audio alongside candidate transcriptions to the local Gemma 4 model (with mmproj) during the merge step."
+      }
+    },
+    "gemma4": {
+      "title": "Gemma 4 Multimodal STT",
+      "label": "Enable Gemma 4 2B STT",
+      "description": "Adds a 4th transcription source using Gemma 4 2B with mmproj and audio input via the llama.cpp server."
+    },
+    "mergePrompt": {
+      "title": "Merge Prompt",
+      "description": "LLM prompt used to merge transcriptions from all models.",
+      "promptName": "Prompt Name",
+      "promptLabel": "Prompt",
+      "promptNamePlaceholder": "e.g. Merge Specialist",
+      "promptPlaceholder": "${output}, ${output2}, ${output3} — merge these transcriptions into one accurate result...",
+      "promptTip": "Use ${output} for primary, ${output2} for secondary, ${output3} for tertiary.",
+      "savePrompt": "Save Prompt",
+      "resetDefault": "Reset to Default",
+      "clearPrompt": "Clear Prompt",
+      "noPrompt": "No merge prompt configured. Transcriptions will be concatenated as fallback."
+    },
+    "status": {
+      "title": "Status",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "tertiary": "Tertiary",
+      "gemma4": "Gemma 4",
+      "noModels": "No extra models selected."
+    }
+  },
+  "whatsNew": {
+    "title": "Nowości w Handy v{{version}}"
+  },
   "common": {
     "loading": "Wczytywanie...",
     "delete": "Usuń",
@@ -1031,9 +1111,6 @@
     "processing": "Przetwarzanie...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
-  },
-  "whatsNew": {
-    "title": "Nowości w Handy v{{version}}"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} może blokować 1 skrót",

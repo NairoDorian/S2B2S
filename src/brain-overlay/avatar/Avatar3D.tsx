@@ -51,24 +51,24 @@ export const Avatar3D: React.FC<Avatar3DProps> = React.memo(
       camera.position.z = 4.8;
 
       // ── Lighting ──────────────────────────────────────────────
-      const ambient = new THREE.AmbientLight("#a78bfa", 1.4);
+      const ambient = new THREE.AmbientLight("#fef08a", 1.4);
       scene.add(ambient);
       const key = new THREE.DirectionalLight("#ffffff", 3.0);
       key.position.set(1, 1.5, 2);
       scene.add(key);
-      const rim = new THREE.DirectionalLight("#7c3aed", 2.0);
+      const rim = new THREE.DirectionalLight("#d97706", 2.0);
       rim.position.set(-1.5, -0.5, -1);
       scene.add(rim);
 
       // ── Pyramid (low-poly 4-sided cone) ───────────────────────
       const geo = new THREE.ConeGeometry(0.7, 1.1, 4, 1);
       const mat = new THREE.MeshPhysicalMaterial({
-        color: "#7c3aed",
-        emissive: "#4c1d95",
-        emissiveIntensity: 0.4,
+        color: "#f59e0b",
+        emissive: "#b45309",
+        emissiveIntensity: 0.45,
         roughness: 0.15,
-        metalness: 0.5,
-        clearcoat: 0.1,
+        metalness: 0.65,
+        clearcoat: 0.3,
       });
       const pyramid = new THREE.Mesh(geo, mat);
       scene.add(pyramid);
@@ -76,9 +76,9 @@ export const Avatar3D: React.FC<Avatar3DProps> = React.memo(
       // ── Glow orb (additive-blended sphere behind the pyramid) ─
       const glowGeo = new THREE.SphereGeometry(1.0, 32, 32);
       const glowMat = new THREE.MeshBasicMaterial({
-        color: "#7c3aed",
+        color: "#f59e0b",
         transparent: true,
-        opacity: 0.12,
+        opacity: 0.14,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
@@ -88,9 +88,9 @@ export const Avatar3D: React.FC<Avatar3DProps> = React.memo(
       // ── Outer glow ring (idle ring) ───────────────────────────
       const ringGeo = new THREE.TorusGeometry(0.9, 0.02, 16, 64);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: "#a78bfa",
+        color: "#fbbf24",
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.35,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
@@ -157,8 +157,8 @@ export const Avatar3D: React.FC<Avatar3DProps> = React.memo(
 
         // Reset error color when not in error
         if (phase !== "error") {
-          mat.color.set("#7c3aed");
-          mat.emissive.set("#4c1d95");
+          mat.color.set("#f59e0b");
+          mat.emissive.set("#b45309");
         }
 
         // Spin

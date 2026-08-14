@@ -21,7 +21,8 @@
     "brain": "Brain",
     "conversation": "Conversation",
     "llamaCpp": "Llama.cpp",
-    "overlayWindow": "Overlay Window"
+    "overlayWindow": "Overlay Window",
+    "multiStt": "Multi STT"
   },
   "onboarding": {
     "subtitle": "Để bắt đầu, hãy chọn một mô hình chuyển đổi giọng nói",
@@ -127,6 +128,7 @@
   },
   "modelSelector": {
     "custom": "Tùy chỉnh",
+    "legacy": "Cũ",
     "streaming": "Truyền trực tiếp",
     "active": "Đang hoạt động",
     "switching": "Đang chuyển...",
@@ -146,18 +148,33 @@
     "noModelDownloadRequired": "Chưa Có Mô Hình - Cần Tải Xuống",
     "deleteModel": "Xóa {{modelName}}",
     "downloadSpeed": "{{speed}} MB/s",
-    "capabilities": {
-      "languageSelection": "Hỗ trợ nhiều ngôn ngữ đầu vào",
-      "languageCount": "{{total}} languages",
-      "translation": "Có thể dịch sang tiếng Anh",
-      "translate": "Dịch sang tiếng Anh",
-      "singleLanguage": "Chỉ hỗ trợ ngôn ngữ này",
-      "languageOnly": "Chỉ {{language}}",
-      "streaming": "Hiển thị phiên âm trực tiếp khi bạn nói"
-    },
     "cancel": "Hủy",
     "cancelDownload": "Hủy tải xuống",
-    "legacy": "Cũ"
+    "capabilities": {
+      "languageSelection": "Hỗ trợ nhiều ngôn ngữ đầu vào",
+      "singleLanguage": "Chỉ hỗ trợ ngôn ngữ này",
+      "languageCount": "{{total}} languages",
+      "languageOnly": "Chỉ {{language}}",
+      "translation": "Có thể dịch sang tiếng Anh",
+      "translate": "Dịch sang tiếng Anh",
+      "streaming": "Hiển thị phiên âm trực tiếp khi bạn nói"
+    },
+    "nativeStreamingLatency": {
+      "title": "Streaming Latency",
+      "description": "Choose how quickly this model responds. Faster modes reduce latency, while balanced and accurate modes give higher accuracy.",
+      "fastest": "Fastest (~80–160ms)",
+      "fast": "Fast (~160–320ms)",
+      "balanced": "Balanced (~560ms)",
+      "accurate": "Accurate (Full)",
+      "appliesNextRecording": "Applies from the next recording.",
+      "cpuWarning": "This mode can lag on CPU.",
+      "presets": {
+        "fastest": "Fastest (~80–160ms)",
+        "fast": "Fast (~160–320ms)",
+        "balanced": "Balanced (~560ms)",
+        "accurate": "Accurate (Full)"
+      }
+    }
   },
   "settings": {
     "modelSettings": {
@@ -166,26 +183,6 @@
       "parakeetStreamingToggle": {
         "label": "Streaming Mode",
         "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
-      }
-    },
-    "models": {
-      "title": "Mô hình chuyển đổi",
-      "description": "Chọn mô hình chuyển đổi hoặc tải thêm mô hình. Các mô hình khác nhau có mức độ chính xác và tốc độ khác nhau.",
-      "deleteConfirm": "Bạn có chắc chắn muốn xóa {{modelName}}? Bạn sẽ cần tải lại để sử dụng.",
-      "deleteActiveConfirm": "{{modelName}} là mô hình đang hoạt động của bạn. Xóa nó sẽ dừng phiên âm cho đến khi bạn chọn một mô hình mới. Bạn có chắc không?",
-      "deleteTitle": "Xóa mô hình",
-      "filters": {
-        "allLanguages": "Tất cả ngôn ngữ",
-        "streaming": "Lọc các mô hình hỗ trợ phiên âm trực tiếp",
-        "translation": "Lọc các mô hình hỗ trợ dịch sang tiếng Anh"
-      },
-      "noModelsMatch": "Không có mô hình nào khớp với bộ lọc này.",
-      "yourModels": "Mô hình đã tải",
-      "availableModels": "Có sẵn để tải xuống",
-      "searchPlaceholder": "Tìm mô hình theo tên…",
-      "rescan": {
-        "label": "Quét lại",
-        "tooltip": "Quét lại các mô hình được thêm vào thư mục mô hình hoặc bộ nhớ đệm Hugging Face bên ngoài Handy"
       }
     },
     "general": {
@@ -228,6 +225,26 @@
         "label": "Nhấn để nói",
         "description": "Giữ để ghi âm, thả để dừng"
       }
+    },
+    "models": {
+      "title": "Mô hình chuyển đổi",
+      "description": "Chọn mô hình chuyển đổi hoặc tải thêm mô hình. Các mô hình khác nhau có mức độ chính xác và tốc độ khác nhau.",
+      "searchPlaceholder": "Tìm mô hình theo tên…",
+      "yourModels": "Mô hình đã tải",
+      "availableModels": "Có sẵn để tải xuống",
+      "deleteConfirm": "Bạn có chắc chắn muốn xóa {{modelName}}? Bạn sẽ cần tải lại để sử dụng.",
+      "deleteActiveConfirm": "{{modelName}} là mô hình đang hoạt động của bạn. Xóa nó sẽ dừng phiên âm cho đến khi bạn chọn một mô hình mới. Bạn có chắc không?",
+      "deleteTitle": "Xóa mô hình",
+      "filters": {
+        "allLanguages": "Tất cả ngôn ngữ",
+        "streaming": "Lọc các mô hình hỗ trợ phiên âm trực tiếp",
+        "translation": "Lọc các mô hình hỗ trợ dịch sang tiếng Anh"
+      },
+      "rescan": {
+        "label": "Quét lại",
+        "tooltip": "Quét lại các mô hình được thêm vào thư mục mô hình hoặc bộ nhớ đệm Hugging Face bên ngoài Handy"
+      },
+      "noModelsMatch": "Không có mô hình nào khớp với bộ lọc này."
     },
     "sound": {
       "title": "Âm thanh",
@@ -566,6 +583,13 @@
         "label": "Kiểm tra cập nhật",
         "description": "Tự động kiểm tra phiên bản mới của S2B2S"
       },
+      "whatsNewPreview": {
+        "title": "Xem trước điểm mới",
+        "description": "Mở ghi chú phát hành mới nhất được đóng gói mà không đánh dấu là đã xem",
+        "button": "Xem trước",
+        "noNotes": "Không tìm thấy ghi chú phát hành được đóng gói",
+        "error": "Không thể xem trước ghi chú phát hành"
+      },
       "soundTheme": {
         "label": "Chủ đề âm thanh",
         "description": "Chọn chủ đề âm thanh cho phản hồi bắt đầu và kết thúc ghi âm"
@@ -655,13 +679,6 @@
         "verdictNoEvents": "Không ghi nhận sự kiện nào — bạn có bấm phím nào trong lúc kiểm tra không?",
         "failed": "Chẩn đoán thất bại: {{error}}"
       },
-      "whatsNewPreview": {
-        "title": "Xem trước điểm mới",
-        "description": "Mở ghi chú phát hành mới nhất được đóng gói mà không đánh dấu là đã xem",
-        "button": "Xem trước",
-        "noNotes": "Không tìm thấy ghi chú phát hành được đóng gói",
-        "error": "Không thể xem trước ghi chú phát hành"
-      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
@@ -687,6 +704,10 @@
       "version": {
         "title": "Phiên bản",
         "description": "Phiên bản hiện tại của S2B2S"
+      },
+      "whatsNewUpdates": {
+        "label": "Hiển thị điểm mới",
+        "description": "Hiển thị ghi chú phát hành sau khi Handy cập nhật"
       },
       "appDataDirectory": {
         "title": "Thư mục dữ liệu ứng dụng",
@@ -739,10 +760,6 @@
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
         }
-      },
-      "whatsNewUpdates": {
-        "label": "Hiển thị điểm mới",
-        "description": "Hiển thị ghi chú phát hành sau khi Handy cập nhật"
       }
     },
     "speech": {
@@ -980,6 +997,69 @@
     "voicesCount": "{{count}} voices",
     "downloadingModel": "Downloading {{model}}..."
   },
+  "multiStt": {
+    "enabled": {
+      "label": "Multi-STT",
+      "description": "Run multiple transcription models in parallel and merge the results."
+    },
+    "shortcut": {
+      "title": "Multi-STT Shortcut"
+    },
+    "models": {
+      "title": "Model Slots",
+      "model2": "Secondary Model",
+      "model2Description": "An optional second STT model to transcribe alongside the primary.",
+      "model3": "Tertiary Model",
+      "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
+      "model2Language": "Language:",
+      "model3Language": "Language:",
+      "translateToEnglish": "Translate to English",
+      "notSelected": "Not selected",
+      "disableModel": "Disable",
+      "primaryModel": "Primary model: {{model}}",
+      "languageNotApplicable": "This model does not support language selection."
+    },
+    "mergeProvider": {
+      "title": "Merge Provider",
+      "useLlama": {
+        "label": "Use llama.cpp for merge",
+        "description": "When enabled, the LLM merge uses the local llama.cpp server (Gemma 4) instead of a cloud provider."
+      },
+      "includeAudio": {
+        "label": "Include audio in merge (Multimodal)",
+        "description": "Feeds the recorded audio alongside candidate transcriptions to the local Gemma 4 model (with mmproj) during the merge step."
+      }
+    },
+    "gemma4": {
+      "title": "Gemma 4 Multimodal STT",
+      "label": "Enable Gemma 4 2B STT",
+      "description": "Adds a 4th transcription source using Gemma 4 2B with mmproj and audio input via the llama.cpp server."
+    },
+    "mergePrompt": {
+      "title": "Merge Prompt",
+      "description": "LLM prompt used to merge transcriptions from all models.",
+      "promptName": "Prompt Name",
+      "promptLabel": "Prompt",
+      "promptNamePlaceholder": "e.g. Merge Specialist",
+      "promptPlaceholder": "${output}, ${output2}, ${output3} — merge these transcriptions into one accurate result...",
+      "promptTip": "Use ${output} for primary, ${output2} for secondary, ${output3} for tertiary.",
+      "savePrompt": "Save Prompt",
+      "resetDefault": "Reset to Default",
+      "clearPrompt": "Clear Prompt",
+      "noPrompt": "No merge prompt configured. Transcriptions will be concatenated as fallback."
+    },
+    "status": {
+      "title": "Status",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "tertiary": "Tertiary",
+      "gemma4": "Gemma 4",
+      "noModels": "No extra models selected."
+    }
+  },
+  "whatsNew": {
+    "title": "Điểm mới trong Handy v{{version}}"
+  },
   "common": {
     "loading": "Đang tải...",
     "delete": "Xóa",
@@ -1031,9 +1111,6 @@
     "processing": "Đang xử lý...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
-  },
-  "whatsNew": {
-    "title": "Điểm mới trong Handy v{{version}}"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} có thể đang chặn 1 phím tắt",

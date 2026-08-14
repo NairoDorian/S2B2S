@@ -9,6 +9,7 @@ export { ModelsSettings } from "./models/ModelsSettings";
 export { SpeechSettings } from "./speech/SpeechSettings";
 export { BrainSettings } from "./brain/BrainSettings";
 export { LlamaCppSettings } from "./llama-cpp/LlamaCppSettings";
+export { MultiSttSettings } from "./multi-stt/MultiSttSettings";
 export { default as OverlayWindowSettings } from "./OverlayWindowSettings";
 
 // Individual setting components

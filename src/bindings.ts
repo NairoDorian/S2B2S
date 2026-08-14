@@ -34,6 +34,19 @@ export const commands = {
 	changeAutoSubmitKeySetting: (key: string) => typedError<null, string>(__TAURI_INVOKE("change_auto_submit_key_setting", { key })),
 	changePostProcessEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_post_process_enabled_setting", { enabled })),
 	changeExperimentalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_experimental_enabled_setting", { enabled })),
+	changeMultiSttEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_enabled_setting", { enabled })),
+	changeMultiSttExtraModel: (slot: number, modelId: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model", { slot, modelId })),
+	changeMultiSttExtraModelLanguage: (slot: number, language: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_language", { slot, language })),
+	changeMultiSttMergePrompt: (prompt: {
+	id: string,
+	name: string,
+	prompt: string,
+} | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_prompt", { prompt })),
+	changeMultiSttTranslateModel2: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_2", { enabled })),
+	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
+	changeMultiSttUseLlamaMergeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_use_llama_merge_setting", { enabled })),
+	changeMultiSttGemma4Setting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_gemma4_setting", { enabled })),
+	changeMultiSttMergeIncludeAudioSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_include_audio_setting", { enabled })),
 	changePostProcessBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl })),
 	changePostProcessApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_api_key_setting", { providerId, apiKey })),
 	changePostProcessModelSetting: (providerId: string, model: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_model_setting", { providerId, model })),
@@ -205,6 +218,7 @@ export const commands = {
 	unloadModelManually: () => typedError<null, string>(__TAURI_INVOKE("unload_model_manually")),
 	setLongAudioModel: (model: string | null) => __TAURI_INVOKE<void>("set_long_audio_model", { model }),
 	setLongAudioThreshold: (threshold: number | null) => __TAURI_INVOKE<void>("set_long_audio_threshold", { threshold }),
+	unloadExtraModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("unload_extra_model", { modelId })),
 	getHistoryEntries: (cursor: number | null, limit: number | null) => typedError<PaginatedHistory, string>(__TAURI_INVOKE("get_history_entries", { cursor, limit })),
 	toggleHistoryEntrySaved: (id: number) => typedError<null, string>(__TAURI_INVOKE("toggle_history_entry_saved", { id })),
 	getAudioFilePath: (fileName: string) => typedError<string, string>(__TAURI_INVOKE("get_audio_file_path", { fileName })),
@@ -431,9 +445,27 @@ export type AppSettings_Deserialize = {
 	llama_server?: LlamaServerConfig,
 	/**  Multi-STT: run multiple transcription models in parallel and merge results. */
 	multi_stt_enabled?: boolean,
-	multi_stt_models?: string[],
-	/**  Multi-STT post-processing prompt. {transcriptions} is replaced with the model results. */
-	multi_stt_prompt?: string,
+	/**  Optional secondary model slot (runs alongside the primary selected_model). */
+	multi_stt_model_2?: string | null,
+	/**  Optional tertiary model slot. */
+	multi_stt_model_3?: string | null,
+	/**  Per-model language override for slot 2. */
+	multi_stt_language_model_2?: string | null,
+	/**  Per-model language override for slot 3. */
+	multi_stt_language_model_3?: string | null,
+	/**  Translate slot 2 output to English. */
+	multi_stt_translate_model_2?: boolean,
+	/**  Translate slot 3 output to English. */
+	multi_stt_translate_model_3?: boolean,
+	/**  LLM merge prompt for multi-STT. ${output}, ${output2}, ${output3} are replaced. */
+	multi_stt_merge_prompt?: LLMPrompt | null,
+	multi_stt_selected_merge_prompt_id?: string | null,
+	/**  When true, use the local llama.cpp server as the LLM merge provider instead of a cloud provider. */
+	multi_stt_use_llama_merge?: boolean,
+	/**  When true, add a 4th transcription source using Gemma 4 2B multimodal (mmproj + audio). */
+	multi_stt_gemma4_enabled?: boolean,
+	/**  When true, include the raw audio in the LLM merge step with the local llama.cpp server (Gemma 4 with mmproj). */
+	multi_stt_merge_include_audio?: boolean,
 	/**
 	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
 	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
@@ -575,9 +607,27 @@ export type AppSettings_Serialize = {
 	llama_server: LlamaServerConfig,
 	/**  Multi-STT: run multiple transcription models in parallel and merge results. */
 	multi_stt_enabled: boolean,
-	multi_stt_models: string[],
-	/**  Multi-STT post-processing prompt. {transcriptions} is replaced with the model results. */
-	multi_stt_prompt: string,
+	/**  Optional secondary model slot (runs alongside the primary selected_model). */
+	multi_stt_model_2: string | null,
+	/**  Optional tertiary model slot. */
+	multi_stt_model_3: string | null,
+	/**  Per-model language override for slot 2. */
+	multi_stt_language_model_2: string | null,
+	/**  Per-model language override for slot 3. */
+	multi_stt_language_model_3: string | null,
+	/**  Translate slot 2 output to English. */
+	multi_stt_translate_model_2: boolean,
+	/**  Translate slot 3 output to English. */
+	multi_stt_translate_model_3: boolean,
+	/**  LLM merge prompt for multi-STT. ${output}, ${output2}, ${output3} are replaced. */
+	multi_stt_merge_prompt: LLMPrompt | null,
+	multi_stt_selected_merge_prompt_id: string | null,
+	/**  When true, use the local llama.cpp server as the LLM merge provider instead of a cloud provider. */
+	multi_stt_use_llama_merge: boolean,
+	/**  When true, add a 4th transcription source using Gemma 4 2B multimodal (mmproj + audio). */
+	multi_stt_gemma4_enabled: boolean,
+	/**  When true, include the raw audio in the LLM merge step with the local llama.cpp server (Gemma 4 with mmproj). */
+	multi_stt_merge_include_audio: boolean,
 	/**
 	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
 	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial

@@ -86,6 +86,7 @@ pub fn is_transcribe_binding(id: &str) -> bool {
     id == "transcribe"
         || id == "transcribe_with_post_process"
         || id == "converse"
+        || id == "multi_stt_transcribe"
         || id.starts_with(ACTION_BINDING_PREFIX)
 }
 

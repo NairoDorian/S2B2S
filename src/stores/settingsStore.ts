@@ -201,6 +201,30 @@ const settingUpdaters: {
   theme: (value) => commands.changeThemeSetting(value as string),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
+  multi_stt_enabled: (value) =>
+    commands.changeMultiSttEnabledSetting(value as boolean),
+  multi_stt_model_2: (value) =>
+    commands.changeMultiSttExtraModel(2, value as string | null),
+  multi_stt_model_3: (value) =>
+    commands.changeMultiSttExtraModel(3, value as string | null),
+  multi_stt_language_model_2: (value) =>
+    commands.changeMultiSttExtraModelLanguage(2, value as string | null),
+  multi_stt_language_model_3: (value) =>
+    commands.changeMultiSttExtraModelLanguage(3, value as string | null),
+  multi_stt_translate_model_2: (value) =>
+    commands.changeMultiSttTranslateModel2(value as boolean),
+  multi_stt_translate_model_3: (value) =>
+    commands.changeMultiSttTranslateModel3(value as boolean),
+  multi_stt_merge_prompt: (value) =>
+    commands.changeMultiSttMergePrompt(
+      value as { id: string; name: string; prompt: string } | null,
+    ),
+  multi_stt_use_llama_merge: (value) =>
+    commands.changeMultiSttUseLlamaMergeSetting(value as boolean),
+  multi_stt_gemma4_enabled: (value) =>
+    commands.changeMultiSttGemma4Setting(value as boolean),
+  multi_stt_merge_include_audio: (value) =>
+    commands.changeMultiSttMergeIncludeAudioSetting(value as boolean),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),

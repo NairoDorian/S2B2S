@@ -48,7 +48,7 @@ rdev = { git = "https://github.com/rustdesk-org/rdev" }
 # Pinned to 0.17 (latest usable): rodio 0.22 requires cpal ^0.17, and a single
 # cpal version is mandatory because audio_feedback hands a cpal Device to rodio.
 cpal = "0.17"
-anyhow = "1.0.103"
+anyhow = "^1.0.104"
 rubato = "3.0.0"
 # rubato 3.0 exposes audio I/O through these adapter crates (same version rubato uses).
 audioadapter = "3.0"
@@ -62,7 +62,7 @@ vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 ort = { version = "=2.0.0-rc.12", features = [] }
 ndarray = { version = "=0.17.2" }
 enigo = "*"
-rodio = "0.22"
+rodio = "^0.22.2"
 reqwest = { version = "*", features = ["json", "stream", "blocking", "gzip", "brotli", "deflate"] }
 ureq = "*"
 futures-util = "*"
@@ -94,7 +94,7 @@ tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "*"
 text-processing-rs = "*"
 base64 = "*"
-getrandom = "*"
+getrandom = "0.2"
 keyring = "*"
 aes-gcm = "*"
 aead = "*"
