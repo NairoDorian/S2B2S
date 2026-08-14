@@ -128,13 +128,6 @@ const BrainSelector: React.FC = () => {
             className="w-3.5 h-3.5 object-contain"
           />
           <span className="font-medium">{t("footer.brain")}</span>
-          {brain.provider_id === "llama_cpp" &&
-            llamaServer?.running &&
-            llamaServer.mmprojLoaded && (
-              <span className="text-[9px] font-semibold text-logo-primary bg-logo-primary/10 rounded px-1 py-px">
-                {t("footer.mmproj")}
-              </span>
-            )}
         </span>
         <div
           className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
