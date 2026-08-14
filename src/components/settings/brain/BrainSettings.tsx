@@ -431,6 +431,13 @@ export const BrainSettings: React.FC = () => {
           formatValue={(value) => `${Math.round(value)}`}
         />
         <ToggleSwitch
+          checked={brain.compaction_enabled ?? true}
+          onChange={(compaction_enabled) => update({ compaction_enabled })}
+          label={t("settings.brain.compaction.label")}
+          description={t("settings.brain.compaction.description")}
+          grouped
+        />
+        <ToggleSwitch
           checked={brain.read_aloud}
           onChange={(read_aloud) => update({ read_aloud })}
           label={t("settings.brain.readAloud.label")}

@@ -825,6 +825,12 @@ export type BrainConfig = {
 	 *  mainly helps smaller local models.
 	 */
 	reply_language?: string,
+	/**
+	 *  Compress old conversation turns into a short summary when the context
+	 *  window fills up (dense-JSON summarization, single-flight background
+	 *  task). When disabled, oldest turns are simply dropped.
+	 */
+	compaction_enabled?: boolean,
 };
 
 export type CartesiaConfig = {

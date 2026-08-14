@@ -29,6 +29,21 @@ impl MessageContent {
     pub fn parts(parts: Vec<ContentPart>) -> Self {
         MessageContent::Parts(parts)
     }
+    /// Plain-text view of this content (text parts joined) — used for token
+    /// budgeting and transcript rendering; drops image/audio parts.
+    pub fn text_content(&self) -> String {
+        match self {
+            MessageContent::Text(t) => t.clone(),
+            MessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }
+    }
 }
 
 /// A single part in a multimodal content array.

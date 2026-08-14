@@ -37,12 +37,12 @@
 
 ### Current Task in Progress
 
-- None. M0 + M1 complete. Next: **Milestone M2 (Smart Conversation Core)** — see Section 4.
+- None. M0, M1 complete; M2 partially done (M2.3 compaction + M2.4 TTS coalescing landed). Remaining M2 tasks: M2.1/M2.2 speculative turns + two-tier endpointing, M2.5 tool calling, M2.6 realtime gateway.
 
 ### Next Immediate Action for Takeover
 
-1. M2.3: Brain context compaction (token-counted truncation + optional LLM summarization, single-flight worker, generation counter).
-2. M2.4: sentence batching + TTS input coalescing.
+1. M2.1: `(turn_id, revision)` tagging + `SpeculativeTurnTracker` in `managers/continuous_voice.rs` / `recorder.rs` (see speech-to-speech `speculative_turns.py` design in Section 3).
+2. M2.2: reopen-grace endpointing (800ms/2000ms) driving TTS/chat commit.
 
 ### Active Traps & Blockers
 
@@ -132,8 +132,8 @@
 
 - [ ] **M2.1** Turn system: `(turn_id, revision)` tagging on every continuous-voice message; central `SpeculativeTurnTracker` (latest/committed/pending-reopen + grace deadlines) in Rust (`Mutex<HashMap>` + `Notify`).
 - [ ] **M2.2** Two-tier endpointing: keep Silero/VAD boundary, add reopen-grace selection (800ms confident / 2000ms tentative) driving when TTS/chat commit; per-stage `is_latest(turn, rev)` gates.
-- [ ] **M2.3** Brain context compaction: token-counted truncation + optional LLM summarization (dense-JSON summary prompt, single-flight background worker, generation counter to reject stale splices; hard cap at 2× turns).
-- [ ] **M2.4** Sentence batching (`stream_batch_sentences`) + TTS input coalescing (drain `try_recv` same-response sentences into one synth call; preserve event-before-audio ordering).
+- [x] **M2.3** Brain context compaction: token-aware context building (`select_context_messages` — never exceeds llama.cpp 16k / cloud 8k budget minus headroom), optional LLM summarization (`compaction_enabled`, default on) with dense-JSON prompt, single-flight background worker, generation counter rejecting stale splices, prose fallback parse; hard truncation fallback when disabled or on failure; `brain:history-compacted` event; `compaction_enabled` exposed in BrainSettings; 5 unit tests.
+- [x] **M2.4** TTS sentence coalescing: the sentence consumer drains same-generation backlog up to `MAX_COALESCE_CHARS` (800) into single synthesis calls — fewer model invocations, better cross-sentence prosody — while the first sentence still synthesizes alone for fast first audio. (Sentence batching skipped: per-sentence TTS emission already minimizes time-to-first-audio; coalescing covers the backlog case.)
 - [ ] **M2.5** Tool calling for local models: `<code>…</code>` block prompt + parser (paren-depth scanner, JSON args), schema validation before execution; expose 2-3 built-in tools (time/date, clipboard read, open URL) — MCP-lite, fully offline.
 - [ ] **M2.6** (Stretch) Local OpenAI Realtime WebSocket gateway (`ws://127.0.0.1:8765/v1/realtime`) — axum + tokio-tungstenite; protocol layer (response keys, item ordering, lazy `response.created`) separate from pipeline layer; barge-in order: cancel → flush queues → re-enable mic.
 

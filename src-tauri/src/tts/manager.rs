@@ -22,6 +22,11 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
+/// Upper bound for sentence coalescing: merge queued sentences into one
+/// synthesis call only while the combined text stays under this many chars.
+/// Keeps single synthesis blocks short so playback and barge-in stay snappy.
+const MAX_COALESCE_CHARS: usize = 800;
+
 pub struct TtsManager {
     app: AppHandle,
     player: TtsPlayer,
@@ -434,6 +439,8 @@ impl TtsManager {
     /// Speak a single already-segmented sentence as part of an ongoing session
     /// (used by the Brain → TTS bridge). Returns immediately; synthesis happens
     /// on a worker and the result is appended to the active playback queue.
+    /// Consecutive queued sentences are coalesced into single synthesis calls
+    /// (bounded by [`MAX_COALESCE_CHARS`]) to reduce model invocations.
     pub fn speak_sentence(&self, sentence: String) {
         let cfg = get_settings(&self.app).tts;
         let sentence = sanitize_text(sentence.trim(), &cfg.sanitization);
@@ -466,8 +473,29 @@ impl TtsManager {
                     if gen_counter.load(Ordering::SeqCst) != gen {
                         continue;
                     }
+                    // TTS input coalescing (speech-to-speech pattern): merge
+                    // consecutive same-generation sentences that piled up
+                    // while this synthesis ran — fewer model invocations and
+                    // better prosody across sentence boundaries. The first
+                    // sentence is synthesized alone so first audio stays fast.
+                    let mut merged = text;
+                    let mut merged_len = merged.chars().count();
+                    while merged_len < MAX_COALESCE_CHARS {
+                        match rx.try_recv() {
+                            Ok((next, next_gen)) if next_gen == gen => {
+                                merged.push(' ');
+                                merged.push_str(&next);
+                                merged_len += next.chars().count() + 1;
+                            }
+                            // Different generation: begin_session() reset the
+                            // session, so this item is stale — drop it. New
+                            // turns use a fresh channel anyway.
+                            Ok((_, _)) => continue,
+                            Err(_) => break,
+                        }
+                    }
                     let synth_start = std::time::Instant::now();
-                    match backend.synthesize(&text, &voice, speed) {
+                    match backend.synthesize(&merged, &voice, speed) {
                         Ok(bytes) => {
                             if gen_counter.load(Ordering::SeqCst) == gen {
                                 player.append(bytes);
@@ -476,7 +504,7 @@ impl TtsManager {
                                     app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
                                 {
                                     let key = format!("{}:{}", engine_name, voice);
-                                    telemetry.record(&key, text.len(), synth_ms);
+                                    telemetry.record(&key, merged.len(), synth_ms);
                                 }
                                 let _ = app
                                     .emit("tts:synth-done", serde_json::json!({ "ms": synth_ms }));

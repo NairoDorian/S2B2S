@@ -1024,6 +1024,10 @@
         "label": "Memory (turns)",
         "description": "How many previous exchanges the Brain remembers. 0 means each question is independent."
       },
+      "compaction": {
+        "label": "Summarize old turns",
+        "description": "When the conversation outgrows the context window, compress the oldest turns into a short summary instead of forgetting them. When off, old turns are simply dropped."
+      },
       "readAloud": {
         "label": "Read replies aloud",
         "description": "Speak each reply sentence-by-sentence while it streams (requires speech output)."

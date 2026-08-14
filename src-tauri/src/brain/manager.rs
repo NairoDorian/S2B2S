@@ -8,11 +8,65 @@
 use crate::brain::client::{BrainClient, BrainResult, ChatMessage, ContentPart, MessageContent};
 use crate::settings::get_settings;
 use crate::tts::manager::TtsManager;
-use log::info;
-use std::sync::atomic::{AtomicBool, Ordering};
+use log::{info, warn};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
+
+/// Rough token estimate (~4 chars per token) used for context budgeting.
+fn estimate_tokens(text: &str) -> usize {
+    text.chars().count() / 4 + 1
+}
+
+/// Context window budget. llama.cpp is launched with `-c 16384`; cloud
+/// providers get a conservative 8192 budget.
+const LLAMA_CPP_CONTEXT_TOKENS: usize = 16384;
+const DEFAULT_CONTEXT_TOKENS: usize = 8192;
+/// Headroom reserved for the model's reply (and prompt overhead).
+const CONTEXT_HEADROOM: usize = 2048;
+/// Messages kept unsummarized when compaction runs (≈ last 2 exchanges).
+const COMPACTION_KEEP_MESSAGES: usize = 4;
+/// How many turns (messages) to summarize in one compaction call.
+const COMPACTION_MAX_MESSAGES: usize = 64;
+
+/// Dense-JSON summarization prompt (mirrors speech-to-speech
+/// `compaction_prompt.py`): one call compresses the whole old transcript into
+/// a single user+assistant summary pair.
+const COMPACTION_SYSTEM_PROMPT: &str = "You compress conversation history. Summarize the conversation into dense, third-person notes as valid JSON with exactly two string fields: \"user_summary\" (1-5 sentences: the user's intents, questions, constraints and key facts) and \"assistant_summary\" (1-5 sentences: your answers, decisions and important conclusions). Preserve all facts, names, numbers, and decisions. Output ONLY the JSON object — no markdown fences, no commentary.";
+
+/// Parse the compaction response into `(user_summary, assistant_summary)`.
+/// Forgiving: strips markdown fences, tolerates missing fields.
+fn parse_compaction_json(raw: &str) -> (String, String) {
+    let trimmed = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let parsed: Option<serde_json::Value> = serde_json::from_str(trimmed).ok();
+    match parsed {
+        Some(serde_json::Value::Object(map)) => {
+            let user = map
+                .get("user_summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("The user asked for help with the conversation above.");
+            let assistant = map
+                .get("assistant_summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("The assistant answered the user's questions.");
+            (user.to_string(), assistant.to_string())
+        }
+        _ => {
+            // Model returned prose instead of JSON: store it as one summary pair.
+            let fallback = trimmed.chars().take(2000).collect::<String>();
+            (
+                format!("Earlier conversation summary: {fallback}"),
+                "The assistant continued the conversation after the summarized part.".to_string(),
+            )
+        }
+    }
+}
 
 pub struct BrainManager {
     app: AppHandle,
@@ -21,6 +75,11 @@ pub struct BrainManager {
     /// Abort token of the in-flight turn; replaced on every `ask` so aborting an
     /// old turn can never cancel a new one (barge-in safety).
     current_abort: Mutex<Arc<AtomicBool>>,
+    /// Bumped on `clear_history`; a stale compaction result must not splice
+    /// into a conversation that was reset while the summary was in flight.
+    history_generation: AtomicU64,
+    /// Single-flight guard for the background compaction task.
+    compaction_in_flight: AtomicBool,
 }
 
 impl BrainManager {
@@ -30,6 +89,8 @@ impl BrainManager {
             client: Arc::new(BrainClient::new()),
             history: Mutex::new(Vec::new()),
             current_abort: Mutex::new(Arc::new(AtomicBool::new(false))),
+            history_generation: AtomicU64::new(0),
+            compaction_in_flight: AtomicBool::new(false),
         }
     }
 
@@ -46,7 +107,200 @@ impl BrainManager {
 
     pub fn clear_history(&self) {
         self.history.lock().unwrap().clear();
+        self.history_generation.fetch_add(1, Ordering::SeqCst);
         let _ = self.app.emit("brain:history-cleared", ());
+    }
+
+    /// Effective context budget for the active provider.
+    fn context_token_limit(&self) -> usize {
+        let cfg = get_settings(&self.app).brain;
+        let budget = if cfg.provider_id == "llama_cpp" {
+            LLAMA_CPP_CONTEXT_TOKENS
+        } else {
+            DEFAULT_CONTEXT_TOKENS
+        };
+        budget.saturating_sub(CONTEXT_HEADROOM)
+    }
+
+    /// Total estimated tokens across the stored history.
+    fn history_tokens(&self) -> usize {
+        let history = self.history.lock().unwrap();
+        history
+            .iter()
+            .map(|m| estimate_tokens(&m.content.text_content()))
+            .sum()
+    }
+
+    /// Build the context window from history with two guards: never exceed the
+    /// last `context_turns * 2` messages, and never exceed the token budget
+    /// (oldest turns are dropped first). Prevents silent context overflow on
+    /// long turns while a background compaction is still in flight.
+    fn select_context_messages(&self, cfg: &crate::settings::BrainConfig) -> Vec<ChatMessage> {
+        let history = self.history.lock().unwrap();
+        let max_messages = if cfg.context_turns > 0 {
+            (cfg.context_turns as usize) * 2
+        } else {
+            0
+        };
+        let limit = self.context_token_limit();
+
+        let mut selected = Vec::new();
+        let mut used_tokens = 0usize;
+        for message in history.iter().rev() {
+            let tokens = estimate_tokens(&message.content.text_content());
+            if max_messages > 0 && selected.len() >= max_messages {
+                break;
+            }
+            if used_tokens + tokens > limit && !selected.is_empty() {
+                break;
+            }
+            used_tokens += tokens;
+            selected.push(message.clone());
+        }
+        selected.reverse();
+        selected
+    }
+
+    /// After appending a turn: if history exceeds the token budget, either
+    /// summarize the old turns (single-flight background task) or drop the
+    /// oldest ones when compaction is disabled.
+    fn maybe_compact_history(&self) {
+        let cfg = get_settings(&self.app).brain;
+        if self.history_tokens() <= self.context_token_limit() {
+            return;
+        }
+        if !cfg.compaction_enabled {
+            self.drop_oldest_until_fits();
+            return;
+        }
+        if self.compaction_in_flight.swap(true, Ordering::SeqCst) {
+            // A compaction is already running; the token-aware context builder
+            // keeps requests within budget until it lands.
+            return;
+        }
+        self.spawn_compaction_task();
+    }
+
+    /// Hard truncation: remove oldest messages until the token budget holds.
+    fn drop_oldest_until_fits(&self) {
+        let limit = self.context_token_limit();
+        let mut history = self.history.lock().unwrap();
+        while !history.is_empty() {
+            let total: usize = history
+                .iter()
+                .map(|m| estimate_tokens(&m.content.text_content()))
+                .sum();
+            if total <= limit {
+                break;
+            }
+            history.remove(0);
+            warn!("[Brain] Dropped oldest turn (context over budget)");
+        }
+    }
+
+    /// Run the LLM summarization on a background thread and splice the result
+    /// back into history — but only if the conversation wasn't cleared while
+    /// the summary was in flight (generation counter).
+    fn spawn_compaction_task(&self) {
+        let app = self.app.clone();
+        let client = self.client.clone();
+        let generation = self.history_generation.load(Ordering::SeqCst);
+
+        // Snapshot the oldest turns (keep the most recent few intact).
+        let transcript = {
+            let history = self.history.lock().unwrap();
+            let summary_len = history.len().saturating_sub(COMPACTION_KEEP_MESSAGES);
+            let summary_len = summary_len.min(COMPACTION_MAX_MESSAGES);
+            let turns: Vec<String> = history[..summary_len]
+                .iter()
+                .map(|m| format!("{}: {}", m.role, m.content.text_content()))
+                .collect();
+            (turns.join("\n\n"), summary_len)
+        };
+
+        std::thread::spawn(move || {
+            let (transcript, summary_len) = transcript;
+            let result = tauri::async_runtime::block_on(async {
+                let settings = get_settings(&app);
+                let cfg = &settings.brain;
+                if !cfg.enabled {
+                    return Err("Brain disabled".to_string());
+                }
+                if cfg.provider_id == "llama_cpp" {
+                    if let Some(llama_manager) =
+                        app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+                    {
+                        llama_manager.ensure_server_running().await?;
+                    }
+                }
+                let messages = vec![
+                    ChatMessage {
+                        role: "system".to_string(),
+                        content: MessageContent::text(COMPACTION_SYSTEM_PROMPT),
+                    },
+                    ChatMessage {
+                        role: "user".to_string(),
+                        content: MessageContent::text(transcript),
+                    },
+                ];
+                let abort = Arc::new(AtomicBool::new(false));
+                let mut full = String::new();
+                client
+                    .stream_chat(
+                        &cfg.active_base_url(),
+                        &cfg.active_api_key(),
+                        &cfg.active_model(),
+                        &messages,
+                        abort,
+                        |token| full.push_str(token),
+                        |_| {},
+                    )
+                    .await?;
+                Ok(full)
+            });
+
+            // Re-claim the single-flight flag on every exit path.
+            let manager = app.state::<Arc<BrainManager>>().inner().clone();
+            manager.compaction_in_flight.store(false, Ordering::SeqCst);
+
+            let full = match result {
+                Ok(text) => text,
+                Err(e) => {
+                    warn!("[Brain] Compaction failed ({e}); dropping oldest turns instead");
+                    manager.drop_oldest_until_fits();
+                    return;
+                }
+            };
+
+            // Stale splice guard: a clear_history() during the summary invalidates it.
+            if manager.history_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+
+            let (user_summary, assistant_summary) = parse_compaction_json(&full);
+            let mut history = manager.history.lock().unwrap();
+            if history.len() <= summary_len {
+                return;
+            }
+            let tail: Vec<ChatMessage> = history[summary_len..].to_vec();
+            *history = vec![
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: MessageContent::text(user_summary),
+                },
+                ChatMessage {
+                    role: "assistant".to_string(),
+                    content: MessageContent::text(assistant_summary),
+                },
+            ];
+            history.extend(tail);
+            info!(
+                "[Brain] Compaction spliced {} turns into a summary pair ({} remaining)",
+                summary_len,
+                history.len()
+            );
+            let _ = app.emit("brain:history-compacted", ());
+        });
     }
 
     /// Ask the Brain (text-only). Streams the reply; returns the full assistant text.
@@ -147,13 +401,8 @@ impl BrainManager {
                 content: MessageContent::text(system),
             });
         }
-        if cfg.context_turns > 0 {
-            let history = self.history.lock().unwrap();
-            // 2 messages per turn (user + assistant).
-            let keep = (cfg.context_turns as usize) * 2;
-            let start = history.len().saturating_sub(keep);
-            messages.extend(history[start..].iter().cloned());
-        }
+        // Token-aware + turn-count-aware context window (oldest dropped first).
+        messages.extend(self.select_context_messages(&cfg));
         // Optional reply-language hint (huggingface/speech-to-speech `--enable_lang_prompt`).
         // Prepended only to the model-facing user turn; conversation history keeps the
         // original (unhinted) text so it stays clean.
@@ -320,6 +569,7 @@ impl BrainManager {
                         content: MessageContent::text(full.clone()),
                     });
                 }
+                self.maybe_compact_history();
                 let done_payload = serde_json::json!({
                     "text": &full,
                     "tokens_per_sec": tokens_per_sec,
@@ -340,6 +590,7 @@ impl BrainManager {
                         content: MessageContent::text(text),
                     });
                 }
+                self.maybe_compact_history();
                 let _ = self.app.emit("brain:error", &e);
                 Err(e)
             }
@@ -410,5 +661,50 @@ impl BrainManager {
                 Err(e)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_estimate_scales_with_length() {
+        assert_eq!(estimate_tokens(""), 1);
+        assert_eq!(estimate_tokens("hello"), 2);
+        assert!(estimate_tokens(&"x".repeat(400)) > 50);
+    }
+
+    #[test]
+    fn compaction_json_is_parsed() {
+        let (user, assistant) = parse_compaction_json(
+            r#"```json
+{"user_summary": "User asked about weather.", "assistant_summary": "Assistant said it rains."}
+```"#,
+        );
+        assert_eq!(user, "User asked about weather.");
+        assert_eq!(assistant, "Assistant said it rains.");
+    }
+
+    #[test]
+    fn compaction_plain_json_is_parsed() {
+        let (user, assistant) =
+            parse_compaction_json(r#"{"user_summary": "U.", "assistant_summary": "A."}"#);
+        assert_eq!(user, "U.");
+        assert_eq!(assistant, "A.");
+    }
+
+    #[test]
+    fn compaction_prose_falls_back_to_single_summary() {
+        let (user, assistant) = parse_compaction_json("The user talked a lot.");
+        assert!(user.contains("The user talked a lot."));
+        assert!(!assistant.is_empty());
+    }
+
+    #[test]
+    fn compaction_missing_fields_get_defaults() {
+        let (user, assistant) = parse_compaction_json(r#"{"user_summary": "Only user."}"#);
+        assert_eq!(user, "Only user.");
+        assert!(!assistant.is_empty());
     }
 }

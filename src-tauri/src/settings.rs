@@ -598,6 +598,11 @@ pub struct BrainConfig {
     /// mainly helps smaller local models.
     #[serde(default = "default_brain_reply_language")]
     pub reply_language: String,
+    /// Compress old conversation turns into a short summary when the context
+    /// window fills up (dense-JSON summarization, single-flight background
+    /// task). When disabled, oldest turns are simply dropped.
+    #[serde(default = "default_compaction_enabled")]
+    pub compaction_enabled: bool,
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -618,6 +623,10 @@ fn default_endpoint_preset() -> String {
 
 fn default_brain_reply_language() -> String {
     "auto".to_string()
+}
+
+fn default_compaction_enabled() -> bool {
+    true
 }
 
 /// Fixed prompt sent to the multimodal Brain instead of STT transcription
@@ -689,6 +698,7 @@ impl Default for BrainConfig {
             multimodal_image_enabled: false,
             brain_only_transcription: false,
             reply_language: default_brain_reply_language(),
+            compaction_enabled: default_compaction_enabled(),
         }
     }
 }
