@@ -62,7 +62,7 @@ vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 ort = { version = "=2.0.0-rc.12", features = [] }
 ndarray = { version = "=0.17.2" }
 enigo = "*"
-rodio = "^0.22.2"
+rodio = { version = "^0.22.2", features = ["symphonia-aac", "symphonia-isomp4"] }
 reqwest = { version = "*", features = ["json", "stream", "blocking", "gzip", "brotli", "deflate"] }
 ureq = "*"
 futures-util = "*"

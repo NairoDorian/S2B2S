@@ -14,6 +14,7 @@ mod commands;
 mod control_server;
 mod crash_logging;
 mod crypto;
+mod file_transcription;
 mod helpers;
 mod input;
 mod input_source;
@@ -842,6 +843,7 @@ commands::models::rescan_local_models,
             commands::profiles::save_transcription_profile,
             commands::profiles::delete_transcription_profile,
             commands::profiles::set_active_transcription_profile,
+            file_transcription::transcribe_audio_file_command,
             commands::tts::tts_speak,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_stop,

@@ -272,6 +272,12 @@ export const commands = {
 	deleteTranscriptionProfile: (profileId: string) => typedError<TranscriptionProfile[], string>(__TAURI_INVOKE("delete_transcription_profile", { profileId })),
 	/**  Activate a profile (applying model/language) or clear the active profile. */
 	setActiveTranscriptionProfile: (profileId: string | null) => typedError<null, string>(__TAURI_INVOKE("set_active_transcription_profile", { profileId })),
+	/**  Tauri command wrapper. */
+	transcribeAudioFileCommand: (path: string, format: 
+/**  SRT subtitle format. */
+"srt" | 
+/**  WebVTT subtitle format. */
+"vtt" | null) => typedError<string, string>(__TAURI_INVOKE("transcribe_audio_file_command", { path, format })),
 	/**  Speak arbitrary text aloud (sanitize → paginate → streaming synthesis). */
 	ttsSpeak: (text: string) => typedError<null, string>(__TAURI_INVOKE("tts_speak", { text })),
 	/**  Speak the current clipboard text. */

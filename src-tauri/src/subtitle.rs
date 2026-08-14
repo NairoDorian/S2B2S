@@ -245,6 +245,70 @@ pub fn history_entries_to_subtitle_segments(
     segments
 }
 
+/// Split plain transcription text into timed cues for a known total duration.
+/// Timing is proportional to chunk length (no word timings available); cues
+/// are cut at sentence boundaries and capped at ~120 chars.
+pub fn text_to_subtitle_segments(text: &str, total_secs: f32) -> Vec<SubtitleSegment> {
+    // Sentence-ish chunks on terminal punctuation, then cap length.
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        current.push(ch);
+        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') && current.chars().count() >= 20 {
+            chunks.push(current.trim().to_string());
+            current.clear();
+        }
+    }
+    if !current.trim().is_empty() {
+        chunks.push(current.trim().to_string());
+    }
+
+    let mut capped: Vec<String> = Vec::new();
+    for chunk in chunks {
+        if chunk.chars().count() <= 120 {
+            capped.push(chunk);
+            continue;
+        }
+        // Split over-long chunks at clause boundaries (commas / spaces).
+        let words: Vec<&str> = chunk.split_whitespace().collect();
+        let mut piece = String::new();
+        for word in words {
+            if piece.chars().count() + word.chars().count() + 1 > 120 && !piece.is_empty() {
+                capped.push(piece.trim().to_string());
+                piece.clear();
+            }
+            if !piece.is_empty() {
+                piece.push(' ');
+            }
+            piece.push_str(word);
+        }
+        if !piece.is_empty() {
+            capped.push(piece.trim().to_string());
+        }
+    }
+
+    let mut segments = Vec::with_capacity(capped.len());
+    let mut cursor = 0.0f32;
+    // Proportional timing uses the sum of chunk lengths (spaces between
+    // chunks are not spoken, so they must not stretch the timeline).
+    let chunk_total = capped
+        .iter()
+        .map(|c| c.chars().count() as f32)
+        .sum::<f32>()
+        .max(1.0);
+    for chunk in capped {
+        let share = chunk.chars().count() as f32 / chunk_total;
+        let dur = (share * total_secs).clamp(0.4, 7.0);
+        segments.push(SubtitleSegment {
+            start: cursor,
+            end: cursor + dur,
+            text: chunk,
+        });
+        cursor += dur;
+    }
+    segments
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,5 +384,25 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].text, "Hello world");
         assert_eq!(segments[1].text, "Again");
+    }
+
+    #[test]
+    fn text_to_segments_distributes_time_proportionally() {
+        let text = "First sentence is here. Second sentence follows right after.";
+        let segments = text_to_subtitle_segments(text, 10.0);
+        assert_eq!(segments.len(), 2);
+        assert!(segments[0].start < segments[1].start);
+        assert!(segments[1].end <= 10.0 + 0.01);
+        // Sum of durations ≈ total.
+        let total: f32 = segments.iter().map(|s| s.end - s.start).sum();
+        assert!((total - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn text_to_segments_caps_long_chunks() {
+        let long = "word ".repeat(200);
+        let segments = text_to_subtitle_segments(&long, 60.0);
+        assert!(segments.len() > 1);
+        assert!(segments.iter().all(|s| s.text.chars().count() <= 121));
     }
 }

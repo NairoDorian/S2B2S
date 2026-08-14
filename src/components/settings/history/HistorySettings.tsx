@@ -89,6 +89,9 @@ export const HistorySettings: React.FC = () => {
   const [exportingSubtitle, setExportingSubtitle] = useState<
     "srt" | "vtt" | null
   >(null);
+  const [transcribingFormat, setTranscribingFormat] = useState<
+    "txt" | "srt" | "vtt" | null
+  >(null);
 
   // Keep ref in sync for use in IntersectionObserver callback
   useEffect(() => {
@@ -390,6 +393,48 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
+  const transcribeFile = async (format: "txt" | "srt" | "vtt") => {
+    try {
+      setTranscribingFormat(format);
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        filters: [
+          {
+            name: "Audio / Video",
+            extensions: ["wav", "mp3", "m4a", "mp4", "ogg", "oga", "flac"],
+          },
+        ],
+        multiple: false,
+      });
+      if (!selected || typeof selected !== "string") return;
+
+      const result = await commands.transcribeAudioFileCommand(
+        selected,
+        format === "txt" ? null : format,
+      );
+      if (result.status === "ok") {
+        toast.success(
+          t("settings.history.transcribeFileSuccess", {
+            path: result.data,
+            defaultValue: `Transcript saved: ${result.data}`,
+          }),
+        );
+      } else {
+        toast.error(
+          t("settings.history.transcribeFileError", {
+            error: result.error,
+            defaultValue: `File transcription failed: ${result.error}`,
+          }),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to transcribe file:", err);
+      toast.error(String(err));
+    } finally {
+      setTranscribingFormat(null);
+    }
+  };
+
   let content: React.ReactNode;
 
   if (loading) {
@@ -454,6 +499,27 @@ export const HistorySettings: React.FC = () => {
         >
           {t("settings.history.exportVtt", { defaultValue: "Export .VTT" })}
         </Button>
+        <span className="text-mid-gray/30">|</span>
+        <span className="text-xs text-text/60">
+          {t("settings.history.transcribeFileLabel", {
+            defaultValue: "Transcribe a file:",
+          })}
+        </span>
+        {(["txt", "srt", "vtt"] as const).map((format) => (
+          <Button
+            key={format}
+            onClick={() => void transcribeFile(format)}
+            variant="secondary"
+            size="sm"
+            disabled={transcribingFormat !== null}
+          >
+            {transcribingFormat === format
+              ? t("settings.history.transcribingFile", {
+                  defaultValue: "Transcribing...",
+                })
+              : t(`settings.history.transcribeFile${format.toUpperCase()}`)}
+          </Button>
+        ))}
       </div>
       <div className="space-y-2">
         {selectedIds.length > 0 ? (

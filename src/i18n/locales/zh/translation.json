@@ -596,7 +596,14 @@
       "exportSrt": "Export .SRT",
       "exportVtt": "Export .VTT",
       "exportSubtitleSuccess": "Subtitle file saved: {{path}}",
-      "exportSubtitleError": "Subtitle export failed: {{error}}"
+      "exportSubtitleError": "Subtitle export failed: {{error}}",
+      "transcribeFileLabel": "Transcribe a file:",
+      "transcribeFileTXT": "To .TXT",
+      "transcribeFileSRT": "To .SRT",
+      "transcribeFileVTT": "To .VTT",
+      "transcribingFile": "Transcribing...",
+      "transcribeFileSuccess": "Transcript saved: {{path}}",
+      "transcribeFileError": "File transcription failed: {{error}}"
     },
     "debug": {
       "title": "调试",
