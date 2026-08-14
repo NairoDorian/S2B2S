@@ -497,7 +497,18 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
                 if let Some(state) = app_clone.try_state::<KeyListenerState>() {
                     if let Err(e) = state.register(&cancel_binding) {
-                        error!("Failed to register cancel shortcut: {}", e);
+                        // A cancel binding that collides with an already-registered
+                        // hotkey (e.g. the user set cancel = push-to-talk) is a
+                        // configuration quirk, not a runtime failure: the same key
+                        // already toggles the recording. Keep real failures loud.
+                        if e.to_lowercase().contains("already registered") {
+                            debug!(
+                                "Cancel shortcut '{}' is already registered by another binding; skipping",
+                                cancel_binding.current_binding
+                            );
+                        } else {
+                            error!("Failed to register cancel shortcut: {}", e);
+                        }
                     }
                 }
             }

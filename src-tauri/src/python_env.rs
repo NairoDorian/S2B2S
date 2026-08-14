@@ -480,6 +480,35 @@ fn uv_pip_install(
     run_streaming(app, context, cmd)
 }
 
+/// Like `uv_pip_install` but force-reinstalls every package. Used for the
+/// torch/torchvision/torchaudio trio: a GPU↔CPU toggle or a partial earlier
+/// install can leave a mixed venv (e.g. stable CPU torch next to nightly
+/// CUDA torchvision → `torchvision::nms does not exist` at import time).
+/// Reinstalling all three from one index guarantees they stay aligned.
+fn uv_pip_install_force(
+    app: &tauri::AppHandle,
+    context: &str,
+    uv: &str,
+    packages: &[&str],
+) -> Result<(), String> {
+    let python = venv_python();
+    let python_str = python.to_str().unwrap_or("python");
+
+    let mut cmd = make_cmd(uv);
+    cmd.arg("pip")
+        .arg("install")
+        .arg("--python")
+        .arg(python_str)
+        .arg("--no-cache")
+        .arg("--force-reinstall");
+
+    for pkg in packages {
+        cmd.arg(pkg);
+    }
+
+    run_streaming(app, context, cmd)
+}
+
 fn uv_pip_uninstall(uv: &str, package: &str) {
     let python = venv_python();
     let python_str = python.to_str().unwrap_or("python");
@@ -616,9 +645,11 @@ pub fn install_backend(
         }
 
         "qwen3" => {
-            // Install torch (CUDA nightly or CPU wheel)
+            // Install torch (CUDA nightly or CPU wheel). Force-reinstall all
+            // three so a GPU↔CPU switch or partial install can never leave a
+            // mismatched torch/torchvision/torchaudio set behind.
             if gpu {
-                uv_pip_install(
+                uv_pip_install_force(
                     app,
                     "qwen3",
                     uv,
@@ -632,7 +663,7 @@ pub fn install_backend(
                     ],
                 )?;
             } else {
-                uv_pip_install(
+                uv_pip_install_force(
                     app,
                     "qwen3",
                     uv,
