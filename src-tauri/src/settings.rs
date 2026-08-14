@@ -608,6 +608,23 @@ pub struct BrainConfig {
     /// the model in a follow-up turn.
     #[serde(default)]
     pub tools_enabled: bool,
+    /// Gemma 4 E2B GGUF quantization for the local llama.cpp Brain (e.g.
+    /// "Q2_K_XL", "Q4_K_XL"). The matching `gemma-4-E2B-it-qat-UD-<quant>.gguf`
+    /// is downloaded from the unsloth HF repo and loaded by llama-server.
+    #[serde(default = "default_llama_model_quant")]
+    pub llama_model_quant: String,
+    /// Multimodal projector (mmproj) precision for the local Brain.
+    #[serde(default = "default_llama_mmproj_quant")]
+    pub llama_mmproj_quant: String,
+    /// MTP draft-model quantization for speculative decoding.
+    #[serde(default = "default_llama_mtp_quant")]
+    pub llama_mtp_quant: String,
+    /// Local Brain model variant: "standard" (unsloth/gemma-4-E2B-it-qat-GGUF)
+    /// or "mobile" (unsloth/gemma-4-E2B-it-qat-mobile-GGUF — Google's
+    /// mobile-optimized QAT checkpoint, published only as UD-Q2_K_XL, lower
+    /// VRAM at some quality cost).
+    #[serde(default = "default_llama_model_variant")]
+    pub llama_model_variant: String,
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -632,6 +649,22 @@ fn default_brain_reply_language() -> String {
 
 fn default_compaction_enabled() -> bool {
     true
+}
+
+fn default_llama_model_quant() -> String {
+    "Q2_K_XL".to_string()
+}
+
+fn default_llama_mmproj_quant() -> String {
+    "F16".to_string()
+}
+
+fn default_llama_mtp_quant() -> String {
+    "Q4_0".to_string()
+}
+
+fn default_llama_model_variant() -> String {
+    "standard".to_string()
 }
 
 /// Fixed prompt sent to the multimodal Brain instead of STT transcription
@@ -705,6 +738,10 @@ impl Default for BrainConfig {
             reply_language: default_brain_reply_language(),
             compaction_enabled: default_compaction_enabled(),
             tools_enabled: false,
+            llama_model_quant: default_llama_model_quant(),
+            llama_mmproj_quant: default_llama_mmproj_quant(),
+            llama_mtp_quant: default_llama_mtp_quant(),
+            llama_model_variant: default_llama_model_variant(),
         }
     }
 }
@@ -1332,7 +1369,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -1966,16 +2003,6 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     bindings.insert(
-        "pause".to_string(),
-        ShortcutBinding {
-            id: "pause".to_string(),
-            name: "Pause / Resume".to_string(),
-            description: "Pauses or resumes the current recording.".to_string(),
-            default_binding: "f6".to_string(),
-            current_binding: "f6".to_string(),
-        },
-    );
-    bindings.insert(
         "show_history".to_string(),
         ShortcutBinding {
             id: "show_history".to_string(),
@@ -2439,6 +2466,17 @@ fn apply_settings_migrations(
         updated = true;
     }
 
+    if stored_schema_version < 3 {
+        // The legacy `pause` binding (F6) duplicated `toggle_pause` (also F6)
+        // and was never wired to an action — its registration failed on every
+        // startup. Drop it; `toggle_pause` is the real pause action.
+        if settings.bindings.remove("pause").is_some() {
+            log::info!("[Settings] Removed legacy 'pause' binding (duplicate of 'toggle_pause')");
+        }
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
+
     // One-time overlay migration (only while the new key is absent): the retired
     // overlay_position `none` meant "hide the overlay" → OverlayStyle::None; any
     // other position had it visible → Live. The position enum no longer has a
@@ -2531,7 +2569,7 @@ mod tests {
         // the store's post-migration state (schema-1 stores migrate once).
         let stored: serde_json::Value = serde_json::from_str(
             r##"{
-            "settings_schema_version": 2,
+            "settings_schema_version": 3,
             "bindings": {
                 "transcribe": {
                     "id": "transcribe",

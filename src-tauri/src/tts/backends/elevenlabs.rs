@@ -94,7 +94,7 @@ impl ElevenLabsTtsBackend {
         log::debug!("ElevenLabs - fetching available voices");
 
         if self.config.api_key.trim().is_empty() {
-            log::error!("ElevenLabs - API key is missing");
+            log::debug!("ElevenLabs - API key is missing (engine not configured)");
             return Err("ElevenLabs API key is missing".to_string());
         }
 

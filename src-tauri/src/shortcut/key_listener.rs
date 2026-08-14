@@ -461,6 +461,13 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
             .cloned()
             .unwrap_or(default_binding);
 
+        // Unassigned shortcuts (empty hotkey) are common defaults for
+        // optional features — skip them quietly instead of error-logging.
+        if binding.current_binding.trim().is_empty() {
+            debug!("Skipping key-listener shortcut {} with empty hotkey", id);
+            continue;
+        }
+
         if let Err(e) = state.register(&binding) {
             error!(
                 "Failed to register key-listener shortcut {} during init: {}",

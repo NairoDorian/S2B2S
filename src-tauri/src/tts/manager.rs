@@ -149,7 +149,9 @@ impl TtsManager {
                         })
                         .collect(),
                     Err(e) => {
-                        log::error!("Failed to list ElevenLabs voices: {e}");
+                        // A cloud engine without a configured key is an
+                        // expected state, not an error worth alarming about.
+                        log::debug!("Failed to list ElevenLabs voices: {e}");
                         Vec::new()
                     }
                 }
