@@ -23,6 +23,7 @@ export const commands = {
 	changeExtraRecordingBufferSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_extra_recording_buffer_setting", { ms })),
 	changePasteDelayMsSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_paste_delay_ms_setting", { ms })),
 	changePasteDelayAfterMsSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_paste_delay_after_ms_setting", { ms })),
+	changeReliablePasteSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_reliable_paste_setting", { enabled })),
 	changePasteMethodSetting: (method: string) => typedError<null, string>(__TAURI_INVOKE("change_paste_method_setting", { method })),
 	getAvailableTypingTools: () => __TAURI_INVOKE<string[]>("get_available_typing_tools"),
 	changeTypingToolSetting: (tool: string) => typedError<null, string>(__TAURI_INVOKE("change_typing_tool_setting", { tool })),
@@ -53,6 +54,8 @@ export const commands = {
 	deletePostProcessPrompt: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_post_process_prompt", { id })),
 	setPostProcessSelectedPrompt: (id: string) => typedError<null, string>(__TAURI_INVOKE("set_post_process_selected_prompt", { id })),
 	updateCustomWords: (words: string[]) => typedError<null, string>(__TAURI_INVOKE("update_custom_words", { words })),
+	suspendAllBindings: () => typedError<null, string>(__TAURI_INVOKE("suspend_all_bindings")),
+	resumeAllBindings: () => typedError<null, string>(__TAURI_INVOKE("resume_all_bindings")),
 	/**
 	 *  Temporarily unregister a binding while the user is editing it in the UI.
 	 *  This avoids firing the action while keys are being recorded.
@@ -64,6 +67,7 @@ export const commands = {
 	changeAppendTrailingSpaceSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_append_trailing_space_setting", { enabled })),
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
+	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
 	changeShowWhatsNewOnUpdateSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_whats_new_on_update_setting", { enabled })),
@@ -94,6 +98,8 @@ export const commands = {
 	startHandyKeysRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_handy_keys_recording", { bindingId })),
 	/**  Stop key recording mode */
 	stopHandyKeysRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_handy_keys_recording")),
+	getSecureInputStatus: () => __TAURI_INVOKE<SecureInputStatus>("get_secure_input_status"),
+	runKeyboardDiagnostic: (durationSecs: number | null) => typedError<KeyboardDiagnosticReport, string>(__TAURI_INVOKE("run_keyboard_diagnostic", { durationSecs })),
 	triggerUpdateCheck: () => typedError<null, string>(__TAURI_INVOKE("trigger_update_check")),
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
@@ -164,6 +170,8 @@ export const commands = {
 	getAvailableMicrophones: () => typedError<AudioDevice[], string>(__TAURI_INVOKE("get_available_microphones")),
 	setSelectedMicrophone: (deviceName: string) => typedError<null, string>(__TAURI_INVOKE("set_selected_microphone", { deviceName })),
 	getSelectedMicrophone: () => typedError<string, string>(__TAURI_INVOKE("get_selected_microphone")),
+	getMicrophoneChannels: (deviceName: string) => typedError<number, string>(__TAURI_INVOKE("get_microphone_channels", { deviceName })),
+	setSelectedChannel: (channel: number | null) => typedError<null, string>(__TAURI_INVOKE("set_selected_channel", { channel })),
 	getAvailableOutputDevices: () => typedError<AudioDevice[], string>(__TAURI_INVOKE("get_available_output_devices")),
 	setSelectedOutputDevice: (deviceName: string) => typedError<null, string>(__TAURI_INVOKE("set_selected_output_device", { deviceName })),
 	getSelectedOutputDevice: () => typedError<string, string>(__TAURI_INVOKE("get_selected_output_device")),
@@ -183,10 +191,6 @@ export const commands = {
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
-	/**
-	 *  Stub implementation for non-macOS platforms
-	 *  Always returns false since laptop detection is macOS-specific
-	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
 };
 
@@ -245,6 +249,7 @@ export type AppSettings_Deserialize = {
 	onboarding_completed?: boolean,
 	always_on_microphone?: boolean,
 	selected_microphone?: string | null,
+	selected_channel?: number | null,
 	clamshell_microphone?: string | null,
 	selected_output_device?: string | null,
 	translate_to_english?: boolean,
@@ -278,8 +283,10 @@ export type AppSettings_Deserialize = {
 	show_tray_icon?: boolean,
 	paste_delay_ms?: number,
 	paste_delay_after_ms?: number,
+	reliable_paste?: boolean,
 	typing_tool?: TypingTool,
 	external_script_path?: string | null,
+	filler_word_removal_enabled?: boolean,
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	ort_accelerator?: OrtAcceleratorSetting,
@@ -344,6 +351,7 @@ export type AppSettings_Serialize = {
 	onboarding_completed: boolean,
 	always_on_microphone: boolean,
 	selected_microphone: string | null,
+	selected_channel: number | null,
 	clamshell_microphone: string | null,
 	selected_output_device: string | null,
 	translate_to_english: boolean,
@@ -377,8 +385,10 @@ export type AppSettings_Serialize = {
 	show_tray_icon: boolean,
 	paste_delay_ms: number,
 	paste_delay_after_ms: number,
+	reliable_paste: boolean,
 	typing_tool: TypingTool,
 	external_script_path: string | null,
+	filler_word_removal_enabled: boolean,
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	ort_accelerator: OrtAcceleratorSetting,
@@ -640,6 +650,29 @@ export type WindowsMicrophonePermissionStatus = {
 	device_access: PermissionAccess,
 	app_access: PermissionAccess,
 	desktop_app_access: PermissionAccess,
+};
+
+export type SecureInputStatus = {
+	enabled: boolean,
+	sustained: boolean,
+	culprit_pid: number | null,
+	culprit_name: string | null,
+	fallback_active: boolean,
+	covered_bindings: string[],
+	degraded_bindings: string[],
+	uncovered_bindings: string[],
+	recorder_blocked: boolean,
+};
+
+export type KeyboardDiagnosticReport = {
+	secure_input_enabled: boolean,
+	culprit_pid: number | null,
+	culprit_name: string | null,
+	key_down: number,
+	key_up: number,
+	flags_changed: number,
+	mouse: number,
+	duration_ms: number,
 };
 
 /* Tauri Specta runtime */

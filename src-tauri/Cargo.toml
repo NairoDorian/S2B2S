@@ -1,6 +1,6 @@
 [package]
 name = "handy"
-version = "0.9.4"
+version = "0.9.5"
 description = "Handy"
 authors = ["cjpais"]
 edition = "2024"
@@ -51,20 +51,27 @@ tokio = "1.53.1"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
-reqwest = { version = "0.13.4", features = ["json", "stream"] }
+reqwest = { version = "0.13.4", features = ["json", "stream", "gzip", "brotli", "deflate"] }
 futures-util = "0.3.33"
 rustfft = "6.4.1"
 strsim = "0.11.1"
 natural = "0.5.0"
 regex = "1.13.1"
+# Text-based language ID (filler-word removal fallback); isolang bridges the
+# ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
+whatlang = "0.16"
+isolang = "2"
 chrono = "0.4.45"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 tar = "0.4.46"
 flate2 = "1.1.9"
 sha2 = "0.11.0"
+# Whisper-family models run through transcribe-cpp (GGUF/ggml, native backends);
+# transcribe-rs is now ONNX-only (Parakeet, Moonshine, SenseVoice, GigaAM,
+# Canary, Cohere). Per-platform backend features are added in the target tables.
 transcribe-rs = { version = "0.3.11", features = ["onnx"] }
 transcribe-cpp = { version = "*", default-features = false }
-handy-keys = "0.3.2"
+handy-keys = "0.3.3"
 ferrous-opencc = "0.4.0"
 clap = { version = "4.6.4", features = ["derive"] }
 specta = "=2.0.0-rc.25"
@@ -88,10 +95,14 @@ tauri-plugin-updater = "2.10.1"
 windows = { version = "0.62.2", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
+  "Win32_System_DataExchange",
   "Win32_System_LibraryLoader",
+  "Win32_System_Ole",
+  "Win32_System_Memory",
   "Win32_System_Threading",
   "Win32_System_Variant",
   "Win32_Foundation",
+  "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
 ] }
 winreg = "0.56.0"
@@ -108,10 +119,17 @@ transcribe-cpp = { version = "*", default-features = false }
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }
+# Used by the receipt-sequenced ("reliable") paste path for lazy NSPasteboard
+# promises. Versions track what Tauri already pulls in.
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+objc2-service-management = "0.3.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
 gtk = "0.18.2"
+libc = "0.2"
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
   "cuda",
@@ -125,6 +143,9 @@ transcribe-cpp-sys = { git = "https://github.com/handy-computer/transcribe.cpp",
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# Test-only tokio features for the local socket servers exercising the
+# resumable HTTP downloader; normal builds keep the leaner feature set.
+tokio = { version = "1.53.1", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
 
 [profile.release]
 lto = true
