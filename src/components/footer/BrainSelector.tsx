@@ -132,7 +132,7 @@ const BrainSelector: React.FC = () => {
             llamaServer?.running &&
             llamaServer.mmprojLoaded && (
               <span className="text-[9px] font-semibold text-logo-primary bg-logo-primary/10 rounded px-1 py-px">
-                mmproj
+                {t("footer.mmproj")}
               </span>
             )}
         </span>

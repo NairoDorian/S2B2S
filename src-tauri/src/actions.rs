@@ -844,6 +844,9 @@ pub(crate) async fn process_transcription_output(
         final_text = itn_text;
     }
 
+    // User-defined text replacement rules (expansions, abbreviations, regex).
+    final_text = crate::text_replacement::apply_replacements_from_settings(app, &final_text);
+
     // Check if a specific post-process action was selected via shortcut
     let action_id: Option<String> = app
         .try_state::<ActiveActionState>()

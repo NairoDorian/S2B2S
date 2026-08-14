@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
@@ -10,7 +10,7 @@ import { Button } from "../../ui/Button";
 import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
 import type { TtsConfig, TtsEngine, Voice } from "@/bindings";
-import { ExternalLink, Terminal, Upload } from "lucide-react";
+import { ExternalLink, Mic, Terminal, Upload } from "lucide-react";
 
 const ENGINES: TtsEngine[] = [
   "piper",
@@ -161,29 +161,6 @@ export const SpeechSettings: React.FC = () => {
       setTestResult({ success: false, message: String(err) });
     } finally {
       setTesting(false);
-    }
-  };
-
-  const handleCloneVoice = async () => {
-    setImportingVoice(true);
-    try {
-      // Use Tauri dialog to pick a WAV file
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        filters: [{ name: "WAV Audio", extensions: ["wav"] }],
-        multiple: false,
-      });
-      if (selected && typeof selected === "string") {
-        const result = await commands.pocketImportClonedVoice(selected);
-        if (result.status === "ok") {
-          await refreshVoices();
-          update({ voice: result.data.id });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to import cloned voice:", err);
-    } finally {
-      setImportingVoice(false);
     }
   };
 
@@ -393,79 +370,26 @@ export const SpeechSettings: React.FC = () => {
 
       {/* Pocket Voice Cloning */}
       {tts.engine === "pocket" && (
-        <SettingsGroup title={t("settings.speech.cloneVoice.pocketGroup")}>
-          <SettingContainer
-            title={t("settings.speech.cloneVoice.importTitle")}
-            description={t("settings.speech.cloneVoice.importDescription")}
-            grouped
-          >
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={importingVoice}
-              onClick={handleCloneVoice}
-            >
-              <Upload size={14} className="mr-1" />
-              {importingVoice
-                ? t("settings.speech.cloneVoice.importing")
-                : t("settings.speech.cloneVoice.selectWav")}
-            </Button>
-          </SettingContainer>
-          {voices.some((v) => v.language === "cloned") && (
-            <div className="px-4 pb-3 text-[11px] text-text/40">
-              {t("speech.clonedVoicesHint")}
-            </div>
-          )}
-        </SettingsGroup>
+        <CloneVoiceSettings
+          engine="pocket"
+          importingVoice={importingVoice}
+          setImportingVoice={setImportingVoice}
+          refreshVoices={refreshVoices}
+          update={update}
+          hasClonedVoices={voices.some((v) => v.language === "cloned")}
+        />
       )}
 
       {/* Qwen3 Voice Cloning */}
       {tts.engine === "qwen3" && (
-        <SettingsGroup title={t("settings.speech.cloneVoice.qwen3Group")}>
-          <SettingContainer
-            title={t("settings.speech.cloneVoice.importTitle")}
-            description={t("settings.speech.cloneVoice.importDescription")}
-            grouped
-          >
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={importingVoice}
-              onClick={async () => {
-                setImportingVoice(true);
-                try {
-                  const { open } = await import("@tauri-apps/plugin-dialog");
-                  const selected = await open({
-                    filters: [{ name: "WAV Audio", extensions: ["wav"] }],
-                    multiple: false,
-                  });
-                  if (selected && typeof selected === "string") {
-                    const result =
-                      await commands.qwen3ImportClonedVoice(selected);
-                    if (result.status === "ok") {
-                      await refreshVoices();
-                      update({ voice: result.data.id });
-                    }
-                  }
-                } catch (err) {
-                  console.error("Failed to import cloned voice:", err);
-                } finally {
-                  setImportingVoice(false);
-                }
-              }}
-            >
-              <Upload size={14} className="mr-1" />
-              {importingVoice
-                ? t("settings.speech.cloneVoice.importing")
-                : t("settings.speech.cloneVoice.selectWav")}
-            </Button>
-          </SettingContainer>
-          {voices.some((v) => v.language === "cloned") && (
-            <div className="px-4 pb-3 text-[11px] text-text/40">
-              {t("speech.clonedVoicesHint")}
-            </div>
-          )}
-        </SettingsGroup>
+        <CloneVoiceSettings
+          engine="qwen3"
+          importingVoice={importingVoice}
+          setImportingVoice={setImportingVoice}
+          refreshVoices={refreshVoices}
+          update={update}
+          hasClonedVoices={voices.some((v) => v.language === "cloned")}
+        />
       )}
 
       <SettingsGroup title={t("settings.speech.greetingGroup")}>
@@ -903,6 +827,171 @@ const WakeWordSettings: React.FC<{
             grouped
           />
         </>
+      )}
+    </SettingsGroup>
+  );
+};
+
+/**
+ * Voice-cloning reference source for Pocket / Qwen3: import a WAV file or
+ * record a reference directly from the configured microphone (M3.5).
+ */
+const CloneVoiceSettings: React.FC<{
+  engine: "pocket" | "qwen3";
+  importingVoice: boolean;
+  setImportingVoice: (value: boolean) => void;
+  refreshVoices: () => Promise<void>;
+  update: (patch: Partial<TtsConfig>) => void;
+  hasClonedVoices: boolean;
+}> = ({
+  engine,
+  importingVoice,
+  setImportingVoice,
+  refreshVoices,
+  update,
+  hasClonedVoices,
+}) => {
+  const { t } = useTranslation();
+  const [duration, setDuration] = useState(10);
+  const [recording, setRecording] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  const handleImport = async () => {
+    setImportingVoice(true);
+    setError(null);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        filters: [{ name: "WAV Audio", extensions: ["wav"] }],
+        multiple: false,
+      });
+      if (selected && typeof selected === "string") {
+        const result =
+          engine === "pocket"
+            ? await commands.pocketImportClonedVoice(selected)
+            : await commands.qwen3ImportClonedVoice(selected);
+        if (result.status === "ok") {
+          await refreshVoices();
+          update({ voice: result.data.id });
+        } else {
+          setError(String(result.error));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to import cloned voice:", err);
+      setError(String(err));
+    } finally {
+      setImportingVoice(false);
+    }
+  };
+
+  const handleRecord = async () => {
+    setRecording(true);
+    setError(null);
+    setSecondsLeft(duration);
+    countdownRef.current = setInterval(() => {
+      setSecondsLeft((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    try {
+      const result = await commands.recordCloneReference(engine, duration);
+      if (result.status === "ok") {
+        await refreshVoices();
+        update({ voice: result.data.id });
+      } else {
+        setError(String(result.error));
+      }
+    } catch (err) {
+      console.error("Failed to record cloned voice reference:", err);
+      setError(String(err));
+    } finally {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      countdownRef.current = null;
+      setRecording(false);
+      setSecondsLeft(0);
+    }
+  };
+
+  const busy = importingVoice || recording;
+  const groupTitle =
+    engine === "pocket"
+      ? t("settings.speech.cloneVoice.pocketGroup")
+      : t("settings.speech.cloneVoice.qwen3Group");
+
+  return (
+    <SettingsGroup title={groupTitle}>
+      <SettingContainer
+        title={t("settings.speech.cloneVoice.importTitle")}
+        description={t("settings.speech.cloneVoice.importDescription")}
+        grouped
+      >
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void handleImport()}
+          >
+            <Upload size={14} className="mr-1" />
+            {importingVoice
+              ? t("settings.speech.cloneVoice.importing")
+              : t("settings.speech.cloneVoice.selectWav")}
+          </Button>
+        </div>
+      </SettingContainer>
+      <SettingContainer
+        title={t("settings.speech.cloneVoice.recordTitle")}
+        description={t("settings.speech.cloneVoice.recordDescription")}
+        grouped
+      >
+        <div className="flex flex-col gap-2">
+          <Slider
+            value={duration}
+            onChange={setDuration}
+            min={5}
+            max={20}
+            step={1}
+            label={t("settings.speech.cloneVoice.recordDuration")}
+            description=""
+            grouped
+            showValue
+            formatValue={(value) =>
+              t("settings.speech.cloneVoice.recordSeconds", { seconds: value })
+            }
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => void handleRecord()}
+            >
+              {recording ? (
+                <Mic size={14} className="mr-1 animate-pulse" />
+              ) : (
+                <Mic size={14} className="mr-1" />
+              )}
+              {recording
+                ? t("settings.speech.cloneVoice.recording", {
+                    seconds: secondsLeft,
+                  })
+                : t("settings.speech.cloneVoice.startRecording")}
+            </Button>
+          </div>
+        </div>
+      </SettingContainer>
+      {error && <div className="px-4 pb-3 text-xs text-red-400">{error}</div>}
+      {hasClonedVoices && !error && (
+        <div className="px-4 pb-3 text-[11px] text-text/40">
+          {t("speech.clonedVoicesHint")}
+        </div>
       )}
     </SettingsGroup>
   );

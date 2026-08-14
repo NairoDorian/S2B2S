@@ -1136,6 +1136,9 @@ pub struct AppSettings {
     /// `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
     #[serde(default = "default_ai_replace_instruction")]
     pub ai_replace_instruction: String,
+    /// User-defined text replacement rules applied after STT/ITN.
+    #[serde(default)]
+    pub text_replacements: Vec<TextReplacement>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -1440,6 +1443,21 @@ fn default_theme() -> Theme {
 
 fn default_post_process_enabled() -> bool {
     false
+}
+
+/// A user-defined text replacement rule (expand "omw" → "on my way").
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TextReplacement {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    pub enabled: bool,
+    /// Match case exactly (default false: case-insensitive expansion).
+    #[serde(default)]
+    pub case_sensitive: bool,
+    /// Treat `from` as a regex pattern.
+    #[serde(default)]
+    pub is_regex: bool,
 }
 
 fn default_ai_replace_instruction() -> String {
@@ -2050,6 +2068,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_actions: Vec::new(),
         post_process_actions_initialized: false,
         ai_replace_instruction: default_ai_replace_instruction(),
+        text_replacements: Vec::new(),
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),

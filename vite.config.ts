@@ -27,6 +27,10 @@ export default defineConfig(async () => ({
           import.meta.dirname,
           "src/brain-overlay/index.html",
         ),
+        region_capture: resolve(
+          import.meta.dirname,
+          "src/region-capture/index.html",
+        ),
       },
     },
   },

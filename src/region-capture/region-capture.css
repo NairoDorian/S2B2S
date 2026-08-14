@@ -1,0 +1,132 @@
+.region-capture-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dim-overlay {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.dim-overlay.dim-top {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.dim-overlay.dim-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.dim-overlay.dim-left {
+  left: 0;
+}
+
+.dim-overlay.dim-right {
+  right: 0;
+}
+
+.selection-region {
+  position: absolute;
+  border: 2px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.06);
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.region-capture-container.state-moving .selection-region {
+  cursor: move;
+}
+
+.region-capture-container.state-resizing-nw .selection-region,
+.region-capture-container.state-resizing-se .selection-region {
+  cursor: nwse-resize;
+}
+
+.region-capture-container.state-resizing-ne .selection-region,
+.region-capture-container.state-resizing-sw .selection-region {
+  cursor: nesw-resize;
+}
+
+.region-capture-container.state-resizing-n .selection-region,
+.region-capture-container.state-resizing-s .selection-region {
+  cursor: ns-resize;
+}
+
+.region-capture-container.state-resizing-w .selection-region,
+.region-capture-container.state-resizing-e .selection-region {
+  cursor: ew-resize;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #f59e0b;
+  border: 2px solid #fff;
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 11;
+}
+
+.handle-nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+.handle-n {
+  top: -6px;
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+}
+.handle-ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+.handle-w {
+  top: calc(50% - 6px);
+  left: -6px;
+  cursor: ew-resize;
+}
+.handle-e {
+  top: calc(50% - 6px);
+  right: -6px;
+  cursor: ew-resize;
+}
+.handle-sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+.handle-s {
+  bottom: -6px;
+  left: calc(50% - 6px);
+  cursor: ns-resize;
+}
+.handle-se {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
+}
+
+.hint-text {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+}

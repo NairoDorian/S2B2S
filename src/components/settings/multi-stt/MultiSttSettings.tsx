@@ -582,7 +582,8 @@ export const MultiSttSettings: React.FC = () => {
                 <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
                   <span className="w-2 h-2 rounded-full bg-orange-500" />
                   <span className="text-sm">
-                    {t("multiStt.status.gemma4")}: Gemma 4 2B Multimodal
+                    {t("multiStt.status.gemma4")}:{" "}
+                    {t("multiStt.status.gemma4Model")}
                   </span>
                 </div>
               )}

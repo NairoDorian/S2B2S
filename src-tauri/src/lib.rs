@@ -30,6 +30,7 @@ mod paste_tx;
 pub mod portable;
 pub mod python_env;
 mod recording_auto_stop;
+mod region_capture;
 mod secure_input;
 mod selection;
 mod session_manager;
@@ -39,6 +40,7 @@ mod signal_handle;
 mod speculative_turns;
 mod stt;
 mod subtitle;
+mod text_replacement;
 mod text_replacement_decapitalize;
 mod transcription_coordinator;
 mod tray;
@@ -46,6 +48,7 @@ mod tray_i18n;
 mod tts;
 mod url_security;
 mod utils;
+mod voice_clone_recorder;
 mod wake_word;
 mod webview_hardening;
 mod webview_runtime;
@@ -840,6 +843,8 @@ commands::models::rescan_local_models,
             commands::history::export_history_subtitle,
             commands::history::regenerate_history_entry,
             file_transcription::transcribe_audio_file_command,
+            text_replacement::save_text_replacement,
+            text_replacement::delete_text_replacement,
             commands::tts::tts_speak,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_stop,
@@ -852,6 +857,7 @@ commands::models::rescan_local_models,
             commands::tts::get_local_tts_status,
             commands::tts::pocket_import_cloned_voice,
             commands::tts::qwen3_import_cloned_voice,
+            voice_clone_recorder::record_clone_reference,
             commands::tts::change_tts_config,
             commands::tts::tts_play_greeting,
             commands::tts::tts_save_to_file,
@@ -871,6 +877,10 @@ commands::models::rescan_local_models,
             commands::brain::is_llama_downloading,
             commands::brain::get_brain_server_status,
             commands::brain::warm_brain_server,
+            commands::brain::brain_ask_region,
+            commands::region_capture::region_capture_get_data,
+            commands::region_capture::region_capture_confirm,
+            commands::region_capture::region_capture_cancel,
             commands::llama_server::fetch_llama_releases,
             commands::llama_server::download_llama_server,
             commands::llama_server::get_downloaded_llama_servers,
@@ -1163,6 +1173,7 @@ pub fn run(cli_args: CliArgs) {
             app.manage(std::sync::Arc::new(
                 crate::llm_operation::LlmOperationTracker::new(),
             ));
+            app.manage(region_capture::ManagedRegionCaptureState::default());
 
             // (TTS telemetry is registered above as `Arc<Telemetry>` — the bare
             // `Telemetry` that used to be managed here was a dead duplicate with a
@@ -1407,11 +1418,16 @@ pub fn run(cli_args: CliArgs) {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                let _res = window.hide();
+                // Only the main window hides to tray on close. Auxiliary
+                // windows (region capture picker, overlays) must close freely
+                // or their state machines would never resolve.
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _res = window.hide();
+                }
 
                 #[cfg(target_os = "macos")]
-                {
+                if window.label() == "main" {
                     let settings = get_settings(window.app_handle());
                     let tray_visible =
                         settings.show_tray_icon && !window.app_handle().state::<CliArgs>().no_tray;
@@ -1425,6 +1441,13 @@ pub fn run(cli_args: CliArgs) {
                         }
                     }
                     // No tray: keep the dock icon visible so the user can reopen
+                }
+            }
+            tauri::WindowEvent::Destroyed => {
+                // A closed/destroyed region picker resolves its pending
+                // operation as cancelled so callers never hang forever.
+                if window.label() == region_capture::REGION_CAPTURE_LABEL {
+                    region_capture::on_region_window_closed(window.app_handle());
                 }
             }
             tauri::WindowEvent::ThemeChanged(theme) => {

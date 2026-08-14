@@ -25,6 +25,7 @@ import { LazyStreamClose } from "../LazyStreamClose";
 import { AudioEnhancements } from "./AudioEnhancements";
 import { LongAudioRouting } from "./LongAudioRouting";
 import { FillerWordRemoval } from "../FillerWordRemoval";
+import { TextReplacementSettings } from "../TextReplacementSettings";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -68,6 +69,7 @@ export const AdvancedSettings: React.FC = () => {
         <VoiceActivityDetection descriptionMode="tooltip" grouped={true} />
         <FillerWordRemoval descriptionMode="tooltip" grouped={true} />
         <CustomWords descriptionMode="tooltip" grouped />
+        <TextReplacementSettings />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
         <AudioEnhancements grouped={true} />
         <LongAudioRouting grouped={true} />

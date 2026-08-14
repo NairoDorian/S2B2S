@@ -187,6 +187,28 @@
         "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
       }
     },
+    "textReplacement": {
+      "group": "Text Replacements",
+      "empty": "No rules yet. Add an expansion like \"omw\" → \"on my way\" — it applies after every transcription.",
+      "caseSensitive": "Case sensitive",
+      "caseInsensitive": "Case insensitive",
+      "regex": "Regex",
+      "delete": "Delete rule",
+      "add": "New rule",
+      "addDescription": "Applied after speech-to-text. Supports \\n, \\t, \\\\ and \\u{...} escapes; regex mode treats \"from\" as a pattern.",
+      "fromPlaceholder": "From (e.g. omw)",
+      "toPlaceholder": "To (e.g. on my way)",
+      "addButton": "Add rule"
+    },
+    "pythonEnv": {
+      "title": "Python Environment",
+      "uvManager": "uv package manager",
+      "installUv": "Install uv",
+      "venv": "Python venv (3.12)",
+      "open": "Open",
+      "acceleration": "Acceleration",
+      "running": "Running…"
+    },
     "general": {
       "title": "Geral",
       "shortcut": {
@@ -946,7 +968,13 @@
         "importTitle": "Import reference audio",
         "importDescription": "Select a 5-20 second WAV file of someone speaking clearly. The engine will clone that voice.",
         "importing": "Importing...",
-        "selectWav": "Select WAV File"
+        "selectWav": "Select WAV File",
+        "recordTitle": "Record reference audio",
+        "recordDescription": "Record yourself (or someone) speaking clearly for the chosen length, directly from your microphone.",
+        "recordDuration": "Recording length",
+        "recordSeconds": "{{seconds}} seconds",
+        "startRecording": "Record reference",
+        "recording": "Recording... {{seconds}}s"
       },
       "sanitizeEnabled": {
         "label": "Clean text before speaking",
@@ -1114,6 +1142,7 @@
     "portableUpdateBrowseButton": "Abrir GitHub Releases",
     "stt": "STT",
     "brain": "Brain",
+    "mmproj": "mmproj",
     "brainTitle": "AI Brain",
     "brainActiveProvider": "Active Provider",
     "tts": "TTS",
@@ -1179,6 +1208,7 @@
       "secondary": "Secondary",
       "tertiary": "Tertiary",
       "gemma4": "Gemma 4",
+      "gemma4Model": "Gemma 4 2B Multimodal",
       "noModels": "No extra models selected."
     }
   },
@@ -1262,6 +1292,9 @@
     "readAloudOff": "Silent mode (OFF)",
     "brainOnlyStt": "Brain STT",
     "brainOnlySttTooltip": "Bypass STT models and use Brain AI for transcription",
+    "regionCapture": "Ask region",
+    "regionCaptureTooltip": "Drag a screen region and ask the Brain about it (Windows)",
+    "regionDefaultQuestion": "Describe what you see in the selected region of the screen.",
     "voiceListening": "Voice Mode: Listening...",
     "voiceCapturing": "Voice Mode: Capturing Speech...",
     "voiceProcessing": "Voice Mode: Processing speech...",

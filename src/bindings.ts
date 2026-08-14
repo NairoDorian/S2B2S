@@ -272,6 +272,10 @@ export const commands = {
 "srt" | 
 /**  WebVTT subtitle format. */
 "vtt" | null) => typedError<string, string>(__TAURI_INVOKE("transcribe_audio_file_command", { path, format })),
+	/**  Upsert a rule (empty id generates one). Returns the saved list. */
+	saveTextReplacement: (rule: TextReplacement) => typedError<TextReplacement[], string>(__TAURI_INVOKE("save_text_replacement", { rule })),
+	/**  Delete a rule. Returns the saved list. */
+	deleteTextReplacement: (ruleId: string) => typedError<TextReplacement[], string>(__TAURI_INVOKE("delete_text_replacement", { ruleId })),
 	/**  Speak arbitrary text aloud (sanitize → paginate → streaming synthesis). */
 	ttsSpeak: (text: string) => typedError<null, string>(__TAURI_INVOKE("tts_speak", { text })),
 	/**  Speak the current clipboard text. */
@@ -288,6 +292,14 @@ export const commands = {
 	getLocalTtsStatus: (engine: string) => typedError<string | null, string>(__TAURI_INVOKE("get_local_tts_status", { engine })),
 	pocketImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("pocket_import_cloned_voice", { sourcePath })),
 	qwen3ImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("qwen3_import_cloned_voice", { sourcePath })),
+	/**
+	 *  Record `duration_secs` of raw microphone audio (VAD disabled) and import it
+	 *  as a cloned voice for the given engine. Returns the imported voice.
+	 * 
+	 *  The blocking capture runs on the async runtime's blocking pool so the
+	 *  command never stalls the main thread; the UI shows a countdown meanwhile.
+	 */
+	recordCloneReference: (engine: string, durationSecs: number) => typedError<Voice, string>(__TAURI_INVOKE("record_clone_reference", { engine, durationSecs })),
 	/**  Replace the whole TTS configuration (engine, voice, speed, volume, toggles). */
 	changeTtsConfig: (config: TtsConfig) => typedError<null, string>(__TAURI_INVOKE("change_tts_config", { config })),
 	/**  Play the startup greeting audio using customized greeting settings. */
@@ -332,6 +344,22 @@ export const commands = {
 	 *  upgrades it when mmproj is required.
 	 */
 	warmBrainServer: (mmproj: boolean) => typedError<null, string>(__TAURI_INVOKE("warm_brain_server", { mmproj })),
+	/**
+	 *  Open the region capture overlay and send the selected screen region as an
+	 *  image to the multimodal Brain (M3.8). Streams the reply like a normal
+	 *  conversation turn (`brain:token` / `brain:sentence` events, TTS read-aloud)
+	 *  and returns the full reply text.
+	 */
+	brainAskRegion: (question: string) => typedError<string, string>(__TAURI_INVOKE("brain_ask_region", { question })),
+	/**
+	 *  Called from the overlay when it is ready to render: returns the virtual
+	 *  screen geometry so the frontend can convert logical → physical pixels.
+	 */
+	regionCaptureGetData: () => typedError<RegionCaptureData, string>(__TAURI_INVOKE("region_capture_get_data")),
+	/**  Called from the overlay when the user confirms a region (physical pixels). */
+	regionCaptureConfirm: (region: SelectedRegion) => __TAURI_INVOKE<void>("region_capture_confirm", { region }),
+	/**  Called from the overlay when the user cancels (Escape). */
+	regionCaptureCancel: () => __TAURI_INVOKE<void>("region_capture_cancel"),
 	fetchLlamaReleases: () => typedError<LlamaRelease[], string>(__TAURI_INVOKE("fetch_llama_releases")),
 	downloadLlamaServer: (backend: string, releaseTag: string, downloadUrl: string) => typedError<null, string>(__TAURI_INVOKE("download_llama_server", { backend, releaseTag, downloadUrl })),
 	getDownloadedLlamaServers: () => typedError<DownloadedServer[], string>(__TAURI_INVOKE("get_downloaded_llama_servers")),
@@ -491,6 +519,8 @@ export type AppSettings_Deserialize = {
 	 *  `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
 	 */
 	ai_replace_instruction?: string,
+	/**  User-defined text replacement rules applied after STT/ITN. */
+	text_replacements?: TextReplacement[],
 	mute_while_recording?: boolean,
 	append_trailing_space?: boolean,
 	app_language?: string,
@@ -658,6 +688,8 @@ export type AppSettings_Serialize = {
 	 *  `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
 	 */
 	ai_replace_instruction: string,
+	/**  User-defined text replacement rules applied after STT/ITN. */
+	text_replacements: TextReplacement[],
 	mute_while_recording: boolean,
 	append_trailing_space: boolean,
 	app_language: string,
@@ -1281,6 +1313,11 @@ export type QuantVariant = {
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";
 
+/**  Response for the picker's initial data request. */
+export type RegionCaptureData = {
+	virtual_screen: VirtualScreenInfo,
+};
+
 /**  Pre-TTS text sanitization toggles (markdown stripping + speech normalization). */
 export type SanitizationConfig = {
 	enabled: boolean,
@@ -1316,6 +1353,14 @@ export type SecureInputStatus = {
 	 *  warning banner appears and explains why recording refused.
 	 */
 	recorder_blocked: boolean,
+};
+
+/**  Region selected by the user, in physical (virtual-screen) pixels. */
+export type SelectedRegion = {
+	x: number,
+	y: number,
+	width: number,
+	height: number,
 };
 
 export type ShortcutBinding = {
@@ -1382,6 +1427,18 @@ export type SystemRamInfo = {
 	free_mb: number,
 };
 
+/**  A user-defined text replacement rule (expand "omw" → "on my way"). */
+export type TextReplacement = {
+	id: string,
+	from: string,
+	to: string,
+	enabled: boolean,
+	/**  Match case exactly (default false: case-insensitive expansion). */
+	case_sensitive?: boolean,
+	/**  Treat `from` as a regex pattern. */
+	is_regex?: boolean,
+};
+
 /**
  *  UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  *  and `Dark` force one of the two palettes Handy already ships.
@@ -1439,6 +1496,20 @@ export type TtsGreetingConfig = {
 };
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
+
+/**  Information about the virtual screen (all monitors combined). */
+export type VirtualScreenInfo = {
+	/**  Minimum X coordinate (can be negative if monitors are left of primary) */
+	offset_x: number,
+	/**  Minimum Y coordinate */
+	offset_y: number,
+	/**  Total width spanning all monitors */
+	total_width: number,
+	/**  Total height spanning all monitors */
+	total_height: number,
+	/**  Scale factor of the primary monitor (logical → physical conversion) */
+	scale_factor: number | null,
+};
 
 /**  Metadata for a voice option exposed in the settings UI. */
 export type Voice = {

@@ -167,6 +167,9 @@ pub fn process_continuous_samples(
 
     // ITN: spoken → written normalization for continuous voice (conversation mode)
     let transcription = crate::tts::sanitize::post_stt_normalize(&transcription);
+    // User-defined text replacement rules.
+    let transcription =
+        crate::text_replacement::apply_replacements_from_settings(app, &transcription);
 
     // 4. Save STT entry in history
     if wav_saved {

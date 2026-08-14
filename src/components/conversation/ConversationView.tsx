@@ -5,7 +5,7 @@ import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "@/bindings";
-import { Mic, Volume2, VolumeX, Eraser, Brain } from "lucide-react";
+import { Mic, Volume2, VolumeX, Eraser, Brain, Crop } from "lucide-react";
 import { MultiSttConversationControls } from "./MultiSttConversationControls";
 
 interface Message {
@@ -251,6 +251,22 @@ export const ConversationView: React.FC = () => {
     setError(null);
   }, []);
 
+  // Region capture → multimodal Brain (M3.8): lets the user drag a screen
+  // region and ask the Brain about it. The reply streams through the same
+  // brain:* events as a text turn.
+  const askRegion = useCallback(async () => {
+    setError(null);
+    const question = draft.trim() || t("conversation.regionDefaultQuestion");
+    setDraft("");
+    if (question !== draft.trim()) {
+      setMessages((prev) => [...prev, { role: "user", content: question }]);
+    }
+    const result = await commands.brainAskRegion(question);
+    if (result.status === "error") {
+      setError(String(result.error));
+    }
+  }, [draft, t]);
+
   return (
     <div className="flex flex-col h-full min-h-0 space-y-3 overflow-hidden">
       {!brainEnabled && (
@@ -450,6 +466,16 @@ export const ConversationView: React.FC = () => {
             onClick={() => void send()}
           >
             {t("conversation.send")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!brainEnabled}
+            onClick={() => void askRegion()}
+            title={t("conversation.regionCaptureTooltip")}
+          >
+            <Crop size={13} className="mr-1" />
+            {t("conversation.regionCapture")}
           </Button>
           <Button
             variant="secondary"

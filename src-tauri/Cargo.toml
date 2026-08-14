@@ -95,6 +95,9 @@ tauri-plugin-dialog = "*"
 text-processing-rs = "*"
 base64 = "*"
 getrandom = "0.2"
+# Region-capture overlay → multimodal Brain (M3.8). Cross-platform screen
+# capture crate: Windows DXGI, macOS CoreGraphics, Linux X11.
+screenshots = "0.8"
 keyring = "*"
 aes-gcm = "*"
 aead = "*"

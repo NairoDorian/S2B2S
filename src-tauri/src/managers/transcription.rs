@@ -1333,6 +1333,10 @@ impl TranscriptionManager {
             );
 
             let mut perf = StreamPerf::new();
+            // Raw committed length at the previous emit — used to isolate the
+            // newly committed segment for the one-shot realtime decapitalize
+            // trigger (committed is append-only, so byte slicing is safe).
+            let mut last_committed_raw = 0usize;
             while let Ok(cmd) = rx.recv() {
                 match cmd {
                     StreamCmd::Feed(pcm) => {
@@ -1351,7 +1355,29 @@ impl TranscriptionManager {
                                 if update.committed_changed || update.tentative_changed {
                                     let text = stream.text();
                                     perf.record_emit();
-                                    self.emit_stream_text(&text.committed, &text.tentative);
+                                    // Realtime decapitalize (edit-key trigger):
+                                    // consume the one-shot trigger on the newly
+                                    // committed segment; preview the tentative
+                                    // text without consuming it.
+                                    let new_part = text
+                                        .committed
+                                        .get(last_committed_raw.min(text.committed.len())..)
+                                        .unwrap_or("");
+                                    let new_display =
+                                        crate::text_replacement_decapitalize::maybe_decapitalize_next_chunk_realtime(new_part);
+                                    let committed_display = format!(
+                                        "{}{}",
+                                        text.committed
+                                            .get(..last_committed_raw.min(text.committed.len()))
+                                            .unwrap_or(""),
+                                        new_display
+                                    );
+                                    let tentative_display =
+                                        crate::text_replacement_decapitalize::preview_decapitalize_next_chunk_realtime(
+                                            &text.tentative,
+                                        );
+                                    last_committed_raw = text.committed.len();
+                                    self.emit_stream_text(&committed_display, &tentative_display);
                                 }
                                 perf.maybe_log();
                             }

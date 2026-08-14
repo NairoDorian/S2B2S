@@ -8,6 +8,7 @@ pub mod history;
 pub mod llama_server;
 pub mod models;
 pub mod python_env;
+pub mod region_capture;
 pub mod system;
 pub mod transcription;
 pub mod tts;

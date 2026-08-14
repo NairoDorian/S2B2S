@@ -44,6 +44,46 @@ pub fn brain_abort(brain: State<'_, Arc<BrainManager>>) -> Result<(), String> {
     Ok(())
 }
 
+/// Open the region capture overlay and send the selected screen region as an
+/// image to the multimodal Brain (M3.8). Streams the reply like a normal
+/// conversation turn (`brain:token` / `brain:sentence` events, TTS read-aloud)
+/// and returns the full reply text.
+#[tauri::command]
+#[specta::specta]
+pub async fn brain_ask_region(
+    app: AppHandle,
+    brain: State<'_, Arc<BrainManager>>,
+    question: String,
+) -> Result<String, String> {
+    use crate::region_capture::RegionCaptureResult;
+
+    if question.trim().is_empty() {
+        return Err("Please enter a question about the selected region.".to_string());
+    }
+
+    match crate::region_capture::open_region_picker(&app).await {
+        RegionCaptureResult::Selected { region, image_data } => {
+            use base64::Engine;
+            log::info!(
+                "[RegionBrain] Captured region {}x{} at ({}, {}), {} bytes PNG",
+                region.width,
+                region.height,
+                region.x,
+                region.y,
+                image_data.len()
+            );
+            let png_b64 = base64::engine::general_purpose::STANDARD.encode(&image_data);
+            brain
+                .inner()
+                .clone()
+                .ask_multimodal(question, None, Some(png_b64), None, Vec::new())
+                .await
+        }
+        RegionCaptureResult::Cancelled => Err("Region capture cancelled".to_string()),
+        RegionCaptureResult::Error(e) => Err(e),
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn brain_clear_history(brain: State<'_, Arc<BrainManager>>) -> Result<(), String> {

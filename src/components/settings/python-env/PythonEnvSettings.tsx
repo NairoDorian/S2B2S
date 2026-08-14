@@ -188,7 +188,7 @@ export const PythonEnvSettings: React.FC = () => {
         <div className="flex items-center gap-2">
           <Terminal className="w-5 h-5 text-logo-primary" />
           <h2 className="text-base font-semibold text-white">
-            Python Environment
+            {t("settings.pythonEnv.title")}
           </h2>
         </div>
         <button
@@ -207,7 +207,9 @@ export const PythonEnvSettings: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <StatusDot installed={uvInstalled} loading={loading} />
-            <span className="text-sm text-zinc-300">uv package manager</span>
+            <span className="text-sm text-zinc-300">
+              {t("settings.pythonEnv.uvManager")}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             {status?.uv_version && (
@@ -222,7 +224,7 @@ export const PythonEnvSettings: React.FC = () => {
                 className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-logo-primary/20 hover:bg-logo-primary/40 text-logo-primary text-xs font-medium transition-colors disabled:opacity-40"
               >
                 <Download className="w-3 h-3" />
-                Install uv
+                {t("settings.pythonEnv.installUv")}
               </button>
             )}
           </div>
@@ -232,7 +234,9 @@ export const PythonEnvSettings: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <StatusDot installed={venvOk} loading={loading} />
-            <span className="text-sm text-zinc-300">Python venv (3.12)</span>
+            <span className="text-sm text-zinc-300">
+              {t("settings.pythonEnv.venv")}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             {status?.python_version && (
@@ -268,7 +272,7 @@ export const PythonEnvSettings: React.FC = () => {
               onClick={handleOpenFolder}
               className="px-2 py-1 text-xs text-zinc-400 hover:text-white rounded-md hover:bg-white/10 transition-colors shrink-0 ml-2"
             >
-              Open
+              {t("settings.pythonEnv.open")}
             </button>
           </div>
         )}
@@ -277,7 +281,9 @@ export const PythonEnvSettings: React.FC = () => {
         <div className="flex items-center justify-between pt-1 border-t border-white/8">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-amber-400" />
-            <span className="text-sm text-zinc-300">Acceleration</span>
+            <span className="text-sm text-zinc-300">
+              {t("settings.pythonEnv.acceleration")}
+            </span>
           </div>
           <div className="flex gap-1 bg-white/8 rounded-lg p-0.5">
             <button
@@ -391,7 +397,7 @@ export const PythonEnvSettings: React.FC = () => {
               {busy && (
                 <div className="flex gap-1 items-center text-zinc-500 mt-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Running…</span>
+                  <span>{t("settings.pythonEnv.running")}</span>
                 </div>
               )}
             </div>
