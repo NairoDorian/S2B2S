@@ -18,7 +18,20 @@ use crate::audio_toolkit::{
     vad::{self, VadFrame},
     VoiceActivityDetector,
 };
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+
+/// Reopen-grace window after a VAD silence endpoint, per `endpoint_preset`.
+/// While the grace is open, resumed speech reopens the same turn (revision+1)
+/// instead of starting a new one; when it expires the turn finalizes.
+/// (Two-tier endpointing without the SmartTurn classifier: the preset doubles
+/// as the confidence tier — snappy 400ms / balanced 800ms / patient 2000ms.)
+fn reopen_grace_ms_for_preset(preset: &str) -> u64 {
+    match preset.to_ascii_lowercase().as_str() {
+        "snappy" => 400,
+        "patient" => 2000,
+        _ => 800,
+    }
+}
 
 enum Cmd {
     /// Begin capturing. Carries the send timestamp so the consumer can log how
@@ -733,6 +746,14 @@ fn run_consumer(
             .map(|f| f.load(Ordering::Relaxed).max(1))
             .unwrap_or(40)
     };
+    // Speculative-turn state (continuous voice): the current turn's
+    // (turn_id, revision) and an armed reopen-grace deadline.
+    let mut pending_turn: Option<(u64, u32)> = None;
+    let mut pending_end: Option<Instant> = None;
+    let tracker = app_handle.as_ref().and_then(|app| {
+        app.try_state::<Arc<crate::speculative_turns::SpeculativeTurnTracker>>()
+            .map(|state| state.inner().clone())
+    });
 
     // ---------- latency instrumentation ---------------------------------- //
     // First-chunk arrival exposes the play()->samples-flowing gap; the
@@ -967,6 +988,8 @@ fn run_consumer(
                 processed_samples.clear();
                 recording = false;
                 silence_frames = 0;
+                pending_turn = None;
+                pending_end = None;
                 if let Some(cfg) = &vad {
                     cfg.detector.lock().unwrap().reset();
                 }
@@ -1033,39 +1056,127 @@ fn run_consumer(
                                     recording = true;
                                     processed_samples.clear();
                                     processed_samples.extend_from_slice(buf);
-                                    log::info!("[ContinuousVoice] VAD detected speech START!");
+                                    let (turn_id, revision) = tracker
+                                        .as_ref()
+                                        .map(|t| t.new_turn())
+                                        .unwrap_or((0, 0));
+                                    pending_turn = Some((turn_id, revision));
+                                    log::info!(
+                                        "[ContinuousVoice] VAD detected speech START! (turn {turn_id}, rev {revision})"
+                                    );
                                     if let Some(app) = &app_handle {
-                                        let _ = app.emit("continuous-voice:speech-started", ());
+                                        let _ = app.emit(
+                                            "continuous-voice:speech-started",
+                                            serde_json::json!({
+                                                "turn_id": turn_id,
+                                                "revision": revision,
+                                            }),
+                                        );
                                     }
                                 } else {
                                     processed_samples.extend_from_slice(buf);
+                                    // Speech inside the reopen grace: reopen the
+                                    // same turn (revision+1) instead of starting
+                                    // a new one — the utterance continues.
+                                    let reopen = pending_end
+                                        .as_ref()
+                                        .and_then(|deadline| {
+                                            (Instant::now() < *deadline).then_some(())
+                                        })
+                                        .and_then(|()| {
+                                            pending_turn.as_ref().map(|(turn_id, _)| *turn_id)
+                                        });
+                                    if let Some(turn_id) = reopen {
+                                        let revision = tracker
+                                            .as_ref()
+                                            .map(|t| t.reopen(turn_id))
+                                            .unwrap_or(0);
+                                        pending_turn = Some((turn_id, revision));
+                                        log::info!(
+                                            "[ContinuousVoice] Turn reopened during grace (turn {turn_id}, rev {revision})"
+                                        );
+                                    }
                                 }
+                                pending_end = None;
                                 silence_frames = 0;
                             }
                             VadFrame::Noise => {
                                 if recording {
                                     silence_frames += 1;
                                     if silence_frames >= endpoint_frames() {
-                                        recording = false;
-                                        let duration_secs = processed_samples.len() as f64 / 16000.0;
-                                        log::info!(
-                                            "[ContinuousVoice] VAD detected speech END! Captured {} samples ({:.2}s)",
-                                            processed_samples.len(),
-                                            duration_secs
-                                        );
-                                        if let Some(app) = &app_handle {
-                                            let _ = app.emit("continuous-voice:speech-ended", ());
-                                        }
-                                        let samples = std::mem::take(&mut processed_samples);
-                                        if let Some(app) = &app_handle {
-                                            let app_clone = app.clone();
-                                            std::thread::spawn(move || {
-                                                if let Err(e) = crate::managers::continuous_voice::process_continuous_samples(&app_clone, samples) {
-                                                    log::error!("Error in continuous voice pipeline: {}", e);
+                                        match pending_end {
+                                            // Silence endpoint reached: arm the
+                                            // reopen grace instead of finalizing
+                                            // immediately (two-tier endpointing).
+                                            None => {
+                                                let grace_ms = reopen_grace_ms_for_preset(
+                                                    &app_handle
+                                                        .as_ref()
+                                                        .map(|app| {
+                                                            crate::settings::get_settings(app)
+                                                                .brain
+                                                                .endpoint_preset
+                                                        })
+                                                        .unwrap_or_default(),
+                                                );
+                                                pending_end = Some(
+                                                    Instant::now()
+                                                        + Duration::from_millis(grace_ms),
+                                                );
+                                                log::info!(
+                                                    "[ContinuousVoice] Silence endpoint — reopen grace armed ({grace_ms}ms)"
+                                                );
+                                            }
+                                            // Grace expired with no resumed
+                                            // speech: finalize the turn.
+                                            Some(deadline)
+                                                if Instant::now() >= deadline =>
+                                            {
+                                                let (turn_id, revision) =
+                                                    pending_turn.take().unwrap_or((0, 0));
+                                                recording = false;
+                                                let duration_secs =
+                                                    processed_samples.len() as f64 / 16000.0;
+                                                log::info!(
+                                                    "[ContinuousVoice] VAD detected speech END! Captured {} samples ({:.2}s) — turn {turn_id}, rev {revision}",
+                                                    processed_samples.len(),
+                                                    duration_secs
+                                                );
+                                                if let Some(app) = &app_handle {
+                                                    let _ = app.emit(
+                                                        "continuous-voice:speech-ended",
+                                                        serde_json::json!({
+                                                            "turn_id": turn_id,
+                                                            "revision": revision,
+                                                        }),
+                                                    );
                                                 }
-                                            });
+                                                let samples =
+                                                    std::mem::take(&mut processed_samples);
+                                                if let Some(app) = &app_handle {
+                                                    let app_clone = app.clone();
+                                                    std::thread::spawn(move || {
+                                                        if let Err(e) =
+                                                            crate::managers::continuous_voice::process_continuous_samples(
+                                                                &app_clone,
+                                                                samples,
+                                                                turn_id,
+                                                                revision,
+                                                            )
+                                                        {
+                                                            log::error!(
+                                                                "Error in continuous voice pipeline: {}",
+                                                                e
+                                                            );
+                                                        }
+                                                    });
+                                                }
+                                                silence_frames = 0;
+                                                pending_end = None;
+                                            }
+                                            // Still inside the grace window.
+                                            Some(_) => {}
                                         }
-                                        silence_frames = 0;
                                     }
                                 }
                             }

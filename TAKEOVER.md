@@ -37,12 +37,12 @@
 
 ### Current Task in Progress
 
-- None. M0, M1 complete; M2 partially done (M2.3 compaction + M2.4 TTS coalescing landed). Remaining M2 tasks: M2.1/M2.2 speculative turns + two-tier endpointing, M2.5 tool calling, M2.6 realtime gateway.
+- None. M0, M1 complete; M2 nearly complete (M2.1 speculative turns, M2.2 two-tier endpointing, M2.3 compaction, M2.4 TTS coalescing landed). Remaining M2 tasks: M2.5 tool calling, M2.6 realtime gateway.
 
 ### Next Immediate Action for Takeover
 
-1. M2.1: `(turn_id, revision)` tagging + `SpeculativeTurnTracker` in `managers/continuous_voice.rs` / `recorder.rs` (see speech-to-speech `speculative_turns.py` design in Section 3).
-2. M2.2: reopen-grace endpointing (800ms/2000ms) driving TTS/chat commit.
+1. M2.5: `<code>…</code>` tool-call parsing for local LLMs (paren-depth scanner + JSON args + schema validation) with 2-3 built-in offline tools.
+2. M2.6 (stretch): local OpenAI Realtime WebSocket gateway.
 
 ### Active Traps & Blockers
 
@@ -130,8 +130,8 @@
 
 ### Milestone M2: Smart Conversation Core (from speech-to-speech)
 
-- [ ] **M2.1** Turn system: `(turn_id, revision)` tagging on every continuous-voice message; central `SpeculativeTurnTracker` (latest/committed/pending-reopen + grace deadlines) in Rust (`Mutex<HashMap>` + `Notify`).
-- [ ] **M2.2** Two-tier endpointing: keep Silero/VAD boundary, add reopen-grace selection (800ms confident / 2000ms tentative) driving when TTS/chat commit; per-stage `is_latest(turn, rev)` gates.
+- [x] **M2.1** Turn system: `SpeculativeTurnTracker` (`src-tauri/src/speculative_turns.rs`) — `new_turn`/`reopen`/`is_latest`/`commit_if_latest`/`cancel`/`prune` over `(turn_id, revision)`, managed as Tauri state; recorder tags every utterance; pipeline stages gate side effects on `is_latest`. 5 unit tests.
+- [x] **M2.2** Two-tier endpointing: silence endpoint now arms a reopen-grace window (400ms snappy / 800ms balanced / 2000ms patient from `endpoint_preset`); speech during the grace reopens the same turn (revision+1, samples continue accumulating); grace expiry finalizes. The pipeline re-checks staleness after STT and before Brain ask, and `commit_if_latest` gates the TTS wait — a barge-in listener now spans the whole pipeline (STT + thinking + TTS) and cancels the turn. (No SmartTurn classifier yet — the preset doubles as the confidence tier; real SmartTurn ONNX is a future enhancement.)
 - [x] **M2.3** Brain context compaction: token-aware context building (`select_context_messages` — never exceeds llama.cpp 16k / cloud 8k budget minus headroom), optional LLM summarization (`compaction_enabled`, default on) with dense-JSON prompt, single-flight background worker, generation counter rejecting stale splices, prose fallback parse; hard truncation fallback when disabled or on failure; `brain:history-compacted` event; `compaction_enabled` exposed in BrainSettings; 5 unit tests.
 - [x] **M2.4** TTS sentence coalescing: the sentence consumer drains same-generation backlog up to `MAX_COALESCE_CHARS` (800) into single synthesis calls — fewer model invocations, better cross-sentence prosody — while the first sentence still synthesizes alone for fast first audio. (Sentence batching skipped: per-sentence TTS emission already minimizes time-to-first-audio; coalescing covers the backlog case.)
 - [ ] **M2.5** Tool calling for local models: `<code>…</code>` block prompt + parser (paren-depth scanner, JSON args), schema validation before execution; expose 2-3 built-in tools (time/date, clipboard read, open URL) — MCP-lite, fully offline.

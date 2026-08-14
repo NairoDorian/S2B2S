@@ -35,6 +35,7 @@ mod session_manager;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod speculative_turns;
 mod stt;
 mod text_replacement_decapitalize;
 mod transcription_coordinator;
@@ -1151,6 +1152,9 @@ pub fn run(cli_args: CliArgs) {
             app.manage(actions::ActiveActionState(std::sync::Mutex::new(None)));
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
             app.manage(session_manager::ManagedSessionState::default());
+            app.manage(std::sync::Arc::new(
+                speculative_turns::SpeculativeTurnTracker::new(),
+            ));
             app.manage(recording_auto_stop::new_managed_state());
             app.manage(std::sync::Arc::new(
                 crate::llm_operation::LlmOperationTracker::new(),
