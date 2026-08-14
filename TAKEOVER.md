@@ -37,12 +37,12 @@
 
 ### Current Task in Progress
 
-- None. M0, M1, M2 complete (M2.6 stretch remains); M3 partially done (M3.1 subtitles, M3.3 profiles v1). Next: M3.2 batch file transcription or M3.3 follow-ups (per-app auto-switch, footer quick-switch).
+- None. M0, M1, M2 complete (M2.6 stretch remains); M3: M3.1, M3.2 done; M3.3 removed per user decision. Next: M3.4 text replacement rules, M3.5 cloning recorder, M3.8 region capture.
 
 ### Next Immediate Action for Takeover
 
-1. M3.3 follow-up: per-app auto-switch (match foreground app name → activate profile) + footer quick-switch dropdown.
-2. M3.2: batch file transcription (decode stack: hound/rodio/rubato; export .srt/.vtt/.md).
+1. M3.4: text replacement rules table (case-sensitive/regex, escape sequences) + realtime decapitalize wiring.
+2. M3.5: in-app voice-cloning reference recorder (record → Pocket/Qwen3 import).
 
 ### Active Traps & Blockers
 
@@ -141,7 +141,7 @@
 
 - [x] **M3.1** Subtitle export: new `subtitle.rs` — pure SRT/VTT formatters + cue grouping (ported from AIVORelay) + `history_entries_to_subtitle_segments` (timestamps + recorded duration or chars-per-sec estimate); `export_history_subtitle` command writes timed `.srt`/`.vtt` of all dictation history; export buttons in HistorySettings; 5 unit tests.
 - [x] **M3.2** Batch file transcription: new `file_transcription.rs` — rodio decode (wav/mp3/m4a/mp4/ogg/flac via symphonia-aac/isomp4 features), mono downmix + 16kHz rubato resample, extension validation, recording-session guard, `transcribe_audio_file_command` exporting `.txt`/`.srt`/`.vtt` to `<app data>/transcripts/`; `text_to_subtitle_segments` (sentence cues, proportional timing, 120-char cap); UI buttons in HistorySettings; 3 new subtitle tests. (Diarization deferred — requires provider word timings.)
-- [/] **M3.3** Multi-profile transcription (v1): `TranscriptionProfile` struct (id, name, model, language), `transcription_profiles` + `active_transcription_profile_id` settings, CRUD + activate commands (`commands/profiles.rs`); activating applies model (via `switch_active_model`) and language immediately; full management UI in GeneralSettings. TODO: per-app auto-switch via `active_app.rs` + footer quick-switch.
+- ~~**M3.3** Multi-profile transcription~~ — **REMOVED per user decision** (profiles + auto-switch dropped entirely; no residue in settings/commands/UI).
 - [ ] **M3.4** Text replacement rules table (case-sensitive/regex, escape sequences) + wire the realtime decapitalize path.
 - [ ] **M3.5** Voice-cloning reference recorder: record N seconds in-app → `pocket_import_cloned_voice` / `qwen3_import_cloned_voice` (close the loop the UI implies).
 - [ ] **M3.6** Mic auto-switch (wildcard mask + manual fallback if device still present), input-channel selection, pause-media-while-recording.

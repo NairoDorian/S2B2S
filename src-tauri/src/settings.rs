@@ -1136,12 +1136,6 @@ pub struct AppSettings {
     /// `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
     #[serde(default = "default_ai_replace_instruction")]
     pub ai_replace_instruction: String,
-    /// Named transcription profiles (model + language presets).
-    #[serde(default)]
-    pub transcription_profiles: Vec<TranscriptionProfile>,
-    /// ID of the currently active transcription profile.
-    #[serde(default)]
-    pub active_transcription_profile_id: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -1446,19 +1440,6 @@ fn default_theme() -> Theme {
 
 fn default_post_process_enabled() -> bool {
     false
-}
-
-/// A named preset of transcription settings: STT model and language.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct TranscriptionProfile {
-    pub id: String,
-    pub name: String,
-    /// STT model override (None = keep current model).
-    #[serde(default)]
-    pub model: Option<String>,
-    /// Language override (None = keep current language).
-    #[serde(default)]
-    pub language: Option<String>,
 }
 
 fn default_ai_replace_instruction() -> String {
@@ -2069,8 +2050,6 @@ pub fn get_default_settings() -> AppSettings {
         post_process_actions: Vec::new(),
         post_process_actions_initialized: false,
         ai_replace_instruction: default_ai_replace_instruction(),
-        transcription_profiles: Vec::new(),
-        active_transcription_profile_id: None,
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),

@@ -187,21 +187,6 @@
         "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
       }
     },
-    "profiles": {
-      "group": "Transcription Profiles",
-      "noProfiles": "No profiles yet. Create a preset of model + language and switch with one click.",
-      "keepCurrent": "Keep current",
-      "activeBadge": "ACTIVE",
-      "activate": "Activate",
-      "deactivate": "Deactivate",
-      "delete": "Delete profile",
-      "add": "New profile",
-      "addDescription": "Save the current model and language as a named preset.",
-      "namePlaceholder": "e.g. Coding (English)",
-      "modelPlaceholder": "Model (keep current)",
-      "languagePlaceholder": "Language (keep current)",
-      "addButton": "Add profile"
-    },
     "general": {
       "title": "Общи",
       "shortcut": {
