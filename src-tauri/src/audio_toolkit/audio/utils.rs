@@ -54,9 +54,14 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
 
 /// Encode f32 audio samples to WAV bytes in memory (for multimodal Brain input).
 pub fn encode_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
+    encode_wav_bytes_at(samples, 16000)
+}
+
+/// Encode f32 audio samples at an arbitrary sample rate to WAV bytes in memory.
+pub fn encode_wav_bytes_at(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
     let spec = WavSpec {
         channels: 1,
-        sample_rate: 16000,
+        sample_rate,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };

@@ -70,6 +70,9 @@ DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 DEFAULT_VOICE = "Aiden"
 DEFAULT_REF_TEXT = "I'm confused why some people have super short timelines, yet at the same time are bullish on scaling up reinforcement learning atop LLMs."
 SAMPLE_RATE = 24000
+# Codec steps per streamed chunk. 12 steps ≈ 1 second of audio; 4 steps ≈
+# 333ms — smaller chunks cut time-to-first-audio at a small RTF cost.
+DEFAULT_CHUNK_SIZE = 4
 
 # ---------------------------------------------------------------------------
 # Globals set at startup
@@ -77,6 +80,7 @@ SAMPLE_RATE = 24000
 MODEL = None
 AVAILABLE_VOICES = []
 MODEL_TYPE = "custom_voice"
+CHUNK_SIZE = DEFAULT_CHUNK_SIZE
 
 def resolve_local_models_dir():
     """Find the local TTS models directory relative to this script."""
@@ -206,10 +210,96 @@ def get_supported_speakers(model):
     return ["Aiden", "Ashley", "Ben", "Cora", "Daniel", "Elsa", "Felix", "Grace", "Hale", "Iris", "Jack", "Katherine"]
 
 
+def _iter_audio_chunks(gen):
+    """Yield (float32_chunk, sample_rate) from a qwen-tts streaming generator."""
+    for item in gen:
+        if isinstance(item, tuple):
+            audio_chunk, chunk_sr, _ = item
+            yield np.asarray(audio_chunk, dtype=np.float32).squeeze(), chunk_sr
+        else:
+            audio = getattr(item, "audio", None)
+            if audio is not None:
+                chunk_sr = getattr(item, "sample_rate", SAMPLE_RATE)
+                yield np.asarray(audio, dtype=np.float32).squeeze(), chunk_sr
+
+
+def _start_generator(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None, non_streaming_mode=True, chunk_size=DEFAULT_CHUNK_SIZE):
+    """Create the right streaming generator for the current model/inputs."""
+    if voice_wav and os.path.isfile(voice_wav):
+        ref_text = voice_text if voice_text else DEFAULT_REF_TEXT
+        print(f"[qwen3_server] Synthesizing voice clone. Ref audio: {voice_wav}", flush=True)
+        return MODEL.generate_voice_clone_streaming(
+            text=text,
+            language="auto",
+            ref_audio=voice_wav,
+            ref_text=ref_text,
+            non_streaming_mode=non_streaming_mode,
+            chunk_size=chunk_size
+        )
+    if MODEL_TYPE == "voice_design" or (instruct and instruct.strip()):
+        inst_prompt = instruct if instruct else f"A speech by {voice}."
+        print(f"[qwen3_server] Synthesizing voice design. Instruct: {inst_prompt}", flush=True)
+        return MODEL.generate_voice_design_streaming(
+            text=text,
+            instruct=inst_prompt,
+            language="auto",
+            non_streaming_mode=non_streaming_mode,
+            chunk_size=chunk_size
+        )
+    print(f"[qwen3_server] Synthesizing custom voice. Speaker: {voice}", flush=True)
+    return MODEL.generate_custom_voice_streaming(
+        text=text,
+        speaker=voice,
+        language="auto",
+        non_streaming_mode=non_streaming_mode,
+        chunk_size=chunk_size
+    )
+
+
+def _is_fast_model():
+    """True when the loaded model is FasterQwen3TTS (has streaming methods)."""
+    return hasattr(MODEL, "generate_custom_voice_streaming")
+
+
+def _official_generate(text, voice, voice_wav=None, voice_text=None, instruct=None):
+    """Official qwen-tts API (CPU fallback): returns (float32_chunk, sample_rate)."""
+    if voice_wav and os.path.isfile(voice_wav):
+        ref_text = voice_text if voice_text else DEFAULT_REF_TEXT
+        print(f"[qwen3_server] Synthesizing voice clone (official API). Ref audio: {voice_wav}", flush=True)
+        wavs, sr = MODEL.generate_voice_clone(
+            text=text, language=None, ref_audio=voice_wav, ref_text=ref_text
+        )
+    elif MODEL_TYPE == "voice_design" or (instruct and instruct.strip()):
+        inst_prompt = instruct if instruct else f"A speech by {voice}."
+        print(f"[qwen3_server] Synthesizing voice design (official API). Instruct: {inst_prompt}", flush=True)
+        wavs, sr = MODEL.generate_voice_design(text=text, instruct=inst_prompt, language=None)
+    else:
+        print(f"[qwen3_server] Synthesizing custom voice (official API). Speaker: {voice}", flush=True)
+        wavs, sr = MODEL.generate_custom_voice(text=text, speaker=voice, language=None)
+    return np.asarray(wavs[0], dtype=np.float32).squeeze(), sr
+
+
+def synthesize_streaming(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None, chunk_size=None):
+    """Stream chunks of (float32, sr) as they are generated (no buffering)."""
+    global MODEL
+    if not _is_fast_model():
+        # Official CPU path has no streaming API — emit the full result as one chunk.
+        yield _official_generate(text, voice, voice_wav=voice_wav, voice_text=voice_text, instruct=instruct)
+        return
+    if chunk_size is None:
+        chunk_size = CHUNK_SIZE
+    gen = _start_generator(
+        text, voice, length_scale,
+        voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
+        non_streaming_mode=False, chunk_size=chunk_size,
+    )
+    yield from _iter_audio_chunks(gen)
+
+
 def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None):
     """Run inference, return WAV bytes."""
     global MODEL, MODEL_TYPE, SAMPLE_RATE
-    
+
     # Coalesce inputs
     text = text.strip()
     if not text:
@@ -218,7 +308,7 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
     if QwenTTS is not None and isinstance(MODEL, QwenTTS):
         # Native GGML backend
         print(f"[qwen3_server] Synthesizing via native C++ GGML backend...", flush=True)
-        
+
         ref_audio_24k = None
         ref_text = None
         if voice_wav and os.path.isfile(voice_wav):
@@ -235,13 +325,13 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
             ref_text=ref_text,
             instruct=instruct
         )
-        
+
         buf = io.BytesIO()
         w = wave.open(buf, "wb")
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sr)
-        
+
         # Clip and convert to int16 PCM
         int16 = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
         w.writeframes(int16.tobytes())
@@ -249,56 +339,40 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
         return buf.getvalue()
 
     # PyTorch fallback backend
+    if not _is_fast_model():
+        # Official qwen-tts model (CPU): no streaming generators available.
+        audio, sr = _official_generate(
+            text, voice,
+            voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
+        )
+        int16 = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
+        pcm = int16.tobytes()
+        buf = io.BytesIO()
+        w = wave.open(buf, "wb")
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(pcm)
+        w.close()
+        return buf.getvalue()
+
+    # FasterQwen3TTS — buffer all chunks into one WAV.
     chunks = []
     sr = SAMPLE_RATE
-
-    if voice_wav and os.path.isfile(voice_wav):
-        # Voice cloning / ICL
-        ref_text = voice_text if voice_text else DEFAULT_REF_TEXT
-        print(f"[qwen3_server] Synthesizing voice clone. Ref audio: {voice_wav}", flush=True)
-        gen = MODEL.generate_voice_clone_streaming(
-            text=text,
-            language="auto",
-            ref_audio=voice_wav,
-            ref_text=ref_text,
-            non_streaming_mode=True
-        )
-    elif MODEL_TYPE == "voice_design" or (instruct and instruct.strip()):
-        # Voice design
-        inst_prompt = instruct if instruct else f"A speech by {voice}."
-        print(f"[qwen3_server] Synthesizing voice design. Instruct: {inst_prompt}", flush=True)
-        gen = MODEL.generate_voice_design_streaming(
-            text=text,
-            instruct=inst_prompt,
-            language="auto",
-            non_streaming_mode=True
-        )
-    else:
-        # Custom voice
-        print(f"[qwen3_server] Synthesizing custom voice. Speaker: {voice}", flush=True)
-        gen = MODEL.generate_custom_voice_streaming(
-            text=text,
-            speaker=voice,
-            language="auto",
-            non_streaming_mode=True
-        )
-
-    for item in gen:
-        if isinstance(item, tuple):
-            audio_chunk, chunk_sr, _ = item
-            chunks.append(np.asarray(audio_chunk, dtype=np.float32).squeeze())
-            sr = chunk_sr
-        else:
-            audio = getattr(item, "audio", None)
-            if audio is not None:
-                chunks.append(np.asarray(audio, dtype=np.float32).squeeze())
-                sr = getattr(item, "sample_rate", sr)
+    gen = _start_generator(
+        text, voice, length_scale,
+        voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
+        non_streaming_mode=True, chunk_size=CHUNK_SIZE,
+    )
+    for audio_chunk, chunk_sr in _iter_audio_chunks(gen):
+        chunks.append(audio_chunk)
+        sr = chunk_sr
 
     if not chunks:
         raise ValueError("Synthesis yielded zero audio chunks")
 
     waveform = np.concatenate(chunks)
-    
+
     # Clip and convert to int16 PCM
     int16 = np.clip(waveform * 32767, -32768, 32767).astype(np.int16)
     pcm = int16.tobytes()
@@ -310,7 +384,7 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
     w.setframerate(sr)
     w.writeframes(pcm)
     w.close()
-    
+
     return buf.getvalue()
 
 # ---------------------------------------------------------------------------
@@ -343,6 +417,7 @@ class Qwen3Handler(BaseHTTPRequestHandler):
             voice_wav = req.get("voice_wav")
             voice_text = req.get("voice_text")
             instruct = req.get("instruct")
+            stream_mode = bool(req.get("stream", False))
 
             if not text.strip():
                 self.send_response(400)
@@ -358,6 +433,30 @@ class Qwen3Handler(BaseHTTPRequestHandler):
                 else:
                     print(f"[qwen3_server] Unknown voice '{voice}', falling back to {DEFAULT_VOICE}", file=sys.stderr, flush=True)
                     voice = DEFAULT_VOICE
+
+            if stream_mode:
+                # Chunk-level streaming: one JSON header line, then raw
+                # little-endian int16 mono PCM frames as they are generated.
+                # The connection closes when synthesis finishes.
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                try:
+                    header = json.dumps({"sample_rate": SAMPLE_RATE, "channels": 1, "bytes_per_sample": 2}) + "\n"
+                    self.wfile.write(header.encode())
+                    for audio_chunk, chunk_sr in synthesize_streaming(
+                        text=text, voice=voice, length_scale=length_scale,
+                        voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
+                    ):
+                        int16 = np.clip(audio_chunk * 32767, -32768, 32767).astype(np.int16)
+                        self.wfile.write(int16.tobytes())
+                        self.wfile.flush()
+                    print(f"[qwen3_server] Streamed synthesis complete.", file=sys.stderr, flush=True)
+                except Exception:
+                    tb = traceback.format_exc()
+                    print(f"[qwen3_server] Streaming synthesis error:\n{tb}", file=sys.stderr, flush=True)
+                return
 
             wav_bytes = synthesize(
                 text=text,
@@ -390,9 +489,12 @@ def main():
     parser.add_argument("--device", default="cuda", help="Inference device (cuda / cpu)")
     parser.add_argument("--models-dir", default=None, help="Directory for storing downloaded models")
     parser.add_argument("--backend", default="torch", choices=["ggml", "torch"], help="Inference backend (default: torch)")
+    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE,
+                        help=f"Codec steps per streamed chunk — smaller = faster first audio (default: {DEFAULT_CHUNK_SIZE})")
     args = parser.parse_args()
 
-    global MODEL, AVAILABLE_VOICES, MODEL_TYPE
+    global MODEL, AVAILABLE_VOICES, MODEL_TYPE, CHUNK_SIZE
+    CHUNK_SIZE = max(1, args.chunk_size)
 
     # Use cuda if available
     device = args.device

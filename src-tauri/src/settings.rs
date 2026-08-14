@@ -451,6 +451,9 @@ pub struct TtsConfig {
     pub elevenlabs: ElevenLabsConfig,
     #[serde(default)]
     pub cartesia: CartesiaConfig,
+    /// Qwen3-TTS engine configuration (model size picker).
+    #[serde(default)]
+    pub qwen3: Qwen3Config,
     /// Number of parallel Kokoro synthesis workers (auto-tuned from CPU count, min 1, max 8).
     #[serde(default = "default_tts_workers")]
     pub tts_workers: u32,
@@ -463,6 +466,28 @@ pub struct TtsConfig {
     /// Wake word / always-listening keyword detection.
     #[serde(default)]
     pub wake_word: WakeWordConfig,
+}
+
+/// Qwen3-TTS engine configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct Qwen3Config {
+    /// Hugging Face model id. Qwen3-TTS is published at 0.6B and 1.7B
+    /// (CustomVoice variants support the built-in speakers + voice cloning);
+    /// both use the 12Hz tokenizer (~97ms E2E streaming latency).
+    #[serde(default = "default_qwen3_model")]
+    pub model: String,
+}
+
+fn default_qwen3_model() -> String {
+    "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice".to_string()
+}
+
+impl Default for Qwen3Config {
+    fn default() -> Self {
+        Self {
+            model: default_qwen3_model(),
+        }
+    }
 }
 
 /// User-facing configuration for wake word detection.
@@ -535,6 +560,7 @@ impl Default for TtsConfig {
             openai: OpenAIConfig::default(),
             elevenlabs: ElevenLabsConfig::default(),
             cartesia: CartesiaConfig::default(),
+            qwen3: Qwen3Config::default(),
             tts_workers: default_tts_workers(),
             tts_shorten_first_chunk: default_tts_shorten_first_chunk(),
             tts_save_format: crate::tts::audio_format::AudioFormat::default(),

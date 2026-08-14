@@ -976,6 +976,13 @@
         "startRecording": "Record reference",
         "recording": "Recording... {{seconds}}s"
       },
+      "qwen3Model": {
+        "group": "Qwen3-TTS Model",
+        "label": "Model size",
+        "description": "Both sizes use the 12Hz tokenizer (streaming synthesis with ~97ms end-to-end latency). The 1.7B model sounds better but needs more VRAM/RAM.",
+        "option06b": "0.6B CustomVoice (fast, ~2.4 GB)",
+        "option17b": "1.7B CustomVoice (quality, ~6.6 GB)"
+      },
       "sanitizeEnabled": {
         "label": "Clean text before speaking",
         "description": "Apply cleanup passes to text before synthesis."

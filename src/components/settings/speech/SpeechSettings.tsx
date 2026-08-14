@@ -382,14 +382,49 @@ export const SpeechSettings: React.FC = () => {
 
       {/* Qwen3 Voice Cloning */}
       {tts.engine === "qwen3" && (
-        <CloneVoiceSettings
-          engine="qwen3"
-          importingVoice={importingVoice}
-          setImportingVoice={setImportingVoice}
-          refreshVoices={refreshVoices}
-          update={update}
-          hasClonedVoices={voices.some((v) => v.language === "cloned")}
-        />
+        <>
+          <SettingsGroup title={t("settings.speech.qwen3Model.group")}>
+            <SettingContainer
+              title={t("settings.speech.qwen3Model.label")}
+              description={t("settings.speech.qwen3Model.description")}
+              grouped
+            >
+              <Dropdown
+                options={[
+                  {
+                    value: "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+                    label: t("settings.speech.qwen3Model.option06b"),
+                  },
+                  {
+                    value: "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+                    label: t("settings.speech.qwen3Model.option17b"),
+                  },
+                ]}
+                selectedValue={
+                  tts.qwen3?.model ?? "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+                }
+                onSelect={async (value) => {
+                  update({
+                    qwen3: {
+                      model: value,
+                    },
+                  });
+                  // The running server keeps the old model loaded — unload it
+                  // so the next synthesis spawns with the newly selected one.
+                  await commands.ttsUnloadEngine();
+                }}
+              />
+            </SettingContainer>
+          </SettingsGroup>
+          <CloneVoiceSettings
+            engine="qwen3"
+            importingVoice={importingVoice}
+            setImportingVoice={setImportingVoice}
+            refreshVoices={refreshVoices}
+            update={update}
+            hasClonedVoices={voices.some((v) => v.language === "cloned")}
+          />
+        </>
       )}
 
       <SettingsGroup title={t("settings.speech.greetingGroup")}>

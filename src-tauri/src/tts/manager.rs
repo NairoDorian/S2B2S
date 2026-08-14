@@ -36,6 +36,64 @@ pub struct TtsManager {
     sentence_tx: Mutex<Option<mpsc::Sender<(String, u64)>>>,
 }
 
+/// Result of one synthesis: either complete audio bytes (buffered backend) or
+/// the accumulated streaming PCM (already appended to the player chunk-wise).
+enum SynthOutcome {
+    /// Complete encoded audio (WAV/MP3) appended to the player.
+    Buffered(Vec<u8>),
+    /// Chunk-streamed synthesis: mono f32 samples at `sample_rate`, already
+    /// appended to the player incrementally as they were generated.
+    Streamed { sample_rate: u32, samples: Vec<f32> },
+}
+
+/// Synthesize `text` through `backend` and append the audio to `player`.
+///
+/// Backends with streaming support deliver PCM chunks to the player as they
+/// are generated (much lower time-to-first-audio); `on_first_audio` fires on
+/// the very first chunk. Buffered backends keep the old whole-WAV path.
+fn synthesize_into(
+    backend: &dyn TtsBackend,
+    player: &TtsPlayer,
+    text: &str,
+    voice: &str,
+    speed: f32,
+    mut on_first_audio: Option<&mut dyn FnMut()>,
+) -> Result<SynthOutcome, String> {
+    if !backend.supports_streaming() {
+        let bytes = backend.synthesize(text, voice, speed)?;
+        player.append(bytes.clone());
+        if let Some(cb) = on_first_audio.as_deref_mut() {
+            cb();
+        }
+        return Ok(SynthOutcome::Buffered(bytes));
+    }
+
+    let mut sample_rate = 24000u32;
+    let mut samples: Vec<f32> = Vec::new();
+    let mut first = true;
+    backend.synthesize_streaming(text, voice, speed, &mut |sr, frames| {
+        sample_rate = sr;
+        for &f in &frames {
+            samples.push(f as f32 / 32768.0);
+        }
+        if first {
+            first = false;
+            if let Some(cb) = on_first_audio.as_deref_mut() {
+                cb();
+            }
+        }
+        player.append_pcm(sr, frames);
+    })?;
+
+    if samples.is_empty() {
+        return Err("Qwen3 streaming produced no audio".to_string());
+    }
+    Ok(SynthOutcome::Streamed {
+        sample_rate,
+        samples,
+    })
+}
+
 impl TtsManager {
     pub fn new(app: AppHandle) -> Self {
         let player = TtsPlayer::new(app.clone());
@@ -350,8 +408,25 @@ impl TtsManager {
                     return;
                 }
                 let frag_synth_start = std::time::Instant::now();
-                match backend.synthesize(&frag.text, &voice, speed) {
-                    Ok(bytes) => {
+                let mut first_audio_emitted_local = first_audio_emitted;
+                let outcome = synthesize_into(
+                    backend.as_ref(),
+                    &player,
+                    &frag.text,
+                    &voice,
+                    speed,
+                    Some(&mut || {
+                        if !first_audio_emitted_local {
+                            first_audio_emitted_local = true;
+                            let ttfa_ms = synth_start.elapsed().as_millis() as u64;
+                            let _ =
+                                app.emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
+                        }
+                    }),
+                );
+                first_audio_emitted = first_audio_emitted_local;
+                match outcome {
+                    Ok(SynthOutcome::Buffered(bytes)) => {
                         if gen_counter.load(Ordering::SeqCst) != generation {
                             return;
                         }
@@ -377,13 +452,45 @@ impl TtsManager {
                                 }),
                             );
                         }
-                        all_chunks.push(bytes.clone());
-                        player.append(bytes);
-                        if !first_audio_emitted {
-                            first_audio_emitted = true;
-                            let ttfa_ms = synth_start.elapsed().as_millis() as u64;
-                            let _ =
-                                app.emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
+                        all_chunks.push(bytes);
+                    }
+                    Ok(SynthOutcome::Streamed {
+                        sample_rate,
+                        samples,
+                    }) => {
+                        if gen_counter.load(Ordering::SeqCst) != generation {
+                            return;
+                        }
+                        let frag_synth_ms = frag_synth_start.elapsed().as_millis() as u64;
+                        if let Some(telemetry) =
+                            app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
+                        {
+                            let key = format!("{}:{}", engine_name, voice);
+                            telemetry.record(&key, frag.text.len(), frag_synth_ms);
+                        }
+                        let _ = app.emit(
+                            "tts:fragment",
+                            serde_json::json!({ "index": frag.index, "total": frag.total }),
+                        );
+                        // Wrap the streamed PCM into a WAV so history + the
+                        // waveform HUD keep working exactly like buffered backends.
+                        match crate::audio_toolkit::encode_wav_bytes_at(&samples, sample_rate) {
+                            Ok(wav) => {
+                                if let Some(envelope) = extract_envelope(&wav, 32) {
+                                    let _ = app.emit(
+                                        "tts:waveform",
+                                        serde_json::json!({
+                                            "fragment_index": frag.index,
+                                            "values": envelope.values,
+                                            "duration_ms": envelope.duration_ms,
+                                        }),
+                                    );
+                                }
+                                all_chunks.push(wav);
+                            }
+                            Err(e) => {
+                                log::warn!("[TTS] failed to wrap streamed PCM as WAV: {e}");
+                            }
                         }
                     }
                     Err(e) => {
@@ -497,10 +604,9 @@ impl TtsManager {
                         }
                     }
                     let synth_start = std::time::Instant::now();
-                    match backend.synthesize(&merged, &voice, speed) {
-                        Ok(bytes) => {
+                    match synthesize_into(backend.as_ref(), &player, &merged, &voice, speed, None) {
+                        Ok(_) => {
                             if gen_counter.load(Ordering::SeqCst) == gen {
-                                player.append(bytes);
                                 let synth_ms = synth_start.elapsed().as_millis() as u64;
                                 if let Some(telemetry) =
                                     app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()

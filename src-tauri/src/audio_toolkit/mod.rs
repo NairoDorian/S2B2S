@@ -9,9 +9,10 @@ pub mod utils;
 pub mod vad;
 
 pub use audio::{
-    encode_wav_bytes, extract_envelope, is_microphone_access_denied, is_no_input_device_error,
-    list_input_devices, list_output_devices, read_wav_samples, save_wav_file, verify_wav_file,
-    AmplitudeEnvelope, AudioRecorder, CpalDeviceInfo, NoiseSuppressor, VadPolicy,
+    encode_wav_bytes, encode_wav_bytes_at, extract_envelope, is_microphone_access_denied,
+    is_no_input_device_error, list_input_devices, list_output_devices, read_wav_samples,
+    save_wav_file, verify_wav_file, AmplitudeEnvelope, AudioRecorder, CpalDeviceInfo,
+    NoiseSuppressor, VadPolicy,
 };
 pub use lang_id::detect_output_language;
 pub use text::{

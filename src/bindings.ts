@@ -1353,6 +1353,16 @@ export type QuantVariant = {
 	isDefault: boolean,
 };
 
+/**  Qwen3-TTS engine configuration. */
+export type Qwen3Config = {
+	/**
+	 *  Hugging Face model id. Qwen3-TTS is published at 0.6B and 1.7B
+	 *  (CustomVoice variants support the built-in speakers + voice cloning);
+	 *  both use the 12Hz tokenizer (~97ms E2E streaming latency).
+	 */
+	model?: string,
+};
+
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";
 
 /**  Response for the picker's initial data request. */
@@ -1513,6 +1523,8 @@ export type TtsConfig = {
 	openai?: OpenAIConfig,
 	elevenlabs?: ElevenLabsConfig,
 	cartesia?: CartesiaConfig,
+	/**  Qwen3-TTS engine configuration (model size picker). */
+	qwen3?: Qwen3Config,
 	/**  Number of parallel Kokoro synthesis workers (auto-tuned from CPU count, min 1, max 8). */
 	tts_workers?: number,
 	/**  Shorten the first chunk to reduce time-to-first-audio (Parrot pattern). */

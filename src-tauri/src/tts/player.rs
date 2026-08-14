@@ -5,7 +5,7 @@
 //! order — the manager can synthesize fragment *i+1* while *i* is still playing.
 //! State changes are surfaced to the UI via Tauri events.
 
-use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player};
+use rodio::{buffer::SamplesBuffer, Decoder, DeviceSinkBuilder, MixerDeviceSink, Player};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
@@ -17,6 +17,13 @@ use tauri::{AppHandle, Emitter};
 enum Cmd {
     /// Decode and append WAV/MP3/etc. bytes to the active sink.
     Append(Vec<u8>),
+    /// Append raw mono i16 PCM frames (chunk-level streaming from engines that
+    /// synthesize incrementally). Decoding is skipped — samples go straight to
+    /// the sink, so audio starts as soon as the first frames arrive.
+    AppendPcm {
+        sample_rate: u32,
+        frames: Vec<i16>,
+    },
     /// Stop playback and drop the current sink/stream (clears the queue).
     Stop,
     Pause,
@@ -129,6 +136,54 @@ impl TtsPlayer {
                             }
                         }
                     }
+                    Ok(Cmd::AppendPcm {
+                        sample_rate,
+                        frames,
+                    }) => {
+                        just_appended = true;
+                        if frames.len() < 8 {
+                            log::warn!(
+                                "[TtsPlayer] ignoring tiny PCM chunk ({} frames)",
+                                frames.len()
+                            );
+                            continue;
+                        }
+                        if sink.is_none() {
+                            match DeviceSinkBuilder::from_default_device()
+                                .and_then(|b| b.open_stream())
+                            {
+                                Ok(s) => {
+                                    let sk = Player::connect_new(s.mixer());
+                                    sk.set_volume(volume);
+                                    sink = Some(sk);
+                                    _stream = Some(s);
+                                }
+                                Err(e) => {
+                                    log::error!("[TtsPlayer] no output device: {e}");
+                                    continue;
+                                }
+                            }
+                        }
+                        if let Some(sk) = &sink {
+                            // rodio 0.22: NonZero channel/sample-rate counts and
+                            // f32 samples (rodio's internal Sample type).
+                            let channels = std::num::NonZeroU16::new(1).expect("1 is non-zero");
+                            let rate = std::num::NonZeroU32::new(sample_rate)
+                                .or_else(|| std::num::NonZeroU32::new(24000))
+                                .expect("sample rate is non-zero");
+                            let samples: Vec<f32> =
+                                frames.iter().map(|&s| s as f32 / 32768.0).collect();
+                            let src = SamplesBuffer::new(channels, rate, samples);
+                            sk.append(src);
+                            prev_playing = true;
+                            is_playing_t.store(true, Ordering::Relaxed);
+                            let _ = app.emit("tts:playing-changed", true);
+                            if !overlay_shown {
+                                crate::overlay::show_speaking_overlay(&app);
+                                overlay_shown = true;
+                            }
+                        }
+                    }
                     Ok(Cmd::Stop) => {
                         if let Some(sk) = sink.take() {
                             sk.stop();
@@ -175,6 +230,14 @@ impl TtsPlayer {
     /// Append synthesized audio bytes to the playback queue.
     pub fn append(&self, bytes: Vec<u8>) {
         let _ = self.tx.send(Cmd::Append(bytes));
+    }
+
+    /// Append raw mono i16 PCM frames to the playback queue (streaming).
+    pub fn append_pcm(&self, sample_rate: u32, frames: Vec<i16>) {
+        let _ = self.tx.send(Cmd::AppendPcm {
+            sample_rate,
+            frames,
+        });
     }
 
     /// Stop playback and clear the queue.

@@ -13,7 +13,7 @@ pub use recorder::{
 };
 pub use resampler::FrameResampler;
 pub use utils::{
-    encode_wav_bytes, extract_envelope, read_wav_samples, save_wav_file, verify_wav_file,
-    AmplitudeEnvelope,
+    encode_wav_bytes, encode_wav_bytes_at, extract_envelope, read_wav_samples, save_wav_file,
+    verify_wav_file, AmplitudeEnvelope,
 };
 pub use visualizer::AudioVisualiser;

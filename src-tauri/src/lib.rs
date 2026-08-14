@@ -1310,7 +1310,7 @@ pub fn run(cli_args: CliArgs) {
                         match crate::tts::local_tts_server::ensure_running(
                             "qwen3",
                             "python".to_string(),
-                            crate::tts::backends::qwen3::server_args(),
+                            crate::tts::backends::qwen3::server_args(&tts_handle),
                         ) {
                             Ok(_) => {
                                 log::info!("[Startup] Qwen3 persistent server loaded successfully.")
