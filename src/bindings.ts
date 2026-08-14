@@ -258,7 +258,20 @@ export const commands = {
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
 	deleteHistoryEntries: (ids: number[]) => typedError<null, string>(__TAURI_INVOKE("delete_history_entries", { ids })),
 	exportHistoryEntries: (ids: number[], filePath: string) => typedError<null, string>(__TAURI_INVOKE("export_history_entries", { ids, filePath })),
+	/**
+	 *  Export all transcription (STT) history as a timed subtitle file.
+	 *  Entries are placed on the timeline by their recorded timestamps; entries
+	 *  without a recorded duration are timed with a characters-per-second
+	 *  estimate. Returns the absolute path of the written `.srt`/`.vtt` file.
+	 */
+	exportHistorySubtitle: (format: SubtitleFormat) => typedError<string, string>(__TAURI_INVOKE("export_history_subtitle", { format })),
 	regenerateHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("regenerate_history_entry", { id })),
+	getTranscriptionProfiles: () => typedError<TranscriptionProfile[], string>(__TAURI_INVOKE("get_transcription_profiles")),
+	/**  Upsert a profile (id empty → generate one) and return the saved list. */
+	saveTranscriptionProfile: (profile: TranscriptionProfile) => typedError<TranscriptionProfile[], string>(__TAURI_INVOKE("save_transcription_profile", { profile })),
+	deleteTranscriptionProfile: (profileId: string) => typedError<TranscriptionProfile[], string>(__TAURI_INVOKE("delete_transcription_profile", { profileId })),
+	/**  Activate a profile (applying model/language) or clear the active profile. */
+	setActiveTranscriptionProfile: (profileId: string | null) => typedError<null, string>(__TAURI_INVOKE("set_active_transcription_profile", { profileId })),
 	/**  Speak arbitrary text aloud (sanitize → paginate → streaming synthesis). */
 	ttsSpeak: (text: string) => typedError<null, string>(__TAURI_INVOKE("tts_speak", { text })),
 	/**  Speak the current clipboard text. */
@@ -478,6 +491,10 @@ export type AppSettings_Deserialize = {
 	 *  `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
 	 */
 	ai_replace_instruction?: string,
+	/**  Named transcription profiles (model + language presets). */
+	transcription_profiles?: TranscriptionProfile[],
+	/**  ID of the currently active transcription profile. */
+	active_transcription_profile_id?: string | null,
 	mute_while_recording?: boolean,
 	append_trailing_space?: boolean,
 	app_language?: string,
@@ -645,6 +662,10 @@ export type AppSettings_Serialize = {
 	 *  `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
 	 */
 	ai_replace_instruction: string,
+	/**  Named transcription profiles (model + language presets). */
+	transcription_profiles: TranscriptionProfile[],
+	/**  ID of the currently active transcription profile. */
+	active_transcription_profile_id: string | null,
 	mute_while_recording: boolean,
 	append_trailing_space: boolean,
 	app_language: string,
@@ -1356,6 +1377,13 @@ export type StreamTextEvent = {
 /**  Semantic kind of "working" phase, used to localize the spinner label. */
 export type StreamWorkKind = "transcribing" | "polishing";
 
+/**  Output format for transcription. */
+export type SubtitleFormat = 
+/**  SRT subtitle format. */
+"srt" | 
+/**  WebVTT subtitle format. */
+"vtt";
+
 export type SystemRamInfo = {
 	total_mb: number,
 	used_mb: number,
@@ -1369,6 +1397,16 @@ export type SystemRamInfo = {
 export type Theme = "system" | "light" | "dark";
 
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
+
+/**  A named preset of transcription settings: STT model and language. */
+export type TranscriptionProfile = {
+	id: string,
+	name: string,
+	/**  STT model override (None = keep current model). */
+	model?: string | null,
+	/**  Language override (None = keep current language). */
+	language?: string | null,
+};
 
 /**  Text-to-speech ("Read Anywhere" / CopySpeak) configuration. */
 export type TtsConfig = {

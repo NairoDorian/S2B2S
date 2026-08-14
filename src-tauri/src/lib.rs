@@ -37,6 +37,7 @@ mod shortcut;
 mod signal_handle;
 mod speculative_turns;
 mod stt;
+mod subtitle;
 mod text_replacement_decapitalize;
 mod transcription_coordinator;
 mod tray;
@@ -835,7 +836,12 @@ commands::models::rescan_local_models,
             commands::history::update_recording_retention_period,
             commands::history::delete_history_entries,
             commands::history::export_history_entries,
+            commands::history::export_history_subtitle,
             commands::history::regenerate_history_entry,
+            commands::profiles::get_transcription_profiles,
+            commands::profiles::save_transcription_profile,
+            commands::profiles::delete_transcription_profile,
+            commands::profiles::set_active_transcription_profile,
             commands::tts::tts_speak,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_stop,

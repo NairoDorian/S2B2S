@@ -12,6 +12,7 @@ import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { ModelSettingsCard } from "./ModelSettingsCard";
+import { TranscriptionProfilesSettings } from "./TranscriptionProfilesSettings";
 import { AlwaysOnMicrophone } from "../AlwaysOnMicrophone";
 
 export const GeneralSettings: React.FC = () => {
@@ -30,6 +31,7 @@ export const GeneralSettings: React.FC = () => {
         )}
       </SettingsGroup>
       <ModelSettingsCard />
+      <TranscriptionProfilesSettings />
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <ChannelSelector descriptionMode="tooltip" grouped={true} />

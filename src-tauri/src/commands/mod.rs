@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod history;
 pub mod llama_server;
 pub mod models;
+pub mod profiles;
 pub mod python_env;
 pub mod system;
 pub mod transcription;

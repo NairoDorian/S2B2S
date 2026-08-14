@@ -299,6 +299,48 @@ pub async fn export_history_entries(
     Ok(())
 }
 
+/// Export all transcription (STT) history as a timed subtitle file.
+/// Entries are placed on the timeline by their recorded timestamps; entries
+/// without a recorded duration are timed with a characters-per-second
+/// estimate. Returns the absolute path of the written `.srt`/`.vtt` file.
+#[tauri::command]
+#[specta::specta]
+pub async fn export_history_subtitle(
+    history_manager: State<'_, Arc<HistoryManager>>,
+    format: crate::subtitle::SubtitleFormat,
+) -> Result<String, String> {
+    let entries = history_manager
+        .get_history_entries(None, None)
+        .await
+        .map_err(|e| e.to_string())?
+        .entries;
+
+    let mut stt_entries: Vec<HistoryEntry> = entries
+        .into_iter()
+        .filter(|e| e.entry_type == "stt")
+        .collect();
+    stt_entries.sort_by_key(|e| e.timestamp);
+
+    let segments = crate::subtitle::history_entries_to_subtitle_segments(&stt_entries);
+    if segments.is_empty() {
+        return Err("No transcription history to export".to_string());
+    }
+
+    let content = match format {
+        crate::subtitle::SubtitleFormat::Srt => crate::subtitle::segments_to_srt(&segments),
+        crate::subtitle::SubtitleFormat::Vtt => crate::subtitle::segments_to_vtt(&segments),
+    };
+    let file_name = format!(
+        "s2b2s-transcript-{}.{}",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S"),
+        crate::subtitle::get_format_extension(format)
+    );
+    let path = history_manager.recordings_dir().join(file_name);
+    std::fs::write(&path, content).map_err(|e| format!("Failed to write subtitle file: {}", e))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn regenerate_history_entry(

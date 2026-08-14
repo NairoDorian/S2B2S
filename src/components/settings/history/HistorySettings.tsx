@@ -86,6 +86,9 @@ export const HistorySettings: React.FC = () => {
   // Upgraded multi-select state
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [exportingSelected, setExportingSelected] = useState(false);
+  const [exportingSubtitle, setExportingSubtitle] = useState<
+    "srt" | "vtt" | null
+  >(null);
 
   // Keep ref in sync for use in IntersectionObserver callback
   useEffect(() => {
@@ -360,6 +363,33 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
+  const exportSubtitle = async (format: "srt" | "vtt") => {
+    try {
+      setExportingSubtitle(format);
+      const result = await commands.exportHistorySubtitle(format);
+      if (result.status === "ok") {
+        toast.success(
+          t("settings.history.exportSubtitleSuccess", {
+            path: result.data,
+            defaultValue: `Subtitle file saved: ${result.data}`,
+          }),
+        );
+      } else {
+        toast.error(
+          t("settings.history.exportSubtitleError", {
+            error: result.error,
+            defaultValue: `Subtitle export failed: ${result.error}`,
+          }),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to export subtitles:", err);
+      toast.error(String(err));
+    } finally {
+      setExportingSubtitle(null);
+    }
+  };
+
   let content: React.ReactNode;
 
   if (loading) {
@@ -402,6 +432,29 @@ export const HistorySettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-xs text-text/60">
+          {t("settings.history.subtitleExport", {
+            defaultValue: "Timed subtitle export (all dictation):",
+          })}
+        </span>
+        <Button
+          onClick={() => void exportSubtitle("srt")}
+          variant="secondary"
+          size="sm"
+          disabled={exportingSubtitle !== null}
+        >
+          {t("settings.history.exportSrt", { defaultValue: "Export .SRT" })}
+        </Button>
+        <Button
+          onClick={() => void exportSubtitle("vtt")}
+          variant="secondary"
+          size="sm"
+          disabled={exportingSubtitle !== null}
+        >
+          {t("settings.history.exportVtt", { defaultValue: "Export .VTT" })}
+        </Button>
+      </div>
       <div className="space-y-2">
         {selectedIds.length > 0 ? (
           <div className="px-4 py-2 bg-mid-gray/10 rounded-lg flex items-center justify-between border border-mid-gray/20 animate-fade-in">
