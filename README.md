@@ -83,7 +83,7 @@ bun run tauri build
 bun run sync:repos     # Sync faster-qwen3-tts and transcribe.cpp git dependencies
 bun run repomix        # Regenerate repomix codebase pack
 bunx tsc --noEmit      # TypeScript type check
-bun run lint:fix       # ESLint auto-fix
+bun run lint:fix       # oxlint auto-fix
 bun run format         # Prettier + cargo fmt
 cargo test             # Run Rust tests
 ```

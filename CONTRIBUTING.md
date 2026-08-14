@@ -145,7 +145,7 @@ We use GitHub Discussions for feature requests. This keeps issues focused on bug
    bun run sync:repos     # Sync faster-qwen3-tts, transcribe.cpp, and git dependencies to latest commits
    bun run repomix        # Regenerate repomix codebase pack
    bunx tsc --noEmit      # TypeScript type checking
-   bun run lint:fix       # ESLint auto-fix
+   bun run lint:fix       # oxlint auto-fix
    bun run format         # Prettier + cargo fmt
    cargo test             # Run Rust test suite
    ```

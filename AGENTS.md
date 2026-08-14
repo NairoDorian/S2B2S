@@ -96,17 +96,25 @@ bun run repomix
 
 # 5. Type check, lint, format & test
 bunx tsc --noEmit      # TypeScript type checking
-bun run lint:fix       # ESLint auto-fix
+bun run lint:fix       # oxlint auto-fix (i18n hardcoded-string rule)
 bun run format         # Prettier + cargo fmt code formatting
 cargo test             # Run Rust backend unit & integration tests
 ```
+
+> **Linting runs on oxlint** (native, no `typescript` dependency) with
+> `eslint-plugin-i18next` loaded as a JS plugin — the only active rule is
+> `i18next/no-literal-string` (no hardcoded strings in JSX). Config lives in
+> `.oxlintrc.json`. This replaces the old ESLint setup, which broke because
+> typescript-eslint has no TypeScript 7 API support
+> ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940))
+> and this project pins `typescript@7.1.0-dev`.
 
 
 **Testing:**
 
 ```bash
-bun run lint              # ESLint for frontend
-bun run lint:fix          # ESLint with auto-fix
+bun run lint              # oxlint (i18next hardcoded-string rule, see Pre-Commit note)
+bun run lint:fix          # oxlint with auto-fix
 bun run format            # Prettier + cargo fmt
 bun run format:check      # Check formatting without changes
 bun run format:frontend   # Prettier only
@@ -394,7 +402,7 @@ The app enforces single instance behavior via `tauri_plugin_single_instance`. La
 
 ## Internationalization (i18n)
 
-All user-facing strings must use i18next translations. ESLint enforces this (no hardcoded strings in JSX). **20 languages supported.**
+All user-facing strings must use i18next translations. The `i18next/no-literal-string` oxlint rule enforces this (no hardcoded strings in JSX; `.oxlintrc.json`). **20 languages supported.**
 
 **Adding new text:**
 

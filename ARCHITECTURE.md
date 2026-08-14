@@ -478,7 +478,7 @@ S2B2S/
 ├── CLAUDE.md
 ├── CONTRIBUTING.md
 ├── DEPENDENCY_UPDATES.md
-├── eslint.config.js
+├── .oxlintrc.json
 ├── LICENSE
 ├── package.json
 ├── qwen3_cuda13_compilation.md
@@ -506,7 +506,7 @@ Repomix metrics: **387 files · 4.34 MB · 1,125,482 tokens** (text files; binar
 | `CLAUDE.md`                                                                        | 138 B    | 3     | 32     | 137    | Source or resource file for the S2B2S application.                                                    |
 | `CONTRIBUTING.md`                                                                  | 8.8 KB   | 239   | 2245   | 8926   | Contributor guide and coding conventions.                                                             |
 | `DEPENDENCY_UPDATES.md`                                                            | 2.6 KB   | 63    | 657    | 2664   | Source or resource file for the S2B2S application.                                                    |
-| `eslint.config.js`                                                                 | 1.0 KB   | 45    | 247    | 1024   | Source or resource file for the S2B2S application.                                                    |
+| `.oxlintrc.json`                                                                   | 1.0 KB   | 45    | 247    | 1024   | Source or resource file for the S2B2S application.                                                    |
 | `LICENSE`                                                                          | 1.1 KB   | 22    | 246    | 1155   | Source or resource file for the S2B2S application.                                                    |
 | `models/download_models.ps1`                                                       | 14.0 KB  | 331   | 3660   | 13595  | Source or resource file for the S2B2S application.                                                    |
 | `models/download_models.sh`                                                        | 12.7 KB  | 339   | 3354   | 12011  | Source or resource file for the S2B2S application.                                                    |

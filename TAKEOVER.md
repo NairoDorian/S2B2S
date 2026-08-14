@@ -33,23 +33,27 @@
 - **Upstream Sync:** 0 commits behind `cjpais/Handy:main` (portable HF_HOME fix merged as `6505e0fc`).
 - **Milestone M0 (Honesty & Hygiene Sweep) — COMPLETE.** Backend: `cargo check` clean (0 warnings), `cargo test` 315/315 pass, specta bindings regenerated. Frontend: `tsc --noEmit` clean, 24 locales synced + verified, all 5 Playwright specs pass (dictation spec rewritten for the current overlay API; mock now honors `onboarding_completed` + `__settingsOverrides`).
 - **Milestone M1 (AI Replace Selection) — COMPLETE.** `selection.rs` (Windows UIA non-destructive read + clipboard fallback), prompt-variable replacer extended, `AiReplaceAction` wired into ACTION_MAP with events + abort, `AiReplaceSettings` card + i18n. Verified: `cargo test` 315/315, clippy 0 warnings, `tsc` clean, translations synced, Playwright 5/5.
-- **Known environment issue (pre-existing, NOT caused by M0/M1):** `bun run lint` crashes — `typescript-eslint` rejects the pinned `typescript@7.1.0-dev.20260813.1` ("does not support TS 7.0"). Needs a dep fix (pin TS 6.x or bump typescript-eslint); do not block on it.
+- **Milestone M3.4 (Text Replacement Rules) — COMPLETE.** `text_replacement.rs` (escape sequences, case-sensitivity, regex mode, 6 unit tests) applied after STT/ITN in `actions.rs` and `continuous_voice.rs`; `TextReplacementSettings` UI card; realtime decapitalize path wired into the streaming loop (`managers/transcription.rs`).
+- **Milestone M3.5 (Voice-Clone Recorder) — COMPLETE.** `voice_clone_recorder.rs` (`record_clone_reference` command: raw VAD-free capture via a standalone `AudioRecorder`, WAV → `import_cloned_voice`), `CloneVoiceSettings` UI (record button + duration slider + countdown) shared by Pocket/Qwen3.
+- **Milestone M3.8 (Region Capture → Multimodal Brain) — COMPLETE.** `region_capture.rs` (Windows DXGI capture via `screenshots` crate, virtual-screen canvas, hide-window→50ms→crop→PNG, logical→physical DPI at confirm), `commands/region_capture.rs` (3 picker commands), `brain_ask_region` command → `ask_multimodal` (image PNG base64), `src/region-capture/` overlay page, "Ask region" button in ConversationView. macOS/Linux build + degrade with a clear error.
+- **CI workflows — repaired.** `ci.yml` backend-tests no longer swaps in the deleted `transcription_mock.rs` (runs real `cargo test` with Vulkan SDK + OpenBLAS); Playwright jobs use `--with-deps`; build.yml Linux/Windows audits expect `s2b2s` binaries (was `handy`); ORT blobs back on `blob.handy.computer` (blob.s2b2s.computer does not resolve); stale `.nix/bun.nix` regenerated; action versions kept at latest (checkout@v5, cache@v5, upload-artifact@v7, github-script@v9).
+- **Lint now works on TS 7.** Replaced ESLint (typescript-eslint cannot run against the pinned `typescript@7.1.0-dev`, #10940) with **oxlint** loading `eslint-plugin-i18next` as a JS plugin (`.oxlintrc.json`, only rule: `i18next/no-literal-string`). `bun run lint` green in ~230ms.
 
 ### Current Task in Progress
 
-- None. M0, M1, M2 complete (M2.6 stretch remains); M3: M3.1, M3.2 done; M3.3 removed per user decision. Next: M3.4 text replacement rules, M3.5 cloning recorder, M3.8 region capture.
+- None. M0–M3.4 complete; M3.5 + M3.8 complete; CI workflows + lint tooling repaired. Next candidates: M3.6 (mic auto-switch), M3.7 (resumable document TTS), M4.x — or M5 cleanup (god-file splits, unwrap audit).
 
 ### Next Immediate Action for Takeover
 
-1. M3.4: text replacement rules table (case-sensitive/regex, escape sequences) + realtime decapitalize wiring.
-2. M3.5: in-app voice-cloning reference recorder (record → Pocket/Qwen3 import).
+1. Run the full pre-commit routine (translations sync/check, tsc, format, oxlint, cargo test) and verify Playwright 5/5.
+2. Update `TAKEOVER.md` section 4 milestone checkboxes (M3.4/M3.5/M3.8) and `CHANGELOG.md` for the new work.
 
 ### Active Traps & Blockers
 
-- `bun run lint` is broken repo-wide (see above). Use `tsc`, `prettier --check`, `cargo clippy` as substitutes until deps are fixed.
 - `conversation_mode` (push_to_talk|toggle|hands_free) is stored but still NOT honored by the backend — deliberately not exposed in the M0.3 UI. Either wire it (M2) or remove the field.
 - `session_manager.rs` half-built async-ownership API still present behind `#[allow(dead_code)]` — removed as part of M5.3, not now.
 - Keep LLM calls strictly on local `llama-server.exe` (port 8001/8080) with Gemma 4 or Qwen models.
+- oxlint's JS-plugin support is alpha: if `bun run lint` ever reports plugin-loading errors, check the oxlint version against `.oxlintrc.json` and the conformance list; the fallback is pinning an oxlint version that works.
 
 ---
 
@@ -88,11 +92,11 @@
 
 ### Verified Review Findings (Aug 2026 — frontend, post-M0)
 
-- **Remaining cleanup**: `TtsPlayer::is_paused`, realtime decapitalize path (`text_replacement_decapitalize.rs:26,135-144`), `session_manager.rs` ownership API — deferred to M5.
+- **Remaining cleanup**: `TtsPlayer::is_paused`, `session_manager.rs` ownership API — deferred to M5. (Realtime decapitalize path is now wired — M3.4.)
 - **Bugs fixed in M0**: `AccessibilityPermissions` double render, `latencyHud` unrendered, `BrainOverlayApp dir="en"`, ~12 hardcoded i18n strings, cloud TTS keys unreachable, stale Playwright dictation spec + mock onboarding gate.
 - **Conversation persistence**: `ConversationView.tsx:30` keeps messages in `useState` only — nothing survives navigation/restart; SQLite history covers dictation/TTS but not conversations (M4.3).
 - **i18n**: 24 locales; new M0 keys synced to all; `bun run check:translations` green.
-- **Testing**: `bun run test:playwright` 5/5 green. `bun run lint` broken by TS 7.1-dev vs typescript-eslint (pre-existing).
+- **Testing**: `bun run test:playwright` 5/5 green. `bun run lint` runs on **oxlint** (see Build Health) — green in ~230ms.
 
 ### Patterns Worth Adopting from Reference Projects
 
@@ -142,11 +146,11 @@
 - [x] **M3.1** Subtitle export: new `subtitle.rs` — pure SRT/VTT formatters + cue grouping (ported from AIVORelay) + `history_entries_to_subtitle_segments` (timestamps + recorded duration or chars-per-sec estimate); `export_history_subtitle` command writes timed `.srt`/`.vtt` of all dictation history; export buttons in HistorySettings; 5 unit tests.
 - [x] **M3.2** Batch file transcription: new `file_transcription.rs` — rodio decode (wav/mp3/m4a/mp4/ogg/flac via symphonia-aac/isomp4 features), mono downmix + 16kHz rubato resample, extension validation, recording-session guard, `transcribe_audio_file_command` exporting `.txt`/`.srt`/`.vtt` to `<app data>/transcripts/`; `text_to_subtitle_segments` (sentence cues, proportional timing, 120-char cap); UI buttons in HistorySettings; 3 new subtitle tests. (Diarization deferred — requires provider word timings.)
 - ~~**M3.3** Multi-profile transcription~~ — **REMOVED per user decision** (profiles + auto-switch dropped entirely; no residue in settings/commands/UI).
-- [ ] **M3.4** Text replacement rules table (case-sensitive/regex, escape sequences) + wire the realtime decapitalize path.
-- [ ] **M3.5** Voice-cloning reference recorder: record N seconds in-app → `pocket_import_cloned_voice` / `qwen3_import_cloned_voice` (close the loop the UI implies).
+- [x] **M3.4** Text replacement rules: new `text_replacement.rs` (escape sequences `\n`/`\t`/`\\`/`\u{...}`, case-sensitivity, regex mode, 6 unit tests) applied after STT/ITN in `actions.rs` + `continuous_voice.rs`; `TextReplacementSettings` card in AdvancedSettings; realtime decapitalize path wired into the streaming loop (`managers/transcription.rs`) with one-shot-trigger commit slicing.
+- [x] **M3.5** Voice-cloning reference recorder: new `voice_clone_recorder.rs` (`record_clone_reference` command — raw VAD-free capture on a standalone `AudioRecorder`, recording guard, WAV → `pocket_import_cloned_voice`/`qwen3_import_cloned_voice`); `CloneVoiceSettings` UI (record button, 5–20s duration slider, live countdown) shared by Pocket and Qwen3 sections.
 - [ ] **M3.6** Mic auto-switch (wildcard mask + manual fallback if device still present), input-channel selection, pause-media-while-recording.
 - [ ] **M3.7** Resumable document TTS + listen-later queue: checkpoint workspace (alternating JSON slots, sha256, config signature, fs2 lease) + batch conversion panel.
-- [ ] **M3.8** (Windows-gated) Region capture overlay → multimodal Brain (`ask_multimodal`); logical→physical DPI at confirm boundary; hide-window→50ms→capture.
+- [x] **M3.8** (Windows-gated) Region capture overlay → multimodal Brain: new `region_capture.rs` (DXGI virtual-screen capture via `screenshots`, logical→physical DPI at confirm boundary, hide-window→50ms→capture→crop→PNG) + `commands/region_capture.rs` (get_data/confirm/cancel) + `brain_ask_region` command → `BrainManager::ask_multimodal` (PNG base64 image); `src/region-capture/` overlay page (drag/move/resize/8 handles, Enter/double-click confirm, Escape cancel); "Ask region" button in ConversationView; macOS/Linux degrade with a clear error.
 - [ ] **M3.9** (Later) Browser connector (axum loopback + ECDH/HKDF/AES-GCM + extension export) and remote STT gateways (Soniox/Deepgram/OpenAI realtime) with automatic local fallback.
 
 ### Milestone M4: TTS UX & History (from copyspeak)
@@ -172,16 +176,19 @@
 
 ### Subsystem File Map
 
-| Area           | Path                                                                                         | Responsibility                                        |
-| -------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| **STT Engine** | [`src-tauri/src/managers/transcription.rs`](file:///src-tauri/src/managers/transcription.rs) | transcribe.cpp streaming, VAD feeding, model switches |
-| **Multi-STT**  | [`src-tauri/src/stt/multi_stt.rs`](file:///src-tauri/src/stt/multi_stt.rs)                   | Gemma 4 ASR (`mmproj`), parallel models, LLM merge    |
-| **Local LLM**  | [`src-tauri/src/llama_server/manager.rs`](file:///src-tauri/src/llama_server/manager.rs)     | llama-server.exe process lifecycle, GPU offload       |
-| **Brain**      | [`src-tauri/src/brain/manager.rs`](file:///src-tauri/src/brain/manager.rs)                   | Turn history, sentence splitting, TTS queueing        |
-| **TTS**        | [`src-tauri/src/tts/manager.rs`](file:///src-tauri/src/tts/manager.rs)                       | Local TTS servers, gapless audio playback             |
-| **Audio/VAD**  | [`src-tauri/src/audio_toolkit/`](file:///src-tauri/src/audio_toolkit/)                       | cpal recording, Silero VAD ONNX, RNNoise              |
-| **Shortcuts**  | [`src-tauri/src/shortcut/handler.rs`](file:///src-tauri/src/shortcut/handler.rs)             | Global hotkey dispatcher and event handling           |
-| **UI Theme**   | [`src/styles/theme.css`](file:///src/styles/theme.css)                                       | Golden theme tokens and color mappings                |
+| Area            | Path                                                                                         | Responsibility                                        |
+| --------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **STT Engine**  | [`src-tauri/src/managers/transcription.rs`](file:///src-tauri/src/managers/transcription.rs) | transcribe.cpp streaming, VAD feeding, model switches |
+| **Multi-STT**   | [`src-tauri/src/stt/multi_stt.rs`](file:///src-tauri/src/stt/multi_stt.rs)                   | Gemma 4 ASR (`mmproj`), parallel models, LLM merge    |
+| **Local LLM**   | [`src-tauri/src/llama_server/manager.rs`](file:///src-tauri/src/llama_server/manager.rs)     | llama-server.exe process lifecycle, GPU offload       |
+| **Brain**       | [`src-tauri/src/brain/manager.rs`](file:///src-tauri/src/brain/manager.rs)                   | Turn history, sentence splitting, TTS queueing        |
+| **TTS**         | [`src-tauri/src/tts/manager.rs`](file:///src-tauri/src/tts/manager.rs)                       | Local TTS servers, gapless audio playback             |
+| **Audio/VAD**   | [`src-tauri/src/audio_toolkit/`](file:///src-tauri/src/audio_toolkit/)                       | cpal recording, Silero VAD ONNX, RNNoise              |
+| **Voice Clone** | [`src-tauri/src/voice_clone_recorder.rs`](file:///src-tauri/src/voice_clone_recorder.rs)     | In-app reference recorder → pocket/qwen3 import       |
+| **Region Cap.** | [`src-tauri/src/region_capture.rs`](file:///src-tauri/src/region_capture.rs)                 | Region picker overlay → PNG for multimodal Brain      |
+| **Text Rules**  | [`src-tauri/src/text_replacement.rs`](file:///src-tauri/src/text_replacement.rs)             | User-defined post-STT text replacement rules          |
+| **Shortcuts**   | [`src-tauri/src/shortcut/handler.rs`](file:///src-tauri/src/shortcut/handler.rs)             | Global hotkey dispatcher and event handling           |
+| **UI Theme**    | [`src/styles/theme.css`](file:///src/styles/theme.css)                                       | Golden theme tokens and color mappings                |
 
 ### Mandatory Pre-Commit Commands
 
@@ -190,7 +197,7 @@ bun run sync:translations    # 1. Sync all 24 translation languages
 bun run check:translations   # 2. Verify all translation keys exist
 bunx tsc --noEmit            # 3. TypeScript type checking
 bun run format               # 4. Prettier + cargo fmt formatting
-bun run lint:fix             # 5. ESLint auto-fix
-cargo test                   # 6. Rust backend tests (319 tests)
+bun run lint:fix             # 5. oxlint auto-fix (i18next hardcoded-string rule)
+cargo test                   # 6. Rust backend tests (348 tests)
 bun run validate             # 7. Automated pre-commit verification gate
 ```

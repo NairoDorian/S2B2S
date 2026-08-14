@@ -208,9 +208,15 @@ bun run preview   # Preview built frontend
 
 ## Linting and Formatting
 
+> Linting runs on **oxlint** (native binary, no `typescript` dependency) with
+> `eslint-plugin-i18next` loaded as a JS plugin — the only active rule is
+> `i18next/no-literal-string` (no hardcoded strings in JSX). Config:
+> `.oxlintrc.json`. This replaced ESLint, which cannot run against the pinned
+> `typescript@7.1.0-dev` (typescript-eslint#10940).
+
 ```bash
-bun run lint              # ESLint for frontend
-bun run lint:fix          # ESLint with auto-fix
+bun run lint              # oxlint (i18next hardcoded-string rule)
+bun run lint:fix          # oxlint with auto-fix
 bun run format            # Prettier + cargo fmt
 bun run format:check      # Check formatting without changes
 bun run format:frontend   # Prettier only
@@ -445,17 +451,14 @@ This was the blocker after the Handy 0.9 source merge: the first build produced 
 
 CI is configured via GitHub Actions in `.github/workflows/`:
 
-| Workflow            | Triggers     | Purpose                                       |
-| ------------------- | ------------ | --------------------------------------------- |
-| `test.yml`          | Push/PR      | Unit tests + lint                             |
-| `build.yml`         | Push/PR      | Build on Windows, macOS, Linux                |
-| `build-test.yml`    | Push/PR      | Build + test                                  |
-| `release.yml`       | Manual       | Create draft release + build platform bundles |
-| `playwright.yml`    | Push/PR      | E2E tests                                     |
-| `code-quality.yml`  | Push/PR      | ESLint, Prettier, Clippy                      |
-| `pr-test-build.yml` | PR           | PR build verification                         |
-| `nix-check.yml`     | Push/PR      | Nix flake check                               |
-| `main-build.yml`    | Push to main | Main branch build                             |
+| Workflow         | Triggers     | Purpose                                                                                    |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `ci.yml`         | Push/PR      | Frontend quality (oxlint, translations, Prettier, tsc), backend unit tests, Playwright E2E |
+| `build-main.yml` | Push to main | Build on Windows, macOS, Linux (matrix of 7 platform targets)                              |
+| `build-test.yml` | Manual       | Test build (matrix of 7 platform targets) + PR artifact links                              |
+| `release.yml`    | Manual       | Create draft release + build platform bundles                                              |
+| `playwright.yml` | PR           | E2E tests (frontend changes only)                                                          |
+| `nix-check.yml`  | Push/PR      | Nix flake check                                                                            |
 
 ---
 
