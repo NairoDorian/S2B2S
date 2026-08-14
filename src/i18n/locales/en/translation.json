@@ -508,6 +508,20 @@
         "selectToEdit": "Select a prompt above to view and edit its details.",
         "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
       },
+      "aiReplace": {
+        "group": "AI Replace Selection",
+        "shortcut": {
+          "title": "Shortcut"
+        },
+        "instruction": {
+          "label": "Rewrite instruction",
+          "description": "Instruction sent to the Brain when you press the shortcut with text selected. The selection is replaced with the rewritten text."
+        },
+        "usesBrain": "Uses the Brain's provider, model, and API key. Select text in any app, press the shortcut, and the rewritten text replaces your selection.",
+        "toastStarted": "Rewriting selection…",
+        "toastDone": "Selection replaced ({{length}} characters)",
+        "toastError": "AI Replace failed: {{error}}"
+      },
       "title": "Post Process",
       "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {

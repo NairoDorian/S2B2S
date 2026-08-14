@@ -508,6 +508,20 @@
         "selectToEdit": "Scegli un prompt qui sopra per visualizzare o modificare i dettagli.",
         "createFirst": "Clicca 'Crea un nuovo prompt' qui sopra per creare il tuo primo prompt di post-elaborazione."
       },
+      "aiReplace": {
+        "group": "AI Replace Selection",
+        "shortcut": {
+          "title": "Shortcut"
+        },
+        "instruction": {
+          "label": "Rewrite instruction",
+          "description": "Instruction sent to the Brain when you press the shortcut with text selected. The selection is replaced with the rewritten text."
+        },
+        "usesBrain": "Uses the Brain's provider, model, and API key. Select text in any app, press the shortcut, and the rewritten text replaces your selection.",
+        "toastStarted": "Rewriting selection…",
+        "toastDone": "Selection replaced ({{length}} characters)",
+        "toastError": "AI Replace failed: {{error}}"
+      },
       "title": "Post Process",
       "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {

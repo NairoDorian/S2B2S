@@ -488,6 +488,11 @@ fn register_all_shortcuts_for_implementation(
             continue;
         }
 
+        // Skip the AI Replace shortcut when the Brain is disabled
+        if id == "ai_replace" && !current_settings.brain.enabled {
+            continue;
+        }
+
         let mut binding = current_settings
             .bindings
             .get(id)
@@ -1699,6 +1704,18 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
     // Refresh the tray menu with the new language
     tray::update_tray_menu(&app, Some(&language));
 
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_ai_replace_instruction_setting(
+    app: AppHandle,
+    instruction: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ai_replace_instruction = instruction;
+    settings::write_settings(&app, settings);
     Ok(())
 }
 

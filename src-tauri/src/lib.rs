@@ -30,6 +30,7 @@ pub mod portable;
 pub mod python_env;
 mod recording_auto_stop;
 mod secure_input;
+mod selection;
 mod session_manager;
 mod settings;
 mod shortcut;
@@ -729,6 +730,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_vad_enabled_setting,
             shortcut::change_filler_word_removal_enabled_setting,
             shortcut::change_app_language_setting,
+            shortcut::change_ai_replace_instruction_setting,
             shortcut::change_update_checks_setting,
             shortcut::change_show_whats_new_on_update_setting,
             shortcut::change_whats_new_last_seen_version_setting,
@@ -850,6 +852,7 @@ commands::models::rescan_local_models,
             commands::tts::tts_save_to_file,
             commands::brain::brain_ask,
             commands::brain::ai_replace_selection,
+            commands::brain::ai_replace_abort,
             commands::brain::brain_abort,
             commands::brain::brain_clear_history,
             commands::brain::fetch_brain_models,

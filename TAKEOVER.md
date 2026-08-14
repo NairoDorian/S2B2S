@@ -32,16 +32,17 @@
 - **App Version:** `0.1.4` (cargo, package.json, tauri.conf.json in sync).
 - **Upstream Sync:** 0 commits behind `cjpais/Handy:main` (portable HF_HOME fix merged as `6505e0fc`).
 - **Milestone M0 (Honesty & Hygiene Sweep) — COMPLETE.** Backend: `cargo check` clean (0 warnings), `cargo test` 315/315 pass, specta bindings regenerated. Frontend: `tsc --noEmit` clean, 24 locales synced + verified, all 5 Playwright specs pass (dictation spec rewritten for the current overlay API; mock now honors `onboarding_completed` + `__settingsOverrides`).
-- **Known environment issue (pre-existing, NOT caused by M0):** `bun run lint` crashes — `typescript-eslint` rejects the pinned `typescript@7.1.0-dev.20260813.1` ("does not support TS 7.0"). Needs a dep fix (pin TS 6.x or bump typescript-eslint); do not block on it.
+- **Milestone M1 (AI Replace Selection) — COMPLETE.** `selection.rs` (Windows UIA non-destructive read + clipboard fallback), prompt-variable replacer extended, `AiReplaceAction` wired into ACTION_MAP with events + abort, `AiReplaceSettings` card + i18n. Verified: `cargo test` 315/315, clippy 0 warnings, `tsc` clean, translations synced, Playwright 5/5.
+- **Known environment issue (pre-existing, NOT caused by M0/M1):** `bun run lint` crashes — `typescript-eslint` rejects the pinned `typescript@7.1.0-dev.20260813.1` ("does not support TS 7.0"). Needs a dep fix (pin TS 6.x or bump typescript-eslint); do not block on it.
 
 ### Current Task in Progress
 
-- None. M0 complete. Next: **Milestone M1 (AI Replace Selection)** — see Section 4.
+- None. M0 + M1 complete. Next: **Milestone M2 (Smart Conversation Core)** — see Section 4.
 
 ### Next Immediate Action for Takeover
 
-1. M1.1: OS selection capture — port the Windows UIA text-pattern reader from AIVORelay `selection.rs` (never synthesize Ctrl+C), add macOS AXUIElement + Linux xclip fallbacks.
-2. M1.2: generic prompt-variable replacer (`${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`).
+1. M2.3: Brain context compaction (token-counted truncation + optional LLM summarization, single-flight worker, generation counter).
+2. M2.4: sentence batching + TTS input coalescing.
 
 ### Active Traps & Blockers
 
@@ -122,10 +123,10 @@
 
 ### Milestone M1: Complete AI Replace Selection (finish the scaffold)
 
-- [ ] **M1.1** OS selection capture: Windows UIA text-pattern reader (port `selection.rs` approach — never synthesize Ctrl+C); macOS AXUIElement `kAXSelectedTextAttribute`; Linux xclip/primary-selection fallback.
-- [ ] **M1.2** Generic prompt-variable replacer (`${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`) applied before LLM dispatch in both Brain and post-processing.
-- [ ] **M1.3** Wire `ai_replace` binding into shortcut handler + ACTION_MAP (`shortcut/handler.rs`); add abort + progress events; add non-streaming mode to `BrainClient`.
-- [ ] **M1.4** Frontend AI Replace settings card (reuse the AIVORelay `useAiReplaceProviderState` inherit-from-post-processing pattern) + i18n sync.
+- [x] **M1.1** OS selection capture: new `selection.rs` — Windows UIA text-pattern reader (non-destructive, never synthesizes Copy; focused-element fast path + Chromium Document-control fallback), clipboard sentinel capture as fallback; macOS/Linux use the clipboard capture. `windows` crate features extended with `Win32_UI_Accessibility`.
+- [x] **M1.2** Prompt-variable replacer: `substitute_context_variables` now supports `${active_app}` (alias), `${selected_text}`, `${clipboard}`, `${time_local}` alongside `${current_app}`; applied in post-processing and AI Replace paths.
+- [x] **M1.3** Wired `ai_replace` into ACTION_MAP (`AiReplaceAction`): capture → instruction (settings) → non-streaming rewrite via shared `actions::rewrite_selected_text` (Brain provider; no history/TTS pollution) → `clipboard::paste` replaces the selection. Events `ai-replace:started/done/error`; single-flight abort via `AI_REPLACE_ABORT` + `ai_replace_abort` command; shortcut gated on `brain.enabled` and re-registered on `change_brain_config`.
+- [x] **M1.4** Frontend: `AiReplaceSettings` card in post-processing (instruction textarea with variable hints, shortcut capture, sonner toasts for the three events); `ai_replace_instruction` setting + `change_ai_replace_instruction_setting` command; i18n synced (24 locales).
 
 ### Milestone M2: Smart Conversation Core (from speech-to-speech)
 

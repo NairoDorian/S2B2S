@@ -21,6 +21,7 @@ import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
 import { PostProcessActions } from "./PostProcessActions";
+import { AiReplaceSettings } from "./AiReplaceSettings";
 import { useSettings } from "../../../hooks/useSettings";
 import { useLlamaState } from "../../../hooks/useLlamaState";
 
@@ -607,6 +608,8 @@ export const PostProcessingSettings: React.FC = () => {
       </SettingsGroup>
 
       <PostProcessActions />
+
+      <AiReplaceSettings />
     </div>
   );
 };

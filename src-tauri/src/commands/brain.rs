@@ -14,60 +14,15 @@ pub async fn ai_replace_selection(
     instruction: String,
     selected_text: String,
 ) -> Result<String, String> {
-    let settings = crate::settings::get_settings(&app);
-    let brain_cfg = &settings.brain;
-    if !brain_cfg.enabled {
-        return Err("The Brain is disabled".to_string());
-    }
-    if brain_cfg.provider_id == "llama_cpp" {
-        if let Some(llama_manager) =
-            app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
-        {
-            llama_manager.ensure_server_running().await?;
-        }
-    }
-    let api_key = brain_cfg.active_api_key();
-    let model = brain_cfg.active_model();
-    let provider = brain_cfg.active_provider().ok_or("No Brain provider")?;
-    let base_url = provider.base_url.clone();
-    let system_prompt = "You rewrite text according to the user's instruction. \
-        Output ONLY the rewritten text — no preamble, no explanation, no markdown formatting. \
-        Preserve the original meaning unless the instruction changes it.";
+    crate::actions::rewrite_selected_text(&app, &instruction, &selected_text).await
+}
 
-    let prompt =
-        format!("TEXT:\n{selected_text}\n\nINSTRUCTION:\n{instruction}\n\nREWRITTEN TEXT:");
-
-    let messages = vec![
-        crate::brain::client::ChatMessage {
-            role: "system".to_string(),
-            content: crate::brain::client::MessageContent::text(system_prompt),
-        },
-        crate::brain::client::ChatMessage {
-            role: "user".to_string(),
-            content: crate::brain::client::MessageContent::text(prompt),
-        },
-    ];
-
-    let client = crate::brain::client::BrainClient::new();
-    let abort = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let mut result = String::new();
-
-    // Non-streaming request for simplicity
-    let full = client
-        .stream_chat(
-            &base_url,
-            &api_key,
-            &model,
-            &messages,
-            abort,
-            |token| {
-                result.push_str(token);
-            },
-            |_sentence| {},
-        )
-        .await?;
-
-    Ok(full.text.trim().to_string())
+/// Abort an in-flight AI Replace rewrite.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_replace_abort() -> Result<(), String> {
+    crate::actions::abort_ai_replace();
+    Ok(())
 }
 
 /// Ask the Brain; streams `brain:token` / `brain:sentence` events and returns the full reply.
@@ -151,6 +106,13 @@ pub fn change_brain_config(app: AppHandle, config: BrainConfig) -> Result<(), St
     // Register/unregister the converse shortcut with the feature toggle.
     if was_enabled != now_enabled {
         if let Some(binding) = settings.bindings.get("converse").cloned() {
+            if now_enabled {
+                let _ = crate::shortcut::register_shortcut(&app, binding);
+            } else {
+                let _ = crate::shortcut::unregister_shortcut(&app, binding);
+            }
+        }
+        if let Some(binding) = settings.bindings.get("ai_replace").cloned() {
             if now_enabled {
                 let _ = crate::shortcut::register_shortcut(&app, binding);
             } else {

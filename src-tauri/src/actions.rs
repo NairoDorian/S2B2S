@@ -25,6 +25,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -200,7 +201,7 @@ async fn post_process_transcription(
         }
     };
 
-    let prompt = substitute_context_variables(&prompt_raw);
+    let prompt = substitute_context_variables(app, &prompt_raw, None);
 
     if prompt.trim().is_empty() {
         debug!("Post-processing skipped because the selected prompt is empty");
@@ -1759,20 +1760,186 @@ impl ShortcutAction for TogglePauseAction {
     }
 }
 
-fn substitute_context_variables(prompt: &str) -> String {
+/// In-flight AI Replace abort flag. Single-flight by design: starting a new
+/// AI Replace resets it, and `ai_replace_abort` sets it.
+static AI_REPLACE_ABORT: Lazy<Arc<std::sync::atomic::AtomicBool>> =
+    Lazy::new(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+
+/// Abort an in-flight AI Replace rewrite (no-op when idle).
+pub fn abort_ai_replace() {
+    AI_REPLACE_ABORT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Rewrite `selected_text` according to `instruction` using the active Brain
+/// provider. Non-streaming: tokens accumulate into a local buffer; the
+/// conversation history and TTS pipeline are deliberately not involved.
+pub async fn rewrite_selected_text(
+    app: &AppHandle,
+    instruction: &str,
+    selected_text: &str,
+) -> Result<String, String> {
+    let settings = crate::settings::get_settings(app);
+    let brain_cfg = &settings.brain;
+    if !brain_cfg.enabled {
+        return Err("The Brain is disabled".to_string());
+    }
+    if brain_cfg.provider_id == "llama_cpp" {
+        if let Some(llama_manager) =
+            app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+        {
+            llama_manager.ensure_server_running().await?;
+        }
+    }
+    let api_key = brain_cfg.active_api_key();
+    let model = brain_cfg.active_model();
+    if model.trim().is_empty() {
+        return Err("No Brain model configured".to_string());
+    }
+    let provider = brain_cfg.active_provider().ok_or("No Brain provider")?;
+    let base_url = provider.base_url.clone();
+    let system_prompt = "You rewrite text according to the user's instruction. \
+        Output ONLY the rewritten text — no preamble, no explanation, no markdown formatting. \
+        Preserve the original meaning unless the instruction changes it.";
+
+    let prompt =
+        format!("TEXT:\n{selected_text}\n\nINSTRUCTION:\n{instruction}\n\nREWRITTEN TEXT:");
+
+    let messages = vec![
+        crate::brain::client::ChatMessage {
+            role: "system".to_string(),
+            content: crate::brain::client::MessageContent::text(system_prompt),
+        },
+        crate::brain::client::ChatMessage {
+            role: "user".to_string(),
+            content: crate::brain::client::MessageContent::text(prompt),
+        },
+    ];
+
+    let client = crate::brain::client::BrainClient::new();
+    AI_REPLACE_ABORT.store(false, std::sync::atomic::Ordering::SeqCst);
+    let abort = AI_REPLACE_ABORT.clone();
+    let mut result = String::new();
+
+    let full = client
+        .stream_chat(
+            &base_url,
+            &api_key,
+            &model,
+            &messages,
+            abort,
+            |token| {
+                result.push_str(token);
+            },
+            |_sentence| {},
+        )
+        .await?;
+
+    Ok(strip_invisible_chars(&full.text).trim().to_string())
+}
+
+/// Global shortcut action: capture the selection in the focused app, run it
+/// through the Brain with the configured instruction, and replace the
+/// selection with the rewritten text.
+struct AiReplaceAction;
+
+impl ShortcutAction for AiReplaceAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            let _ = app_clone.emit("ai-replace:started", ());
+
+            let selected = match crate::selection::read_selected_text(&app_clone) {
+                Ok(text) => text,
+                Err(e) => {
+                    log::warn!("[AI Replace] selection capture failed: {e}");
+                    let _ = app_clone.emit("ai-replace:error", &e);
+                    return;
+                }
+            };
+
+            let settings = get_settings(&app_clone);
+            let instruction = substitute_context_variables(
+                &app_clone,
+                &settings.ai_replace_instruction,
+                Some(&selected),
+            );
+
+            let result = tauri::async_runtime::block_on(rewrite_selected_text(
+                &app_clone,
+                &instruction,
+                &selected,
+            ));
+
+            match result {
+                Ok(text) if text.trim().is_empty() => {
+                    let msg = "The Brain returned an empty rewrite".to_string();
+                    log::warn!("[AI Replace] {msg}");
+                    let _ = app_clone.emit("ai-replace:error", &msg);
+                }
+                Ok(text) => {
+                    let app_for_paste = app_clone.clone();
+                    let text_for_event = text.clone();
+                    match crate::clipboard::paste(text, app_for_paste) {
+                        Ok(()) => {
+                            log::info!(
+                                "[AI Replace] selection replaced ({} chars)",
+                                text_for_event.len()
+                            );
+                            let _ = app_clone.emit("ai-replace:done", &text_for_event);
+                        }
+                        Err(e) => {
+                            log::error!("[AI Replace] paste failed: {e}");
+                            let _ = app_clone.emit("ai-replace:error", &e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("[AI Replace] rewrite failed: {e}");
+                    let _ = app_clone.emit("ai-replace:error", &e);
+                }
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // One-shot action; nothing to do on release.
+    }
+}
+
+/// Replace dynamic context variables in an LLM prompt before dispatch:
+/// `${current_app}` / `${active_app}`, `${time_local}`, `${selected_text}`,
+/// `${clipboard}`. `${output}` is handled separately by each caller.
+fn substitute_context_variables(
+    app: &AppHandle,
+    prompt: &str,
+    selected_text: Option<&str>,
+) -> String {
     let mut substituted = prompt.to_string();
 
-    // 1. ${current_app}
-    if substituted.contains("${current_app}") {
+    // 1. ${current_app} / ${active_app}
+    if substituted.contains("${current_app}") || substituted.contains("${active_app}") {
         let app_name = crate::active_app::get_frontmost_app_name()
             .unwrap_or_else(|| "Unknown Application".to_string());
         substituted = substituted.replace("${current_app}", &app_name);
+        substituted = substituted.replace("${active_app}", &app_name);
     }
 
     // 2. ${time_local}
     if substituted.contains("${time_local}") {
         let local_time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         substituted = substituted.replace("${time_local}", &local_time);
+    }
+
+    // 3. ${selected_text} — the text the user selected (AI Replace flow).
+    if substituted.contains("${selected_text}") {
+        let value = selected_text.unwrap_or("").to_string();
+        substituted = substituted.replace("${selected_text}", &value);
+    }
+
+    // 4. ${clipboard} — current clipboard text.
+    if substituted.contains("${clipboard}") {
+        let clipboard_text = app.clipboard().read_text().unwrap_or_default();
+        substituted = substituted.replace("${clipboard}", &clipboard_text);
     }
 
     substituted
@@ -1816,6 +1983,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "speak_selection".to_string(),
         Arc::new(SpeakSelectionAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "ai_replace".to_string(),
+        Arc::new(AiReplaceAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

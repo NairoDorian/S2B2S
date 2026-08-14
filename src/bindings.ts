@@ -75,6 +75,7 @@ export const commands = {
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
+	changeAiReplaceInstructionSetting: (instruction: string) => typedError<null, string>(__TAURI_INVOKE("change_ai_replace_instruction_setting", { instruction })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
 	changeShowWhatsNewOnUpdateSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_whats_new_on_update_setting", { enabled })),
 	changeWhatsNewLastSeenVersionSetting: (version: string) => typedError<null, string>(__TAURI_INVOKE("change_whats_new_last_seen_version_setting", { version })),
@@ -287,6 +288,8 @@ export const commands = {
 	 *  Returns the rewritten text; caller pastes it at the cursor.
 	 */
 	aiReplaceSelection: (instruction: string, selectedText: string) => typedError<string, string>(__TAURI_INVOKE("ai_replace_selection", { instruction, selectedText })),
+	/**  Abort an in-flight AI Replace rewrite. */
+	aiReplaceAbort: () => typedError<null, string>(__TAURI_INVOKE("ai_replace_abort")),
 	/**  Abort the in-flight Brain stream and stop any speech it queued (barge-in). */
 	brainAbort: () => typedError<null, string>(__TAURI_INVOKE("brain_abort")),
 	brainClearHistory: () => typedError<null, string>(__TAURI_INVOKE("brain_clear_history")),
@@ -470,6 +473,11 @@ export type AppSettings_Deserialize = {
 	llm_models?: LLMModel[],
 	post_process_actions?: PostProcessAction[],
 	post_process_actions_initialized?: boolean,
+	/**
+	 *  Instruction prompt for the AI Replace selection action. Supports
+	 *  `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
+	 */
+	ai_replace_instruction?: string,
 	mute_while_recording?: boolean,
 	append_trailing_space?: boolean,
 	app_language?: string,
@@ -632,6 +640,11 @@ export type AppSettings_Serialize = {
 	llm_models: LLMModel[],
 	post_process_actions: PostProcessAction[],
 	post_process_actions_initialized: boolean,
+	/**
+	 *  Instruction prompt for the AI Replace selection action. Supports
+	 *  `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
+	 */
+	ai_replace_instruction: string,
 	mute_while_recording: boolean,
 	append_trailing_space: boolean,
 	app_language: string,

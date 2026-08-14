@@ -508,6 +508,20 @@
         "selectToEdit": "选择上方的提示词以查看和编辑其详细信息。",
         "createFirst": "点击上方的「创建新提示词」来创建您的第一个后处理提示词。"
       },
+      "aiReplace": {
+        "group": "AI Replace Selection",
+        "shortcut": {
+          "title": "Shortcut"
+        },
+        "instruction": {
+          "label": "Rewrite instruction",
+          "description": "Instruction sent to the Brain when you press the shortcut with text selected. The selection is replaced with the rewritten text."
+        },
+        "usesBrain": "Uses the Brain's provider, model, and API key. Select text in any app, press the shortcut, and the rewritten text replaces your selection.",
+        "toastStarted": "Rewriting selection…",
+        "toastDone": "Selection replaced ({{length}} characters)",
+        "toastError": "AI Replace failed: {{error}}"
+      },
       "title": "Post Process",
       "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {

@@ -1116,6 +1116,10 @@ pub struct AppSettings {
     pub post_process_actions: Vec<PostProcessAction>,
     #[serde(default)]
     pub post_process_actions_initialized: bool,
+    /// Instruction prompt for the AI Replace selection action. Supports
+    /// `${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`.
+    #[serde(default = "default_ai_replace_instruction")]
+    pub ai_replace_instruction: String,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -1420,6 +1424,11 @@ fn default_theme() -> Theme {
 
 fn default_post_process_enabled() -> bool {
     false
+}
+
+fn default_ai_replace_instruction() -> String {
+    "Fix the grammar, spelling, and clarity of the selected text. Keep the same language and meaning. Return only the rewritten text."
+        .to_string()
 }
 
 fn default_app_language() -> String {
@@ -2024,6 +2033,7 @@ pub fn get_default_settings() -> AppSettings {
         llm_models: Vec::new(),
         post_process_actions: Vec::new(),
         post_process_actions_initialized: false,
+        ai_replace_instruction: default_ai_replace_instruction(),
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
