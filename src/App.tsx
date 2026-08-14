@@ -167,6 +167,16 @@ function App() {
           },
         );
       }
+      if (event.payload.event_type === "multi_stt_model_load_failed") {
+        toast.error(
+          t("errors.modelLoadFailed", {
+            model: event.payload.model_id || t("errors.modelLoadFailedUnknown"),
+          }),
+          {
+            description: event.payload.error,
+          },
+        );
+      }
     });
     return () => {
       unlisten.then((fn) => fn());

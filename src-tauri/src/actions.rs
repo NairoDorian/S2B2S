@@ -1,23 +1,20 @@
+use crate::TranscriptionCoordinator;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
-use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
-use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::audio_feedback::{SoundType, play_feedback_sound, play_feedback_sound_blocking};
+use crate::audio_toolkit::{VadPolicy, is_microphone_access_denied, is_no_input_device_error};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{
-    get_settings, AppSettings, OverlayStyle,
-    APPLE_INTELLIGENCE_PROVIDER_ID,
-};
+use crate::settings::{APPLE_INTELLIGENCE_PROVIDER_ID, AppSettings, OverlayStyle, get_settings};
 use crate::shortcut;
-use crate::tray::{change_tray_icon, TrayIconState};
+use crate::tray::{TrayIconState, change_tray_icon};
 use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
 };
-use crate::TranscriptionCoordinator;
-use ferrous_opencc::{config::BuiltinConfig, OpenCC};
+use ferrous_opencc::{OpenCC, config::BuiltinConfig};
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -339,8 +336,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         Err(e) => {
             error!(
                 "LLM post-processing failed for provider '{}': {}. Falling back to original transcription.",
-                provider.id,
-                e
+                provider.id, e
             );
             None
         }
@@ -389,7 +385,10 @@ async fn maybe_convert_chinese_variant(
             Some(converted)
         }
         Err(e) => {
-            error!("Failed to initialize OpenCC converter: {}. Falling back to original transcription.", e);
+            error!(
+                "Failed to initialize OpenCC converter: {}. Falling back to original transcription.",
+                e
+            );
             None
         }
     }
@@ -963,7 +962,10 @@ async fn multi_stt_merge_transcriptions(
         .replace("${output2}", output2)
         .replace("${output3}", output3);
 
-    debug!("Multi-STT merge prompt prepared, length: {} chars", prompt.len());
+    debug!(
+        "Multi-STT merge prompt prepared, length: {} chars",
+        prompt.len()
+    );
 
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
@@ -980,7 +982,10 @@ async fn multi_stt_merge_transcriptions(
         .unwrap_or_default();
 
     if model.trim().is_empty() {
-        debug!("Multi-STT merge skipped: no model configured for provider '{}'", provider.id);
+        debug!(
+            "Multi-STT merge skipped: no model configured for provider '{}'",
+            provider.id
+        );
         return None;
     }
 
@@ -996,15 +1001,7 @@ async fn multi_stt_merge_transcriptions(
     );
 
     // Use legacy chat completion for merging
-    match crate::llm_client::send_chat_completion(
-        &provider,
-        api_key,
-        &model,
-        prompt,
-        false,
-    )
-    .await
-    {
+    match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt, false).await {
         Ok(Some(content)) => {
             let content = content.trim().to_string();
             debug!(
@@ -1018,7 +1015,10 @@ async fn multi_stt_merge_transcriptions(
             None
         }
         Err(e) => {
-            error!("Multi-STT merge failed for provider '{}': {}", provider.id, e);
+            error!(
+                "Multi-STT merge failed for provider '{}': {}",
+                provider.id, e
+            );
             None
         }
     }
@@ -1159,7 +1159,10 @@ impl ShortcutAction for MultiSttAction {
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone());
-            debug!("Multi-STT: Starting async transcription task for binding: {}", binding_id);
+            debug!(
+                "Multi-STT: Starting async transcription task for binding: {}",
+                binding_id
+            );
 
             let _stop_recording_time = Instant::now();
             if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
@@ -1184,9 +1187,12 @@ impl ShortcutAction for MultiSttAction {
                     return;
                 }
 
-                // Save WAV concurrently
-                let wav_path = hm.recordings_dir()
-                    .join(format!("handy-multi-{}.wav", chrono::Utc::now().timestamp()));
+                // Save WAV concurrently. The timestamp is shared with the
+                // history entry below so the recorded file name always matches.
+                let recording_timestamp = chrono::Utc::now().timestamp();
+                let wav_path = hm
+                    .recordings_dir()
+                    .join(format!("handy-multi-{recording_timestamp}.wav"));
                 let wav_for_save = wav_path.clone();
                 let samples_for_wav = samples.clone();
                 let _wav_handle = tauri::async_runtime::spawn_blocking(move || {
@@ -1202,11 +1208,19 @@ impl ShortcutAction for MultiSttAction {
                     if !tm.is_extra_model_loaded(model_id) {
                         info!("Multi-STT: loading extra model 2: {}", model_id);
                         match tm.load_extra_model(model_id) {
-                            Ok(name) => info!("Multi-STT: extra model 2 '{}' loaded successfully", name),
-                            Err(e) => error!("Multi-STT: failed to load extra model 2 '{}': {}", model_id, e),
+                            Ok(name) => {
+                                info!("Multi-STT: extra model 2 '{}' loaded successfully", name)
+                            }
+                            Err(e) => error!(
+                                "Multi-STT: failed to load extra model 2 '{}': {}",
+                                model_id, e
+                            ),
                         }
                     } else {
-                        info!("Multi-STT: extra model 2 '{}' already loaded, skipping", model_id);
+                        info!(
+                            "Multi-STT: extra model 2 '{}' already loaded, skipping",
+                            model_id
+                        );
                     }
                 }
 
@@ -1214,15 +1228,25 @@ impl ShortcutAction for MultiSttAction {
                     if !tm.is_extra_model_loaded(model_id) {
                         info!("Multi-STT: loading extra model 3: {}", model_id);
                         match tm.load_extra_model(model_id) {
-                            Ok(name) => info!("Multi-STT: extra model 3 '{}' loaded successfully", name),
-                            Err(e) => error!("Multi-STT: failed to load extra model 3 '{}': {}", model_id, e),
+                            Ok(name) => {
+                                info!("Multi-STT: extra model 3 '{}' loaded successfully", name)
+                            }
+                            Err(e) => error!(
+                                "Multi-STT: failed to load extra model 3 '{}': {}",
+                                model_id, e
+                            ),
                         }
                     } else {
-                        info!("Multi-STT: extra model 3 '{}' already loaded, skipping", model_id);
+                        info!(
+                            "Multi-STT: extra model 3 '{}' already loaded, skipping",
+                            model_id
+                        );
                     }
                 }
 
                 // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
+                // Inference is CPU/GPU-bound blocking work: run it on the
+                // blocking pool so tokio workers stay free for events/UI.
 
                 let tm1 = Arc::clone(&tm);
                 let tm2 = Arc::clone(&tm);
@@ -1231,8 +1255,8 @@ impl ShortcutAction for MultiSttAction {
                 let s2 = samples.clone();
                 let s3 = samples.clone();
 
-                let task1 = tokio::spawn(async move {
-                    match tm1.finalize_stream() {
+                let task1 =
+                    tauri::async_runtime::spawn_blocking(move || match tm1.finalize_stream() {
                         Ok(Some(text)) if !text.trim().is_empty() => {
                             info!("Multi-STT: Model 1 (primary) transcription: '{}'", text);
                             text
@@ -1251,20 +1275,25 @@ impl ShortcutAction for MultiSttAction {
                             error!("Multi-STT: Model 1 finalize failed: {}", err);
                             String::new()
                         }
-                    }
-                });
+                    });
 
                 let task2 = if let Some(ref model_id) = extra_model_2 {
                     let model_id = model_id.clone();
-                    Some(tokio::spawn(async move {
+                    Some(tauri::async_runtime::spawn_blocking(move || {
                         if tm2.is_extra_model_loaded(&model_id) {
                             match tm2.transcribe_with_extra(&model_id, s2) {
                                 Ok(text) => {
-                                    info!("Multi-STT: Model 2 '{}' transcription: '{}'", model_id, text);
+                                    info!(
+                                        "Multi-STT: Model 2 '{}' transcription: '{}'",
+                                        model_id, text
+                                    );
                                     text
                                 }
                                 Err(e) => {
-                                    error!("Multi-STT: Model 2 '{}' transcription failed: {}", model_id, e);
+                                    error!(
+                                        "Multi-STT: Model 2 '{}' transcription failed: {}",
+                                        model_id, e
+                                    );
                                     String::new()
                                 }
                             }
@@ -1279,15 +1308,21 @@ impl ShortcutAction for MultiSttAction {
 
                 let task3 = if let Some(ref model_id) = extra_model_3 {
                     let model_id = model_id.clone();
-                    Some(tokio::spawn(async move {
+                    Some(tauri::async_runtime::spawn_blocking(move || {
                         if tm3.is_extra_model_loaded(&model_id) {
                             match tm3.transcribe_with_extra(&model_id, s3) {
                                 Ok(text) => {
-                                    info!("Multi-STT: Model 3 '{}' transcription: '{}'", model_id, text);
+                                    info!(
+                                        "Multi-STT: Model 3 '{}' transcription: '{}'",
+                                        model_id, text
+                                    );
                                     text
                                 }
                                 Err(e) => {
-                                    error!("Multi-STT: Model 3 '{}' transcription failed: {}", model_id, e);
+                                    error!(
+                                        "Multi-STT: Model 3 '{}' transcription failed: {}",
+                                        model_id, e
+                                    );
                                     String::new()
                                 }
                             }
@@ -1328,7 +1363,8 @@ impl ShortcutAction for MultiSttAction {
 
                 // === MERGE TRANSCRIPTIONS ===
                 let settings_for_merge = get_settings(&ah);
-                let merged = if has_merge_prompt(&settings_for_merge) {
+                let merge_requested = has_merge_prompt(&settings_for_merge);
+                let merged = if merge_requested {
                     if use_streaming_overlay {
                         tm.emit_stream_working(StreamWorkKind::Polishing);
                     } else {
@@ -1360,11 +1396,15 @@ impl ShortcutAction for MultiSttAction {
                     // No merge prompt: concatenate
                     let mut combined = output1.clone();
                     if !output2.is_empty() {
-                        if !combined.is_empty() { combined.push('\n'); }
+                        if !combined.is_empty() {
+                            combined.push('\n');
+                        }
                         combined.push_str(&output2);
                     }
                     if !output3.is_empty() {
-                        if !combined.is_empty() { combined.push('\n'); }
+                        if !combined.is_empty() {
+                            combined.push('\n');
+                        }
                         combined.push_str(&output3);
                     }
                     combined
@@ -1373,18 +1413,24 @@ impl ShortcutAction for MultiSttAction {
                 // Save to history
                 let multi_transcript = format!(
                     "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\n=== Merged ===\n{}",
-                    settings.selected_model, output1,
-                    settings.multi_stt_model_2.as_deref().unwrap_or("none"), output2,
-                    settings.multi_stt_model_3.as_deref().unwrap_or("none"), output3,
+                    settings.selected_model,
+                    output1,
+                    settings.multi_stt_model_2.as_deref().unwrap_or("none"),
+                    output2,
+                    settings.multi_stt_model_3.as_deref().unwrap_or("none"),
+                    output3,
                     merged
                 );
 
                 if let Err(err) = hm.save_entry(
-                    format!("handy-multi-{}.wav", chrono::Utc::now().timestamp()),
+                    format!("handy-multi-{recording_timestamp}.wav"),
                     multi_transcript,
-                    true,
+                    merge_requested,
                     Some(merged.clone()),
-                    settings.multi_stt_merge_prompt.as_ref().map(|p| p.prompt.clone()),
+                    settings
+                        .multi_stt_merge_prompt
+                        .as_ref()
+                        .map(|p| p.prompt.clone()),
                 ) {
                     error!("Failed to save multi-STT history entry: {}", err);
                 }
@@ -1437,7 +1483,10 @@ impl ShortcutAction for MultiSttAction {
 
 fn has_merge_prompt(settings: &AppSettings) -> bool {
     settings.multi_stt_merge_prompt.is_some()
-        && !settings.multi_stt_merge_prompt.as_ref().is_some_and(|p| p.prompt.trim().is_empty())
+        && !settings
+            .multi_stt_merge_prompt
+            .as_ref()
+            .is_some_and(|p| p.prompt.trim().is_empty())
 }
 
 // Static Action Map
@@ -1476,8 +1525,8 @@ mod tests {
     };
     use crate::settings::OverlayStyle;
     use std::future;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
 

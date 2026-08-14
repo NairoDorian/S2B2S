@@ -739,7 +739,8 @@
       "promptPlaceholder": "Enter instructions for merging the transcriptions...",
       "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, and <code>{{output3}}</code> for the third model",
       "savePrompt": "Save Merge Prompt",
-      "noPrompt": "Without a merge prompt, outputs will be concatenated"
+      "noPrompt": "Without a merge prompt, outputs will be concatenated",
+      "clearPrompt": "Clear Merge Prompt"
     },
     "status": {
       "title": "Model Status",

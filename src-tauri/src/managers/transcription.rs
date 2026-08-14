@@ -1,21 +1,21 @@
 use crate::audio_toolkit::{
-    apply_custom_words, detect_output_language, normalize_transcription_output,
-    remove_filler_words, OutputLanguageEvidence,
+    OutputLanguageEvidence, apply_custom_words, detect_output_language,
+    normalize_transcription_output, remove_filler_words,
 };
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
-    get_settings, AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting,
-    TranscribeAcceleratorSetting,
+    AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting, TranscribeAcceleratorSetting,
+    get_settings,
 };
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashMap;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::collections::{HashMap, HashSet};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
@@ -25,16 +25,16 @@ use transcribe_cpp::{
     WhisperRunOptions,
 };
 use transcribe_rs::{
+    SpeechModel, TranscribeOptions,
     onnx::{
+        Quantization,
         canary::CanaryModel,
         cohere::CohereModel,
         gigaam::GigaAMModel,
         moonshine::{MoonshineModel, MoonshineVariant, StreamingModel},
         parakeet::{ParakeetModel, ParakeetParams, TimestampGranularity},
         sense_voice::{SenseVoiceModel, SenseVoiceParams},
-        Quantization,
     },
-    SpeechModel, TranscribeOptions,
 };
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
@@ -205,7 +205,9 @@ impl Drop for LoadingGuard {
         let mut is_loading = match self.is_loading.lock() {
             Ok(g) => g,
             Err(e) => {
-                warn!("Recovered poisoned is_loading mutex during LoadingGuard drop — a panic occurred earlier this session");
+                warn!(
+                    "Recovered poisoned is_loading mutex during LoadingGuard drop — a panic occurred earlier this session"
+                );
                 e.into_inner()
             }
         };
@@ -264,6 +266,10 @@ pub struct TranscriptionManager {
     /// Extra transcription engines for multi-STT mode, keyed by model ID.
     /// These are loaded alongside the primary engine for simultaneous multi-model transcription.
     extra_engines: Arc<Mutex<HashMap<String, LoadedEngine>>>,
+    /// Extra models whose unload was requested while their engine was leased
+    /// out for transcription (not present in `extra_engines`). The engine is
+    /// dropped instead of re-inserted when the in-flight transcription returns.
+    extra_unload_requests: Arc<Mutex<HashSet<String>>>,
     /// True only while a transcribe-cpp `Stream` is actually in flight (set by
     /// the worker once `stream()` succeeds). Used for overlay/UI decisions.
     stream_active: Arc<AtomicBool>,
@@ -298,6 +304,7 @@ impl TranscriptionManager {
             reload_model_on_next_use: Arc::new(AtomicBool::new(false)),
             router: Arc::new(StreamRouter::new()),
             extra_engines: Arc::new(Mutex::new(HashMap::new())),
+            extra_unload_requests: Arc::new(Mutex::new(HashSet::new())),
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
@@ -1875,59 +1882,90 @@ impl TranscriptionManager {
     /// Load an additional model engine for multi-STT mode.
     /// Returns the loaded engine's model name.
     pub fn load_extra_model(&self, model_id: &str) -> Result<String> {
-
         let load_start = std::time::Instant::now();
         info!("Starting to load extra model for multi-STT: {}", model_id);
 
-        let model_info = self
-            .model_manager
-            .get_model_info(model_id)
-            .ok_or_else(|| anyhow::anyhow!("Extra model not found: {}", model_id))?;
+        let load_result = (|| {
+            let model_info = self
+                .model_manager
+                .get_model_info(model_id)
+                .ok_or_else(|| anyhow::anyhow!("Extra model not found: {}", model_id))?;
 
-        if !model_info.is_downloaded {
-            return Err(anyhow::anyhow!(
-                "Extra model '{}' is not downloaded",
-                model_id
-            ));
+            if !model_info.is_downloaded {
+                return Err(anyhow::anyhow!(
+                    "Extra model '{}' is not downloaded",
+                    model_id
+                ));
+            }
+
+            let model_path = self.model_manager.get_model_path(model_id)?;
+
+            let loaded_engine = self.create_engine(model_id, &model_path, &model_info)?;
+
+            {
+                let mut extra = self.extra_engines.lock().unwrap();
+                // A fresh load supersedes any pending unload request.
+                self.extra_unload_requests.lock().unwrap().remove(model_id);
+                extra.insert(model_id.to_string(), loaded_engine);
+            }
+
+            Ok(model_info.name)
+        })();
+
+        match load_result {
+            Ok(model_name) => {
+                let load_duration = load_start.elapsed();
+                info!(
+                    "Loaded extra model '{}' for multi-STT (took {}ms)",
+                    model_id,
+                    load_duration.as_millis()
+                );
+
+                // Emit event for frontend
+                let _ = self.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "multi_stt_model_loaded".to_string(),
+                        model_id: Some(model_id.to_string()),
+                        model_name: Some(model_name.clone()),
+                        error: None,
+                    },
+                );
+
+                Ok(model_name)
+            }
+            Err(e) => {
+                // Distinct event type: the App-level listener toasts this while
+                // the primary model selector's state stays untouched.
+                let _ = self.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "multi_stt_model_load_failed".to_string(),
+                        model_id: Some(model_id.to_string()),
+                        model_name: None,
+                        error: Some(e.to_string()),
+                    },
+                );
+                Err(e)
+            }
         }
-
-        let model_path = self.model_manager.get_model_path(model_id)?;
-
-        let loaded_engine = self.create_engine(model_id, &model_path, &model_info)?;
-
-        let model_name = model_info.name.clone();
-        {
-            let mut extra = self.extra_engines.lock().unwrap();
-            extra.insert(model_id.to_string(), loaded_engine);
-        }
-
-        let load_duration = load_start.elapsed();
-        info!(
-            "Loaded extra model '{}' for multi-STT (took {}ms)",
-            model_id,
-            load_duration.as_millis()
-        );
-
-        // Emit event for frontend
-        let _ = self.app_handle.emit(
-            "model-state-changed",
-            ModelStateEvent {
-                event_type: "multi_stt_model_loaded".to_string(),
-                model_id: Some(model_id.to_string()),
-                model_name: Some(model_name.clone()),
-                error: None,
-            },
-        );
-
-        Ok(model_name)
     }
 
     /// Unload an extra model engine.
+    ///
+    /// If the engine is currently leased out for an in-flight transcription it
+    /// cannot be dropped here; the unload request is recorded instead and the
+    /// engine is dropped when `transcribe_with_extra` returns it.
     pub fn unload_extra_model(&self, model_id: &str) -> Result<()> {
         info!("Unloading extra model: {}", model_id);
         {
             let mut extra = self.extra_engines.lock().unwrap();
-            extra.remove(model_id);
+            if extra.remove(model_id).is_none() {
+                self.extra_unload_requests
+                    .lock()
+                    .unwrap()
+                    .insert(model_id.to_string());
+            }
         }
         info!("Extra model '{}' unloaded", model_id);
 
@@ -1956,9 +1994,9 @@ impl TranscriptionManager {
 
         let mut engine = {
             let mut extra = self.extra_engines.lock().unwrap();
-            extra.remove(model_id).ok_or_else(|| {
-                anyhow::anyhow!("Extra model '{}' is not loaded", model_id)
-            })?
+            extra
+                .remove(model_id)
+                .ok_or_else(|| anyhow::anyhow!("Extra model '{}' is not loaded", model_id))?
         };
 
         let st = std::time::Instant::now();
@@ -2000,13 +2038,13 @@ impl TranscriptionManager {
         }));
 
         let (transcription, engine_to_return) = match result {
-            Ok(Ok(text)) => {
+            Ok(Ok(output)) => {
                 let filtered = post_process_transcription_text(
-                    text,
+                    output.text,
                     &settings,
-                    false,
-                    &OutputLanguageEvidence::Unknown,
-                    &[],
+                    output.custom_words_already_prompted,
+                    &output.output_language,
+                    &output.supported_languages,
                 );
                 (Ok(filtered), Some(engine))
             }
@@ -2017,15 +2055,50 @@ impl TranscriptionManager {
                     "Extra model '{}' engine panicked: {}. Model has been unloaded.",
                     model_id, panic_msg
                 );
-                (Err(anyhow::anyhow!("Extra model '{}' engine panicked: {}", model_id, panic_msg)), None)
+                (
+                    Err(anyhow::anyhow!(
+                        "Extra model '{}' engine panicked: {}",
+                        model_id,
+                        panic_msg
+                    )),
+                    None,
+                )
             }
         };
 
-        // Return engine to the map if it survived
+        // Decide whether the surviving engine returns to the map. It is dropped
+        // (freed) when an unload was requested while it was leased out, or when
+        // the unload timeout is Immediately (mirrors the primary model's
+        // maybe_unload_immediately).
         if let Some(eng) = engine_to_return {
             let mut extra = self.extra_engines.lock().unwrap();
-            // Only put back if the model hasn't been explicitly unloaded while transcribing
-            if !extra.contains_key(model_id) {
+            let unload_requested = self.extra_unload_requests.lock().unwrap().remove(model_id);
+            let unload_immediately =
+                settings.model_unload_timeout == ModelUnloadTimeout::Immediately;
+            if unload_requested || unload_immediately {
+                if unload_immediately {
+                    info!(
+                        "Immediately unloading extra model '{}' after transcription",
+                        model_id
+                    );
+                } else {
+                    info!(
+                        "Extra model '{}' was unloaded during transcription; freeing its engine",
+                        model_id
+                    );
+                }
+                drop(extra);
+                drop(eng);
+                let _ = self.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "multi_stt_model_unloaded".to_string(),
+                        model_id: Some(model_id.to_string()),
+                        model_name: None,
+                        error: None,
+                    },
+                );
+            } else {
                 extra.insert(model_id.to_string(), eng);
             }
         }
@@ -2064,19 +2137,15 @@ impl TranscriptionManager {
         model_info: &crate::managers::model::ModelInfo,
     ) -> Result<LoadedEngine> {
         use crate::managers::model::EngineType;
-        use transcribe_cpp::{
-            Model, ModelOptions,
-        };
-        use transcribe_rs::{
-            onnx::{
-                canary::CanaryModel,
-                cohere::CohereModel,
-                gigaam::GigaAMModel,
-                moonshine::{MoonshineModel, MoonshineVariant, StreamingModel},
-                parakeet::ParakeetModel,
-                sense_voice::SenseVoiceModel,
-                Quantization,
-            },
+        use transcribe_cpp::{Model, ModelOptions};
+        use transcribe_rs::onnx::{
+            Quantization,
+            canary::CanaryModel,
+            cohere::CohereModel,
+            gigaam::GigaAMModel,
+            moonshine::{MoonshineModel, MoonshineVariant, StreamingModel},
+            parakeet::ParakeetModel,
+            sense_voice::SenseVoiceModel,
         };
 
         match model_info.engine_type {
@@ -2091,8 +2160,9 @@ impl TranscriptionManager {
                 };
                 let model = Model::load_with(model_path, &model_options)
                     .map_err(|e| anyhow::anyhow!("Failed to load model {}: {}", model_id, e))?;
-                let session = model.session()
-                    .map_err(|e| anyhow::anyhow!("Failed to create session for {}: {}", model_id, e))?;
+                let session = model.session().map_err(|e| {
+                    anyhow::anyhow!("Failed to create session for {}: {}", model_id, e)
+                })?;
                 Ok(LoadedEngine::TranscribeCpp(session))
             }
             EngineType::Parakeet => {
@@ -2101,18 +2171,26 @@ impl TranscriptionManager {
                 Ok(LoadedEngine::Parakeet(engine))
             }
             EngineType::Moonshine => {
-                let engine = MoonshineModel::load(model_path, MoonshineVariant::Base, &Quantization::default())
-                    .map_err(|e| anyhow::anyhow!("Failed to load moonshine {}: {}", model_id, e))?;
+                let engine = MoonshineModel::load(
+                    model_path,
+                    MoonshineVariant::Base,
+                    &Quantization::default(),
+                )
+                .map_err(|e| anyhow::anyhow!("Failed to load moonshine {}: {}", model_id, e))?;
                 Ok(LoadedEngine::Moonshine(engine))
             }
             EngineType::MoonshineStreaming => {
                 let engine = StreamingModel::load(model_path, 0, &Quantization::default())
-                    .map_err(|e| anyhow::anyhow!("Failed to load moonshine streaming {}: {}", model_id, e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to load moonshine streaming {}: {}", model_id, e)
+                    })?;
                 Ok(LoadedEngine::MoonshineStreaming(engine))
             }
             EngineType::SenseVoice => {
-                let engine = SenseVoiceModel::load(model_path, &Quantization::Int8)
-                    .map_err(|e| anyhow::anyhow!("Failed to load SenseVoice {}: {}", model_id, e))?;
+                let engine =
+                    SenseVoiceModel::load(model_path, &Quantization::Int8).map_err(|e| {
+                        anyhow::anyhow!("Failed to load SenseVoice {}: {}", model_id, e)
+                    })?;
                 Ok(LoadedEngine::SenseVoice(engine))
             }
             EngineType::GigaAM => {
@@ -2134,6 +2212,17 @@ impl TranscriptionManager {
     }
 }
 
+/// Result of transcribing audio with a single engine, carrying enough context
+/// for the shared post-processing pipeline to behave identically to the primary
+/// batch path (language evidence, supported languages, custom-word prompt flag).
+struct EngineTranscribeOutput {
+    text: String,
+    output_language: OutputLanguageEvidence,
+    supported_languages: Vec<String>,
+    /// True when custom words were handed to the model as a decode prompt
+    /// (whisper family), so the fuzzy correction pass must be skipped.
+    custom_words_already_prompted: bool,
+}
 
 /// Transcribe audio with a given engine (shared between primary and extra models).
 fn transcribe_with_engine(
@@ -2142,17 +2231,30 @@ fn transcribe_with_engine(
     audio: &[f32],
     model_id: &str,
     model_manager: &ModelManager,
-) -> Result<String> {
-    match engine {
+) -> Result<EngineTranscribeOutput> {
+    // Supported languages reported by the model manager are the fallback for
+    // engines that do not expose live capabilities (the ONNX engines).
+    let catalog_languages = model_manager
+        .get_model_info(model_id)
+        .map(|info| info.supported_languages)
+        .unwrap_or_default();
+
+    let mut output_was_translated = false;
+    let mut applied_language_hint: Option<String> = None;
+    let mut model_detected_language: Option<String> = None;
+    let mut custom_words_already_prompted = false;
+    let mut cpp_model_languages: Option<Vec<String>> = None;
+
+    let text = match engine {
         LoadedEngine::TranscribeCpp(session) => {
             let model = session.model();
             let caps = model.capabilities();
             let model_supports_translate = caps.supports_translate;
             let model_languages = caps.languages.clone();
-            let _model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
             let model_is_whisper = model.arch() == "whisper";
 
-            let effective_language = effective_language_for_model(settings, model_manager, model_id);
+            let effective_language =
+                effective_language_for_model(settings, model_manager, model_id);
             let family = if settings.custom_words.is_empty() || !model_is_whisper {
                 None
             } else {
@@ -2161,6 +2263,7 @@ fn transcribe_with_engine(
                     ..Default::default()
                 }))
             };
+            custom_words_already_prompted = family.is_some();
 
             let run_plan = transcribe_cpp_run_plan(
                 settings.translate_to_english,
@@ -2168,6 +2271,8 @@ fn transcribe_with_engine(
                 &model_languages,
                 model_supports_translate,
             );
+            output_was_translated = run_plan.target_language.as_deref() == Some("en");
+            applied_language_hint = run_plan.language.clone();
 
             let run_options = RunOptions {
                 task: run_plan.task,
@@ -2177,10 +2282,15 @@ fn transcribe_with_engine(
                 ..Default::default()
             };
 
-            session
+            let text = session
                 .run(audio, &run_options)
-                .map(|t| t.text)
-                .map_err(|e| anyhow::anyhow!("transcribe-cpp transcription failed: {}", e))
+                .map(|t| {
+                    model_detected_language = t.language;
+                    t.text
+                })
+                .map_err(|e| anyhow::anyhow!("transcribe-cpp transcription failed: {}", e))?;
+            cpp_model_languages = Some(model_languages);
+            text
         }
         LoadedEngine::Parakeet(parakeet_engine) => {
             let params = ParakeetParams {
@@ -2190,22 +2300,16 @@ fn transcribe_with_engine(
             parakeet_engine
                 .transcribe_with(audio, &params)
                 .map(|r| r.text)
-                .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))
+                .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))?
         }
-        LoadedEngine::Moonshine(moonshine_engine) => {
-            moonshine_engine
-                .transcribe(audio, &TranscribeOptions::default())
-                .map(|r| r.text)
-                .map_err(|e| anyhow::anyhow!("Moonshine transcription failed: {}", e))
-        }
-        LoadedEngine::MoonshineStreaming(streaming_engine) => {
-            streaming_engine
-                .transcribe(audio, &TranscribeOptions::default())
-                .map(|r| r.text)
-                .map_err(|e| {
-                    anyhow::anyhow!("Moonshine streaming transcription failed: {}", e)
-                })
-        }
+        LoadedEngine::Moonshine(moonshine_engine) => moonshine_engine
+            .transcribe(audio, &TranscribeOptions::default())
+            .map(|r| r.text)
+            .map_err(|e| anyhow::anyhow!("Moonshine transcription failed: {}", e))?,
+        LoadedEngine::MoonshineStreaming(streaming_engine) => streaming_engine
+            .transcribe(audio, &TranscribeOptions::default())
+            .map(|r| r.text)
+            .map_err(|e| anyhow::anyhow!("Moonshine streaming transcription failed: {}", e))?,
         LoadedEngine::SenseVoice(sense_voice_engine) => {
             let language = match normalize_cjk_language(&settings.selected_language) {
                 "zh" => Some("zh".to_string()),
@@ -2215,6 +2319,7 @@ fn transcribe_with_engine(
                 "yue" => Some("yue".to_string()),
                 _ => None,
             };
+            applied_language_hint = language.clone();
             let params = SenseVoiceParams {
                 language,
                 use_itn: Some(true),
@@ -2222,20 +2327,20 @@ fn transcribe_with_engine(
             sense_voice_engine
                 .transcribe_with(audio, &params)
                 .map(|r| r.text)
-                .map_err(|e| anyhow::anyhow!("SenseVoice transcription failed: {}", e))
+                .map_err(|e| anyhow::anyhow!("SenseVoice transcription failed: {}", e))?
         }
-        LoadedEngine::GigaAM(gigaam_engine) => {
-            gigaam_engine
-                .transcribe(audio, &TranscribeOptions::default())
-                .map(|r| r.text)
-                .map_err(|e| anyhow::anyhow!("GigaAM transcription failed: {}", e))
-        }
+        LoadedEngine::GigaAM(gigaam_engine) => gigaam_engine
+            .transcribe(audio, &TranscribeOptions::default())
+            .map(|r| r.text)
+            .map_err(|e| anyhow::anyhow!("GigaAM transcription failed: {}", e))?,
         LoadedEngine::Canary(canary_engine) => {
+            output_was_translated = settings.translate_to_english;
             let lang = if settings.selected_language == "auto" {
                 None
             } else {
                 Some(settings.selected_language.clone())
             };
+            applied_language_hint = lang.clone();
             let options = TranscribeOptions {
                 language: lang,
                 translate: settings.translate_to_english,
@@ -2244,7 +2349,7 @@ fn transcribe_with_engine(
             canary_engine
                 .transcribe(audio, &options)
                 .map(|r| r.text)
-                .map_err(|e| anyhow::anyhow!("Canary transcription failed: {}", e))
+                .map_err(|e| anyhow::anyhow!("Canary transcription failed: {}", e))?
         }
         LoadedEngine::Cohere(cohere_engine) => {
             let lang = if settings.selected_language == "auto" {
@@ -2252,6 +2357,7 @@ fn transcribe_with_engine(
             } else {
                 Some(normalize_cjk_language(&settings.selected_language).to_string())
             };
+            applied_language_hint = lang.clone();
             let options = TranscribeOptions {
                 language: lang,
                 ..Default::default()
@@ -2259,9 +2365,27 @@ fn transcribe_with_engine(
             cohere_engine
                 .transcribe(audio, &options)
                 .map(|r| r.text)
-                .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e))
+                .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e))?
         }
-    }
+    };
+
+    let supported_languages = cpp_model_languages.unwrap_or(catalog_languages);
+    let output_language = with_model_detected_language(
+        resolve_output_language_evidence(
+            settings,
+            applied_language_hint.as_deref(),
+            &supported_languages,
+            output_was_translated,
+        ),
+        model_detected_language,
+    );
+
+    Ok(EngineTranscribeOutput {
+        text,
+        output_language,
+        supported_languages,
+        custom_words_already_prompted,
+    })
 }
 
 /// Initialize the transcribe-cpp native backend once at startup: route native +
@@ -2339,7 +2463,7 @@ fn resolve_device_index(index: usize) -> Result<(Backend, i32)> {
         other => {
             return Err(anyhow::anyhow!(
                 "Device index {index} has kind '{other}', which cannot host a model"
-            ))
+            ));
         }
     };
     // gpu_device is a registry index used only by GPU backends; CPU ignores it.
@@ -2877,7 +3001,9 @@ impl Drop for TranscriptionManager {
         let mut guard = match self.watcher_handle.lock() {
             Ok(g) => g,
             Err(e) => {
-                warn!("Recovered poisoned watcher_handle mutex during TranscriptionManager drop — a panic occurred earlier this session");
+                warn!(
+                    "Recovered poisoned watcher_handle mutex during TranscriptionManager drop — a panic occurred earlier this session"
+                );
                 e.into_inner()
             }
         };

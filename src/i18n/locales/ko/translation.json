@@ -381,6 +381,17 @@
       "fillerWordRemoval": {
         "title": "군더더기 표현 제거",
         "description": "전사에서 흔한 머뭇거림 표현을 제거합니다. 그대로 두려면 이 옵션을 끄세요."
+      },
+      "micIdleTimeout": {
+        "title": "Mic Idle Timeout",
+        "infiniteLabel": "Keep Mic Open Indefinitely",
+        "infiniteDescription": "When enabled, the microphone stream stays open forever until manually closed. Disable to set a custom timeout duration.",
+        "timeoutLabel": "Timeout Value",
+        "timeoutDescription": "How long to keep the mic open after a recording stops before closing it.",
+        "unitLabel": "Unit",
+        "unitDescription": "Seconds or minutes for the timeout value.",
+        "seconds": "Seconds",
+        "minutes": "Minutes"
       }
     },
     "postProcessing": {
@@ -684,5 +695,66 @@
     "learnMore": "해결 방법",
     "recorderBlocked": "지금은 단축키를 등록할 수 없습니다. macOS Secure Input이 키 이벤트를 차단하고 있습니다. Secure Input 경고를 먼저 해결하세요.",
     "dismiss": "닫기"
+  },
+  "multiStt": {
+    "enabled": {
+      "label": "Enable Multi STT",
+      "description": "Run multiple speech-to-text models simultaneously and merge their results"
+    },
+    "shortcut": {
+      "title": "Multi STT Shortcut",
+      "description": "Keyboard shortcut to trigger multi-model transcription"
+    },
+    "models": {
+      "title": "Additional Models",
+      "model2": "Second Model",
+      "model3": "Third Model",
+      "model2Description": "Select a second STT model to run alongside the primary model",
+      "model3Description": "Select a third STT model to run alongside the primary model",
+      "primaryModel": "Primary Model ({{model}})",
+      "noPrimaryModel": "No primary model selected",
+      "notSelected": "Not selected",
+      "loadingModels": "Loading models...",
+      "noModelsAvailable": "No additional models available",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "loadModel": "Load Model",
+      "unloadModel": "Unload Model",
+      "loadingModel": "Loading...",
+      "unloadingModel": "Unloading...",
+      "model2Language": "Language for Second Model",
+      "model3Language": "Language for Third Model",
+      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
+      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
+      "languageNotApplicable": "This model does not support language selection",
+      "disableModel": "Disable",
+      "translateToEnglish": "Translate to English"
+    },
+    "mergePrompt": {
+      "title": "Merge Prompt",
+      "description": "Configure how the multiple transcriptions are merged",
+      "promptName": "Prompt Name",
+      "promptNamePlaceholder": "e.g. Merge Prompt",
+      "promptLabel": "Merge Instructions",
+      "promptPlaceholder": "Enter instructions for merging the transcriptions...",
+      "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, and <code>{{output3}}</code> for the third model",
+      "savePrompt": "Save Merge Prompt",
+      "noPrompt": "Without a merge prompt, outputs will be concatenated",
+      "clearPrompt": "Clear Merge Prompt"
+    },
+    "status": {
+      "title": "Model Status",
+      "modelsLoaded": "Models loaded in memory",
+      "noModels": "No additional models loaded",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "tertiary": "Tertiary"
+    }
+  },
+  "bindings": {
+    "multi_stt_transcribe": {
+      "name": "Multi STT Shortcut",
+      "description": "Keyboard shortcut to record and transcribe with multiple STT models"
+    }
   }
 }

@@ -129,7 +129,9 @@ export const MultiSttSettings: React.FC = () => {
     ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)
     : undefined;
 
-  // Initialize draft from existing merge prompt
+  // Initialize draft from existing merge prompt. Keyed on the saved values
+  // (not the object identity) so an externally-changed prompt syncs in without
+  // clobbering an in-progress draft.
   useEffect(() => {
     if (multiSttMergePrompt) {
       setDraftName(multiSttMergePrompt.name || "");
@@ -138,7 +140,7 @@ export const MultiSttSettings: React.FC = () => {
       setDraftName("");
       setDraftText("");
     }
-  }, []);
+  }, [multiSttMergePrompt?.name, multiSttMergePrompt?.prompt]);
 
   const handleModel2Select = (value: string | null) => {
     updateSetting("multi_stt_model_2", value || null);
@@ -239,6 +241,15 @@ export const MultiSttSettings: React.FC = () => {
                     disabled={modelOptionsForSlot2.length === 0}
                     className="flex-1 min-w-0"
                   />
+                  {multiSttModel2 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleModel2Select(null)}
+                    >
+                      {t("multiStt.models.disableModel")}
+                    </Button>
+                  )}
                 </div>
                 <PerModelLanguageSelector
                   slot={2}
@@ -381,6 +392,15 @@ export const MultiSttSettings: React.FC = () => {
                   >
                     {t("multiStt.mergePrompt.savePrompt")}
                   </Button>
+                  {multiSttMergePrompt && (
+                    <Button
+                      onClick={handleClearMergePrompt}
+                      variant="secondary"
+                      size="md"
+                    >
+                      {t("multiStt.mergePrompt.clearPrompt")}
+                    </Button>
+                  )}
                 </div>
 
                 {!multiSttMergePrompt && (
