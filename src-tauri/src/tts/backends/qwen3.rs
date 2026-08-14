@@ -119,9 +119,10 @@ pub fn server_args(app: &tauri::AppHandle) -> Vec<String> {
         "torch".to_string(),
         "--model".to_string(),
         model,
-        // ~333ms of audio per streamed chunk — fast time-to-first-audio.
+        // 167ms of audio per streamed chunk — fastest real-time chunk size
+        // (faster-qwen3-tts benchmark table), lowest time-to-first-audio.
         "--chunk-size".to_string(),
-        "4".to_string(),
+        "2".to_string(),
     ]
 }
 

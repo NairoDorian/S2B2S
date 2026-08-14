@@ -281,6 +281,9 @@ impl TtsManager {
         *self.sentence_tx.lock().unwrap() = None; // drop old channel
         self.player.stop();
         self.player.set_volume(cfg.volume);
+        // Open the output device now so it's ready before the first audio
+        // chunk arrives — device open is part of TTFA otherwise.
+        self.player.preopen();
 
         let sanitized = sanitize_text(&text, &cfg.sanitization);
         if sanitized.trim().is_empty() {
@@ -578,6 +581,9 @@ impl TtsManager {
             let app = self.app.clone();
             let engine_name = format!("{:?}", cfg.engine).to_lowercase();
             std::thread::spawn(move || {
+                // Pre-open the output device so the first sentence's first
+                // chunk doesn't pay the device-open latency.
+                player.preopen();
                 while let Ok((text, gen)) = rx.recv() {
                     if gen_counter.load(Ordering::SeqCst) != gen {
                         continue;
@@ -677,6 +683,7 @@ impl TtsManager {
         std::thread::spawn(move || {
             log::info!("[Greeting] Synthesizing custom greeting...");
             player.set_volume(volume);
+            player.preopen();
             match backend.synthesize(&text, &voice, speed) {
                 Ok(bytes) => {
                     log::info!("[Greeting] Playing custom greeting audio out loud...");

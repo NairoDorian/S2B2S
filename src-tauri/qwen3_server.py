@@ -70,9 +70,10 @@ DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 DEFAULT_VOICE = "Aiden"
 DEFAULT_REF_TEXT = "I'm confused why some people have super short timelines, yet at the same time are bullish on scaling up reinforcement learning atop LLMs."
 SAMPLE_RATE = 24000
-# Codec steps per streamed chunk. 12 steps ≈ 1 second of audio; 4 steps ≈
-# 333ms — smaller chunks cut time-to-first-audio at a small RTF cost.
-DEFAULT_CHUNK_SIZE = 4
+# Codec steps per streamed chunk. 12 steps ≈ 1 second of audio, 2 steps ≈
+# 167ms — the smallest size that stays real-time (per the faster-qwen3-tts
+# benchmarks), chosen for the fastest possible time-to-first-audio.
+DEFAULT_CHUNK_SIZE = 2
 
 # ---------------------------------------------------------------------------
 # Globals set at startup

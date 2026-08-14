@@ -15,6 +15,9 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 enum Cmd {
+    /// Open the output device + sink eagerly (before any audio exists) so the
+    /// first append doesn't pay the device-open latency on the TTFA path.
+    Open,
     /// Decode and append WAV/MP3/etc. bytes to the active sink.
     Append(Vec<u8>),
     /// Append raw mono i16 PCM frames (chunk-level streaming from engines that
@@ -96,6 +99,23 @@ impl TtsPlayer {
                 }
 
                 match rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(Cmd::Open) => {
+                        if sink.is_none() {
+                            match DeviceSinkBuilder::from_default_device()
+                                .and_then(|b| b.open_stream())
+                            {
+                                Ok(s) => {
+                                    let sk = Player::connect_new(s.mixer());
+                                    sk.set_volume(volume);
+                                    sink = Some(sk);
+                                    _stream = Some(s);
+                                }
+                                Err(e) => {
+                                    log::error!("[TtsPlayer] no output device: {e}");
+                                }
+                            }
+                        }
+                    }
                     Ok(Cmd::Append(bytes)) => {
                         just_appended = true;
                         if bytes.len() < 16 {
@@ -230,6 +250,11 @@ impl TtsPlayer {
     /// Append synthesized audio bytes to the playback queue.
     pub fn append(&self, bytes: Vec<u8>) {
         let _ = self.tx.send(Cmd::Append(bytes));
+    }
+
+    /// Pre-open the output device so the first append starts instantly.
+    pub fn preopen(&self) {
+        let _ = self.tx.send(Cmd::Open);
     }
 
     /// Append raw mono i16 PCM frames to the playback queue (streaming).
