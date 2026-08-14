@@ -297,7 +297,17 @@ Unix signals (Linux/macOS):
 
 ---
 
+- **X11**: Install `xdotool` for both direct typing and clipboard paste shortcuts
+- **Ubuntu 24.04+ / 26.04**: Has Wayland display server by default. `wtype` or `ydotool` (configured with systemd) is recommended.
+- **Wayland**: Install `wtype` (preferred) or `dotool` for text input to work correctly
+- **dotool setup**: Requires adding your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in)
+
 ### Linux Environment Variables
+
+| Variable                           | Purpose                                        |
+| ---------------------------------- | ---------------------------------------------- |
+| `S2B2S_NO_GTK_LAYER_SHELL=1`       | Skip GTK layer shell on Linux                  |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | Fix WebKit rendering on some GPU/driver combos |
 
 | Variable                           | Purpose                                        |
 | ---------------------------------- | ---------------------------------------------- |
@@ -332,6 +342,54 @@ Unix signals (Linux/macOS):
 - Cloud engines: Requires internet connection and API key.
 
 ---
+
+| ----------------------------------------- | -------------------------------------------------------- |
+| Toggle transcription | `pkill -USR2 -n handy` or `handy --toggle-transcription` |
+| Toggle transcription with post-processing | `handy --toggle-post-process` |
+
+Example Sway config:
+
+```ini
+bindsym $mod+o exec pkill -USR2 -n handy
+bindsym $mod+p exec handy --toggle-post-process
+```
+
+`pkill` here simply delivers the signal—it does not terminate the process.
+
+> **Behavior change:** older releases also accepted `SIGUSR1` for toggling transcription with post-processing. WebKitGTK — the webview engine embedded in Handy on Linux — uses SIGUSR1 internally to coordinate JavaScript garbage collection, so listening for it caused phantom recordings and interrupted dictations every few minutes ([#1660](https://github.com/cjpais/Handy/issues/1660)). Handy no longer listens for SIGUSR1 on Linux; the post-processing toggle is still available via `handy --toggle-post-process`. **Remove any `pkill -USR1` bindings**: the signal is now delivered straight to WebKit's internal handler and can crash the app.
+
+**Overlay & Pasting Issues (Linux):**
+
+- The recording overlay window can interfere with pasting transcribed text into target applications on Linux (X11)
+- **Solution:** Open **Settings > Advanced** and set **"Overlay Position"** to **"None"** to disable the overlay
+- Enable **"Audio Feedback"** (also in Advanced) if you still want audible confirmation of recording state
+- Users who upgrade from older versions or import settings from other platforms may need to manually apply this change
+
+### Platform Support
+
+- **macOS (both Intel and Apple Silicon)**
+- **x64 Windows**
+- **x64 Linux**
+
+### System Requirements/Recommendations
+
+The following are recommendations for running Handy on your own machine. If you don't meet the system requirements, the performance of the application may be degraded. We are working on improving the performance across all kinds of computers and hardware.
+
+**For Whisper Models:**
+
+- **macOS**: M series Mac, Intel Mac
+- **Windows**: Intel, AMD, or NVIDIA GPU
+- **Linux**: Intel, AMD, or NVIDIA GPU
+  - Ubuntu 22.04, 24.04
+
+**For Parakeet V3 Model:**
+
+- **CPU-only operation** - runs on a wide variety of hardware
+- **Minimum**: Intel Skylake (6th gen) or equivalent AMD processors
+- **Performance**: ~5x real-time speed on mid-range hardware (tested on i5)
+- **Automatic language detection** - no manual language selection required
+
+> > > > > > > upstream/main
 
 ## Roadmap & Active Development
 

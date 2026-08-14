@@ -24,6 +24,7 @@ import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
 import { AudioEnhancements } from "./AudioEnhancements";
 import { LongAudioRouting } from "./LongAudioRouting";
+import { FillerWordRemoval } from "../FillerWordRemoval";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -65,6 +66,7 @@ export const AdvancedSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <VoiceActivityDetection descriptionMode="tooltip" grouped={true} />
+        <FillerWordRemoval descriptionMode="tooltip" grouped={true} />
         <CustomWords descriptionMode="tooltip" grouped />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
         <AudioEnhancements grouped={true} />

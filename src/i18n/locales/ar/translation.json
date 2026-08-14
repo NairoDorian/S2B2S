@@ -6,16 +6,17 @@
     "unloadModel": "تفريغ النموذج",
     "model": "النموذج",
     "quit": "إنهاء",
-    "cancel": "إلغاء"
+    "cancel": "إلغاء",
+    "secureInputWarning": "⚠ الاختصارات محجوبة بواسطة Secure Input"
   },
   "sidebar": {
     "general": "عام",
-    "models": "النماذج",
     "advanced": "متقدم",
     "postProcessing": "معالجة لاحقة",
     "history": "السجل",
     "debug": "تصحيح الأخطاء",
     "about": "حول",
+    "models": "النماذج",
     "speech": "Speech",
     "brain": "Brain",
     "conversation": "Conversation",
@@ -127,10 +128,8 @@
   },
   "modelSelector": {
     "custom": "مخصص",
-    "legacy": "قديم",
     "streaming": "البث",
     "active": "نشط",
-    "switching": "جارٍ التبديل...",
     "noModelsAvailable": "لا توجد نماذج متاحة",
     "verifying": "جارٍ التحقق من {{modelName}}...",
     "verifyingGeneric": "جارٍ التحقق...",
@@ -146,6 +145,7 @@
     "modelUnloaded": "تم إلغاء تحميل النموذج",
     "noModelDownloadRequired": "لا يوجد نموذج - التنزيل مطلوب",
     "deleteModel": "حذف {{modelName}}",
+    "switching": "جارٍ التبديل...",
     "downloadSpeed": "{{speed}} ميجابايت/ث",
     "cancel": "إلغاء",
     "cancelDownload": "إلغاء التنزيل",
@@ -157,17 +157,10 @@
       "translation": "يدعم الترجمة",
       "translate": "ترجمة",
       "streaming": "يعرض النسخ المباشر أثناء التحدث"
-    }
+    },
+    "legacy": "قديم"
   },
   "settings": {
-    "modelSettings": {
-      "title": "إعدادات النموذج",
-      "noSettingsNeeded": "This model works automatically with no configuration needed.",
-      "parakeetStreamingToggle": {
-        "label": "Streaming Mode",
-        "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
-      }
-    },
     "general": {
       "title": "عام",
       "shortcut": {
@@ -209,24 +202,6 @@
         "description": "استمر في الضغط للتسجيل، واترك للتوقف"
       }
     },
-    "models": {
-      "title": "نماذج النسخ",
-      "description": "اختر نموذج نسخ أو قم بتنزيل نماذج إضافية. تقدم النماذج المختلفة مستويات متفاوتة من الدقة والسرعة.",
-      "searchPlaceholder": "ابحث عن النماذج بالاسم…",
-      "yourModels": "النماذج المحمّلة",
-      "availableModels": "متاح للتنزيل",
-      "deleteConfirm": "هل أنت متأكد أنك تريد حذف {{modelName}}؟ ستحتاج إلى تنزيله مرة أخرى لاستخدامه.",
-      "deleteActiveConfirm": "{{modelName}} هو النموذج النشط حاليًا. حذفه سيوقف النسخ حتى تختار نموذجًا جديدًا. هل أنت متأكد؟",
-      "deleteTitle": "حذف النموذج",
-      "filters": {
-        "allLanguages": "جميع اللغات"
-      },
-      "rescan": {
-        "label": "إعادة الفحص",
-        "tooltip": "إعادة الفحص بحثًا عن النماذج المضافة إلى مجلد النماذج أو ذاكرة Hugging Face التخزينية المؤقتة خارج Handy"
-      },
-      "noModelsMatch": "لا توجد نماذج مطابقة لهذا الفلتر."
-    },
     "sound": {
       "title": "الصوت",
       "microphone": {
@@ -234,6 +209,12 @@
         "description": "اختر جهاز الميكروفون المفضل لديك",
         "placeholder": "...اختر الميكروفون",
         "loading": "...جاري التحميل"
+      },
+      "channel": {
+        "title": "قناة الإدخال",
+        "description": "اختر قناة الإدخال التي تريد التسجيل منها. استخدم هذا الخيار إذا كانت واجهة الصوت لديك تحتوي على عدة مداخل.",
+        "average": "متوسط جميع القنوات",
+        "channel": "القناة {{n}}"
       },
       "audioFeedback": {
         "label": "تنبيهات صوتية",
@@ -309,6 +290,79 @@
             "top": "أعلى"
           }
         }
+      },
+      "pasteMethod": {
+        "title": "طريقة اللصق",
+        "description": ".اختر كيفية إدراج النص. مباشر: يحاكي الكتابة عبر إدخال النظام. بلا: يتخطى اللصق، ويحدث السجل/الحافظة فقط",
+        "options": {
+          "clipboard": "الحافظة ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "الحافظة (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "الحافظة (Shift+Insert)",
+          "direct": "مباشر",
+          "none": "بلا",
+          "externalScript": "نص برمجي خارجي"
+        },
+        "externalScriptPlaceholder": "/path/to/your/script.sh"
+      },
+      "typingTool": {
+        "title": "أداة الكتابة",
+        "description": ".اختر أداة الكتابة في Linux لاستخدامها مع طريقة اللصق المباشر. سيكتشف \"تلقائي\" تلقائياً أفضل أداة متاحة لنظامك ويستخدمها",
+        "options": {
+          "auto": "تلقائي (موصى به)"
+        }
+      },
+      "clipboardHandling": {
+        "title": "التعامل مع الحافظة",
+        "description": ".'عدم تعديل الحافظة' يحافظ على محتويات حافظتك الحالية بعد التفريغ. 'نسخ إلى الحافظة' يترك نتيجة التفريغ في حافظتك بعد اللصق",
+        "options": {
+          "dontModify": "عدم تعديل الحافظة",
+          "copyToClipboard": "نسخ إلى الحافظة"
+        }
+      },
+      "autoSubmit": {
+        "title": "إرسال تلقائي",
+        "description": "إرسال مجموعة المفاتيح المحددة تلقائياً بعد إدراج النص. Cmd+Enter ينطبق على macOS، بينما يستخدم Windows/Linux مفتاح Super+Enter.",
+        "options": {
+          "off": "إيقاف",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
+        }
+      },
+      "translateToEnglish": {
+        "label": "الترجمة إلى الإنجليزية",
+        "description": ".ترجمة الكلام من اللغات الأخرى تلقائياً إلى الإنجليزية أثناء التفريغ"
+      },
+      "modelUnload": {
+        "title": "إلغاء تحميل النموذج",
+        "description": "تحرير ذاكرة GPU/CPU تلقائياً عندما لا يتم استخدام النموذج للوقت المحدد",
+        "options": {
+          "never": "أبداً",
+          "immediately": "فوراً",
+          "min2": "بعد دقيقتين",
+          "min5": "بعد 5 دقائق",
+          "min10": "بعد 10 دقائق",
+          "min15": "بعد 15 دقيقة",
+          "hour1": "بعد ساعة واحدة",
+          "sec15": "بعد 15 ثوانٍ (تصحيح أخطاء)"
+        }
+      },
+      "customWords": {
+        "title": "كلمات مخصصة",
+        "description": "ساعد النماذج المدعومة على التعرّف على الأسماء والمصطلحات المتخصصة. يقتصر التصحيح التقريبي حاليًا على الكلمات التي تستخدم الأحرف A–Z والأرقام.",
+        "placeholder": "أضف كلمة",
+        "add": "إضافة",
+        "remove": "إزالة {{word}}",
+        "duplicate": "\"{{word}}\" موجود بالفعل"
+      },
+      "voiceActivityDetection": {
+        "title": "Voice Activity Detection",
+        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
+      },
+      "fillerWordRemoval": {
+        "title": "إزالة كلمات الحشو",
+        "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها."
       },
       "overlayWindow": {
         "title": "Overlay Window",
@@ -402,80 +456,9 @@
           "label": "Click Ripple",
           "description": "Show an expanding ripple circle on mouse click."
         }
-      },
-      "pasteMethod": {
-        "title": "طريقة اللصق",
-        "description": ".اختر كيفية إدراج النص. مباشر: يحاكي الكتابة عبر إدخال النظام. بلا: يتخطى اللصق، ويحدث السجل/الحافظة فقط",
-        "options": {
-          "clipboard": "الحافظة ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "الحافظة (Ctrl+Shift+V)",
-          "clipboardShiftInsert": "الحافظة (Shift+Insert)",
-          "direct": "مباشر",
-          "none": "بلا",
-          "externalScript": "نص برمجي خارجي"
-        },
-        "externalScriptPlaceholder": "/path/to/your/script.sh"
-      },
-      "typingTool": {
-        "title": "أداة الكتابة",
-        "description": ".اختر أداة الكتابة في Linux لاستخدامها مع طريقة اللصق المباشر. سيكتشف \"تلقائي\" تلقائياً أفضل أداة متاحة لنظامك ويستخدمها",
-        "options": {
-          "auto": "تلقائي (موصى به)"
-        }
-      },
-      "clipboardHandling": {
-        "title": "التعامل مع الحافظة",
-        "description": ".'عدم تعديل الحافظة' يحافظ على محتويات حافظتك الحالية بعد التفريغ. 'نسخ إلى الحافظة' يترك نتيجة التفريغ في حافظتك بعد اللصق",
-        "options": {
-          "dontModify": "عدم تعديل الحافظة",
-          "copyToClipboard": "نسخ إلى الحافظة"
-        }
-      },
-      "autoSubmit": {
-        "title": "إرسال تلقائي",
-        "description": "إرسال مجموعة المفاتيح المحددة تلقائياً بعد إدراج النص. Cmd+Enter ينطبق على macOS، بينما يستخدم Windows/Linux مفتاح Super+Enter.",
-        "options": {
-          "off": "إيقاف",
-          "enter": "Enter",
-          "cmdEnter": "Cmd+Enter",
-          "superEnter": "Super+Enter",
-          "ctrlEnter": "Ctrl+Enter"
-        }
-      },
-      "translateToEnglish": {
-        "label": "الترجمة إلى الإنجليزية",
-        "description": ".ترجمة الكلام من اللغات الأخرى تلقائياً إلى الإنجليزية أثناء التفريغ"
-      },
-      "modelUnload": {
-        "title": "إلغاء تحميل النموذج",
-        "description": "تحرير ذاكرة GPU/CPU تلقائياً عندما لا يتم استخدام النموذج للوقت المحدد",
-        "options": {
-          "never": "أبداً",
-          "immediately": "فوراً",
-          "min2": "بعد دقيقتين",
-          "min5": "بعد 5 دقائق",
-          "min10": "بعد 10 دقائق",
-          "min15": "بعد 15 دقيقة",
-          "hour1": "بعد ساعة واحدة",
-          "sec15": "بعد 15 ثوانٍ (تصحيح أخطاء)"
-        }
-      },
-      "customWords": {
-        "title": "كلمات مخصصة",
-        "description": "ساعد النماذج المدعومة على التعرّف على الأسماء والمصطلحات المتخصصة. يقتصر التصحيح التقريبي حاليًا على الكلمات التي تستخدم الأحرف A–Z والأرقام.",
-        "placeholder": "أضف كلمة",
-        "add": "إضافة",
-        "remove": "إزالة {{word}}",
-        "duplicate": "\"{{word}}\" موجود بالفعل"
-      },
-      "voiceActivityDetection": {
-        "title": "Voice Activity Detection",
-        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       }
     },
     "postProcessing": {
-      "title": "Post Process",
-      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
         "title": "مفتاح الاختصار"
       },
@@ -507,6 +490,29 @@
           "refreshModels": "تحديث النماذج"
         }
       },
+      "prompts": {
+        "title": "المطالبة",
+        "selectedPrompt": {
+          "title": "المطالبة المختارة",
+          "description": ".اختر قالباً لتحسين التفريغ الصوتي أو أنشئ قالباً جديداً. استخدم ${output} داخل نص المطالبة للإشارة إلى النص الملتقط"
+        },
+        "noPrompts": "لا توجد مطالبات متاحة",
+        "selectPrompt": "اختر مطالبة",
+        "createNew": "إنشاء مطالبة جديدة",
+        "promptLabel": "تسمية المطالبة",
+        "promptLabelPlaceholder": "أدخل اسم المطالبة",
+        "promptInstructions": "تعليمات المطالبة",
+        "promptInstructionsPlaceholder": ".اكتب التعليمات المراد تشغيلها بعد التفريغ الصوتي. مثال: قم بتحسين القواعد والوضوح للنص التالي: ${output}",
+        "promptTip": "تلميح: استخدم <code>${output}</code> لإدراج النص المفرغ في مطالبتك.",
+        "updatePrompt": "تحديث المطالبة",
+        "deletePrompt": "حذف المطالبة",
+        "createPrompt": "إنشاء مطالبة",
+        "cancel": "إلغاء",
+        "selectToEdit": ".اختر مطالبة أعلاه لعرض وتعديل تفاصيلها",
+        "createFirst": ".انقر على 'إنشاء مطالبة جديدة' أعلاه لإنشاء أول مطالبة معالجة لاحقة لك"
+      },
+      "title": "Post Process",
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {
         "title": "Default Shortcut",
         "toggleLabel": "Enable default post-processing shortcut",
@@ -536,27 +542,6 @@
         "empty": "Create your first action to start processing transcriptions with custom prompts.",
         "emptyTitle": "No actions yet",
         "noModelShort": "No model"
-      },
-      "prompts": {
-        "title": "المطالبة",
-        "selectedPrompt": {
-          "title": "المطالبة المختارة",
-          "description": ".اختر قالباً لتحسين التفريغ الصوتي أو أنشئ قالباً جديداً. استخدم ${output} داخل نص المطالبة للإشارة إلى النص الملتقط"
-        },
-        "noPrompts": "لا توجد مطالبات متاحة",
-        "selectPrompt": "اختر مطالبة",
-        "createNew": "إنشاء مطالبة جديدة",
-        "promptLabel": "تسمية المطالبة",
-        "promptLabelPlaceholder": "أدخل اسم المطالبة",
-        "promptInstructions": "تعليمات المطالبة",
-        "promptInstructionsPlaceholder": ".اكتب التعليمات المراد تشغيلها بعد التفريغ الصوتي. مثال: قم بتحسين القواعد والوضوح للنص التالي: ${output}",
-        "promptTip": "تلميح: استخدم <code>${output}</code> لإدراج النص المفرغ في مطالبتك.",
-        "updatePrompt": "تحديث المطالبة",
-        "deletePrompt": "حذف المطالبة",
-        "createPrompt": "إنشاء مطالبة",
-        "cancel": "إلغاء",
-        "selectToEdit": ".اختر مطالبة أعلاه لعرض وتعديل تفاصيلها",
-        "createFirst": ".انقر على 'إنشاء مطالبة جديدة' أعلاه لإنشاء أول مطالبة معالجة لاحقة لك"
       }
     },
     "history": {
@@ -568,12 +553,12 @@
       "save": "حفظ التفريغ",
       "unsave": "إزالة من المحفوظات",
       "delete": "حذف الإدخال",
-      "deleteAll": "Delete All",
       "deleteError": ".فشل حذف الإدخال. يرجى المحاولة مرة أخرى",
       "retranscribe": "إعادة النسخ",
       "retranscribeError": "فشلت إعادة النسخ. يرجى المحاولة مرة أخرى.",
       "transcribing": "جارٍ النسخ...",
       "transcriptionFailed": "فشل النسخ. يمكنك إعادة النسخ باستخدام أيقونة إعادة المحاولة.",
+      "deleteAll": "Delete All",
       "processWith": "Process with action…",
       "processError": "Failed to process entry with action.",
       "processed": "Processed",
@@ -606,13 +591,6 @@
       "updateChecks": {
         "label": "التحقق من وجود تحديثات",
         "description": "التحقق تلقائياً من وجود إصدارات جديدة من S2B2S"
-      },
-      "whatsNewPreview": {
-        "title": "معاينة الجديد",
-        "description": "افتح أحدث ملاحظات إصدار مضمنة دون وضع علامة عليها كمقروءة",
-        "button": "معاينة",
-        "noNotes": "لم يتم العثور على ملاحظات إصدار مضمنة",
-        "error": "تعذرت معاينة ملاحظات الإصدار"
       },
       "soundTheme": {
         "label": "سمة الصوت",
@@ -675,9 +653,40 @@
         "title": "تأخير اللصق (بعد)",
         "description": "التأخير (بالمللي ثانية) بعد ضغطة مفتاح اللصق وقبل استعادة محتوى الحافظة السابق. قم بزيادته إذا تم لصق محتوى الحافظة القديم بدلاً من النص المُفرَّغ."
       },
+      "reliablePaste": {
+        "title": "لصق موثوق (Beta)",
+        "description": "استعادة الحافظة فقط بعد أن يقرأ التطبيق المستهدف النص المُفرَّغ فعلياً، بدلاً من الاعتماد على تأخير ثابت. يهدف إلى إصلاح لصق محتوى الحافظة القديم عند وجود حمل على النظام. يتطلب طريقة لصق تعتمد على الحافظة؛ على macOS وWindows فقط."
+      },
       "recordingBuffer": {
         "title": "مخزن التسجيل الإضافي",
         "description": "وقت إضافي (بالمللي ثانية) للاستمرار في التسجيل بعد تحرير المفتاح، لالتقاط الصوت المتبقي. 0 = لا مخزن إضافي."
+      },
+      "keyboardDiagnostic": {
+        "title": "تشخيص لوحة المفاتيح",
+        "description": "يتحقق مما إذا كانت أحداث لوحة المفاتيح تصل إلى Handy. يُسجَّل عدد الأحداث فقط — ولا تُسجَّل أبدًا المفاتيح التي تضغط عليها.",
+        "run": "تشغيل تشخيص لمدة 10 ثوانٍ",
+        "running": "جارٍ الاستماع… اضغط اختصارك عدة مرات (مثل Option+Space)",
+        "secureInputLabel": "Secure Input",
+        "enabled": "مُفعَّل",
+        "disabled": "مُعطَّل",
+        "holder": "يحتجزه {{name}} (pid {{pid}})",
+        "holderUnknown": "لا يوجد محتجِز ظاهر",
+        "keyDown": "ضغط مفتاح",
+        "keyUp": "تحرير مفتاح",
+        "flagsChanged": "مفاتيح التعديل",
+        "mouse": "الماوس",
+        "verdictBlocked": "يحجب Secure Input أحداث المفاتيح — لا يمكن للاختصارات التي تتضمن مفتاحًا عاديًا أن تعمل حتى تُحلّ المشكلة.",
+        "verdictSuspicious": "وصلت أحداث مفاتيح التعديل لكن لم يصل أي حدث مفتاح — هناك شيء يمنع المفاتيح رغم أن Secure Input يظهر معطلاً. يُرجى الإبلاغ عن ذلك على GitHub.",
+        "verdictOk": "أحداث المفاتيح تصل إلى Handy بشكل طبيعي.",
+        "verdictNoEvents": "لم يُسجَّل أي حدث — هل ضغطت أي مفاتيح أثناء الاختبار؟",
+        "failed": "فشل التشخيص: {{error}}"
+      },
+      "whatsNewPreview": {
+        "title": "معاينة الجديد",
+        "description": "افتح أحدث ملاحظات إصدار مضمنة دون وضع علامة عليها كمقروءة",
+        "button": "معاينة",
+        "noNotes": "لم يتم العثور على ملاحظات إصدار مضمنة",
+        "error": "تعذرت معاينة ملاحظات الإصدار"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -705,10 +714,6 @@
         "title": "الإصدار",
         "description": "الإصدار الحالي من S2B2S"
       },
-      "whatsNewUpdates": {
-        "label": "إظهار الجديد",
-        "description": "إظهار ملاحظات الإصدار بعد تحديثات Handy"
-      },
       "appDataDirectory": {
         "title": "مجلد بيانات التطبيق",
         "description": "الموقع الذي يخزن فيه S2B2S بياناته"
@@ -725,6 +730,11 @@
       },
       "acknowledgments": {
         "title": "شكر وتقدير",
+        "ggml": {
+          "title": "ggml",
+          "description": "استنتاج عالي الأداء لنموذج التعرف التلقائي على الكلام Whisper من OpenAI",
+          "details": ".يستخدم Handy برنامج ggml لمعالجة سريعة ومحلية لتحويل الكلام إلى نص. شكراً للعمل الرائع الذي قام به Georgi Gerganov والمساهمون"
+        },
         "forkLineage": {
           "title": "Project Lineage & Forks",
           "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
@@ -754,12 +764,39 @@
           "title": "Python & ML Ecosystem",
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
-        },
-        "ggml": {
-          "title": "ggml",
-          "description": "استنتاج عالي الأداء لنموذج التعرف التلقائي على الكلام Whisper من OpenAI",
-          "details": ".يستخدم Handy برنامج ggml لمعالجة سريعة ومحلية لتحويل الكلام إلى نص. شكراً للعمل الرائع الذي قام به Georgi Gerganov والمساهمون"
         }
+      },
+      "whatsNewUpdates": {
+        "label": "إظهار الجديد",
+        "description": "إظهار ملاحظات الإصدار بعد تحديثات Handy"
+      }
+    },
+    "modelSettings": {
+      "title": "إعدادات النموذج",
+      "noSettingsNeeded": "This model works automatically with no configuration needed.",
+      "parakeetStreamingToggle": {
+        "label": "Streaming Mode",
+        "description": "Feed audio incrementally for progressive partial results with EOU detection. Disable to use offline single-call transcription."
+      }
+    },
+    "models": {
+      "title": "نماذج النسخ",
+      "description": "اختر نموذج نسخ أو قم بتنزيل نماذج إضافية. تقدم النماذج المختلفة مستويات متفاوتة من الدقة والسرعة.",
+      "yourModels": "النماذج المحمّلة",
+      "availableModels": "متاح للتنزيل",
+      "deleteConfirm": "هل أنت متأكد أنك تريد حذف {{modelName}}؟ ستحتاج إلى تنزيله مرة أخرى لاستخدامه.",
+      "deleteActiveConfirm": "{{modelName}} هو النموذج النشط حاليًا. حذفه سيوقف النسخ حتى تختار نموذجًا جديدًا. هل أنت متأكد؟",
+      "deleteTitle": "حذف النموذج",
+      "filters": {
+        "allLanguages": "جميع اللغات",
+        "streaming": "تصفية النماذج التي تدعم النسخ المباشر",
+        "translation": "تصفية النماذج التي تدعم الترجمة إلى الإنجليزية"
+      },
+      "noModelsMatch": "لا توجد نماذج مطابقة لهذا الفلتر.",
+      "searchPlaceholder": "ابحث عن النماذج بالاسم…",
+      "rescan": {
+        "label": "إعادة الفحص",
+        "tooltip": "إعادة الفحص بحثًا عن النماذج المضافة إلى مجلد النماذج أو ذاكرة Hugging Face التخزينية المؤقتة خارج Handy"
       }
     },
     "speech": {
@@ -974,15 +1011,6 @@
     }
   },
   "footer": {
-    "stt": "STT",
-    "brain": "Brain",
-    "brainTitle": "AI Brain",
-    "brainActiveProvider": "Active Provider",
-    "tts": "TTS",
-    "ttsTitle": "Speech (TTS)",
-    "ttsEngine": "Speech Engine",
-    "voicesCount": "{{count}} voices",
-    "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "...جاري التحقق من وجود تحديثات",
     "updateAvailableShort": "تحديث متاح",
     "upToDate": "محدث",
@@ -993,10 +1021,18 @@
     "checkForUpdates": "التحقق من وجود تحديثات",
     "portableUpdateTitle": "التحديث اليدوي مطلوب",
     "portableUpdateMessage": "لا يمكن تحديث التثبيتات المحمولة تلقائيًا. للتحديث: نزّل أحدث مثبّت NSIS من GitHub Releases، وثبّته في المجلد نفسه، ثم انسخ مجلد Data/ (الإعدادات والنماذج والتسجيلات) من الإصدار القديم إلى الجديد.",
-    "portableUpdateButton": "فتح GitHub Releases"
-  },
-  "whatsNew": {
-    "title": "الجديد في Handy v{{version}}"
+    "portableUpdateButton": "فتح GitHub Releases",
+    "portableUpdateBrowseMessage": "لا يمكن تحديث التثبيتات المحمولة تلقائيًا. نزّل أحدث إصدار مناسب لنظامك من GitHub Releases وثبّته في المجلد نفسه — يبقى مجلد Data/ (الإعدادات والنماذج والتسجيلات) في مكانه.",
+    "portableUpdateBrowseButton": "فتح GitHub Releases",
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
+    "voicesCount": "{{count}} voices",
+    "downloadingModel": "Downloading {{model}}..."
   },
   "common": {
     "loading": "...جاري التحميل",
@@ -1008,9 +1044,9 @@
     "noOptionsFound": "لم يتم العثور على خيارات"
   },
   "accessibility": {
-    "permissionsRequired": "أذونات إمكانية الوصول مطلوبة",
     "permissionsDescription": ".يحتاج Handy إلى أذونات إمكانية الوصول لكتابة النص المفرغ",
     "openSettings": "فتح إعدادات النظام",
+    "permissionsRequired": "أذونات إمكانية الوصول مطلوبة",
     "dismiss": "تجاهل"
   },
   "errors": {
@@ -1049,6 +1085,20 @@
     "processing": "...جاري المعالجة",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
+  },
+  "whatsNew": {
+    "title": "الجديد في Handy v{{version}}"
+  },
+  "secureInput": {
+    "blockedWithCulprit_one": "قد يحظر {{name}} اختصارًا واحدًا",
+    "blockedWithCulprit_other": "قد يحظر {{name}} {{count}} اختصارات",
+    "blockedNoCulprit_one": "يحظر macOS مؤقتًا اختصارًا واحدًا",
+    "blockedNoCulprit_other": "يحظر macOS مؤقتًا {{count}} اختصارات",
+    "recorderBlockedWithCulprit": "قد يمنع {{name}} تغيير الاختصارات",
+    "recorderBlockedNoCulprit": "يمنع macOS مؤقتًا تغيير الاختصارات",
+    "learnMore": "كيفية الإصلاح",
+    "recorderBlocked": "لا يمكن تسجيل الاختصارات الآن — يحجب Secure Input في macOS أحداث المفاتيح. عالج تحذير Secure Input أولاً.",
+    "dismiss": "تجاهل"
   },
   "conversation": {
     "disabledHint": "The Brain is disabled. Enable it in the Brain settings to start a conversation.",

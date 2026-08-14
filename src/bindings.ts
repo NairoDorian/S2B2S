@@ -24,6 +24,7 @@ export const commands = {
 	changeExtraRecordingBufferSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_extra_recording_buffer_setting", { ms })),
 	changePasteDelayMsSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_paste_delay_ms_setting", { ms })),
 	changePasteDelayAfterMsSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_paste_delay_after_ms_setting", { ms })),
+	changeReliablePasteSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_reliable_paste_setting", { enabled })),
 	changePasteMethodSetting: (method: string) => typedError<null, string>(__TAURI_INVOKE("change_paste_method_setting", { method })),
 	getAvailableTypingTools: () => __TAURI_INVOKE<string[]>("get_available_typing_tools"),
 	changeTypingToolSetting: (tool: string) => typedError<null, string>(__TAURI_INVOKE("change_typing_tool_setting", { tool })),
@@ -49,16 +50,17 @@ export const commands = {
 	deletePostProcessAction: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_post_process_action", { id })),
 	updateCustomWords: (words: string[]) => typedError<null, string>(__TAURI_INVOKE("update_custom_words", { words })),
 	/**
-	 *  Temporarily unregister a binding while the user is editing it in the UI.
-	 *  This avoids firing the action while keys are being recorded.
+	 *  Temporarily unregister all bindings while the user is recording a
+	 *  shortcut in the UI. This avoids firing actions while keys are recorded.
 	 */
-	suspendBinding: (id: string) => typedError<null, string>(__TAURI_INVOKE("suspend_binding", { id })),
-	/**  Re-register the binding after the user has finished editing. */
-	resumeBinding: (id: string) => typedError<null, string>(__TAURI_INVOKE("resume_binding", { id })),
+	suspendAllBindings: () => typedError<null, string>(__TAURI_INVOKE("suspend_all_bindings")),
+	/**  Re-register all bindings after the user has finished recording. */
+	resumeAllBindings: () => typedError<null, string>(__TAURI_INVOKE("resume_all_bindings")),
 	changeMuteWhileRecordingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mute_while_recording_setting", { enabled })),
 	changeAppendTrailingSpaceSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_append_trailing_space_setting", { enabled })),
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
+	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
 	changeShowWhatsNewOnUpdateSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_whats_new_on_update_setting", { enabled })),
@@ -97,6 +99,8 @@ export const commands = {
 	startKeyListenerRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_key_listener_recording", { bindingId })),
 	/**  Stop key recording mode */
 	stopKeyListenerRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_key_listener_recording")),
+	getSecureInputStatus: () => __TAURI_INVOKE<SecureInputStatus>("get_secure_input_status"),
+	runKeyboardDiagnostic: (durationSecs: number | null) => typedError<KeyboardDiagnosticReport, string>(__TAURI_INVOKE("run_keyboard_diagnostic", { durationSecs })),
 	triggerUpdateCheck: () => typedError<null, string>(__TAURI_INVOKE("trigger_update_check")),
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
@@ -194,6 +198,8 @@ export const commands = {
 	startContinuousVoiceMode: () => typedError<null, string>(__TAURI_INVOKE("start_continuous_voice_mode")),
 	stopContinuousVoiceMode: () => typedError<null, string>(__TAURI_INVOKE("stop_continuous_voice_mode")),
 	setRecordingAutoStop: (enabled: boolean, silenceSecs: number) => typedError<null, string>(__TAURI_INVOKE("set_recording_auto_stop", { enabled, silenceSecs })),
+	getMicrophoneChannels: (deviceName: string) => typedError<number, string>(__TAURI_INVOKE("get_microphone_channels", { deviceName })),
+	setSelectedChannel: (channel: number | null) => typedError<null, string>(__TAURI_INVOKE("set_selected_channel", { channel })),
 	setModelUnloadTimeout: (timeout: ModelUnloadTimeout) => __TAURI_INVOKE<void>("set_model_unload_timeout", { timeout }),
 	getModelLoadStatus: () => typedError<ModelLoadStatus, string>(__TAURI_INVOKE("get_model_load_status")),
 	unloadModelManually: () => typedError<null, string>(__TAURI_INVOKE("unload_model_manually")),
@@ -348,6 +354,11 @@ export type AppSettings_Deserialize = {
 	onboarding_completed?: boolean,
 	always_on_microphone?: boolean,
 	selected_microphone?: string | null,
+	/**
+	 *  Which input channel to use on the selected microphone device.
+	 *  None means "average all channels" (original behavior).
+	 */
+	selected_channel?: number | null,
 	clamshell_microphone?: string | null,
 	selected_output_device?: string | null,
 	translate_to_english?: boolean,
@@ -388,8 +399,15 @@ export type AppSettings_Deserialize = {
 	show_tray_icon?: boolean,
 	paste_delay_ms?: number,
 	paste_delay_after_ms?: number,
+	/**
+	 *  Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
+	 *  after the target app actually reads the transcript, instead of after a
+	 *  fixed delay. See `paste_tx`. macOS and Windows only.
+	 */
+	reliable_paste?: boolean,
 	typing_tool?: TypingTool,
 	external_script_path?: string | null,
+	filler_word_removal_enabled?: boolean,
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	ort_accelerator?: OrtAcceleratorSetting,
@@ -482,6 +500,11 @@ export type AppSettings_Serialize = {
 	onboarding_completed: boolean,
 	always_on_microphone: boolean,
 	selected_microphone: string | null,
+	/**
+	 *  Which input channel to use on the selected microphone device.
+	 *  None means "average all channels" (original behavior).
+	 */
+	selected_channel: number | null,
 	clamshell_microphone: string | null,
 	selected_output_device: string | null,
 	translate_to_english: boolean,
@@ -522,8 +545,15 @@ export type AppSettings_Serialize = {
 	show_tray_icon: boolean,
 	paste_delay_ms: number,
 	paste_delay_after_ms: number,
+	/**
+	 *  Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
+	 *  after the target app actually reads the transcript, instead of after a
+	 *  fixed delay. See `paste_tx`. macOS and Windows only.
+	 */
+	reliable_paste: boolean,
 	typing_tool: TypingTool,
 	external_script_path: string | null,
+	filler_word_removal_enabled: boolean,
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	ort_accelerator: OrtAcceleratorSetting,
@@ -762,6 +792,18 @@ export type ImplementationChangeResult = {
 	success: boolean,
 	/**  List of binding IDs that were reset to defaults due to incompatibility */
 	reset_bindings: string[],
+};
+
+export type KeyboardDiagnosticReport = {
+	secure_input_enabled: boolean,
+	culprit_pid: number | null,
+	culprit_name: string | null,
+	/**  Counts only — key identity is deliberately never captured. */
+	key_down: number,
+	key_up: number,
+	flags_changed: number,
+	mouse: number,
+	duration_ms: number,
 };
 
 export type KeyboardImplementation = "tauri" | "key_listener" | "handy_keys";
@@ -1025,6 +1067,32 @@ export type SanitizationConfig = {
 };
 
 export type SecretMap = { [key in string]: string };
+
+export type SecureInputStatus = {
+	/**  Secure input is currently enabled (live check) */
+	enabled: boolean,
+	/**
+	 *  Enabled continuously long enough to be considered stuck (not just a
+	 *  password field gaining momentary focus)
+	 */
+	sustained: boolean,
+	culprit_pid: number | null,
+	culprit_name: string | null,
+	/**  Carbon fallback registrations are currently active */
+	fallback_active: boolean,
+	/**  Binding ids shadow-registered with identical semantics */
+	covered_bindings: string[],
+	/**  Side-specific binding ids widened to match either side while shadowed */
+	degraded_bindings: string[],
+	/**  Binding ids that cannot fire at all (e.g. fn+key, registration failure) */
+	uncovered_bindings: string[],
+	/**
+	 *  The user tried to record a shortcut while secure input was active.
+	 *  Treated as user impact even when every binding is covered, so the
+	 *  warning banner appears and explains why recording refused.
+	 */
+	recorder_blocked: boolean,
+};
 
 export type ShortcutBinding = {
 	id: string,

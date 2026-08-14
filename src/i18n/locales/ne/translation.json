@@ -6,7 +6,8 @@
     "unloadModel": "मोडेल अनलोड गर्नुहोस्",
     "model": "मोडेल",
     "quit": "बाहिर निस्कनुहोस्",
-    "cancel": "रद्द गर्नुहोस्"
+    "cancel": "रद्द गर्नुहोस्",
+    "secureInputWarning": "⚠ Secure Input ले सर्टकटहरू रोकेको छ"
   },
   "sidebar": {
     "general": "सामान्य",
@@ -219,7 +220,9 @@
       "deleteActiveConfirm": "{{modelName}} तपाईंको सक्रिय मोडेल हो। यसलाई मेटाउँदा नयाँ मोडेल चयन नगरेसम्म ट्रान्सक्रिप्सन रोकिनेछ। के तपाईं साँच्चै मेटाउन चाहनुहुन्छ?",
       "deleteTitle": "मोडेल मेटाउनुहोस्",
       "filters": {
-        "allLanguages": "सबै भाषाहरू"
+        "allLanguages": "सबै भाषाहरू",
+        "streaming": "लाइभ ट्रान्सक्रिप्सन समर्थन गर्ने मोडेलहरू फिल्टर गर्नुहोस्",
+        "translation": "अङ्ग्रेजीमा अनुवाद समर्थन गर्ने मोडेलहरू फिल्टर गर्नुहोस्"
       },
       "rescan": {
         "label": "फेरि स्क्यान गर्नुहोस्",
@@ -234,6 +237,12 @@
         "description": "आफ्नो मनपर्ने माइक्रोफोन डिभाइस चयन गर्नुहोस्",
         "placeholder": "माइक्रोफोन चयन गर्नुहोस्...",
         "loading": "लोड गरिँदैछ..."
+      },
+      "channel": {
+        "title": "इनपुट च्यानल",
+        "description": "रेकर्ड गर्ने इनपुट च्यानल चयन गर्नुहोस्। तपाईंको अडियो इन्टरफेसमा धेरै इनपुटहरू छन् भने यो प्रयोग गर्नुहोस्।",
+        "average": "सबै च्यानलको औसत",
+        "channel": "च्यानल {{n}}"
       },
       "audioFeedback": {
         "label": "अडियो फिडब्याक",
@@ -309,6 +318,79 @@
             "top": "माथि"
           }
         }
+      },
+      "pasteMethod": {
+        "title": "पेस्ट विधि",
+        "description": "टेक्स्ट कसरी घुसाइन्छ छान्नुहोस्। डाइरेक्ट: सिस्टम इनपुटमार्फत टाइपिङ अनुकरण गर्छ। कुनै होइन: पेस्ट नगरी हिस्ट्री/क्लिपबोर्ड मात्र अपडेट गर्छ।",
+        "options": {
+          "clipboard": "क्लिपबोर्ड ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "क्लिपबोर्ड (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "क्लिपबोर्ड (Shift+Insert)",
+          "direct": "डाइरेक्ट",
+          "none": "कुनै होइन",
+          "externalScript": "बाह्य स्क्रिप्ट"
+        },
+        "externalScriptPlaceholder": "/path/to/your/script.sh"
+      },
+      "typingTool": {
+        "title": "टाइपिङ उपकरण",
+        "description": "डाइरेक्ट पेस्ट विधिका लागि कुन Linux टाइपिङ उपकरण प्रयोग गर्ने छान्नुहोस्। Auto ले तपाईंको सिस्टमका लागि उपलब्ध उत्तम उपकरण स्वतः पत्ता लगाएर प्रयोग गर्छ।",
+        "options": {
+          "auto": "स्वतः (सिफारिस गरिएको)"
+        }
+      },
+      "clipboardHandling": {
+        "title": "क्लिपबोर्ड व्यवस्थापन",
+        "description": "'क्लिपबोर्ड परिवर्तन नगर्नुहोस्' ले ट्रान्सक्रिप्सनपछि तपाईंको हालको क्लिपबोर्ड सामग्री जोगाउँछ। 'क्लिपबोर्डमा कपी गर्नुहोस्' ले पेस्ट गरेपछि ट्रान्सक्रिप्सन नतिजा क्लिपबोर्डमा छोड्छ।",
+        "options": {
+          "dontModify": "क्लिपबोर्ड परिवर्तन नगर्नुहोस्",
+          "copyToClipboard": "क्लिपबोर्डमा कपी गर्नुहोस्"
+        }
+      },
+      "autoSubmit": {
+        "title": "स्वतः सबमिट",
+        "description": "टेक्स्ट घुसाएपछि चयन गरिएको कि संयोजन स्वतः पठाउनुहोस्। Cmd+Enter macOS मा लागू हुन्छ, भने Windows/Linux ले Super+Enter प्रयोग गर्छ।",
+        "options": {
+          "off": "अफ",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
+        }
+      },
+      "translateToEnglish": {
+        "label": "अङ्ग्रेजीमा अनुवाद गर्नुहोस्",
+        "description": "ट्रान्सक्रिप्सनका बेला अन्य भाषाको बोलीलाई स्वतः अङ्ग्रेजीमा अनुवाद गर्नुहोस्।"
+      },
+      "modelUnload": {
+        "title": "मोडेल अनलोड",
+        "description": "तोकिएको समयसम्म मोडेल प्रयोग नभएमा GPU/CPU मेमोरी स्वतः खाली गर्नुहोस्",
+        "options": {
+          "never": "कहिल्यै होइन",
+          "immediately": "तुरुन्तै",
+          "min2": "2 मिनेटपछि",
+          "min5": "5 मिनेटपछि",
+          "min10": "10 मिनेटपछि",
+          "min15": "15 मिनेटपछि",
+          "hour1": "1 घण्टापछि",
+          "sec15": "15 सेकेन्डपछि (डिबग)"
+        }
+      },
+      "customWords": {
+        "title": "कस्टम शब्दहरू",
+        "description": "समर्थित मोडेलहरूलाई नाम र विशेष शब्दावली चिन्न मद्दत गर्नुहोस्। फजी सुधार हाल A–Z अक्षर र अङ्क प्रयोग भएका शब्दहरूमा मात्र सीमित छ।",
+        "placeholder": "शब्द थप्नुहोस्",
+        "add": "थप्नुहोस्",
+        "remove": "{{word}} हटाउनुहोस्",
+        "duplicate": "\"{{word}}\" पहिले नै छ"
+      },
+      "voiceActivityDetection": {
+        "title": "भ्वाइस एक्टिभिटी डिटेक्सन",
+        "description": "रेकर्डिङबाट मौनता हटाउँछ। स्ट्रिमिङ-सक्षम मोडेलहरूले लामो VAD टेल प्रयोग गर्छन्; VAD अफ गर्दा कच्चा अडियो रेकर्ड हुन्छ।"
+      },
+      "fillerWordRemoval": {
+        "title": "फिलर शब्दहरू हटाउनुहोस्",
+        "description": "ट्रान्सक्रिप्सनबाट सामान्य हिचकिचाहटका शब्दहरू हटाउँछ। तिनलाई राख्न यो विकल्प बन्द गर्नुहोस्।"
       },
       "overlayWindow": {
         "title": "Overlay Window",
@@ -402,80 +484,9 @@
           "label": "Click Ripple",
           "description": "Show an expanding ripple circle on mouse click."
         }
-      },
-      "pasteMethod": {
-        "title": "पेस्ट विधि",
-        "description": "टेक्स्ट कसरी घुसाइन्छ छान्नुहोस्। डाइरेक्ट: सिस्टम इनपुटमार्फत टाइपिङ अनुकरण गर्छ। कुनै होइन: पेस्ट नगरी हिस्ट्री/क्लिपबोर्ड मात्र अपडेट गर्छ।",
-        "options": {
-          "clipboard": "क्लिपबोर्ड ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "क्लिपबोर्ड (Ctrl+Shift+V)",
-          "clipboardShiftInsert": "क्लिपबोर्ड (Shift+Insert)",
-          "direct": "डाइरेक्ट",
-          "none": "कुनै होइन",
-          "externalScript": "बाह्य स्क्रिप्ट"
-        },
-        "externalScriptPlaceholder": "/path/to/your/script.sh"
-      },
-      "typingTool": {
-        "title": "टाइपिङ उपकरण",
-        "description": "डाइरेक्ट पेस्ट विधिका लागि कुन Linux टाइपिङ उपकरण प्रयोग गर्ने छान्नुहोस्। Auto ले तपाईंको सिस्टमका लागि उपलब्ध उत्तम उपकरण स्वतः पत्ता लगाएर प्रयोग गर्छ।",
-        "options": {
-          "auto": "स्वतः (सिफारिस गरिएको)"
-        }
-      },
-      "clipboardHandling": {
-        "title": "क्लिपबोर्ड व्यवस्थापन",
-        "description": "'क्लिपबोर्ड परिवर्तन नगर्नुहोस्' ले ट्रान्सक्रिप्सनपछि तपाईंको हालको क्लिपबोर्ड सामग्री जोगाउँछ। 'क्लिपबोर्डमा कपी गर्नुहोस्' ले पेस्ट गरेपछि ट्रान्सक्रिप्सन नतिजा क्लिपबोर्डमा छोड्छ।",
-        "options": {
-          "dontModify": "क्लिपबोर्ड परिवर्तन नगर्नुहोस्",
-          "copyToClipboard": "क्लिपबोर्डमा कपी गर्नुहोस्"
-        }
-      },
-      "autoSubmit": {
-        "title": "स्वतः सबमिट",
-        "description": "टेक्स्ट घुसाएपछि चयन गरिएको कि संयोजन स्वतः पठाउनुहोस्। Cmd+Enter macOS मा लागू हुन्छ, भने Windows/Linux ले Super+Enter प्रयोग गर्छ।",
-        "options": {
-          "off": "अफ",
-          "enter": "Enter",
-          "cmdEnter": "Cmd+Enter",
-          "superEnter": "Super+Enter",
-          "ctrlEnter": "Ctrl+Enter"
-        }
-      },
-      "translateToEnglish": {
-        "label": "अङ्ग्रेजीमा अनुवाद गर्नुहोस्",
-        "description": "ट्रान्सक्रिप्सनका बेला अन्य भाषाको बोलीलाई स्वतः अङ्ग्रेजीमा अनुवाद गर्नुहोस्।"
-      },
-      "modelUnload": {
-        "title": "मोडेल अनलोड",
-        "description": "तोकिएको समयसम्म मोडेल प्रयोग नभएमा GPU/CPU मेमोरी स्वतः खाली गर्नुहोस्",
-        "options": {
-          "never": "कहिल्यै होइन",
-          "immediately": "तुरुन्तै",
-          "min2": "2 मिनेटपछि",
-          "min5": "5 मिनेटपछि",
-          "min10": "10 मिनेटपछि",
-          "min15": "15 मिनेटपछि",
-          "hour1": "1 घण्टापछि",
-          "sec15": "15 सेकेन्डपछि (डिबग)"
-        }
-      },
-      "customWords": {
-        "title": "कस्टम शब्दहरू",
-        "description": "समर्थित मोडेलहरूलाई नाम र विशेष शब्दावली चिन्न मद्दत गर्नुहोस्। फजी सुधार हाल A–Z अक्षर र अङ्क प्रयोग भएका शब्दहरूमा मात्र सीमित छ।",
-        "placeholder": "शब्द थप्नुहोस्",
-        "add": "थप्नुहोस्",
-        "remove": "{{word}} हटाउनुहोस्",
-        "duplicate": "\"{{word}}\" पहिले नै छ"
-      },
-      "voiceActivityDetection": {
-        "title": "भ्वाइस एक्टिभिटी डिटेक्सन",
-        "description": "रेकर्डिङबाट मौनता हटाउँछ। स्ट्रिमिङ-सक्षम मोडेलहरूले लामो VAD टेल प्रयोग गर्छन्; VAD अफ गर्दा कच्चा अडियो रेकर्ड हुन्छ।"
       }
     },
     "postProcessing": {
-      "title": "Post Process",
-      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
         "title": "हटकी"
       },
@@ -507,6 +518,29 @@
           "refreshModels": "मोडेलहरू रिफ्रेस गर्नुहोस्"
         }
       },
+      "prompts": {
+        "title": "प्रम्प्ट",
+        "selectedPrompt": {
+          "title": "चयन गरिएको प्रम्प्ट",
+          "description": "ट्रान्सक्रिप्सन परिष्कृत गर्न टेम्प्लेट चयन गर्नुहोस् वा नयाँ बनाउनुहोस्। क्याप्चर गरिएको ट्रान्सक्रिप्ट उल्लेख गर्न प्रम्प्ट टेक्स्टभित्र ${output} प्रयोग गर्नुहोस्।"
+        },
+        "noPrompts": "कुनै प्रम्प्ट उपलब्ध छैन",
+        "selectPrompt": "प्रम्प्ट चयन गर्नुहोस्",
+        "createNew": "नयाँ प्रम्प्ट बनाउनुहोस्",
+        "promptLabel": "प्रम्प्ट लेबल",
+        "promptLabelPlaceholder": "प्रम्प्टको नाम लेख्नुहोस्",
+        "promptInstructions": "प्रम्प्ट निर्देशनहरू",
+        "promptInstructionsPlaceholder": "ट्रान्सक्रिप्सनपछि चलाउने निर्देशनहरू लेख्नुहोस्। उदाहरण: निम्न टेक्स्टको व्याकरण र स्पष्टता सुधार गर्नुहोस्: ${output}",
+        "promptTip": "सुझाव: प्रम्प्टमा ट्रान्सक्राइब गरिएको टेक्स्ट घुसाउन <code>${output}</code> प्रयोग गर्नुहोस्।",
+        "updatePrompt": "प्रम्प्ट अपडेट गर्नुहोस्",
+        "deletePrompt": "प्रम्प्ट मेटाउनुहोस्",
+        "createPrompt": "प्रम्प्ट बनाउनुहोस्",
+        "cancel": "रद्द गर्नुहोस्",
+        "selectToEdit": "विवरण हेर्न र सम्पादन गर्न माथिबाट प्रम्प्ट चयन गर्नुहोस्।",
+        "createFirst": "आफ्नो पहिलो पोस्ट-प्रोसेसिङ प्रम्प्ट बनाउन माथिको 'नयाँ प्रम्प्ट बनाउनुहोस्' क्लिक गर्नुहोस्।"
+      },
+      "title": "Post Process",
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {
         "title": "Default Shortcut",
         "toggleLabel": "Enable default post-processing shortcut",
@@ -536,27 +570,6 @@
         "empty": "Create your first action to start processing transcriptions with custom prompts.",
         "emptyTitle": "No actions yet",
         "noModelShort": "No model"
-      },
-      "prompts": {
-        "title": "प्रम्प्ट",
-        "selectedPrompt": {
-          "title": "चयन गरिएको प्रम्प्ट",
-          "description": "ट्रान्सक्रिप्सन परिष्कृत गर्न टेम्प्लेट चयन गर्नुहोस् वा नयाँ बनाउनुहोस्। क्याप्चर गरिएको ट्रान्सक्रिप्ट उल्लेख गर्न प्रम्प्ट टेक्स्टभित्र ${output} प्रयोग गर्नुहोस्।"
-        },
-        "noPrompts": "कुनै प्रम्प्ट उपलब्ध छैन",
-        "selectPrompt": "प्रम्प्ट चयन गर्नुहोस्",
-        "createNew": "नयाँ प्रम्प्ट बनाउनुहोस्",
-        "promptLabel": "प्रम्प्ट लेबल",
-        "promptLabelPlaceholder": "प्रम्प्टको नाम लेख्नुहोस्",
-        "promptInstructions": "प्रम्प्ट निर्देशनहरू",
-        "promptInstructionsPlaceholder": "ट्रान्सक्रिप्सनपछि चलाउने निर्देशनहरू लेख्नुहोस्। उदाहरण: निम्न टेक्स्टको व्याकरण र स्पष्टता सुधार गर्नुहोस्: ${output}",
-        "promptTip": "सुझाव: प्रम्प्टमा ट्रान्सक्राइब गरिएको टेक्स्ट घुसाउन <code>${output}</code> प्रयोग गर्नुहोस्।",
-        "updatePrompt": "प्रम्प्ट अपडेट गर्नुहोस्",
-        "deletePrompt": "प्रम्प्ट मेटाउनुहोस्",
-        "createPrompt": "प्रम्प्ट बनाउनुहोस्",
-        "cancel": "रद्द गर्नुहोस्",
-        "selectToEdit": "विवरण हेर्न र सम्पादन गर्न माथिबाट प्रम्प्ट चयन गर्नुहोस्।",
-        "createFirst": "आफ्नो पहिलो पोस्ट-प्रोसेसिङ प्रम्प्ट बनाउन माथिको 'नयाँ प्रम्प्ट बनाउनुहोस्' क्लिक गर्नुहोस्।"
       }
     },
     "history": {
@@ -568,12 +581,12 @@
       "save": "ट्रान्सक्रिप्सन सेभ गर्नुहोस्",
       "unsave": "सेभ गरिएकाबाट हटाउनुहोस्",
       "delete": "प्रविष्टि मेटाउनुहोस्",
-      "deleteAll": "Delete All",
       "deleteError": "प्रविष्टि मेटाउन सकिएन। कृपया फेरि प्रयास गर्नुहोस्।",
       "retranscribe": "फेरि ट्रान्सक्राइब गर्नुहोस्",
       "retranscribeError": "फेरि ट्रान्सक्राइब गर्न सकिएन। कृपया फेरि प्रयास गर्नुहोस्।",
       "transcribing": "ट्रान्सक्राइब गरिँदैछ...",
       "transcriptionFailed": "ट्रान्सक्रिप्सन गर्न सकिएन। रिट्राई आइकन प्रयोग गरेर फेरि ट्रान्सक्राइब गर्न सक्नुहुन्छ।",
+      "deleteAll": "Delete All",
       "processWith": "Process with action…",
       "processError": "Failed to process entry with action.",
       "processed": "Processed",
@@ -675,9 +688,33 @@
         "title": "पेस्ट ढिलाइ (पछि)",
         "description": "पेस्ट किस्ट्रोकपछि, तपाईंको अघिल्लो क्लिपबोर्ड पुनर्स्थापना गर्नुअघिको ढिलाइ (मिलिसेकेन्डमा)। ट्रान्सक्रिप्सनको सट्टा पुरानो क्लिपबोर्ड सामग्री पेस्ट भइरहेको छ भने बढाउनुहोस्।"
       },
+      "reliablePaste": {
+        "title": "भरपर्दो पेस्ट (Beta)",
+        "description": "निश्चित ढिलाइपछि नभई, लक्षित एपले ट्रान्सक्रिप्सन साँच्चै पढेपछि मात्र क्लिपबोर्ड पुनर्स्थापना गर्नुहोस्। प्रणालीमा भार बढ्दा पुरानो क्लिपबोर्ड सामग्री पेस्ट हुने समस्या समाधान गर्न बनाइएको। क्लिपबोर्ड प्रयोग गर्ने पेस्ट विधि आवश्यक; macOS र Windows मा मात्र।"
+      },
       "recordingBuffer": {
         "title": "अतिरिक्त रेकर्डिङ बफर",
         "description": "कि छोडेपछि अन्तिम अडियो समात्न रेकर्डिङ जारी राख्ने अतिरिक्त समय (मिलिसेकेन्डमा)। 0 = कुनै अतिरिक्त बफर छैन।"
+      },
+      "keyboardDiagnostic": {
+        "title": "किबोर्ड डायग्नोस्टिक",
+        "description": "किबोर्ड इभेन्टहरू Handy सम्म पुग्छन् कि पुग्दैनन् भनी जाँच्छ। इभेन्टको संख्या मात्र रेकर्ड हुन्छ — तपाईंले कुन कुञ्जी थिच्नुभयो भन्ने कहिल्यै होइन।",
+        "run": "१० सेकेन्डको डायग्नोस्टिक चलाउनुहोस्",
+        "running": "सुनिरहेको छ… आफ्नो सर्टकट केही पटक थिच्नुहोस् (जस्तै Option+Space)",
+        "secureInputLabel": "Secure Input",
+        "enabled": "सक्षम",
+        "disabled": "अक्षम",
+        "holder": "{{name}} (pid {{pid}}) ले समातेको छ",
+        "holderUnknown": "देखिने कुनै धारक छैन",
+        "keyDown": "कुञ्जी थिचिएको",
+        "keyUp": "कुञ्जी छाडिएको",
+        "flagsChanged": "मोडिफायर",
+        "mouse": "माउस",
+        "verdictBlocked": "Secure Input ले कुञ्जी इभेन्टहरू रोकिरहेको छ — यो समाधान नभएसम्म सामान्य कुञ्जी भएका सर्टकटहरूले काम गर्न सक्दैनन्।",
+        "verdictSuspicious": "मोडिफायर इभेन्टहरू आए तर कुञ्जी इभेन्ट आएनन् — Secure Input अक्षम देखिए पनि केहीले कुञ्जीहरू दबाइरहेको छ। कृपया यसको रिपोर्ट GitHub मा गर्नुहोस्।",
+        "verdictOk": "कुञ्जी इभेन्टहरू Handy सम्म सामान्य रूपमा पुगिरहेका छन्।",
+        "verdictNoEvents": "कुनै इभेन्ट कैद भएन — के तपाईंले परीक्षणको क्रममा कुनै कुञ्जी थिच्नुभयो?",
+        "failed": "डायग्नोस्टिक असफल: {{error}}"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -725,6 +762,11 @@
       },
       "acknowledgments": {
         "title": "आभार",
+        "ggml": {
+          "title": "ggml",
+          "description": "अन-डिभाइस मेसिन लर्निङ अनुमानका लागि उच्च-प्रदर्शन टेन्सर लाइब्रेरी",
+          "details": "Handy को स्थानीय स्पिच-टु-टेक्स्ट transcribe.cpp र ggml मा आधारित छ। Georgi Gerganov र योगदानकर्ताहरूको उत्कृष्ट कामका लागि धन्यवाद।"
+        },
         "forkLineage": {
           "title": "Project Lineage & Forks",
           "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
@@ -754,11 +796,6 @@
           "title": "Python & ML Ecosystem",
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
-        },
-        "ggml": {
-          "title": "ggml",
-          "description": "अन-डिभाइस मेसिन लर्निङ अनुमानका लागि उच्च-प्रदर्शन टेन्सर लाइब्रेरी",
-          "details": "Handy को स्थानीय स्पिच-टु-टेक्स्ट transcribe.cpp र ggml मा आधारित छ। Georgi Gerganov र योगदानकर्ताहरूको उत्कृष्ट कामका लागि धन्यवाद।"
         }
       }
     },
@@ -974,15 +1011,6 @@
     }
   },
   "footer": {
-    "stt": "STT",
-    "brain": "Brain",
-    "brainTitle": "AI Brain",
-    "brainActiveProvider": "Active Provider",
-    "tts": "TTS",
-    "ttsTitle": "Speech (TTS)",
-    "ttsEngine": "Speech Engine",
-    "voicesCount": "{{count}} voices",
-    "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "अपडेटहरू जाँच गरिँदैछ...",
     "updateAvailableShort": "अपडेट उपलब्ध छ",
     "upToDate": "अद्यावधिक छ",
@@ -993,7 +1021,18 @@
     "checkForUpdates": "अपडेटहरू जाँच गर्नुहोस्",
     "portableUpdateTitle": "म्यानुअल अपडेट आवश्यक",
     "portableUpdateMessage": "पोर्टेबल इन्स्टलहरू स्वतः अपडेट गर्न सकिँदैन। अपडेट गर्न: GitHub Releases बाट पछिल्लो NSIS इन्स्टलर डाउनलोड गर्नुहोस्, उही फोल्डरमा इन्स्टल गर्नुहोस्, अनि पुरानो संस्करणबाट आफ्नो Data/ फोल्डर (सेटिङ, मोडेल, रेकर्डिङ) नयाँमा कपी गर्नुहोस्।",
-    "portableUpdateButton": "GitHub Releases खोल्नुहोस्"
+    "portableUpdateButton": "GitHub Releases खोल्नुहोस्",
+    "portableUpdateBrowseMessage": "पोर्टेबल इन्स्टलहरू स्वतः अपडेट गर्न सकिँदैन। GitHub Releases बाट आफ्नो प्रणालीका लागि पछिल्लो संस्करण डाउनलोड गर्नुहोस् र उही फोल्डरमा इन्स्टल गर्नुहोस् — तपाईंको Data/ फोल्डर (सेटिङ, मोडेल, रेकर्डिङ) जस्ताको तस्तै रहन्छ।",
+    "portableUpdateBrowseButton": "GitHub Releases खोल्नुहोस्",
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
+    "voicesCount": "{{count}} voices",
+    "downloadingModel": "Downloading {{model}}..."
   },
   "whatsNew": {
     "title": "Handy v{{version}} मा नयाँ"
@@ -1008,9 +1047,9 @@
     "noOptionsFound": "कुनै विकल्प भेटिएन"
   },
   "accessibility": {
-    "permissionsRequired": "Accessibility Permissions Required",
     "permissionsDescription": "ट्रान्सक्राइब गरिएको टेक्स्ट टाइप गर्न Handy लाई एक्सेसिबिलिटी अनुमति चाहिन्छ।",
     "openSettings": "सिस्टम सेटिङहरू खोल्नुहोस्",
+    "permissionsRequired": "Accessibility Permissions Required",
     "dismiss": "Dismiss"
   },
   "errors": {
@@ -1049,6 +1088,17 @@
     "processing": "प्रशोधन गरिँदैछ...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
+  },
+  "secureInput": {
+    "blockedWithCulprit_one": "{{name}} ले 1 सर्टकट रोकिरहेको हुन सक्छ",
+    "blockedWithCulprit_other": "{{name}} ले {{count}} सर्टकटहरू रोकिरहेको हुन सक्छ",
+    "blockedNoCulprit_one": "macOS ले अस्थायी रूपमा 1 सर्टकट रोकिरहेको छ",
+    "blockedNoCulprit_other": "macOS ले अस्थायी रूपमा {{count}} सर्टकटहरू रोकिरहेको छ",
+    "recorderBlockedWithCulprit": "{{name}} ले सर्टकट परिवर्तन रोकिरहेको हुन सक्छ",
+    "recorderBlockedNoCulprit": "macOS ले अस्थायी रूपमा सर्टकट परिवर्तन रोकिरहेको छ",
+    "learnMore": "यसलाई कसरी ठिक गर्ने",
+    "recorderBlocked": "अहिले सर्टकट रेकर्ड गर्न सकिँदैन — macOS Secure Input ले कुञ्जी इभेन्टहरू रोकिरहेको छ। पहिले Secure Input चेतावनी समाधान गर्नुहोस्।",
+    "dismiss": "हटाउनुहोस्"
   },
   "conversation": {
     "disabledHint": "The Brain is disabled. Enable it in the Brain settings to start a conversation.",

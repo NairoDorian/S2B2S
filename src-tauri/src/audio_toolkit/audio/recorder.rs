@@ -22,9 +22,9 @@ use tauri::Emitter;
 
 enum Cmd {
     /// Begin capturing. Carries the send timestamp so the consumer can log how
-    /// long the command sat in the channel (and how much audio was dropped
-    /// before it was seen).
-    Start(VadPolicy, Instant),
+    /// long the command sat in the channel, plus a one-shot acknowledgement
+    /// sent only after the first microphone sample chunk is processed.
+    Start(VadPolicy, Instant, mpsc::Sender<()>),
     Stop(mpsc::Sender<Vec<f32>>),
     Shutdown,
 }
@@ -78,6 +78,8 @@ pub struct AudioRecorder {
     vad: Option<VadConfig>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     audio_cb: Option<AudioFrameCallback>,
+    /// Which input channel to use. None = average all (original behavior).
+    selected_channel: Option<usize>,
     /// Preferred stream config cached per device name. The two HAL property
     /// queries in `get_preferred_config` cost ~40-85ms per open (worse on
     /// USB/Bluetooth), which lands on the keypress->capture path in on-demand
@@ -104,6 +106,7 @@ impl AudioRecorder {
             vad: None,
             level_cb: None,
             audio_cb: None,
+            selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             pause_flag: None,
             noise_suppression_enabled: None,
@@ -187,9 +190,25 @@ impl AudioRecorder {
         self
     }
 
+    pub fn with_selected_channel(mut self, channel: Option<u16>) -> Self {
+        self.set_selected_channel(channel);
+        self
+    }
+
+    pub fn set_selected_channel(&mut self, channel: Option<u16>) {
+        self.selected_channel = channel.map(usize::from);
+    }
+
     pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
         if self.worker_handle.is_some() {
-            return Ok(()); // already open
+            if !self.is_capture_worker_dead() {
+                return Ok(()); // already open
+            }
+            // The worker exited on its own (see `is_capture_worker_dead`). Reap
+            // it so we rebuild the stream below instead of handing the caller
+            // back a recorder whose channels are already closed.
+            log::warn!("Capture worker exited; rebuilding microphone stream");
+            let _ = self.close();
         }
 
         let (sample_tx, sample_rx) = mpsc::channel::<AudioChunk>();
@@ -210,6 +229,7 @@ impl AudioRecorder {
         let level_cb = self.level_cb.clone();
         // Move the optional real-time audio frame callback into the worker thread
         let audio_cb = self.audio_cb.clone();
+        let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         // S2B2S-specific state
         let pause_flag = self.pause_flag.clone();
@@ -255,6 +275,20 @@ impl AudioRecorder {
                     config.sample_format()
                 );
 
+                if let Some(channel) = selected_channel {
+                    if channel < channels {
+                        log::info!("Using selected input channel: {}", channel + 1);
+                    } else {
+                        log::warn!(
+                            "Selected input channel {} is out of range for a {}-channel device; averaging all channels instead",
+                            channel + 1,
+                            channels
+                        );
+                    }
+                } else {
+                    log::info!("Averaging all {} input channels", channels);
+                }
+
                 let build_started = Instant::now();
                 let stream = match config.sample_format() {
                     cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
@@ -262,6 +296,7 @@ impl AudioRecorder {
                         &config,
                         sample_tx,
                         channels,
+                        selected_channel,
                         stop_flag_for_stream,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?,
@@ -270,6 +305,7 @@ impl AudioRecorder {
                         &config,
                         sample_tx,
                         channels,
+                        selected_channel,
                         stop_flag_for_stream,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?,
@@ -278,6 +314,7 @@ impl AudioRecorder {
                         &config,
                         sample_tx,
                         channels,
+                        selected_channel,
                         stop_flag_for_stream,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?,
@@ -286,6 +323,7 @@ impl AudioRecorder {
                         &config,
                         sample_tx,
                         channels,
+                        selected_channel,
                         stop_flag_for_stream,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?,
@@ -294,6 +332,7 @@ impl AudioRecorder {
                         &config,
                         sample_tx,
                         channels,
+                        selected_channel,
                         stop_flag_for_stream,
                     )
                     .map_err(|e| format!("Failed to build input stream: {e}"))?,
@@ -386,11 +425,21 @@ impl AudioRecorder {
         }
     }
 
-    pub fn start(&self, vad_policy: VadPolicy) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(tx) = &self.cmd_tx {
-            tx.send(Cmd::Start(vad_policy, Instant::now()))?;
-        }
-        Ok(())
+    /// Queue a recording start and return a one-shot receiver that resolves only
+    /// after the first real microphone sample chunk has entered the capture path.
+    /// `Stream::play()` returning is not sufficient: some Bluetooth and USB
+    /// devices take much longer to begin delivering callbacks.
+    pub fn start(
+        &self,
+        vad_policy: VadPolicy,
+    ) -> Result<mpsc::Receiver<()>, Box<dyn std::error::Error>> {
+        let tx = self
+            .cmd_tx
+            .as_ref()
+            .ok_or_else(|| Error::other("Recorder is not open"))?;
+        let (ready_tx, ready_rx) = mpsc::channel();
+        tx.send(Cmd::Start(vad_policy, Instant::now(), ready_tx))?;
+        Ok(ready_rx)
     }
 
     pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -399,6 +448,20 @@ impl AudioRecorder {
             tx.send(Cmd::Stop(resp_tx))?;
         }
         Ok(resp_rx.recv()?) // wait for the samples
+    }
+
+    /// True once the capture worker has exited without anyone calling `close`.
+    ///
+    /// `run_consumer` is driven entirely by the sample channel, so when cpal
+    /// tears the stream down mid-session (device unplugged, USB/Bluetooth
+    /// dropout) `sample_rx.recv()` returns `Err`, the loop ends and the worker
+    /// thread finishes. `cmd_tx` and `worker_handle` are still populated at
+    /// that point, so the recorder looks open from the outside while every
+    /// command sent to it fails on a closed channel.
+    pub fn is_capture_worker_dead(&self) -> bool {
+        self.worker_handle
+            .as_ref()
+            .is_some_and(|handle| handle.is_finished())
     }
 
     pub fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -417,6 +480,7 @@ impl AudioRecorder {
         config: &cpal::SupportedStreamConfig,
         sample_tx: mpsc::Sender<AudioChunk>,
         channels: usize,
+        selected_channel: Option<usize>,
         stop_flag: Arc<AtomicBool>,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
@@ -425,6 +489,13 @@ impl AudioRecorder {
     {
         let mut output_buffer = Vec::new();
         let mut eos_sent = false;
+        // Resolve the effective channel to use. If the selected channel is
+        // out of range for this device, fall back to averaging all channels.
+        let use_channel: Option<usize> = match selected_channel {
+            Some(ch) if ch < channels => Some(ch),
+            Some(_) => None, // out of range, fall back to average
+            None => None,    // user chose "average all"
+        };
 
         let stream_cb = move |data: &[T], _: &cpal::InputCallbackInfo| {
             if stop_flag.load(Ordering::Relaxed) {
@@ -444,13 +515,20 @@ impl AudioRecorder {
                 let frame_count = data.len() / channels;
                 output_buffer.reserve(frame_count);
 
-                for frame in data.chunks_exact(channels) {
-                    let mono_sample = frame
-                        .iter()
-                        .map(|&sample| sample.to_sample::<f32>())
-                        .sum::<f32>()
-                        / channels as f32;
-                    output_buffer.push(mono_sample);
+                if let Some(ch) = use_channel {
+                    for frame in data.chunks_exact(channels) {
+                        let mono_sample = frame[ch].to_sample::<f32>();
+                        output_buffer.push(mono_sample);
+                    }
+                } else {
+                    for frame in data.chunks_exact(channels) {
+                        let mono_sample = frame
+                            .iter()
+                            .map(|&sample| sample.to_sample::<f32>())
+                            .sum::<f32>()
+                            / channels as f32;
+                        output_buffer.push(mono_sample);
+                    }
                 }
             }
 
@@ -468,6 +546,12 @@ impl AudioRecorder {
             |err| log::error!("Stream error: {}", err),
             None,
         )
+    }
+
+    pub fn preferred_input_channel_count(
+        device: &cpal::Device,
+    ) -> Result<u16, Box<dyn std::error::Error>> {
+        Ok(Self::get_preferred_config(device)?.channels())
     }
 
     fn get_preferred_config(
@@ -540,6 +624,58 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
             && normalized.contains("coreaudio"))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{is_microphone_access_denied, is_no_input_device_error, AudioRecorder};
+
+    #[test]
+    fn unopened_recorder_is_not_reported_dead() {
+        // No worker has been spawned yet, so there is nothing to reap. Guards
+        // against inverting the "no worker" case, which would make every first
+        // open() take the rebuild path.
+        let recorder = AudioRecorder::new().expect("recorder");
+        assert!(!recorder.is_capture_worker_dead());
+    }
+
+    #[test]
+    fn detects_access_is_denied() {
+        assert!(is_microphone_access_denied("Access is denied"));
+    }
+
+    #[test]
+    fn detects_permission_denied() {
+        assert!(is_microphone_access_denied("permission denied"));
+    }
+
+    #[test]
+    fn detects_windows_error_code() {
+        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_errors() {
+        assert!(!is_microphone_access_denied("device not found"));
+    }
+
+    #[test]
+    fn detects_no_input_device() {
+        assert!(is_no_input_device_error("No input device found"));
+    }
+
+    #[test]
+    fn detects_coreaudio_config_error() {
+        assert!(is_no_input_device_error(
+            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
+        ));
+    }
+
+    #[test]
+    fn does_not_match_other_errors_for_no_device() {
+        assert!(!is_no_input_device_error("permission denied"));
+        assert!(!is_no_input_device_error("device not found"));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_consumer(
     in_sample_rate: u32,
@@ -581,6 +717,7 @@ fn run_consumer(
     // when Cmd::Start lands.
     let mut first_chunk_logged = false;
     let mut awaiting_first_captured_chunk: Option<Instant> = None;
+    let mut capture_ready_tx: Option<mpsc::Sender<()>> = None;
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -647,12 +784,13 @@ fn run_consumer(
         let mut pending = Some(chunk);
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                Cmd::Start(policy, sent_at) => {
+                Cmd::Start(policy, sent_at, ready_tx) => {
                     log::debug!(
                         "Cmd::Start processed {:?} after send; capture begins with the in-flight chunk",
                         sent_at.elapsed()
                     );
                     awaiting_first_captured_chunk = Some(Instant::now());
+                    capture_ready_tx = Some(ready_tx);
                     stop_flag.store(false, Ordering::Relaxed);
                     vad_policy = policy;
                     processed_samples.clear();
@@ -673,6 +811,10 @@ fn run_consumer(
                 }
                 Cmd::Stop(reply_tx) => {
                     recording = false;
+                    // If Stop was queued before the first chunk, dropping this
+                    // sender prevents a stale ready UI event or start chime.
+                    capture_ready_tx = None;
+                    awaiting_first_captured_chunk = None;
                     stop_flag.store(true, Ordering::Relaxed);
 
                     // The chunk in hand arrived before the stop; it belongs to
@@ -759,153 +901,167 @@ fn run_consumer(
             .map(|f| f.load(Ordering::Relaxed))
             .unwrap_or(false);
 
-        // ---------- spectrum processing ---------------------------------- //
-        let visualizer_input = if is_paused {
-            vec![0.0f32; raw.len()]
-        } else {
-            raw.clone()
-        };
-        if let Some(buckets) = visualizer.feed(&visualizer_input) {
-            if let Some(cb) = &level_cb {
-                cb(buckets);
-            }
-        }
-
-        if is_paused {
-            continue;
-        }
-
-        // ---------- existing pipeline ------------------------------------ //
         let is_continuous = continuous_mode
             .as_ref()
             .map(|f| f.load(Ordering::Relaxed))
             .unwrap_or(false);
-        let is_continuous_paused = continuous_mode_paused
+
+        let has_wake_word = wake_word_detector
             .as_ref()
-            .map(|f| f.load(Ordering::Relaxed))
+            .map(|d| d.active.load(Ordering::SeqCst))
             .unwrap_or(false);
 
-        if is_continuous && is_continuous_paused {
-            processed_samples.clear();
-            recording = false;
-            silence_frames = 0;
-            if let Some(cfg) = &vad {
-                cfg.detector.lock().unwrap().reset();
+        // ---------- spectrum & recording-time processing ----------------- //
+        // In always-on mode the capture stream stays open continuously for
+        // zero-latency start, so while idle (not recording) there is nothing to
+        // do with a chunk: handle_frame returns early when not recording, which
+        // means the resampled output would be discarded, and the level meter has
+        // no idle consumer. Skip both the level-meter FFT and the resampler while
+        // idle (unless continuous mode or wake word is active) to avoid doing
+        // unnecessary work whose output is thrown away.
+        if recording || is_continuous || has_wake_word {
+            let visualizer_input = if is_paused {
+                vec![0.0f32; raw.len()]
+            } else {
+                raw.clone()
+            };
+            if let Some(buckets) = visualizer.feed(&visualizer_input) {
+                if let Some(cb) = &level_cb {
+                    cb(buckets);
+                }
             }
-        }
 
-        frame_resampler.push(&raw, &mut |frame: &[f32]| {
-            // Apply noise suppression if enabled (S2B2S feature)
-            let ns_on = noise_suppression_enabled
+            if is_paused {
+                continue;
+            }
+
+            let is_continuous_paused = continuous_mode_paused
                 .as_ref()
                 .map(|f| f.load(Ordering::Relaxed))
                 .unwrap_or(false);
-            let processed: Vec<f32> = if ns_on {
-                if let Some(ns) = &mut standalone_ns {
-                    let (denoised, _) = ns.process_16khz_frame(frame);
-                    denoised
-                } else {
-                    frame.to_vec()
-                }
-            } else {
-                frame.to_vec()
-            };
 
-            // Feed wake word detector if active (S2B2S feature)
-            if let Some(detector) = &wake_word_detector {
-                if detector.active.load(Ordering::SeqCst) {
-                    detector.feed_audio(&processed);
+            if is_continuous && is_continuous_paused {
+                processed_samples.clear();
+                recording = false;
+                silence_frames = 0;
+                if let Some(cfg) = &vad {
+                    cfg.detector.lock().unwrap().reset();
                 }
             }
 
-            if is_continuous {
-                // Continuous voice mode: barge-in + auto-segment
-                if is_continuous_paused {
-                    // Barge-in: VAD still runs to detect new user speech during TTS
-                    if let Some(cfg) = &vad {
-                        let mut det = cfg.detector.lock().unwrap();
-                        if det.push_frame(&processed).unwrap_or(VadFrame::Noise).is_speech() {
-                            if !recording {
-                                recording = true;
-                                silence_frames = 0;
-                                log::info!("[ContinuousVoice Barge-in] VAD detected user speech start during TTS!");
-                                if let Some(app) = &app_handle {
-                                    let _ = app.emit("continuous-voice:speech-started", ());
-                                }
-                            }
-                        } else if recording {
-                            silence_frames += 1;
-                            if silence_frames >= 40 {
-                                recording = false;
-                                silence_frames = 0;
-                                if let Some(cfg2) = &vad {
-                                    cfg2.detector.lock().unwrap().reset();
-                                }
-                            }
-                        }
+            frame_resampler.push(&raw, &mut |frame: &[f32]| {
+                // Apply noise suppression if enabled (S2B2S feature)
+                let ns_on = noise_suppression_enabled
+                    .as_ref()
+                    .map(|f| f.load(Ordering::Relaxed))
+                    .unwrap_or(false);
+                let processed: Vec<f32> = if ns_on {
+                    if let Some(ns) = &mut standalone_ns {
+                        let (denoised, _) = ns.process_16khz_frame(frame);
+                        denoised
+                    } else {
+                        frame.to_vec()
                     }
-                } else if let Some(cfg) = &vad {
-                    let mut det = cfg.detector.lock().unwrap();
-                    match det
-                        .push_frame(&processed)
-                        .unwrap_or(VadFrame::Noise)
-                    {
-                        VadFrame::Speech(buf) => {
-                            if !recording {
-                                recording = true;
-                                processed_samples.clear();
-                                processed_samples.extend_from_slice(buf);
-                                log::info!("[ContinuousVoice] VAD detected speech START!");
-                                if let Some(app) = &app_handle {
-                                    let _ = app.emit("continuous-voice:speech-started", ());
+                } else {
+                    frame.to_vec()
+                };
+
+                // Feed wake word detector if active (S2B2S feature)
+                if let Some(detector) = &wake_word_detector {
+                    if detector.active.load(Ordering::SeqCst) {
+                        detector.feed_audio(&processed);
+                    }
+                }
+
+                if is_continuous {
+                    // Continuous voice mode: barge-in + auto-segment
+                    if is_continuous_paused {
+                        // Barge-in: VAD still runs to detect new user speech during TTS
+                        if let Some(cfg) = &vad {
+                            let mut det = cfg.detector.lock().unwrap();
+                            if det.push_frame(&processed).unwrap_or(VadFrame::Noise).is_speech() {
+                                if !recording {
+                                    recording = true;
+                                    silence_frames = 0;
+                                    log::info!("[ContinuousVoice Barge-in] VAD detected user speech start during TTS!");
+                                    if let Some(app) = &app_handle {
+                                        let _ = app.emit("continuous-voice:speech-started", ());
+                                    }
                                 }
-                            } else {
-                                processed_samples.extend_from_slice(buf);
-                            }
-                            silence_frames = 0;
-                        }
-                        VadFrame::Noise => {
-                            if recording {
+                            } else if recording {
                                 silence_frames += 1;
                                 if silence_frames >= 40 {
                                     recording = false;
-                                    let duration_secs = processed_samples.len() as f64 / 16000.0;
-                                    log::info!(
-                                        "[ContinuousVoice] VAD detected speech END! Captured {} samples ({:.2}s)",
-                                        processed_samples.len(),
-                                        duration_secs
-                                    );
-                                    if let Some(app) = &app_handle {
-                                        let _ = app.emit("continuous-voice:speech-ended", ());
-                                    }
-                                    let samples = std::mem::take(&mut processed_samples);
-                                    if let Some(app) = &app_handle {
-                                        let app_clone = app.clone();
-                                        std::thread::spawn(move || {
-                                            if let Err(e) = crate::managers::continuous_voice::process_continuous_samples(&app_clone, samples) {
-                                                log::error!("Error in continuous voice pipeline: {}", e);
-                                            }
-                                        });
-                                    }
                                     silence_frames = 0;
+                                    if let Some(cfg2) = &vad {
+                                        cfg2.detector.lock().unwrap().reset();
+                                    }
                                 }
                             }
                         }
+                    } else if let Some(cfg) = &vad {
+                        let mut det = cfg.detector.lock().unwrap();
+                        match det
+                            .push_frame(&processed)
+                            .unwrap_or(VadFrame::Noise)
+                        {
+                            VadFrame::Speech(buf) => {
+                                if !recording {
+                                    recording = true;
+                                    processed_samples.clear();
+                                    processed_samples.extend_from_slice(buf);
+                                    log::info!("[ContinuousVoice] VAD detected speech START!");
+                                    if let Some(app) = &app_handle {
+                                        let _ = app.emit("continuous-voice:speech-started", ());
+                                    }
+                                } else {
+                                    processed_samples.extend_from_slice(buf);
+                                }
+                                silence_frames = 0;
+                            }
+                            VadFrame::Noise => {
+                                if recording {
+                                    silence_frames += 1;
+                                    if silence_frames >= 40 {
+                                        recording = false;
+                                        let duration_secs = processed_samples.len() as f64 / 16000.0;
+                                        log::info!(
+                                            "[ContinuousVoice] VAD detected speech END! Captured {} samples ({:.2}s)",
+                                            processed_samples.len(),
+                                            duration_secs
+                                        );
+                                        if let Some(app) = &app_handle {
+                                            let _ = app.emit("continuous-voice:speech-ended", ());
+                                        }
+                                        let samples = std::mem::take(&mut processed_samples);
+                                        if let Some(app) = &app_handle {
+                                            let app_clone = app.clone();
+                                            std::thread::spawn(move || {
+                                                if let Err(e) = crate::managers::continuous_voice::process_continuous_samples(&app_clone, samples) {
+                                                    log::error!("Error in continuous voice pipeline: {}", e);
+                                                }
+                                            });
+                                        }
+                                        silence_frames = 0;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        processed_samples.extend_from_slice(&processed);
                     }
                 } else {
-                    processed_samples.extend_from_slice(&processed);
+                    handle_frame(
+                        &processed,
+                        recording,
+                        vad_policy,
+                        &vad,
+                        &audio_cb,
+                        &mut processed_samples,
+                    );
                 }
-            } else {
-                handle_frame(
-                    &processed,
-                    recording,
-                    vad_policy,
-                    &vad,
-                    &audio_cb,
-                    &mut processed_samples,
-                );
-            }
-        });
+            });
+        }
 
         if recording {
             if let Some(started) = awaiting_first_captured_chunk.take() {
@@ -915,49 +1071,12 @@ fn run_consumer(
                     started.elapsed()
                 );
             }
+            if let Some(ready_tx) = capture_ready_tx.take() {
+                // Signal only after this chunk has passed through the visualizer
+                // and resampler. Silence still counts: readiness means the host
+                // is delivering samples, not that VAD has detected speech.
+                let _ = ready_tx.send(());
+            }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{is_microphone_access_denied, is_no_input_device_error};
-
-    #[test]
-    fn detects_access_is_denied() {
-        assert!(is_microphone_access_denied("Access is denied"));
-    }
-
-    #[test]
-    fn detects_permission_denied() {
-        assert!(is_microphone_access_denied("permission denied"));
-    }
-
-    #[test]
-    fn detects_windows_error_code() {
-        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
-    }
-
-    #[test]
-    fn does_not_match_unrelated_errors() {
-        assert!(!is_microphone_access_denied("device not found"));
-    }
-
-    #[test]
-    fn detects_no_input_device() {
-        assert!(is_no_input_device_error("No input device found"));
-    }
-
-    #[test]
-    fn detects_coreaudio_config_error() {
-        assert!(is_no_input_device_error(
-            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
-        ));
-    }
-
-    #[test]
-    fn does_not_match_other_errors_for_no_device() {
-        assert!(!is_no_input_device_error("permission denied"));
-        assert!(!is_no_input_device_error("device not found"));
     }
 }

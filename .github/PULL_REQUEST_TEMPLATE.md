@@ -6,6 +6,8 @@ New features should gather community support first via Discussions. Bug fixes, p
 See CONTRIBUTING.md for current priorities.
 -->
 
+**Please submit only one fix or feature per pull request. Pull requests containing multiple fixes or features will likely be closed.**
+
 **Please confirm you have done the following:**
 
 - [ ] I have searched [existing issues](https://github.com/NairoDorian/S2B2S/issues) and [pull requests](https://github.com/NairoDorian/S2B2S/pulls) (including closed ones) to ensure this isn't a duplicate

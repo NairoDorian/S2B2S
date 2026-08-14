@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { SettingContainer } from "./SettingContainer";
+import { ResetButton } from "./ResetButton";
 
 interface SliderProps {
   value: number;
@@ -16,6 +17,7 @@ interface SliderProps {
   showValue?: boolean;
   formatValue?: (value: number) => string;
   onReset?: () => void;
+  isResetting?: boolean;
 }
 
 export const Slider: React.FC<SliderProps> = ({
@@ -32,6 +34,7 @@ export const Slider: React.FC<SliderProps> = ({
   showValue = true,
   formatValue = (v: number) => v.toString(),
   onReset,
+  isResetting = false,
 }) => {
   const { t } = useTranslation();
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,20 +70,12 @@ export const Slider: React.FC<SliderProps> = ({
             }}
           />
           {showValue && (
-            <span className="text-sm font-medium text-text/90 w-12 text-end flex items-center gap-1">
+            <span className="text-sm font-medium text-text/90 w-12 text-end">
               {formatValue(value)}
-              {onReset && (
-                <button
-                  type="button"
-                  onClick={onReset}
-                  className="text-text/50 hover:text-text/90 transition-colors text-xs leading-none"
-                  title={t("ui.slider.resetToDefault")}
-                >
-                  {/* eslint-disable-next-line i18next/no-literal-string */}
-                  <span>↺</span>
-                </button>
-              )}
             </span>
+          )}
+          {onReset && (
+            <ResetButton onClick={onReset} disabled={disabled || isResetting} />
           )}
         </div>
       </div>

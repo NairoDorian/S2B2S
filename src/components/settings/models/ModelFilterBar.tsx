@@ -255,7 +255,7 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
     if (filters.search === "" && localSearch !== "") {
       setLocalSearch("");
     }
-  }, [filters.search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filters.search, localSearch]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

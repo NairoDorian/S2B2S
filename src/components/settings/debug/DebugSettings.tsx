@@ -4,6 +4,7 @@ import { WordCorrectionThreshold } from "./WordCorrectionThreshold";
 import { LogLevelSelector } from "./LogLevelSelector";
 import { LiveLogViewer } from "./LiveLogViewer";
 import { PasteDelay } from "./PasteDelay";
+import { ReliablePasteToggle } from "./ReliablePaste";
 import { RecordingBuffer } from "./RecordingBuffer";
 import { SessionToastHistory } from "./SessionToastHistory";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -13,6 +14,7 @@ import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { LogViewer } from "./LogViewer";
 import { WhatsNewPreview } from "./WhatsNewPreview";
+import { KeyboardDiagnostic } from "./KeyboardDiagnostic";
 
 export const DebugSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -36,9 +38,11 @@ export const DebugSettings: React.FC = () => {
           labelKey="settings.debug.pasteDelayAfter.title"
           descriptionKey="settings.debug.pasteDelayAfter.description"
         />
+        <ReliablePasteToggle descriptionMode="tooltip" grouped={true} />
         <RecordingBuffer descriptionMode="tooltip" grouped={true} />
         <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
         <ClamshellMicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        <KeyboardDiagnostic />
         <LiveLogViewer descriptionMode="tooltip" grouped={true} />
         <SessionToastHistory />
       </SettingsGroup>

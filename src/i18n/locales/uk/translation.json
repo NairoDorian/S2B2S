@@ -6,7 +6,8 @@
     "unloadModel": "Вивантажити модель",
     "model": "Модель",
     "quit": "Вийти",
-    "cancel": "Скасувати"
+    "cancel": "Скасувати",
+    "secureInputWarning": "⚠ Комбінації клавіш заблоковано Secure Input"
   },
   "sidebar": {
     "general": "Загальні",
@@ -127,10 +128,8 @@
   },
   "modelSelector": {
     "custom": "Користувацька",
-    "legacy": "Застаріле",
     "streaming": "Потокове",
     "active": "Активна",
-    "switching": "Перемикання...",
     "noModelsAvailable": "Немає доступних моделей",
     "verifying": "Перевірка {{modelName}}...",
     "verifyingGeneric": "Перевірка...",
@@ -146,18 +145,20 @@
     "modelUnloaded": "Модель вивантажена",
     "noModelDownloadRequired": "Немає моделі - потрібно завантажити",
     "deleteModel": "Видалити {{modelName}}",
+    "switching": "Перемикання...",
     "downloadSpeed": "{{speed}} MB/s",
-    "cancel": "Скасувати",
-    "cancelDownload": "Скасувати завантаження",
     "capabilities": {
       "languageSelection": "Підтримує кілька мов введення",
-      "singleLanguage": "Підтримує лише цю мову",
       "languageCount": "{{total}} languages",
-      "languageOnly": "Лише {{language}}",
       "translation": "Може перекладати на англійську",
       "translate": "Перекласти на англійську",
+      "singleLanguage": "Підтримує лише цю мову",
+      "languageOnly": "Лише {{language}}",
       "streaming": "Показує транскрипцію в реальному часі під час мовлення"
-    }
+    },
+    "cancel": "Скасувати",
+    "cancelDownload": "Скасувати завантаження",
+    "legacy": "Застаріле"
   },
   "settings": {
     "modelSettings": {
@@ -212,20 +213,22 @@
     "models": {
       "title": "Моделі транскрипції",
       "description": "Виберіть модель транскрипції або завантажте додаткові моделі. Різні моделі пропонують різні рівні точності та швидкості.",
-      "searchPlaceholder": "Пошук моделей за назвою…",
-      "yourModels": "Завантажені моделі",
-      "availableModels": "Доступні для завантаження",
       "deleteConfirm": "Ви впевнені, що хочете видалити {{modelName}}? Вам потрібно буде завантажити її знову, щоб використовувати.",
       "deleteActiveConfirm": "{{modelName}} — ваша активна модель. Видалення зупинить транскрипцію, доки ви не оберете нову модель. Ви впевнені?",
       "deleteTitle": "Видалити модель",
       "filters": {
-        "allLanguages": "Усі мови"
+        "allLanguages": "Усі мови",
+        "streaming": "Фільтрувати моделі з підтримкою транскрипції в реальному часі",
+        "translation": "Фільтрувати моделі з підтримкою перекладу англійською"
       },
+      "noModelsMatch": "Жодна модель не відповідає цьому фільтру.",
+      "yourModels": "Завантажені моделі",
+      "availableModels": "Доступні для завантаження",
+      "searchPlaceholder": "Пошук моделей за назвою…",
       "rescan": {
         "label": "Пересканувати",
         "tooltip": "Пересканувати моделі, додані до папки моделей або кешу Hugging Face поза межами Handy"
-      },
-      "noModelsMatch": "Жодна модель не відповідає цьому фільтру."
+      }
     },
     "sound": {
       "title": "Звук",
@@ -234,6 +237,12 @@
         "description": "Оберіть бажаний мікрофон",
         "placeholder": "Оберіть мікрофон...",
         "loading": "Завантаження..."
+      },
+      "channel": {
+        "title": "Вхідний канал",
+        "description": "Виберіть вхідний канал для запису. Використовуйте цю опцію, якщо ваш аудіоінтерфейс має кілька входів.",
+        "average": "Усереднювати всі канали",
+        "channel": "Канал {{n}}"
       },
       "audioFeedback": {
         "label": "Звукове сповіщення",
@@ -309,6 +318,79 @@
             "top": "Вгорі"
           }
         }
+      },
+      "pasteMethod": {
+        "title": "Метод вставки",
+        "description": "Оберіть спосіб вставки тексту. Прямий: емулює набір тексту. Немає: пропускає вставку, оновлює лише історію/буфер обміну.",
+        "options": {
+          "clipboard": "Буфер обміну ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "Буфер обміну (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "Буфер обміну (Shift+Insert)",
+          "direct": "Прямий",
+          "none": "Немає",
+          "externalScript": "Зовнішній скрипт"
+        },
+        "externalScriptPlaceholder": "/path/to/your/script.sh"
+      },
+      "typingTool": {
+        "title": "Інструмент введення",
+        "description": "Виберіть, який інструмент введення в Linux використовувати для методу прямого вставлення. Auto автоматично визначить і використає найкращий доступний інструмент для вашої системи.",
+        "options": {
+          "auto": "Auto (Рекомендовано)"
+        }
+      },
+      "clipboardHandling": {
+        "title": "Робота з буфером обміну",
+        "description": "Не змінювати буфер обміну зберігає поточний вміст буфера після транскрипції. Копіювати в буфер обміну залишає результат транскрипції в буфері після вставки.",
+        "options": {
+          "dontModify": "Не змінювати буфер обміну",
+          "copyToClipboard": "Копіювати в буфер обміну"
+        }
+      },
+      "autoSubmit": {
+        "title": "Автоматичне надсилання",
+        "description": "Автоматично надсилає вибрану комбінацію клавіш після вставки тексту. Cmd+Enter застосовується на macOS, тоді як Windows/Linux використовують Super+Enter.",
+        "options": {
+          "off": "Вимк.",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
+        }
+      },
+      "translateToEnglish": {
+        "label": "Перекласти на англійську",
+        "description": "Автоматично перекладати мовлення з інших мов англійською під час транскрипції."
+      },
+      "modelUnload": {
+        "title": "Вивантаження моделі",
+        "description": "Автоматично звільняти пам'ять GPU/CPU, коли модель не використовується протягом вказаного часу",
+        "options": {
+          "never": "Ніколи",
+          "immediately": "Негайно",
+          "min2": "Через 2 хвилини",
+          "min5": "Через 5 хвилин",
+          "min10": "Через 10 хвилин",
+          "min15": "Через 15 хвилин",
+          "hour1": "Через 1 годину",
+          "sec15": "Через 15 секунд (Дебаг)"
+        }
+      },
+      "customWords": {
+        "title": "Власні слова",
+        "description": "Допоможіть підтримуваним моделям розпізнавати імена та спеціалізовані терміни. Нечітке виправлення наразі обмежене словами, що містять літери A–Z і цифри.",
+        "placeholder": "Додати слово",
+        "add": "Додати",
+        "remove": "Видалити {{word}}",
+        "duplicate": "\"{{word}}\" вже існує"
+      },
+      "voiceActivityDetection": {
+        "title": "Voice Activity Detection",
+        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
+      },
+      "fillerWordRemoval": {
+        "title": "Видаляти слова-паразити",
+        "description": "Видаляє поширені слова-вагання з транскрипцій. Вимкніть, щоб зберегти їх."
       },
       "overlayWindow": {
         "title": "Overlay Window",
@@ -402,80 +484,9 @@
           "label": "Click Ripple",
           "description": "Show an expanding ripple circle on mouse click."
         }
-      },
-      "pasteMethod": {
-        "title": "Метод вставки",
-        "description": "Оберіть спосіб вставки тексту. Прямий: емулює набір тексту. Немає: пропускає вставку, оновлює лише історію/буфер обміну.",
-        "options": {
-          "clipboard": "Буфер обміну ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "Буфер обміну (Ctrl+Shift+V)",
-          "clipboardShiftInsert": "Буфер обміну (Shift+Insert)",
-          "direct": "Прямий",
-          "none": "Немає",
-          "externalScript": "Зовнішній скрипт"
-        },
-        "externalScriptPlaceholder": "/path/to/your/script.sh"
-      },
-      "typingTool": {
-        "title": "Інструмент введення",
-        "description": "Виберіть, який інструмент введення в Linux використовувати для методу прямого вставлення. Auto автоматично визначить і використає найкращий доступний інструмент для вашої системи.",
-        "options": {
-          "auto": "Auto (Рекомендовано)"
-        }
-      },
-      "clipboardHandling": {
-        "title": "Робота з буфером обміну",
-        "description": "Не змінювати буфер обміну зберігає поточний вміст буфера після транскрипції. Копіювати в буфер обміну залишає результат транскрипції в буфері після вставки.",
-        "options": {
-          "dontModify": "Не змінювати буфер обміну",
-          "copyToClipboard": "Копіювати в буфер обміну"
-        }
-      },
-      "autoSubmit": {
-        "title": "Автоматичне надсилання",
-        "description": "Автоматично надсилає вибрану комбінацію клавіш після вставки тексту. Cmd+Enter застосовується на macOS, тоді як Windows/Linux використовують Super+Enter.",
-        "options": {
-          "off": "Вимк.",
-          "enter": "Enter",
-          "cmdEnter": "Cmd+Enter",
-          "superEnter": "Super+Enter",
-          "ctrlEnter": "Ctrl+Enter"
-        }
-      },
-      "translateToEnglish": {
-        "label": "Перекласти на англійську",
-        "description": "Автоматично перекладати мовлення з інших мов англійською під час транскрипції."
-      },
-      "modelUnload": {
-        "title": "Вивантаження моделі",
-        "description": "Автоматично звільняти пам'ять GPU/CPU, коли модель не використовується протягом вказаного часу",
-        "options": {
-          "never": "Ніколи",
-          "immediately": "Негайно",
-          "min2": "Через 2 хвилини",
-          "min5": "Через 5 хвилин",
-          "min10": "Через 10 хвилин",
-          "min15": "Через 15 хвилин",
-          "hour1": "Через 1 годину",
-          "sec15": "Через 15 секунд (Дебаг)"
-        }
-      },
-      "customWords": {
-        "title": "Власні слова",
-        "description": "Допоможіть підтримуваним моделям розпізнавати імена та спеціалізовані терміни. Нечітке виправлення наразі обмежене словами, що містять літери A–Z і цифри.",
-        "placeholder": "Додати слово",
-        "add": "Додати",
-        "remove": "Видалити {{word}}",
-        "duplicate": "\"{{word}}\" вже існує"
-      },
-      "voiceActivityDetection": {
-        "title": "Voice Activity Detection",
-        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       }
     },
     "postProcessing": {
-      "title": "Post Process",
-      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
         "title": "Гаряча клавіша"
       },
@@ -507,6 +518,29 @@
           "refreshModels": "Оновити моделі"
         }
       },
+      "prompts": {
+        "title": "Промпт",
+        "selectedPrompt": {
+          "title": "Обраний промпт",
+          "description": "Оберіть шаблон для покращення транскрипцій або створіть новий. Використовуйте ${output} у тексті промпта для посилання на захоплену транскрипцію."
+        },
+        "noPrompts": "Немає доступних промптів",
+        "selectPrompt": "Оберіть промпт",
+        "createNew": "Створити новий промпт",
+        "promptLabel": "Назва промпта",
+        "promptLabelPlaceholder": "Введіть назву промпта",
+        "promptInstructions": "Інструкції промпта",
+        "promptInstructionsPlaceholder": "Напишіть інструкції для виконання після транскрипції. Приклад: Покращити граматику та ясність для наступного тексту: ${output}",
+        "promptTip": "Порада: Використовуйте <code>${output}</code> для вставки транскрибованого тексту у ваш промпт.",
+        "updatePrompt": "Оновити промпт",
+        "deletePrompt": "Видалити промпт",
+        "createPrompt": "Створити промпт",
+        "cancel": "Скасувати",
+        "selectToEdit": "Оберіть промпт вище для перегляду та редагування його деталей.",
+        "createFirst": "Натисніть «Створити новий промпт» вище, щоб створити ваш перший промпт постобробки."
+      },
+      "title": "Post Process",
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {
         "title": "Default Shortcut",
         "toggleLabel": "Enable default post-processing shortcut",
@@ -536,27 +570,6 @@
         "empty": "Create your first action to start processing transcriptions with custom prompts.",
         "emptyTitle": "No actions yet",
         "noModelShort": "No model"
-      },
-      "prompts": {
-        "title": "Промпт",
-        "selectedPrompt": {
-          "title": "Обраний промпт",
-          "description": "Оберіть шаблон для покращення транскрипцій або створіть новий. Використовуйте ${output} у тексті промпта для посилання на захоплену транскрипцію."
-        },
-        "noPrompts": "Немає доступних промптів",
-        "selectPrompt": "Оберіть промпт",
-        "createNew": "Створити новий промпт",
-        "promptLabel": "Назва промпта",
-        "promptLabelPlaceholder": "Введіть назву промпта",
-        "promptInstructions": "Інструкції промпта",
-        "promptInstructionsPlaceholder": "Напишіть інструкції для виконання після транскрипції. Приклад: Покращити граматику та ясність для наступного тексту: ${output}",
-        "promptTip": "Порада: Використовуйте <code>${output}</code> для вставки транскрибованого тексту у ваш промпт.",
-        "updatePrompt": "Оновити промпт",
-        "deletePrompt": "Видалити промпт",
-        "createPrompt": "Створити промпт",
-        "cancel": "Скасувати",
-        "selectToEdit": "Оберіть промпт вище для перегляду та редагування його деталей.",
-        "createFirst": "Натисніть «Створити новий промпт» вище, щоб створити ваш перший промпт постобробки."
       }
     },
     "history": {
@@ -568,12 +581,12 @@
       "save": "Зберегти транскрипцію",
       "unsave": "Видалити зі збережених",
       "delete": "Видалити запис",
-      "deleteAll": "Delete All",
       "deleteError": "Не вдалося видалити запис. Спробуйте ще раз.",
       "retranscribe": "Перетранскрибувати",
       "retranscribeError": "Не вдалося перетранскрибувати. Будь ласка, спробуйте ще раз.",
       "transcribing": "Транскрибування...",
       "transcriptionFailed": "Транскрипція не вдалася. Ви можете перетранскрибувати за допомогою іконки повтору.",
+      "deleteAll": "Delete All",
       "processWith": "Process with action…",
       "processError": "Failed to process entry with action.",
       "processed": "Processed",
@@ -606,13 +619,6 @@
       "updateChecks": {
         "label": "Перевірка оновлень",
         "description": "Автоматично перевіряти наявність нових версій S2B2S"
-      },
-      "whatsNewPreview": {
-        "title": "Попередній перегляд новин",
-        "description": "Відкрити останні вбудовані примітки до випуску, не позначаючи їх як переглянуті",
-        "button": "Перегляд",
-        "noNotes": "Вбудовані примітки до випуску не знайдено",
-        "error": "Не вдалося переглянути примітки до випуску"
       },
       "soundTheme": {
         "label": "Звукова тема",
@@ -675,9 +681,40 @@
         "title": "Затримка вставки (після)",
         "description": "Затримка (у мілісекундах) після натискання клавіші вставки, перед відновленням попереднього буфера обміну. Збільшіть, якщо замість транскрипції вставляється старий вміст буфера обміну."
       },
+      "reliablePaste": {
+        "title": "Надійна вставка (Beta)",
+        "description": "Відновлювати буфер обміну лише після того, як цільова програма справді прочитає транскрипцію, а не через фіксовану затримку. Призначено для усунення вставки старого вмісту буфера обміну під навантаженням на систему. Потрібен метод вставки через буфер обміну; лише macOS і Windows."
+      },
       "recordingBuffer": {
         "title": "Додатковий буфер запису",
         "description": "Додатковий час (у мілісекундах) для продовження запису після відпускання клавіші, щоб захопити завершальний звук. 0 = без додаткового буфера."
+      },
+      "keyboardDiagnostic": {
+        "title": "Діагностика клавіатури",
+        "description": "Перевіряє, чи доходять події клавіатури до Handy. Записується лише кількість подій — ніколи те, які клавіші ви натискаєте.",
+        "run": "Запустити 10-секундну діагностику",
+        "running": "Прослуховування… натисніть свою комбінацію кілька разів (наприклад, Option+Space)",
+        "secureInputLabel": "Secure Input",
+        "enabled": "увімкнено",
+        "disabled": "вимкнено",
+        "holder": "утримує {{name}} (pid {{pid}})",
+        "holderUnknown": "видимого власника не знайдено",
+        "keyDown": "Натискання клавіші",
+        "keyUp": "Відпускання клавіші",
+        "flagsChanged": "Модифікатори",
+        "mouse": "Миша",
+        "verdictBlocked": "Secure Input блокує події клавіш — комбінації зі звичайною клавішею не працюватимуть, доки це не буде усунуто.",
+        "verdictSuspicious": "Події модифікаторів надходять, а події клавіш — ні: щось пригнічує клавіші, хоча Secure Input позначено як вимкнений. Будь ласка, повідомте про це на GitHub.",
+        "verdictOk": "Події клавіш надходять до Handy нормально.",
+        "verdictNoEvents": "Подій не зафіксовано — ви натискали клавіші під час тесту?",
+        "failed": "Не вдалося виконати діагностику: {{error}}"
+      },
+      "whatsNewPreview": {
+        "title": "Попередній перегляд новин",
+        "description": "Відкрити останні вбудовані примітки до випуску, не позначаючи їх як переглянуті",
+        "button": "Перегляд",
+        "noNotes": "Вбудовані примітки до випуску не знайдено",
+        "error": "Не вдалося переглянути примітки до випуску"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -705,10 +742,6 @@
         "title": "Версія",
         "description": "Поточна версія S2B2S"
       },
-      "whatsNewUpdates": {
-        "label": "Показувати новини",
-        "description": "Показувати примітки до випуску після оновлень Handy"
-      },
       "appDataDirectory": {
         "title": "Папка даних програми",
         "description": "Розташування даних S2B2S"
@@ -725,6 +758,11 @@
       },
       "acknowledgments": {
         "title": "Подяки",
+        "ggml": {
+          "title": "ggml",
+          "description": "Високопродуктивний інференс моделі автоматичного розпізнавання мовлення Whisper від OpenAI",
+          "details": "Handy використовує ggml для швидкої локальної обробки мовлення в текст. Дякуємо за чудову роботу Георгію Герганову та контриб'юторам."
+        },
         "forkLineage": {
           "title": "Project Lineage & Forks",
           "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
@@ -754,12 +792,11 @@
           "title": "Python & ML Ecosystem",
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
-        },
-        "ggml": {
-          "title": "ggml",
-          "description": "Високопродуктивний інференс моделі автоматичного розпізнавання мовлення Whisper від OpenAI",
-          "details": "Handy використовує ggml для швидкої локальної обробки мовлення в текст. Дякуємо за чудову роботу Георгію Герганову та контриб'юторам."
         }
+      },
+      "whatsNewUpdates": {
+        "label": "Показувати новини",
+        "description": "Показувати примітки до випуску після оновлень Handy"
       }
     },
     "speech": {
@@ -974,15 +1011,6 @@
     }
   },
   "footer": {
-    "stt": "STT",
-    "brain": "Brain",
-    "brainTitle": "AI Brain",
-    "brainActiveProvider": "Active Provider",
-    "tts": "TTS",
-    "ttsTitle": "Speech (TTS)",
-    "ttsEngine": "Speech Engine",
-    "voicesCount": "{{count}} voices",
-    "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "Перевірка оновлень...",
     "updateAvailableShort": "Доступне оновлення",
     "upToDate": "Актуальна версія",
@@ -993,10 +1021,18 @@
     "checkForUpdates": "Перевірити оновлення",
     "portableUpdateTitle": "Потрібне ручне оновлення",
     "portableUpdateMessage": "Портативні встановлення не можна оновити автоматично. Щоб оновити: завантажте найновіший інсталятор NSIS зі сторінки GitHub Releases, установіть його в ту саму теку, а потім скопіюйте теку Data/ (налаштування, моделі, записи) зі старої версії до нової.",
-    "portableUpdateButton": "Відкрити GitHub Releases"
-  },
-  "whatsNew": {
-    "title": "Нове в Handy v{{version}}"
+    "portableUpdateButton": "Відкрити GitHub Releases",
+    "portableUpdateBrowseMessage": "Портативні встановлення не можна оновити автоматично. Завантажте найновішу версію для вашої системи зі сторінки GitHub Releases та встановіть її в ту саму теку — ваша тека Data/ (налаштування, моделі, записи) залишиться на місці.",
+    "portableUpdateBrowseButton": "Відкрити GitHub Releases",
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
+    "voicesCount": "{{count}} voices",
+    "downloadingModel": "Downloading {{model}}..."
   },
   "common": {
     "loading": "Завантаження...",
@@ -1008,9 +1044,9 @@
     "noOptionsFound": "Опцій не знайдено"
   },
   "accessibility": {
-    "permissionsRequired": "Потрібні права доступу",
     "permissionsDescription": "Handy потребує дозволи доступності для введення транскрибованого тексту.",
     "openSettings": "Відкрити Системні налаштування",
+    "permissionsRequired": "Потрібні права доступу",
     "dismiss": "Закрити"
   },
   "errors": {
@@ -1049,6 +1085,20 @@
     "processing": "Постобробка...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
+  },
+  "whatsNew": {
+    "title": "Нове в Handy v{{version}}"
+  },
+  "secureInput": {
+    "blockedWithCulprit_one": "{{name}} може блокувати 1 комбінацію клавіш",
+    "blockedWithCulprit_other": "{{name}} може блокувати {{count}} комбінацій клавіш",
+    "blockedNoCulprit_one": "macOS тимчасово блокує 1 комбінацію клавіш",
+    "blockedNoCulprit_other": "macOS тимчасово блокує {{count}} комбінацій клавіш",
+    "recorderBlockedWithCulprit": "{{name}} може блокувати зміну комбінацій клавіш",
+    "recorderBlockedNoCulprit": "macOS тимчасово блокує зміну комбінацій клавіш",
+    "learnMore": "Як це виправити",
+    "recorderBlocked": "Зараз неможливо записати комбінацію — Secure Input у macOS блокує події клавіш. Спершу усуньте попередження про Secure Input.",
+    "dismiss": "Приховати"
   },
   "conversation": {
     "disabledHint": "The Brain is disabled. Enable it in the Brain settings to start a conversation.",

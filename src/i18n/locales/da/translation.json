@@ -6,7 +6,8 @@
     "unloadModel": "Frigør model",
     "model": "Model",
     "quit": "Afslut",
-    "cancel": "Annuller"
+    "cancel": "Annuller",
+    "secureInputWarning": "⚠ Genveje blokeret af Secure Input"
   },
   "sidebar": {
     "general": "Generelt",
@@ -219,7 +220,9 @@
       "deleteActiveConfirm": "{{modelName}} er din aktive model. Sletning af den vil stoppe transskriptioner, indtil du vælger en ny model. Er du sikker?",
       "deleteTitle": "Slet model",
       "filters": {
-        "allLanguages": "Alle sprog"
+        "allLanguages": "Alle sprog",
+        "streaming": "Filtrer modeller, der understøtter live transskription",
+        "translation": "Filtrer modeller, der understøtter oversættelse til engelsk"
       },
       "rescan": {
         "label": "Søg igen",
@@ -234,6 +237,12 @@
         "description": "Vælg din foretrukne mikrofonenhed",
         "placeholder": "Vælg mikrofon...",
         "loading": "Indlæser..."
+      },
+      "channel": {
+        "title": "Inputkanal",
+        "description": "Vælg, hvilken inputkanal der skal optages fra. Brug dette, hvis din lydgrænseflade har flere indgange.",
+        "average": "Gennemsnit af alle kanaler",
+        "channel": "Kanal {{n}}"
       },
       "audioFeedback": {
         "label": "Lydfeedback",
@@ -309,6 +318,79 @@
             "top": "Top"
           }
         }
+      },
+      "pasteMethod": {
+        "title": "Indsætningsmetode",
+        "description": "Vælg, hvordan tekst indsættes. Direkte: simulerer tastetryk via systeminput. Ingen: springer indsætning over, opdaterer kun historik/udklipsholder.",
+        "options": {
+          "clipboard": "Udklipsholder ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "Udklipsholder (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "Udklipsholder (Shift+Insert)",
+          "direct": "Direkte",
+          "none": "Ingen",
+          "externalScript": "Eksternt script"
+        },
+        "externalScriptPlaceholder": "/sti/til/dit/script.sh"
+      },
+      "typingTool": {
+        "title": "Skriveværktøj",
+        "description": "Vælg hvilket Linux-skriveværktøj der skal bruges til Direkte indsætningsmetode. Auto registrerer og bruger automatisk det bedste tilgængelige værktøj til dit system.",
+        "options": {
+          "auto": "Auto (anbefalet)"
+        }
+      },
+      "clipboardHandling": {
+        "title": "Håndtering af udklipsholder",
+        "description": "Rør ikke ved udklipsholder bevarer dit nuværende udklipsholderindhold efter transskription. Kopiér til udklipsholder efterlader transskriptionsresultatet i din udklipsholder efter indsætning.",
+        "options": {
+          "dontModify": "Rør ikke ved udklipsholder",
+          "copyToClipboard": "Kopiér til udklipsholder"
+        }
+      },
+      "autoSubmit": {
+        "title": "Automatisk indsendelse",
+        "description": "Send automatisk den valgte tastekombination efter tekstindsættelse. Cmd+Enter gælder på macOS, mens Windows/Linux bruger Super+Enter.",
+        "options": {
+          "off": "Fra",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
+        }
+      },
+      "translateToEnglish": {
+        "label": "Oversæt til engelsk",
+        "description": "Oversæt automatisk tale fra andre sprog til engelsk under transskription."
+      },
+      "modelUnload": {
+        "title": "Frigør model",
+        "description": "Frigør automatisk GPU-/CPU-hukommelse, når modellen ikke har været brugt i den angivne tid",
+        "options": {
+          "never": "Aldrig",
+          "immediately": "Med det samme",
+          "min2": "Efter 2 minutter",
+          "min5": "Efter 5 minutter",
+          "min10": "Efter 10 minutter",
+          "min15": "Efter 15 minutter",
+          "hour1": "Efter 1 time",
+          "sec15": "Efter 15 sekunder (fejlfinding)"
+        }
+      },
+      "customWords": {
+        "title": "Brugerdefinerede ord",
+        "description": "Hjælp understøttede modeller med at genkende navne og specialiserede udtryk. Fuzzy-korrektion er i øjeblikket begrænset til ord, der bruger A-Z og tal.",
+        "placeholder": "Tilføj et ord",
+        "add": "Tilføj",
+        "remove": "Fjern {{word}}",
+        "duplicate": "\"{{word}}\" findes allerede"
+      },
+      "voiceActivityDetection": {
+        "title": "Stemmeaktivitetsdetektion",
+        "description": "Filtrer stilhed fra optagelser. Streaming-modeller bruger en længere VAD-hale; deaktivering af VAD optager rå lyd."
+      },
+      "fillerWordRemoval": {
+        "title": "Fjern fyldord",
+        "description": "Fjerner almindelige tøveord fra transskriptioner. Slå fra for at beholde dem."
       },
       "overlayWindow": {
         "title": "Overlay Window",
@@ -402,80 +484,9 @@
           "label": "Click Ripple",
           "description": "Show an expanding ripple circle on mouse click."
         }
-      },
-      "pasteMethod": {
-        "title": "Indsætningsmetode",
-        "description": "Vælg, hvordan tekst indsættes. Direkte: simulerer tastetryk via systeminput. Ingen: springer indsætning over, opdaterer kun historik/udklipsholder.",
-        "options": {
-          "clipboard": "Udklipsholder ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "Udklipsholder (Ctrl+Shift+V)",
-          "clipboardShiftInsert": "Udklipsholder (Shift+Insert)",
-          "direct": "Direkte",
-          "none": "Ingen",
-          "externalScript": "Eksternt script"
-        },
-        "externalScriptPlaceholder": "/sti/til/dit/script.sh"
-      },
-      "typingTool": {
-        "title": "Skriveværktøj",
-        "description": "Vælg hvilket Linux-skriveværktøj der skal bruges til Direkte indsætningsmetode. Auto registrerer og bruger automatisk det bedste tilgængelige værktøj til dit system.",
-        "options": {
-          "auto": "Auto (anbefalet)"
-        }
-      },
-      "clipboardHandling": {
-        "title": "Håndtering af udklipsholder",
-        "description": "Rør ikke ved udklipsholder bevarer dit nuværende udklipsholderindhold efter transskription. Kopiér til udklipsholder efterlader transskriptionsresultatet i din udklipsholder efter indsætning.",
-        "options": {
-          "dontModify": "Rør ikke ved udklipsholder",
-          "copyToClipboard": "Kopiér til udklipsholder"
-        }
-      },
-      "autoSubmit": {
-        "title": "Automatisk indsendelse",
-        "description": "Send automatisk den valgte tastekombination efter tekstindsættelse. Cmd+Enter gælder på macOS, mens Windows/Linux bruger Super+Enter.",
-        "options": {
-          "off": "Fra",
-          "enter": "Enter",
-          "cmdEnter": "Cmd+Enter",
-          "superEnter": "Super+Enter",
-          "ctrlEnter": "Ctrl+Enter"
-        }
-      },
-      "translateToEnglish": {
-        "label": "Oversæt til engelsk",
-        "description": "Oversæt automatisk tale fra andre sprog til engelsk under transskription."
-      },
-      "modelUnload": {
-        "title": "Frigør model",
-        "description": "Frigør automatisk GPU-/CPU-hukommelse, når modellen ikke har været brugt i den angivne tid",
-        "options": {
-          "never": "Aldrig",
-          "immediately": "Med det samme",
-          "min2": "Efter 2 minutter",
-          "min5": "Efter 5 minutter",
-          "min10": "Efter 10 minutter",
-          "min15": "Efter 15 minutter",
-          "hour1": "Efter 1 time",
-          "sec15": "Efter 15 sekunder (fejlfinding)"
-        }
-      },
-      "customWords": {
-        "title": "Brugerdefinerede ord",
-        "description": "Hjælp understøttede modeller med at genkende navne og specialiserede udtryk. Fuzzy-korrektion er i øjeblikket begrænset til ord, der bruger A-Z og tal.",
-        "placeholder": "Tilføj et ord",
-        "add": "Tilføj",
-        "remove": "Fjern {{word}}",
-        "duplicate": "\"{{word}}\" findes allerede"
-      },
-      "voiceActivityDetection": {
-        "title": "Stemmeaktivitetsdetektion",
-        "description": "Filtrer stilhed fra optagelser. Streaming-modeller bruger en længere VAD-hale; deaktivering af VAD optager rå lyd."
       }
     },
     "postProcessing": {
-      "title": "Post Process",
-      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
         "title": "Genvejstast"
       },
@@ -507,6 +518,29 @@
           "refreshModels": "Opdater modeller"
         }
       },
+      "prompts": {
+        "title": "Prompt",
+        "selectedPrompt": {
+          "title": "Valgt prompt",
+          "description": "Vælg en skabelon til at forfine transskriptioner, eller opret en ny. Brug ${output} i promptteksten for at referere til den fangede transskription."
+        },
+        "noPrompts": "Ingen prompts tilgængelige",
+        "selectPrompt": "Vælg en prompt",
+        "createNew": "Opret ny prompt",
+        "promptLabel": "Promptnavn",
+        "promptLabelPlaceholder": "Indtast promptnavn",
+        "promptInstructions": "Promptinstruktioner",
+        "promptInstructionsPlaceholder": "Skriv de instruktioner, der skal køres efter transskription. Eksempel: Forbedr grammatik og klarhed for følgende tekst: ${output}",
+        "promptTip": "Tip: Brug <code>${output}</code> til at indsætte den transskriberede tekst i din prompt.",
+        "updatePrompt": "Opdater prompt",
+        "deletePrompt": "Slet prompt",
+        "createPrompt": "Opret prompt",
+        "cancel": "Annuller",
+        "selectToEdit": "Vælg en prompt ovenfor for at se og redigere dens detaljer.",
+        "createFirst": "Klik på 'Opret ny prompt' ovenfor for at oprette din første efterbehandlingsprompt."
+      },
+      "title": "Post Process",
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {
         "title": "Default Shortcut",
         "toggleLabel": "Enable default post-processing shortcut",
@@ -536,27 +570,6 @@
         "empty": "Create your first action to start processing transcriptions with custom prompts.",
         "emptyTitle": "No actions yet",
         "noModelShort": "No model"
-      },
-      "prompts": {
-        "title": "Prompt",
-        "selectedPrompt": {
-          "title": "Valgt prompt",
-          "description": "Vælg en skabelon til at forfine transskriptioner, eller opret en ny. Brug ${output} i promptteksten for at referere til den fangede transskription."
-        },
-        "noPrompts": "Ingen prompts tilgængelige",
-        "selectPrompt": "Vælg en prompt",
-        "createNew": "Opret ny prompt",
-        "promptLabel": "Promptnavn",
-        "promptLabelPlaceholder": "Indtast promptnavn",
-        "promptInstructions": "Promptinstruktioner",
-        "promptInstructionsPlaceholder": "Skriv de instruktioner, der skal køres efter transskription. Eksempel: Forbedr grammatik og klarhed for følgende tekst: ${output}",
-        "promptTip": "Tip: Brug <code>${output}</code> til at indsætte den transskriberede tekst i din prompt.",
-        "updatePrompt": "Opdater prompt",
-        "deletePrompt": "Slet prompt",
-        "createPrompt": "Opret prompt",
-        "cancel": "Annuller",
-        "selectToEdit": "Vælg en prompt ovenfor for at se og redigere dens detaljer.",
-        "createFirst": "Klik på 'Opret ny prompt' ovenfor for at oprette din første efterbehandlingsprompt."
       }
     },
     "history": {
@@ -568,12 +581,12 @@
       "save": "Gem transskription",
       "unsave": "Fjern fra gemte",
       "delete": "Slet post",
-      "deleteAll": "Delete All",
       "deleteError": "Kunne ikke slette posten. Prøv igen.",
       "retranscribe": "Transskribér igen",
       "retranscribeError": "Kunne ikke transskribere igen. Prøv igen.",
       "transcribing": "Transskriberer...",
       "transcriptionFailed": "Transskription mislykkedes. Du kan transskribere igen ved hjælp af genforsøgsikonet.",
+      "deleteAll": "Delete All",
       "processWith": "Process with action…",
       "processError": "Failed to process entry with action.",
       "processed": "Processed",
@@ -675,9 +688,33 @@
         "title": "Forsinkelse af indsættelse (efter)",
         "description": "Forsinkelse (i millisekunder) efter tastetrykket for indsætning, før din tidligere udklipsholder gendannes. Øg, hvis dit gamle udklipsholderindhold bliver indsat i stedet for transskriptionen."
       },
+      "reliablePaste": {
+        "title": "Pålidelig indsættelse (Beta)",
+        "description": "Gendan først din udklipsholder, når målappen faktisk har læst transskriptionen, i stedet for efter en fast forsinkelse. Skal afhjælpe, at gammelt udklipsholderindhold indsættes, når systemet er belastet. Kræver en indsætningsmetode via udklipsholderen; kun macOS og Windows."
+      },
       "recordingBuffer": {
         "title": "Ekstra optagelsesbuffer",
         "description": "Ekstra tid (i millisekunder) til at fortsætte optagelsen, efter du slipper tasten, for at fange efterfølgende lyd. 0 = ingen ekstra buffer."
+      },
+      "keyboardDiagnostic": {
+        "title": "Tastaturdiagnostik",
+        "description": "Kontrollerer, om tastaturhændelser når frem til Handy. Kun antallet af hændelser registreres — aldrig hvilke taster du trykker på.",
+        "run": "Kør 10 s diagnostik",
+        "running": "Lytter… tryk på din genvej et par gange (f.eks. Option+Space)",
+        "secureInputLabel": "Secure Input",
+        "enabled": "aktiveret",
+        "disabled": "deaktiveret",
+        "holder": "holdes af {{name}} (pid {{pid}})",
+        "holderUnknown": "ingen synlig indehaver",
+        "keyDown": "Tast ned",
+        "keyUp": "Tast op",
+        "flagsChanged": "Modifikatorer",
+        "mouse": "Mus",
+        "verdictBlocked": "Secure Input blokerer tastehændelser — genveje med en almindelig tast kan ikke fungere, før det er løst.",
+        "verdictSuspicious": "Der kom modifikatorhændelser, men ingen tastehændelser — noget undertrykker taster, selvom Secure Input rapporteres som deaktiveret. Rapportér det gerne på GitHub.",
+        "verdictOk": "Tastehændelser når frem til Handy som normalt.",
+        "verdictNoEvents": "Ingen hændelser registreret — trykkede du på nogen taster under testen?",
+        "failed": "Diagnostik mislykkedes: {{error}}"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -725,6 +762,11 @@
       },
       "acknowledgments": {
         "title": "Anerkendelser",
+        "ggml": {
+          "title": "ggml",
+          "description": "Højtydende tensor-bibliotek til maskinlæringsinferens på enheden",
+          "details": "Handys lokale tale-til-tekst funktionalitet er bygget på transcribe.cpp og ggml. Tak for det fantastiske arbejde af Georgi Gerganov og bidragyderne."
+        },
         "forkLineage": {
           "title": "Project Lineage & Forks",
           "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
@@ -754,11 +796,6 @@
           "title": "Python & ML Ecosystem",
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
-        },
-        "ggml": {
-          "title": "ggml",
-          "description": "Højtydende tensor-bibliotek til maskinlæringsinferens på enheden",
-          "details": "Handys lokale tale-til-tekst funktionalitet er bygget på transcribe.cpp og ggml. Tak for det fantastiske arbejde af Georgi Gerganov og bidragyderne."
         }
       }
     },
@@ -974,15 +1011,6 @@
     }
   },
   "footer": {
-    "stt": "STT",
-    "brain": "Brain",
-    "brainTitle": "AI Brain",
-    "brainActiveProvider": "Active Provider",
-    "tts": "TTS",
-    "ttsTitle": "Speech (TTS)",
-    "ttsEngine": "Speech Engine",
-    "voicesCount": "{{count}} voices",
-    "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "Tjekker for opdateringer...",
     "updateAvailableShort": "Opdatering tilgængelig",
     "upToDate": "Opdateret",
@@ -993,7 +1021,18 @@
     "checkForUpdates": "Tjek for opdateringer",
     "portableUpdateTitle": "Manuel opdatering påkrævet",
     "portableUpdateMessage": "Flytbare installationer kan ikke opdateres automatisk. For at opdatere: download den nyeste NSIS-installer fra GitHub Releases, installer den i den samme mappe, og kopiér derefter din Data/-mappe (indstillinger, modeller, optagelser) fra den gamle version til den nye.",
-    "portableUpdateButton": "Åbn GitHub Releases"
+    "portableUpdateButton": "Åbn GitHub Releases",
+    "portableUpdateBrowseMessage": "Flytbare installationer kan ikke opdateres automatisk. Download den nyeste version til dit system fra GitHub Releases, og installer den i den samme mappe — din Data/-mappe (indstillinger, modeller, optagelser) bliver bevaret.",
+    "portableUpdateBrowseButton": "Åbn GitHub Releases",
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
+    "voicesCount": "{{count}} voices",
+    "downloadingModel": "Downloading {{model}}..."
   },
   "whatsNew": {
     "title": "Nyt i Handy v{{version}}"
@@ -1008,9 +1047,9 @@
     "noOptionsFound": "Ingen muligheder fundet"
   },
   "accessibility": {
-    "permissionsRequired": "Accessibility Permissions Required",
     "permissionsDescription": "Handy har brug for tilgængelighedstilladelser for at skrive den transskriberede tekst.",
     "openSettings": "Åbn systemindstillinger",
+    "permissionsRequired": "Accessibility Permissions Required",
     "dismiss": "Dismiss"
   },
   "errors": {
@@ -1049,6 +1088,17 @@
     "processing": "Behandler...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
+  },
+  "secureInput": {
+    "blockedWithCulprit_one": "{{name}} blokerer muligvis 1 genvej",
+    "blockedWithCulprit_other": "{{name}} blokerer muligvis {{count}} genveje",
+    "blockedNoCulprit_one": "macOS blokerer midlertidigt 1 genvej",
+    "blockedNoCulprit_other": "macOS blokerer midlertidigt {{count}} genveje",
+    "recorderBlockedWithCulprit": "{{name}} blokerer muligvis ændringer af genveje",
+    "recorderBlockedNoCulprit": "macOS blokerer midlertidigt ændringer af genveje",
+    "learnMore": "Sådan løser du det",
+    "recorderBlocked": "Genveje kan ikke optages lige nu — macOS Secure Input blokerer tastehændelser. Løs advarslen om Secure Input først.",
+    "dismiss": "Afvis"
   },
   "conversation": {
     "disabledHint": "The Brain is disabled. Enable it in the Brain settings to start a conversation.",

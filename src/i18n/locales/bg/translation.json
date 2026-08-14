@@ -6,7 +6,8 @@
     "unloadModel": "Разтоварване на модела",
     "model": "Модел",
     "quit": "Изход",
-    "cancel": "Отказ"
+    "cancel": "Отказ",
+    "secureInputWarning": "⚠ Бързите клавиши са блокирани от Secure Input"
   },
   "sidebar": {
     "general": "Общи",
@@ -127,7 +128,6 @@
   },
   "modelSelector": {
     "custom": "Персонализиран",
-    "legacy": "Наследен",
     "streaming": "Стрийминг",
     "active": "Активен",
     "switching": "Превключване...",
@@ -157,7 +157,8 @@
       "translation": "Може да превежда на английски",
       "translate": "Превод на английски",
       "streaming": "Показва транскрипция на живо, докато говорите"
-    }
+    },
+    "legacy": "Наследен"
   },
   "settings": {
     "modelSettings": {
@@ -212,20 +213,22 @@
     "models": {
       "title": "Модели за транскрипция",
       "description": "Изберете модел за транскрипция или изтеглете допълнителни. Различните модели предлагат различна точност и скорост.",
-      "searchPlaceholder": "Търсене на модели по име…",
       "yourModels": "Изтеглени модели",
       "availableModels": "Налични за изтегляне",
       "deleteConfirm": "Сигурни ли сте, че искате да изтриете {{modelName}}? Ще трябва да го изтеглите отново, за да го използвате.",
       "deleteActiveConfirm": "{{modelName}} е вашият активен модел. Изтриването му ще спре транскрипциите, докато не изберете нов модел. Сигурни ли сте?",
       "deleteTitle": "Изтриване на модел",
       "filters": {
-        "allLanguages": "Всички езици"
+        "allLanguages": "Всички езици",
+        "streaming": "Филтриране на моделите, които поддържат транскрипция на живо",
+        "translation": "Филтриране на моделите, които поддържат превод на английски"
       },
+      "noModelsMatch": "Няма модели, отговарящи на този филтър.",
+      "searchPlaceholder": "Търсене на модели по име…",
       "rescan": {
         "label": "Сканиране отново",
         "tooltip": "Сканиране отново за модели, добавени в папката с модели или кеша на Hugging Face извън Handy"
-      },
-      "noModelsMatch": "Няма модели, отговарящи на този филтър."
+      }
     },
     "sound": {
       "title": "Звук",
@@ -234,6 +237,12 @@
         "description": "Изберете предпочитано микрофонно устройство",
         "placeholder": "Изберете микрофон...",
         "loading": "Зареждане..."
+      },
+      "channel": {
+        "title": "Входен канал",
+        "description": "Изберете входния канал, от който да записвате. Използвайте тази опция, ако аудио интерфейсът ви има няколко входа.",
+        "average": "Осредняване на всички канали",
+        "channel": "Канал {{n}}"
       },
       "audioFeedback": {
         "label": "Звукова обратна връзка",
@@ -309,6 +318,79 @@
             "top": "Горе"
           }
         }
+      },
+      "pasteMethod": {
+        "title": "Начин на поставяне",
+        "description": "Изберете как се вмъква текстът. Директно: симулира писане чрез системния вход. Няма: пропуска поставянето, актуализира само историята/клипборда.",
+        "options": {
+          "clipboard": "Клипборд ({{modifier}}+V)",
+          "clipboardCtrlShiftV": "Клипборд (Ctrl+Shift+V)",
+          "clipboardShiftInsert": "Клипборд (Shift+Insert)",
+          "direct": "Директно",
+          "none": "Няма",
+          "externalScript": "Външен скрипт"
+        },
+        "externalScriptPlaceholder": "/път/към/вашия/script.sh"
+      },
+      "typingTool": {
+        "title": "Инструмент за писане",
+        "description": "Изберете кой Linux инструмент за писане да се използва при директно поставяне. „Автоматично“ открива и използва най-подходящия за вашата система.",
+        "options": {
+          "auto": "Автоматично (препоръчително)"
+        }
+      },
+      "clipboardHandling": {
+        "title": "Работа с клипборда",
+        "description": "„Без промяна на клипборда“ запазва съдържанието на клипборда след транскрипция. „Копиране в клипборда“ оставя резултата в клипборда след поставяне.",
+        "options": {
+          "dontModify": "Без промяна на клипборда",
+          "copyToClipboard": "Копиране в клипборда"
+        }
+      },
+      "autoSubmit": {
+        "title": "Автоматично изпращане",
+        "description": "Автоматично изпращане на избраната клавишна комбинация след вмъкване на текста. Cmd+Enter важи за macOS, а Windows/Linux използват Super+Enter.",
+        "options": {
+          "off": "Изкл.",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
+        }
+      },
+      "translateToEnglish": {
+        "label": "Превод на английски",
+        "description": "Автоматичен превод на реч от други езици на английски по време на транскрипция."
+      },
+      "modelUnload": {
+        "title": "Разтоварване на модела",
+        "description": "Автоматично освобождаване на памет на GPU/CPU, ако моделът не е използван за зададеното време",
+        "options": {
+          "never": "Никога",
+          "immediately": "Веднага",
+          "min2": "След 2 минути",
+          "min5": "След 5 минути",
+          "min10": "След 10 минути",
+          "min15": "След 15 минути",
+          "hour1": "След 1 час",
+          "sec15": "След 15 секунди (отстраняване)"
+        }
+      },
+      "customWords": {
+        "title": "Персонализирани думи",
+        "description": "Помогнете на поддържаните модели да разпознават имена и специализирани термини. Приблизителната корекция в момента е ограничена до думи с букви A–Z и цифри.",
+        "placeholder": "Добавете дума",
+        "add": "Добавяне",
+        "remove": "Премахване на {{word}}",
+        "duplicate": "„{{word}}“ вече съществува"
+      },
+      "voiceActivityDetection": {
+        "title": "Voice Activity Detection",
+        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
+      },
+      "fillerWordRemoval": {
+        "title": "Премахване на думи паразити",
+        "description": "Премахва често срещаните думи за колебание от транскрипциите. Изключете, за да ги запазите."
       },
       "overlayWindow": {
         "title": "Overlay Window",
@@ -402,80 +484,9 @@
           "label": "Click Ripple",
           "description": "Show an expanding ripple circle on mouse click."
         }
-      },
-      "pasteMethod": {
-        "title": "Начин на поставяне",
-        "description": "Изберете как се вмъква текстът. Директно: симулира писане чрез системния вход. Няма: пропуска поставянето, актуализира само историята/клипборда.",
-        "options": {
-          "clipboard": "Клипборд ({{modifier}}+V)",
-          "clipboardCtrlShiftV": "Клипборд (Ctrl+Shift+V)",
-          "clipboardShiftInsert": "Клипборд (Shift+Insert)",
-          "direct": "Директно",
-          "none": "Няма",
-          "externalScript": "Външен скрипт"
-        },
-        "externalScriptPlaceholder": "/път/към/вашия/script.sh"
-      },
-      "typingTool": {
-        "title": "Инструмент за писане",
-        "description": "Изберете кой Linux инструмент за писане да се използва при директно поставяне. „Автоматично“ открива и използва най-подходящия за вашата система.",
-        "options": {
-          "auto": "Автоматично (препоръчително)"
-        }
-      },
-      "clipboardHandling": {
-        "title": "Работа с клипборда",
-        "description": "„Без промяна на клипборда“ запазва съдържанието на клипборда след транскрипция. „Копиране в клипборда“ оставя резултата в клипборда след поставяне.",
-        "options": {
-          "dontModify": "Без промяна на клипборда",
-          "copyToClipboard": "Копиране в клипборда"
-        }
-      },
-      "autoSubmit": {
-        "title": "Автоматично изпращане",
-        "description": "Автоматично изпращане на избраната клавишна комбинация след вмъкване на текста. Cmd+Enter важи за macOS, а Windows/Linux използват Super+Enter.",
-        "options": {
-          "off": "Изкл.",
-          "enter": "Enter",
-          "cmdEnter": "Cmd+Enter",
-          "superEnter": "Super+Enter",
-          "ctrlEnter": "Ctrl+Enter"
-        }
-      },
-      "translateToEnglish": {
-        "label": "Превод на английски",
-        "description": "Автоматичен превод на реч от други езици на английски по време на транскрипция."
-      },
-      "modelUnload": {
-        "title": "Разтоварване на модела",
-        "description": "Автоматично освобождаване на памет на GPU/CPU, ако моделът не е използван за зададеното време",
-        "options": {
-          "never": "Никога",
-          "immediately": "Веднага",
-          "min2": "След 2 минути",
-          "min5": "След 5 минути",
-          "min10": "След 10 минути",
-          "min15": "След 15 минути",
-          "hour1": "След 1 час",
-          "sec15": "След 15 секунди (отстраняване)"
-        }
-      },
-      "customWords": {
-        "title": "Персонализирани думи",
-        "description": "Помогнете на поддържаните модели да разпознават имена и специализирани термини. Приблизителната корекция в момента е ограничена до думи с букви A–Z и цифри.",
-        "placeholder": "Добавете дума",
-        "add": "Добавяне",
-        "remove": "Премахване на {{word}}",
-        "duplicate": "„{{word}}“ вече съществува"
-      },
-      "voiceActivityDetection": {
-        "title": "Voice Activity Detection",
-        "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       }
     },
     "postProcessing": {
-      "title": "Post Process",
-      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "hotkey": {
         "title": "Бърз клавиш"
       },
@@ -507,6 +518,29 @@
           "refreshModels": "Опресняване на моделите"
         }
       },
+      "prompts": {
+        "title": "Подкана",
+        "selectedPrompt": {
+          "title": "Избрана подкана",
+          "description": "Изберете шаблон за подобряване на транскрипции или създайте нов. Използвайте ${output} в текста на подканата, за да препратите към уловения транскрипт."
+        },
+        "noPrompts": "Няма налични подкани",
+        "selectPrompt": "Изберете подкана",
+        "createNew": "Нова подкана",
+        "promptLabel": "Етикет на подканата",
+        "promptLabelPlaceholder": "Въведете име на подканата",
+        "promptInstructions": "Инструкции за подканата",
+        "promptInstructionsPlaceholder": "Напишете инструкциите за изпълнение след транскрипция. Пример: Подобрете граматиката и яснотата на следния текст: ${output}",
+        "promptTip": "Съвет: Използвайте <code>${output}</code>, за да вмъкнете транскрибирания текст в подканата.",
+        "updatePrompt": "Обновяване на подканата",
+        "deletePrompt": "Изтриване на подканата",
+        "createPrompt": "Създаване на подкана",
+        "cancel": "Отказ",
+        "selectToEdit": "Изберете подкана по-горе, за да видите и редактирате подробностите ѝ.",
+        "createFirst": "Натиснете „Нова подкана“ по-горе, за да създадете първата си подкана за постобработка."
+      },
+      "title": "Post Process",
+      "description": "Configure post-processing providers, prompts, and actions for refining transcriptions.",
       "defaultShortcut": {
         "title": "Default Shortcut",
         "toggleLabel": "Enable default post-processing shortcut",
@@ -536,27 +570,6 @@
         "empty": "Create your first action to start processing transcriptions with custom prompts.",
         "emptyTitle": "No actions yet",
         "noModelShort": "No model"
-      },
-      "prompts": {
-        "title": "Подкана",
-        "selectedPrompt": {
-          "title": "Избрана подкана",
-          "description": "Изберете шаблон за подобряване на транскрипции или създайте нов. Използвайте ${output} в текста на подканата, за да препратите към уловения транскрипт."
-        },
-        "noPrompts": "Няма налични подкани",
-        "selectPrompt": "Изберете подкана",
-        "createNew": "Нова подкана",
-        "promptLabel": "Етикет на подканата",
-        "promptLabelPlaceholder": "Въведете име на подканата",
-        "promptInstructions": "Инструкции за подканата",
-        "promptInstructionsPlaceholder": "Напишете инструкциите за изпълнение след транскрипция. Пример: Подобрете граматиката и яснотата на следния текст: ${output}",
-        "promptTip": "Съвет: Използвайте <code>${output}</code>, за да вмъкнете транскрибирания текст в подканата.",
-        "updatePrompt": "Обновяване на подканата",
-        "deletePrompt": "Изтриване на подканата",
-        "createPrompt": "Създаване на подкана",
-        "cancel": "Отказ",
-        "selectToEdit": "Изберете подкана по-горе, за да видите и редактирате подробностите ѝ.",
-        "createFirst": "Натиснете „Нова подкана“ по-горе, за да създадете първата си подкана за постобработка."
       }
     },
     "history": {
@@ -568,12 +581,12 @@
       "save": "Запазване на транскрипцията",
       "unsave": "Премахване от запазените",
       "delete": "Изтриване на записа",
-      "deleteAll": "Delete All",
       "deleteError": "Изтриването на записа не бе успешно. Опитайте отново.",
       "retranscribe": "Повторна транскрипция",
       "retranscribeError": "Повторната транскрипция не бе успешна. Опитайте отново.",
       "transcribing": "Транскрибиране...",
       "transcriptionFailed": "Транскрипцията не бе успешна. Можете да опитате отново с иконата за повторен опит.",
+      "deleteAll": "Delete All",
       "processWith": "Process with action…",
       "processError": "Failed to process entry with action.",
       "processed": "Processed",
@@ -606,13 +619,6 @@
       "updateChecks": {
         "label": "Проверка за актуализации",
         "description": "Автоматична проверка за нови версии на S2B2S"
-      },
-      "whatsNewPreview": {
-        "title": "Преглед на новостите",
-        "description": "Отваря последните включени бележки към изданието, без да ги маркира като видени",
-        "button": "Преглед",
-        "noNotes": "Не са намерени включени бележки към изданието",
-        "error": "Неуспешен преглед на бележките към изданието"
       },
       "soundTheme": {
         "label": "Звукова тема",
@@ -675,9 +681,40 @@
         "title": "Забавяне при поставяне (след)",
         "description": "Забавяне (в милисекунди) след клавиша за поставяне, преди възстановяване на предишния клипборд. Увеличете, ако вместо транскрипцията се поставя старото съдържание на клипборда."
       },
+      "reliablePaste": {
+        "title": "Надеждно поставяне (Beta)",
+        "description": "Възстановява клипборда само след като целевото приложение действително прочете транскрипцията, вместо след фиксирано забавяне. Предназначено да отстрани поставянето на старото съдържание на клипборда при натоварване на системата. Изисква начин на поставяне през клипборда; само за macOS и Windows."
+      },
       "recordingBuffer": {
         "title": "Допълнителен буфер на записа",
         "description": "Допълнително време (в милисекунди) за запис след пускане на клавиша, за да се улови краят на аудиото. 0 = без допълнителен буфер."
+      },
+      "keyboardDiagnostic": {
+        "title": "Диагностика на клавиатурата",
+        "description": "Проверява дали клавиатурните събития достигат до Handy. Записва се само броят на събитията — никога кои клавиши натискате.",
+        "run": "Стартиране на 10-секундна диагностика",
+        "running": "Слушане… натиснете бързия си клавиш няколко пъти (напр. Option+Space)",
+        "secureInputLabel": "Secure Input",
+        "enabled": "включен",
+        "disabled": "изключен",
+        "holder": "задържан от {{name}} (pid {{pid}})",
+        "holderUnknown": "няма видим държател",
+        "keyDown": "Натиснат клавиш",
+        "keyUp": "Отпуснат клавиш",
+        "flagsChanged": "Модификатори",
+        "mouse": "Мишка",
+        "verdictBlocked": "Secure Input блокира клавишните събития — бързите клавиши с обикновен клавиш не могат да работят, докато това не бъде решено.",
+        "verdictSuspicious": "Пристигнаха събития от модификатори, но нито едно клавишно събитие — нещо потиска клавишите, въпреки че Secure Input се отчита като изключен. Моля, съобщете за това в GitHub.",
+        "verdictOk": "Клавишните събития достигат до Handy нормално.",
+        "verdictNoEvents": "Не са уловени събития — натиснахте ли някакви клавиши по време на теста?",
+        "failed": "Диагностиката е неуспешна: {{error}}"
+      },
+      "whatsNewPreview": {
+        "title": "Преглед на новостите",
+        "description": "Отваря последните включени бележки към изданието, без да ги маркира като видени",
+        "button": "Преглед",
+        "noNotes": "Не са намерени включени бележки към изданието",
+        "error": "Неуспешен преглед на бележките към изданието"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -705,10 +742,6 @@
         "title": "Версия",
         "description": "Текуща версия на S2B2S"
       },
-      "whatsNewUpdates": {
-        "label": "Показвай новостите",
-        "description": "Показвай бележки към изданието след актуализации на Handy"
-      },
       "appDataDirectory": {
         "title": "Папка с данни на приложението",
         "description": "Мястото, където S2B2S съхранява данните си"
@@ -725,6 +758,11 @@
       },
       "acknowledgments": {
         "title": "Благодарности",
+        "ggml": {
+          "title": "ggml",
+          "description": "Високопроизводително изпълнение на автоматичния модел за разпознаване на реч Whisper на OpenAI",
+          "details": "Handy използва ggml за бързо локално реч-към-текст. Благодарности на Georgi Gerganov и сътрудниците за отличната работа."
+        },
         "forkLineage": {
           "title": "Project Lineage & Forks",
           "description": "S2B2S is built upon a chain of open-source projects that each contributed essential features",
@@ -754,12 +792,11 @@
           "title": "Python & ML Ecosystem",
           "description": "Python packages that power local TTS inference servers",
           "details": "piper-tts — Piper TTS Python bindings with HTTP server\nkokoro-tts — Kokoro-82M TTS Python API\npocket-tts — Pocket TTS PyTorch inference\nkittentts — Kitten TTS ONNX inference\nPyTorch — deep learning framework\nNumPy, SoundFile — scientific computing and audio I/O\nONNX Runtime — cross-platform ML model inference"
-        },
-        "ggml": {
-          "title": "ggml",
-          "description": "Високопроизводително изпълнение на автоматичния модел за разпознаване на реч Whisper на OpenAI",
-          "details": "Handy използва ggml за бързо локално реч-към-текст. Благодарности на Georgi Gerganov и сътрудниците за отличната работа."
         }
+      },
+      "whatsNewUpdates": {
+        "label": "Показвай новостите",
+        "description": "Показвай бележки към изданието след актуализации на Handy"
       }
     },
     "speech": {
@@ -974,15 +1011,6 @@
     }
   },
   "footer": {
-    "stt": "STT",
-    "brain": "Brain",
-    "brainTitle": "AI Brain",
-    "brainActiveProvider": "Active Provider",
-    "tts": "TTS",
-    "ttsTitle": "Speech (TTS)",
-    "ttsEngine": "Speech Engine",
-    "voicesCount": "{{count}} voices",
-    "downloadingModel": "Downloading {{model}}...",
     "checkingUpdates": "Проверка за актуализации...",
     "updateAvailableShort": "Налична актуализация",
     "upToDate": "Актуална версия",
@@ -993,10 +1021,18 @@
     "checkForUpdates": "Проверка за актуализации",
     "portableUpdateTitle": "Необходима е ръчна актуализация",
     "portableUpdateMessage": "Преносимите инсталации не могат да бъдат актуализирани автоматично. За актуализация: изтеглете най-новия NSIS инсталатор от GitHub Releases, инсталирайте го в същата папка, след което копирайте папката Data/ (настройки, модели, записи) от старата версия в новата.",
-    "portableUpdateButton": "Отвори GitHub Releases"
-  },
-  "whatsNew": {
-    "title": "Ново в Handy v{{version}}"
+    "portableUpdateButton": "Отвори GitHub Releases",
+    "portableUpdateBrowseMessage": "Преносимите инсталации не могат да бъдат актуализирани автоматично. Изтеглете най-новата версия за вашата система от GitHub Releases и я инсталирайте в същата папка — папката Data/ (настройки, модели, записи) остава на мястото си.",
+    "portableUpdateBrowseButton": "Отвори GitHub Releases",
+    "stt": "STT",
+    "brain": "Brain",
+    "brainTitle": "AI Brain",
+    "brainActiveProvider": "Active Provider",
+    "tts": "TTS",
+    "ttsTitle": "Speech (TTS)",
+    "ttsEngine": "Speech Engine",
+    "voicesCount": "{{count}} voices",
+    "downloadingModel": "Downloading {{model}}..."
   },
   "common": {
     "loading": "Зареждане...",
@@ -1008,9 +1044,9 @@
     "noOptionsFound": "Няма намерени опции"
   },
   "accessibility": {
-    "permissionsRequired": "Необходими са разрешения за достъпност",
     "permissionsDescription": "Handy се нуждае от разрешения за достъпност, за да въвежда транскрибирания текст.",
     "openSettings": "Отваряне на системните настройки",
+    "permissionsRequired": "Необходими са разрешения за достъпност",
     "dismiss": "Затваряне"
   },
   "errors": {
@@ -1049,6 +1085,20 @@
     "processing": "Обработка...",
     "speaking": "Speaking…",
     "stopSpeaking": "Stop speaking"
+  },
+  "whatsNew": {
+    "title": "Ново в Handy v{{version}}"
+  },
+  "secureInput": {
+    "blockedWithCulprit_one": "{{name}} може да блокира 1 бърз клавиш",
+    "blockedWithCulprit_other": "{{name}} може да блокира {{count}} бързи клавиша",
+    "blockedNoCulprit_one": "macOS временно блокира 1 бърз клавиш",
+    "blockedNoCulprit_other": "macOS временно блокира {{count}} бързи клавиша",
+    "recorderBlockedWithCulprit": "{{name}} може да блокира промените на бързите клавиши",
+    "recorderBlockedNoCulprit": "macOS временно блокира промените на бързите клавиши",
+    "learnMore": "Как да поправите това",
+    "recorderBlocked": "В момента не могат да се записват бързи клавиши — Secure Input на macOS блокира клавишните събития. Първо отстранете предупреждението за Secure Input.",
+    "dismiss": "Отхвърляне"
   },
   "conversation": {
     "disabledHint": "The Brain is disabled. Enable it in the Brain settings to start a conversation.",
