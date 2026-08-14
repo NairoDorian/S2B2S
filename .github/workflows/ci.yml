@@ -16,7 +16,7 @@ jobs:
     name: Frontend Quality & i18n
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -41,23 +41,24 @@ jobs:
     name: Backend Unit Tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libssl-dev libgtk-layer-shell-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libssl-dev libgtk-layer-shell-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Use mock TranscriptionManager (CI only)
-        working-directory: src-tauri
-        run: |
-          # Swap to mock adapter - avoids compiling whisper/Vulkan
-          cp src/managers/transcription_mock.rs src/managers/transcription.rs
-          sed -i '/^transcribe-rs/d' Cargo.toml
+      # transcribe-cpp compiles ggml-vulkan on Linux (dynamic-backends +
+      # vulkan features), which needs a Vulkan SDK (glslc) at build time.
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.335.0
+          cache: true
 
       - name: Run Rust unit tests
         working-directory: src-tauri
@@ -67,7 +68,7 @@ jobs:
     name: Playwright E2E Checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

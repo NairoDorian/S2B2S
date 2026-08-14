@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off",
+    "suspicious": "off",
+    "perf": "off",
+    "style": "off",
+    "pedantic": "off",
+    "nursery": "off",
+    "restriction": "off"
+  },
+  "jsPlugins": ["eslint-plugin-i18next"],
+  "rules": {
+    "i18next/no-literal-string": [
+      "error",
+      {
+        "markupOnly": true,
+        "ignoreAttribute": [
+          "className",
+          "style",
+          "type",
+          "id",
+          "name",
+          "key",
+          "data-*",
+          "aria-*"
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/components/icons/**/*"],
+      "rules": {
+        "i18next/no-literal-string": "off"
+      }
+    }
+  ]
+}

@@ -362,7 +362,7 @@ jobs:
         shell: bash
         run: |
           ORT_VERSION="1.24.2"
-          curl -L -o ort.tgz "https://blob.s2b2s.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
+          curl -L -o ort.tgz "https://blob.handy.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
           tar xzf ort.tgz
           ORT_DIR="$(pwd)/onnxruntime-osx-x86_64-${ORT_VERSION}"
           echo "ORT_LIB_LOCATION=$ORT_DIR/lib" >> $GITHUB_ENV
@@ -377,7 +377,7 @@ jobs:
         shell: bash
         run: |
           ORT_VERSION="1.24.2"
-          curl -L -o ort.tgz "https://blob.s2b2s.computer/onnxruntime-linux-x86_64-${ORT_VERSION}.tgz"
+          curl -L -o ort.tgz "https://blob.handy.computer/onnxruntime-linux-x86_64-${ORT_VERSION}.tgz"
           tar xzf ort.tgz
           ORT_DIR="$(pwd)/onnxruntime-linux-x86_64-${ORT_VERSION}"
           echo "ORT_LIB_LOCATION=$ORT_DIR/lib" >> $GITHUB_ENV
@@ -652,17 +652,17 @@ jobs:
             local root="$1"
             local label="$2"
             local vulkan_icd="${3:-}"
-            # Run under a virtual X server: handy initializes GTK on startup even
+            # Run under a virtual X server: s2b2s initializes GTK on startup even
             # on the headless --list-devices path, which fails without a display.
             # An AppImage audit supplies Mesa's software ICD so GPU registration
             # is deterministic even on a runner without physical graphics.
             if [ -n "$vulkan_icd" ]; then
               export VK_ICD_FILENAMES="$vulkan_icd"
             fi
-            HANDY_NO_GTK_LAYER_SHELL=1 \
+            S2B2S_NO_GTK_LAYER_SHELL=1 \
             LD_LIBRARY_PATH="${root}/usr/lib/Handy:${root}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-              xvfb-run -a "${root}/usr/bin/handy" --list-devices \
-                >/tmp/handy-package-smoke.log 2>&1
+              xvfb-run -a "${root}/usr/bin/s2b2s" --list-devices \
+                >/tmp/s2b2s-package-smoke.log 2>&1
             echo "${label} --list-devices smoke passed"
           }
 
@@ -671,7 +671,7 @@ jobs:
               echo "Auditing deb package: ${deb}"
               listing="$(mktemp)"
               dpkg-deb -c "$deb" > "$listing"
-              require_pattern "$listing" 'usr/bin/handy$' "handy binary"
+              require_pattern "$listing" 'usr/bin/s2b2s$' "s2b2s binary"
               require_pattern "$listing" 'usr/lib/Handy/libtranscribe\.so\.[0-9]+$' "transcribe runtime library (SONAME)"
               require_pattern "$listing" 'usr/lib/Handy/libggml-cpu.*\.so' "ggml CPU backend module"
               if [[ "${{ inputs.platform }}" == *"ubuntu-22.04"* && "${{ inputs.target }}" == "x86_64-unknown-linux-gnu" ]]; then
@@ -701,7 +701,7 @@ jobs:
               echo "Auditing rpm package: ${rpm_pkg}"
               listing="$(mktemp)"
               rpm -qpl "$rpm_pkg" > "$listing"
-              require_pattern "$listing" '/usr/bin/handy$' "handy binary"
+              require_pattern "$listing" '/usr/bin/s2b2s$' "s2b2s binary"
               require_pattern "$listing" '/usr/lib/Handy/libtranscribe\.so\.[0-9]+$' "transcribe runtime library (SONAME)"
               require_pattern "$listing" '/usr/lib/Handy/libggml-cpu.*\.so' "ggml CPU backend module"
               # Same /usr/lib pollution guard as the deb audit (issue #1639).
@@ -723,7 +723,7 @@ jobs:
               (
                 cd "$workdir"
                 ./Handy.AppImage --appimage-extract >/dev/null
-                require_path "squashfs-root/usr/bin/handy" "AppImage handy binary"
+                require_path "squashfs-root/usr/bin/s2b2s" "AppImage s2b2s binary"
                 # Gear Lever and other integration tools consume the root entry;
                 # appimagetool does not update the copy under usr/share/applications.
                 desktop_file="$(find squashfs-root -maxdepth 1 -type f -name '*.desktop' -print -quit)"
@@ -769,9 +769,9 @@ jobs:
                 # llvmpipe is intentionally not exposed as a compute device by
                 # ggml, but reaching this log proves the module loaded against a
                 # usable system Vulkan loader/ICD instead of failing silently.
-                if ! grep -q 'load_backend: loaded Vulkan backend' /tmp/handy-package-smoke.log; then
+                if ! grep -q 'load_backend: loaded Vulkan backend' /tmp/s2b2s-package-smoke.log; then
                   echo "ERROR: AppImage could not initialize its Vulkan backend with a usable system ICD" >&2
-                  cat /tmp/handy-package-smoke.log >&2
+                  cat /tmp/s2b2s-package-smoke.log >&2
                   exit 1
                 fi
               )
@@ -831,9 +831,9 @@ jobs:
           function Assert-PackageContents {
             param([string]$Root, [string]$Label)
 
-            $handy = Get-ChildItem $Root -Filter "handy.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $handy) {
-              throw "$Label package is missing handy.exe"
+            $appBinary = Get-ChildItem $Root -Filter "s2b2s.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $appBinary) {
+              throw "$Label package is missing s2b2s.exe"
             }
             foreach ($dll in $stagedDlls) {
               if (-not (Get-ChildItem $Root -Filter $dll.Name -Recurse -ErrorAction SilentlyContinue)) {
@@ -841,10 +841,10 @@ jobs:
               }
             }
 
-            $deviceOutput = (& $handy.FullName --list-devices | Out-String)
+            $deviceOutput = (& $appBinary.FullName --list-devices | Out-String)
             $deviceOutput | Write-Host
             if ($LASTEXITCODE -ne 0) {
-              throw "$Label handy.exe --list-devices failed"
+              throw "$Label s2b2s.exe --list-devices failed"
             }
             if ("${{ inputs.target }}" -like "aarch64*" -and $deviceOutput -match "kind=(vulkan|cuda|metal|gpu)") {
               throw "$Label Windows ARM64 package unexpectedly exposed a GPU compute device"
