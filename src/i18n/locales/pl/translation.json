@@ -880,6 +880,48 @@
       },
       "reloadVoices": "Reload voices",
       "sanitizeGroup": "Text Cleanup",
+      "cloud": {
+        "group": "Cloud Engine Credentials",
+        "apiKey": {
+          "label": "API Key",
+          "description": "Credentials for this cloud TTS provider. Stored locally in your settings."
+        },
+        "model": {
+          "label": "Model",
+          "description": "Provider model used for synthesis.",
+          "placeholder": "e.g. gpt-4o-mini-tts"
+        },
+        "voiceId": {
+          "label": "Voice ID",
+          "description": "Provider voice identifier used for synthesis.",
+          "placeholder": "e.g. alloy"
+        },
+        "hint": "Required for cloud synthesis. Choose a cloud engine from the dropdown above to edit its credentials."
+      },
+      "wakeWord": {
+        "group": "Wake Word (Energy Activation)",
+        "enabled": {
+          "label": "Enable voice activation",
+          "description": "Continuously listen and start hands-free conversation when you speak. Energy-based: any clear speech activates it (keyword spotting is planned for a future version)."
+        },
+        "sensitivity": {
+          "label": "Sensitivity (threshold)",
+          "description": "How loud the sound must be to activate. Lower = more sensitive, may trigger on background noise."
+        },
+        "indicator": {
+          "label": "Show listening indicator",
+          "description": "Display a visual indicator while the always-on activation is active."
+        },
+        "keywordNote": "The keyword field is reserved for future keyword spotting and is not used by the current energy-based detector."
+      },
+      "cloneVoice": {
+        "pocketGroup": "Clone Voice (Pocket TTS)",
+        "qwen3Group": "Clone Voice (Qwen3-TTS)",
+        "importTitle": "Import reference audio",
+        "importDescription": "Select a 5-20 second WAV file of someone speaking clearly. The engine will clone that voice.",
+        "importing": "Importing...",
+        "selectWav": "Select WAV File"
+      },
       "sanitizeEnabled": {
         "label": "Clean text before speaking",
         "description": "Apply cleanup passes to text before synthesis."
@@ -960,6 +1002,10 @@
         "label": "System prompt",
         "description": "Personality and instructions for the Brain's replies."
       },
+      "warmupPrompt": {
+        "label": "Warmup prompt",
+        "description": "Dummy prompt sent to warm up the model when it loads into VRAM. Leave empty to skip warmup."
+      },
       "contextTurns": {
         "label": "Memory (turns)",
         "description": "How many previous exchanges the Brain remembers. 0 means each question is independent."
@@ -967,6 +1013,45 @@
       "readAloud": {
         "label": "Read replies aloud",
         "description": "Speak each reply sentence-by-sentence while it streams (requires speech output)."
+      },
+      "endpointPreset": {
+        "label": "End of speech sensitivity",
+        "description": "How long the Brain waits in silence before deciding you finished speaking in hands-free mode.",
+        "snappy": "Snappy (300 ms)",
+        "balanced": "Balanced (600 ms)",
+        "patient": "Patient (1.2 s)"
+      },
+      "headphoneMode": {
+        "label": "Headphone mode",
+        "description": "Allow barge-in: speaking interrupts the Brain's reply. Safe with headphones; with speakers the assistant could hear its own voice and interrupt itself."
+      },
+      "autoListen": {
+        "label": "Auto-listen after replies",
+        "description": "Resume listening immediately after each reply in hands-free mode. When off, a short grace period prevents capturing room reverb."
+      },
+      "replyLanguage": {
+        "label": "Reply language",
+        "description": "Language the Brain replies in. \"Auto\" mirrors the language you speak. Choose a specific language to always reply in it.",
+        "auto": "Auto (mirror input)"
+      },
+      "speakableOutputPrompt": {
+        "label": "Speakable output prompt",
+        "description": "Extra instructions appended when replies are read aloud — keeps answers conversational and free of markdown."
+      },
+      "engineStatus": {
+        "title": "Engine Status",
+        "description": "Status and properties of the active local llama.cpp server."
+      },
+      "multimodal": {
+        "group": "Multimodal Input (Gemma 4)",
+        "audioInput": {
+          "label": "Audio Input (Default: On)",
+          "description": "Sends the raw WAV recording alongside text to the Brain model. Gemma 4 processes the audio natively for enhanced transcription accuracy. Enabled by default for the local Gemma 4 model."
+        },
+        "imageInput": {
+          "label": "Image Input",
+          "description": "Enable image (screenshot) input support. When active, you can send a screenshot alongside text prompts for the AI to see and describe your screen."
+        }
       },
       "testGroup": "Test",
       "test": {
@@ -1161,8 +1246,10 @@
       "sttMs": "🎤 {{ms}}ms",
       "tokensPerSec": "{{tps}} t/s",
       "totalMs": "🧠 {{ms}}ms",
-      "ttsMs": "🔊 {{ms}}ms"
-    }
+      "ttsMs": "🔊 {{ms}}ms",
+      "firstToken": "⚡ first token {{ms}}ms"
+    },
+    "latencyHud": "Latency"
   },
   "debug": {
     "logViewer": {
@@ -1191,6 +1278,12 @@
     }
   },
   "llamaCpp": {
+    "serverGroup": "Llama.cpp Server",
+    "download": "Download",
+    "downloadingShort": "DL...",
+    "refresh": "Refresh Releases",
+    "refreshing": "Refreshing...",
+    "activeBadge": "ACTIVE",
     "localGemma": {
       "title": "Local Gemma-4 Engine (Llama.cpp)",
       "setupRequired": "Setup Required",

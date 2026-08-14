@@ -12,6 +12,5 @@ export { SettingContainer } from "./SettingContainer";
 export { SettingsGroup } from "./SettingsGroup";
 export { Slider } from "./Slider";
 export { Textarea } from "./Textarea";
-export { TextDisplay } from "./TextDisplay";
 export { ToggleSwitch } from "./ToggleSwitch";
 export { Tooltip } from "./Tooltip";

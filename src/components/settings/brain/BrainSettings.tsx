@@ -6,6 +6,7 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { Slider } from "../../ui/Slider";
+import { Select } from "../../ui/Select";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import { ResetButton } from "../../ui/ResetButton";
@@ -276,8 +277,8 @@ export const BrainSettings: React.FC = () => {
                 </SettingContainer>
 
                 <SettingContainer
-                  title="Engine Status"
-                  description="Status and properties of the active local llama.cpp server."
+                  title={t("settings.brain.engineStatus.title")}
+                  description={t("settings.brain.engineStatus.description")}
                   descriptionMode="tooltip"
                   layout="stacked"
                   grouped={true}
@@ -405,8 +406,8 @@ export const BrainSettings: React.FC = () => {
           />
         </SettingContainer>
         <SettingContainer
-          title="Warmup Prompt"
-          description="Dummy prompt sent to warm up the model when it loads into VRAM. Leave empty to skip warmup."
+          title={t("settings.brain.warmupPrompt.label")}
+          description={t("settings.brain.warmupPrompt.description")}
           grouped
           layout="stacked"
         >
@@ -436,17 +437,102 @@ export const BrainSettings: React.FC = () => {
           description={t("settings.brain.readAloud.description")}
           grouped
         />
+        <SettingContainer
+          title={t("settings.brain.endpointPreset.label")}
+          description={t("settings.brain.endpointPreset.description")}
+          descriptionMode="tooltip"
+          layout="horizontal"
+          grouped
+        >
+          <Select
+            value={brain.endpoint_preset ?? "balanced"}
+            options={[
+              {
+                value: "snappy",
+                label: t("settings.brain.endpointPreset.snappy"),
+              },
+              {
+                value: "balanced",
+                label: t("settings.brain.endpointPreset.balanced"),
+              },
+              {
+                value: "patient",
+                label: t("settings.brain.endpointPreset.patient"),
+              },
+            ]}
+            isClearable={false}
+            onChange={(value) => value && update({ endpoint_preset: value })}
+            className="min-w-[240px]"
+          />
+        </SettingContainer>
+        <ToggleSwitch
+          checked={brain.headphone_mode ?? false}
+          onChange={(headphone_mode) => update({ headphone_mode })}
+          label={t("settings.brain.headphoneMode.label")}
+          description={t("settings.brain.headphoneMode.description")}
+          grouped
+        />
+        <ToggleSwitch
+          checked={brain.auto_listen ?? false}
+          onChange={(auto_listen) => update({ auto_listen })}
+          label={t("settings.brain.autoListen.label")}
+          description={t("settings.brain.autoListen.description")}
+          grouped
+        />
+        <SettingContainer
+          title={t("settings.brain.replyLanguage.label")}
+          description={t("settings.brain.replyLanguage.description")}
+          descriptionMode="tooltip"
+          layout="horizontal"
+          grouped
+        >
+          <Select
+            value={brain.reply_language ?? "auto"}
+            options={[
+              { value: "auto", label: t("settings.brain.replyLanguage.auto") },
+              { value: "en", label: "English" },
+              { value: "es", label: "Español" },
+              { value: "fr", label: "Français" },
+              { value: "de", label: "Deutsch" },
+              { value: "it", label: "Italiano" },
+              { value: "pt", label: "Português" },
+              { value: "ru", label: "Русский" },
+              { value: "ja", label: "日本語" },
+              { value: "zh", label: "中文" },
+            ]}
+            isCreatable
+            formatCreateLabel={(input) => `Use "${input}"`}
+            onCreateOption={(value) => update({ reply_language: value })}
+            onChange={(value) => value && update({ reply_language: value })}
+            className="min-w-[240px]"
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("settings.brain.speakableOutputPrompt.label")}
+          description={t("settings.brain.speakableOutputPrompt.description")}
+          grouped
+          layout="stacked"
+        >
+          <Textarea
+            variant="compact"
+            rows={3}
+            value={brain.speakable_output_prompt ?? ""}
+            onChange={(e) =>
+              update({ speakable_output_prompt: e.target.value })
+            }
+          />
+        </SettingContainer>
       </SettingsGroup>
 
       {state.selectedProviderId === "llama_cpp" && (
-        <SettingsGroup title="Multimodal Input (Gemma 4)">
+        <SettingsGroup title={t("settings.brain.multimodal.group")}>
           <ToggleSwitch
             checked={brain.multimodal_audio_enabled ?? true}
             onChange={(multimodal_audio_enabled) =>
               update({ multimodal_audio_enabled })
             }
-            label="Audio Input (Default: On)"
-            description="Sends the raw WAV recording alongside text to the Brain model. Gemma 4 processes the audio natively for enhanced transcription accuracy. Enabled by default for the local Gemma 4 model."
+            label={t("settings.brain.multimodal.audioInput.label")}
+            description={t("settings.brain.multimodal.audioInput.description")}
             grouped
           />
           <ToggleSwitch
@@ -454,8 +540,8 @@ export const BrainSettings: React.FC = () => {
             onChange={(multimodal_image_enabled) =>
               update({ multimodal_image_enabled })
             }
-            label="Image Input"
-            description="Enable image (screenshot) input support. When active, you can send a screenshot alongside text prompts for the AI to see and describe your screen."
+            label={t("settings.brain.multimodal.imageInput.label")}
+            description={t("settings.brain.multimodal.imageInput.description")}
             grouped
           />
         </SettingsGroup>

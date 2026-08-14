@@ -21,8 +21,8 @@ interface OverlayStatePayload {
 }
 
 const BrainOverlayApp: React.FC = () => {
-  const { t } = useTranslation();
-  const dir = getLanguageDirection("en");
+  const { t, i18n } = useTranslation();
+  const dir = getLanguageDirection(i18n.language);
   const autoHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamingRef = useRef(false);
 

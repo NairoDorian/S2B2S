@@ -20,6 +20,7 @@ import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
+import { PostProcessActions } from "./PostProcessActions";
 import { useSettings } from "../../../hooks/useSettings";
 import { useLlamaState } from "../../../hooks/useLlamaState";
 
@@ -189,8 +190,8 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
               </SettingContainer>
 
               <SettingContainer
-                title="Engine Status"
-                description="Status and properties of the active local llama.cpp server."
+                title={t("settings.brain.engineStatus.title")}
+                description={t("settings.brain.engineStatus.description")}
                 descriptionMode="tooltip"
                 layout="stacked"
                 grouped={true}
@@ -604,6 +605,8 @@ export const PostProcessingSettings: React.FC = () => {
       <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
         <PostProcessingSettingsPrompts />
       </SettingsGroup>
+
+      <PostProcessActions />
     </div>
   );
 };

@@ -123,7 +123,7 @@ const LlamaCppSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <SettingsGroup title="Llama.cpp Server">
+      <SettingsGroup title={t("llamaCpp.serverGroup")}>
         {error && (
           <Alert variant="error" contained>
             {error}
@@ -188,7 +188,7 @@ const LlamaCppSettings: React.FC = () => {
                         </span>
                         {active && (
                           <span className="text-[10px] px-2 py-0.5 bg-green-500/15 text-green-400 font-bold rounded">
-                            ACTIVE
+                            {t("llamaCpp.activeBadge")}
                           </span>
                         )}
                       </div>
@@ -222,12 +222,12 @@ const LlamaCppSettings: React.FC = () => {
                           disabled={!!downloading && !downloaded}
                         >
                           {active
-                            ? "Active"
+                            ? t("llamaCpp.activeBadge")
                             : downloaded
-                              ? "Use"
+                              ? t("llamaCpp.use")
                               : isDl
-                                ? "DL..."
-                                : "Use"}
+                                ? t("llamaCpp.downloadingShort")
+                                : t("llamaCpp.use")}
                         </Button>
                       )}
                       {downloaded ? (
@@ -249,7 +249,9 @@ const LlamaCppSettings: React.FC = () => {
                             handleDownload(asset, latestRelease.tag)
                           }
                         >
-                          {isDl ? "Downloading..." : "Download"}
+                          {isDl
+                            ? t("shared.downloading")
+                            : t("llamaCpp.download")}
                         </Button>
                       )}
                     </div>
@@ -327,7 +329,7 @@ const LlamaCppSettings: React.FC = () => {
           onClick={refresh}
           disabled={loading}
         >
-          {loading ? "Refreshing..." : "Refresh Releases"}
+          {loading ? t("llamaCpp.refreshing") : t("llamaCpp.refresh")}
         </Button>
       </SettingsGroup>
     </div>

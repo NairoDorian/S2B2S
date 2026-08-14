@@ -393,10 +393,10 @@ export const SpeechSettings: React.FC = () => {
 
       {/* Pocket Voice Cloning */}
       {tts.engine === "pocket" && (
-        <SettingsGroup title="Clone Voice (Pocket TTS)">
+        <SettingsGroup title={t("settings.speech.cloneVoice.pocketGroup")}>
           <SettingContainer
-            title="Import reference audio"
-            description="Select a 5-20 second WAV file of someone speaking clearly. Pocket TTS will clone that voice."
+            title={t("settings.speech.cloneVoice.importTitle")}
+            description={t("settings.speech.cloneVoice.importDescription")}
             grouped
           >
             <Button
@@ -406,7 +406,9 @@ export const SpeechSettings: React.FC = () => {
               onClick={handleCloneVoice}
             >
               <Upload size={14} className="mr-1" />
-              {importingVoice ? "Importing..." : "Select WAV File"}
+              {importingVoice
+                ? t("settings.speech.cloneVoice.importing")
+                : t("settings.speech.cloneVoice.selectWav")}
             </Button>
           </SettingContainer>
           {voices.some((v) => v.language === "cloned") && (
@@ -419,10 +421,10 @@ export const SpeechSettings: React.FC = () => {
 
       {/* Qwen3 Voice Cloning */}
       {tts.engine === "qwen3" && (
-        <SettingsGroup title="Clone Voice (Qwen3-TTS)">
+        <SettingsGroup title={t("settings.speech.cloneVoice.qwen3Group")}>
           <SettingContainer
-            title="Import reference audio"
-            description="Select a 5-20 second WAV file of someone speaking clearly. Qwen3-TTS will clone that voice."
+            title={t("settings.speech.cloneVoice.importTitle")}
+            description={t("settings.speech.cloneVoice.importDescription")}
             grouped
           >
             <Button
@@ -453,7 +455,9 @@ export const SpeechSettings: React.FC = () => {
               }}
             >
               <Upload size={14} className="mr-1" />
-              {importingVoice ? "Importing..." : "Select WAV File"}
+              {importingVoice
+                ? t("settings.speech.cloneVoice.importing")
+                : t("settings.speech.cloneVoice.selectWav")}
             </Button>
           </SettingContainer>
           {voices.some((v) => v.language === "cloned") && (
@@ -659,6 +663,247 @@ export const SpeechSettings: React.FC = () => {
           grouped
         />
       </SettingsGroup>
+
+      {/* Cloud engine credentials */}
+      {["openai", "elevenlabs", "cartesia"].includes(tts.engine) && (
+        <CloudCredentialsSettings engine={tts.engine} update={update} />
+      )}
+
+      {/* Wake word (energy activation) */}
+      <WakeWordSettings tts={tts} update={update} />
     </div>
+  );
+};
+
+const CloudCredentialsSettings: React.FC<{
+  engine: TtsEngine;
+  update: (patch: Partial<TtsConfig>) => void;
+}> = ({ engine, update }) => {
+  const { t } = useTranslation();
+  const { settings } = useSettings();
+  const tts = settings?.tts;
+  if (!tts) return null;
+
+  if (engine === "openai") {
+    const cfg = tts.openai ?? { api_key: "", model: "", voice: "alloy" };
+    return (
+      <SettingsGroup title={t("settings.speech.cloud.group")}>
+        <SettingContainer
+          title={t("settings.speech.cloud.apiKey.label")}
+          description={t("settings.speech.cloud.apiKey.description")}
+          grouped
+        >
+          <Input
+            type="password"
+            value={cfg.api_key}
+            onChange={(e) =>
+              update({ openai: { ...cfg, api_key: e.target.value } })
+            }
+            placeholder="sk-..."
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("settings.speech.cloud.model.label")}
+          description={t("settings.speech.cloud.model.description")}
+          grouped
+        >
+          <Input
+            value={cfg.model}
+            onChange={(e) =>
+              update({ openai: { ...cfg, model: e.target.value } })
+            }
+            placeholder={t("settings.speech.cloud.model.placeholder")}
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("settings.speech.cloud.voiceId.label")}
+          description={t("settings.speech.cloud.voiceId.description")}
+          grouped
+        >
+          <Input
+            value={cfg.voice}
+            onChange={(e) =>
+              update({ openai: { ...cfg, voice: e.target.value } })
+            }
+            placeholder={t("settings.speech.cloud.voiceId.placeholder")}
+          />
+        </SettingContainer>
+      </SettingsGroup>
+    );
+  }
+
+  if (engine === "elevenlabs") {
+    const cfg = tts.elevenlabs ?? {
+      api_key: "",
+      voice_id: "",
+      voice_name: null,
+      model_id: "eleven_multilingual_v2",
+      output_format: "mp3_44100_128" as const,
+      voice_style: null,
+      use_speaker_boost: null,
+      use_manual_voice_id: true,
+    };
+    return (
+      <SettingsGroup title={t("settings.speech.cloud.group")}>
+        <SettingContainer
+          title={t("settings.speech.cloud.apiKey.label")}
+          description={t("settings.speech.cloud.apiKey.description")}
+          grouped
+        >
+          <Input
+            type="password"
+            value={cfg.api_key}
+            onChange={(e) =>
+              update({ elevenlabs: { ...cfg, api_key: e.target.value } })
+            }
+            placeholder="sk-..."
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("settings.speech.cloud.model.label")}
+          description={t("settings.speech.cloud.model.description")}
+          grouped
+        >
+          <Input
+            value={cfg.model_id}
+            onChange={(e) =>
+              update({ elevenlabs: { ...cfg, model_id: e.target.value } })
+            }
+            placeholder="eleven_multilingual_v2"
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("settings.speech.cloud.voiceId.label")}
+          description={t("settings.speech.cloud.voiceId.description")}
+          grouped
+        >
+          <Input
+            value={cfg.voice_id}
+            onChange={(e) =>
+              update({ elevenlabs: { ...cfg, voice_id: e.target.value } })
+            }
+            placeholder={t("settings.speech.cloud.voiceId.placeholder")}
+          />
+        </SettingContainer>
+      </SettingsGroup>
+    );
+  }
+
+  const cfg = tts.cartesia ?? {
+    api_key: "",
+    model_id: "sonic-2",
+    voice_id: "",
+    voice_name: null,
+    output_format: "mp3",
+    use_manual_voice_id: true,
+  };
+  return (
+    <SettingsGroup title={t("settings.speech.cloud.group")}>
+      <SettingContainer
+        title={t("settings.speech.cloud.apiKey.label")}
+        description={t("settings.speech.cloud.apiKey.description")}
+        grouped
+      >
+        <Input
+          type="password"
+          value={cfg.api_key}
+          onChange={(e) =>
+            update({ cartesia: { ...cfg, api_key: e.target.value } })
+          }
+          placeholder="sk-..."
+        />
+      </SettingContainer>
+      <SettingContainer
+        title={t("settings.speech.cloud.model.label")}
+        description={t("settings.speech.cloud.model.description")}
+        grouped
+      >
+        <Input
+          value={cfg.model_id}
+          onChange={(e) =>
+            update({ cartesia: { ...cfg, model_id: e.target.value } })
+          }
+          placeholder="sonic-2"
+        />
+      </SettingContainer>
+      <SettingContainer
+        title={t("settings.speech.cloud.voiceId.label")}
+        description={t("settings.speech.cloud.voiceId.description")}
+        grouped
+      >
+        <Input
+          value={cfg.voice_id}
+          onChange={(e) =>
+            update({ cartesia: { ...cfg, voice_id: e.target.value } })
+          }
+          placeholder={t("settings.speech.cloud.voiceId.placeholder")}
+        />
+      </SettingContainer>
+    </SettingsGroup>
+  );
+};
+
+const WakeWordSettings: React.FC<{
+  tts: TtsConfig;
+  update: (patch: Partial<TtsConfig>) => void;
+}> = ({ tts, update }) => {
+  const { t } = useTranslation();
+  const wakeWord = tts.wake_word ?? {
+    enabled: false,
+    keyword: "hey s2b2s",
+    energy_threshold: 0.03,
+    show_indicator: true,
+  };
+
+  const applyConfig = (config: typeof wakeWord) => {
+    update({ wake_word: config });
+    void commands
+      .wakeWordSetConfig(config)
+      .then(() => {
+        if (config.enabled) {
+          return commands.wakeWordStart();
+        }
+        return commands.wakeWordStop();
+      })
+      .catch((err) => console.error("Failed to apply wake word config:", err));
+  };
+
+  return (
+    <SettingsGroup title={t("settings.speech.wakeWord.group")}>
+      <ToggleSwitch
+        checked={wakeWord.enabled}
+        onChange={(enabled) => applyConfig({ ...wakeWord, enabled })}
+        label={t("settings.speech.wakeWord.enabled.label")}
+        description={t("settings.speech.wakeWord.enabled.description")}
+        grouped
+      />
+      {wakeWord.enabled && (
+        <>
+          <Slider
+            value={wakeWord.energy_threshold ?? 0.03}
+            onChange={(energy_threshold) =>
+              applyConfig({ ...wakeWord, energy_threshold })
+            }
+            min={0.005}
+            max={0.2}
+            step={0.005}
+            label={t("settings.speech.wakeWord.sensitivity.label")}
+            description={t("settings.speech.wakeWord.sensitivity.description")}
+            grouped
+            showValue
+            formatValue={(value) => value.toFixed(3)}
+          />
+          <ToggleSwitch
+            checked={wakeWord.show_indicator}
+            onChange={(show_indicator) =>
+              applyConfig({ ...wakeWord, show_indicator })
+            }
+            label={t("settings.speech.wakeWord.indicator.label")}
+            description={t("settings.speech.wakeWord.indicator.description")}
+            grouped
+          />
+        </>
+      )}
+    </SettingsGroup>
   );
 };

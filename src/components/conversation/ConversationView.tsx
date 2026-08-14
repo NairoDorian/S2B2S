@@ -289,6 +289,20 @@ export const ConversationView: React.FC = () => {
           </div>
         </div>
       )}
+      {brainEnabled && latencyHud && (
+        <div className="flex items-center gap-3 px-3 text-[10px] text-text/30 font-mono">
+          <span className="font-semibold text-text/40 uppercase tracking-wide">
+            {t("conversation.latencyHud")}
+          </span>
+          {latencyHud.first_token != null && (
+            <span>
+              {t("conversation.metrics.firstToken", {
+                ms: latencyHud.first_token,
+              })}
+            </span>
+          )}
+        </div>
+      )}
 
       {voiceMode && (
         <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-logo-primary/30 bg-logo-primary/5 shadow-sm transition-all duration-300">
