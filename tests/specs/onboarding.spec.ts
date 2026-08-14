@@ -8,6 +8,7 @@ test.describe("Onboarding Flow", () => {
     // 1. Mock Tauri IPC layer and override check commands for a fresh installation
     await mockTauriIpc(page);
     await page.addInitScript(() => {
+      (window as any).__settingsOverrides = { onboarding_completed: false };
       (window as any).__mockHandlers = {
         ...(window as any).__mockHandlers,
         check_speech_runtime_installed: () => false,

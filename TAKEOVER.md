@@ -1,7 +1,7 @@
 # S2B2S Agent Takeover & Living Memory Protocol
 
 > **Purpose:** This file is the official living handoff document between sequential AI coding agents.  
-> **Rule of Maintenance:** The section headers in this file **NEVER** change. Every agent taking over or finishing a turn must update the *content* beneath the headers following the lifecycle rules defined below.
+> **Rule of Maintenance:** The section headers in this file **NEVER** change. Every agent taking over or finishing a turn must update the _content_ beneath the headers following the lifecycle rules defined below.
 
 ---
 
@@ -28,103 +28,164 @@
 ## 2. Active Session Pass-Over (Transient State)
 
 ### Immediate Status & Build Health
+
 - **App Version:** `0.1.4` (cargo, package.json, tauri.conf.json in sync).
-- **Build Status:** All 319 Rust unit tests pass (`cargo test`). `bun run validate` passes (23 languages synced with 793 keys, TypeScript clean, ESLint/Prettier clean, Cargo check clean).
-- **Backend Runtime:** Multi-STT default merge prompt updated to `"Merge and Clean"`. Model path resolution fixed for HF cache vs local models.
-- **Frontend Theme:** Golden style implemented (`--color-logo-primary: #f59e0b` / `#d97706`). All pink removed. Bottom status bar brain emoji replaced with `src/assets/icon.png`. 3D Avatar shaders updated to gold.
+- **Upstream Sync:** 0 commits behind `cjpais/Handy:main` (portable HF_HOME fix merged as `6505e0fc`).
+- **Milestone M0 (Honesty & Hygiene Sweep) — COMPLETE.** Backend: `cargo check` clean (0 warnings), `cargo test` 315/315 pass, specta bindings regenerated. Frontend: `tsc --noEmit` clean, 24 locales synced + verified, all 5 Playwright specs pass (dictation spec rewritten for the current overlay API; mock now honors `onboarding_completed` + `__settingsOverrides`).
+- **Known environment issue (pre-existing, NOT caused by M0):** `bun run lint` crashes — `typescript-eslint` rejects the pinned `typescript@7.1.0-dev.20260813.1` ("does not support TS 7.0"). Needs a dep fix (pin TS 6.x or bump typescript-eslint); do not block on it.
 
 ### Current Task in Progress
-- Planning and preparation for **Milestone 1: AI Selection Transformation & Dynamic Context Variables**.
+
+- None. M0 complete. Next: **Milestone M1 (AI Replace Selection)** — see Section 4.
 
 ### Next Immediate Action for Takeover
-1. Begin **Milestone 1 Task 1.1**: Add `ai_replace_selection` action in [`src-tauri/src/actions.rs`](file:///src-tauri/src/actions.rs) and simulate selection capture via Enigo in [`src-tauri/src/clipboard.rs`](file:///src-tauri/src/clipboard.rs).
-2. Wire global shortcut for AI Selection Edit in [`src-tauri/src/shortcut/handler.rs`](file:///src-tauri/src/shortcut/handler.rs).
+
+1. M1.1: OS selection capture — port the Windows UIA text-pattern reader from AIVORelay `selection.rs` (never synthesize Ctrl+C), add macOS AXUIElement + Linux xclip fallbacks.
+2. M1.2: generic prompt-variable replacer (`${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`).
 
 ### Active Traps & Blockers
-- **None currently.** Build directory locks release normally. Keep LLM calls pointing strictly to local `llama-server.exe` (port 8001/8080) with Gemma 4 or Qwen models.
+
+- `bun run lint` is broken repo-wide (see above). Use `tsc`, `prettier --check`, `cargo clippy` as substitutes until deps are fixed.
+- `conversation_mode` (push_to_talk|toggle|hands_free) is stored but still NOT honored by the backend — deliberately not exposed in the M0.3 UI. Either wire it (M2) or remove the field.
+- `session_manager.rs` half-built async-ownership API still present behind `#[allow(dead_code)]` — removed as part of M5.3, not now.
+- Keep LLM calls strictly on local `llama-server.exe` (port 8001/8080) with Gemma 4 or Qwen models.
 
 ---
 
 ## 3. Project Memory & Durable Knowledge (Accumulating)
 
 ### STT & transcribe.cpp Invariants
+
 - **Local Engine**: `transcribe.cpp` uses GGUF models. Primary models: Nemotron 3.5 Streaming (Vulkan/CUDA cache-aware), Parakeet TDT 0.6B v3, Whisper Turbo, SenseVoice.
 - **Multi-STT Slot Resolution**: Model paths must be resolved via `model_manager.get_model_path(&model_id)` to handle both `models/` directory and HuggingFace cache gracefully without panics.
 - **Multimodal Ground-Truth ASR**: Gemma 4 2B running on `llama-server.exe` with `mmproj-F16.gguf` accepts raw 16kHz WAV audio in `input_audio` payload to provide a 2nd independent acoustic hypothesis in ~580ms.
 - **Consensus Fusion**: When Multi-STT is enabled, `DEFAULT_MULTI_STT_MERGE_PROMPT` ("Merge and Clean") automatically fuses hypotheses `${output}`, `${output2}`, `${output3}` into a final clean transcript.
+- **Portable HF_HOME**: Since upstream `9e534a3d`, portable mode sets `HF_HOME=<Data>/huggingface` so hf-hub snapshots stay inside the portable Data dir. Do not bypass this when adding model-download code paths.
 
 ### Brain, Llama.cpp & Local Model Rules
-- **Local Server Lifecycle**: Pre-compiled `llama-server.exe` managed by [`src-tauri/src/llama_server/manager.rs`](file:///src-tauri/src/llama_server/manager.rs). Auto-detects GPU backend (Vulkan0, CUDA 12/13, Apple Metal, CPU AVX2).
+
+- **Local Server Lifecycle**: Pre-compiled `llama-server.exe` managed by [`src-tauri/src/llama_server/manager.rs`](file:///src-tauri/src/llama_server/manager.rs). Auto-detects GPU backend (Vulkan0, CUDA 12/13, Apple Metal, CPU AVX2). Fixed 16384 context, `--parallel 1`, MTP draft decoding.
 - **Zero-Cloud Default**: All features default to offline local operation. No external API keys required for core functionality.
-- **Prompt Variables**: Variables like `${output}`, `${selected_text}`, `${active_app}`, `${time_local}` must be replaced before LLM dispatch.
+- **Context fragility**: Brain history is an unbounded `Vec<ChatMessage>` truncated to the last `context_turns * 2` messages (`src-tauri/src/brain/manager.rs:150-156`). No token counting, no compaction — long turns silently overflow the 16k context. Failed user turns are dropped, not remembered (`brain/manager.rs:312-322`).
 
 ### TTS Engines & Runtime Bindings
-- **Offline Engines (6 local)**:
-  - `Qwen3-TTS`: Local GGML or PyTorch CUDA Graphs (`faster-qwen3-tts`).
-  - `Kokoro-82M`: Local persistent ONNX HTTP server (54 voices, 9 languages).
-  - `Pocket TTS`: Local persistent server with zero-shot voice cloning.
-  - `Piper`: Local ONNX neural voice engine.
-  - `Kitten TTS`: Local lightweight engine.
-  - `SAPI`: Native Windows COM interop fallback.
-- **Audio Output**: `rodio` streaming gapless audio player (`src-tauri/src/tts/player.rs`) with sub-20ms instant flush on barge-in.
+
+- **Offline Engines (6 local)**: Qwen3-TTS (GGML or PyTorch CUDA Graphs via `faster-qwen3-tts`), Kokoro-82M (ONNX HTTP server), Pocket TTS (zero-shot cloning), Piper (ONNX), Kitten TTS, SAPI (Windows COM).
+- **Cloud Engines (3)**: OpenAI, ElevenLabs, Cartesia. **Their API-key configs have no frontend UI** (`SpeechSettings.tsx` only shows the engine dropdown) — effectively unusable from the GUI until M0.4 lands.
+- **Audio Output**: `rodio` streaming gapless player (`src-tauri/src/tts/player.rs`) with sub-20ms instant flush on barge-in. Only single-entry WAV→MP3/OGG/FLAC export exists (`commands/tts.rs:70-110`); no batch conversion or listen-later queue.
+
+### Verified Review Findings (Aug 2026 — backend)
+
+- **Milestone-1 half-truth**: `ai_replace_selection` command EXISTS (`commands/brain.rs:12`, registered `lib.rs:853`) and a default `ai_replace` binding EXISTS (`settings.rs:1955-1966`), but: no ACTION_MAP/shortcut-handler wiring, no OS selection capture, no frontend caller, no prompt-variable replacer. Treat as scaffold, not feature.
+- **Stored-but-dead settings (post-M0 status)**: `endpoint_preset`/`headphone_mode` NOW WIRED (M0.1); wake-word `energy_threshold` NOW WIRED (M0.2). Still dead: `conversation_mode`, `auto_listen` (wired — used in `continuous_voice.rs:272`), `reply_language` (wired via `resolve_reply_language`), `speakable_output_prompt` (wired in `brain/manager.rs`). Remaining unwired: `WakeWordConfig.keyword` (reserved for future KWS), `show_indicator`, `custom_filler_words` list, `tts_save_format`/`tts_workers`/`pagination` UI.
+- **Dead code removed (M0.5)**: `tts/fragment_queue.rs`, `managers/transcription_mock.rs`, `recording_session.rs` (all refs → `session_manager`), frontend `ModelFilterBar`/`ModelMetadataPanel`/`useModelFilters` (recoverable from git), `PostProcessActions` (wired, not deleted), KeyboardShortcutsModal/DeveloperHub/DevConsoleLogLevelSelector/DebugPaths/TextDisplay/TranscriptionIcon/`lib/shortcuts.ts`.
+- **Triplicated recording state machines**: `TranscriptionCoordinator` stage vs `session_manager::SessionState` vs `AudioRecordingManager::RecordingState`; `recording_auto_stop.rs:89-98` bypasses the coordinator. Consolidate into one owner (coordinator as single entry point).
+- **Duplicated infra**: two LLM HTTP clients (`brain/client.rs` SSE vs `llm_client.rs` post-processing) with duplicate structs; two local-TTS server lifecycles (`piper_server.rs` vs `local_tts_server.rs`) with split status commands; parakeet-EOU detection duplicated (`transcription.rs:1631`, `stt/multi_stt.rs:479`).
+- **Panic audit debt**: 401 `.unwrap()` in backend — hot spots `managers/audio.rs` (43), `managers/model.rs` (68), `managers/transcription.rs` (28); live-path `expect()` at `continuous_voice.rs:145`.
+- **God files (Phase 3 refactor targets)**: `managers/model.rs` (3369), `managers/transcription.rs` (2814), `settings.rs` (2612), `actions.rs` (1750), `shortcut/mod.rs` (1668), `lib.rs` (1351), `clipboard.rs` (1236).
+- **Good foundations to build on**: GGUF header parser (`managers/gguf_meta.rs`, wanted-keys + truncation-as-error), generation counters for stale-worker rejection (`session_manager.rs`), PTT debounce/regression tests, sentence splitter (`brain/client.rs:311-446`), settings snapshot capture, trailing audio buffer (`extra_recording_buffer_ms`, `managers/audio.rs:935-955`), recording auto-stop.
+
+### Verified Review Findings (Aug 2026 — frontend, post-M0)
+
+- **Remaining cleanup**: `TtsPlayer::is_paused`, realtime decapitalize path (`text_replacement_decapitalize.rs:26,135-144`), `session_manager.rs` ownership API — deferred to M5.
+- **Bugs fixed in M0**: `AccessibilityPermissions` double render, `latencyHud` unrendered, `BrainOverlayApp dir="en"`, ~12 hardcoded i18n strings, cloud TTS keys unreachable, stale Playwright dictation spec + mock onboarding gate.
+- **Conversation persistence**: `ConversationView.tsx:30` keeps messages in `useState` only — nothing survives navigation/restart; SQLite history covers dictation/TTS but not conversations (M4.3).
+- **i18n**: 24 locales; new M0 keys synced to all; `bun run check:translations` green.
+- **Testing**: `bun run test:playwright` 5/5 green. `bun run lint` broken by TS 7.1-dev vs typescript-eslint (pre-existing).
+
+### Patterns Worth Adopting from Reference Projects
+
+- **AIVORelay**: operation-id stale-result rejection (`is_operation_current` before every UI side effect); `Arc::ptr_eq` token claim for auto-stop timers; captured-settings snapshot at recording start; subtitle.rs pure SRT/VTT formatter (6s/0.8s/84-char cue limits); diarization temp-artifact + validated speaker reapply; region-capture logical→physical DPI math with hide-window→50ms→capture ordering; browser connector ECDH P-256 + HKDF + AES-256-GCM handshake; resumable TTS workspace (alternating JSON checkpoint slots + sha256 segments + config-signature invalidation + fs2 lease); UIA-based selection reading that never touches the clipboard (Windows) with clipboard fallback.
+- **copyspeak**: audio effects as pure `AudioBuffer→AudioBuffer` Web Audio transforms behind a registry (frontend-only DSP); TTS voice profiles with tagged `{engine, ...knobs}` options and migration ladder (secrets global, knobs profile-owned); engine health check = real "Hello." synthesis through the same runtime, with stable `error_type` strings; HUD hidden = parked off-screen (avoids WebView2 transparent-window repaint bug); installer marker protocol `[STEP]/[DONE]/[ERROR] name` + `manifest.json` as install-state source of truth; history file-tracking map (path↔entry) for O(1) cleanup; import/export via full-config JSON + backend `validate_config` + diff-driven side effects + env-stripping of secrets.
+- **speech-to-speech**: generation counter `CancelScope` (snapshot at task start, `is_stale` poll at each await); speculative turns — tag everything `(turn_id, revision)`, generate immediately on endpoint but delay _commit_ (TTS start, chat write-back) by a reopen grace window, bump revision on reopen and drop stale work at every stage gate; two-tier endpointing (cheap Silero boundary + Smart-Turn end-of-turn classifier choosing 800ms vs 2000ms grace); sentence batching (`stream_batch_sentences`) + TTS input coalescing (merge consecutive same-response `TTSInput`s); context compaction via dense-JSON summary prompt in a single-flight background worker with a generation counter; `<code>…</code>` tool-call blocks parseable from any local LLM stream with schema validation before execution; response-key visibility barrier (nothing client-visible before its `response.created`); "always emit terminal sentinel even on error" so state machines never deadlock.
 
 ### Cross-Platform & UI Design Rules
+
 - **Cross-Platform Mandate**: Windows 11 (Top priority), macOS (First-class), Linux (First-class). Every `#[cfg(target_os = "...")]` must provide fallbacks.
 - **Color Theme**: Golden Accent Palette (`--color-logo-primary: #f59e0b` / `#d97706`, `--dark-color-logo-stroke: #fef3c7`, UI background accent: `#d97706`). **No pink or purple accents.**
-- **Internationalization**: 23 languages in `src/i18n/locales/`. Every new user-facing string must be in `en/translation.json` and synced via `bun run sync:translations`.
+- **Internationalization**: 24 languages in `src/i18n/locales/`. Every new user-facing string must be in `en/translation.json` and synced via `bun run sync:translations`.
 
 ---
 
 ## 4. Sequential Roadmap & Task Tracker (Stateful Milestones)
 
-### Milestone 1: AI Selection Transformation & Dynamic Context
-- [ ] **Task 1.1**: Implement OS selection capture in [`src-tauri/src/clipboard.rs`](file:///src-tauri/src/clipboard.rs) & [`src-tauri/src/actions.rs`](file:///src-tauri/src/actions.rs).
-- [ ] **Task 1.2**: Implement dynamic prompt variable replacer (`${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`).
-- [ ] **Task 1.3**: Add `ai_replace_selection` action & global shortcut in [`src-tauri/src/shortcut/handler.rs`](file:///src-tauri/src/shortcut/handler.rs).
-- [ ] **Task 1.4**: Add frontend AI Replace settings card in `src/components/settings/` and sync all 23 translation files.
+> Consolidated from: AIVORelay implementation plans (`AIVO_RELAY_IMPLEMENTATION_PLAN.md`, `AIVO_update_integration_plan.md` — historical, superseded by this section), copyspeak, and speech-to-speech deep dives. Sequencing rule: M0 fixes dishonesty before building; M2 conversation quality outranks ecosystem breadth (it's the product's core); M5 refactors run last so they don't destabilize new features.
 
-### Milestone 2: Multi-Profile Transcription System
-- [ ] **Task 2.1**: Define `TranscriptionProfile` struct in [`src-tauri/src/settings.rs`](file:///src-tauri/src/settings.rs).
-- [ ] **Task 2.2**: Implement profile cycle hotkey and dedicated per-profile shortcut triggers.
-- [ ] **Task 2.3**: Build frontend Profile Management UI with active profile status indicator in footer.
+### Milestone M0: Honesty & Hygiene Sweep (cheapest wins, highest trust impact)
 
-### Milestone 3: Local OpenAI Realtime WebSocket Gateway
-- [ ] **Task 3.1**: Implement local WebSocket server (`ws://127.0.0.1:8765/v1/realtime`) using `axum` + `tokio-tungstenite`.
-- [ ] **Task 3.2**: Implement standard OpenAI Realtime events (`session.update`, `input_audio_buffer.append`, `response.create`, `response.audio.delta`).
-- [ ] **Task 3.3**: Implement zero-latency hardware barge-in queue cancellation.
+- [x] **M0.1** Wire `endpoint_preset` (snappy/balanced/patient → real ms) + `headphone_mode` into continuous-voice EOU (`recorder.rs:996,1028`). Added `endpoint_silence_frames` atomic (live-updatable, no stream restart) + `endpoint_frames_for_preset()`; `change_brain_config` applies it live; `headphone_mode` now gates the barge-in abort listener (`continuous_voice.rs`).
+- [x] **M0.2** Wake word honesty: stale comments fixed (`wake_word.rs:52,99`); `WakeWordConfig.threshold` (unused 0.6) replaced with `energy_threshold` (RMS, default 0.03, live-applied, clamped); UI card added in SpeechSettings with honest "energy activation" labeling.
+- [x] **M0.3** Expose dead Brain settings in UI: `endpoint_preset`, `headphone_mode`, `auto_listen`, `reply_language`, `speakable_output_prompt` added to BrainSettings behavior group. `conversation_mode` intentionally NOT exposed (backend ignores it — see traps).
+- [x] **M0.4** Cloud TTS credential UI: conditional OpenAI/ElevenLabs/Cartesia API-key/model/voice fields in `SpeechSettings.tsx` (previously unreachable).
+- [x] **M0.5** Dead-code sweep: deleted backend `tts/fragment_queue.rs`, `managers/transcription_mock.rs`, `recording_session.rs` shim (all refs migrated to `session_manager`); frontend: wired `PostProcessActions` into PostProcessingSettings (recovers the whole post-process-actions feature), deleted `ModelFilterBar`/`ModelMetadataPanel`/`useModelFilters` (unwired filter UI — recoverable from git, re-wire in M3 if desired), `KeyboardShortcutsModal`, `DeveloperHub`, `DevConsoleLogLevelSelector`, `DebugPaths`, `TextDisplay`, `TranscriptionIcon`, `lib/shortcuts.ts`, dead `prepare/consumeModelDownloadAutoActivation` exports.
+- [x] **M0.6** Frontend bug fixes: single `AccessibilityPermissions` render (was doubled), `latencyHud` now rendered, `BrainOverlayApp` RTL `dir` fixed, ~12 hardcoded i18n strings i18n-ized (Brain/Speech/LlamaCpp/PostProcessing), brain history appends user turn on error (`brain/manager.rs`), `continuous_voice.rs` `expect()` removed; Playwright dictation spec rewritten for the current overlay DOM + mock `onboarding_completed`/`__settingsOverrides` support (5/5 specs green).
 
-### Milestone 4: Dual-Channel System Loopback Audio Recorder
-- [ ] **Task 4.1**: Implement WASAPI loopback (Windows) & CoreAudio/PulseAudio capture in `audio_toolkit`.
-- [ ] **Task 4.2**: Dual-channel mixer: Channel 0 (Mic) + Channel 1 (System Speaker/Meeting Audio).
-- [ ] **Task 4.3**: Real-time meeting transcription window with Markdown minutes export.
+### Milestone M1: Complete AI Replace Selection (finish the scaffold)
 
-### Milestone 5: Local Batch Media & Document Transcriber
-- [ ] **Task 5.1**: Drag-and-drop batch audio/video transcriber (export `.srt`, `.vtt`, `.md`).
-- [ ] **Task 5.2**: Long document-to-speech synthesizer (Audiobook mode with chapter chunking).
+- [ ] **M1.1** OS selection capture: Windows UIA text-pattern reader (port `selection.rs` approach — never synthesize Ctrl+C); macOS AXUIElement `kAXSelectedTextAttribute`; Linux xclip/primary-selection fallback.
+- [ ] **M1.2** Generic prompt-variable replacer (`${selected_text}`, `${active_app}`, `${clipboard}`, `${time_local}`) applied before LLM dispatch in both Brain and post-processing.
+- [ ] **M1.3** Wire `ai_replace` binding into shortcut handler + ACTION_MAP (`shortcut/handler.rs`); add abort + progress events; add non-streaming mode to `BrainClient`.
+- [ ] **M1.4** Frontend AI Replace settings card (reuse the AIVORelay `useAiReplaceProviderState` inherit-from-post-processing pattern) + i18n sync.
 
-### Milestone 6: Local Zero-Shot Voice Cloning Studio
-- [ ] **Task 6.1**: Visual 3-second reference voice recorder in TTS settings.
-- [ ] **Task 6.2**: Save reference embeddings and route to Qwen3-TTS / Pocket TTS prompt audio.
+### Milestone M2: Smart Conversation Core (from speech-to-speech)
+
+- [ ] **M2.1** Turn system: `(turn_id, revision)` tagging on every continuous-voice message; central `SpeculativeTurnTracker` (latest/committed/pending-reopen + grace deadlines) in Rust (`Mutex<HashMap>` + `Notify`).
+- [ ] **M2.2** Two-tier endpointing: keep Silero/VAD boundary, add reopen-grace selection (800ms confident / 2000ms tentative) driving when TTS/chat commit; per-stage `is_latest(turn, rev)` gates.
+- [ ] **M2.3** Brain context compaction: token-counted truncation + optional LLM summarization (dense-JSON summary prompt, single-flight background worker, generation counter to reject stale splices; hard cap at 2× turns).
+- [ ] **M2.4** Sentence batching (`stream_batch_sentences`) + TTS input coalescing (drain `try_recv` same-response sentences into one synth call; preserve event-before-audio ordering).
+- [ ] **M2.5** Tool calling for local models: `<code>…</code>` block prompt + parser (paren-depth scanner, JSON args), schema validation before execution; expose 2-3 built-in tools (time/date, clipboard read, open URL) — MCP-lite, fully offline.
+- [ ] **M2.6** (Stretch) Local OpenAI Realtime WebSocket gateway (`ws://127.0.0.1:8765/v1/realtime`) — axum + tokio-tungstenite; protocol layer (response keys, item ordering, lazy `response.created`) separate from pipeline layer; barge-in order: cancel → flush queues → re-enable mic.
+
+### Milestone M3: Dictation Ecosystem (from AIVORelay)
+
+- [ ] **M3.1** Subtitle export: port `subtitle.rs` formatter (pure, tested) → export history/transcriptions as `.srt`/`.vtt`.
+- [ ] **M3.2** Batch file transcription: hound WAV + rodio decode + rubato 16kHz resample; provider routing; diarization via temp-artifact + speaker reapply; drag-and-drop UI.
+- [ ] **M3.3** Multi-profile transcription: `TranscriptionProfile` struct (model, language, prompt, post-process, hotkey), per-app auto-switch via existing `active_app.rs`, footer quick-switch.
+- [ ] **M3.4** Text replacement rules table (case-sensitive/regex, escape sequences) + wire the realtime decapitalize path.
+- [ ] **M3.5** Voice-cloning reference recorder: record N seconds in-app → `pocket_import_cloned_voice` / `qwen3_import_cloned_voice` (close the loop the UI implies).
+- [ ] **M3.6** Mic auto-switch (wildcard mask + manual fallback if device still present), input-channel selection, pause-media-while-recording.
+- [ ] **M3.7** Resumable document TTS + listen-later queue: checkpoint workspace (alternating JSON slots, sha256, config signature, fs2 lease) + batch conversion panel.
+- [ ] **M3.8** (Windows-gated) Region capture overlay → multimodal Brain (`ask_multimodal`); logical→physical DPI at confirm boundary; hide-window→50ms→capture.
+- [ ] **M3.9** (Later) Browser connector (axum loopback + ECDH/HKDF/AES-GCM + extension export) and remote STT gateways (Soniox/Deepgram/OpenAI realtime) with automatic local fallback.
+
+### Milestone M4: TTS UX & History (from copyspeak)
+
+- [ ] **M4.1** Audio effects: registry pattern + walkie-talkie/game-boy as Web Audio transforms (frontend-only DSP), per-voice or per-profile toggle.
+- [ ] **M4.2** HUD overlay hardening: adopt off-screen parking instead of hide/show; `hud:*` event protocol; amplitude streaming.
+- [ ] **M4.3** History: search/filter/bulk actions; HTML export; file-tracking map for cleanup; conversation persistence (new SQLite table or history reuse) surfaced in `HistorySettings.tsx`.
+- [ ] **M4.4** TTS voice profiles: tagged `{engine, knobs}` options, export/import JSON with id-collision remap, migration ladder (`schema_version`).
+- [ ] **M4.5** Engine health checks: "Hello." synthesis through the real runtime + stable `error_type`s; per-engine install manifests + marker protocol.
+- [ ] **M4.6** Import/export hardening: backend `validate_config`, diff-driven side effects, env-stripping of secrets.
+
+### Milestone M5: Infrastructure Consolidation (STATUS.md Phase 3)
+
+- [ ] **M5.1** Split god files: `managers/model.rs`, `managers/transcription.rs`, `settings.rs`, `actions.rs`, `shortcut/mod.rs`, `lib.rs`, `clipboard.rs`.
+- [ ] **M5.2** Settings schema versioning + grouped sub-structs with explicit migrations.
+- [ ] **M5.3** Unify: LLM clients (`brain/client.rs` + `llm_client.rs` shared structs), TTS server lifecycles (`piper_server.rs` + `local_tts_server.rs`), recording state machines (coordinator as single owner).
+- [ ] **M5.4** Hot-path unwrap audit: `managers/audio.rs` (43), `managers/model.rs` (68), `managers/transcription.rs` (28), `continuous_voice.rs:145` — convert to logged fallbacks.
+- [ ] **M5.5** Extract model catalog to JSON/TOML manifest (addresses `managers/model.rs` TODO) using the AIVORelay catalog schema (revision + sha256 pinning for mirrors).
 
 ---
 
 ## 5. Subsystem Reference & Pre-Commit Routine (Fixed Schema)
 
 ### Subsystem File Map
-| Area | Path | Responsibility |
-|---|---|---|
+
+| Area           | Path                                                                                         | Responsibility                                        |
+| -------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | **STT Engine** | [`src-tauri/src/managers/transcription.rs`](file:///src-tauri/src/managers/transcription.rs) | transcribe.cpp streaming, VAD feeding, model switches |
-| **Multi-STT** | [`src-tauri/src/stt/multi_stt.rs`](file:///src-tauri/src/stt/multi_stt.rs) | Gemma 4 ASR (`mmproj`), parallel models, LLM merge |
-| **Local LLM** | [`src-tauri/src/llama_server/manager.rs`](file:///src-tauri/src/llama_server/manager.rs) | llama-server.exe process lifecycle, GPU offload |
-| **Brain** | [`src-tauri/src/brain/manager.rs`](file:///src-tauri/src/brain/manager.rs) | Turn history, sentence splitting, TTS queueing |
-| **TTS** | [`src-tauri/src/tts/manager.rs`](file:///src-tauri/src/tts/manager.rs) | Local TTS servers, gapless audio playback |
-| **Audio/VAD** | [`src-tauri/src/audio_toolkit/`](file:///src-tauri/src/audio_toolkit/) | cpal recording, Silero VAD ONNX, RNNoise |
-| **Shortcuts** | [`src-tauri/src/shortcut/handler.rs`](file:///src-tauri/src/shortcut/handler.rs) | Global hotkey dispatcher and event handling |
-| **UI Theme** | [`src/styles/theme.css`](file:///src/styles/theme.css) | Golden theme tokens and color mappings |
+| **Multi-STT**  | [`src-tauri/src/stt/multi_stt.rs`](file:///src-tauri/src/stt/multi_stt.rs)                   | Gemma 4 ASR (`mmproj`), parallel models, LLM merge    |
+| **Local LLM**  | [`src-tauri/src/llama_server/manager.rs`](file:///src-tauri/src/llama_server/manager.rs)     | llama-server.exe process lifecycle, GPU offload       |
+| **Brain**      | [`src-tauri/src/brain/manager.rs`](file:///src-tauri/src/brain/manager.rs)                   | Turn history, sentence splitting, TTS queueing        |
+| **TTS**        | [`src-tauri/src/tts/manager.rs`](file:///src-tauri/src/tts/manager.rs)                       | Local TTS servers, gapless audio playback             |
+| **Audio/VAD**  | [`src-tauri/src/audio_toolkit/`](file:///src-tauri/src/audio_toolkit/)                       | cpal recording, Silero VAD ONNX, RNNoise              |
+| **Shortcuts**  | [`src-tauri/src/shortcut/handler.rs`](file:///src-tauri/src/shortcut/handler.rs)             | Global hotkey dispatcher and event handling           |
+| **UI Theme**   | [`src/styles/theme.css`](file:///src/styles/theme.css)                                       | Golden theme tokens and color mappings                |
 
 ### Mandatory Pre-Commit Commands
+
 ```bash
-bun run sync:translations    # 1. Sync all 23 translation languages
+bun run sync:translations    # 1. Sync all 24 translation languages
 bun run check:translations   # 2. Verify all translation keys exist
 bunx tsc --noEmit            # 3. TypeScript type checking
 bun run format               # 4. Prettier + cargo fmt formatting

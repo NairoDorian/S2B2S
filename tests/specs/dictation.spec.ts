@@ -22,8 +22,9 @@ test.describe("Dictation HUD Overlay", () => {
     await emitMockEvent(page, "show-overlay", "recording");
 
     // 4. Assert overlay is visible and in recording state
-    const overlay = page.locator(".recording-overlay");
-    await expect(overlay).toHaveClass(/fade-in/);
+    const overlay = page.locator(".ov-stage");
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toHaveClass(/ov-fade show/);
 
     // 5. Emit mic-levels to verify VAD bars rendering
     await emitMockEvent(
@@ -31,11 +32,10 @@ test.describe("Dictation HUD Overlay", () => {
       "mic-level",
       [0.1, 0.3, 0.8, 0.9, 0.5, 0.2, 0.1, 0.0, 0.4],
     );
-    const bar = page.locator(".bar").first();
-    await expect(bar).toBeVisible();
+    await expect(page.locator(".swave")).toBeVisible();
 
     // 6. Click the cancel button and verify the Tauri command is called
-    const cancelBtn = page.locator(".cancel-button");
+    const cancelBtn = page.locator("button[aria-label='cancel']");
     await expect(cancelBtn).toBeVisible();
     await cancelBtn.click();
 
@@ -44,17 +44,16 @@ test.describe("Dictation HUD Overlay", () => {
     );
     expect(wasCancelCalled).toBe(true);
 
-    // 7. Test state transition to transcribing
+    // 7. Test state transition to transcribing (working row with label)
     await emitMockEvent(page, "show-overlay", "transcribing");
-    const transcribingText = page.locator(".transcribing-text");
-    await expect(transcribingText).toBeVisible();
+    await expect(page.locator(".swork-label")).toBeVisible();
 
-    // 8. Test state transition to speaking
+    // 8. Test state transition to speaking (listening row with waveform)
     await emitMockEvent(page, "show-overlay", "speaking");
-    await expect(transcribingText).toBeVisible();
+    await expect(page.locator(".swave")).toBeVisible();
 
-    // 9. Emit hide-overlay and verify hidden class
+    // 9. Emit hide-overlay and verify the stage unmounts
     await emitMockEvent(page, "hide-overlay", null);
-    await expect(overlay).not.toHaveClass(/fade-in/);
+    await expect(page.locator(".ov-stage")).toHaveCount(0);
   });
 });

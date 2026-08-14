@@ -1,5 +1,7 @@
 # 🏛️ AIVO Relay Master Implementation Plan & 1,080+ Commit Architectural Audit
 
+> **STATUS: HISTORICAL — superseded by the M0–M5 roadmap in [`TAKEOVER.md`](TAKEOVER.md#4-sequential-roadmap--task-tracker-stateful-milestones).** This document is kept as an audit record of AIVORelay v1.0.31.
+
 > **Target Repository**: S2B2S (`c:\Users\Z\Downloads\PROJECTS\STT_BRAIN_TTS\S2B2S`)  
 > **Source Repository**: AIVORelay (`c:\Users\Z\Downloads\PROJECTS\STT_BRAIN_TTS\AIVORelay`, tag `v1.0.31`, 1,540 total commits / 1,080+ commits ahead of Handy)  
 > **Base Repository**: Upstream Handy (`cjpais/Handy`, ~450 commits)  
@@ -9,18 +11,18 @@
 
 ## 📊 1. Core Architectural Comparison Matrix
 
-| Subsystem / Dimension | Upstream Handy (Base) | AIVORelay (`v1.0.31`) | S2B2S (Target Codebase) | S2B2S Integration Plan & Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **Total Commits** | ~450 commits | **1,540 commits** (+1,080 ahead of Handy) | **896 commits** | Core audio/LLM foundation audited |
-| **STT Engine Scope** | Local GGUF/ONNX (Whisper, Parakeet) | Local GGUF/ONNX + **Soniox Realtime + Deepgram Nova-3 + OpenAI Realtime** | **9 Local Engines (Parakeet V3, Whisper, Moonshine, SenseVoice, GigaAM, Canary, Cohere, Nemotron, Gemma 4 ASR)** | Local multi-STT consensus native; Cloud STT (Soniox/Deepgram) planned for Phase 10 |
-| **Brain / LLM Engine** | Basic post-processing LLM calls | AI Replace + Post-Processing LLM | **Full Voice-Native Streaming Brain (Ollama/LM Studio/LlamaServer, sentence splitter, barge-in, Her 3D avatar)** | Brain active; Browser & Screen inputs feed into `ask_multimodal()` |
-| **TTS System** | SAPI / basic local | Piper / SAPI / Kokoro / Edge / Murf / ElevenLabs / Cartesia / OpenAI + **Resumable File Conversions & Listen Later Queue** | **9 TTS Backends (Piper, Kokoro, Kitten, Pocket, Qwen3, SAPI, OpenAI, ElevenLabs, Cartesia)** | Persistent audio stream worker active; Resumable long document conversion in Phase 6 |
-| **Audio Capture** | Basic Mic capture | Mic capture + **WASAPI Loopback (System Audio) + Multi-Channel Routing + Mic Boost & Silence Filter** | Mic capture + RNNoise + Silero VAD + TripleVAD | WASAPI system audio loopback in Phase 9 |
-| **Browser Extension** | None | **Built-in `axum` HTTP Server + Auto-Exported Chrome Extension (ECDH P-256 + AES-256-GCM)** | None | Browser Connector planned for Phase 8 |
-| **Screen Overlay** | Simple recording pill | Recording pill + **Region Capture OCR + Floating Live Preview** | 3D Avatar Brain Overlay + Recording Pill | Screen Region Capture planned for Phase 7 |
-| **WebView Runtime** | Multi-process default (~600 MB RAM) | **Shared Browser Process Group (`webview_runtime.rs`, ~180 MB RAM)** | Multi-process default | **Shared WebView2 Process Group in Phase 5** |
-| **Shortcuts Engine** | `rdev` / `tauri` | `tauri` + `rdev` + **`handy-keys` 0.3.1 (backend recording) + Monitored Key Diagnostics** | `rdev` + `tauri` | HandyKeys backend engine verified |
-| **Profile Management** | Single global profile | **Multi-Profile Transcription Engine (`TranscriptionProfiles.tsx`, 119 KB)** | Single global profile | Multi-Profile Transcription in Phase 6 |
+| Subsystem / Dimension  | Upstream Handy (Base)               | AIVORelay (`v1.0.31`)                                                                                                      | S2B2S (Target Codebase)                                                                                          | S2B2S Integration Plan & Status                                                      |
+| :--------------------- | :---------------------------------- | :------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
+| **Total Commits**      | ~450 commits                        | **1,540 commits** (+1,080 ahead of Handy)                                                                                  | **896 commits**                                                                                                  | Core audio/LLM foundation audited                                                    |
+| **STT Engine Scope**   | Local GGUF/ONNX (Whisper, Parakeet) | Local GGUF/ONNX + **Soniox Realtime + Deepgram Nova-3 + OpenAI Realtime**                                                  | **9 Local Engines (Parakeet V3, Whisper, Moonshine, SenseVoice, GigaAM, Canary, Cohere, Nemotron, Gemma 4 ASR)** | Local multi-STT consensus native; Cloud STT (Soniox/Deepgram) planned for Phase 10   |
+| **Brain / LLM Engine** | Basic post-processing LLM calls     | AI Replace + Post-Processing LLM                                                                                           | **Full Voice-Native Streaming Brain (Ollama/LM Studio/LlamaServer, sentence splitter, barge-in, Her 3D avatar)** | Brain active; Browser & Screen inputs feed into `ask_multimodal()`                   |
+| **TTS System**         | SAPI / basic local                  | Piper / SAPI / Kokoro / Edge / Murf / ElevenLabs / Cartesia / OpenAI + **Resumable File Conversions & Listen Later Queue** | **9 TTS Backends (Piper, Kokoro, Kitten, Pocket, Qwen3, SAPI, OpenAI, ElevenLabs, Cartesia)**                    | Persistent audio stream worker active; Resumable long document conversion in Phase 6 |
+| **Audio Capture**      | Basic Mic capture                   | Mic capture + **WASAPI Loopback (System Audio) + Multi-Channel Routing + Mic Boost & Silence Filter**                      | Mic capture + RNNoise + Silero VAD + TripleVAD                                                                   | WASAPI system audio loopback in Phase 9                                              |
+| **Browser Extension**  | None                                | **Built-in `axum` HTTP Server + Auto-Exported Chrome Extension (ECDH P-256 + AES-256-GCM)**                                | None                                                                                                             | Browser Connector planned for Phase 8                                                |
+| **Screen Overlay**     | Simple recording pill               | Recording pill + **Region Capture OCR + Floating Live Preview**                                                            | 3D Avatar Brain Overlay + Recording Pill                                                                         | Screen Region Capture planned for Phase 7                                            |
+| **WebView Runtime**    | Multi-process default (~600 MB RAM) | **Shared Browser Process Group (`webview_runtime.rs`, ~180 MB RAM)**                                                       | Multi-process default                                                                                            | **Shared WebView2 Process Group in Phase 5**                                         |
+| **Shortcuts Engine**   | `rdev` / `tauri`                    | `tauri` + `rdev` + **`handy-keys` 0.3.1 (backend recording) + Monitored Key Diagnostics**                                  | `rdev` + `tauri`                                                                                                 | HandyKeys backend engine verified                                                    |
+| **Profile Management** | Single global profile               | **Multi-Profile Transcription Engine (`TranscriptionProfiles.tsx`, 119 KB)**                                               | Single global profile                                                                                            | Multi-Profile Transcription in Phase 6                                               |
 
 ---
 
@@ -70,6 +72,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 🖥️ Module 1: Shared WebView2 Process Group Optimization
+
 - **AIVORelay Reference**: `src-tauri/src/webview_runtime.rs` (Commits `30c5f965`, `98895c94`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/webview_runtime.rs`
@@ -83,6 +86,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### ⏱️ Module 2: Trailing Speech Buffer & Audio Enhancements
+
 - **AIVORelay Reference**: `src-tauri/src/managers/audio.rs`, `src/components/settings/audio-processing/` (Commits `f8f17fd8`, `37a73d1b`, `75d5c5ba`)
 - **S2B2S Codebase Target**:
   - `[MODIFY] src-tauri/src/settings.rs` (add `extra_recording_buffer_ms: u64`, `input_channel: Option<u16>`, `mic_boost_db: f32`, `pause_media_while_recording: bool`)
@@ -97,6 +101,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 📂 Module 3: Multi-Profile Transcription System
+
 - **AIVORelay Reference**: `src-tauri/src/settings.rs`, `src/components/settings/TranscriptionProfiles.tsx` (119 KB) (Commits `499e0f3d`, `4b18cefd`)
 - **S2B2S Codebase Target**:
   - `[MODIFY] src-tauri/src/settings.rs` (add `TranscriptionProfile` struct, `profiles: Vec<TranscriptionProfile>`, `active_profile_id: String`)
@@ -111,6 +116,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 📚 Module 4: Resumable Long Document TTS & Listen Later Queue
+
 - **AIVORelay Reference**: `src-tauri/src/managers/tts_resume.rs`, `src-tauri/src/cli_file_conversion.rs`, `src/components/settings/text-to-speech/` (Commits `01d712d1`, `86f2e136`, `1c3ac663`, `51801f75`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/managers/tts_resume.rs`
@@ -125,6 +131,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 🌐 Module 5: Desktop Browser Connector & Chrome Extension Bridge
+
 - **AIVORelay Reference**: `src-tauri/src/managers/connector.rs`, `src-tauri/src/commands/connector.rs`, `src/components/settings/browser-connector/` (Commits `206d8b0a`, `f599630e`, `7e85bbec`)
 - **S2B2S Codebase Target**:
   - `[MODIFY] src-tauri/Cargo.toml` (add `axum`, `tower-http`, `zip`, `p256`, `hkdf`, `hmac`, `sha2`)
@@ -141,6 +148,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 📸 Module 6: Native Screen Region Capture Overlay
+
 - **AIVORelay Reference**: `src-tauri/src/region_capture.rs`, `src-tauri/src/commands/region_capture.rs`, `src/region-capture/` (Commits `da067634`, `dafd7598`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/region_capture.rs`
@@ -154,6 +162,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 🎙️ Module 7: Live System Audio Loopback Transcription & Diarization
+
 - **AIVORelay Reference**: `src-tauri/src/managers/live_sound_transcription.rs`, `src-tauri/src/managers/live_sound_audio.rs` (Commits `cfdd6082`, `ae7d1232`, `24d273b1`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/managers/live_sound_transcription.rs`
@@ -167,6 +176,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 📄 Module 8: Subtitle Export (SRT & VTT File Generator)
+
 - **AIVORelay Reference**: `src-tauri/src/subtitle.rs`, `src/components/settings/history/HistorySettings.tsx` (Commits `9a4600c6`, `d80ed323`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/subtitle.rs`
@@ -179,6 +189,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### 🔍 Module 9: GGUF Header Auto-Metadata Extraction
+
 - **AIVORelay Reference**: `src-tauri/src/managers/gguf_meta.rs`, `src-tauri/src/managers/model_capabilities.rs` (Commit `2b13d60a`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/managers/gguf_meta.rs`
@@ -191,6 +202,7 @@ Below is the comprehensive technical specification for every remaining module in
 ---
 
 ### ☁️ Module 10: Remote STT Cloud Gateways (Soniox, Deepgram, Realtime Whisper)
+
 - **AIVORelay Reference**: `src-tauri/src/managers/remote_stt.rs`, `src-tauri/src/managers/soniox_stt.rs`, `src-tauri/src/managers/deepgram_stt.rs` (Commits `082c2a95`, `c2a600c2`, `680f1488`)
 - **S2B2S Codebase Target**:
   - `[NEW] src-tauri/src/managers/remote_stt.rs`
@@ -209,81 +221,81 @@ Below is an exhaustive analysis of the commit corridors between AIVORelay `v1.0.
 
 ### Table 1: TTS Ecosystem, Long Document Conversion & Listen Later (Commits v1.0.26–v1.0.31)
 
-| Commit SHA | Component | Commit Title & Summary | Integration Action for S2B2S |
-| :--- | :--- | :--- | :--- |
-| `b057b494` | Versioning | `chore: bump version to 1.0.31` | Reference version tag sync |
-| `01d712d1` | TTS | `feat(tts): add Listen Later queue and profile controls` | Integrated in Module 4 |
-| `08a85b20` | TTS | `fix(tts): handle missing conversion progress` | Progress bar guardrail |
-| `f72c96c6` | Versioning | `chore: bump version to 1.0.30` | Version tag sync |
-| `86f2e136` | TTS | `feat(tts): make long document cleanup resumable` | Resumable AI cleanup loop |
-| `f5014e4c` | TTS UI | `fix(tts): expand AI cleanup textareas` | UI layout refinement |
-| `d518711e` | TTS | `feat(tts): reveal completed conversion output` | Direct folder reveal on completion |
-| `93d0a0a0` | Versioning | `chore: bump version to 1.0.29` | Version tag sync |
-| `3dfc683c` | TTS | `feat(tts): polish settings and streaming feedback` | Live synthesis progress cues |
-| `b6857553` | TTS Overlay | `feat(tts): default overlay auto-hide to two seconds` | Overlay timer preset |
-| `d4898984` | TTS Player | `fix(tts): prevent replay after reload and refine speed controls` | Playback state machine fix |
-| `eadfa7f4` | TTS Providers | `fix(tts): align provider defaults with API guidance` | Cloud API config sync |
-| `20eb4735` | TTS Overlay | `fix(tts): refine overlay interaction and appearance` | Golden theme alignment |
-| `6d8ae717` | TTS Stream | `fix(tts): stabilize streamed progress and auto-hide overlay` | Rodio stream progress events |
-| `377729fc` | Documentation | `docs(help): explain TTS actions and privacy` | Help card update |
-| `43f7f9fe` | TTS Providers | `fix(tts): allow shared key for OpenAI-compatible provider` | Shared API key resolver |
-| `2c6d16b7` | TTS Providers | `feat(tts): add OpenAI-compatible provider support and update API check` | OpenAI-compatible TTS endpoint |
-| `f461462f` | TTS Providers | `feat(tts): add Murf AI, ElevenLabs, and Cartesia cloud providers` | Cloud provider adapters |
-| `59d889df` | TTS Persistence | `fix(tts): persist and migrate file synthesis customizations` | File conversion settings store |
-| `335d786c` | TTS Audio | `fix(tts): make streamed overlay playback gapless` | Gapless Rodio chunk buffer |
-| `9648f7f8` | TTS Testing | `test(tts): cover durable resume ownership` | Resume checkpoint unit tests |
-| `63087baf` | TTS Resume | `fix(tts): safely claim legacy resume checkpoints` | Legacy JSON migration |
-| `51801f75` | TTS Batch | `feat(tts): retain interrupted batch files` | Auto-save partial WAV chunks |
-| `1c3ac663` | TTS Batch | `feat(tts): persist resumable file conversions` | `.checkpoint.json` persistence |
-| `9db91cd5` | TTS Engine | `fix(tts): skip whitespace-only synthesis chunks` | Zero-sample synthesis bypass |
-| `3a66a303` | TTS Batch | `feat(tts): add one-shot batch file conversion` | Batch drag-drop synthesis |
+| Commit SHA | Component       | Commit Title & Summary                                                   | Integration Action for S2B2S       |
+| :--------- | :-------------- | :----------------------------------------------------------------------- | :--------------------------------- |
+| `b057b494` | Versioning      | `chore: bump version to 1.0.31`                                          | Reference version tag sync         |
+| `01d712d1` | TTS             | `feat(tts): add Listen Later queue and profile controls`                 | Integrated in Module 4             |
+| `08a85b20` | TTS             | `fix(tts): handle missing conversion progress`                           | Progress bar guardrail             |
+| `f72c96c6` | Versioning      | `chore: bump version to 1.0.30`                                          | Version tag sync                   |
+| `86f2e136` | TTS             | `feat(tts): make long document cleanup resumable`                        | Resumable AI cleanup loop          |
+| `f5014e4c` | TTS UI          | `fix(tts): expand AI cleanup textareas`                                  | UI layout refinement               |
+| `d518711e` | TTS             | `feat(tts): reveal completed conversion output`                          | Direct folder reveal on completion |
+| `93d0a0a0` | Versioning      | `chore: bump version to 1.0.29`                                          | Version tag sync                   |
+| `3dfc683c` | TTS             | `feat(tts): polish settings and streaming feedback`                      | Live synthesis progress cues       |
+| `b6857553` | TTS Overlay     | `feat(tts): default overlay auto-hide to two seconds`                    | Overlay timer preset               |
+| `d4898984` | TTS Player      | `fix(tts): prevent replay after reload and refine speed controls`        | Playback state machine fix         |
+| `eadfa7f4` | TTS Providers   | `fix(tts): align provider defaults with API guidance`                    | Cloud API config sync              |
+| `20eb4735` | TTS Overlay     | `fix(tts): refine overlay interaction and appearance`                    | Golden theme alignment             |
+| `6d8ae717` | TTS Stream      | `fix(tts): stabilize streamed progress and auto-hide overlay`            | Rodio stream progress events       |
+| `377729fc` | Documentation   | `docs(help): explain TTS actions and privacy`                            | Help card update                   |
+| `43f7f9fe` | TTS Providers   | `fix(tts): allow shared key for OpenAI-compatible provider`              | Shared API key resolver            |
+| `2c6d16b7` | TTS Providers   | `feat(tts): add OpenAI-compatible provider support and update API check` | OpenAI-compatible TTS endpoint     |
+| `f461462f` | TTS Providers   | `feat(tts): add Murf AI, ElevenLabs, and Cartesia cloud providers`       | Cloud provider adapters            |
+| `59d889df` | TTS Persistence | `fix(tts): persist and migrate file synthesis customizations`            | File conversion settings store     |
+| `335d786c` | TTS Audio       | `fix(tts): make streamed overlay playback gapless`                       | Gapless Rodio chunk buffer         |
+| `9648f7f8` | TTS Testing     | `test(tts): cover durable resume ownership`                              | Resume checkpoint unit tests       |
+| `63087baf` | TTS Resume      | `fix(tts): safely claim legacy resume checkpoints`                       | Legacy JSON migration              |
+| `51801f75` | TTS Batch       | `feat(tts): retain interrupted batch files`                              | Auto-save partial WAV chunks       |
+| `1c3ac663` | TTS Batch       | `feat(tts): persist resumable file conversions`                          | `.checkpoint.json` persistence     |
+| `9db91cd5` | TTS Engine      | `fix(tts): skip whitespace-only synthesis chunks`                        | Zero-sample synthesis bypass       |
+| `3a66a303` | TTS Batch       | `feat(tts): add one-shot batch file conversion`                          | Batch drag-drop synthesis          |
 
 ---
 
 ### Table 2: Profiles, Shortcuts & Windowing Hardening
 
-| Commit SHA | Component | Commit Title & Summary | Integration Action for S2B2S |
-| :--- | :--- | :--- | :--- |
-| `499e0f3d` | Profiles | `fix(post-processing): respect active profile settings` | Profile-aware LLM routing |
-| `4b18cefd` | Profiles UI | `Always show profile post-processing settings` | UI conditional display |
-| `c75a743e` | Prompts | `Improve new post-processing prompt creation` | Prompt template wizard |
-| `75824763` | Shortcuts | `fix(shortcuts): share capture and report invalid monitored keys` | Shortcut capture diagnostics |
-| `310c8619` | Shortcuts | `fix(shortcuts): suspend all bindings during shortcut capture` | Prevents key swallowing |
-| `7b0a2d82` | Shortcuts | `fix(shortcuts): restore empty binding on failure` | Safe rollback logic |
-| `dc17492d` | Shortcuts | `fix(shortcuts): resume bindings after capture unmount` | Cleanup guardrail |
-| `2a605dab` | UI | `fix(hotkey-sidebar): ignore click generated by drag` | Prevents accidental tab switch |
-| `ac20a6a2` | UI Layout | `fix(layout): keep app footer pinned` | Layout stability |
-| `e37ba132` | UI Overlay | `fix(ui): keep recording preview clear of navigation` | Positioning logic |
-| `41c1442c` | Overlay | `fix(overlay): stop rendering animations while hidden` | Saves GPU/CPU cycles |
+| Commit SHA | Component   | Commit Title & Summary                                            | Integration Action for S2B2S   |
+| :--------- | :---------- | :---------------------------------------------------------------- | :----------------------------- |
+| `499e0f3d` | Profiles    | `fix(post-processing): respect active profile settings`           | Profile-aware LLM routing      |
+| `4b18cefd` | Profiles UI | `Always show profile post-processing settings`                    | UI conditional display         |
+| `c75a743e` | Prompts     | `Improve new post-processing prompt creation`                     | Prompt template wizard         |
+| `75824763` | Shortcuts   | `fix(shortcuts): share capture and report invalid monitored keys` | Shortcut capture diagnostics   |
+| `310c8619` | Shortcuts   | `fix(shortcuts): suspend all bindings during shortcut capture`    | Prevents key swallowing        |
+| `7b0a2d82` | Shortcuts   | `fix(shortcuts): restore empty binding on failure`                | Safe rollback logic            |
+| `dc17492d` | Shortcuts   | `fix(shortcuts): resume bindings after capture unmount`           | Cleanup guardrail              |
+| `2a605dab` | UI          | `fix(hotkey-sidebar): ignore click generated by drag`             | Prevents accidental tab switch |
+| `ac20a6a2` | UI Layout   | `fix(layout): keep app footer pinned`                             | Layout stability               |
+| `e37ba132` | UI Overlay  | `fix(ui): keep recording preview clear of navigation`             | Positioning logic              |
+| `41c1442c` | Overlay     | `fix(overlay): stop rendering animations while hidden`            | Saves GPU/CPU cycles           |
 
 ---
 
 ### Table 3: Audio Capture, Loopback & Hardware Optimization
 
-| Commit SHA | Component | Commit Title & Summary | Integration Action for S2B2S |
-| :--- | :--- | :--- | :--- |
-| `f8f17fd8` | Audio | `fix(audio): add input channel selection for multi-channel interfaces` | Channel mapping in settings |
-| `68281314` | Audio | `fix(audio): move blocking cpal work off the main thread + lock-free is_recording` | Eliminates UI micro-stutters |
-| `a4ee374f` | Audio | `fix: recover microphone stream after the capture worker dies` | Stream watchdog recovery |
-| `1e8a50b9` | Permissions | `fix: prioritize NonPackaged key in Windows mic permission check` | Fixes debloated Windows mic check |
-| `37a73d1b` | Audio | `fix(audio): skip idle level-meter and resampler work` | Zero CPU when audio idle |
-| `cfdd6082` | Live Sound | `fix(live-sound): wait for provider finalization` | Safe stream teardown |
-| `ae7d1232` | Live Sound | `fix(live-sound): disable sessions on unsupported systems` | Cross-platform graceful gating |
-| `24d273b1` | Live Sound | `fix(live-sound): save numeric overrides after editing` | Setting serialization |
-| `f0666404` | Live Sound | `fix(live-sound): migrate legacy provider to Soniox` | Live stream backend update |
+| Commit SHA | Component   | Commit Title & Summary                                                             | Integration Action for S2B2S      |
+| :--------- | :---------- | :--------------------------------------------------------------------------------- | :-------------------------------- |
+| `f8f17fd8` | Audio       | `fix(audio): add input channel selection for multi-channel interfaces`             | Channel mapping in settings       |
+| `68281314` | Audio       | `fix(audio): move blocking cpal work off the main thread + lock-free is_recording` | Eliminates UI micro-stutters      |
+| `a4ee374f` | Audio       | `fix: recover microphone stream after the capture worker dies`                     | Stream watchdog recovery          |
+| `1e8a50b9` | Permissions | `fix: prioritize NonPackaged key in Windows mic permission check`                  | Fixes debloated Windows mic check |
+| `37a73d1b` | Audio       | `fix(audio): skip idle level-meter and resampler work`                             | Zero CPU when audio idle          |
+| `cfdd6082` | Live Sound  | `fix(live-sound): wait for provider finalization`                                  | Safe stream teardown              |
+| `ae7d1232` | Live Sound  | `fix(live-sound): disable sessions on unsupported systems`                         | Cross-platform graceful gating    |
+| `24d273b1` | Live Sound  | `fix(live-sound): save numeric overrides after editing`                            | Setting serialization             |
+| `f0666404` | Live Sound  | `fix(live-sound): migrate legacy provider to Soniox`                               | Live stream backend update        |
 
 ---
 
 ### Table 4: Browser Connector & Screen Region Capture
 
-| Commit SHA | Component | Commit Title & Summary | Integration Action for S2B2S |
-| :--- | :--- | :--- | :--- |
-| `206d8b0a` | Connector | `docs(help): clarify Chrome web chat connector` | User guide documentation |
-| `c1cd2a7d` | Connector | `fix: prevent stale confirmations and connector toggle desync` | State synchronization |
-| `f599630e` | Connector | `fix(browser-connector): validate screenshot timing settings` | Timing validation |
-| `7e85bbec` | Connector | `fix(browser-connector): gate screenshot capture to Windows` | Cross-platform safety |
-| `da067634` | Region Capture| `fix: cancel native region picker on window close` | Prevents orphaned overlays |
-| `dafd7598` | Region Capture| `fix(tts): release watched paths after conversion` | Resource deallocation |
+| Commit SHA | Component      | Commit Title & Summary                                         | Integration Action for S2B2S |
+| :--------- | :------------- | :------------------------------------------------------------- | :--------------------------- |
+| `206d8b0a` | Connector      | `docs(help): clarify Chrome web chat connector`                | User guide documentation     |
+| `c1cd2a7d` | Connector      | `fix: prevent stale confirmations and connector toggle desync` | State synchronization        |
+| `f599630e` | Connector      | `fix(browser-connector): validate screenshot timing settings`  | Timing validation            |
+| `7e85bbec` | Connector      | `fix(browser-connector): gate screenshot capture to Windows`   | Cross-platform safety        |
+| `da067634` | Region Capture | `fix: cancel native region picker on window close`             | Prevents orphaned overlays   |
+| `dafd7598` | Region Capture | `fix(tts): release watched paths after conversion`             | Resource deallocation        |
 
 ---
 

@@ -81,7 +81,8 @@ export async function mockTauriIpc(page: Page) {
       // Generic mock fallbacks for S2B2S commands
       switch (cmd) {
         case "get_app_settings":
-        case "get_default_settings":
+        case "get_default_settings": {
+          const overrides = (window as any).__settingsOverrides || {};
           return {
             push_to_talk: false,
             audio_feedback: false,
@@ -179,7 +180,10 @@ export async function mockTauriIpc(page: Page) {
             rnnoise_voice_threshold: 0.2,
             llama_server: { backend: "cpu", release_tag: "" },
             first_run: false,
+            onboarding_completed: true,
+            ...overrides,
           };
+        }
         case "check_speech_runtime_installed":
           return false;
         case "install_speech_runtime":

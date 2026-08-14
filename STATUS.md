@@ -28,10 +28,11 @@ For the active, sequential local-first engineering roadmap and agent takeover in
 ## 2. Project Quality Scorecard
 
 - **Core Loop Pipeline**: **A−** (Solid, well-layered architecture)
-- **Backend Code Quality**: **B+** (Panic audit reduced crash surface; hot-path unwraps converted to handled errors; 5 god-files remain)
-- **Frontend Code Quality**: **B+** (Playwright E2E suites added for onboarding, dictation, and conversation pipelines)
-- **Documentation Honesty**: **A−** (Doc sprawl cleaned from 66 files/24.5K lines to ~18 files/5K lines; STATUS.md established as single truth)
+- **Backend Code Quality**: **B+** (Panic audit reduced crash surface; hot-path unwraps converted to handled errors; 401 unwraps + 7 god-files remain)
+- **Frontend Code Quality**: **B** (Playwright E2E suites added; 11 dead components, double-rendered permission banner, unwired backend features)
+- **Documentation Honesty**: **A−** (Doc sprawl cleaned; several stored settings (`endpoint_preset`, `headphone_mode`, wake-word `keyword`) promise more than the backend delivers — M0 addresses)
 - **Nix & Cross-Platform Support**: **C+** (Standalone speech runtime scripts reduce but don't eliminate Python venv fragility for local TTS)
+- **Upstream Health**: **A** (0 commits behind `cjpais/Handy:main`; portable HF_HOME fix merged as `6505e0fc`)
 
 ---
 
@@ -52,6 +53,24 @@ For the active, sequential local-first engineering roadmap and agent takeover in
         v
 [Phase 4: Ambition] (Profiles, MCP Tool use, Full-Duplex AEC, Android app release)
 ```
+
+### Active Feature Roadmap (Milestones M0–M5)
+
+The consolidated feature roadmap — synthesized from deep reviews of AIVORelay, copyspeak, and
+speech-to-speech — lives in **[`TAKEOVER.md`](TAKEOVER.md#4-sequential-roadmap--task-tracker-stateful-milestones)**
+and is the authoritative, sequential task tracker:
+
+| Milestone | Theme                                                                                                                                                   | Source Inspiration |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| **M0**    | Honesty & Hygiene Sweep (wire dead settings, kill dead code, fix UI bugs)                                                                               | S2B2S self-review  |
+| **M1**    | Complete AI Replace Selection (selection capture, prompt variables, shortcut wiring)                                                                    | AIVORelay          |
+| **M2**    | Smart Conversation Core (speculative turns, two-tier endpointing, compaction, tool calling, realtime gateway)                                           | speech-to-speech   |
+| **M3**    | Dictation Ecosystem (subtitle export, batch file transcription, profiles, text replacement, cloning recorder, resumable TTS, region capture, connector) | AIVORelay          |
+| **M4**    | TTS UX & History (audio effects, HUD hardening, history search/export, voice profiles, health checks)                                                   | copyspeak          |
+| **M5**    | Infrastructure Consolidation (god-file splits, schema versioning, subsystem unification, unwrap audit)                                                  | S2B2S Phase 3      |
+
+The historical AIVO plans (`AIVO_RELAY_IMPLEMENTATION_PLAN.md`, `AIVO_update_integration_plan.md`) are
+superseded by the M0–M5 tracker.
 
 ### Phase 0 — Stop the Bleeding
 
@@ -85,6 +104,6 @@ For the active, sequential local-first engineering roadmap and agent takeover in
 
 ### Phase 4 — Ambitious Features
 
-- [ ] Application profiles (context-aware settings).
-- [ ] MCP tool use integration for the Brain.
+- [ ] Application profiles (context-aware settings) — now Milestone M3.3.
+- [ ] MCP tool use integration for the Brain — now Milestone M2.5 (offline `<code>`-block tool calls first).
 - [ ] On-device Android voice assistant application.
