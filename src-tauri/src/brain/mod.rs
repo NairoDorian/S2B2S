@@ -7,3 +7,4 @@
 pub mod client;
 pub mod llama_manager;
 pub mod manager;
+pub mod tool_calls;

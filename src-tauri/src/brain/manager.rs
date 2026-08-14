@@ -386,7 +386,7 @@ impl BrainManager {
 
         // Build the context window: system + optional speakable-output prompt + last N turns + the new user message.
         let mut messages = Vec::new();
-        let system = if cfg.read_aloud && !cfg.speakable_output_prompt.trim().is_empty() {
+        let mut system = if cfg.read_aloud && !cfg.speakable_output_prompt.trim().is_empty() {
             format!(
                 "{}\n\n{}",
                 cfg.system_prompt.trim(),
@@ -395,6 +395,12 @@ impl BrainManager {
         } else {
             cfg.system_prompt.clone()
         };
+        if cfg.tools_enabled {
+            system = format!(
+                "{system}\n\n{}",
+                crate::brain::tool_calls::tools_prompt_section()
+            );
+        }
         if !system.trim().is_empty() {
             messages.push(ChatMessage {
                 role: "system".into(),
@@ -492,12 +498,22 @@ impl BrainManager {
         let turn_clone = turn_start;
         let app_tokens = self.app.clone();
         let app_sentences = self.app.clone();
+        let app_tools = self.app.clone();
         let tts_for_sentences = tts.clone();
+        let tools_enabled = cfg.tools_enabled;
         let _ = self.app.emit("brain:thinking", ());
 
         // Latency: mark time from end of STT to first token
         let ft = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let app_latency = self.app.clone();
+
+        // Tool interception: complete <code> blocks are swallowed from the
+        // stream, executed locally, and their results collected for the
+        // follow-up turn.
+        let tool_intercept = Arc::new(Mutex::new(
+            crate::brain::tool_calls::ToolIntercept::default(),
+        ));
+        let tool_results = Arc::new(Mutex::new(Vec::<String>::new()));
 
         let result = self
             .client
@@ -506,29 +522,141 @@ impl BrainManager {
                 &cfg.active_api_key(),
                 &cfg.active_model(),
                 &messages,
-                abort,
-                move |token| {
-                    if !ft.load(std::sync::atomic::Ordering::SeqCst) {
-                        ft.store(true, std::sync::atomic::Ordering::SeqCst);
-                        let ms = turn_clone.elapsed().as_millis() as u64;
-                        let _ = app_latency.emit(
-                            "brain:latency",
-                            serde_json::json!({ "stage": "first_token", "ms": ms }),
-                        );
+                abort.clone(),
+                {
+                    let tool_intercept = tool_intercept.clone();
+                    let tool_results = tool_results.clone();
+                    let app_tools = app_tools.clone();
+                    let app_tokens = app_tokens.clone();
+                    move |token| {
+                        if !ft.load(std::sync::atomic::Ordering::SeqCst) {
+                            ft.store(true, std::sync::atomic::Ordering::SeqCst);
+                            let ms = turn_clone.elapsed().as_millis() as u64;
+                            let _ = app_latency.emit(
+                                "brain:latency",
+                                serde_json::json!({ "stage": "first_token", "ms": ms }),
+                            );
+                        }
+                        let cleaned = if tools_enabled {
+                            tool_intercept.lock().unwrap().feed(
+                                token,
+                                &app_tools,
+                                &mut tool_results.lock().unwrap(),
+                            )
+                        } else {
+                            token.to_string()
+                        };
+                        if !cleaned.is_empty() {
+                            let _ = app_tokens.emit("brain:token", cleaned);
+                        }
                     }
-                    let _ = app_tokens.emit("brain:token", token);
                 },
-                move |sentence| {
-                    let _ = app_sentences.emit("brain:sentence", &sentence);
-                    if let Some(tts) = &tts_for_sentences {
-                        tts.speak_sentence(sentence);
+                {
+                    let app_sentences = app_sentences.clone();
+                    let tts_for_sentences = tts_for_sentences.clone();
+                    move |sentence| {
+                        // Defense-in-depth: strip any complete tool blocks that
+                        // slipped through the token interceptor (e.g. a block that
+                        // arrived whole inside one sentence flush).
+                        let cleaned = if tools_enabled {
+                            crate::brain::tool_calls::scan_code_blocks(&sentence).0
+                        } else {
+                            sentence
+                        };
+                        if cleaned.trim().is_empty() {
+                            return;
+                        }
+                        let _ = app_sentences.emit("brain:sentence", &cleaned);
+                        if let Some(tts) = &tts_for_sentences {
+                            tts.speak_sentence(cleaned);
+                        }
                     }
                 },
             )
             .await;
 
+        // Flush any unterminated block back into the stream text.
+        let flushed = if tools_enabled {
+            tool_intercept.lock().unwrap().flush()
+        } else {
+            String::new()
+        };
+        if !flushed.is_empty() {
+            let _ = self.app.emit("brain:token", &flushed);
+        }
+
         match result {
             Ok(BrainResult { text: full, timing }) => {
+                // Tool results collected during this stream.
+                let tool_lines = if tools_enabled {
+                    std::mem::take(&mut *tool_results.lock().unwrap())
+                } else {
+                    Vec::new()
+                };
+
+                // Follow-up turn: feed tool results back so the assistant can
+                // answer with them (single round, bounded).
+                let (assistant_text, follow_ok) = if !tool_lines.is_empty() {
+                    let mut follow_messages = messages.clone();
+                    follow_messages.push(ChatMessage {
+                        role: "user".into(),
+                        content: MessageContent::text(format!(
+                            "Tool results:\n{}\n\nContinue your answer to the user using these results. Be concise. Do not call more tools.",
+                            tool_lines.join("\n")
+                        )),
+                    });
+                    let follow = self
+                        .client
+                        .stream_chat(
+                            &cfg.active_base_url(),
+                            &cfg.active_api_key(),
+                            &cfg.active_model(),
+                            &follow_messages,
+                            abort.clone(),
+                            {
+                                let app_tokens = app_tokens.clone();
+                                move |token| {
+                                    let _ = app_tokens.emit("brain:token", token);
+                                }
+                            },
+                            {
+                                let app_sentences = app_sentences.clone();
+                                let tts_for_sentences = tts_for_sentences.clone();
+                                move |sentence| {
+                                    let _ = app_sentences.emit("brain:sentence", &sentence);
+                                    if let Some(tts) = &tts_for_sentences {
+                                        tts.speak_sentence(sentence);
+                                    }
+                                }
+                            },
+                        )
+                        .await;
+                    match follow {
+                        Ok(follow_result) => {
+                            let cleaned_follow =
+                                crate::brain::tool_calls::scan_code_blocks(&follow_result.text).0;
+                            (
+                                format!("{}\n\n{}", full.trim(), cleaned_follow.trim()),
+                                true,
+                            )
+                        }
+                        Err(e) => {
+                            warn!("[Brain] Tool follow-up failed: {e}");
+                            (full.clone(), false)
+                        }
+                    }
+                } else {
+                    (full.clone(), true)
+                };
+                let _ = follow_ok;
+
+                // Strip tool blocks from the displayed/committed text.
+                let cleaned_full = if tools_enabled {
+                    crate::brain::tool_calls::scan_code_blocks(&full).0
+                } else {
+                    full.clone()
+                };
+
                 let total_ms = turn_start.elapsed().as_millis() as u64;
                 // Use server predicted_per_second from timings block (exact generation speed)
                 let server_tps = timing.as_ref().and_then(|t| t.tokens_per_second);
@@ -566,19 +694,20 @@ impl BrainManager {
                     });
                     history.push(ChatMessage {
                         role: "assistant".into(),
-                        content: MessageContent::text(full.clone()),
+                        content: MessageContent::text(assistant_text.clone()),
                     });
                 }
                 self.maybe_compact_history();
                 let done_payload = serde_json::json!({
-                    "text": &full,
+                    "text": &assistant_text,
+                    "cleaned": &cleaned_full,
                     "tokens_per_sec": tokens_per_sec,
                     "total_ms": display_ms,
                     "predicted_ms": predicted_ms,
                     "prompt_ms": prompt_ms,
                 });
                 let _ = self.app.emit("brain:done", &done_payload);
-                Ok(full)
+                Ok(assistant_text)
             }
             Err(e) => {
                 // Remember the user's turn even when the model failed, so the

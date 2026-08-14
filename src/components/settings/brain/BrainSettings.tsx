@@ -438,6 +438,13 @@ export const BrainSettings: React.FC = () => {
           grouped
         />
         <ToggleSwitch
+          checked={brain.tools_enabled ?? false}
+          onChange={(tools_enabled) => update({ tools_enabled })}
+          label={t("settings.brain.tools.label")}
+          description={t("settings.brain.tools.description")}
+          grouped
+        />
+        <ToggleSwitch
           checked={brain.read_aloud}
           onChange={(read_aloud) => update({ read_aloud })}
           label={t("settings.brain.readAloud.label")}

@@ -603,6 +603,11 @@ pub struct BrainConfig {
     /// task). When disabled, oldest turns are simply dropped.
     #[serde(default = "default_compaction_enabled")]
     pub compaction_enabled: bool,
+    /// Allow the Brain to invoke built-in offline tools (current time,
+    /// clipboard read/write) via `<code>` blocks, with results fed back to
+    /// the model in a follow-up turn.
+    #[serde(default)]
+    pub tools_enabled: bool,
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -699,6 +704,7 @@ impl Default for BrainConfig {
             brain_only_transcription: false,
             reply_language: default_brain_reply_language(),
             compaction_enabled: default_compaction_enabled(),
+            tools_enabled: false,
         }
     }
 }

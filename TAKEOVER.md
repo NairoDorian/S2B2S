@@ -37,12 +37,12 @@
 
 ### Current Task in Progress
 
-- None. M0, M1 complete; M2 nearly complete (M2.1 speculative turns, M2.2 two-tier endpointing, M2.3 compaction, M2.4 TTS coalescing landed). Remaining M2 tasks: M2.5 tool calling, M2.6 realtime gateway.
+- None. M0, M1 complete; M2 complete except M2.6 (stretch: local OpenAI Realtime WebSocket gateway). Next milestones: M3 (dictation ecosystem) or M4 (TTS UX).
 
 ### Next Immediate Action for Takeover
 
-1. M2.5: `<code>…</code>` tool-call parsing for local LLMs (paren-depth scanner + JSON args + schema validation) with 2-3 built-in offline tools.
-2. M2.6 (stretch): local OpenAI Realtime WebSocket gateway.
+1. M3.1: port the pure SRT/VTT formatter (`subtitle.rs`) and export transcription history as `.srt`/`.vtt`.
+2. M3.3: `TranscriptionProfile` struct + per-app auto-switch (existing `active_app.rs`) + footer quick-switch.
 
 ### Active Traps & Blockers
 
@@ -134,7 +134,7 @@
 - [x] **M2.2** Two-tier endpointing: silence endpoint now arms a reopen-grace window (400ms snappy / 800ms balanced / 2000ms patient from `endpoint_preset`); speech during the grace reopens the same turn (revision+1, samples continue accumulating); grace expiry finalizes. The pipeline re-checks staleness after STT and before Brain ask, and `commit_if_latest` gates the TTS wait — a barge-in listener now spans the whole pipeline (STT + thinking + TTS) and cancels the turn. (No SmartTurn classifier yet — the preset doubles as the confidence tier; real SmartTurn ONNX is a future enhancement.)
 - [x] **M2.3** Brain context compaction: token-aware context building (`select_context_messages` — never exceeds llama.cpp 16k / cloud 8k budget minus headroom), optional LLM summarization (`compaction_enabled`, default on) with dense-JSON prompt, single-flight background worker, generation counter rejecting stale splices, prose fallback parse; hard truncation fallback when disabled or on failure; `brain:history-compacted` event; `compaction_enabled` exposed in BrainSettings; 5 unit tests.
 - [x] **M2.4** TTS sentence coalescing: the sentence consumer drains same-generation backlog up to `MAX_COALESCE_CHARS` (800) into single synthesis calls — fewer model invocations, better cross-sentence prosody — while the first sentence still synthesizes alone for fast first audio. (Sentence batching skipped: per-sentence TTS emission already minimizes time-to-first-audio; coalescing covers the backlog case.)
-- [ ] **M2.5** Tool calling for local models: `<code>…</code>` block prompt + parser (paren-depth scanner, JSON args), schema validation before execution; expose 2-3 built-in tools (time/date, clipboard read, open URL) — MCP-lite, fully offline.
+- [x] **M2.5** Tool calling for local models: new `brain/tool_calls.rs` — `<code>…</code>` block prompt + streaming interceptor (handles tags split across arbitrary token boundaries via partial-prefix buffers, swallows blocks from UI/TTS, executes locally, emits `brain:tool-call`), schema-validated built-ins (get_current_time, read_clipboard, copy_to_clipboard), results fed back in a single bounded follow-up turn so the assistant speaks the answer; `tools_enabled` toggle (default off) in BrainSettings; 9 unit tests.
 - [ ] **M2.6** (Stretch) Local OpenAI Realtime WebSocket gateway (`ws://127.0.0.1:8765/v1/realtime`) — axum + tokio-tungstenite; protocol layer (response keys, item ordering, lazy `response.created`) separate from pipeline layer; barge-in order: cancel → flush queues → re-enable mic.
 
 ### Milestone M3: Dictation Ecosystem (from AIVORelay)

@@ -1028,6 +1028,10 @@
         "label": "Summarize old turns",
         "description": "When the conversation outgrows the context window, compress the oldest turns into a short summary instead of forgetting them. When off, old turns are simply dropped."
       },
+      "tools": {
+        "label": "Built-in tools",
+        "description": "Allow the Brain to use offline tools (current time, clipboard read/write). Tool calls are validated and executed locally; results are fed back so the assistant can answer with them."
+      },
       "readAloud": {
         "label": "Read replies aloud",
         "description": "Speak each reply sentence-by-sentence while it streams (requires speech output)."

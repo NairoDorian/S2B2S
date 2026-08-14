@@ -831,6 +831,12 @@ export type BrainConfig = {
 	 *  task). When disabled, oldest turns are simply dropped.
 	 */
 	compaction_enabled?: boolean,
+	/**
+	 *  Allow the Brain to invoke built-in offline tools (current time,
+	 *  clipboard read/write) via `<code>` blocks, with results fed back to
+	 *  the model in a follow-up turn.
+	 */
+	tools_enabled?: boolean,
 };
 
 export type CartesiaConfig = {
