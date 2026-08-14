@@ -2079,14 +2079,14 @@ fn encrypt_settings_keys(mut settings: AppSettings) -> AppSettings {
             settings.tts.cartesia.api_key = enc;
         }
     }
-    for (_, val) in settings.post_process_api_keys.0.iter_mut() {
+    for val in settings.post_process_api_keys.0.values_mut() {
         if !val.is_empty() && !val.starts_with("enc:v1:") {
             if let Ok(enc) = crate::crypto::encrypt_str(val) {
                 *val = enc;
             }
         }
     }
-    for (_, val) in settings.brain.api_keys.0.iter_mut() {
+    for val in settings.brain.api_keys.0.values_mut() {
         if !val.is_empty() && !val.starts_with("enc:v1:") {
             if let Ok(enc) = crate::crypto::encrypt_str(val) {
                 *val = enc;
@@ -2112,14 +2112,14 @@ fn decrypt_settings_keys(mut settings: AppSettings) -> AppSettings {
             settings.tts.cartesia.api_key = dec;
         }
     }
-    for (_, val) in settings.post_process_api_keys.0.iter_mut() {
+    for val in settings.post_process_api_keys.0.values_mut() {
         if val.starts_with("enc:v1:") {
             if let Ok(dec) = crate::crypto::decrypt_str(val) {
                 *val = dec;
             }
         }
     }
-    for (_, val) in settings.brain.api_keys.0.iter_mut() {
+    for val in settings.brain.api_keys.0.values_mut() {
         if val.starts_with("enc:v1:") {
             if let Ok(dec) = crate::crypto::decrypt_str(val) {
                 *val = dec;

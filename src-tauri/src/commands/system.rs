@@ -186,7 +186,7 @@ pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String>
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                &script_path.to_string_lossy().to_string(),
+                script_path.to_string_lossy().as_ref(),
                 "-TargetDir",
                 &target_dir_str,
             ]);
@@ -223,22 +223,18 @@ pub async fn install_speech_runtime(app: tauri::AppHandle) -> Result<(), String>
         let stdout_thread = std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    log::info!("[RuntimeInstall] {}", l);
-                    let payload = serde_json::json!({ "message": l });
-                    let _ = app_emit.emit("runtime-install-progress", payload);
-                }
+            for l in reader.lines().map_while(Result::ok) {
+                log::info!("[RuntimeInstall] {}", l);
+                let payload = serde_json::json!({ "message": l });
+                let _ = app_emit.emit("runtime-install-progress", payload);
             }
         });
 
         let stderr_thread = std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    log::warn!("[RuntimeInstall Error] {}", l);
-                }
+            for l in reader.lines().map_while(Result::ok) {
+                log::warn!("[RuntimeInstall Error] {}", l);
             }
         });
 

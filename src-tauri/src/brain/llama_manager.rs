@@ -186,7 +186,7 @@ impl LlamaManager {
         cmd.env("LLAMA_ATTN_ROT_DISABLE", "1");
 
         // Base args
-        cmd.args(&[
+        cmd.args([
             "-m",
             &model_path.to_string_lossy(),
             "--port",
@@ -225,7 +225,7 @@ impl LlamaManager {
         // from attention rotation overhead on short prompts.
         if multimodal_enabled {
             info!("[LlamaManager] Multimodal mode — loading mmproj-F16.gguf for audio/image input");
-            cmd.args(&["--mmproj", &mmproj_path.to_string_lossy()]);
+            cmd.args(["--mmproj", &mmproj_path.to_string_lossy()]);
         } else {
             info!("[LlamaManager] Text-only mode — skipping mmproj (saves ~940 MB VRAM, ~3% speed gain)");
         }
@@ -258,15 +258,12 @@ impl LlamaManager {
                 break;
             }
             // Check if child process exited
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let _ = self.app.emit(
-                        "brain:llama-error",
-                        format!("llama-server exited with status {:?}", status),
-                    );
-                    return Err(format!("llama-server exited with status {:?}", status));
-                }
-                _ => {}
+            if let Ok(Some(status)) = child.try_wait() {
+                let _ = self.app.emit(
+                    "brain:llama-error",
+                    format!("llama-server exited with status {:?}", status),
+                );
+                return Err(format!("llama-server exited with status {:?}", status));
             }
             if start.elapsed() > timeout {
                 let _ = self.app.emit(

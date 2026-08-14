@@ -250,17 +250,16 @@ impl TtsManager {
                         if word_count > 0 {
                             last_space = Some(idx);
                         }
-                    } else if last_space.map_or(true, |s| idx > s) {
-                        if word_count == 0
+                    } else if last_space.is_none_or(|s| idx > s)
+                        && (word_count == 0
                             || t[..idx]
                                 .chars()
                                 .last()
-                                .map_or(true, |prev| prev.is_whitespace())
-                        {
-                            word_count += 1;
-                            if word_count >= 12 {
-                                return Some(idx + c.len_utf8());
-                            }
+                                .is_none_or(|prev| prev.is_whitespace()))
+                    {
+                        word_count += 1;
+                        if word_count >= 12 {
+                            return Some(idx + c.len_utf8());
                         }
                     }
                 }

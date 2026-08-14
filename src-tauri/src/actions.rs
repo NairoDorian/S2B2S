@@ -922,7 +922,7 @@ impl ShortcutAction for TranscribeAction {
                 operation_id,
                 started_at: Instant::now(),
                 captured_profile_id: None,
-                captured_settings,
+                captured_settings: Box::new(captured_settings),
             };
         }
 
@@ -1400,7 +1400,6 @@ impl ShortcutAction for TranscribeAction {
                                         ah.try_state::<Arc<crate::brain::manager::BrainManager>>()
                                     {
                                         let bm = bm.inner().clone();
-                                        let text_to_ask = text_to_ask;
                                         let reply_language = reply_language.clone();
                                         let sample_count = samples_for_brain.len();
                                         tauri::async_runtime::spawn(async move {

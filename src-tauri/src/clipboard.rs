@@ -891,7 +891,7 @@ mod win_clipboard {
                 return Err("Failed to open clipboard for backup".into());
             }
 
-            let result = (|| -> Result<ClipboardBackup, String> {
+            let result = {
                 // Enumerate all formats.
                 let mut format = EnumClipboardFormats(0);
                 while format != 0 {
@@ -915,7 +915,7 @@ mod win_clipboard {
 
                 debug!("Backed up {} clipboard formats", entries.len());
                 Ok(ClipboardBackup { entries })
-            })();
+            };
 
             let _ = CloseClipboard();
             result
@@ -1085,7 +1085,7 @@ mod win_clipboard {
         let ptr = GlobalLock(hmem);
         if ptr.is_null() {
             let mut h = hmem;
-            let _ = h.free();
+            h.free();
             return Err("GlobalLock failed".into());
         }
 
@@ -1095,7 +1095,7 @@ mod win_clipboard {
         let handle = HANDLE(hmem.0);
         if let Err(e) = SetClipboardData(format, Some(handle)) {
             let mut h = hmem;
-            let _ = h.free();
+            h.free();
             return Err(format!("SetClipboardData failed: {}", e));
         }
 
@@ -1106,7 +1106,7 @@ mod win_clipboard {
         let handle = HANDLE(bitmap.0);
         if let Err(e) = SetClipboardData(format, Some(handle)) {
             let mut bitmap = bitmap;
-            let _ = bitmap.free();
+            bitmap.free();
             return Err(format!("SetClipboardData failed for bitmap: {}", e));
         }
         Ok(())
@@ -1116,7 +1116,7 @@ mod win_clipboard {
         let handle = HANDLE(metafile.0);
         if let Err(e) = SetClipboardData(format, Some(handle)) {
             let mut metafile = metafile;
-            let _ = metafile.free();
+            metafile.free();
             return Err(format!(
                 "SetClipboardData failed for enhanced metafile: {}",
                 e
@@ -1138,9 +1138,9 @@ mod win_clipboard {
         let ptr = GlobalLock(hmem);
         if ptr.is_null() {
             let mut h = hmem;
-            let _ = h.free();
+            h.free();
             let mut metafile = metafile;
-            let _ = metafile.free();
+            metafile.free();
             return Err("GlobalLock failed".into());
         }
 
@@ -1156,9 +1156,9 @@ mod win_clipboard {
         let handle = HANDLE(hmem.0);
         if let Err(e) = SetClipboardData(format, Some(handle)) {
             let mut h = hmem;
-            let _ = h.free();
+            h.free();
             let mut metafile = metafile;
-            let _ = metafile.free();
+            metafile.free();
             return Err(format!(
                 "SetClipboardData failed for CF_METAFILEPICT: {}",
                 e
@@ -1179,13 +1179,13 @@ mod win_clipboard {
             match entry.payload {
                 ClipboardPayload::GlobalMemory(_) => {}
                 ClipboardPayload::Bitmap(mut bitmap) => {
-                    let _ = bitmap.free();
+                    bitmap.free();
                 }
                 ClipboardPayload::EnhancedMetafile(mut metafile) => {
-                    let _ = metafile.free();
+                    metafile.free();
                 }
                 ClipboardPayload::MetafilePict { mut metafile, .. } => {
-                    let _ = metafile.free();
+                    metafile.free();
                 }
             }
         }

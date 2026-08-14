@@ -24,8 +24,10 @@ use tauri::{AppHandle, Manager};
 /// This is the single source of truth for whether we're recording or processing.
 #[derive(Debug)]
 #[allow(dead_code)] // snapshot fields are written on start, read by future async-ownership wiring
+#[derive(Default)]
 pub enum SessionState {
     /// No recording or processing in progress
+    #[default]
     Idle,
     /// Recording is active with the given session
     Recording {
@@ -40,7 +42,7 @@ pub enum SessionState {
         /// Full settings snapshot captured when recording started.
         /// Stop/transcription logic must use this snapshot to avoid routing
         /// drift when the user changes settings mid-recording.
-        captured_settings: AppSettings,
+        captured_settings: Box<AppSettings>,
     },
     /// Recording finished, now processing (transcription, LLM, etc.)
     /// New recordings are blocked during this state, only cancellation is allowed.
@@ -48,12 +50,6 @@ pub enum SessionState {
         binding_id: String,
         operation_id: u64,
     },
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        SessionState::Idle
-    }
 }
 
 /// Managed state type for the session

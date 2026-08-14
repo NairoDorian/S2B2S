@@ -1838,7 +1838,7 @@ impl ModelManager {
                 // A models-dir copy counts too: mirror-fallback downloads land
                 // there, and it makes manual drop-ins of catalog files work.
                 let local_path = self.models_dir.join(&model.filename);
-                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
                 model.is_downloaded = hf_cached_path(repo_id, revision, &model.filename).is_some()
                     || local_path.exists();
                 model.is_downloading = false;
@@ -1858,10 +1858,10 @@ impl ModelManager {
             if model.is_directory {
                 // For directory-based models, check if the directory exists
                 let model_path = self.models_dir.join(&model.filename);
-                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
                 let extracting_path = self
                     .models_dir
-                    .join(format!("{}.extracting", &model.filename));
+                    .join(format!("{}.extracting", model.filename));
 
                 // Also check project-local models dir in dev mode
                 let local_exists = self
@@ -1894,7 +1894,7 @@ impl ModelManager {
             } else {
                 // For file-based models (existing logic)
                 let model_path = self.models_dir.join(&model.filename);
-                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
 
                 // Also check project-local models dir in dev mode
                 let local_exists = self
@@ -2371,7 +2371,7 @@ impl ModelManager {
         // Create temp extraction dir
         let temp_dir = self
             .models_dir
-            .join(format!("{}.extracting", &model_info.filename));
+            .join(format!("{}.extracting", model_info.filename));
         if temp_dir.exists() {
             let _ = fs::remove_dir_all(&temp_dir);
         }
@@ -2824,7 +2824,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
 
         // Don't download if complete version already exists
         if model_path.exists() {
@@ -2923,7 +2923,7 @@ impl ModelManager {
             // Use a temporary extraction directory to ensure atomic operations
             let temp_extract_dir = self
                 .models_dir
-                .join(format!("{}.extracting", &model_info.filename));
+                .join(format!("{}.extracting", model_info.filename));
             let final_model_dir = self.models_dir.join(&model_info.filename);
 
             // Clean up any previous incomplete extraction
@@ -3068,7 +3068,7 @@ impl ModelManager {
             for path in [
                 self.models_dir.join(&model_info.filename),
                 self.models_dir
-                    .join(format!("{}.partial", &model_info.filename)),
+                    .join(format!("{}.partial", model_info.filename)),
             ] {
                 if path.exists() {
                     info!("Deleting model file at: {:?}", path);
@@ -3093,7 +3093,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
         debug!("ModelManager: Model path: {:?}", model_path);
         debug!("ModelManager: Partial path: {:?}", partial_path);
 
@@ -3176,7 +3176,7 @@ impl ModelManager {
             if local_path.exists() {
                 let partial_path = self
                     .models_dir
-                    .join(format!("{}.partial", &model_info.filename));
+                    .join(format!("{}.partial", model_info.filename));
                 if partial_path.exists() {
                     let _ = fs::remove_file(&partial_path);
                 }
@@ -3191,7 +3191,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
 
         // Check project-local models dir first for dev mode
         if let Some(ref local_dir) = self.project_local_models_dir {

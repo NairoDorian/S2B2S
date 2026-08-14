@@ -169,7 +169,7 @@ impl TtsBackend for SapiBackend {
                 let pcwstr = PCWSTR(text_w.as_ptr());
 
                 // Speak synchronously to write all audio into the stream
-                let _ = speaker
+                speaker
                     .Speak(pcwstr, 0, None)
                     .map_err(|e| format!("SAPI Speak failed: {e}"))?;
 

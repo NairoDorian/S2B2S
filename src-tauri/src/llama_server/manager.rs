@@ -389,9 +389,7 @@ fn parse_asset_name(name: &str) -> Option<(String, &str, &str)> {
         "windows"
     } else if name_lower.contains("ubuntu") || name_lower.contains("linux") {
         "linux"
-    } else if name_lower.contains("macos") {
-        "macos"
-    } else if name_lower.contains("mac") {
+    } else if name_lower.contains("macos") || name_lower.contains("mac") {
         "macos"
     } else {
         return None;
@@ -415,17 +413,8 @@ fn parse_asset_name(name: &str) -> Option<(String, &str, &str)> {
         format!("cuda-{}", cuda_ver)
     } else if name_lower.contains("vulkan") {
         "vulkan".to_string()
-    } else if name_lower.contains("cpu")
-        || name_lower.contains("opencl")
-        || name_lower.contains("hip")
-        || name_lower.contains("rocm")
-        || name_lower.contains("openvino")
-    {
-        "cpu".to_string()
-    } else if !name_lower.contains("cuda") && !name_lower.contains("vulkan") {
-        "cpu".to_string()
     } else {
-        return None;
+        "cpu".to_string()
     };
 
     // Skip cudart-llama variants — they bundle the CUDA runtime separately.
@@ -441,7 +430,7 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         let status = Command::new("powershell")
-            .args(&[
+            .args([
                 "-Command",
                 &format!(
                     "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
@@ -476,7 +465,7 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
 fn extract_tgz(tar_path: &Path, dest: &Path) -> Result<(), String> {
     fs::create_dir_all(dest).map_err(|e| format!("mkdir: {}", e))?;
     let status = Command::new("tar")
-        .args(&[
+        .args([
             "-xzf",
             &tar_path.to_string_lossy(),
             "-C",

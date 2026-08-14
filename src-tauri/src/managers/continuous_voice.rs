@@ -125,7 +125,7 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     // Brain-only mode always requires multimodal audio
     let multimodal_audio = is_brain_only || multimodal_audio;
 
-    let reply_language = crate::actions::resolve_reply_language(&app, &settings);
+    let reply_language = crate::actions::resolve_reply_language(app, &settings);
     let app_clone = app.clone();
     let bm_clone = bm.clone();
     let transcription_clone = brain_text.clone();
@@ -213,7 +213,7 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
                 if !barge_aborted_clone.load(std::sync::atomic::Ordering::SeqCst) {
                     barge_aborted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
                     log::info!("[Barge-in] User speech detected during TTS, aborting turn...");
-                    let _ = bm_for_barge.abort();
+                    bm_for_barge.abort();
                     tts_for_barge.stop();
                     // Unpause so the new utterance gets processed normally
                     rm_for_barge.set_continuous_mode_paused(false);

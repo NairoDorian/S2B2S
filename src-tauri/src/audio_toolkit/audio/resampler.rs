@@ -92,7 +92,7 @@ impl FrameResampler {
         self.in_buf.clear();
         self.pending.clear();
         if let Some(ref mut resampler) = self.resampler {
-            let _ = resampler.reset();
+            resampler.reset();
         }
     }
 

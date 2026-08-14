@@ -132,7 +132,21 @@ impl KeyListenerState {
                         binding_id, hotkey_string, event.state
                     );
                     let is_pressed = event.state == HotkeyState::Pressed;
-                    handle_shortcut_event(&app, binding_id, hotkey_string, is_pressed);
+                    let app_handle = app.clone();
+                    let binding_id_clone = binding_id.clone();
+                    let hotkey_clone = hotkey_string.clone();
+                    let dispatch_res =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                            handle_shortcut_event(
+                                &app_handle,
+                                &binding_id_clone,
+                                &hotkey_clone,
+                                is_pressed,
+                            );
+                        }));
+                    if let Err(e) = dispatch_res {
+                        error!("Shortcut handler for '{}' panicked: {:?}", binding_id, e);
+                    }
                 }
             }
 

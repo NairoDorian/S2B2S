@@ -60,8 +60,9 @@ impl BrainManager {
     /// - `image_png_base64`: raw base64-encoded PNG screenshot (for vision)
     /// - `reply_language`: when `Some`, prepend a "respond in <language>" hint to the
     ///   user turn (mirrors huggingface/speech-to-speech `--enable_lang_prompt`).
+    ///
     /// Content parts order follows Gemma 4 best practices:
-    /// image → text → audio
+    /// `image → text → audio`
     pub async fn ask_multimodal(
         &self,
         text: String,
