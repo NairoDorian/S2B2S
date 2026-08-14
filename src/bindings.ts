@@ -1402,11 +1402,22 @@ export type Voice = {
 	language: string | null,
 };
 
-/**  User-facing configuration for wake word detection. */
+/**
+ *  User-facing configuration for wake word detection.
+ * 
+ *  V1 detection is **energy-based** (RMS threshold on the always-on mic) —
+ *  there is no keyword spotting yet. The `keyword` field is reserved for the
+ *  future sherpa-onnx KWS implementation and is not used by the detector.
+ */
 export type WakeWordConfig = {
 	enabled: boolean,
+	/**  Reserved for future keyword spotting (sherpa-onnx KWS). Unused in V1. */
 	keyword: string,
-	threshold: number | null,
+	/**
+	 *  RMS energy threshold for V1 activation (typical range 0.01–0.1;
+	 *  default 0.03). Lower = more sensitive.
+	 */
+	energy_threshold?: number | null,
 	show_indicator: boolean,
 };
 

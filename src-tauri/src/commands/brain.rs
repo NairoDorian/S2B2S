@@ -138,6 +138,16 @@ pub fn change_brain_config(app: AppHandle, config: BrainConfig) -> Result<(), St
     settings.brain = config;
     write_settings(&app, settings.clone());
 
+    // Live-apply the endpoint preset to the continuous-voice recorder so the
+    // silence threshold changes without restarting the app or mic stream.
+    if let Some(audio_manager) =
+        app.try_state::<Arc<crate::managers::audio::AudioRecordingManager>>()
+    {
+        let frames =
+            crate::managers::audio::endpoint_frames_for_preset(&settings.brain.endpoint_preset);
+        audio_manager.inner().set_endpoint_silence_frames(frames);
+    }
+
     // Register/unregister the converse shortcut with the feature toggle.
     if was_enabled != now_enabled {
         if let Some(binding) = settings.bindings.get("converse").cloned() {

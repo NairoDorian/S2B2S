@@ -331,6 +331,15 @@ impl BrainManager {
                 Ok(full)
             }
             Err(e) => {
+                // Remember the user's turn even when the model failed, so the
+                // context isn't silently lost on a transient provider error.
+                {
+                    let mut history = self.history.lock().unwrap();
+                    history.push(ChatMessage {
+                        role: "user".into(),
+                        content: MessageContent::text(text),
+                    });
+                }
                 let _ = self.app.emit("brain:error", &e);
                 Err(e)
             }

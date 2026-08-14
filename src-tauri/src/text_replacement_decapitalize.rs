@@ -266,13 +266,13 @@ pub fn init_rdev_listener(app: AppHandle) {
 }
 
 fn should_arm_standard_output_for_decapitalize(app: &AppHandle) -> bool {
-    let state = app.state::<crate::recording_session::ManagedSessionState>();
+    let state = app.state::<crate::session_manager::ManagedSessionState>();
     let Ok(state_guard) = state.lock() else {
         return false;
     };
 
     match &*state_guard {
-        crate::recording_session::SessionState::Recording { binding_id, .. } => {
+        crate::session_manager::SessionState::Recording { binding_id, .. } => {
             binding_id == "transcribe" || binding_id.starts_with("transcribe_")
         }
         _ => false,

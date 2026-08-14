@@ -80,7 +80,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     crate::recording_auto_stop::cancel_auto_stop_timer(app);
 
     // Reset the active recording session state
-    let _ = crate::recording_session::take_session(app);
+    let _ = crate::session_manager::take_session(app);
 
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);

@@ -114,6 +114,10 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     // 5. Query Brain and play TTS
     let will_play_tts = settings.brain.read_aloud && settings.tts.enabled;
     let multimodal_audio = settings.brain.multimodal_audio_enabled;
+    // Barge-in during TTS playback is only safe with headphones: on speakers,
+    // the assistant's own voice echoes into the mic and would abort its own
+    // turn. `headphone_mode` gates the barge-in abort listener.
+    let barge_in_enabled = settings.brain.headphone_mode;
 
     // When brain-only transcription is on, bypass STT output and send the
     // fixed transcription prompt + raw audio to the Brain instead.
@@ -141,42 +145,50 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
     // Run the async Brain/TTS pipeline
     tauri::async_runtime::block_on(async move {
         let ask_result = if multimodal_audio {
-            let samples = samples_for_brain
-                .expect("samples_for_brain should be Some when multimodal_audio is true");
-            if is_brain_only {
-                log::info!(
-                    "[ContinuousVoice] Brain-only transcription mode — encoding {} samples ({:.2}s) to WAV, bypassing STT, sending fixed prompt + audio to Gemma 4",
-                    samples.len(),
-                    samples.len() as f64 / 16000.0
-                );
-            } else {
-                log::info!(
-                    "[ContinuousVoice] Multimodal audio enabled — encoding {} samples ({:.2}s) to WAV for Gemma 4",
-                    samples.len(),
-                    samples.len() as f64 / 16000.0
-                );
-            }
-            match crate::audio_toolkit::encode_wav_bytes(&samples) {
-                Ok(wav_bytes) => {
-                    use base64::Engine;
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&wav_bytes);
-                    log::info!(
-                        "[ContinuousVoice] WAV encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
-                        wav_bytes.len(),
-                        b64.len()
-                    );
-                    bm_clone
-                        .ask_multimodal(
-                            transcription_clone,
-                            Some(b64),
-                            None,
-                            reply_language.clone(),
-                            Vec::new(),
-                        )
-                        .await
+            match samples_for_brain {
+                Some(samples) => {
+                    if is_brain_only {
+                        log::info!(
+                            "[ContinuousVoice] Brain-only transcription mode — encoding {} samples ({:.2}s) to WAV, bypassing STT, sending fixed prompt + audio to Gemma 4",
+                            samples.len(),
+                            samples.len() as f64 / 16000.0
+                        );
+                    } else {
+                        log::info!(
+                            "[ContinuousVoice] Multimodal audio enabled — encoding {} samples ({:.2}s) to WAV for Gemma 4",
+                            samples.len(),
+                            samples.len() as f64 / 16000.0
+                        );
+                    }
+                    match crate::audio_toolkit::encode_wav_bytes(&samples) {
+                        Ok(wav_bytes) => {
+                            use base64::Engine;
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&wav_bytes);
+                            log::info!(
+                                "[ContinuousVoice] WAV encoded — {} bytes raw, {} base64 — sending to ask_multimodal",
+                                wav_bytes.len(),
+                                b64.len()
+                            );
+                            bm_clone
+                                .ask_multimodal(
+                                    transcription_clone,
+                                    Some(b64),
+                                    None,
+                                    reply_language.clone(),
+                                    Vec::new(),
+                                )
+                                .await
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "[ContinuousVoice] Failed to encode WAV for multimodal brain: {e}"
+                            );
+                            bm_clone.ask(transcription_clone).await
+                        }
+                    }
                 }
-                Err(e) => {
-                    log::error!("[ContinuousVoice] Failed to encode WAV for multimodal brain: {e}");
+                None => {
+                    log::error!("[ContinuousVoice] samples_for_brain unexpectedly missing; falling back to text-only ask");
                     bm_clone.ask(transcription_clone).await
                 }
             }
@@ -198,29 +210,44 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
         // (tts:finished/stopped/error) for the LAST queued sentence fires after this
         // point, so registering the listeners now and waiting for it is race-free.
         if will_play_tts && has_reply {
-            log::info!("Waiting for TTS playback to finish (barge-in active)...");
-
-            // Barge-in: if user speaks during TTS, abort current turn
-            let barge_aborted = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let barge_aborted_clone = barge_aborted.clone();
-
-            let app_for_barge = app_clone.clone();
-            let bm_for_barge = bm_clone.clone();
-            let tts_for_barge = tts.clone();
-            let rm_for_barge = rm.clone();
-
-            // Listen for speech-start events while TTS is playing
-            let barge_listener = app_clone.listen("continuous-voice:speech-started", move |_| {
-                if !barge_aborted_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                    barge_aborted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
-                    log::info!("[Barge-in] User speech detected during TTS, aborting turn...");
-                    bm_for_barge.abort();
-                    tts_for_barge.stop();
-                    // Unpause so the new utterance gets processed normally
-                    rm_for_barge.set_continuous_mode_paused(false);
-                    let _ = app_for_barge.emit("brain:barge-in", ());
+            log::info!(
+                "Waiting for TTS playback to finish{}...",
+                if barge_in_enabled {
+                    " (barge-in active)"
+                } else {
+                    " (barge-in disabled — headphone mode off)"
                 }
-            });
+            );
+
+            // Barge-in: if user speaks during TTS, abort current turn.
+            // Only registered in headphone mode so speaker echo can't abort
+            // the assistant's own reply.
+            let barge_aborted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let barge_listener = if barge_in_enabled {
+                let barge_aborted_clone = barge_aborted.clone();
+                let app_for_barge = app_clone.clone();
+                let bm_for_barge = bm_clone.clone();
+                let tts_for_barge = tts.clone();
+                let rm_for_barge = rm.clone();
+
+                Some(
+                    app_clone.listen("continuous-voice:speech-started", move |_| {
+                        if !barge_aborted_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                            barge_aborted_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                            log::info!(
+                                "[Barge-in] User speech detected during TTS, aborting turn..."
+                            );
+                            bm_for_barge.abort();
+                            tts_for_barge.stop();
+                            // Unpause so the new utterance gets processed normally
+                            rm_for_barge.set_continuous_mode_paused(false);
+                            let _ = app_for_barge.emit("brain:barge-in", ());
+                        }
+                    }),
+                )
+            } else {
+                None
+            };
 
             let (tx, rx) = std::sync::mpsc::channel::<()>();
 
@@ -256,7 +283,9 @@ pub fn process_continuous_samples(app: &AppHandle, samples: Vec<f32>) -> Result<
             };
 
             let _ = rx.recv_timeout(std::time::Duration::from_secs(60));
-            app_clone.unlisten(barge_listener);
+            if let Some(barge_listener) = barge_listener {
+                app_clone.unlisten(barge_listener);
+            }
 
             if barge_aborted.load(std::sync::atomic::Ordering::Relaxed) {
                 log::info!("TTS turn aborted by barge-in.");

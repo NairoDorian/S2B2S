@@ -1,7 +1,7 @@
 use std::{
     io::Error,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -94,6 +94,11 @@ pub struct AudioRecorder {
     app_handle: Option<tauri::AppHandle>,
     continuous_mode: Option<Arc<AtomicBool>>,
     continuous_mode_paused: Option<Arc<AtomicBool>>,
+    /// Silence frames (30 ms each) required to endpoint an utterance in
+    /// continuous-voice mode. Mirrors `BrainConfig::endpoint_preset`
+    /// (snappy/balanced/patient) so the setting applies without reopening
+    /// the stream. Defaults to 40 frames (~1.2 s) when unset.
+    endpoint_silence_frames: Option<Arc<AtomicUsize>>,
     wake_word_detector: Option<Arc<crate::wake_word::WakeWordDetector>>,
 }
 
@@ -114,6 +119,7 @@ impl AudioRecorder {
             app_handle: None,
             continuous_mode: None,
             continuous_mode_paused: None,
+            endpoint_silence_frames: None,
             wake_word_detector: None,
         })
     }
@@ -182,6 +188,11 @@ impl AudioRecorder {
         self
     }
 
+    pub fn with_endpoint_silence_frames(mut self, frames: Arc<AtomicUsize>) -> Self {
+        self.endpoint_silence_frames = Some(frames);
+        self
+    }
+
     pub fn with_wake_word_detector(
         mut self,
         detector: Arc<crate::wake_word::WakeWordDetector>,
@@ -238,6 +249,7 @@ impl AudioRecorder {
         let app_handle = self.app_handle.clone();
         let continuous_mode = self.continuous_mode.clone();
         let continuous_mode_paused = self.continuous_mode_paused.clone();
+        let endpoint_silence_frames = self.endpoint_silence_frames.clone();
         let wake_word_detector = self.wake_word_detector.clone();
 
         let worker = std::thread::spawn(move || {
@@ -388,6 +400,7 @@ impl AudioRecorder {
                         app_handle,
                         continuous_mode,
                         continuous_mode_paused,
+                        endpoint_silence_frames,
                         wake_word_detector,
                     );
                     drop(stream);
@@ -696,6 +709,7 @@ fn run_consumer(
     app_handle: Option<tauri::AppHandle>,
     continuous_mode: Option<Arc<AtomicBool>>,
     continuous_mode_paused: Option<Arc<AtomicBool>>,
+    endpoint_silence_frames: Option<Arc<AtomicUsize>>,
     wake_word_detector: Option<Arc<crate::wake_word::WakeWordDetector>>,
 ) {
     let mut standalone_ns = if use_standalone_ns {
@@ -713,6 +727,12 @@ fn run_consumer(
     let mut recording = false;
     let mut vad_policy = VadPolicy::Offline;
     let mut silence_frames = 0usize;
+    let endpoint_frames = || {
+        endpoint_silence_frames
+            .as_ref()
+            .map(|f| f.load(Ordering::Relaxed).max(1))
+            .unwrap_or(40)
+    };
 
     // ---------- latency instrumentation ---------------------------------- //
     // First-chunk arrival exposes the play()->samples-flowing gap; the
@@ -993,7 +1013,7 @@ fn run_consumer(
                                 }
                             } else if recording {
                                 silence_frames += 1;
-                                if silence_frames >= 40 {
+                                if silence_frames >= endpoint_frames() {
                                     recording = false;
                                     silence_frames = 0;
                                     if let Some(cfg2) = &vad {
@@ -1025,7 +1045,7 @@ fn run_consumer(
                             VadFrame::Noise => {
                                 if recording {
                                     silence_frames += 1;
-                                    if silence_frames >= 40 {
+                                    if silence_frames >= endpoint_frames() {
                                         recording = false;
                                         let duration_secs = processed_samples.len() as f64 / 16000.0;
                                         log::info!(

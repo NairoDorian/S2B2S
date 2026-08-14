@@ -29,7 +29,6 @@ mod paste_tx;
 pub mod portable;
 pub mod python_env;
 mod recording_auto_stop;
-mod recording_session;
 mod secure_input;
 mod session_manager;
 mod settings;
@@ -1148,7 +1147,7 @@ pub fn run(cli_args: CliArgs) {
 
             app.manage(actions::ActiveActionState(std::sync::Mutex::new(None)));
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
-            app.manage(recording_session::ManagedSessionState::default());
+            app.manage(session_manager::ManagedSessionState::default());
             app.manage(recording_auto_stop::new_managed_state());
             app.manage(std::sync::Arc::new(
                 crate::llm_operation::LlmOperationTracker::new(),

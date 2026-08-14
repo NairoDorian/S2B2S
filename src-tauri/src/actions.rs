@@ -42,7 +42,7 @@ impl Drop for FinishGuard {
         if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
             c.notify_processing_finished();
         }
-        crate::recording_session::exit_processing(&self.0);
+        crate::session_manager::exit_processing(&self.0);
         // The pipeline just freed its large transient buffers (captured PCM,
         // WAV copy, engine scratch); hand the cached pages back to the OS so
         // they don't sit in malloc arenas until they get swapped out (#1792).
@@ -894,12 +894,9 @@ impl ShortcutAction for TranscribeAction {
 
         // Check if there is already an active session
         {
-            let state = app.state::<crate::recording_session::ManagedSessionState>();
+            let state = app.state::<crate::session_manager::ManagedSessionState>();
             let mut session_state = state.lock().unwrap();
-            if !matches!(
-                &*session_state,
-                crate::recording_session::SessionState::Idle
-            ) {
+            if !matches!(&*session_state, crate::session_manager::SessionState::Idle) {
                 warn!(
                     "TranscribeAction::start called but session is not idle (state is {:?})",
                     *session_state
@@ -908,7 +905,7 @@ impl ShortcutAction for TranscribeAction {
             }
 
             let session = std::sync::Arc::new(
-                crate::recording_session::RecordingSession::new_with_resources(
+                crate::session_manager::RecordingSession::new_with_resources(
                     app, true, // will register cancel
                     true, // will apply mute
                 ),
@@ -916,7 +913,7 @@ impl ShortcutAction for TranscribeAction {
 
             let operation_id = crate::session_manager::next_operation_id();
             let captured_settings = get_settings(app);
-            *session_state = crate::recording_session::SessionState::Recording {
+            *session_state = crate::session_manager::SessionState::Recording {
                 session: std::sync::Arc::clone(&session),
                 binding_id: binding_id.to_string(),
                 operation_id,
@@ -1054,8 +1051,8 @@ impl ShortcutAction for TranscribeAction {
 
         if recording_error.is_none() {
             // Dynamically register the cancel shortcut via the session guard
-            if let crate::recording_session::SessionState::Recording { session, .. } = &*app
-                .state::<crate::recording_session::ManagedSessionState>()
+            if let crate::session_manager::SessionState::Recording { session, .. } = &*app
+                .state::<crate::session_manager::ManagedSessionState>()
                 .lock()
                 .unwrap()
             {
@@ -1071,7 +1068,7 @@ impl ShortcutAction for TranscribeAction {
         } else {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state and reset the session state to Idle
-            let _ = crate::recording_session::take_session(app);
+            let _ = crate::session_manager::take_session(app);
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             change_tray_icon(app, TrayIconState::Idle);
@@ -1105,7 +1102,7 @@ impl ShortcutAction for TranscribeAction {
         app.state::<Arc<AudioRecordingManager>>()
             .invalidate_recording_readiness();
 
-        let session = match crate::recording_session::take_session_if_matches(app, binding_id) {
+        let session = match crate::session_manager::take_session_if_matches(app, binding_id) {
             Some(s) => s,
             None => {
                 debug!(
@@ -1118,15 +1115,15 @@ impl ShortcutAction for TranscribeAction {
 
         // Transition to Processing state
         {
-            let state = app.state::<crate::recording_session::ManagedSessionState>();
+            let state = app.state::<crate::session_manager::ManagedSessionState>();
             let mut session_state = state.lock().unwrap();
             let operation_id = match &*session_state {
-                crate::recording_session::SessionState::Recording { operation_id, .. } => {
+                crate::session_manager::SessionState::Recording { operation_id, .. } => {
                     *operation_id
                 }
                 _ => crate::session_manager::next_operation_id(),
             };
-            *session_state = crate::recording_session::SessionState::Processing {
+            *session_state = crate::session_manager::SessionState::Processing {
                 binding_id: binding_id.to_string(),
                 operation_id,
             };
@@ -1303,9 +1300,9 @@ impl ShortcutAction for TranscribeAction {
 
                             let check_cancelled = || {
                                 let state =
-                                    ah.state::<crate::recording_session::ManagedSessionState>();
+                                    ah.state::<crate::session_manager::ManagedSessionState>();
                                 let session_state = state.lock().unwrap();
-                                !matches!(&*session_state, crate::recording_session::SessionState::Processing { binding_id: ref bid, .. } if bid == &binding_id)
+                                !matches!(&*session_state, crate::session_manager::SessionState::Processing { binding_id: ref bid, .. } if bid == &binding_id)
                             };
 
                             if check_cancelled() {

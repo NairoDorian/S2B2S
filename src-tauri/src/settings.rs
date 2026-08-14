@@ -466,12 +466,24 @@ pub struct TtsConfig {
 }
 
 /// User-facing configuration for wake word detection.
+///
+/// V1 detection is **energy-based** (RMS threshold on the always-on mic) —
+/// there is no keyword spotting yet. The `keyword` field is reserved for the
+/// future sherpa-onnx KWS implementation and is not used by the detector.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct WakeWordConfig {
     pub enabled: bool,
+    /// Reserved for future keyword spotting (sherpa-onnx KWS). Unused in V1.
     pub keyword: String,
-    pub threshold: f32,
+    /// RMS energy threshold for V1 activation (typical range 0.01–0.1;
+    /// default 0.03). Lower = more sensitive.
+    #[serde(default = "default_wake_word_energy_threshold")]
+    pub energy_threshold: f32,
     pub show_indicator: bool,
+}
+
+fn default_wake_word_energy_threshold() -> f32 {
+    0.03
 }
 
 impl Default for WakeWordConfig {
@@ -479,7 +491,7 @@ impl Default for WakeWordConfig {
         Self {
             enabled: false,
             keyword: "hey s2b2s".to_string(),
-            threshold: 0.6,
+            energy_threshold: default_wake_word_energy_threshold(),
             show_indicator: true,
         }
     }

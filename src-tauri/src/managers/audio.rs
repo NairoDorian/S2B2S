@@ -12,13 +12,26 @@ use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const VAD_THRESHOLD: f32 = 0.3;
+
+/// Translate the Brain's `endpoint_preset` into a silence frame count
+/// (frames are 30 ms at 16 kHz):
+/// - `snappy`  → 300 ms (10 frames)
+/// - `patient` → 1200 ms (40 frames)
+/// - anything else (`balanced` default) → 600 ms (20 frames)
+pub fn endpoint_frames_for_preset(preset: &str) -> usize {
+    match preset.to_ascii_lowercase().as_str() {
+        "snappy" => 10,
+        "patient" => 40,
+        _ => 20,
+    }
+}
 
 /// Resolve the Silero VAD ONNX model path.
 ///
@@ -315,6 +328,7 @@ fn create_audio_recorder(
     stream_router: Arc<StreamRouter>,
     continuous_mode: Arc<AtomicBool>,
     continuous_mode_paused: Arc<AtomicBool>,
+    endpoint_silence_frames: Arc<AtomicUsize>,
 ) -> Result<AudioRecorder, anyhow::Error> {
     let settings = get_settings(app_handle);
     let silero = SileroVad::new(vad_path, VAD_THRESHOLD)
@@ -349,6 +363,7 @@ fn create_audio_recorder(
             VAD_STREAMING_HANGOVER_FRAMES,
         )
         .with_continuous_mode(continuous_mode, continuous_mode_paused)
+        .with_endpoint_silence_frames(endpoint_silence_frames)
         .with_selected_channel(selected_channel)
         .with_level_callback({
             let app_handle = app_handle.clone();
@@ -419,6 +434,9 @@ pub struct AudioRecordingManager {
     noise_suppression_enabled: Arc<AtomicBool>,
     continuous_mode: Arc<AtomicBool>,
     continuous_mode_paused: Arc<AtomicBool>,
+    /// Silence frames (30 ms each) to endpoint a continuous-voice utterance.
+    /// Live mirror of `BrainConfig::endpoint_preset`.
+    endpoint_silence_frames: Arc<AtomicUsize>,
     /// Auto-stop: silence watchdog timer
     auto_stop_enabled: Arc<AtomicBool>,
     auto_stop_duration_secs: Arc<std::sync::atomic::AtomicU32>,
@@ -445,6 +463,9 @@ impl AudioRecordingManager {
             Arc::new(AtomicBool::new(settings.noise_suppression_enabled));
         let continuous_mode = Arc::new(AtomicBool::new(false));
         let continuous_mode_paused = Arc::new(AtomicBool::new(false));
+        let endpoint_silence_frames = Arc::new(AtomicUsize::new(endpoint_frames_for_preset(
+            &settings.brain.endpoint_preset,
+        )));
         let auto_stop_enabled = Arc::new(AtomicBool::new(false));
         let auto_stop_duration_secs = Arc::new(std::sync::atomic::AtomicU32::new(30));
 
@@ -466,6 +487,7 @@ impl AudioRecordingManager {
             noise_suppression_enabled,
             continuous_mode,
             continuous_mode_paused,
+            endpoint_silence_frames,
             auto_stop_enabled,
             auto_stop_duration_secs,
             cached_device: Arc::new(Mutex::new(None)),
@@ -625,6 +647,7 @@ impl AudioRecordingManager {
                 Arc::clone(&self.stream_router),
                 Arc::clone(&self.continuous_mode),
                 Arc::clone(&self.continuous_mode_paused),
+                Arc::clone(&self.endpoint_silence_frames),
             )?);
             info!("Silero VAD model preloaded successfully");
         }
@@ -1061,6 +1084,11 @@ impl AudioRecordingManager {
         self.continuous_mode_paused.store(false, Ordering::SeqCst);
 
         if enabled {
+            // Re-read the endpoint preset every time continuous mode starts so
+            // the silence threshold always reflects current settings.
+            let settings = get_settings(&self.app_handle);
+            let frames = endpoint_frames_for_preset(&settings.brain.endpoint_preset);
+            self.endpoint_silence_frames.store(frames, Ordering::SeqCst);
             self.update_mode(MicrophoneMode::AlwaysOn)?;
         } else {
             let settings = get_settings(&self.app_handle);
@@ -1073,6 +1101,18 @@ impl AudioRecordingManager {
         }
 
         Ok(())
+    }
+
+    /// Live-update the continuous-voice endpoint threshold (in 30 ms silence
+    /// frames) without restarting the stream. Called when the Brain's
+    /// endpoint preset changes in settings.
+    pub fn set_endpoint_silence_frames(&self, frames: usize) {
+        self.endpoint_silence_frames
+            .store(frames.max(1), Ordering::SeqCst);
+        log::info!(
+            "[ContinuousVoice] Endpoint silence set to {} frames",
+            frames
+        );
     }
 
     pub fn set_continuous_mode_paused(&self, paused: bool) {

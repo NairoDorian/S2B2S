@@ -31,6 +31,8 @@ pub struct WakeWordDetector {
     ring_buffer: Mutex<Vec<f32>>,
     /// Consecutive positive detections for debounce.
     detection_count: AtomicU32,
+    /// RMS energy threshold (f32 bits) from `WakeWordConfig::energy_threshold`.
+    energy_threshold: AtomicU32,
 }
 
 impl WakeWordDetector {
@@ -39,7 +41,15 @@ impl WakeWordDetector {
             active: AtomicBool::new(false),
             ring_buffer: Mutex::new(Vec::with_capacity(32000)),
             detection_count: AtomicU32::new(0),
+            energy_threshold: AtomicU32::new(0.03f32.to_bits()),
         }
+    }
+
+    /// Live-update the RMS activation threshold (clamped to 0.001–1.0).
+    pub fn set_energy_threshold(&self, threshold: f32) {
+        let clamped = threshold.clamp(0.001, 1.0);
+        self.energy_threshold
+            .store(clamped.to_bits(), Ordering::SeqCst);
     }
 
     /// Reset the ring buffer.
@@ -49,8 +59,9 @@ impl WakeWordDetector {
     }
 
     /// Feed audio into the ring buffer for energy analysis.
-    /// NOTE: Currently not connected to the audio pipeline (V1 limitation).
-    /// V2 will connect this via recorder.rs callback.
+    /// Connected via the recorder's frame callback (see
+    /// `run_consumer` in `audio_toolkit/audio/recorder.rs`), gated on
+    /// `WakeWordDetector::active`.
     pub fn feed_audio(&self, samples: &[f32]) {
         let mut buf = self.ring_buffer.lock().unwrap();
         buf.extend_from_slice(samples);
@@ -60,8 +71,8 @@ impl WakeWordDetector {
         }
     }
 
-    /// Check RMS energy threshold (0.03) with 3-frame debounce.
-    /// Returns true once per detection event.
+    /// Check RMS energy threshold (configurable, default 0.03) with 3-frame
+    /// debounce. Returns true once per detection event.
     pub fn check_detected(&self) -> bool {
         let buf = self.ring_buffer.lock().unwrap();
         if buf.len() < 1600 {
@@ -69,7 +80,8 @@ impl WakeWordDetector {
         }
 
         let rms = (buf.iter().map(|s| s * s).sum::<f32>() / buf.len() as f32).sqrt();
-        if rms > 0.03 {
+        let threshold = f32::from_bits(self.energy_threshold.load(Ordering::SeqCst));
+        if rms > threshold {
             let count = self.detection_count.fetch_add(1, Ordering::SeqCst) + 1;
             if count >= 3 {
                 self.detection_count.store(0, Ordering::SeqCst);
@@ -89,14 +101,18 @@ pub fn start_wake_word_detection(app: AppHandle) {
         return;
     }
     detector.reset();
+    // Apply the configured energy threshold before starting.
+    let settings = crate::settings::get_settings(&app);
+    detector.set_energy_threshold(settings.tts.wake_word.energy_threshold);
     detector.active.store(true, Ordering::SeqCst);
 
     let det = detector.inner().clone();
     let app2 = app.clone();
 
     std::thread::spawn(move || {
-        log::info!("[WakeWord] thread started (VAD mode)");
-        // TO FINISH: connect audio input stream callback in recorder.rs to call detector.feed_audio()
+        log::info!("[WakeWord] thread started (energy/VAD mode)");
+        // The recorder feeds 16 kHz frames via `feed_audio()` whenever this
+        // detector is active (see run_consumer in audio_toolkit/audio/recorder.rs).
         if let Some(mgr) = app2.try_state::<Arc<AudioRecordingManager>>() {
             mgr.enable_wake_word(true);
         }

@@ -103,17 +103,18 @@ fn run_streaming(app: &tauri::AppHandle, context: &str, mut cmd: Command) -> Res
     let stdout_handle = {
         let app2 = app.clone();
         let ctx = context.to_string();
-        if let Some(stdout) = child.stdout.take() {
-            Some(std::thread::spawn(move || {
+        child.stdout.take().map(|stdout| {
+            std::thread::spawn(move || {
                 use std::io::BufRead;
-                for line in std::io::BufReader::new(stdout).lines().flatten() {
+                for line in std::io::BufReader::new(stdout)
+                    .lines()
+                    .map_while(Result::ok)
+                {
                     log::debug!("[python_env/{ctx}] {line}");
                     emit_progress(&app2, &ctx, &line, "info");
                 }
-            }))
-        } else {
-            None
-        }
+            })
+        })
     };
 
     // Drain stderr
@@ -123,7 +124,10 @@ fn run_streaming(app: &tauri::AppHandle, context: &str, mut cmd: Command) -> Res
         let ctx = context.to_string();
         if let Some(stderr) = child.stderr.take() {
             use std::io::BufRead;
-            for line in std::io::BufReader::new(stderr).lines().flatten() {
+            for line in std::io::BufReader::new(stderr)
+                .lines()
+                .map_while(Result::ok)
+            {
                 log::debug!("[python_env/{ctx}] STDERR: {line}");
                 let level = if line.to_ascii_lowercase().contains("error") {
                     "error"
@@ -306,7 +310,7 @@ pub fn python_version_in_venv() -> Option<String> {
         String::from_utf8_lossy(&output.stderr)
     );
     for part in combined.split_whitespace() {
-        if part.contains('.') && part.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        if part.contains('.') && part.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             return Some(part.to_string());
         }
     }
@@ -842,7 +846,7 @@ pub fn install_all_backends(app: &tauri::AppHandle, uv: &str, gpu: bool) -> Resu
 /// Build the current `PythonEnvStatus` snapshot (non-blocking).
 pub fn get_env_status() -> PythonEnvStatus {
     let uv = find_uv();
-    let uv_version = uv.as_deref().and_then(|u| uv_version(u));
+    let uv_version = uv.as_deref().and_then(uv_version);
     let venv = venv_dir();
     let venv_exists = venv.exists();
     let python_version = if venv_exists {

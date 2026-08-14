@@ -30,6 +30,9 @@ pub fn wake_word_set_config(app: AppHandle, config: WakeWordConfig) -> Result<()
         if detector.active.load(std::sync::atomic::Ordering::SeqCst) {
             stop_wake_word_detection(app.clone());
         }
+        // Always apply the threshold so a config change takes effect on the
+        // next start (or immediately if the detector is still running).
+        detector.set_energy_threshold(config.energy_threshold);
     }
     let mut settings = get_settings(&app);
     settings.tts.wake_word = config;
