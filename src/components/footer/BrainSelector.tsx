@@ -80,7 +80,7 @@ const BrainSelector: React.FC = () => {
 
   // Display-friendly model name
   const displayModel =
-    brain.provider_id === "llama_cpp" ? "Gemma-4 2B (Local)" : rawModel;
+    brain.provider_id === "llama_cpp" ? "Gemma 4 E2B (Local)" : rawModel;
 
   // Rich status line for the local server: model + mmproj + backend.
   const llamaDetails = (() => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { RefreshCcw } from "lucide-react";
@@ -13,7 +13,7 @@ import { ResetButton } from "../../ui/ResetButton";
 import { Alert } from "../../ui/Alert";
 import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
-import type { BrainConfig } from "@/bindings";
+import type { BrainConfig, Gemma4QuantCatalog } from "@/bindings";
 
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
@@ -26,15 +26,50 @@ const LlamaDownloadPanel: React.FC<{
   llamaState: ReturnType<typeof useLlamaState>;
 }> = ({ llamaState }) => {
   const { t } = useTranslation();
+  const { settings, updateSetting } = useSettings();
+  const brain = settings?.brain;
+  const [catalog, setCatalog] = useState<Gemma4QuantCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const refreshCatalog = useCallback(async () => {
+    setCatalogError(null);
+    const result = await commands.fetchGemma4Quants();
+    if (result.status === "ok") {
+      setCatalog(result.data);
+    } else {
+      setCatalogError(String(result.error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCatalog();
+  }, [refreshCatalog]);
+
+  const quantUpdate = useCallback(
+    (patch: Partial<BrainConfig>) => {
+      if (!brain) return;
+      void updateSetting("brain", { ...brain, ...patch });
+    },
+    [brain, updateSetting],
+  );
+
+  const quantOptions = (list: Gemma4QuantCatalog["model"]) =>
+    list.map((q) => ({
+      value: q.id,
+      label: `${q.label} (${(q.size_mb ?? 0).toFixed(0)} MB)`,
+    }));
+
   return (
     <div className="p-5 rounded-lg border border-logo-primary/20 bg-gradient-to-br from-logo-primary/5 via-logo-primary/[0.02] to-transparent backdrop-blur-sm space-y-4">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <h4 className="text-sm font-semibold text-text flex items-center gap-2">
             {t("llamaCpp.localGemma.title")}
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              {t("llamaCpp.localGemma.setupRequired")}
-            </span>
+            {!llamaState.isDownloaded && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {t("llamaCpp.localGemma.setupRequired")}
+              </span>
+            )}
           </h4>
           <p className="text-xs text-mid-gray max-w-xl">
             {t("llamaCpp.localGemma.brainDescription")}
@@ -46,6 +81,83 @@ const LlamaDownloadPanel: React.FC<{
         <Alert variant="error" contained>
           {llamaState.error}
         </Alert>
+      )}
+
+      {/* Quantization pickers: model GGUF, mmproj precision, MTP draft. */}
+      {brain && (
+        <>
+          <ToggleSwitch
+            checked={brain.llama_model_variant === "mobile"}
+            onChange={(mobile) =>
+              quantUpdate({
+                llama_model_variant: mobile ? "mobile" : "standard",
+                // The mobile checkpoint is only published as Q2_K_XL.
+                ...(mobile ? { llama_model_quant: "Q2_K_XL" } : {}),
+              })
+            }
+            label={t("llamaCpp.localGemma.mobileVariant.label")}
+            description={t("llamaCpp.localGemma.mobileVariant.description")}
+            grouped
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-mid-gray">
+                {t("llamaCpp.localGemma.modelQuant")}
+              </span>
+              <Select
+                value={brain.llama_model_quant ?? "Q2_K_XL"}
+                options={
+                  brain.llama_model_variant === "mobile"
+                    ? [{ value: "Q2_K_XL", label: "Q2_K_XL (Mobile)" }]
+                    : quantOptions(catalog?.model ?? [])
+                }
+                isClearable={false}
+                disabled={brain.llama_model_variant === "mobile"}
+                onChange={(value) =>
+                  value && quantUpdate({ llama_model_quant: value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-mid-gray">
+                {t("llamaCpp.localGemma.mmprojQuant")}
+              </span>
+              <Select
+                value={brain.llama_mmproj_quant ?? "F16"}
+                options={quantOptions(catalog?.mmproj ?? [])}
+                isClearable={false}
+                onChange={(value) =>
+                  value && quantUpdate({ llama_mmproj_quant: value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs font-medium text-mid-gray">
+                {t("llamaCpp.localGemma.mtpQuant")}
+              </span>
+              <Select
+                value={brain.llama_mtp_quant ?? "Q4_0"}
+                options={quantOptions(catalog?.mtp ?? [])}
+                isClearable={false}
+                onChange={(value) =>
+                  value && quantUpdate({ llama_mtp_quant: value })
+                }
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {catalogError && (
+        <p className="text-[11px] text-amber-400/80">
+          {t("llamaCpp.localGemma.quantCatalogError")} {catalogError}
+          <button
+            className="ml-2 underline hover:text-amber-300"
+            onClick={() => void refreshCatalog()}
+          >
+            {t("llamaCpp.localGemma.retry")}
+          </button>
+        </p>
       )}
 
       {llamaState.isDownloading ? (
@@ -80,7 +192,9 @@ const LlamaDownloadPanel: React.FC<{
           onClick={() => void llamaState.startDownload()}
           className="w-full justify-center py-2.5 font-medium shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_4px_16px_rgba(168,85,247,0.25)] transition-all"
         >
-          {t("llamaCpp.localGemma.downloadButton")}
+          {llamaState.isDownloaded
+            ? t("llamaCpp.localGemma.redownloadButton")
+            : t("llamaCpp.localGemma.downloadButton")}
         </Button>
       )}
     </div>
@@ -89,6 +203,8 @@ const LlamaDownloadPanel: React.FC<{
 
 const LlamaStatusCard: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettings();
+  const quant = settings?.brain?.llama_model_quant ?? "Q2_K_XL";
   return (
     <div className="p-4 rounded-lg border border-green-500/10 bg-green-500/[0.02] backdrop-blur-sm grid grid-cols-2 gap-3 text-xs">
       <div className="col-span-2 border-b border-white/5 pb-2 mb-1 flex items-center justify-between">
@@ -105,7 +221,7 @@ const LlamaStatusCard: React.FC = () => {
           {t("llamaCpp.localGemma.status.model")}
         </span>
         <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.modelValue")}
+          {t("llamaCpp.localGemma.status.modelValue", { quant })}
         </span>
       </div>
       <div>
@@ -250,43 +366,37 @@ export const BrainSettings: React.FC = () => {
 
         {state.selectedProviderId === "llama_cpp" ? (
           <div className="space-y-4 pt-2">
-            {!llamaState.isDownloaded || llamaState.isDownloading ? (
-              <LlamaDownloadPanel llamaState={llamaState} />
-            ) : (
-              <>
-                <SettingContainer
-                  title={t("settings.postProcessing.api.baseUrl.title")}
-                  description={t(
-                    "settings.postProcessing.api.baseUrl.description",
-                  )}
-                  descriptionMode="tooltip"
-                  layout="horizontal"
-                  grouped={true}
-                >
-                  <div className="flex items-center gap-2">
-                    <BaseUrlField
-                      value={state.baseUrl}
-                      onBlur={state.handleBaseUrlChange}
-                      placeholder={t(
-                        "settings.postProcessing.api.baseUrl.placeholder",
-                      )}
-                      disabled={state.isBaseUrlUpdating}
-                      className="min-w-[380px]"
-                    />
-                  </div>
-                </SettingContainer>
+            <LlamaDownloadPanel llamaState={llamaState} />
 
-                <SettingContainer
-                  title={t("settings.brain.engineStatus.title")}
-                  description={t("settings.brain.engineStatus.description")}
-                  descriptionMode="tooltip"
-                  layout="stacked"
-                  grouped={true}
-                >
-                  <LlamaStatusCard />
-                </SettingContainer>
-              </>
-            )}
+            <SettingContainer
+              title={t("settings.postProcessing.api.baseUrl.title")}
+              description={t("settings.postProcessing.api.baseUrl.description")}
+              descriptionMode="tooltip"
+              layout="horizontal"
+              grouped={true}
+            >
+              <div className="flex items-center gap-2">
+                <BaseUrlField
+                  value={state.baseUrl}
+                  onBlur={state.handleBaseUrlChange}
+                  placeholder={t(
+                    "settings.postProcessing.api.baseUrl.placeholder",
+                  )}
+                  disabled={state.isBaseUrlUpdating}
+                  className="min-w-[380px]"
+                />
+              </div>
+            </SettingContainer>
+
+            <SettingContainer
+              title={t("settings.brain.engineStatus.title")}
+              description={t("settings.brain.engineStatus.description")}
+              descriptionMode="tooltip"
+              layout="stacked"
+              grouped={true}
+            >
+              <LlamaStatusCard />
+            </SettingContainer>
           </div>
         ) : state.isAppleProvider ? (
           state.appleIntelligenceUnavailable ? (

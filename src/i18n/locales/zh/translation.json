@@ -1356,6 +1356,16 @@
       "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
       "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
+      "redownloadButton": "Download / Switch Quantization",
+      "mobileVariant": {
+        "label": "Mobile variant (lower VRAM)",
+        "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
+      },
+      "modelQuant": "Model quantization",
+      "mmprojQuant": "Vision projector (mmproj)",
+      "mtpQuant": "MTP draft model",
+      "quantCatalogError": "Could not fetch quantization list from Hugging Face.",
+      "retry": "Retry",
       "status": {
         "model": "Model",
         "modelValue": "Gemma-4-E2B-it-qat (UD-Q4_K_XL)",

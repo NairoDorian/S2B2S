@@ -49,6 +49,235 @@ struct ServerState {
     port: u16,
 }
 
+/// Hugging Face repo hosting the unsloth Gemma 4 GGUF quants, MTP drafts and
+/// mmproj files for the local llama.cpp Brain.
+pub const GEMMA4_HF_REPO: &str = "unsloth/gemma-4-E2B-it-qat-GGUF";
+
+/// Mobile-optimized variant (Google's mobile QAT checkpoint) — only
+/// UD-Q2_K_XL is published, plus the same shared mmproj/MTP files.
+pub const GEMMA4_MOBILE_HF_REPO: &str = "unsloth/gemma-4-E2B-it-qat-mobile-GGUF";
+
+/// The HF repo for a model variant id ("standard" | "mobile").
+pub fn gemma4_repo(variant: &str) -> &'static str {
+    if variant == "mobile" {
+        GEMMA4_MOBILE_HF_REPO
+    } else {
+        GEMMA4_HF_REPO
+    }
+}
+
+/// File name the main Gemma 4 model GGUF has INSIDE its HF repo (both the
+/// standard and mobile repos publish the same file name).
+fn remote_model_file_name(quant: &str) -> String {
+    format!("gemma-4-E2B-it-qat-UD-{quant}.gguf")
+}
+
+/// Local file name of the main Gemma 4 model GGUF. The mobile variant shares
+/// its quant file name with the standard variant, so the local copy must be
+/// variant-aware to avoid colliding with a standard file of the same quant.
+pub fn model_file_name(variant: &str, quant: &str) -> String {
+    if variant == "mobile" {
+        format!("gemma-4-E2B-it-qat-mobile-UD-{quant}.gguf")
+    } else {
+        remote_model_file_name(quant)
+    }
+}
+
+/// Local file name of the multimodal projector for a precision id.
+pub fn mmproj_file_name(quant: &str) -> String {
+    format!("mmproj-{quant}.gguf")
+}
+
+/// Local file name of the MTP draft model for a quantization id.
+pub fn mtp_file_name(quant: &str) -> String {
+    format!("mtp-gemma-4-E2B-it-{quant}.gguf")
+}
+
+/// Resolve the MTP draft path. Q4_0 was historically stored as the bare
+/// `mtp-gemma-4-E2B-it.gguf` root file — reuse it so existing installs don't
+/// re-download the same bytes.
+fn mtp_path(models_dir: &std::path::Path, quant: &str) -> PathBuf {
+    let new_path = models_dir.join(mtp_file_name(quant));
+    if quant == "Q4_0" && !new_path.exists() {
+        let legacy = models_dir.join("mtp-gemma-4-E2B-it.gguf");
+        if legacy.exists() {
+            return legacy;
+        }
+    }
+    new_path
+}
+
+/// One selectable quantization option for the Gemma 4 model, mmproj or MTP
+/// draft. `id` is the quant string embedded in the file name.
+#[derive(Serialize, Deserialize, Clone, Debug, Type)]
+pub struct Gemma4QuantOption {
+    pub id: String,
+    pub label: String,
+    pub size_mb: f64,
+}
+
+/// The full set of downloadable Gemma 4 quantization choices, grouped by the
+/// three files the local Brain needs (model, mmproj, MTP draft).
+#[derive(Serialize, Deserialize, Clone, Debug, Type)]
+pub struct Gemma4QuantCatalog {
+    pub model: Vec<Gemma4QuantOption>,
+    pub mmproj: Vec<Gemma4QuantOption>,
+    pub mtp: Vec<Gemma4QuantOption>,
+}
+
+/// Hardcoded fallback catalog (current contents of the unsloth repo) used
+/// when the HF API is unreachable.
+fn fallback_quant_catalog() -> Gemma4QuantCatalog {
+    Gemma4QuantCatalog {
+        model: vec![
+            Gemma4QuantOption {
+                id: "Q2_K_XL".to_string(),
+                label: "Q2_K_XL".to_string(),
+                size_mb: 2085.0,
+            },
+            Gemma4QuantOption {
+                id: "Q4_K_XL".to_string(),
+                label: "Q4_K_XL".to_string(),
+                size_mb: 2499.0,
+            },
+        ],
+        mmproj: vec![
+            Gemma4QuantOption {
+                id: "BF16".to_string(),
+                label: "BF16".to_string(),
+                size_mb: 941.0,
+            },
+            Gemma4QuantOption {
+                id: "F16".to_string(),
+                label: "F16".to_string(),
+                size_mb: 940.0,
+            },
+            Gemma4QuantOption {
+                id: "F32".to_string(),
+                label: "F32".to_string(),
+                size_mb: 1815.0,
+            },
+        ],
+        mtp: vec![
+            Gemma4QuantOption {
+                id: "Q4_0".to_string(),
+                label: "Q4_0".to_string(),
+                size_mb: 56.5,
+            },
+            Gemma4QuantOption {
+                id: "Q8_0".to_string(),
+                label: "Q8_0".to_string(),
+                size_mb: 93.3,
+            },
+            Gemma4QuantOption {
+                id: "F16".to_string(),
+                label: "F16".to_string(),
+                size_mb: 162.3,
+            },
+            Gemma4QuantOption {
+                id: "BF16".to_string(),
+                label: "BF16".to_string(),
+                size_mb: 162.3,
+            },
+        ],
+    }
+}
+
+#[derive(Deserialize)]
+struct HfTreeEntry {
+    path: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(rename = "type")]
+    entry_type: String,
+}
+
+async fn fetch_hf_tree(client: &reqwest::Client, subdir: &str) -> Result<Vec<HfTreeEntry>, String> {
+    let url = format!("https://huggingface.co/api/models/{GEMMA4_HF_REPO}/tree/main/{subdir}");
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to reach Hugging Face API: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Hugging Face API returned HTTP {}", resp.status()));
+    }
+    resp.json::<Vec<HfTreeEntry>>()
+        .await
+        .map_err(|e| format!("Failed to parse Hugging Face API response: {e}"))
+}
+
+/// Fetch the available Gemma 4 quantizations from the unsloth Hugging Face
+/// repo (model GGUF quants, mmproj precisions, MTP draft quants). Falls back
+/// to a hardcoded snapshot when the HF API is unreachable.
+pub async fn fetch_gemma4_quant_catalog() -> Gemma4QuantCatalog {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!(
+                "[LlamaManager] Failed to build HTTP client: {e}; using fallback quant catalog"
+            );
+            return fallback_quant_catalog();
+        }
+    };
+
+    let (root_entries, mtp_entries) = match (
+        fetch_hf_tree(&client, "").await,
+        fetch_hf_tree(&client, "MTP").await,
+    ) {
+        (Ok(root), Ok(mtp)) => (root, mtp),
+        (root_res, mtp_res) => {
+            log::warn!(
+                "[LlamaManager] HF quant catalog unavailable (root={}, mtp={}); using fallback",
+                root_res.is_ok(),
+                mtp_res.is_ok()
+            );
+            return fallback_quant_catalog();
+        }
+    };
+
+    let to_option =
+        |entries: &[HfTreeEntry], prefix: &str, suffix: &str| -> Vec<Gemma4QuantOption> {
+            entries
+                .iter()
+                .filter(|e| e.entry_type == "file")
+                .filter_map(|e| {
+                    let name = e.path.rsplit('/').next()?;
+                    name.strip_prefix(prefix)?
+                        .strip_suffix(suffix)
+                        .map(|id| Gemma4QuantOption {
+                            id: id.to_string(),
+                            label: id.to_string(),
+                            size_mb: e.size as f64 / (1024.0 * 1024.0),
+                        })
+                })
+                .collect()
+        };
+
+    let mut model = to_option(&root_entries, "gemma-4-E2B-it-qat-UD-", ".gguf");
+    let mut mmproj = to_option(&root_entries, "mmproj-", ".gguf");
+    let mut mtp = to_option(&mtp_entries, "mtp-gemma-4-E2B-it-", ".gguf");
+
+    model.sort_by(|a, b| a.id.cmp(&b.id));
+    mmproj.sort_by(|a, b| a.id.cmp(&b.id));
+    mtp.sort_by(|a, b| a.id.cmp(&b.id));
+
+    if model.is_empty() || mmproj.is_empty() || mtp.is_empty() {
+        log::warn!(
+            "[LlamaManager] HF quant catalog parsed empty (model={}, mmproj={}, mtp={}); using fallback",
+            model.len(),
+            mmproj.len(),
+            mtp.len()
+        );
+        return fallback_quant_catalog();
+    }
+
+    Gemma4QuantCatalog { model, mmproj, mtp }
+}
+
 pub struct LlamaManager {
     app: AppHandle,
     child: Mutex<Option<std::process::Child>>,
@@ -96,9 +325,13 @@ impl LlamaManager {
 
     pub fn get_models_status(&self) -> Result<bool, String> {
         let models_dir = self.get_models_dir()?;
-        let model = models_dir.join("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
-        let mmproj = models_dir.join("mmproj-F16.gguf");
-        let draft = models_dir.join("mtp-gemma-4-E2B-it.gguf");
+        let settings = crate::settings::get_settings(&self.app);
+        let model = models_dir.join(model_file_name(
+            &settings.brain.llama_model_variant,
+            &settings.brain.llama_model_quant,
+        ));
+        let mmproj = models_dir.join(mmproj_file_name(&settings.brain.llama_mmproj_quant));
+        let draft = mtp_path(&models_dir, &settings.brain.llama_mtp_quant);
 
         Ok(model.exists() && mmproj.exists() && draft.exists())
     }
@@ -202,7 +435,8 @@ impl LlamaManager {
         // Check if models exist
         if !self.get_models_status()? {
             return Err(
-                "Gemma-4 models are missing. Please download them in settings first.".to_string(),
+                "Gemma 4 E2B models are missing. Please download them in settings first."
+                    .to_string(),
             );
         }
 
@@ -253,9 +487,14 @@ impl LlamaManager {
         );
 
         let models_dir = self.get_models_dir()?;
-        let model_path = models_dir.join("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf");
-        let mmproj_path = models_dir.join("mmproj-F16.gguf");
-        let draft_path = models_dir.join("mtp-gemma-4-E2B-it.gguf");
+        let settings = crate::settings::get_settings(&self.app);
+        let model_file = model_file_name(
+            &settings.brain.llama_model_variant,
+            &settings.brain.llama_model_quant,
+        );
+        let model_path = models_dir.join(&model_file);
+        let mmproj_path = models_dir.join(mmproj_file_name(&settings.brain.llama_mmproj_quant));
+        let draft_path = mtp_path(&models_dir, &settings.brain.llama_mtp_quant);
 
         // Load mmproj when multimodal features are enabled (audio/image input,
         // Gemma 4 ASR, multimodal merge) OR when this caller requires it.
@@ -275,7 +514,7 @@ impl LlamaManager {
             LlamaServerStatus {
                 running: false,
                 state: "loading".to_string(),
-                model: Some("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf".to_string()),
+                model: Some(model_file.clone()),
                 mmproj_loaded: multimodal_enabled,
                 backend: backend.to_string(),
                 port: Some(port),
@@ -529,18 +768,44 @@ impl LlamaManager {
     }
 
     async fn download_all_files(&self) -> Result<(), String> {
-        let files = &[
-            ("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf", "https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"),
-            ("mmproj-F16.gguf", "https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main/mmproj-F16.gguf"),
-            ("mtp-gemma-4-E2B-it.gguf", "https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main/mtp-gemma-4-E2B-it.gguf"),
+        let settings = crate::settings::get_settings(&self.app);
+        let variant = settings.brain.llama_model_variant.clone();
+        let model_quant = settings.brain.llama_model_quant.clone();
+        let model_name = model_file_name(&variant, &model_quant);
+        // Both repos publish the model file under the same name; only the
+        // repo path differs between the standard and mobile variants.
+        let model_repo = gemma4_repo(&variant);
+        let model_url_name = remote_model_file_name(&model_quant);
+        let mmproj_name = mmproj_file_name(&settings.brain.llama_mmproj_quant);
+        let mtp_name = mtp_file_name(&settings.brain.llama_mtp_quant);
+
+        let files: Vec<(String, String)> = vec![
+            (
+                model_name,
+                format!("https://huggingface.co/{model_repo}/resolve/main/{model_url_name}"),
+            ),
+            // mmproj and MTP drafts are identical between both variants —
+            // always fetch the shared copies from the standard repo.
+            (
+                mmproj_name.clone(),
+                format!("https://huggingface.co/{GEMMA4_HF_REPO}/resolve/main/{mmproj_name}"),
+            ),
+            (
+                mtp_name.clone(),
+                format!("https://huggingface.co/{GEMMA4_HF_REPO}/resolve/main/MTP/{mtp_name}"),
+            ),
         ];
 
         let models_dir = self.get_models_dir()?;
         let client = reqwest::Client::new();
 
-        for &(name, url) in files {
+        for (name, url) in &files {
             let dest_path = models_dir.join(name);
-            if dest_path.exists() {
+            // The Q4_0 draft was historically stored as the bare root file —
+            // treat that legacy file as satisfying the download.
+            let legacy_satisfied = name == "mtp-gemma-4-E2B-it-Q4_0.gguf"
+                && models_dir.join("mtp-gemma-4-E2B-it.gguf").exists();
+            if dest_path.exists() || legacy_satisfied {
                 info!(
                     "[LlamaManager] File {} already exists, skipping download.",
                     name

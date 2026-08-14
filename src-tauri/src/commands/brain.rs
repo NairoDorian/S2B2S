@@ -249,6 +249,15 @@ pub async fn download_llama_models(
     Ok(())
 }
 
+/// Fetch the available Gemma 4 quantizations (model, mmproj, MTP draft) from
+/// the unsloth Hugging Face repo. Falls back to a hardcoded snapshot offline.
+#[tauri::command]
+#[specta::specta]
+pub async fn fetch_gemma4_quants() -> Result<crate::brain::llama_manager::Gemma4QuantCatalog, String>
+{
+    Ok(crate::brain::llama_manager::fetch_gemma4_quant_catalog().await)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_llama_models_status(

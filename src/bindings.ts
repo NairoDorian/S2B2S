@@ -327,6 +327,11 @@ export const commands = {
 	changeBrainApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_api_key_setting", { providerId, apiKey })),
 	changeBrainModelSetting: (providerId: string, model: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_model_setting", { providerId, model })),
 	downloadLlamaModels: () => typedError<null, string>(__TAURI_INVOKE("download_llama_models")),
+	/**
+	 *  Fetch the available Gemma 4 quantizations (model, mmproj, MTP draft) from
+	 *  the unsloth Hugging Face repo. Falls back to a hardcoded snapshot offline.
+	 */
+	fetchGemma4Quants: () => typedError<Gemma4QuantCatalog, string>(__TAURI_INVOKE("fetch_gemma4_quants")),
 	getLlamaModelsStatus: () => typedError<boolean, string>(__TAURI_INVOKE("get_llama_models_status")),
 	isLlamaDownloading: () => typedError<boolean, string>(__TAURI_INVOKE("is_llama_downloading")),
 	/**
@@ -882,6 +887,23 @@ export type BrainConfig = {
 	 *  the model in a follow-up turn.
 	 */
 	tools_enabled?: boolean,
+	/**
+	 *  Gemma 4 E2B GGUF quantization for the local llama.cpp Brain (e.g.
+	 *  "Q2_K_XL", "Q4_K_XL"). The matching `gemma-4-E2B-it-qat-UD-<quant>.gguf`
+	 *  is downloaded from the unsloth HF repo and loaded by llama-server.
+	 */
+	llama_model_quant?: string,
+	/**  Multimodal projector (mmproj) precision for the local Brain. */
+	llama_mmproj_quant?: string,
+	/**  MTP draft-model quantization for speculative decoding. */
+	llama_mtp_quant?: string,
+	/**
+	 *  Local Brain model variant: "standard" (unsloth/gemma-4-E2B-it-qat-GGUF)
+	 *  or "mobile" (unsloth/gemma-4-E2B-it-qat-mobile-GGUF — Google's
+	 *  mobile-optimized QAT checkpoint, published only as UD-Q2_K_XL, lower
+	 *  VRAM at some quality cost).
+	 */
+	llama_model_variant?: string,
 };
 
 export type CartesiaConfig = {
@@ -950,6 +972,26 @@ export type EnvProgressEvent = {
 	line: string,
 	/**  Severity: "info", "warn", "error". */
 	level: string,
+};
+
+/**
+ *  The full set of downloadable Gemma 4 quantization choices, grouped by the
+ *  three files the local Brain needs (model, mmproj, MTP draft).
+ */
+export type Gemma4QuantCatalog = {
+	model: Gemma4QuantOption[],
+	mmproj: Gemma4QuantOption[],
+	mtp: Gemma4QuantOption[],
+};
+
+/**
+ *  One selectable quantization option for the Gemma 4 model, mmproj or MTP
+ *  draft. `id` is the quant string embedded in the file name.
+ */
+export type Gemma4QuantOption = {
+	id: string,
+	label: string,
+	size_mb: number | null,
 };
 
 export type GpuDeviceOption = {
