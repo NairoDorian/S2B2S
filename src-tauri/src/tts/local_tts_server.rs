@@ -484,7 +484,8 @@ pub fn ensure_running(
     engine: &str,
     command: String,
     script_args: Vec<String>,
-) -> Result<ServerHandle, String> {    let slot = slot_for(engine).ok_or_else(|| format!("Unknown engine: {}", engine))?;
+) -> Result<ServerHandle, String> {
+    let slot = slot_for(engine).ok_or_else(|| format!("Unknown engine: {}", engine))?;
 
     loop {
         let mut state = slot.state().lock().unwrap_or_else(|p| p.into_inner());

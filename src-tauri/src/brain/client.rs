@@ -85,6 +85,8 @@ struct ChatCompletionRequest<'a> {
 #[derive(Deserialize)]
 struct Delta {
     content: Option<String>,
+    #[serde(alias = "reasoning", alias = "reasoning_content")]
+    reasoning_content: Option<String>,
     timings: Option<ChunkTimings>,
 }
 #[derive(Deserialize)]
@@ -293,6 +295,15 @@ impl BrainClient {
                                     completion_tokens: None,
                                 });
                             }
+                        }
+                    }
+                    if let Some(reasoning) = parsed
+                        .choices
+                        .first()
+                        .and_then(|c| c.delta.reasoning_content.as_ref())
+                    {
+                        if !reasoning.is_empty() {
+                            log::trace!("[Brain] Reasoning token: {}", reasoning);
                         }
                     }
                     if let Some(content) = parsed

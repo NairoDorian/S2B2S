@@ -11,8 +11,10 @@ import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
 import type { TtsConfig, TtsEngine, Voice } from "@/bindings";
 import { ExternalLink, Mic, Terminal, Upload } from "lucide-react";
+import { AudioCppModelManager } from "./AudioCppModelManager";
 
 const ENGINES: TtsEngine[] = [
+  "audio_cpp",
   "piper",
   "kokoro",
   "kitten",
@@ -28,6 +30,7 @@ const ENGINE_BADGES: Record<
   string,
   ("offline" | "free" | "cloud" | "paid" | "freemium")[]
 > = {
+  audio_cpp: ["offline", "free"],
   piper: ["offline", "free"],
   kokoro: ["offline", "free"],
   kitten: ["offline", "free"],
@@ -52,6 +55,7 @@ const BADGE_COLORS: Record<string, string> = {
 // control in the underlying model, and Cartesia isn't plumbed — so the slider is
 // hidden for those to avoid a dead control. Keep in sync with the TtsBackend impls.
 const SPEED_CAPABLE_ENGINES = new Set<TtsEngine>([
+  "audio_cpp",
   "piper",
   "kokoro",
   "sapi",
@@ -61,10 +65,16 @@ const SPEED_CAPABLE_ENGINES = new Set<TtsEngine>([
 const engineSupportsSpeed = (engine?: TtsEngine | null): boolean =>
   !!engine && SPEED_CAPABLE_ENGINES.has(engine);
 
+// "english" -> "English" for the dropdown labels; the server and settings
+// store the lowercase ids ("auto" = per-utterance auto-detect).
+const qwen3LanguageLabel = (id: string): string =>
+  id.charAt(0).toUpperCase() + id.slice(1).replace("_", " ");
+
 export const SpeechSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
   const [voices, setVoices] = useState<Voice[]>([]);
+  const [qwen3Languages, setQwen3Languages] = useState<string[]>([]);
   const [speaking, setSpeaking] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -119,6 +129,11 @@ export const SpeechSettings: React.FC = () => {
   }, [refreshVoices, tts?.engine, tts?.piper.data_dir]);
 
   useEffect(() => {
+    if (tts?.engine !== "qwen3") return;
+    void commands.qwen3GetLanguages().then(setQwen3Languages);
+  }, [tts?.engine]);
+
+  useEffect(() => {
     void refreshGreetingVoices();
   }, [refreshGreetingVoices, tts?.greeting?.engine, tts?.piper.data_dir]);
 
@@ -143,9 +158,7 @@ export const SpeechSettings: React.FC = () => {
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await commands.ttsSpeak(
-        "Hello, this is a test of the S2B2S speech engine. If you can hear this clearly, the engine is working correctly.",
-      );
+      const result = await commands.ttsTestEngine(tts.engine);
       if (result.status === "ok") {
         setTestResult({
           success: true,
@@ -406,12 +419,37 @@ export const SpeechSettings: React.FC = () => {
                 onSelect={async (value) => {
                   update({
                     qwen3: {
+                      ...tts.qwen3,
                       model: value,
                     },
                   });
                   // The running server keeps the old model loaded — unload it
                   // so the next synthesis spawns with the newly selected one.
                   await commands.ttsUnloadEngine();
+                }}
+              />
+            </SettingContainer>
+            <SettingContainer
+              title={t("settings.speech.qwen3Language.label")}
+              description={t("settings.speech.qwen3Language.description")}
+              grouped
+            >
+              <Dropdown
+                options={qwen3Languages.map((id) => ({
+                  value: id,
+                  label:
+                    id === "auto"
+                      ? t("settings.speech.qwen3Language.optionAuto")
+                      : qwen3LanguageLabel(id),
+                }))}
+                selectedValue={tts.qwen3?.language ?? "auto"}
+                onSelect={async (value) => {
+                  update({
+                    qwen3: {
+                      ...tts.qwen3,
+                      language: value,
+                    },
+                  });
                 }}
               />
             </SettingContainer>
@@ -424,6 +462,56 @@ export const SpeechSettings: React.FC = () => {
             update={update}
             hasClonedVoices={voices.some((v) => v.language === "cloned")}
           />
+        </>
+      )}
+
+      {tts.engine === "audio_cpp" && (
+        <>
+          <SettingsGroup title={t("settings.speech.audiocppBackend.group")}>
+            <SettingContainer
+              title={t("settings.speech.audiocppBackend.label")}
+              description={t("settings.speech.audiocppBackend.description")}
+              grouped
+            >
+              <Dropdown
+                options={[
+                  {
+                    value: "cuda",
+                    label: t("settings.speech.audiocppBackend.cuda"),
+                  },
+                  {
+                    value: "vulkan",
+                    label: t("settings.speech.audiocppBackend.vulkan"),
+                  },
+                  {
+                    value: "cpu",
+                    label: t("settings.speech.audiocppBackend.cpu"),
+                  },
+                ]}
+                selectedValue={tts.audiocpp?.backend ?? "cuda"}
+                onSelect={async (value) => {
+                  update({
+                    audiocpp: {
+                      ...tts.audiocpp,
+                      backend: value,
+                    },
+                  });
+                  await commands.ttsUnloadEngine();
+                }}
+              />
+            </SettingContainer>
+          </SettingsGroup>
+
+          <SettingsGroup
+            title={t("settings.speech.audiocppManager.groupTitle")}
+            description={t("settings.speech.audiocppManager.groupDescription")}
+          >
+            <AudioCppModelManager
+              onModelSelected={() => {
+                void refreshVoices();
+              }}
+            />
+          </SettingsGroup>
         </>
       )}
 

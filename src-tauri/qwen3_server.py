@@ -68,20 +68,33 @@ except ImportError:
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 DEFAULT_VOICE = "Aiden"
+# Matches the model's `talker_config.codec_language_id` minus the dialect
+# entries (beijing_dialect/sichuan_dialect are auto-applied for eric/dylan
+# when the language is chinese/auto). "auto" is always valid.
+FALLBACK_LANGUAGES = [
+    "auto",
+    "chinese",
+    "english",
+    "german",
+    "italian",
+    "portuguese",
+    "spanish",
+    "japanese",
+    "korean",
+    "french",
+    "russian",
+]
+DEFAULT_LANGUAGE = "auto"
 DEFAULT_REF_TEXT = "I'm confused why some people have super short timelines, yet at the same time are bullish on scaling up reinforcement learning atop LLMs."
 SAMPLE_RATE = 24000
-# Codec steps per streamed chunk. 12 steps ≈ 1 second of audio, 2 steps ≈
-# 167ms — the smallest size that stays real-time (per the faster-qwen3-tts
-# benchmarks), chosen for the fastest possible time-to-first-audio.
-DEFAULT_CHUNK_SIZE = 2
 
 # ---------------------------------------------------------------------------
 # Globals set at startup
 # ---------------------------------------------------------------------------
 MODEL = None
 AVAILABLE_VOICES = []
+AVAILABLE_LANGUAGES = []
 MODEL_TYPE = "custom_voice"
-CHUNK_SIZE = DEFAULT_CHUNK_SIZE
 
 def resolve_local_models_dir():
     """Find the local TTS models directory relative to this script."""
@@ -153,7 +166,6 @@ def load_model(model_name=DEFAULT_MODEL, device="cuda", models_dir=None, backend
         except Exception as e:
             print(f"[qwen3_server] Warmup warning: {e}", flush=True)
 
-
         return model
     else:
         # CPU Fallback via standard qwen-tts Hugging Face model
@@ -208,96 +220,57 @@ def get_supported_speakers(model):
             speakers = get_speakers()
             if speakers:
                 return [str(s) for s in speakers if s]
-    return ["Aiden", "Ashley", "Ben", "Cora", "Daniel", "Elsa", "Felix", "Grace", "Hale", "Iris", "Jack", "Katherine"]
+    return ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]
 
 
-def _iter_audio_chunks(gen):
-    """Yield (float32_chunk, sample_rate) from a qwen-tts streaming generator."""
-    for item in gen:
-        if isinstance(item, tuple):
-            audio_chunk, chunk_sr, _ = item
-            yield np.asarray(audio_chunk, dtype=np.float32).squeeze(), chunk_sr
-        else:
-            audio = getattr(item, "audio", None)
-            if audio is not None:
-                chunk_sr = getattr(item, "sample_rate", SAMPLE_RATE)
-                yield np.asarray(audio, dtype=np.float32).squeeze(), chunk_sr
+def get_supported_languages(model):
+    """Retrieve the languages the loaded model can synthesize.
 
-
-def _start_generator(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None, non_streaming_mode=True, chunk_size=DEFAULT_CHUNK_SIZE):
-    """Create the right streaming generator for the current model/inputs."""
-    if voice_wav and os.path.isfile(voice_wav):
-        ref_text = voice_text if voice_text else DEFAULT_REF_TEXT
-        print(f"[qwen3_server] Synthesizing voice clone. Ref audio: {voice_wav}", flush=True)
-        return MODEL.generate_voice_clone_streaming(
-            text=text,
-            language="auto",
-            ref_audio=voice_wav,
-            ref_text=ref_text,
-            non_streaming_mode=non_streaming_mode,
-            chunk_size=chunk_size
-        )
-    if MODEL_TYPE == "voice_design" or (instruct and instruct.strip()):
-        inst_prompt = instruct if instruct else f"A speech by {voice}."
-        print(f"[qwen3_server] Synthesizing voice design. Instruct: {inst_prompt}", flush=True)
-        return MODEL.generate_voice_design_streaming(
-            text=text,
-            instruct=inst_prompt,
-            language="auto",
-            non_streaming_mode=non_streaming_mode,
-            chunk_size=chunk_size
-        )
-    print(f"[qwen3_server] Synthesizing custom voice. Speaker: {voice}", flush=True)
-    return MODEL.generate_custom_voice_streaming(
-        text=text,
-        speaker=voice,
-        language="auto",
-        non_streaming_mode=non_streaming_mode,
-        chunk_size=chunk_size
-    )
+    The fast and official qwen-tts wrappers expose `get_supported_languages()`
+    on the underlying model object; the GGML (qwentts.cpp) runtime has no such
+    method, so its language set is always the upstream codec table minus the
+    auto-applied dialects. Returns a list of lowercase language ids ("auto"
+    first).
+    """
+    for candidate in (model, getattr(model, "model", None), getattr(getattr(model, "model", None), "model", None)):
+        get_langs = getattr(candidate, "get_supported_languages", None)
+        if callable(get_langs):
+            try:
+                langs = get_langs()
+            except Exception:
+                langs = None
+            if langs:
+                normalized = [str(s).lower() for s in langs if s]
+                if normalized and "auto" not in normalized:
+                    normalized.insert(0, "auto")
+                return normalized or list(FALLBACK_LANGUAGES)
+    return list(FALLBACK_LANGUAGES)
 
 
 def _is_fast_model():
-    """True when the loaded model is FasterQwen3TTS (has streaming methods)."""
-    return hasattr(MODEL, "generate_custom_voice_streaming")
+    """True when the loaded model is FasterQwen3TTS."""
+    return hasattr(MODEL, "generate_custom_voice")
 
 
-def _official_generate(text, voice, voice_wav=None, voice_text=None, instruct=None):
+def _official_generate(text, voice, voice_wav=None, voice_text=None, instruct=None, language=DEFAULT_LANGUAGE):
     """Official qwen-tts API (CPU fallback): returns (float32_chunk, sample_rate)."""
     if voice_wav and os.path.isfile(voice_wav):
         ref_text = voice_text if voice_text else DEFAULT_REF_TEXT
         print(f"[qwen3_server] Synthesizing voice clone (official API). Ref audio: {voice_wav}", flush=True)
         wavs, sr = MODEL.generate_voice_clone(
-            text=text, language=None, ref_audio=voice_wav, ref_text=ref_text
+            text=text, language=language, ref_audio=voice_wav, ref_text=ref_text
         )
     elif MODEL_TYPE == "voice_design" or (instruct and instruct.strip()):
         inst_prompt = instruct if instruct else f"A speech by {voice}."
         print(f"[qwen3_server] Synthesizing voice design (official API). Instruct: {inst_prompt}", flush=True)
-        wavs, sr = MODEL.generate_voice_design(text=text, instruct=inst_prompt, language=None)
+        wavs, sr = MODEL.generate_voice_design(text=text, instruct=inst_prompt, language=language)
     else:
         print(f"[qwen3_server] Synthesizing custom voice (official API). Speaker: {voice}", flush=True)
-        wavs, sr = MODEL.generate_custom_voice(text=text, speaker=voice, language=None)
+        wavs, sr = MODEL.generate_custom_voice(text=text, speaker=voice, language=language)
     return np.asarray(wavs[0], dtype=np.float32).squeeze(), sr
 
 
-def synthesize_streaming(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None, chunk_size=None):
-    """Stream chunks of (float32, sr) as they are generated (no buffering)."""
-    global MODEL
-    if not _is_fast_model():
-        # Official CPU path has no streaming API — emit the full result as one chunk.
-        yield _official_generate(text, voice, voice_wav=voice_wav, voice_text=voice_text, instruct=instruct)
-        return
-    if chunk_size is None:
-        chunk_size = CHUNK_SIZE
-    gen = _start_generator(
-        text, voice, length_scale,
-        voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
-        non_streaming_mode=False, chunk_size=chunk_size,
-    )
-    yield from _iter_audio_chunks(gen)
-
-
-def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None):
+def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instruct=None, language=DEFAULT_LANGUAGE):
     """Run inference, return WAV bytes."""
     global MODEL, MODEL_TYPE, SAMPLE_RATE
 
@@ -320,7 +293,7 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
 
         audio, sr = MODEL.synthesize(
             text=text,
-            lang="english", # standard qwentts_cpp defaults to english/chinese
+            lang=language,
             speaker=voice if not voice_wav else None,
             ref_audio_24k=ref_audio_24k,
             ref_text=ref_text,
@@ -339,12 +312,11 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
         w.close()
         return buf.getvalue()
 
-    # PyTorch fallback backend
+    # PyTorch CPU fallback backend
     if not _is_fast_model():
-        # Official qwen-tts model (CPU): no streaming generators available.
         audio, sr = _official_generate(
             text, voice,
-            voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
+            voice_wav=voice_wav, voice_text=voice_text, instruct=instruct, language=language,
         )
         int16 = np.clip(audio * 32767, -32768, 32767).astype(np.int16)
         pcm = int16.tobytes()
@@ -357,22 +329,38 @@ def synthesize(text, voice, length_scale, voice_wav=None, voice_text=None, instr
         w.close()
         return buf.getvalue()
 
-    # FasterQwen3TTS — buffer all chunks into one WAV.
-    chunks = []
+    # FasterQwen3TTS (CUDA Graphs) — whole-utterance generation
     sr = SAMPLE_RATE
-    gen = _start_generator(
-        text, voice, length_scale,
-        voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
-        non_streaming_mode=True, chunk_size=CHUNK_SIZE,
-    )
-    for audio_chunk, chunk_sr in _iter_audio_chunks(gen):
-        chunks.append(audio_chunk)
-        sr = chunk_sr
+    if voice_wav and os.path.isfile(voice_wav):
+        ref_text = voice_text if voice_text else DEFAULT_REF_TEXT
+        print(f"[qwen3_server] Synthesizing voice clone. Ref audio: {voice_wav}", flush=True)
+        wavs, sr = MODEL.generate_voice_clone(
+            text=text,
+            language=language,
+            ref_audio=voice_wav,
+            ref_text=ref_text,
+            instruct=instruct,
+        )
+    elif MODEL_TYPE == "voice_design" or (instruct and instruct.strip()):
+        inst_prompt = instruct if instruct else f"A speech by {voice}."
+        print(f"[qwen3_server] Synthesizing voice design. Instruct: {inst_prompt}", flush=True)
+        wavs, sr = MODEL.generate_voice_design(
+            text=text,
+            instruct=inst_prompt,
+            language=language,
+        )
+    else:
+        print(f"[qwen3_server] Synthesizing custom voice. Speaker: {voice}", flush=True)
+        wavs, sr = MODEL.generate_custom_voice(
+            text=text,
+            speaker=voice,
+            language=language,
+        )
 
-    if not chunks:
-        raise ValueError("Synthesis yielded zero audio chunks")
+    if not wavs or len(wavs) == 0:
+        raise ValueError("Synthesis yielded zero audio")
 
-    waveform = np.concatenate(chunks)
+    waveform = np.asarray(wavs[0], dtype=np.float32).squeeze()
 
     # Clip and convert to int16 PCM
     int16 = np.clip(waveform * 32767, -32768, 32767).astype(np.int16)
@@ -396,7 +384,13 @@ class Qwen3Handler(BaseHTTPRequestHandler):
         print(f"[qwen3_server] {args[0]}", file=sys.stderr, flush=True)
 
     def do_GET(self):
-        if self.path in ("/voices", "/health", "/"):
+        if self.path in ("/languages",):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            body = json.dumps({"languages": AVAILABLE_LANGUAGES, "default": DEFAULT_LANGUAGE})
+            self.wfile.write(body.encode())
+        elif self.path in ("/voices", "/health", "/"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -418,7 +412,7 @@ class Qwen3Handler(BaseHTTPRequestHandler):
             voice_wav = req.get("voice_wav")
             voice_text = req.get("voice_text")
             instruct = req.get("instruct")
-            stream_mode = bool(req.get("stream", False))
+            language = str(req.get("language", DEFAULT_LANGUAGE)).lower()
 
             if not text.strip():
                 self.send_response(400)
@@ -435,29 +429,14 @@ class Qwen3Handler(BaseHTTPRequestHandler):
                     print(f"[qwen3_server] Unknown voice '{voice}', falling back to {DEFAULT_VOICE}", file=sys.stderr, flush=True)
                     voice = DEFAULT_VOICE
 
-            if stream_mode:
-                # Chunk-level streaming: one JSON header line, then raw
-                # little-endian int16 mono PCM frames as they are generated.
-                # The connection closes when synthesis finishes.
-                self.send_response(200)
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                try:
-                    header = json.dumps({"sample_rate": SAMPLE_RATE, "channels": 1, "bytes_per_sample": 2}) + "\n"
-                    self.wfile.write(header.encode())
-                    for audio_chunk, chunk_sr in synthesize_streaming(
-                        text=text, voice=voice, length_scale=length_scale,
-                        voice_wav=voice_wav, voice_text=voice_text, instruct=instruct,
-                    ):
-                        int16 = np.clip(audio_chunk * 32767, -32768, 32767).astype(np.int16)
-                        self.wfile.write(int16.tobytes())
-                        self.wfile.flush()
-                    print(f"[qwen3_server] Streamed synthesis complete.", file=sys.stderr, flush=True)
-                except Exception:
-                    tb = traceback.format_exc()
-                    print(f"[qwen3_server] Streaming synthesis error:\n{tb}", file=sys.stderr, flush=True)
-                return
+            # Validate the requested language against the loaded model's table.
+            if AVAILABLE_LANGUAGES:
+                language_lookup = {str(l).lower(): str(l) for l in AVAILABLE_LANGUAGES}
+                if language not in language_lookup:
+                    print(f"[qwen3_server] Unknown language '{language}', falling back to {DEFAULT_LANGUAGE}", file=sys.stderr, flush=True)
+                    language = DEFAULT_LANGUAGE
+                else:
+                    language = language_lookup[language]
 
             wav_bytes = synthesize(
                 text=text,
@@ -465,7 +444,8 @@ class Qwen3Handler(BaseHTTPRequestHandler):
                 length_scale=length_scale,
                 voice_wav=voice_wav,
                 voice_text=voice_text,
-                instruct=instruct
+                instruct=instruct,
+                language=language,
             )
 
             self.send_response(200)
@@ -490,12 +470,9 @@ def main():
     parser.add_argument("--device", default="cuda", help="Inference device (cuda / cpu)")
     parser.add_argument("--models-dir", default=None, help="Directory for storing downloaded models")
     parser.add_argument("--backend", default="torch", choices=["ggml", "torch"], help="Inference backend (default: torch)")
-    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE,
-                        help=f"Codec steps per streamed chunk — smaller = faster first audio (default: {DEFAULT_CHUNK_SIZE})")
     args = parser.parse_args()
 
-    global MODEL, AVAILABLE_VOICES, MODEL_TYPE, CHUNK_SIZE
-    CHUNK_SIZE = max(1, args.chunk_size)
+    global MODEL, AVAILABLE_VOICES, AVAILABLE_LANGUAGES, MODEL_TYPE
 
     # Use cuda if available
     device = args.device
@@ -510,9 +487,11 @@ def main():
     MODEL = load_model(model_name=args.model, device=device, models_dir=models_dir, backend=args.backend)
     MODEL_TYPE = infer_model_type(MODEL)
     AVAILABLE_VOICES = get_supported_speakers(MODEL)
+    AVAILABLE_LANGUAGES = get_supported_languages(MODEL)
 
     print(f"[qwen3_server] Model {args.model} loaded. Type={MODEL_TYPE}.", file=sys.stderr, flush=True)
     print(f"[qwen3_server] Voices: {AVAILABLE_VOICES}", file=sys.stderr, flush=True)
+    print(f"[qwen3_server] Languages: {AVAILABLE_LANGUAGES}", file=sys.stderr, flush=True)
 
     server = HTTPServer((args.host, args.port), Qwen3Handler)
     print(f"[qwen3_server] Listening on http://{args.host}:{args.port}", file=sys.stderr, flush=True)

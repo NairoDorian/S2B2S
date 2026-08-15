@@ -5884,6 +5884,7 @@ dependencies = [
  "env_filter 2.0.0",
  "ferrous-opencc",
  "flate2",
+ "futures-executor",
  "futures-util",
  "getrandom 0.2.17",
  "gtk",

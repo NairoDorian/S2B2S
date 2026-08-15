@@ -19,6 +19,7 @@
     "check:translations": "bun scripts/check-translations.ts",
     "sync:translations": "bun scripts/sync-translations.ts",
     "sync:repos": "powershell -ExecutionPolicy Bypass ./scripts/sync-all-repos.ps1",
+    "compile:audiocpp": "powershell -ExecutionPolicy Bypass ./scripts/compile-audiocpp.ps1 -Backend cuda -Target audiocpp_server",
     "repomix": "repomix",
     "before-commit": "bun scripts/before-commit.ts",
     "validate": "bun scripts/before-commit.ts --full",

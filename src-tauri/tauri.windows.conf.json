@@ -1,7 +1,8 @@
 {
   "bundle": {
     "resources": {
-      "resources": "resources",
+      "resources/models": "resources/models",
+      "resources/model_specs": "resources/model_specs",
       "transcribe-libs": "."
     }
   }

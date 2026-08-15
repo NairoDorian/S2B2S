@@ -15,6 +15,17 @@ pub fn tts_speak(tts: State<'_, Arc<TtsManager>>, text: String) -> Result<(), St
     Ok(())
 }
 
+/// Test speech synthesis with the given engine (or currently configured engine).
+/// Returns Ok(()) if synthesis and playback start cleanly, or Err(error_message) if it fails.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_test_engine(
+    tts: State<'_, Arc<TtsManager>>,
+    engine: Option<crate::settings::TtsEngine>,
+) -> Result<(), String> {
+    tts.test_engine(engine)
+}
+
 /// Speak the current clipboard text.
 #[tauri::command]
 #[specta::specta]
@@ -130,6 +141,7 @@ pub fn tts_unload_engine(app: AppHandle) -> Result<bool, String> {
         crate::settings::TtsEngine::Kitten => crate::tts::local_tts_server::unload("kitten"),
         crate::settings::TtsEngine::Pocket => crate::tts::local_tts_server::unload("pocket"),
         crate::settings::TtsEngine::Qwen3 => crate::tts::local_tts_server::unload("qwen3"),
+        crate::settings::TtsEngine::AudioCpp => crate::audiocpp_server::unload(),
         _ => false,
     };
     Ok(unloaded)
@@ -180,6 +192,13 @@ pub fn qwen3_import_cloned_voice(
     crate::tts::backends::qwen3::Qwen3Backend::import_cloned_voice(&app, source)
 }
 
+/// List the languages the Qwen3 engine can synthesize ("auto" first).
+#[tauri::command]
+#[specta::specta]
+pub fn qwen3_get_languages() -> Vec<String> {
+    crate::tts::backends::qwen3::Qwen3Backend::list_languages()
+}
+
 /// Replace the whole TTS configuration (engine, voice, speed, volume, toggles).
 #[tauri::command]
 #[specta::specta]
@@ -228,6 +247,9 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
             crate::settings::TtsEngine::Qwen3 => {
                 crate::tts::local_tts_server::unload("qwen3");
             }
+            crate::settings::TtsEngine::AudioCpp => {
+                crate::audiocpp_server::unload();
+            }
             _ => {}
         }
 
@@ -273,12 +295,69 @@ pub fn change_tts_config(app: AppHandle, config: TtsConfig) -> Result<(), String
                 crate::tts::local_tts_server::prewarm(
                     "qwen3".to_string(),
                     "python".to_string(),
-                    crate::tts::backends::qwen3::server_args(&app),
+                    crate::tts::backends::qwen3::server_args(&app_clone),
                 );
+            }
+            crate::settings::TtsEngine::AudioCpp => {
+                let settings = crate::settings::get_settings(&app_clone);
+                let backend = if settings.tts.audiocpp.backend.is_empty() {
+                    "cuda"
+                } else {
+                    &settings.tts.audiocpp.backend
+                };
+                let _ = crate::audiocpp_server::ensure_running(&app_clone, backend);
             }
             _ => {}
         });
     }
 
+    Ok(())
+}
+
+/// List all Audio.cpp model families, their quantization variants, sizes, and installation states.
+#[tauri::command]
+#[specta::specta]
+pub fn audiocpp_list_models(
+    app: AppHandle,
+) -> Result<Vec<crate::audiocpp_server::AudioCppModelFamily>, String> {
+    crate::audiocpp_server::get_audiocpp_catalog(&app)
+}
+
+/// Download a specific Audio.cpp model package variant (e.g. "supertonic_3_orig", "qwen3_tts_1_7b_customvoice_q8_0").
+#[tauri::command]
+#[specta::specta]
+pub fn audiocpp_download_model(app: AppHandle, package_id: String) -> Result<(), String> {
+    crate::audiocpp_server::start_package_download(app, package_id)
+}
+
+/// Cancel an ongoing Audio.cpp model package download.
+#[tauri::command]
+#[specta::specta]
+pub fn audiocpp_cancel_download(package_id: String) -> Result<bool, String> {
+    Ok(crate::audiocpp_server::cancel_package_download(&package_id))
+}
+
+/// Delete an Audio.cpp model package from disk.
+#[tauri::command]
+#[specta::specta]
+pub fn audiocpp_delete_model(app: AppHandle, package_id: String) -> Result<(), String> {
+    crate::audiocpp_server::delete_package(&app, &package_id)
+}
+
+/// Set active Audio.cpp model family and optional quantization package ID in settings.
+#[tauri::command]
+#[specta::specta]
+pub fn audiocpp_set_active_model(
+    app: AppHandle,
+    family: String,
+    package_id: Option<String>,
+) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.tts.audiocpp.model = family;
+    if let Some(pkg) = package_id {
+        settings.tts.audiocpp.quantization = pkg;
+    }
+    write_settings(&app, settings);
+    crate::audiocpp_server::unload();
     Ok(())
 }

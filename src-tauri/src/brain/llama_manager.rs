@@ -528,6 +528,12 @@ impl LlamaManager {
         // but on short prompts it's pure overhead from the Hadamard FWHT transform.
         cmd.env("LLAMA_ATTN_ROT_DISABLE", "1");
 
+        let reasoning_arg = if settings.brain.reasoning_enabled {
+            "on"
+        } else {
+            "off"
+        };
+
         // Base args
         cmd.args([
             "-m",
@@ -547,7 +553,7 @@ impl LlamaManager {
             "-1",
             "--jinja",
             "--reasoning",
-            "off",
+            reasoning_arg,
             "--model-draft",
             &draft_path.to_string_lossy(),
             "--spec-type",

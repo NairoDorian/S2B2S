@@ -28,7 +28,8 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": [
-      "resources/**/*",
+      "resources/models/**/*",
+      "resources/model_specs/**/*",
       "unified_parakeet_server.py",
       "kokoro_server.py",
       "kitten_server.py",

@@ -70,6 +70,9 @@ export const commands = {
 	/**  Re-register all bindings after the user has finished recording. */
 	resumeAllBindings: () => typedError<null, string>(__TAURI_INVOKE("resume_all_bindings")),
 	changeMuteWhileRecordingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mute_while_recording_setting", { enabled })),
+	changePauseMediaWhileRecordingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_pause_media_while_recording_setting", { enabled })),
+	changeSelectedMicrophoneAutoSwitchEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_selected_microphone_auto_switch_enabled_setting", { enabled })),
+	changeSelectedMicrophoneNamePatternSetting: (pattern: string) => typedError<null, string>(__TAURI_INVOKE("change_selected_microphone_name_pattern_setting", { pattern })),
 	changeAppendTrailingSpaceSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_append_trailing_space_setting", { enabled })),
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
@@ -278,6 +281,11 @@ export const commands = {
 	deleteTextReplacement: (ruleId: string) => typedError<TextReplacement[], string>(__TAURI_INVOKE("delete_text_replacement", { ruleId })),
 	/**  Speak arbitrary text aloud (sanitize → paginate → streaming synthesis). */
 	ttsSpeak: (text: string) => typedError<null, string>(__TAURI_INVOKE("tts_speak", { text })),
+	/**
+	 *  Test speech synthesis with the given engine (or currently configured engine).
+	 *  Returns Ok(()) if synthesis and playback start cleanly, or Err(error_message) if it fails.
+	 */
+	ttsTestEngine: (engine: "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia" | "audio_cpp" | null) => typedError<null, string>(__TAURI_INVOKE("tts_test_engine", { engine })),
 	/**  Speak the current clipboard text. */
 	ttsSpeakClipboard: () => typedError<null, string>(__TAURI_INVOKE("tts_speak_clipboard")),
 	ttsStop: () => typedError<null, string>(__TAURI_INVOKE("tts_stop")),
@@ -285,13 +293,15 @@ export const commands = {
 	ttsResume: () => typedError<null, string>(__TAURI_INVOKE("tts_resume")),
 	ttsIsPlaying: () => typedError<boolean, string>(__TAURI_INVOKE("tts_is_playing")),
 	/**  Enumerate available voices for a specific engine, or defaults to the configured engine. */
-	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
+	ttsGetVoices: (engine: "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia" | "audio_cpp" | null) => typedError<Voice[], string>(__TAURI_INVOKE("tts_get_voices", { engine })),
 	/**  Unload the warm TTS model/server (tray "Unload model" parity). */
 	ttsUnloadEngine: () => typedError<boolean, string>(__TAURI_INVOKE("tts_unload_engine")),
 	getPiperServerStatus: () => typedError<PiperServerStatus, string>(__TAURI_INVOKE("get_piper_server_status")),
 	getLocalTtsStatus: (engine: string) => typedError<string | null, string>(__TAURI_INVOKE("get_local_tts_status", { engine })),
 	pocketImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("pocket_import_cloned_voice", { sourcePath })),
 	qwen3ImportClonedVoice: (sourcePath: string) => typedError<Voice, string>(__TAURI_INVOKE("qwen3_import_cloned_voice", { sourcePath })),
+	/**  List the languages the Qwen3 engine can synthesize ("auto" first). */
+	qwen3GetLanguages: () => __TAURI_INVOKE<string[]>("qwen3_get_languages"),
 	/**
 	 *  Record `duration_secs` of raw microphone audio (VAD disabled) and import it
 	 *  as a cloned voice for the given engine. Returns the imported voice.
@@ -306,6 +316,16 @@ export const commands = {
 	ttsPlayGreeting: () => typedError<null, string>(__TAURI_INVOKE("tts_play_greeting")),
 	/**  Save the most recent TTS audio to a user-chosen file path. */
 	ttsSaveToFile: (targetPath: string) => typedError<null, string>(__TAURI_INVOKE("tts_save_to_file", { targetPath })),
+	/**  List all Audio.cpp model families, their quantization variants, sizes, and installation states. */
+	audiocppListModels: () => typedError<AudioCppModelFamily[], string>(__TAURI_INVOKE("audiocpp_list_models")),
+	/**  Download a specific Audio.cpp model package variant (e.g. "supertonic_3_orig", "qwen3_tts_1_7b_customvoice_q8_0"). */
+	audiocppDownloadModel: (packageId: string) => typedError<null, string>(__TAURI_INVOKE("audiocpp_download_model", { packageId })),
+	/**  Cancel an ongoing Audio.cpp model package download. */
+	audiocppCancelDownload: (packageId: string) => typedError<boolean, string>(__TAURI_INVOKE("audiocpp_cancel_download", { packageId })),
+	/**  Delete an Audio.cpp model package from disk. */
+	audiocppDeleteModel: (packageId: string) => typedError<null, string>(__TAURI_INVOKE("audiocpp_delete_model", { packageId })),
+	/**  Set active Audio.cpp model family and optional quantization package ID in settings. */
+	audiocppSetActiveModel: (family: string, packageId: string | null) => typedError<null, string>(__TAURI_INVOKE("audiocpp_set_active_model", { family, packageId })),
 	/**  Ask the Brain; streams `brain:token` / `brain:sentence` events and returns the full reply. */
 	brainAsk: (text: string) => typedError<string, string>(__TAURI_INVOKE("brain_ask", { text })),
 	/**
@@ -429,6 +449,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	audioCppDownloadProgress: makeEvent<AudioCppDownloadProgress>("audio-cpp-download-progress"),
 	envProgressEvent: makeEvent<EnvProgressEvent>("env-progress-event"),
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
 	llamaServerStatus: makeEvent<LlamaServerStatus>("llama-server-status"),
@@ -491,6 +512,16 @@ export type AppSettings_Deserialize = {
 	 *  None means "average all channels" (original behavior).
 	 */
 	selected_channel?: number | null,
+	/**
+	 *  Wildcard name mask (e.g. `*AirPods*`) that, when mic auto-switch is
+	 *  enabled, takes priority over the manually selected microphone.
+	 */
+	selected_microphone_name_pattern?: string,
+	/**
+	 *  Prefer a device matching `selected_microphone_name_pattern` whenever it
+	 *  is available, falling back to the manual selection when it is not.
+	 */
+	selected_microphone_auto_switch_enabled?: boolean,
 	clamshell_microphone?: string | null,
 	selected_output_device?: string | null,
 	translate_to_english?: boolean,
@@ -527,6 +558,11 @@ export type AppSettings_Deserialize = {
 	/**  User-defined text replacement rules applied after STT/ITN. */
 	text_replacements?: TextReplacement[],
 	mute_while_recording?: boolean,
+	/**
+	 *  Pause currently-playing media (system media sessions) while recording,
+	 *  resuming the same sessions afterwards.
+	 */
+	pause_media_while_recording?: boolean,
 	append_trailing_space?: boolean,
 	app_language?: string,
 	theme?: Theme,
@@ -660,6 +696,16 @@ export type AppSettings_Serialize = {
 	 *  None means "average all channels" (original behavior).
 	 */
 	selected_channel: number | null,
+	/**
+	 *  Wildcard name mask (e.g. `*AirPods*`) that, when mic auto-switch is
+	 *  enabled, takes priority over the manually selected microphone.
+	 */
+	selected_microphone_name_pattern: string,
+	/**
+	 *  Prefer a device matching `selected_microphone_name_pattern` whenever it
+	 *  is available, falling back to the manual selection when it is not.
+	 */
+	selected_microphone_auto_switch_enabled: boolean,
 	clamshell_microphone: string | null,
 	selected_output_device: string | null,
 	translate_to_english: boolean,
@@ -696,6 +742,11 @@ export type AppSettings_Serialize = {
 	/**  User-defined text replacement rules applied after STT/ITN. */
 	text_replacements: TextReplacement[],
 	mute_while_recording: boolean,
+	/**
+	 *  Pause currently-playing media (system media sessions) while recording,
+	 *  resuming the same sessions afterwards.
+	 */
+	pause_media_while_recording: boolean,
 	append_trailing_space: boolean,
 	app_language: string,
 	theme: Theme,
@@ -783,6 +834,58 @@ export type AppSettings_Serialize = {
 	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style: OverlayStyle,
+};
+
+/**  audio.cpp native GGUF TTS configuration. */
+export type AudioCppConfig = {
+	/**  Model family / identifier for audio.cpp (e.g. "supertonic", "qwen3_tts", "pocket_tts", "dots_tts", "chatterbox", "omnivoice"). */
+	model?: string,
+	/**  Selected package / quantization identifier (e.g. "supertonic_3_orig", "qwen3_tts_1_7b_customvoice_q8_0"). */
+	quantization?: string,
+	/**  Selected voice name or preset id. */
+	voice?: string,
+	/**  Compute backend: "cuda", "vulkan", "cpu", "metal". */
+	backend?: string,
+};
+
+export type AudioCppDownloadProgress = {
+	packageId: string,
+	downloadedBytes: number | null,
+	totalBytes: number | null,
+	percent: number | null,
+	speedMbps: number | null,
+	status: string,
+	error: string | null,
+};
+
+export type AudioCppModelFamily = {
+	family: string,
+	displayName: string,
+	description: string,
+	category: string,
+	tasks: string[],
+	modes: string[],
+	languages: string[],
+	capabilities: string[],
+	recommendedPackage: string | null,
+	packages: AudioCppPackageVariant[],
+	isActive: boolean,
+};
+
+export type AudioCppPackageVariant = {
+	id: string,
+	displayName: string,
+	precision: string,
+	format: string,
+	targetDirectory: string,
+	files: string[],
+	repo: string,
+	revision: string,
+	isDefault: boolean,
+	isDownloaded: boolean,
+	isDownloading: boolean,
+	sizeMb: number,
+	localPath: string | null,
 };
 
 export type AudioDevice = {
@@ -904,6 +1007,11 @@ export type BrainConfig = {
 	 *  VRAM at some quality cost).
 	 */
 	llama_model_variant?: string,
+	/**
+	 *  Enable internal reasoning/thinking output for models that support it (e.g. Gemma 4 / DeepSeek).
+	 *  When disabled, passes `--reasoning off` to llama-server.
+	 */
+	reasoning_enabled?: boolean,
 };
 
 export type CartesiaConfig = {
@@ -1361,6 +1469,12 @@ export type Qwen3Config = {
 	 *  both use the 12Hz tokenizer (~97ms E2E streaming latency).
 	 */
 	model?: string,
+	/**
+	 *  Language id sent to the server on every synthesis request
+	 *  ("auto" = let the model auto-detect per utterance). Lowercase ids
+	 *  mirror `talker_config.codec_language_id` (dialects auto-apply).
+	 */
+	language?: string,
 };
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";
@@ -1525,6 +1639,8 @@ export type TtsConfig = {
 	cartesia?: CartesiaConfig,
 	/**  Qwen3-TTS engine configuration (model size picker). */
 	qwen3?: Qwen3Config,
+	/**  audio.cpp native GGUF engine configuration. */
+	audiocpp?: AudioCppConfig,
 	/**  Number of parallel Kokoro synthesis workers (auto-tuned from CPU count, min 1, max 8). */
 	tts_workers?: number,
 	/**  Shorten the first chunk to reduce time-to-first-audio (Parrot pattern). */
@@ -1536,7 +1652,7 @@ export type TtsConfig = {
 };
 
 /**  Which TTS engine synthesizes speech. */
-export type TtsEngine = "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia";
+export type TtsEngine = "piper" | "kokoro" | "kitten" | "pocket" | "qwen3" | "sapi" | "openai" | "elevenlabs" | "cartesia" | "audio_cpp";
 
 export type TtsGreetingConfig = {
 	text?: string,

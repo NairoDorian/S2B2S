@@ -39,27 +39,6 @@ pub trait TtsBackend: Send + Sync {
     /// to the engine here and must never be re-applied at playback time.
     fn synthesize(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<u8>, String>;
 
-    /// Whether this backend can deliver audio incrementally via
-    /// [`Self::synthesize_streaming`] (chunk-level streaming — lower
-    /// time-to-first-audio on long replies).
-    fn supports_streaming(&self) -> bool {
-        false
-    }
-
-    /// Stream-synthesize `text`, invoking `on_pcm(sample_rate, i16_frames)`
-    /// for every audio chunk as it is generated. Blocks until synthesis
-    /// finishes. Default implementation fails — backends that return true
-    /// from [`Self::supports_streaming`] must override it.
-    fn synthesize_streaming(
-        &self,
-        _text: &str,
-        _voice: &str,
-        _speed: f32,
-        _on_pcm: &mut dyn FnMut(u32, Vec<i16>),
-    ) -> Result<(), String> {
-        Err("This TTS backend does not support streaming".to_string())
-    }
-
     /// Check that the engine/server is reachable.
     #[allow(dead_code)]
     fn health_check(&self) -> Result<(), String>;

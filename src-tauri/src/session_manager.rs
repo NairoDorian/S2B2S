@@ -212,6 +212,8 @@ impl RecordingSession {
             debug!("RecordingSession: Removing mute");
             if let Some(rm) = self.app.try_state::<Arc<AudioRecordingManager>>() {
                 rm.remove_mute();
+                // Restore any media sessions paused for this recording.
+                rm.resume_media_if_paused();
             }
         }
     }

@@ -2,6 +2,7 @@
 //! the default; Kokoro (in-process ONNX via tts-rs); cloud engines (OpenAI /
 //! ElevenLabs / Cartesia) are added behind the same [`crate::tts::TtsBackend`] trait.
 
+pub mod audiocpp;
 pub mod cartesia;
 pub mod elevenlabs;
 pub mod kitten;

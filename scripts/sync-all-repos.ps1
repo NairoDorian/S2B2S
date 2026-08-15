@@ -18,7 +18,7 @@ Write-Host ""
 # 1. Sync faster-qwen3-tts
 $FasterQwenDir = Join-Path $repoRoot "..\faster-qwen3-tts"
 if (Test-Path $FasterQwenDir) {
-    Write-Host "[1/2] Syncing faster-qwen3-tts (andimarafioti/faster-qwen3-tts)..." -ForegroundColor Yellow
+    Write-Host "[1/4] Syncing faster-qwen3-tts (andimarafioti/faster-qwen3-tts)..." -ForegroundColor Yellow
     git -C $FasterQwenDir pull 2>&1 | Out-Host
     $VenvPython = Join-Path $repoRoot "venv\Scripts\python.exe"
     if ((Test-Path $VenvPython) -and (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -26,13 +26,42 @@ if (Test-Path $FasterQwenDir) {
         uv pip install --no-deps -e $FasterQwenDir --python $VenvPython --quiet 2>&1 | Out-Host
     }
 } else {
-    Write-Host "[1/2] faster-qwen3-tts directory not found at $FasterQwenDir" -ForegroundColor Gray
+    Write-Host "[1/4] faster-qwen3-tts directory not found at $FasterQwenDir" -ForegroundColor Gray
 }
 
-# 2. Smart Sync Cargo git dependencies (transcribe-cpp, hf-hub)
+# 2. Sync audio.cpp & compile natively from source (main branch on GitHub)
+$AudioCppDir = Join-Path $repoRoot "..\audio.cpp"
+if (Test-Path $AudioCppDir) {
+    Write-Host "`n[2/4] Syncing audio.cpp (0xShug0/audio.cpp, branch: main)..." -ForegroundColor Yellow
+    git -C $AudioCppDir checkout main 2>&1 | Out-Host
+    git -C $AudioCppDir pull --recurse-submodules 2>&1 | Out-Host
+} else {
+    Write-Host "`n[2/4] audio.cpp directory not found at $AudioCppDir. Cloning main branch..." -ForegroundColor Yellow
+    git clone --recurse-submodules -b main https://github.com/0xShug0/audio.cpp $AudioCppDir
+}
+
+# Compile audio.cpp from source (always native source build, never precompiled binaries)
+$CompileScript = Join-Path $PSScriptRoot "compile-audiocpp.ps1"
+if (Test-Path $CompileScript) {
+    Write-Host "      Building audio.cpp from source (CUDA Deployment Build)..." -ForegroundColor Cyan
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $CompileScript -Backend cuda -Target audiocpp_server
+}
+
+# 3. Sync transcribe.cpp
+$TranscribeCppDir = Join-Path $repoRoot "..\transcribe.cpp"
+if (Test-Path $TranscribeCppDir) {
+    Write-Host "`n[3/4] Syncing transcribe.cpp (handy-computer/transcribe.cpp, branch: main)..." -ForegroundColor Yellow
+    git -C $TranscribeCppDir checkout main 2>&1 | Out-Host
+    git -C $TranscribeCppDir pull --recurse-submodules 2>&1 | Out-Host
+} else {
+    Write-Host "`n[3/4] transcribe.cpp directory not found at $TranscribeCppDir. Cloning main branch..." -ForegroundColor Yellow
+    git clone --recurse-submodules -b main https://github.com/handy-computer/transcribe.cpp $TranscribeCppDir
+}
+
+# 4. Smart Sync Cargo git dependencies (transcribe-cpp, hf-hub)
 #    Only runs `cargo update` when remote commit differs from Cargo.lock,
 #    preventing costly recompilation of transcribe.cpp C++ artifacts.
-Write-Host "`n[2/2] Checking latest commits for Rust git dependencies..." -ForegroundColor Yellow
+Write-Host "`n[4/4] Checking latest commits for Rust git dependencies..." -ForegroundColor Yellow
 $SrcTauri = Join-Path $repoRoot "src-tauri"
 $CargoLockPath = Join-Path $SrcTauri "Cargo.lock"
 

@@ -33,6 +33,74 @@ pub fn endpoint_frames_for_preset(preset: &str) -> usize {
     }
 }
 
+/// Classic glob matching (`*` and `?`) over chars, case-insensitive at the
+/// call site. Backtracking on `*` keeps the implementation simple and correct
+/// for short device names.
+fn wildcard_match(pattern: &str, candidate: &str) -> bool {
+    let pattern_chars = pattern.chars().collect::<Vec<_>>();
+    let candidate_chars = candidate.chars().collect::<Vec<_>>();
+
+    let mut pattern_index = 0usize;
+    let mut candidate_index = 0usize;
+    let mut star_index: Option<usize> = None;
+    let mut match_index = 0usize;
+
+    while candidate_index < candidate_chars.len() {
+        if pattern_index < pattern_chars.len()
+            && (pattern_chars[pattern_index] == '?'
+                || pattern_chars[pattern_index] == candidate_chars[candidate_index])
+        {
+            pattern_index += 1;
+            candidate_index += 1;
+        } else if pattern_index < pattern_chars.len() && pattern_chars[pattern_index] == '*' {
+            star_index = Some(pattern_index);
+            match_index = candidate_index;
+            pattern_index += 1;
+        } else if let Some(star) = star_index {
+            pattern_index = star + 1;
+            match_index += 1;
+            candidate_index = match_index;
+        } else {
+            return false;
+        }
+    }
+
+    while pattern_index < pattern_chars.len() && pattern_chars[pattern_index] == '*' {
+        pattern_index += 1;
+    }
+
+    pattern_index == pattern_chars.len()
+}
+
+/// Does a device name satisfy the auto-switch mask? Plain substrings (no `*`/
+/// `?`) use containment; wildcards use glob matching. Case-insensitive.
+fn matches_name_mask(device_name: &str, pattern: &str) -> bool {
+    let trimmed = pattern.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let normalized_pattern = trimmed.to_lowercase();
+    let normalized_name = device_name.to_lowercase();
+
+    if normalized_pattern.contains('*') || normalized_pattern.contains('?') {
+        wildcard_match(&normalized_pattern, &normalized_name)
+    } else {
+        normalized_name.contains(&normalized_pattern)
+    }
+}
+
+/// First input device (in enumeration order) whose name matches the mask.
+fn first_device_matching_mask<'a>(
+    device_names: impl IntoIterator<Item = &'a str>,
+    pattern: &str,
+) -> Option<String> {
+    device_names
+        .into_iter()
+        .find(|name| matches_name_mask(name, pattern))
+        .map(|name| name.to_string())
+}
+
 /// Resolve the Silero VAD ONNX model path.
 ///
 /// Preference order: v6.2 (newest, best accuracy) → v4 → legacy name.
@@ -292,6 +360,268 @@ fn restore_mute(prev_muted: Option<bool>) {
     }
 }
 
+/* ──────────────────────────────────────────────────────────────── */
+/* pause-media-while-recording (per-OS media session control)       */
+/* ──────────────────────────────────────────────────────────────── */
+
+#[cfg(target_os = "windows")]
+fn pause_media_playback() -> Vec<String> {
+    use std::future::IntoFuture;
+    use windows::Media::Control::{
+        GlobalSystemMediaTransportControlsSessionManager,
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus,
+    };
+
+    let mut paused_sessions = Vec::new();
+
+    // windows-rs 0.62 removed the blocking `get()` on IAsyncOperation; the
+    // operation is a plain future now, so block on it via futures-executor
+    // (already in the dependency tree).
+    let manager = match GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
+        Ok(operation) => match futures_executor::block_on(operation.into_future()) {
+            Ok(manager) => manager,
+            Err(err) => {
+                debug!("Media pause unavailable: {}", err);
+                return paused_sessions;
+            }
+        },
+        Err(err) => {
+            debug!("Media pause unavailable: {}", err);
+            return paused_sessions;
+        }
+    };
+
+    let sessions = match manager.GetSessions() {
+        Ok(sessions) => sessions,
+        Err(err) => {
+            debug!("Media pause failed to enumerate sessions: {}", err);
+            return paused_sessions;
+        }
+    };
+
+    let session_count = sessions.Size().unwrap_or(0);
+    for index in 0..session_count {
+        let Ok(session) = sessions.GetAt(index) else {
+            continue;
+        };
+
+        let is_playing = session
+            .GetPlaybackInfo()
+            .and_then(|info| info.PlaybackStatus())
+            .map(|status| {
+                status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing
+            })
+            .unwrap_or(false);
+
+        if !is_playing {
+            continue;
+        }
+
+        let source_id = session
+            .SourceAppUserModelId()
+            .map(|id| id.to_string_lossy())
+            .unwrap_or_default();
+
+        let pause_result = session
+            .TryPauseAsync()
+            .map_err(|err| format!("{}", err))
+            .and_then(|operation| {
+                futures_executor::block_on(operation.into_future())
+                    .map_err(|err| format!("{}", err))
+            });
+        match pause_result {
+            Ok(true) => {
+                if !source_id.is_empty() {
+                    paused_sessions.push(source_id);
+                }
+            }
+            Ok(false) => debug!("Media pause declined by session"),
+            Err(err) => debug!("Media pause failed: {}", err),
+        }
+    }
+
+    paused_sessions
+}
+
+#[cfg(target_os = "windows")]
+fn resume_media_playback(paused_sessions: &[String]) {
+    use std::collections::HashSet;
+    use std::future::IntoFuture;
+    use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager;
+
+    if paused_sessions.is_empty() {
+        return;
+    }
+
+    let paused_ids: HashSet<&str> = paused_sessions.iter().map(String::as_str).collect();
+    let manager = match GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
+        Ok(operation) => match futures_executor::block_on(operation.into_future()) {
+            Ok(manager) => manager,
+            Err(err) => {
+                debug!("Media resume unavailable: {}", err);
+                return;
+            }
+        },
+        Err(err) => {
+            debug!("Media resume unavailable: {}", err);
+            return;
+        }
+    };
+
+    let sessions = match manager.GetSessions() {
+        Ok(sessions) => sessions,
+        Err(err) => {
+            debug!("Media resume failed to enumerate sessions: {}", err);
+            return;
+        }
+    };
+
+    let session_count = sessions.Size().unwrap_or(0);
+    for index in 0..session_count {
+        let Ok(session) = sessions.GetAt(index) else {
+            continue;
+        };
+        let source_id = session
+            .SourceAppUserModelId()
+            .map(|id| id.to_string_lossy())
+            .unwrap_or_default();
+
+        if !paused_ids.contains(source_id.as_str()) {
+            continue;
+        }
+
+        let play_result = session
+            .TryPlayAsync()
+            .map_err(|err| format!("{}", err))
+            .and_then(|operation| {
+                futures_executor::block_on(operation.into_future())
+                    .map_err(|err| format!("{}", err))
+            });
+        if let Err(err) = play_result {
+            debug!("Media resume failed: {}", err);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn pause_media_playback() -> Vec<String> {
+    use std::process::Command;
+
+    let mut paused_players = Vec::new();
+    let output = match Command::new("playerctl").arg("-l").output() {
+        Ok(output) if output.status.success() => output,
+        Ok(_) | Err(_) => return paused_players,
+    };
+
+    let players = String::from_utf8_lossy(&output.stdout);
+    for player in players.lines().map(str::trim).filter(|p| !p.is_empty()) {
+        let status = Command::new("playerctl")
+            .args(["-p", player, "status"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string());
+
+        if status.as_deref() != Some("Playing") {
+            continue;
+        }
+
+        if Command::new("playerctl")
+            .args(["-p", player, "pause"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+        {
+            paused_players.push(player.to_string());
+        }
+    }
+
+    paused_players
+}
+
+#[cfg(target_os = "linux")]
+fn resume_media_playback(paused_players: &[String]) {
+    use std::process::Command;
+
+    for player in paused_players {
+        let _ = Command::new("playerctl")
+            .args(["-p", player, "play"])
+            .output();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn run_osascript(script: &str) -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("osascript")
+        .args(["-e", script])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_is_running(process_name: &str) -> bool {
+    let escaped_name = process_name.replace('"', "\\\"");
+    let script = format!(
+        "tell application \"System Events\" to (name of processes) contains \"{}\"",
+        escaped_name
+    );
+    run_osascript(&script).as_deref() == Some("true")
+}
+
+#[cfg(target_os = "macos")]
+fn pause_media_playback() -> Vec<String> {
+    let mut paused_apps = Vec::new();
+    for app_name in ["Music", "Spotify", "QuickTime Player"] {
+        if !macos_process_is_running(app_name) {
+            continue;
+        }
+
+        let escaped_name = app_name.replace('"', "\\\"");
+        let state_script = format!(
+            "tell application \"{}\" to player state as string",
+            escaped_name
+        );
+        if run_osascript(&state_script).as_deref() != Some("playing") {
+            continue;
+        }
+
+        let pause_script = format!("tell application \"{}\" to pause", escaped_name);
+        if run_osascript(&pause_script).is_some() {
+            paused_apps.push(app_name.to_string());
+        }
+    }
+    paused_apps
+}
+
+#[cfg(target_os = "macos")]
+fn resume_media_playback(paused_apps: &[String]) {
+    for app_name in paused_apps {
+        if !macos_process_is_running(app_name) {
+            continue;
+        }
+
+        let escaped_name = app_name.replace('"', "\\\"");
+        let play_script = format!("tell application \"{}\" to play", escaped_name);
+        let _ = run_osascript(&play_script);
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn pause_media_playback() -> Vec<String> {
+    Vec::new()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn resume_media_playback(_paused_sessions: &[String]) {}
+
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -442,6 +772,9 @@ pub struct AudioRecordingManager {
     auto_stop_duration_secs: Arc<std::sync::atomic::AtomicU32>,
     /// Resolution of a *named* microphone cached to skip full device enumeration.
     cached_device: Arc<Mutex<Option<(String, cpal::Device)>>>,
+    /// Media sessions this app paused for the active recording, restored on
+    /// session cleanup (`resume_media_if_paused`).
+    paused_media_sessions: Arc<Mutex<Vec<String>>>,
 }
 
 impl AudioRecordingManager {
@@ -491,6 +824,7 @@ impl AudioRecordingManager {
             auto_stop_enabled,
             auto_stop_duration_secs,
             cached_device: Arc::new(Mutex::new(None)),
+            paused_media_sessions: Arc::new(Mutex::new(Vec::new())),
         };
 
         // Always-on?  Open immediately.
@@ -504,9 +838,36 @@ impl AudioRecordingManager {
     /* ---------- helper methods --------------------------------------------- */
 
     /// The microphone name the settings ask for, or `None` for the system
-    /// default. Only runs the clamshell probe (an `ioreg` subprocess, ~10-20ms)
-    /// when a clamshell microphone is actually configured.
+    /// default. Resolution order:
+    ///   1. mic auto-switch: the first device matching
+    ///      `selected_microphone_name_pattern` (when enabled and non-empty)
+    ///   2. the clamshell probe (an `ioreg` subprocess, ~10-20ms) — only runs
+    ///      when a clamshell microphone is actually configured
+    ///   3. the manually selected microphone
     fn desired_device_name(&self, settings: &AppSettings) -> Option<String> {
+        if settings.selected_microphone_auto_switch_enabled
+            && !settings.selected_microphone_name_pattern.trim().is_empty()
+        {
+            match list_input_devices() {
+                Ok(devices) => {
+                    if let Some(matched) = first_device_matching_mask(
+                        devices.iter().map(|device| device.name.as_str()),
+                        &settings.selected_microphone_name_pattern,
+                    ) {
+                        debug!("mic auto-switch: mask matched '{}'", matched);
+                        return Some(matched);
+                    }
+                    debug!("mic auto-switch: no device matches the mask, falling back");
+                }
+                Err(e) => {
+                    debug!(
+                        "mic auto-switch: device enumeration failed ({}), falling back",
+                        e
+                    );
+                }
+            }
+        }
+
         if settings.clamshell_microphone.is_some() {
             let clamshell_started = Instant::now();
             let is_clamshell = clamshell::is_clamshell().unwrap_or(false);
@@ -631,6 +992,51 @@ impl AudioRecordingManager {
                 mute_guard.prev_muted
             );
         }
+    }
+
+    /// Pauses active media if `pause_media_while_recording` is enabled.
+    /// Tracks which sessions we paused so `resume_media_if_paused` can restore
+    /// exactly those — and never pauses a second time within one recording.
+    pub fn apply_media_pause(&self) {
+        let settings = get_settings(&self.app_handle);
+        if !settings.pause_media_while_recording {
+            return;
+        }
+
+        // Before pausing, ensure we didn't cancel/stop recording while waiting.
+        if !self.is_recording() {
+            return;
+        }
+
+        let mut paused_guard = self.paused_media_sessions.lock().unwrap();
+        if !paused_guard.is_empty() {
+            return;
+        }
+
+        let paused_sessions = pause_media_playback();
+        if !paused_sessions.is_empty() {
+            debug!(
+                "Paused {} media session(s) while recording",
+                paused_sessions.len()
+            );
+        }
+        *paused_guard = paused_sessions;
+    }
+
+    /// Resumes media sessions that this recording paused. Idempotent — a
+    /// no-op when nothing was paused.
+    pub fn resume_media_if_paused(&self) {
+        let mut paused_guard = self.paused_media_sessions.lock().unwrap();
+        if paused_guard.is_empty() {
+            return;
+        }
+
+        resume_media_playback(&paused_guard);
+        debug!(
+            "Requested resume for {} media session(s)",
+            paused_guard.len()
+        );
+        paused_guard.clear();
     }
 
     pub fn preload_vad(&self) -> Result<(), anyhow::Error> {
@@ -880,6 +1286,14 @@ impl AudioRecordingManager {
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
         // Device settings changed; re-enumerate the device and restart capture.
+        // Serialize against recording start/stop: never tear down the stream
+        // under an active recording (its samples would be discarded).
+        let state = self.state.lock().unwrap();
+        if !matches!(*state, RecordingState::Idle) {
+            return Ok(());
+        }
+        drop(state);
+
         self.invalidate_device_cache();
         let was_open = *self.is_open.lock().unwrap();
         if was_open {
@@ -1155,5 +1569,70 @@ impl AudioRecordingManager {
             self.start_microphone_stream()?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{first_device_matching_mask, matches_name_mask, wildcard_match};
+
+    #[test]
+    fn wildcard_match_basic() {
+        assert!(wildcard_match("mic", "mic"));
+        assert!(wildcard_match("mic*", "microphone"));
+        assert!(wildcard_match("*mic*", "micmic"));
+        assert!(wildcard_match("mic?one", "micxone"));
+        assert!(wildcard_match("", ""));
+        assert!(wildcard_match("*", "anything"));
+    }
+
+    #[test]
+    fn wildcard_match_no_false_positives() {
+        assert!(!wildcard_match("mic", "microphone"));
+        assert!(!wildcard_match("mic*", "camera"));
+        assert!(!wildcard_match("?mic", "mic"));
+        assert!(!wildcard_match("*mic", "microphone"));
+        assert!(!wildcard_match("mic?one", "micxophone"));
+    }
+
+    #[test]
+    fn wildcard_match_trailing_and_multiple_stars() {
+        assert!(wildcard_match("USB * Mic*", "USB 2.0 Microphone"));
+        assert!(wildcard_match("*a*b*c*", "abc"));
+        assert!(wildcard_match("*a*b*c*", "aXbYcZ"));
+        assert!(!wildcard_match("*a*b*c*", "acb"));
+    }
+
+    #[test]
+    fn matches_name_mask_plain_substring_is_containment() {
+        assert!(matches_name_mask("USB Microphone", "micro"));
+        assert!(matches_name_mask("USB Microphone", "  USB  "));
+        assert!(matches_name_mask("Microphone Array", "MICROPHONE"));
+        assert!(!matches_name_mask("USB Microphone", "camera"));
+        assert!(!matches_name_mask("USB Microphone", ""));
+        assert!(!matches_name_mask("USB Microphone", "   "));
+    }
+
+    #[test]
+    fn matches_name_mask_wildcards_case_insensitive() {
+        assert!(matches_name_mask("USB 2.0 Microphone", "usb * mic*"));
+        assert!(matches_name_mask("Microphone Array", "*array"));
+        assert!(!matches_name_mask("External Camera", "*mic*"));
+    }
+
+    #[test]
+    fn first_device_matching_mask_picks_first_match() {
+        let devices = [
+            "External Camera",
+            "USB 2.0 Microphone",
+            "USB 2.0 Microphone (Monitor)",
+        ];
+
+        assert_eq!(
+            first_device_matching_mask(devices, "usb*mic*"),
+            Some("USB 2.0 Microphone".to_string())
+        );
+        assert_eq!(first_device_matching_mask(devices, "webcam"), None);
+        assert_eq!(first_device_matching_mask(devices, ""), None);
     }
 }

@@ -82,7 +82,7 @@ curl -o src-tauri/resources/models/silero_vad_v6.2.onnx https://blob.handy.compu
 Before committing and pushing any changes, always run this complete routine:
 
 ```bash
-# 1. Sync dependency git repositories (faster-qwen3-tts, transcribe.cpp)
+# 1. Sync dependency git repositories (faster-qwen3-tts, audio.cpp, transcribe.cpp)
 bun run sync:repos
 
 # 2. Audit documentation (.md files)

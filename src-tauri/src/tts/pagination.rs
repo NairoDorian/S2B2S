@@ -17,6 +17,7 @@ pub struct TextFragment {
 
 impl TextFragment {
     /// Create a new text fragment.
+    #[allow(dead_code)]
     pub fn new(text: String, index: usize, total: usize) -> Self {
         Self { text, index, total }
     }
@@ -201,6 +202,7 @@ fn is_abbreviation(chars: &[char], pos: usize) -> bool {
 ///
 /// # Returns
 /// A vector of text fragments. Returns a single fragment if pagination is disabled or text is short.
+#[allow(dead_code)]
 pub fn paginate_text(text: &str, config: &PaginationConfig) -> Vec<TextFragment> {
     // If pagination is disabled or text is empty, return as single fragment
     if !config.enabled || text.is_empty() {
@@ -295,6 +297,7 @@ pub fn paginate_text(text: &str, config: &PaginationConfig) -> Vec<TextFragment>
 }
 
 /// Fallback: split text at exact character positions when no sentence boundaries exist.
+#[allow(dead_code)]
 fn force_split(text: &str, max_size: usize) -> Vec<TextFragment> {
     let mut fragments = Vec::new();
     let chars: Vec<char> = text.chars().collect();

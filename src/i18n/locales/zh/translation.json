@@ -280,7 +280,22 @@
         "title": "麦克风",
         "description": "选择您偏好的麦克风设备",
         "placeholder": "选择麦克风...",
-        "loading": "加载中..."
+        "loading": "加载中...",
+        "autoSelect": {
+          "sectionTitle": "Automatic Microphone Selection",
+          "label": "Auto-select by device name",
+          "description": "Automatically switch to the first microphone whose name matches a pattern whenever it is connected."
+        },
+        "autoSelectMask": {
+          "title": "Device Name Pattern",
+          "description": "Supports * and ? wildcards (e.g. \"USB * Mic*\"). If no device matches, the manually selected microphone is used.",
+          "placeholder": "e.g. USB * Mic*",
+          "reset": "Reset"
+        }
+      },
+      "pauseMediaWhileRecording": {
+        "label": "Pause Media While Recording",
+        "description": "Pause music and videos while recording, then resume them when finished"
       },
       "channel": {
         "title": "输入通道",
@@ -622,17 +637,6 @@
         "title": "日志级别",
         "description": "设置日志的详细程度"
       },
-      "liveLogs": {
-        "title": "实时日志",
-        "description": "实时传输应用程序日志，无需打开日志文件即可诊断问题。仅显示此面板打开期间产生的日志；遵循上方的“日志级别”设置。",
-        "live": "实时",
-        "paused": "已暂停",
-        "pause": "暂停",
-        "resume": "继续",
-        "copied": "已复制",
-        "lineCount": "{{count}} 行",
-        "empty": "正在等待日志…… 应用产生日志时将显示在此处。"
-      },
       "updateChecks": {
         "label": "检查更新",
         "description": "自动检查 S2B2S 的新版本"
@@ -831,6 +835,7 @@
           "kitten": "Kitten (local)",
           "pocket": "Pocket (local)",
           "qwen3": "Qwen3 (local)",
+          "audio_cpp": "audio.cpp (native C++ GGUF)",
           "sapi": "SAPI (local)",
           "openai": "OpenAI (cloud)",
           "elevenlabs": "ElevenLabs (cloud)",
@@ -842,6 +847,7 @@
           "kitten": "Local: Ultra-lightweight TTS (25-80MB) with 8 natural voices. CPU-optimized ONNX inference, no GPU required.",
           "pocket": "Local: Compact offline TTS engine with 8 distinct character voices. Uses PyTorch/VITS architecture.",
           "qwen3": "Local: High-quality multilingual offline TTS engine using CUDA Graph capture and In-Context Learning for voice cloning.",
+          "audio_cpp": "Local: Ultra-high-performance native C++ GGML/GGUF runtime. Runs Supertonic 3, Qwen3-TTS, PocketTTS, DotsTTS, and Chatterbox up to 200x real-time on CUDA without Python.",
           "sapi": "Local: Built-in Windows speech synthesis. Zero download, always available as a fallback.",
           "openai": "Cloud: High-quality natural voices via the OpenAI API. Requires an API key and internet connection.",
           "elevenlabs": "Cloud: Premium AI voice synthesis with emotional range, 1000+ voices, and multilingual support.",
@@ -858,6 +864,8 @@
           "pocketLabel": "",
           "qwen3": "https://github.com/andimarafioti/faster-qwen3-tts",
           "qwen3Label": "GitHub",
+          "audio_cpp": "https://github.com/0xShug0/audio.cpp",
+          "audio_cppLabel": "GitHub",
           "openai": "https://platform.openai.com/docs/guides/text-to-speech",
           "openaiLabel": "API Docs",
           "elevenlabs": "https://elevenlabs.io/docs/api-reference/text-to-speech",
@@ -982,6 +990,57 @@
         "description": "Both sizes use the 12Hz tokenizer (streaming synthesis with ~97ms end-to-end latency). The 1.7B model sounds better but needs more VRAM/RAM.",
         "option06b": "0.6B CustomVoice (fast, ~2.4 GB)",
         "option17b": "1.7B CustomVoice (quality, ~6.6 GB)"
+      },
+      "qwen3Language": {
+        "label": "Language",
+        "description": "Language used for synthesis. Auto detects the spoken language from each utterance; dialects (e.g. Sichuan/Beijing Mandarin) apply automatically on supported voices.",
+        "optionAuto": "Auto (detect per utterance)"
+      },
+      "audiocppModel": {
+        "group": "audio.cpp GGUF Model",
+        "label": "Model family",
+        "description": "Select the native C++ GGUF audio model family for high-speed local inference.",
+        "supertonic": "Supertonic 3 (Ultra-Fast 200x RTF, Multilingual)",
+        "qwen3_tts": "Qwen3-TTS 12Hz GGUF (High-Fidelity)",
+        "pocket_tts": "PocketTTS-100M GGUF (Lightweight Voice Cloning)",
+        "dots_tts": "DotTTS (Expressive & Emotional)",
+        "chatterbox": "Chatterbox 0.5B (Multilingual Voice Clone)",
+        "omnivoice": "OmniVoice (646+ Languages)",
+        "voxcpm2": "VoxCPM2 2B (48 kHz Streaming)"
+      },
+      "audiocppBackend": {
+        "group": "Hardware Acceleration",
+        "label": "Compute Backend",
+        "description": "Hardware acceleration backend used by audio.cpp (CUDA recommended for NVIDIA GPUs).",
+        "cuda": "NVIDIA CUDA (GPU Accelerated)",
+        "vulkan": "Vulkan Compute (Universal GPU)",
+        "cpu": "Native CPU"
+      },
+      "audiocppManager": {
+        "groupTitle": "Audio.cpp GGUF Model Management",
+        "groupDescription": "Browse, download, manage quantization variants, and select native GGUF speech models.",
+        "searchPlaceholder": "Search models, languages, capabilities...",
+        "filterAll": "All Models",
+        "filterInstalled": "Installed",
+        "filterCloning": "Voice Cloning",
+        "filterMultilingual": "Multilingual",
+        "refresh": "Refresh Models",
+        "loadingModels": "Loading audio.cpp model catalog...",
+        "noModelsFound": "No audio.cpp models match your search.",
+        "active": "Active",
+        "inUseActive": "Currently In Use",
+        "useModel": "Use Model",
+        "delete": "Delete model package",
+        "deleteTitle": "Delete Model Package",
+        "deleteConfirm": "Are you sure you want to delete '{{name}}' from disk?",
+        "voiceClone": "Voice Clone",
+        "voiceDesign": "Voice Design",
+        "streaming": "Streaming",
+        "languagesCount": "{{count}} Languages",
+        "quantizationLabel": "Quantization Variant & Size",
+        "downloadPackage": "Download ({{size}} MB)",
+        "downloading": "Downloading",
+        "cancel": "Cancel"
       },
       "sanitizeEnabled": {
         "label": "Clean text before speaking",
@@ -1130,6 +1189,10 @@
         "running": "Thinking…",
         "abort": "Abort",
         "prompt": "In one short sentence, confirm that you can hear me."
+      },
+      "reasoning": {
+        "label": "模型推理 / 思考过程",
+        "description": "为支持的模型（例如 Gemma 4 / DeepSeek）启用内部推理和思考过程。禁用时将跳过思考以获得更快的响应速度。"
       }
     }
   },
@@ -1326,6 +1389,7 @@
   },
   "debug": {
     "logViewer": {
+      "title": "App Diagnostics & Logs",
       "lastLines": "Last {{count}} Lines",
       "autoRefresh": "Auto-refresh",
       "refresh": "Refresh",
@@ -1336,7 +1400,25 @@
       "showing": "Showing {{filtered}} of {{total}} fetched log entries",
       "levelFilter": "LogLevel Filter: {{level}}",
       "noFilterMatch": "No log entries match your filter criteria.",
-      "noEntries": "No log entries generated yet."
+      "noEntries": "No log entries generated yet.",
+      "live": "Live",
+      "paused": "Paused",
+      "pause": "Pause",
+      "resume": "Resume",
+      "lineCount": "{{count}} lines",
+      "severityAll": "All Levels",
+      "severityError": "Error",
+      "severityWarn": "Warn",
+      "severityInfo": "Info",
+      "severityDebug": "Debug",
+      "severityTrace": "Trace",
+      "clearConfirm": "Are you sure you want to truncate the log files?",
+      "clearSuccess": "Log files cleared successfully",
+      "clearFailure": "Failed to clear logs: {{error}}",
+      "clearFailed": "Failed to clear logs",
+      "copyEmpty": "No logs to copy",
+      "copySuccess": "Logs copied to clipboard",
+      "copyFailed": "Failed to copy logs"
     }
   },
   "gpuVram": {

@@ -40,15 +40,15 @@ $ProjectRoot = Resolve-Path "$ScriptDir\.."
 
 # Default to all TTS models if no -Model specified
 if (-not $Model -or $Model.Count -eq 0) {
-    $Model = @("piper", "kokoro", "pocket", "kitten", "qwen3")
+    $Model = @("piper", "kokoro", "pocket", "kitten", "qwen3", "audiocpp")
 }
 
 # Expand aliases
 $Expanded = @()
 foreach ($m in $Model) {
     switch ($m.ToLower()) {
-        "all"  { $Expanded += @("stt", "brain", "piper", "kokoro", "pocket", "kitten", "qwen3") }
-        "tts"  { $Expanded += @("piper", "kokoro", "pocket", "kitten", "qwen3") }
+        "all"  { $Expanded += @("stt", "brain", "piper", "kokoro", "pocket", "kitten", "qwen3", "audiocpp") }
+        "tts"  { $Expanded += @("piper", "kokoro", "pocket", "kitten", "qwen3", "audiocpp") }
         default { $Expanded += $m }
     }
 }
@@ -306,6 +306,21 @@ if ($Model -contains "qwen3") {
     Write-Host "  NOTE: Qwen3 TTS model files (Qwen3-TTS-12Hz-1.7B-CustomVoice) are auto-downloaded" -ForegroundColor Gray
     Write-Host "        from HuggingFace Hub on first use or via huggingface-cli snapshot_download." -ForegroundColor Gray
     Write-Host "        HF_HOME is set to: $TtsDir" -ForegroundColor Gray
+}
+
+# --- Audio.cpp Native GGUF TTS Models ---
+if ($Model -contains "audiocpp") {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  audio.cpp GGUF Models -> $TtsDir\audiocpp\" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+
+    $audioCppDir = Join-Path $TtsDir "audiocpp"
+    Ensure-Dir $audioCppDir
+
+    Write-Host "  NOTE: audio.cpp native GGUF models can be downloaded from:" -ForegroundColor Gray
+    Write-Host "        https://huggingface.co/audio-cpp/audio.cpp-gguf" -ForegroundColor Gray
+    Write-Host "        Target directory: $audioCppDir" -ForegroundColor Gray
 }
 
 

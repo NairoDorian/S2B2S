@@ -668,6 +668,13 @@ export const BrainSettings: React.FC = () => {
             description={t("settings.brain.multimodal.imageInput.description")}
             grouped
           />
+          <ToggleSwitch
+            checked={brain.reasoning_enabled ?? false}
+            onChange={(reasoning_enabled) => update({ reasoning_enabled })}
+            label={t("settings.brain.reasoning.label")}
+            description={t("settings.brain.reasoning.description")}
+            grouped
+          />
         </SettingsGroup>
       )}
 

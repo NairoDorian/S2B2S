@@ -1,4 +1,4 @@
-//! TTS manager: orchestrates synthesis + streaming playback.
+//! TTS manager: orchestrates synthesis + playback.
 //!
 //! Paginates text, synthesizes each fragment on a worker thread, and appends
 //! audio to the [`TtsPlayer`] as it becomes ready — so fragment *i+1* is
@@ -7,13 +7,13 @@
 
 use crate::audio_toolkit::extract_envelope;
 use crate::settings::{get_settings, TtsConfig, TtsEngine};
+use crate::tts::backends::audiocpp::AudioCppBackend;
 use crate::tts::backends::kitten::KittenBackend;
 use crate::tts::backends::kokoro::KokoroBackend;
 use crate::tts::backends::piper::{self, PiperBackend};
 use crate::tts::backends::pocket::PocketBackend;
 use crate::tts::backends::qwen3::Qwen3Backend;
 use crate::tts::backends::sapi::SapiBackend;
-use crate::tts::pagination::paginate_text;
 use crate::tts::player::TtsPlayer;
 use crate::tts::sanitize::sanitize_text;
 use crate::tts::{TtsBackend, Voice};
@@ -36,21 +36,9 @@ pub struct TtsManager {
     sentence_tx: Mutex<Option<mpsc::Sender<(String, u64)>>>,
 }
 
-/// Result of one synthesis: either complete audio bytes (buffered backend) or
-/// the accumulated streaming PCM (already appended to the player chunk-wise).
-enum SynthOutcome {
-    /// Complete encoded audio (WAV/MP3) appended to the player.
-    Buffered(Vec<u8>),
-    /// Chunk-streamed synthesis: mono f32 samples at `sample_rate`, already
-    /// appended to the player incrementally as they were generated.
-    Streamed { sample_rate: u32, samples: Vec<f32> },
-}
-
-/// Synthesize `text` through `backend` and append the audio to `player`.
-///
-/// Backends with streaming support deliver PCM chunks to the player as they
-/// are generated (much lower time-to-first-audio); `on_first_audio` fires on
-/// the very first chunk. Buffered backends keep the old whole-WAV path.
+/// Synthesize `text` through `backend`, append the audio to `player`, and
+/// return the encoded bytes (for history/WAV caching). Blocks until the whole
+/// utterance is synthesized — no incremental PCM streaming.
 fn synthesize_into(
     backend: &dyn TtsBackend,
     player: &TtsPlayer,
@@ -58,40 +46,13 @@ fn synthesize_into(
     voice: &str,
     speed: f32,
     mut on_first_audio: Option<&mut dyn FnMut()>,
-) -> Result<SynthOutcome, String> {
-    if !backend.supports_streaming() {
-        let bytes = backend.synthesize(text, voice, speed)?;
-        player.append(bytes.clone());
-        if let Some(cb) = on_first_audio.as_deref_mut() {
-            cb();
-        }
-        return Ok(SynthOutcome::Buffered(bytes));
+) -> Result<Vec<u8>, String> {
+    let bytes = backend.synthesize(text, voice, speed)?;
+    player.append(bytes.clone());
+    if let Some(cb) = on_first_audio.as_deref_mut() {
+        cb();
     }
-
-    let mut sample_rate = 24000u32;
-    let mut samples: Vec<f32> = Vec::new();
-    let mut first = true;
-    backend.synthesize_streaming(text, voice, speed, &mut |sr, frames| {
-        sample_rate = sr;
-        for &f in &frames {
-            samples.push(f as f32 / 32768.0);
-        }
-        if first {
-            first = false;
-            if let Some(cb) = on_first_audio.as_deref_mut() {
-                cb();
-            }
-        }
-        player.append_pcm(sr, frames);
-    })?;
-
-    if samples.is_empty() {
-        return Err("Qwen3 streaming produced no audio".to_string());
-    }
-    Ok(SynthOutcome::Streamed {
-        sample_rate,
-        samples,
-    })
+    Ok(bytes)
 }
 
 impl TtsManager {
@@ -142,6 +103,11 @@ impl TtsManager {
             TtsEngine::Cartesia => Ok(Box::new(
                 crate::tts::backends::cartesia::CartesiaTtsBackend::new(cfg.cartesia.clone()),
             )),
+            TtsEngine::AudioCpp => Ok(Box::new(AudioCppBackend::new(
+                self.app.clone(),
+                cfg.voice.clone(),
+                cfg.speed,
+            ))),
         }
     }
 
@@ -155,6 +121,7 @@ impl TtsManager {
             TtsEngine::Kitten => KittenBackend::list_voices(),
             TtsEngine::Pocket => PocketBackend::list_voices(&self.app),
             TtsEngine::Qwen3 => Qwen3Backend::list_voices(&self.app),
+            TtsEngine::AudioCpp => AudioCppBackend::list_voices(&self.app),
             TtsEngine::Sapi => SapiBackend::list_voices(),
             TtsEngine::Openai => {
                 vec![
@@ -260,7 +227,7 @@ impl TtsManager {
         let _ = self.app.emit("tts:stopped", ());
     }
 
-    /// Speak arbitrary text aloud (paginated, streaming).
+    /// Speak arbitrary text aloud (paginated).
     pub fn speak(&self, text: String) {
         let text = text.trim().to_string();
         if text.is_empty() {
@@ -290,107 +257,16 @@ impl TtsManager {
             log::debug!("[TTS] nothing left to speak after sanitization");
             return;
         }
-        let shorten_first = cfg.tts_shorten_first_chunk;
-        let fragments = if shorten_first {
-            // 3-fragment streaming pattern for fast TTFA:
-            //   1st sentence split at first period/!-/? → play immediately
-            //   2nd sentence split at next period → synthesized while 1st plays
-            //   3rd fragment: rest of text in one go → synthesized while 2nd plays
-            //   Fallback: if no punctuation found, split at 12-word boundary
-            let mut frags = Vec::new();
-            let mut remaining = sanitized.as_str();
-
-            // Helper: find sentence boundary (., !, ?, \n) or word-count fallback
-            let find_sentence_end = |t: &str| -> Option<usize> {
-                // First try punctuation
-                if let Some(idx) = t
-                    .char_indices()
-                    .find(|(_, c)| matches!(c, '.' | '!' | '?' | '\n'))
-                    .map(|(idx, c)| idx + c.len_utf8())
-                {
-                    return Some(idx);
-                }
-                // Fallback: find 12th word boundary
-                let mut word_count = 0;
-                let mut last_space = None;
-                for (idx, c) in t.char_indices() {
-                    if c == ' ' || c == '\t' {
-                        if word_count > 0 {
-                            last_space = Some(idx);
-                        }
-                    } else if last_space.is_none_or(|s| idx > s)
-                        && (word_count == 0
-                            || t[..idx]
-                                .chars()
-                                .last()
-                                .is_none_or(|prev| prev.is_whitespace()))
-                    {
-                        word_count += 1;
-                        if word_count >= 12 {
-                            return Some(idx + c.len_utf8());
-                        }
-                    }
-                }
-                None
-            };
-
-            // Fragment 1: up to first sentence-ending punctuation or 12-word boundary
-            if let Some(split) = find_sentence_end(remaining) {
-                let first = remaining[..split].trim().to_string();
-                if !first.is_empty() {
-                    frags.push(crate::tts::pagination::TextFragment {
-                        text: first,
-                        index: 0,
-                        total: 0,
-                    });
-                }
-                remaining = remaining[split..].trim();
-            }
-
-            // Fragment 2: next sentence or next 12-word boundary
-            if !remaining.is_empty() {
-                if let Some(split) = find_sentence_end(remaining) {
-                    let second = remaining[..split].trim().to_string();
-                    if !second.is_empty() {
-                        frags.push(crate::tts::pagination::TextFragment {
-                            text: second,
-                            index: frags.len(),
-                            total: 0,
-                        });
-                    }
-                    remaining = remaining[split..].trim();
-                }
-            }
-
-            // Fragment 3: rest in one go
-            if !remaining.is_empty() {
-                frags.push(crate::tts::pagination::TextFragment {
-                    text: remaining.to_string(),
-                    index: frags.len(),
-                    total: 0,
-                });
-            }
-
-            // Fix total
-            let total = frags.len();
-            for f in &mut frags {
-                f.total = total;
-            }
-            frags
-        } else {
-            let mut pagination_cfg = cfg.pagination.clone();
-            if let Some(telemetry) = self
-                .app
-                .try_state::<Arc<crate::tts::telemetry::Telemetry>>()
-            {
-                let current_engine_name = format!("{:?}", cfg.engine).to_lowercase();
-                let key = format!("{}:{}", current_engine_name, cfg.voice);
-                let adaptive_size =
-                    telemetry.adaptive_fragment_size(&key, pagination_cfg.fragment_size as usize);
-                pagination_cfg.fragment_size = adaptive_size as u32;
-            }
-            paginate_text(&sanitized, &pagination_cfg)
-        };
+        // Synthesize the whole utterance in a single request. No pagination
+        // or sentence splitting: per-fragment overhead (extra HTTP round trips,
+        // fixed per-request cost, prosody breaks at boundaries) outweighs the
+        // earlier first-audio benefit. If an engine ever needs short blocks,
+        // that is a per-model optimization, not a global one.
+        let fragments = vec![crate::tts::pagination::TextFragment {
+            text: sanitized.trim().to_string(),
+            index: 0,
+            total: 1,
+        }];
         let app = self.app.clone();
         let player = self.player.clone();
         let gen_counter = self.generation.clone();
@@ -405,102 +281,69 @@ impl TtsManager {
             let mut all_chunks = Vec::new();
             let mut first_audio_emitted = false;
 
-            for frag in fragments {
-                if gen_counter.load(Ordering::SeqCst) != generation {
-                    log::debug!("[TTS] speak aborted (superseded)");
-                    return;
-                }
-                let frag_synth_start = std::time::Instant::now();
-                let mut first_audio_emitted_local = first_audio_emitted;
-                let outcome = synthesize_into(
-                    backend.as_ref(),
-                    &player,
-                    &frag.text,
-                    &voice,
-                    speed,
-                    Some(&mut || {
-                        if !first_audio_emitted_local {
-                            first_audio_emitted_local = true;
-                            let ttfa_ms = synth_start.elapsed().as_millis() as u64;
-                            let _ =
-                                app.emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
-                        }
-                    }),
-                );
-                first_audio_emitted = first_audio_emitted_local;
-                match outcome {
-                    Ok(SynthOutcome::Buffered(bytes)) => {
-                        if gen_counter.load(Ordering::SeqCst) != generation {
-                            return;
-                        }
-                        let frag_synth_ms = frag_synth_start.elapsed().as_millis() as u64;
-                        if let Some(telemetry) =
-                            app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
-                        {
-                            let key = format!("{}:{}", engine_name, voice);
-                            telemetry.record(&key, frag.text.len(), frag_synth_ms);
-                        }
-                        let _ = app.emit(
-                            "tts:fragment",
-                            serde_json::json!({ "index": frag.index, "total": frag.total }),
-                        );
-                        // Emit waveform envelope for HUD visualization
-                        if let Some(envelope) = extract_envelope(&bytes, 32) {
+            let completed = 'fragments: {
+                for frag in fragments {
+                    if gen_counter.load(Ordering::SeqCst) != generation {
+                        log::debug!("[TTS] speak aborted (superseded)");
+                        break 'fragments false;
+                    }
+                    let frag_synth_start = std::time::Instant::now();
+                    let mut first_audio_emitted_local = first_audio_emitted;
+                    let outcome = synthesize_into(
+                        backend.as_ref(),
+                        &player,
+                        &frag.text,
+                        &voice,
+                        speed,
+                        Some(&mut || {
+                            if !first_audio_emitted_local {
+                                first_audio_emitted_local = true;
+                                let ttfa_ms = synth_start.elapsed().as_millis() as u64;
+                                let _ = app
+                                    .emit("tts:first-audio", serde_json::json!({ "ms": ttfa_ms }));
+                            }
+                        }),
+                    );
+                    first_audio_emitted = first_audio_emitted_local;
+                    match outcome {
+                        Ok(bytes) => {
+                            if gen_counter.load(Ordering::SeqCst) != generation {
+                                break 'fragments false;
+                            }
+                            let frag_synth_ms = frag_synth_start.elapsed().as_millis() as u64;
+                            if let Some(telemetry) =
+                                app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
+                            {
+                                let key = format!("{}:{}", engine_name, voice);
+                                telemetry.record(&key, frag.text.len(), frag_synth_ms);
+                            }
                             let _ = app.emit(
-                                "tts:waveform",
-                                serde_json::json!({
-                                    "fragment_index": frag.index,
-                                    "values": envelope.values,
-                                    "duration_ms": envelope.duration_ms,
-                                }),
+                                "tts:fragment",
+                                serde_json::json!({ "index": frag.index, "total": frag.total }),
                             );
-                        }
-                        all_chunks.push(bytes);
-                    }
-                    Ok(SynthOutcome::Streamed {
-                        sample_rate,
-                        samples,
-                    }) => {
-                        if gen_counter.load(Ordering::SeqCst) != generation {
-                            return;
-                        }
-                        let frag_synth_ms = frag_synth_start.elapsed().as_millis() as u64;
-                        if let Some(telemetry) =
-                            app.try_state::<Arc<crate::tts::telemetry::Telemetry>>()
-                        {
-                            let key = format!("{}:{}", engine_name, voice);
-                            telemetry.record(&key, frag.text.len(), frag_synth_ms);
-                        }
-                        let _ = app.emit(
-                            "tts:fragment",
-                            serde_json::json!({ "index": frag.index, "total": frag.total }),
-                        );
-                        // Wrap the streamed PCM into a WAV so history + the
-                        // waveform HUD keep working exactly like buffered backends.
-                        match crate::audio_toolkit::encode_wav_bytes_at(&samples, sample_rate) {
-                            Ok(wav) => {
-                                if let Some(envelope) = extract_envelope(&wav, 32) {
-                                    let _ = app.emit(
-                                        "tts:waveform",
-                                        serde_json::json!({
-                                            "fragment_index": frag.index,
-                                            "values": envelope.values,
-                                            "duration_ms": envelope.duration_ms,
-                                        }),
-                                    );
-                                }
-                                all_chunks.push(wav);
+                            // Emit waveform envelope for HUD visualization
+                            if let Some(envelope) = extract_envelope(&bytes, 32) {
+                                let _ = app.emit(
+                                    "tts:waveform",
+                                    serde_json::json!({
+                                        "fragment_index": frag.index,
+                                        "values": envelope.values,
+                                        "duration_ms": envelope.duration_ms,
+                                    }),
+                                );
                             }
-                            Err(e) => {
-                                log::warn!("[TTS] failed to wrap streamed PCM as WAV: {e}");
-                            }
+                            all_chunks.push(bytes);
                         }
-                    }
-                    Err(e) => {
-                        log::error!("[TTS] synthesis failed: {e}");
-                        let _ = app.emit("tts:error", e);
+                        Err(e) => {
+                            log::error!("[TTS] synthesis failed: {e}");
+                            let _ = app.emit("tts:error", e);
+                        }
                     }
                 }
+                true
+            };
+            if !completed {
+                return;
             }
             let synth_total_ms = synth_start.elapsed().as_millis() as u64;
             let _ = app.emit(
@@ -610,7 +453,9 @@ impl TtsManager {
                         }
                     }
                     let synth_start = std::time::Instant::now();
-                    match synthesize_into(backend.as_ref(), &player, &merged, &voice, speed, None) {
+                    let outcome =
+                        synthesize_into(backend.as_ref(), &player, &merged, &voice, speed, None);
+                    match outcome {
                         Ok(_) => {
                             if gen_counter.load(Ordering::SeqCst) == gen {
                                 let synth_ms = synth_start.elapsed().as_millis() as u64;
@@ -638,7 +483,7 @@ impl TtsManager {
         let _ = tx.send((sentence, generation));
     }
 
-    /// Begin a fresh TTS session for streamed sentences (e.g. a new Brain turn).
+    /// Begin a fresh TTS session for a sequence of sentences (e.g. a new Brain turn).
     pub fn begin_session(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.player.stop();
@@ -694,6 +539,34 @@ impl TtsManager {
                 }
             }
         });
+    }
+
+    /// Synthesize and play a test phrase with the specified or active engine.
+    /// Runs synchronously and returns Ok on success or Err on failure,
+    /// so the UI can accurately report whether the engine is working.
+    pub fn test_engine(&self, engine: Option<TtsEngine>) -> Result<(), String> {
+        let settings = get_settings(&self.app);
+        let mut tts_cfg = settings.tts.clone();
+        if let Some(eng) = engine {
+            tts_cfg.engine = eng;
+        }
+
+        let backend = self.build_backend(&tts_cfg)?;
+        let voice = tts_cfg.voice.clone();
+        let speed = tts_cfg.speed;
+        let test_text = "Hello, this is a test of the S2B2S speech engine.";
+
+        self.player.set_volume(tts_cfg.volume);
+        self.player.preopen();
+
+        log::info!(
+            "[TtsManager] Testing engine {:?} with voice '{}'...",
+            tts_cfg.engine,
+            voice
+        );
+        let bytes = backend.synthesize(test_text, &voice, speed)?;
+        self.player.append(bytes);
+        Ok(())
     }
 }
 

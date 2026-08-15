@@ -8,6 +8,7 @@ mod autostart;
 mod brain;
 mod catalog;
 
+pub mod audiocpp_server;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -254,6 +255,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Set AppHandle for persistent Piper server status emissions.
     crate::tts::backends::piper_server::set_app_handle(app_handle.clone());
     crate::tts::local_tts_server::set_local_tts_app_handle(app_handle.clone());
+    crate::audiocpp_server::manager::set_app_handle(app_handle.clone());
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -731,6 +733,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::suspend_all_bindings,
             shortcut::resume_all_bindings,
             shortcut::change_mute_while_recording_setting,
+            shortcut::change_pause_media_while_recording_setting,
+            shortcut::change_selected_microphone_auto_switch_enabled_setting,
+            shortcut::change_selected_microphone_name_pattern_setting,
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_vad_enabled_setting,
@@ -846,6 +851,7 @@ commands::models::rescan_local_models,
             text_replacement::save_text_replacement,
             text_replacement::delete_text_replacement,
             commands::tts::tts_speak,
+            commands::tts::tts_test_engine,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_stop,
             commands::tts::tts_pause,
@@ -857,10 +863,16 @@ commands::models::rescan_local_models,
             commands::tts::get_local_tts_status,
             commands::tts::pocket_import_cloned_voice,
             commands::tts::qwen3_import_cloned_voice,
+            commands::tts::qwen3_get_languages,
             voice_clone_recorder::record_clone_reference,
             commands::tts::change_tts_config,
             commands::tts::tts_play_greeting,
             commands::tts::tts_save_to_file,
+            commands::tts::audiocpp_list_models,
+            commands::tts::audiocpp_download_model,
+            commands::tts::audiocpp_cancel_download,
+            commands::tts::audiocpp_delete_model,
+            commands::tts::audiocpp_set_active_model,
             commands::brain::brain_ask,
             commands::brain::ai_replace_selection,
             commands::brain::ai_replace_abort,
@@ -924,6 +936,7 @@ commands::models::rescan_local_models,
             python_env::EnvProgressEvent,
             python_env::PythonEnvStatus,
             brain::llama_manager::LlamaServerStatus,
+            crate::audiocpp_server::AudioCppDownloadProgress,
         ])
 }
 
@@ -1318,6 +1331,22 @@ pub fn run(cli_args: CliArgs) {
                             Err(e) => log::error!("[Startup] Failed to auto-load Qwen3: {}", e),
                         }
                     }
+                    if settings.tts.engine == crate::settings::TtsEngine::AudioCpp {
+                        log::info!("[Startup] Pre-warming Audio.cpp TTS engine...");
+                        let backend = if settings.tts.audiocpp.backend.is_empty() {
+                            "cuda"
+                        } else {
+                            &settings.tts.audiocpp.backend
+                        };
+                        match crate::audiocpp_server::ensure_running(&tts_handle, backend) {
+                            Ok(_) => {
+                                log::info!(
+                                    "[Startup] Audio.cpp persistent server loaded successfully."
+                                )
+                            }
+                            Err(e) => log::error!("[Startup] Failed to auto-load Audio.cpp: {}", e),
+                        }
+                    }
 
                     // Play the startup greeting once TTS is loaded
                     if settings.tts.play_startup_greeting {
@@ -1470,6 +1499,7 @@ pub fn run(cli_args: CliArgs) {
                 log::info!("[Shutdown] Cleaning up all TTS engines...");
                 crate::tts::backends::piper_server::unload_piper_model();
                 crate::tts::local_tts_server::unload_all();
+                crate::audiocpp_server::unload();
                 if let Some(llama_manager) =
                     app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
                 {

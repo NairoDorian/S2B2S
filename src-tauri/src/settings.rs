@@ -199,6 +199,7 @@ pub enum TtsEngine {
     Openai,
     Elevenlabs,
     Cartesia,
+    AudioCpp,
 }
 
 /// Piper (persistent local HTTP server) configuration.
@@ -454,6 +455,9 @@ pub struct TtsConfig {
     /// Qwen3-TTS engine configuration (model size picker).
     #[serde(default)]
     pub qwen3: Qwen3Config,
+    /// audio.cpp native GGUF engine configuration.
+    #[serde(default)]
+    pub audiocpp: AudioCppConfig,
     /// Number of parallel Kokoro synthesis workers (auto-tuned from CPU count, min 1, max 8).
     #[serde(default = "default_tts_workers")]
     pub tts_workers: u32,
@@ -468,6 +472,50 @@ pub struct TtsConfig {
     pub wake_word: WakeWordConfig,
 }
 
+/// audio.cpp native GGUF TTS configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct AudioCppConfig {
+    /// Model family / identifier for audio.cpp (e.g. "supertonic", "qwen3_tts", "pocket_tts", "dots_tts", "chatterbox", "omnivoice").
+    #[serde(default = "default_audiocpp_model")]
+    pub model: String,
+    /// Selected package / quantization identifier (e.g. "supertonic_3_orig", "qwen3_tts_1_7b_customvoice_q8_0").
+    #[serde(default = "default_audiocpp_quantization")]
+    pub quantization: String,
+    /// Selected voice name or preset id.
+    #[serde(default = "default_audiocpp_voice")]
+    pub voice: String,
+    /// Compute backend: "cuda", "vulkan", "cpu", "metal".
+    #[serde(default = "default_audiocpp_backend")]
+    pub backend: String,
+}
+
+fn default_audiocpp_model() -> String {
+    "supertonic".to_string()
+}
+
+fn default_audiocpp_quantization() -> String {
+    "default".to_string()
+}
+
+fn default_audiocpp_voice() -> String {
+    "default".to_string()
+}
+
+fn default_audiocpp_backend() -> String {
+    "cuda".to_string()
+}
+
+impl Default for AudioCppConfig {
+    fn default() -> Self {
+        Self {
+            model: default_audiocpp_model(),
+            quantization: default_audiocpp_quantization(),
+            voice: default_audiocpp_voice(),
+            backend: default_audiocpp_backend(),
+        }
+    }
+}
+
 /// Qwen3-TTS engine configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Qwen3Config {
@@ -476,16 +524,26 @@ pub struct Qwen3Config {
     /// both use the 12Hz tokenizer (~97ms E2E streaming latency).
     #[serde(default = "default_qwen3_model")]
     pub model: String,
+    /// Language id sent to the server on every synthesis request
+    /// ("auto" = let the model auto-detect per utterance). Lowercase ids
+    /// mirror `talker_config.codec_language_id` (dialects auto-apply).
+    #[serde(default = "default_qwen3_language")]
+    pub language: String,
 }
 
 fn default_qwen3_model() -> String {
     "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice".to_string()
 }
 
+fn default_qwen3_language() -> String {
+    "auto".to_string()
+}
+
 impl Default for Qwen3Config {
     fn default() -> Self {
         Self {
             model: default_qwen3_model(),
+            language: default_qwen3_language(),
         }
     }
 }
@@ -561,6 +619,7 @@ impl Default for TtsConfig {
             elevenlabs: ElevenLabsConfig::default(),
             cartesia: CartesiaConfig::default(),
             qwen3: Qwen3Config::default(),
+            audiocpp: AudioCppConfig::default(),
             tts_workers: default_tts_workers(),
             tts_shorten_first_chunk: default_tts_shorten_first_chunk(),
             tts_save_format: crate::tts::audio_format::AudioFormat::default(),
@@ -651,6 +710,14 @@ pub struct BrainConfig {
     /// VRAM at some quality cost).
     #[serde(default = "default_llama_model_variant")]
     pub llama_model_variant: String,
+    /// Enable internal reasoning/thinking output for models that support it (e.g. Gemma 4 / DeepSeek).
+    /// When disabled, passes `--reasoning off` to llama-server.
+    #[serde(default = "default_brain_reasoning_enabled")]
+    pub reasoning_enabled: bool,
+}
+
+fn default_brain_reasoning_enabled() -> bool {
+    false
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -768,6 +835,7 @@ impl Default for BrainConfig {
             llama_mmproj_quant: default_llama_mmproj_quant(),
             llama_mtp_quant: default_llama_mtp_quant(),
             llama_model_variant: default_llama_model_variant(),
+            reasoning_enabled: default_brain_reasoning_enabled(),
         }
     }
 }
@@ -1137,6 +1205,14 @@ pub struct AppSettings {
     /// None means "average all channels" (original behavior).
     #[serde(default)]
     pub selected_channel: Option<u16>,
+    /// Wildcard name mask (e.g. `*AirPods*`) that, when mic auto-switch is
+    /// enabled, takes priority over the manually selected microphone.
+    #[serde(default)]
+    pub selected_microphone_name_pattern: String,
+    /// Prefer a device matching `selected_microphone_name_pattern` whenever it
+    /// is available, falling back to the manual selection when it is not.
+    #[serde(default)]
+    pub selected_microphone_auto_switch_enabled: bool,
     #[serde(default)]
     pub clamshell_microphone: Option<String>,
     #[serde(default)]
@@ -1204,6 +1280,10 @@ pub struct AppSettings {
     pub text_replacements: Vec<TextReplacement>,
     #[serde(default)]
     pub mute_while_recording: bool,
+    /// Pause currently-playing media (system media sessions) while recording,
+    /// resuming the same sessions afterwards.
+    #[serde(default)]
+    pub pause_media_while_recording: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
@@ -2093,6 +2173,8 @@ pub fn get_default_settings() -> AppSettings {
         always_on_microphone: false,
         selected_microphone: None,
         selected_channel: None,
+        selected_microphone_name_pattern: String::new(),
+        selected_microphone_auto_switch_enabled: false,
         clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
@@ -2123,6 +2205,7 @@ pub fn get_default_settings() -> AppSettings {
         ai_replace_instruction: default_ai_replace_instruction(),
         text_replacements: Vec::new(),
         mute_while_recording: false,
+        pause_media_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
         theme: default_theme(),
@@ -2310,9 +2393,13 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
 }
 
 pub fn get_settings(app: &AppHandle) -> AppSettings {
-    let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
-        .expect("Failed to initialize store");
+    // The store may be unavailable during app teardown while background
+    // threads (clipboard watcher, rdev listener) are still polling — treat
+    // that as "no settings loaded" instead of panicking.
+    let Ok(store) = app.store(crate::portable::store_path(SETTINGS_STORE_PATH)) else {
+        warn!("Failed to initialize store (app shutting down?); using default settings");
+        return get_default_settings();
+    };
 
     let mut updated = false;
     let mut settings = if let Some(settings_value) = store.get("settings") {
@@ -2525,9 +2612,12 @@ fn apply_settings_migrations(
 }
 
 pub fn write_settings(app: &AppHandle, settings: AppSettings) {
-    let store = app
-        .store(crate::portable::store_path(SETTINGS_STORE_PATH))
-        .expect("Failed to initialize store");
+    let Ok(store) = app.store(crate::portable::store_path(SETTINGS_STORE_PATH)) else {
+        // Same teardown race as get_settings: never panic from a background
+        // thread just because the app is already exiting.
+        warn!("Failed to initialize store while saving settings (app shutting down?); changes not persisted");
+        return;
+    };
 
     let encrypted = encrypt_settings_keys(settings);
     store.set("settings", serde_json::to_value(&encrypted).unwrap());

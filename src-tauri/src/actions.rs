@@ -1045,6 +1045,9 @@ impl ShortcutAction for TranscribeAction {
                     if rm_clone.is_recording_readiness_current(generation) {
                         rm_clone.apply_mute();
                     }
+                    if rm_clone.is_recording_readiness_current(generation) {
+                        rm_clone.apply_media_pause();
+                    }
                 });
             }
             Err(e) => {

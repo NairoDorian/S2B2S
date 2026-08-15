@@ -358,7 +358,7 @@ powershell -ExecutionPolicy Bypass .\scripts\compile-qwen3-ggml.ps1
 ### 3. Architecture & Performance Notes
 
 - **PyTorch CUDA Graphs**: Captured automatically during server startup warmup (`_warmup(prefill_len=100)`).
-- **Supported Capabilities**: CustomVoice (12 speakers), Voice Cloning (reference WAV audio), Voice Design (prompt instruction), and Streaming synthesis.
+- **Supported Capabilities**: CustomVoice (12 speakers), Voice Cloning (reference WAV audio), Voice Design (prompt instruction), and whole-utterance buffered synthesis (no chunk streaming — see `docs/qwen3-tts-streaming-note.md`).
 - **VRAM Requirements**: ~1.8 GB VRAM for 1.7B models, ~1.2 GB VRAM for 0.6B models.
 - **Phoneme Bleed Mitigation**: Pre-appends 0.5s silence to reference audio in ICL mode to flush acoustic tokens cleanly.
 - **CPU Fallback**: Automatic graceful fallback to standard `qwen-tts` CPU inference (requires `sox` and `soxr`).
