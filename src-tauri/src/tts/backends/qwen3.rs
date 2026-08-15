@@ -3,19 +3,19 @@ use crate::tts::status::{EngineStatus, WarmEngine};
 use crate::tts::{TtsBackend, Voice};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Built-in speakers of the 12Hz CustomVoice checkpoints (0.6B and 1.7B share
+/// this set). Used as the offline fallback; when the server is running, the
+/// authoritative list is fetched from its `/voices` endpoint instead.
 const QWEN3_VOICES: &[&str] = &[
+    "Vivian",
+    "Serena",
+    "Uncle_Fu",
+    "Dylan",
+    "Eric",
+    "Ryan",
     "Aiden",
-    "Ashley",
-    "Ben",
-    "Cora",
-    "Daniel",
-    "Elsa",
-    "Felix",
-    "Grace",
-    "Hale",
-    "Iris",
-    "Jack",
-    "Katherine",
+    "Ono_Anna",
+    "Sohee",
 ];
 
 const CLONED_VOICES_DIR: &str = "TTS/qwen3-cloned-voices";
@@ -54,6 +54,43 @@ impl Qwen3Backend {
                 language: Some("en".to_string()),
             })
             .collect();
+
+        // The running server knows the loaded model's real speaker list — use
+        // it when available so the picker never offers speakers the model
+        // doesn't have (e.g. after switching model size or versions).
+        if let Some(port) = local_tts_server::get_ready_port("qwen3") {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .unwrap_or_default();
+            let url = format!("http://127.0.0.1:{port}/voices");
+            if let Ok(resp) = client.get(&url).send() {
+                if resp.status().is_success() {
+                    match resp.json::<serde_json::Value>() {
+                        Ok(json) => {
+                            if let Some(list) = json.get("voices").and_then(|v| v.as_array()) {
+                                let live: Vec<Voice> = list
+                                    .iter()
+                                    .filter_map(|v| {
+                                        v.as_str().map(|s| Voice {
+                                            id: s.to_string(),
+                                            name: s.to_string(),
+                                            language: Some("en".to_string()),
+                                        })
+                                    })
+                                    .collect();
+                                if !live.is_empty() {
+                                    voices = live;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::debug!("[Qwen3] Failed to parse /voices response: {e}");
+                        }
+                    }
+                }
+            }
+        }
 
         // Scan for cloned voice WAV files
         let dir = cloned_voices_dir(app);

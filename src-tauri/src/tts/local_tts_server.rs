@@ -458,12 +458,33 @@ fn spawn_start_thread(
     });
 }
 
+/// Non-spawning probe: the port of the engine's server when it is currently
+/// Ready (and its process is still alive), `None` otherwise. Used for
+/// lightweight queries like `/voices` that must never trigger a model load.
+pub fn get_ready_port(engine: &str) -> Option<u16> {
+    let slot = slot_for(engine)?;
+    let state = slot.state().lock().unwrap_or_else(|p| p.into_inner());
+    match &*state {
+        ServerState::Ready(server) => {
+            let is_alive = matches!(
+                server
+                    .child
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .try_wait(),
+                Ok(None)
+            );
+            is_alive.then_some(server.port)
+        }
+        _ => None,
+    }
+}
+
 pub fn ensure_running(
     engine: &str,
     command: String,
     script_args: Vec<String>,
-) -> Result<ServerHandle, String> {
-    let slot = slot_for(engine).ok_or_else(|| format!("Unknown engine: {}", engine))?;
+) -> Result<ServerHandle, String> {    let slot = slot_for(engine).ok_or_else(|| format!("Unknown engine: {}", engine))?;
 
     loop {
         let mut state = slot.state().lock().unwrap_or_else(|p| p.into_inner());
