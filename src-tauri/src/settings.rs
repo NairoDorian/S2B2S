@@ -484,9 +484,42 @@ pub struct AudioCppConfig {
     /// Selected voice name or preset id.
     #[serde(default = "default_audiocpp_voice")]
     pub voice: String,
+    /// Target language for speech synthesis (e.g. "auto", "en", "es", "fr", "de", "ja", "ko", "zh", etc.).
+    #[serde(default = "default_audiocpp_language")]
+    pub language: String,
     /// Compute backend: "cuda", "vulkan", "cpu", "metal".
     #[serde(default = "default_audiocpp_backend")]
     pub backend: String,
+    /// GPU device index (for multi-GPU setups).
+    #[serde(default = "default_audiocpp_device_id")]
+    pub device_id: i32,
+    /// CPU inference thread count.
+    #[serde(default = "default_audiocpp_threads")]
+    pub threads: i32,
+    /// Sampling temperature (0.0 - 2.0). Higher values produce more expressive/variable speech.
+    #[serde(default = "default_audiocpp_temperature")]
+    pub temperature: f32,
+    /// Top-p nucleus sampling (0.0 - 1.0).
+    #[serde(default = "default_audiocpp_top_p")]
+    pub top_p: f32,
+    /// Top-k candidate filtering (0 - 100, 0 disables).
+    #[serde(default = "default_audiocpp_top_k")]
+    pub top_k: i32,
+    /// Repetition penalty (1.0 - 2.0) to prevent syllable repetition.
+    #[serde(default = "default_audiocpp_repetition_penalty")]
+    pub repetition_penalty: f32,
+    /// Guidance / emotion scale for diffusion & flow-matching models (1.0 - 10.0).
+    #[serde(default = "default_audiocpp_guidance_scale")]
+    pub guidance_scale: f32,
+    /// Number of inference / ODE denoising steps (5 - 50).
+    #[serde(default = "default_audiocpp_num_inference_steps")]
+    pub num_inference_steps: i32,
+    /// Random seed for deterministic generation (-1 = random).
+    #[serde(default = "default_audiocpp_seed")]
+    pub seed: i32,
+    /// Optional natural language instructions for promptable/instruct models (e.g. "whispering", "excited").
+    #[serde(default)]
+    pub instructions: String,
 }
 
 fn default_audiocpp_model() -> String {
@@ -501,8 +534,48 @@ fn default_audiocpp_voice() -> String {
     "default".to_string()
 }
 
+fn default_audiocpp_language() -> String {
+    "auto".to_string()
+}
+
 fn default_audiocpp_backend() -> String {
     "cuda".to_string()
+}
+
+fn default_audiocpp_device_id() -> i32 {
+    0
+}
+
+fn default_audiocpp_threads() -> i32 {
+    4
+}
+
+fn default_audiocpp_temperature() -> f32 {
+    0.7
+}
+
+fn default_audiocpp_top_p() -> f32 {
+    0.95
+}
+
+fn default_audiocpp_top_k() -> i32 {
+    50
+}
+
+fn default_audiocpp_repetition_penalty() -> f32 {
+    1.05
+}
+
+fn default_audiocpp_guidance_scale() -> f32 {
+    3.0
+}
+
+fn default_audiocpp_num_inference_steps() -> i32 {
+    10
+}
+
+fn default_audiocpp_seed() -> i32 {
+    -1
 }
 
 impl Default for AudioCppConfig {
@@ -511,7 +584,18 @@ impl Default for AudioCppConfig {
             model: default_audiocpp_model(),
             quantization: default_audiocpp_quantization(),
             voice: default_audiocpp_voice(),
+            language: default_audiocpp_language(),
             backend: default_audiocpp_backend(),
+            device_id: default_audiocpp_device_id(),
+            threads: default_audiocpp_threads(),
+            temperature: default_audiocpp_temperature(),
+            top_p: default_audiocpp_top_p(),
+            top_k: default_audiocpp_top_k(),
+            repetition_penalty: default_audiocpp_repetition_penalty(),
+            guidance_scale: default_audiocpp_guidance_scale(),
+            num_inference_steps: default_audiocpp_num_inference_steps(),
+            seed: default_audiocpp_seed(),
+            instructions: String::new(),
         }
     }
 }
@@ -648,7 +732,10 @@ pub struct BrainConfig {
     /// Dummy prompt sent to warm up the Brain model when it loads into VRAM.
     #[serde(default = "default_warmup_prompt")]
     pub warmup_prompt: String,
-    /// Conversation mode: push_to_talk | toggle | hands_free
+    /// Conversation mode: push_to_talk | toggle | hands_free.
+    /// Stored for persistence but not yet read by Rust logic —
+    /// the actual converse shortcut behaviour is controlled by the shortcut keys.
+    // TODO(future): wire this field to select between PTT / toggle / hands-free in actions.rs
     #[serde(default = "default_conversation_mode")]
     pub conversation_mode: String,
     /// Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms)
@@ -660,13 +747,13 @@ pub struct BrainConfig {
     /// Auto-rearm mic after reply in hands-free mode
     #[serde(default)]
     pub auto_listen: bool,
-    /// Send the WAV audio recording as `input_audio` to the multimodal Brain model
-    /// (Gemma 4 supports native audio transcription as an extra STT pass).
-    #[serde(default)]
+    /// DEPRECATED — superseded by `llama_mmproj_enabled` (the single on/off for all
+    /// multimodal input: audio, image, video). Kept only for backwards-compat with old
+    /// saved store files; never read by any runtime logic.
+    #[serde(default, skip_serializing)]
     pub multimodal_audio_enabled: bool,
-    /// Send a screenshot/image as `image_url` to the multimodal Brain model.
-    /// When enabled, images can be passed alongside text prompts for vision understanding.
-    #[serde(default)]
+    /// DEPRECATED — superseded by `llama_mmproj_enabled`. See `multimodal_audio_enabled`.
+    #[serde(default, skip_serializing)]
     pub multimodal_image_enabled: bool,
     /// Bypass STT models and send raw audio directly to the multimodal Brain
     /// with a fixed transcription prompt. Gemma 4 handles both transcription
@@ -701,10 +788,18 @@ pub struct BrainConfig {
     /// Multimodal projector (mmproj) precision for the local Brain.
     #[serde(default = "default_llama_mmproj_quant")]
     pub llama_mmproj_quant: String,
+    /// Whether the multimodal projector (mmproj) should be loaded.
+    /// When disabled, llama-server runs text-only saving ~1 GB VRAM and ~3% speed.
+    #[serde(default = "default_llama_mmproj_enabled")]
+    pub llama_mmproj_enabled: bool,
     /// MTP draft-model quantization for speculative decoding.
     #[serde(default = "default_llama_mtp_quant")]
     pub llama_mtp_quant: String,
-    /// Local Brain model variant: "standard" (unsloth/gemma-4-E2B-it-qat-GGUF)
+    /// Whether MTP speculative decoding draft model should be loaded.
+    #[serde(default = "default_llama_mtp_enabled")]
+    pub llama_mtp_enabled: bool,
+    /// Local Brain model variant: "standard" / "2b" (unsloth/gemma-4-E2B-it-qat-GGUF),
+    /// "4b" / "e4b" (unsloth/gemma-4-E4B-it-qat-GGUF — higher quality/reasoning),
     /// or "mobile" (unsloth/gemma-4-E2B-it-qat-mobile-GGUF — Google's
     /// mobile-optimized QAT checkpoint, published only as UD-Q2_K_XL, lower
     /// VRAM at some quality cost).
@@ -718,6 +813,14 @@ pub struct BrainConfig {
 
 fn default_brain_reasoning_enabled() -> bool {
     false
+}
+
+fn default_llama_mmproj_enabled() -> bool {
+    true
+}
+
+fn default_llama_mtp_enabled() -> bool {
+    true
 }
 
 fn default_speakable_output_prompt() -> String {
@@ -833,7 +936,9 @@ impl Default for BrainConfig {
             tools_enabled: false,
             llama_model_quant: default_llama_model_quant(),
             llama_mmproj_quant: default_llama_mmproj_quant(),
+            llama_mmproj_enabled: default_llama_mmproj_enabled(),
             llama_mtp_quant: default_llama_mtp_quant(),
+            llama_mtp_enabled: default_llama_mtp_enabled(),
             llama_model_variant: default_llama_model_variant(),
             reasoning_enabled: default_brain_reasoning_enabled(),
         }

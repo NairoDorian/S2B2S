@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "Cài đặt Giọng nói audio.cpp"
+      },
+      "audiocppLanguage": {
+        "label": "Ngôn ngữ",
+        "description": "Ngôn ngữ dùng để tổng hợp giọng nói (Supertonic hỗ trợ 31 ngôn ngữ, Chatterbox 19 ngôn ngữ, OmniVoice 646+ ngôn ngữ).",
+        "optionAuto": "Tự động (Nhận diện / Phản chiếu)"
+      },
+      "audiocppInstructions": {
+        "label": "Chỉ dẫn Phong cách / Cảm xúc",
+        "description": "Câu lệnh ngôn ngữ tự nhiên để định hướng tông giọng, cảm xúc và phong cách phát âm.",
+        "placeholder": "vd: thì thầm nhẹ nhàng, tràn đầy năng lượng và vui vẻ..."
+      },
+      "audiocppAdvanced": {
+        "title": "Thông số Tạo Giọng nói Nâng cao",
+        "description": "Tinh chỉnh nhiệt độ lấy mẫu, xác suất nucleus, phạt lặp từ và độ định hướng cảm xúc."
+      },
+      "audiocppTemperature": {
+        "label": "Nhiệt độ (Temperature)",
+        "description": "Kiểm soát độ biến thiên ngữ âm và tính biểu cảm. Giá trị thấp ổn định hơn; giá trị cao biểu cảm hơn."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Lấy mẫu Nucleus)",
+        "description": "Ngưỡng xác suất tích lũy cho lấy mẫu nucleus."
+      },
+      "audiocppTopK": {
+        "label": "Lấy mẫu Top-K",
+        "description": "Giới hạn lấy mẫu trong K ứng viên có xác suất cao nhất (0 để tắt)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "Phạt Lặp từ",
+        "description": "Phạt các âm tiết lặp lại để ngăn chặn tình trạng nói lắp."
+      },
+      "audiocppGuidanceScale": {
+        "label": "Thang Định hướng / Cảm xúc",
+        "description": "Mức độ bộc lộ cảm xúc và bám sát chỉ dẫn cho mô hình khuếch tán (vd: Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "Số Bước Suy luận",
+        "description": "Số bước khử nhiễu lặp. Nhiều bước hơn tăng độ trung thực nhưng làm tăng độ trễ."
+      },
+      "audiocppSeed": {
+        "label": "Hạt giống Ngẫu nhiên (Seed)",
+        "description": "Đặt hạt giống cố định để tổng hợp giọng nói có thể tái tạo (-1 để ngẫu nhiên).",
+        "randomBtn": "Ngẫu nhiên"
+      },
+      "audiocppHardware": {
+        "title": "Phần cứng & Thực thi Tính toán",
+        "description": "Cấu hình tăng tốc GPU, luồng CPU và số hiệu thiết bị."
+      },
+      "audiocppThreads": {
+        "label": "Luồng Suy luận CPU",
+        "description": "Số luồng xử lý được dùng khi suy luận trên CPU."
+      },
+      "audiocppDeviceId": {
+        "label": "Mã Thiết bị GPU",
+        "description": "Chỉ số GPU dùng cho CUDA / Vulkan trên hệ thống nhiều GPU (mặc định: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "Công cụ Gemma 4 Cục bộ (Llama.cpp)",
+      "setupRequired": "Yêu cầu Cài đặt",
+      "brainDescription": "Để chạy Brain cục bộ, S2B2S thực thi llama.cpp trên máy của bạn. Cần tải xuống mô hình Gemma 4, mô hình bản thảo MTP và máy chiếu thị giác (tổng dung lượng {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Tải xuống Bộ Gemma 4 ({{size}})",
+      "redownloadButton": "Tải xuống / Thay đổi Lượng tử hóa",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "Kiến trúc & Kích thước Mô hình",
+      "quickToggle": {
+        "label": "Mô hình Gemma 4 4B (Chất lượng Nâng cao)",
+        "description": "Chuyển sang Gemma 4 4B IT QAT để có khả năng suy luận sâu hơn và độ chính xác cao hơn."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (Mặc định, Nhanh)",
+        "4b": "Gemma 4 4B IT QAT (Suy luận Nâng cao)",
+        "mobile": "Gemma 4 2B Mobile (VRAM Cực thấp)"
+      },
+      "disabledOption": "Đã tắt (Chỉ văn bản / Không có)",
+      "mmprojToggle": {
+        "label": "Máy chiếu Đa phương thức (Âm thanh & Thị giác)",
+        "description": "Tải máy chiếu hình ảnh và âm thanh. Tắt để chuyển sang chế độ chỉ văn bản và tiết kiệm ~1 GB VRAM."
+      },
+      "mtpToggle": {
+        "label": "Tăng tốc Giải mã Suy đoán MTP",
+        "description": "Bật bản thảo suy đoán multi-token để tạo mã thông báo nhanh hơn tới 2 lần."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

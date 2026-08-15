@@ -250,12 +250,14 @@ pub async fn download_llama_models(
 }
 
 /// Fetch the available Gemma 4 quantizations (model, mmproj, MTP draft) from
-/// the unsloth Hugging Face repo. Falls back to a hardcoded snapshot offline.
+/// the unsloth Hugging Face repo for the requested variant (e.g. "standard" / "2b" or "4b" / "e4b").
+/// Falls back to a hardcoded snapshot offline.
 #[tauri::command]
 #[specta::specta]
-pub async fn fetch_gemma4_quants() -> Result<crate::brain::llama_manager::Gemma4QuantCatalog, String>
-{
-    Ok(crate::brain::llama_manager::fetch_gemma4_quant_catalog().await)
+pub async fn fetch_gemma4_quants(
+    variant: Option<String>,
+) -> Result<crate::brain::llama_manager::Gemma4QuantCatalog, String> {
+    Ok(crate::brain::llama_manager::fetch_gemma4_quant_catalog(variant.as_deref()).await)
 }
 
 #[tauri::command]

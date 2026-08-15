@@ -183,19 +183,17 @@ if printf '%s\n' "${MODELS[@]}" | grep -qx "brain"; then
     BRAIN_DIR="$MODELS_PATH/Brain/llama_cpp"
     mkdir_p "$BRAIN_DIR"
 
-    # Gemma-4-E2B GGUF files (~2 GB each)
-    GEMMA_BASE="https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main"
-    GEMMA_FILES=(
-        "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
-        "mmproj-F16.gguf"
-        "mtp-gemma-4-E2B-it.gguf"
-    )
-    for f in "${GEMMA_FILES[@]}"; do
-        download_file \
-            "$GEMMA_BASE/$f" \
-            "$BRAIN_DIR/$f" \
-            "Brain: $f"
-    done
+    if [[ " ${MODELS[@]} " =~ " brain-4b " ]]; then
+        GEMMA_BASE="https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/main"
+        download_file "$GEMMA_BASE/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf" "$BRAIN_DIR/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf" "Brain (4B): gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf"
+        download_file "$GEMMA_BASE/mmproj-F16.gguf" "$BRAIN_DIR/mmproj-gemma-4-E4B-F16.gguf" "Brain (4B): mmproj-gemma-4-E4B-F16.gguf"
+        download_file "$GEMMA_BASE/MTP/mtp-gemma-4-E4B-it-Q4_0.gguf" "$BRAIN_DIR/mtp-gemma-4-E4B-it-Q4_0.gguf" "Brain (4B): mtp-gemma-4-E4B-it-Q4_0.gguf"
+    else
+        GEMMA_BASE="https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main"
+        download_file "$GEMMA_BASE/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf" "$BRAIN_DIR/gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf" "Brain (2B): gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
+        download_file "$GEMMA_BASE/mmproj-F16.gguf" "$BRAIN_DIR/mmproj-gemma-4-E2B-F16.gguf" "Brain (2B): mmproj-gemma-4-E2B-F16.gguf"
+        download_file "$GEMMA_BASE/mtp-gemma-4-E2B-it.gguf" "$BRAIN_DIR/mtp-gemma-4-E2B-it.gguf" "Brain (2B): mtp-gemma-4-E2B-it.gguf"
+    fi
 
     echo ""
     echo "  NOTE: Place additional GGUF model files in: $BRAIN_DIR"

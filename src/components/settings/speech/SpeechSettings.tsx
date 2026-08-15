@@ -12,6 +12,7 @@ import { commands } from "@/bindings";
 import type { TtsConfig, TtsEngine, Voice } from "@/bindings";
 import { ExternalLink, Mic, Terminal, Upload } from "lucide-react";
 import { AudioCppModelManager } from "./AudioCppModelManager";
+import { AudioCppParameters } from "./AudioCppParameters";
 
 const ENGINES: TtsEngine[] = [
   "audio_cpp",
@@ -467,40 +468,7 @@ export const SpeechSettings: React.FC = () => {
 
       {tts.engine === "audio_cpp" && (
         <>
-          <SettingsGroup title={t("settings.speech.audiocppBackend.group")}>
-            <SettingContainer
-              title={t("settings.speech.audiocppBackend.label")}
-              description={t("settings.speech.audiocppBackend.description")}
-              grouped
-            >
-              <Dropdown
-                options={[
-                  {
-                    value: "cuda",
-                    label: t("settings.speech.audiocppBackend.cuda"),
-                  },
-                  {
-                    value: "vulkan",
-                    label: t("settings.speech.audiocppBackend.vulkan"),
-                  },
-                  {
-                    value: "cpu",
-                    label: t("settings.speech.audiocppBackend.cpu"),
-                  },
-                ]}
-                selectedValue={tts.audiocpp?.backend ?? "cuda"}
-                onSelect={async (value) => {
-                  update({
-                    audiocpp: {
-                      ...tts.audiocpp,
-                      backend: value,
-                    },
-                  });
-                  await commands.ttsUnloadEngine();
-                }}
-              />
-            </SettingContainer>
-          </SettingsGroup>
+          <AudioCppParameters tts={tts} update={update} />
 
           <SettingsGroup
             title={t("settings.speech.audiocppManager.groupTitle")}

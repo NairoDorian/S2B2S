@@ -92,6 +92,23 @@ const LlamaDownloadPanel: React.FC<{
 
 const LlamaStatusCard: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettings();
+  const variant = settings?.brain?.llama_model_variant ?? "standard";
+  const quant = settings?.brain?.llama_model_quant ?? "Q2_K_XL";
+  const mmprojEnabled =
+    (settings?.brain?.llama_mmproj_enabled ?? true) &&
+    settings?.brain?.llama_mmproj_quant !== "disabled";
+  const mtpEnabled =
+    (settings?.brain?.llama_mtp_enabled ?? true) &&
+    settings?.brain?.llama_mtp_quant !== "disabled";
+
+  const modelLabel =
+    variant === "4b" || variant === "e4b"
+      ? `Gemma 4 4B (UD-${quant})`
+      : variant === "mobile"
+        ? `Gemma 4 2B Mobile (UD-${quant})`
+        : `Gemma 4 2B (UD-${quant})`;
+
   return (
     <div className="p-4 rounded-lg border border-green-500/10 bg-green-500/[0.02] backdrop-blur-sm grid grid-cols-2 gap-3 text-xs">
       <div className="col-span-2 border-b border-white/5 pb-2 mb-1 flex items-center justify-between">
@@ -107,16 +124,16 @@ const LlamaStatusCard: React.FC = () => {
         <span className="text-mid-gray block">
           {t("llamaCpp.localGemma.status.model")}
         </span>
-        <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.modelValue")}
-        </span>
+        <span className="font-medium text-text">{modelLabel}</span>
       </div>
       <div>
         <span className="text-mid-gray block">
           {t("llamaCpp.localGemma.status.mtpAcceleration")}
         </span>
         <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.mtpEnabledTokens")}
+          {mtpEnabled
+            ? `${t("llamaCpp.localGemma.status.mtpEnabled")} (${settings?.brain?.llama_mtp_quant ?? "Q4_0"})`
+            : t("llamaCpp.localGemma.disabledOption")}
         </span>
       </div>
       <div>
@@ -124,7 +141,9 @@ const LlamaStatusCard: React.FC = () => {
           {t("llamaCpp.localGemma.status.visionComponent")}
         </span>
         <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.visionDisabled")}
+          {mmprojEnabled
+            ? `Enabled (${settings?.brain?.llama_mmproj_quant ?? "F16"})`
+            : t("llamaCpp.localGemma.status.visionDisabled")}
         </span>
       </div>
       <div>

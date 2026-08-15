@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp Настройки на Речта"
+      },
+      "audiocppLanguage": {
+        "label": "Език",
+        "description": "Език, използван за синтез на реч (Supertonic поддържа 31 езика, Chatterbox 19 езика, OmniVoice 646+ езика).",
+        "optionAuto": "Автоматично (Разпознаване / Огледално)"
+      },
+      "audiocppInstructions": {
+        "label": "Промпт за Стил / Емоция",
+        "description": "Инструкция на естествен език за насочване на тона, емоцията и стила на изказ.",
+        "placeholder": "напр. тих шепот, енергичен и радостен..."
+      },
+      "audiocppAdvanced": {
+        "title": "Разширени Параметри на Генериране",
+        "description": "Фина настройка на температурата на вземане на проби, вероятността nucleus, наказанието за повторение и скалата за водене."
+      },
+      "audiocppTemperature": {
+        "label": "Температура",
+        "description": "Контролира фонетичното разнообразие и експресивността. По-ниските стойности са по-стабилни; по-високите по-експресивни."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Nucleus вземане на проби)",
+        "description": "Праг на вероятностната маса за nucleus вземане на проби."
+      },
+      "audiocppTopK": {
+        "label": "Top-K Вземане на проби",
+        "description": "Ограничава извадката до K най-вероятни кандидати (0 за деактивиране)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "Наказание за Повторение",
+        "description": "Наказва повтарящи се срички за предотвратяване на заекване."
+      },
+      "audiocppGuidanceScale": {
+        "label": "Скала за Водене / Емоция",
+        "description": "Сила на емоционалното изразяване и воденето за дифузионни модели (напр. Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "Стъпки на Инференс",
+        "description": "Брой стъпки за премахване на шум. Повече стъпки подобряват качеството за сметка на времето за изчисление."
+      },
+      "audiocppSeed": {
+        "label": "Детерминистично Семе (Seed)",
+        "description": "Задайте фиксирано семе за възпроизводим синтез на реч (-1 за случайно).",
+        "randomBtn": "Случайно"
+      },
+      "audiocppHardware": {
+        "title": "Хардуерно Изпълнение и Изчисления",
+        "description": "Конфигурирайте GPU ускорение, CPU нишки и индекси на устройства."
+      },
+      "audiocppThreads": {
+        "label": "CPU Нишки за Инференс",
+        "description": "Брой изчислителни нишки, използвани при CPU инференс."
+      },
+      "audiocppDeviceId": {
+        "label": "GPU ID на Устройство",
+        "description": "GPU индекс за CUDA / Vulkan в системи с множество карти (по подразбиране: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "Локален Gemma 4 двигател (Llama.cpp)",
+      "setupRequired": "Изисква се настройка",
+      "brainDescription": "За локално стартиране на Brain, S2B2S изпълнява llama.cpp на вашата машина. Необходимо е да изтеглите модела Gemma 4, черновия модел MTP и визуалния проектор (общ размер {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Изтеглете пакета Gemma 4 ({{size}})",
+      "redownloadButton": "Изтегляне / Смяна на квантуване",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "Архитектура и размер на модела",
+      "quickToggle": {
+        "label": "Модел Gemma 4 4B (Повишено качество)",
+        "description": "Превключете към Gemma 4 4B IT QAT за по-дълбоки разсъждения и по-висока точност."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (По подразбиране, Бърз)",
+        "4b": "Gemma 4 4B IT QAT (Разширено разсъждение)",
+        "mobile": "Gemma 4 2B Mobile (Ултра-нисък VRAM)"
+      },
+      "disabledOption": "Деактивирано (Само текст / Няма)",
+      "mmprojToggle": {
+        "label": "Мултимодален проектор (Звук и Визия)",
+        "description": "Зарежда визуален и аудио проектор. Изключете за текстов режим и спестяване на ~1 GB VRAM."
+      },
+      "mtpToggle": {
+        "label": "MTP Спекулативно декодиране",
+        "description": "Активирайте чернова за до 2 пъти по-бързо генериране на токени."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

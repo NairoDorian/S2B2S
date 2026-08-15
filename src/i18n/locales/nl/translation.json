@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp Spraakinstellingen"
+      },
+      "audiocppLanguage": {
+        "label": "Taal",
+        "description": "Taal voor spraaksynthese (Supertonic ondersteunt 31 talen, Chatterbox 19 talen, OmniVoice 646+ talen).",
+        "optionAuto": "Automatisch (Detecteren / Spiegelen)"
+      },
+      "audiocppInstructions": {
+        "label": "Stijl- / Emotie-instructie",
+        "description": "Natuurlijke taalinstructie om toon, emotie en spreekstijl te sturen.",
+        "placeholder": "bijv. zacht fluisterend, energiek en vrolijk..."
+      },
+      "audiocppAdvanced": {
+        "title": "Geavanceerde Generatieparameters",
+        "description": "Stel bemonsteringstemperatuur, nucleus-waarschijnlijkheid, herhalingsstraf en sturingsschaal fijn af."
+      },
+      "audiocppTemperature": {
+        "label": "Temperatuur",
+        "description": "Regelt fonetische variatie en expressiviteit. Lagere waarden zijn stabieler, hogere expressiever."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Nucleus-sampling)",
+        "description": "Waarschijnlijkheidsdrempel voor nucleus-sampling."
+      },
+      "audiocppTopK": {
+        "label": "Top-K Sampling",
+        "description": "Beperkt sampling tot de top K kandidaten (0 om uit te schakelen)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "Herhalingsstraf",
+        "description": "Bestraft herhaalde lettergrepen om stotteren te voorkomen."
+      },
+      "audiocppGuidanceScale": {
+        "label": "Sturings- / Emotieschaal",
+        "description": "Kracht van emotionele expressie en sturing voor diffusiemodellen (bijv. Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "Inferentiestappen",
+        "description": "Aantal iteratieve ontruisingsstappen. Meer stappen verhogen de audiokwaliteit ten koste van latentie."
+      },
+      "audiocppSeed": {
+        "label": "Deterministische Seed",
+        "description": "Stel een vaste seed in voor reproduceerbare spraaksynthese (-1 voor willekeurig).",
+        "randomBtn": "Willekeurig"
+      },
+      "audiocppHardware": {
+        "title": "Hardware- & Rekenuitvoering",
+        "description": "Configureer GPU-versnelling, CPU-threads en apparaat-indices."
+      },
+      "audiocppThreads": {
+        "label": "CPU-inferentiethreads",
+        "description": "Aantal reken-threads tijdens CPU-inferentie."
+      },
+      "audiocppDeviceId": {
+        "label": "GPU-apparaat-ID",
+        "description": "GPU-index voor CUDA / Vulkan in multi-GPU-systemen (standaard: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "Lokale Gemma 4 Engine (Llama.cpp)",
+      "setupRequired": "Installatie vereist",
+      "brainDescription": "Om Brain lokaal uit te voeren, compileert en draait S2B2S llama.cpp. Het Gemma 4 model, MTP draft-model en visieprojector moeten worden gedownload (totale grootte {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Download Gemma 4 Suite ({{size}})",
+      "redownloadButton": "Downloaden / Kwantisatie wisselen",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "Modelarchitectuur & Grootte",
+      "quickToggle": {
+        "label": "Gemma 4 4B Model (Verbeterde Kwaliteit)",
+        "description": "Schakel over naar Gemma 4 4B IT QAT voor diepere redeneringen en hogere nauwkeurigheid."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (Standaard, Snel)",
+        "4b": "Gemma 4 4B IT QAT (Geavanceerd Redeneren)",
+        "mobile": "Gemma 4 2B Mobile (Ultra-laag VRAM)"
+      },
+      "disabledOption": "Uitgeschakeld (Alleen tekst / Geen)",
+      "mmprojToggle": {
+        "label": "Multimodale projector (Geluid & Visie)",
+        "description": "Laadt de visie- en audioprojector. Schakel uit voor alleen-tekstmodus om ~1 GB VRAM te besparen."
+      },
+      "mtpToggle": {
+        "label": "MTP speculatieve decodering versnelling",
+        "description": "Schakel multi-token draft in voor tot 2x snellere tokengeneratie."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

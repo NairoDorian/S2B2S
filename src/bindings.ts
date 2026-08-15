@@ -341,7 +341,7 @@ export const commands = {
 	/**  List models available at the configured Brain endpoint (Ollama, LM Studio, cloud…). */
 	fetchBrainModels: () => typedError<string[], string>(__TAURI_INVOKE("fetch_brain_models")),
 	/**  Replace the whole Brain configuration (endpoint, model, prompt, toggles). */
-	changeBrainConfig: (config: BrainConfig) => typedError<null, string>(__TAURI_INVOKE("change_brain_config", { config })),
+	changeBrainConfig: (config: BrainConfig_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_brain_config", { config })),
 	setBrainProvider: (providerId: string) => typedError<null, string>(__TAURI_INVOKE("set_brain_provider", { providerId })),
 	changeBrainBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_base_url_setting", { providerId, baseUrl })),
 	changeBrainApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_api_key_setting", { providerId, apiKey })),
@@ -349,9 +349,10 @@ export const commands = {
 	downloadLlamaModels: () => typedError<null, string>(__TAURI_INVOKE("download_llama_models")),
 	/**
 	 *  Fetch the available Gemma 4 quantizations (model, mmproj, MTP draft) from
-	 *  the unsloth Hugging Face repo. Falls back to a hardcoded snapshot offline.
+	 *  the unsloth Hugging Face repo for the requested variant (e.g. "standard" / "2b" or "4b" / "e4b").
+	 *  Falls back to a hardcoded snapshot offline.
 	 */
-	fetchGemma4Quants: () => typedError<Gemma4QuantCatalog, string>(__TAURI_INVOKE("fetch_gemma4_quants")),
+	fetchGemma4Quants: (variant: string | null) => typedError<Gemma4QuantCatalog, string>(__TAURI_INVOKE("fetch_gemma4_quants", { variant })),
 	getLlamaModelsStatus: () => typedError<boolean, string>(__TAURI_INVOKE("get_llama_models_status")),
 	isLlamaDownloading: () => typedError<boolean, string>(__TAURI_INVOKE("is_llama_downloading")),
 	/**
@@ -592,7 +593,7 @@ export type AppSettings_Deserialize = {
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
 	tts?: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
-	brain?: BrainConfig,
+	brain?: BrainConfig_Deserialize,
 	long_audio_model?: string | null,
 	long_audio_threshold_seconds?: number | null,
 	noise_suppression_enabled?: boolean,
@@ -776,7 +777,7 @@ export type AppSettings_Serialize = {
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
 	tts: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
-	brain: BrainConfig,
+	brain: BrainConfig_Serialize,
 	long_audio_model: string | null,
 	long_audio_threshold_seconds: number | null,
 	noise_suppression_enabled: boolean,
@@ -844,8 +845,30 @@ export type AudioCppConfig = {
 	quantization?: string,
 	/**  Selected voice name or preset id. */
 	voice?: string,
+	/**  Target language for speech synthesis (e.g. "auto", "en", "es", "fr", "de", "ja", "ko", "zh", etc.). */
+	language?: string,
 	/**  Compute backend: "cuda", "vulkan", "cpu", "metal". */
 	backend?: string,
+	/**  GPU device index (for multi-GPU setups). */
+	device_id?: number,
+	/**  CPU inference thread count. */
+	threads?: number,
+	/**  Sampling temperature (0.0 - 2.0). Higher values produce more expressive/variable speech. */
+	temperature?: number | null,
+	/**  Top-p nucleus sampling (0.0 - 1.0). */
+	top_p?: number | null,
+	/**  Top-k candidate filtering (0 - 100, 0 disables). */
+	top_k?: number,
+	/**  Repetition penalty (1.0 - 2.0) to prevent syllable repetition. */
+	repetition_penalty?: number | null,
+	/**  Guidance / emotion scale for diffusion & flow-matching models (1.0 - 10.0). */
+	guidance_scale?: number | null,
+	/**  Number of inference / ODE denoising steps (5 - 50). */
+	num_inference_steps?: number,
+	/**  Random seed for deterministic generation (-1 = random). */
+	seed?: number,
+	/**  Optional natural language instructions for promptable/instruct models (e.g. "whispering", "excited"). */
+	instructions?: string,
 };
 
 export type AudioCppDownloadProgress = {
@@ -925,7 +948,10 @@ export type BindingResponse = {
 };
 
 /**  The "Brain": a streaming LLM subsystem, independent of dictation post-processing. */
-export type BrainConfig = {
+export type BrainConfig = BrainConfig_Serialize | BrainConfig_Deserialize;
+
+/**  The "Brain": a streaming LLM subsystem, independent of dictation post-processing. */
+export type BrainConfig_Deserialize = {
 	enabled: boolean,
 	provider_id: string,
 	providers: PostProcessProvider[],
@@ -943,7 +969,11 @@ export type BrainConfig = {
 	speakable_output_prompt?: string,
 	/**  Dummy prompt sent to warm up the Brain model when it loads into VRAM. */
 	warmup_prompt?: string,
-	/**  Conversation mode: push_to_talk | toggle | hands_free */
+	/**
+	 *  Conversation mode: push_to_talk | toggle | hands_free.
+	 *  Stored for persistence but not yet read by Rust logic —
+	 *  the actual converse shortcut behaviour is controlled by the shortcut keys.
+	 */
 	conversation_mode?: string,
 	/**  Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms) */
 	endpoint_preset?: string,
@@ -952,14 +982,12 @@ export type BrainConfig = {
 	/**  Auto-rearm mic after reply in hands-free mode */
 	auto_listen?: boolean,
 	/**
-	 *  Send the WAV audio recording as `input_audio` to the multimodal Brain model
-	 *  (Gemma 4 supports native audio transcription as an extra STT pass).
+	 *  DEPRECATED — superseded by `llama_mmproj_enabled` (the single on/off for all
+	 *  multimodal input: audio, image, video). Kept only for backwards-compat with old
+	 *  saved store files; never read by any runtime logic.
 	 */
 	multimodal_audio_enabled?: boolean,
-	/**
-	 *  Send a screenshot/image as `image_url` to the multimodal Brain model.
-	 *  When enabled, images can be passed alongside text prompts for vision understanding.
-	 */
+	/**  DEPRECATED — superseded by `llama_mmproj_enabled`. See `multimodal_audio_enabled`. */
 	multimodal_image_enabled?: boolean,
 	/**
 	 *  Bypass STT models and send raw audio directly to the multimodal Brain
@@ -998,10 +1026,18 @@ export type BrainConfig = {
 	llama_model_quant?: string,
 	/**  Multimodal projector (mmproj) precision for the local Brain. */
 	llama_mmproj_quant?: string,
+	/**
+	 *  Whether the multimodal projector (mmproj) should be loaded.
+	 *  When disabled, llama-server runs text-only saving ~1 GB VRAM and ~3% speed.
+	 */
+	llama_mmproj_enabled?: boolean,
 	/**  MTP draft-model quantization for speculative decoding. */
 	llama_mtp_quant?: string,
+	/**  Whether MTP speculative decoding draft model should be loaded. */
+	llama_mtp_enabled?: boolean,
 	/**
-	 *  Local Brain model variant: "standard" (unsloth/gemma-4-E2B-it-qat-GGUF)
+	 *  Local Brain model variant: "standard" / "2b" (unsloth/gemma-4-E2B-it-qat-GGUF),
+	 *  "4b" / "e4b" (unsloth/gemma-4-E4B-it-qat-GGUF — higher quality/reasoning),
 	 *  or "mobile" (unsloth/gemma-4-E2B-it-qat-mobile-GGUF — Google's
 	 *  mobile-optimized QAT checkpoint, published only as UD-Q2_K_XL, lower
 	 *  VRAM at some quality cost).
@@ -1012,6 +1048,98 @@ export type BrainConfig = {
 	 *  When disabled, passes `--reasoning off` to llama-server.
 	 */
 	reasoning_enabled?: boolean,
+};
+
+/**  The "Brain": a streaming LLM subsystem, independent of dictation post-processing. */
+export type BrainConfig_Serialize = {
+	enabled: boolean,
+	provider_id: string,
+	providers: PostProcessProvider[],
+	api_keys: SecretMap,
+	models: { [key in string]: string },
+	system_prompt: string,
+	/**  How many prior turns to keep in the context window (0 = stateless). */
+	context_turns: number,
+	/**  Speak the Brain's reply aloud via the TTS subsystem. */
+	read_aloud: boolean,
+	/**
+	 *  Separate system prompt appended when read-aloud is ON.
+	 *  Instructs the model to answer conversationally for listening.
+	 */
+	speakable_output_prompt: string,
+	/**  Dummy prompt sent to warm up the Brain model when it loads into VRAM. */
+	warmup_prompt: string,
+	/**
+	 *  Conversation mode: push_to_talk | toggle | hands_free.
+	 *  Stored for persistence but not yet read by Rust logic —
+	 *  the actual converse shortcut behaviour is controlled by the shortcut keys.
+	 */
+	conversation_mode: string,
+	/**  Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms) */
+	endpoint_preset: string,
+	/**  Headphone mode — enables barge-in during TTS playback */
+	headphone_mode: boolean,
+	/**  Auto-rearm mic after reply in hands-free mode */
+	auto_listen: boolean,
+	/**
+	 *  Bypass STT models and send raw audio directly to the multimodal Brain
+	 *  with a fixed transcription prompt. Gemma 4 handles both transcription
+	 *  and response using its native audio understanding.
+	 */
+	brain_only_transcription: boolean,
+	/**
+	 *  Language the Brain should reply in. "auto" (default) mirrors the
+	 *  huggingface/speech-to-speech `--language auto` + `--enable_lang_prompt`
+	 *  behaviour: the conversation passes the effective STT language (the
+	 *  selected language, or the OS input source for "os_input") so the model
+	 *  replies in the same language it was spoken to. Set a concrete BCP-47
+	 *  code (e.g. "es", "fr-FR") to force a fixed reply language regardless of
+	 *  input. Large models usually infer the language from context; this hint
+	 *  mainly helps smaller local models.
+	 */
+	reply_language: string,
+	/**
+	 *  Compress old conversation turns into a short summary when the context
+	 *  window fills up (dense-JSON summarization, single-flight background
+	 *  task). When disabled, oldest turns are simply dropped.
+	 */
+	compaction_enabled: boolean,
+	/**
+	 *  Allow the Brain to invoke built-in offline tools (current time,
+	 *  clipboard read/write) via `<code>` blocks, with results fed back to
+	 *  the model in a follow-up turn.
+	 */
+	tools_enabled: boolean,
+	/**
+	 *  Gemma 4 E2B GGUF quantization for the local llama.cpp Brain (e.g.
+	 *  "Q2_K_XL", "Q4_K_XL"). The matching `gemma-4-E2B-it-qat-UD-<quant>.gguf`
+	 *  is downloaded from the unsloth HF repo and loaded by llama-server.
+	 */
+	llama_model_quant: string,
+	/**  Multimodal projector (mmproj) precision for the local Brain. */
+	llama_mmproj_quant: string,
+	/**
+	 *  Whether the multimodal projector (mmproj) should be loaded.
+	 *  When disabled, llama-server runs text-only saving ~1 GB VRAM and ~3% speed.
+	 */
+	llama_mmproj_enabled: boolean,
+	/**  MTP draft-model quantization for speculative decoding. */
+	llama_mtp_quant: string,
+	/**  Whether MTP speculative decoding draft model should be loaded. */
+	llama_mtp_enabled: boolean,
+	/**
+	 *  Local Brain model variant: "standard" / "2b" (unsloth/gemma-4-E2B-it-qat-GGUF),
+	 *  "4b" / "e4b" (unsloth/gemma-4-E4B-it-qat-GGUF — higher quality/reasoning),
+	 *  or "mobile" (unsloth/gemma-4-E2B-it-qat-mobile-GGUF — Google's
+	 *  mobile-optimized QAT checkpoint, published only as UD-Q2_K_XL, lower
+	 *  VRAM at some quality cost).
+	 */
+	llama_model_variant: string,
+	/**
+	 *  Enable internal reasoning/thinking output for models that support it (e.g. Gemma 4 / DeepSeek).
+	 *  When disabled, passes `--reasoning off` to llama-server.
+	 */
+	reasoning_enabled: boolean,
 };
 
 export type CartesiaConfig = {

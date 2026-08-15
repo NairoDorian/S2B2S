@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "Paramètres Vocaux audio.cpp"
+      },
+      "audiocppLanguage": {
+        "label": "Langue",
+        "description": "Langue utilisée pour la synthèse vocale (Supertonic prend en charge 31 langues, Chatterbox 19 langues, OmniVoice 646+ langues).",
+        "optionAuto": "Auto (Détection / Miroir)"
+      },
+      "audiocppInstructions": {
+        "label": "Consigne de Style / Émotion",
+        "description": "Instruction en langage naturel pour guider le ton, l'émotion et le style de prononciation des modèles compatibles.",
+        "placeholder": "ex. chuchoter doucement, énergique et joyeux..."
+      },
+      "audiocppAdvanced": {
+        "title": "Paramètres de Génération Avancés",
+        "description": "Ajustez la température d'échantillonnage, la probabilité nucleus, la pénalité de répétition et le guidage."
+      },
+      "audiocppTemperature": {
+        "label": "Température",
+        "description": "Contrôle la variation phonétique et l'expressivité. Des valeurs basses sont plus stables, des valeurs hautes plus expressives."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Échantillonnage Nucleus)",
+        "description": "Seuil de masse de probabilité pour l'échantillonnage nucleus."
+      },
+      "audiocppTopK": {
+        "label": "Échantillonnage Top-K",
+        "description": "Restreint l'échantillonnage aux K candidats les plus probables (0 pour désactiver)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "Pénalité de Répétition",
+        "description": "Pénalise la répétition de syllabes pour éviter les bégaiements ou boucles."
+      },
+      "audiocppGuidanceScale": {
+        "label": "Échelle de Guidage / Émotion",
+        "description": "Force de guidage sans classificateur et intensité émotionnelle pour les modèles de diffusion (ex. Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "Étapes d'Inférence",
+        "description": "Nombre d'étapes de débruitage itératif. Des étapes plus élevées augmentent la fidélité au détriment de la latence."
+      },
+      "audiocppSeed": {
+        "label": "Graine Déterministe (Seed)",
+        "description": "Définissez une graine fixe pour une synthèse reproductible (-1 pour aléatoire).",
+        "randomBtn": "Aléatoire"
+      },
+      "audiocppHardware": {
+        "title": "Exécution Matérielle & Calcul",
+        "description": "Configurez l'accélération GPU, les threads CPU et les index d'appareils."
+      },
+      "audiocppThreads": {
+        "label": "Threads d'Inférence CPU",
+        "description": "Nombre de threads de calcul utilisés lors de l'inférence sur CPU."
+      },
+      "audiocppDeviceId": {
+        "label": "Identifiant GPU (Device ID)",
+        "description": "Index du GPU utilisé pour CUDA / Vulkan sur les systèmes multi-GPU (défaut : 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "Moteur local Gemma 4 (Llama.cpp)",
+      "setupRequired": "Configuration requise",
+      "brainDescription": "Pour exécuter Brain localement, S2B2S compile et exécute llama.cpp sur votre machine. Le modèle Gemma 4, le modèle draft MTP et le projecteur visuel doivent être téléchargés (taille totale {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Télécharger la suite Gemma 4 ({{size}})",
+      "redownloadButton": "Télécharger / Changer de quantification",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "Architecture & taille du modèle",
+      "quickToggle": {
+        "label": "Modèle Gemma 4 4B (Qualité supérieure)",
+        "description": "Passez à Gemma 4 4B IT QAT pour un raisonnement plus approfondi et une précision accrue."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (Par défaut, Rapide)",
+        "4b": "Gemma 4 4B IT QAT (Raisonnement avancé)",
+        "mobile": "Gemma 4 2B Mobile (VRAM ultra-faible)"
+      },
+      "disabledOption": "Désactivé (Texte seul / Aucun)",
+      "mmprojToggle": {
+        "label": "Projecteur multimodal (Son & Vision)",
+        "description": "Charge le projecteur visuel et audio. Désactivez pour le mode texte seul et économisez ~1 Go de VRAM."
+      },
+      "mtpToggle": {
+        "label": "Accélération spéculative MTP",
+        "description": "Active l'accélération spéculative multi-tokens pour une génération 2x plus rapide."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

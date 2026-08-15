@@ -28,22 +28,27 @@ const LlamaDownloadPanel: React.FC<{
   const { t } = useTranslation();
   const { settings, updateSetting } = useSettings();
   const brain = settings?.brain;
+  const variant = brain?.llama_model_variant ?? "standard";
   const [catalog, setCatalog] = useState<Gemma4QuantCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  const refreshCatalog = useCallback(async () => {
-    setCatalogError(null);
-    const result = await commands.fetchGemma4Quants();
-    if (result.status === "ok") {
-      setCatalog(result.data);
-    } else {
-      setCatalogError(String(result.error));
-    }
-  }, []);
+  const refreshCatalog = useCallback(
+    async (targetVariant?: string) => {
+      setCatalogError(null);
+      const v = targetVariant ?? variant;
+      const result = await commands.fetchGemma4Quants(v);
+      if (result.status === "ok") {
+        setCatalog(result.data);
+      } else {
+        setCatalogError(String(result.error));
+      }
+    },
+    [variant],
+  );
 
   useEffect(() => {
-    void refreshCatalog();
-  }, [refreshCatalog]);
+    void refreshCatalog(variant);
+  }, [refreshCatalog, variant]);
 
   const quantUpdate = useCallback(
     (patch: Partial<BrainConfig>) => {
@@ -53,11 +58,47 @@ const LlamaDownloadPanel: React.FC<{
     [brain, updateSetting],
   );
 
+  const handleVariantChange = (newVariant: string) => {
+    const is4BVariant = newVariant === "4b" || newVariant === "e4b";
+    const isMobileVariant = newVariant === "mobile";
+    const defaultQuant = isMobileVariant
+      ? "Q2_K_XL"
+      : is4BVariant
+        ? "Q4_K_XL"
+        : "Q2_K_XL";
+    quantUpdate({
+      llama_model_variant: newVariant,
+      llama_model_quant: defaultQuant,
+    });
+    void refreshCatalog(newVariant);
+    void llamaState.refreshStatus();
+  };
+
+  const is4B = variant === "4b" || variant === "e4b";
+  const isMobile = variant === "mobile";
+  const mmprojEnabled =
+    (brain?.llama_mmproj_enabled ?? true) &&
+    brain?.llama_mmproj_quant !== "disabled";
+  const mtpEnabled =
+    (brain?.llama_mtp_enabled ?? true) && brain?.llama_mtp_quant !== "disabled";
+
   const quantOptions = (list: Gemma4QuantCatalog["model"]) =>
     list.map((q) => ({
       value: q.id,
       label: `${q.label} (${(q.size_mb ?? 0).toFixed(0)} MB)`,
     }));
+
+  const modelSize = is4B ? 4.0 : isMobile ? 2.1 : 2.5;
+  const mmprojSize = mmprojEnabled ? 0.95 : 0.0;
+  const mtpSize = mtpEnabled ? 0.06 : 0.0;
+  const totalEstimatedGB = (modelSize + mmprojSize + mtpSize).toFixed(1);
+  const estimatedTotalSize = `~${totalEstimatedGB} GB`;
+
+  const modelDisplayName = is4B
+    ? "Gemma 4 4B IT QAT"
+    : isMobile
+      ? "Gemma 4 2B Mobile"
+      : "Gemma 4 2B IT QAT";
 
   return (
     <div className="p-5 rounded-lg border border-logo-primary/20 bg-gradient-to-br from-logo-primary/5 via-logo-primary/[0.02] to-transparent backdrop-blur-sm space-y-4">
@@ -72,7 +113,9 @@ const LlamaDownloadPanel: React.FC<{
             )}
           </h4>
           <p className="text-xs text-mid-gray max-w-xl">
-            {t("llamaCpp.localGemma.brainDescription")}
+            {t("llamaCpp.localGemma.brainDescription", {
+              size: estimatedTotalSize,
+            })}
           </p>
         </div>
       </div>
@@ -83,36 +126,105 @@ const LlamaDownloadPanel: React.FC<{
         </Alert>
       )}
 
-      {/* Quantization pickers: model GGUF, mmproj precision, MTP draft. */}
+      {/* Model Choice Controls */}
       {brain && (
-        <>
+        <div className="space-y-3">
+          {/* Quick Toggle for 4B vs 2B */}
           <ToggleSwitch
-            checked={brain.llama_model_variant === "mobile"}
-            onChange={(mobile) =>
-              quantUpdate({
-                llama_model_variant: mobile ? "mobile" : "standard",
-                // The mobile checkpoint is only published as Q2_K_XL.
-                ...(mobile ? { llama_model_quant: "Q2_K_XL" } : {}),
-              })
+            checked={is4B}
+            onChange={(checked) =>
+              handleVariantChange(checked ? "4b" : "standard")
             }
-            label={t("llamaCpp.localGemma.mobileVariant.label")}
-            description={t("llamaCpp.localGemma.mobileVariant.description")}
+            label={t("llamaCpp.localGemma.quickToggle.label")}
+            description={t("llamaCpp.localGemma.quickToggle.description")}
             grouped
           />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+          {/* Model Architecture Selector Dropdown */}
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-mid-gray">
+              {t("llamaCpp.localGemma.modelArchitecture")}
+            </span>
+            <Select
+              value={is4B ? "4b" : isMobile ? "mobile" : "standard"}
+              options={[
+                {
+                  value: "standard",
+                  label: t("llamaCpp.localGemma.modelVariant.2b"),
+                },
+                {
+                  value: "4b",
+                  label: t("llamaCpp.localGemma.modelVariant.4b"),
+                },
+                {
+                  value: "mobile",
+                  label: t("llamaCpp.localGemma.modelVariant.mobile"),
+                },
+              ]}
+              isClearable={false}
+              onChange={(value) => value && handleVariantChange(value)}
+            />
+          </div>
+
+          {/* Component Toggles for mmproj and MTP */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <ToggleSwitch
+              checked={brain.llama_mmproj_enabled ?? true}
+              onChange={(enabled) =>
+                quantUpdate({
+                  llama_mmproj_enabled: enabled,
+                  ...(!enabled
+                    ? {}
+                    : {
+                        llama_mmproj_quant:
+                          brain.llama_mmproj_quant === "disabled"
+                            ? "F16"
+                            : (brain.llama_mmproj_quant ?? "F16"),
+                      }),
+                })
+              }
+              label={t("llamaCpp.localGemma.mmprojToggle.label")}
+              description={t("llamaCpp.localGemma.mmprojToggle.description")}
+              grouped
+            />
+            <ToggleSwitch
+              checked={brain.llama_mtp_enabled ?? true}
+              onChange={(enabled) =>
+                quantUpdate({
+                  llama_mtp_enabled: enabled,
+                  ...(!enabled
+                    ? {}
+                    : {
+                        llama_mtp_quant:
+                          brain.llama_mtp_quant === "disabled"
+                            ? "Q4_0"
+                            : (brain.llama_mtp_quant ?? "Q4_0"),
+                      }),
+                })
+              }
+              label={t("llamaCpp.localGemma.mtpToggle.label")}
+              description={t("llamaCpp.localGemma.mtpToggle.description")}
+              grouped
+            />
+          </div>
+
+          {/* Quantization pickers: model GGUF, mmproj precision, MTP draft. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
             <div className="space-y-1">
               <span className="text-xs font-medium text-mid-gray">
                 {t("llamaCpp.localGemma.modelQuant")}
               </span>
               <Select
-                value={brain.llama_model_quant ?? "Q2_K_XL"}
+                value={
+                  brain.llama_model_quant ?? (is4B ? "Q4_K_XL" : "Q2_K_XL")
+                }
                 options={
-                  brain.llama_model_variant === "mobile"
+                  isMobile
                     ? [{ value: "Q2_K_XL", label: "Q2_K_XL (Mobile)" }]
                     : quantOptions(catalog?.model ?? [])
                 }
                 isClearable={false}
-                disabled={brain.llama_model_variant === "mobile"}
+                disabled={isMobile}
                 onChange={(value) =>
                   value && quantUpdate({ llama_model_quant: value })
                 }
@@ -123,12 +235,33 @@ const LlamaDownloadPanel: React.FC<{
                 {t("llamaCpp.localGemma.mmprojQuant")}
               </span>
               <Select
-                value={brain.llama_mmproj_quant ?? "F16"}
-                options={quantOptions(catalog?.mmproj ?? [])}
-                isClearable={false}
-                onChange={(value) =>
-                  value && quantUpdate({ llama_mmproj_quant: value })
+                value={
+                  (brain.llama_mmproj_enabled ?? true)
+                    ? (brain.llama_mmproj_quant ?? "F16")
+                    : "disabled"
                 }
+                options={[
+                  ...quantOptions(catalog?.mmproj ?? []),
+                  {
+                    value: "disabled",
+                    label: t("llamaCpp.localGemma.disabledOption"),
+                  },
+                ]}
+                isClearable={false}
+                disabled={!(brain.llama_mmproj_enabled ?? true)}
+                onChange={(value) => {
+                  if (value === "disabled") {
+                    quantUpdate({
+                      llama_mmproj_enabled: false,
+                      llama_mmproj_quant: "disabled",
+                    });
+                  } else if (value) {
+                    quantUpdate({
+                      llama_mmproj_enabled: true,
+                      llama_mmproj_quant: value,
+                    });
+                  }
+                }}
               />
             </div>
             <div className="space-y-1">
@@ -136,16 +269,37 @@ const LlamaDownloadPanel: React.FC<{
                 {t("llamaCpp.localGemma.mtpQuant")}
               </span>
               <Select
-                value={brain.llama_mtp_quant ?? "Q4_0"}
-                options={quantOptions(catalog?.mtp ?? [])}
-                isClearable={false}
-                onChange={(value) =>
-                  value && quantUpdate({ llama_mtp_quant: value })
+                value={
+                  (brain.llama_mtp_enabled ?? true)
+                    ? (brain.llama_mtp_quant ?? "Q4_0")
+                    : "disabled"
                 }
+                options={[
+                  ...quantOptions(catalog?.mtp ?? []),
+                  {
+                    value: "disabled",
+                    label: t("llamaCpp.localGemma.disabledOption"),
+                  },
+                ]}
+                isClearable={false}
+                disabled={!(brain.llama_mtp_enabled ?? true)}
+                onChange={(value) => {
+                  if (value === "disabled") {
+                    quantUpdate({
+                      llama_mtp_enabled: false,
+                      llama_mtp_quant: "disabled",
+                    });
+                  } else if (value) {
+                    quantUpdate({
+                      llama_mtp_enabled: true,
+                      llama_mtp_quant: value,
+                    });
+                  }
+                }}
               />
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {catalogError && (
@@ -166,7 +320,7 @@ const LlamaDownloadPanel: React.FC<{
             <span className="truncate max-w-[280px]">
               {llamaState.currentFile
                 ? `Downloading ${llamaState.currentFile}...`
-                : "Downloading models..."}
+                : `Downloading ${modelDisplayName}...`}
             </span>
             <span className="flex gap-2">
               <span>
@@ -194,7 +348,9 @@ const LlamaDownloadPanel: React.FC<{
         >
           {llamaState.isDownloaded
             ? t("llamaCpp.localGemma.redownloadButton")
-            : t("llamaCpp.localGemma.downloadButton")}
+            : t("llamaCpp.localGemma.downloadButton", {
+                size: estimatedTotalSize,
+              })}
         </Button>
       )}
     </div>
@@ -204,7 +360,22 @@ const LlamaDownloadPanel: React.FC<{
 const LlamaStatusCard: React.FC = () => {
   const { t } = useTranslation();
   const { settings } = useSettings();
+  const variant = settings?.brain?.llama_model_variant ?? "standard";
   const quant = settings?.brain?.llama_model_quant ?? "Q2_K_XL";
+  const mmprojEnabled =
+    (settings?.brain?.llama_mmproj_enabled ?? true) &&
+    settings?.brain?.llama_mmproj_quant !== "disabled";
+  const mtpEnabled =
+    (settings?.brain?.llama_mtp_enabled ?? true) &&
+    settings?.brain?.llama_mtp_quant !== "disabled";
+
+  const modelLabel =
+    variant === "4b" || variant === "e4b"
+      ? `Gemma 4 4B (UD-${quant})`
+      : variant === "mobile"
+        ? `Gemma 4 2B Mobile (UD-${quant})`
+        : `Gemma 4 2B (UD-${quant})`;
+
   return (
     <div className="p-4 rounded-lg border border-green-500/10 bg-green-500/[0.02] backdrop-blur-sm grid grid-cols-2 gap-3 text-xs">
       <div className="col-span-2 border-b border-white/5 pb-2 mb-1 flex items-center justify-between">
@@ -220,16 +391,16 @@ const LlamaStatusCard: React.FC = () => {
         <span className="text-mid-gray block">
           {t("llamaCpp.localGemma.status.model")}
         </span>
-        <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.modelValue", { quant })}
-        </span>
+        <span className="font-medium text-text">{modelLabel}</span>
       </div>
       <div>
         <span className="text-mid-gray block">
           {t("llamaCpp.localGemma.status.mtpAcceleration")}
         </span>
         <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.mtpEnabled")}
+          {mtpEnabled
+            ? `${t("llamaCpp.localGemma.status.mtpEnabled")} (${settings?.brain?.llama_mtp_quant ?? "Q4_0"})`
+            : t("llamaCpp.localGemma.disabledOption")}
         </span>
       </div>
       <div>
@@ -237,7 +408,9 @@ const LlamaStatusCard: React.FC = () => {
           {t("llamaCpp.localGemma.status.visionComponent")}
         </span>
         <span className="font-medium text-text">
-          {t("llamaCpp.localGemma.status.visionDisabled")}
+          {mmprojEnabled
+            ? `Enabled (${settings?.brain?.llama_mmproj_quant ?? "F16"})`
+            : t("llamaCpp.localGemma.status.visionDisabled")}
         </span>
       </div>
       <div>
@@ -650,24 +823,6 @@ export const BrainSettings: React.FC = () => {
 
       {state.selectedProviderId === "llama_cpp" && (
         <SettingsGroup title={t("settings.brain.multimodal.group")}>
-          <ToggleSwitch
-            checked={brain.multimodal_audio_enabled ?? true}
-            onChange={(multimodal_audio_enabled) =>
-              update({ multimodal_audio_enabled })
-            }
-            label={t("settings.brain.multimodal.audioInput.label")}
-            description={t("settings.brain.multimodal.audioInput.description")}
-            grouped
-          />
-          <ToggleSwitch
-            checked={brain.multimodal_image_enabled ?? false}
-            onChange={(multimodal_image_enabled) =>
-              update({ multimodal_image_enabled })
-            }
-            label={t("settings.brain.multimodal.imageInput.label")}
-            description={t("settings.brain.multimodal.imageInput.description")}
-            grouped
-          />
           <ToggleSwitch
             checked={brain.reasoning_enabled ?? false}
             onChange={(reasoning_enabled) => update({ reasoning_enabled })}

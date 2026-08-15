@@ -199,7 +199,8 @@ pub fn process_continuous_samples(
 
     // 6. Query Brain and play TTS
     let will_play_tts = settings.brain.read_aloud && settings.tts.enabled;
-    let multimodal_audio = settings.brain.multimodal_audio_enabled;
+    // Single mmproj toggle controls all multimodal input (audio/image/video).
+    let multimodal_audio = settings.brain.llama_mmproj_enabled;
 
     // When brain-only transcription is on, bypass STT output and send the
     // fixed transcription prompt + raw audio to the Brain instead.

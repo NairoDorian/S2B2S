@@ -224,6 +224,8 @@ impl BrainClient {
         let mut stream = response.bytes_stream();
         let mut splitter = SentenceSplitter::new(25);
         let mut full = String::new();
+        let mut full_reasoning = String::new();
+        let mut inside_thought_block = false;
         // Buffer partial SSE lines that span chunk boundaries.
         let mut pending = String::new();
         let mut final_timing: Option<BrainTiming> = None;
@@ -303,7 +305,11 @@ impl BrainClient {
                         .and_then(|c| c.delta.reasoning_content.as_ref())
                     {
                         if !reasoning.is_empty() {
-                            log::trace!("[Brain] Reasoning token: {}", reasoning);
+                            if full_reasoning.is_empty() {
+                                log::info!("[Brain] 🧠 Gemma 4 Reasoning stream started...");
+                            }
+                            full_reasoning.push_str(reasoning);
+                            log::info!("[Brain:Reasoning] {}", reasoning);
                         }
                     }
                     if let Some(content) = parsed
@@ -313,14 +319,37 @@ impl BrainClient {
                     {
                         if !content.is_empty() {
                             full.push_str(content);
-                            on_token(content);
-                            for sentence in splitter.push(content) {
-                                on_sentence(sentence);
+                            let (clean_text, thought_text) =
+                                extract_thought_chunk(content, &mut inside_thought_block);
+                            if let Some(thought) = thought_text {
+                                if !thought.is_empty() {
+                                    if full_reasoning.is_empty() {
+                                        log::info!(
+                                            "[Brain] 🧠 Gemma 4 Reasoning stream started..."
+                                        );
+                                    }
+                                    full_reasoning.push_str(&thought);
+                                    log::info!("[Brain:Reasoning] {}", thought);
+                                }
+                            }
+                            if !clean_text.is_empty() {
+                                on_token(&clean_text);
+                                for sentence in splitter.push(&clean_text) {
+                                    on_sentence(sentence);
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+
+        if !full_reasoning.is_empty() {
+            log::info!(
+                "[Brain] 🧠 Gemma 4 Reasoning Completed ({} chars):\n{}",
+                full_reasoning.len(),
+                full_reasoning.trim()
+            );
         }
 
         if let Some(last) = splitter.flush() {
@@ -331,6 +360,57 @@ impl BrainClient {
             timing: final_timing,
         })
     }
+}
+
+/// Helper function to separate `<thought>...</thought>` or `<think>...</think>` tokens
+/// from spoken response text during streaming.
+fn extract_thought_chunk(content: &str, inside_thought: &mut bool) -> (String, Option<String>) {
+    let mut clean = String::new();
+    let mut thought = String::new();
+
+    let mut remaining = content;
+    while !remaining.is_empty() {
+        if *inside_thought {
+            if let Some(pos) = remaining
+                .find("</thought>")
+                .or_else(|| remaining.find("</think>"))
+            {
+                let tag_len = if remaining[pos..].starts_with("</thought>") {
+                    10
+                } else {
+                    8
+                };
+                thought.push_str(&remaining[..pos]);
+                remaining = &remaining[pos + tag_len..];
+                *inside_thought = false;
+            } else {
+                thought.push_str(remaining);
+                remaining = "";
+            }
+        } else if let Some(pos) = remaining
+            .find("<thought>")
+            .or_else(|| remaining.find("<think>"))
+        {
+            let tag_len = if remaining[pos..].starts_with("<thought>") {
+                9
+            } else {
+                7
+            };
+            clean.push_str(&remaining[..pos]);
+            remaining = &remaining[pos + tag_len..];
+            *inside_thought = true;
+        } else {
+            clean.push_str(remaining);
+            remaining = "";
+        }
+    }
+
+    let thought_opt = if thought.is_empty() {
+        None
+    } else {
+        Some(thought)
+    };
+    (clean, thought_opt)
 }
 
 /// Streaming sentence splitter (char-boundary-safe).

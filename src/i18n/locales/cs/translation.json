@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp Nastavení Hlasu"
+      },
+      "audiocppLanguage": {
+        "label": "Jazyk",
+        "description": "Jazyk použitý pro syntézu řeči (Supertonic podporuje 31 jazyků, Chatterbox 19 jazyků, OmniVoice 646+ jazyků).",
+        "optionAuto": "Automaticky (Detekovat / Zrcadlit)"
+      },
+      "audiocppInstructions": {
+        "label": "Instrukce Stylu / Emoce",
+        "description": "Instrukce v přirozeném jazyce pro řízení tónu, emocí a stylu přednesu.",
+        "placeholder": "např. tichý šepot, energický a radostný..."
+      },
+      "audiocppAdvanced": {
+        "title": "Pokročilé Parametry Generování",
+        "description": "Jemné doladění vzorkovací teploty, pravděpodobnosti nucleus, penalizace opakování a škály vedení."
+      },
+      "audiocppTemperature": {
+        "label": "Teplota (Temperature)",
+        "description": "Řídí fonetickou variabilitu a expresivitu. Nižší hodnoty jsou stabilnější, vyšší expresivnější."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Nucleus vzorkování)",
+        "description": "Prahová hodnota kumulativní pravděpodobnosti pro nucleus vzorkování."
+      },
+      "audiocppTopK": {
+        "label": "Top-K Vzorkování",
+        "description": "Omezuje vzorkování na K nejpravděpodobnějších kandidátů (0 pro vypnutí)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "Penalizace Opakování",
+        "description": "Penalizuje opakující se slabiky a slova, aby se zabránilo zadrhávání."
+      },
+      "audiocppGuidanceScale": {
+        "label": "Škála Vedení / Emocí",
+        "description": "Síla emočního vyjádření a vedení pro difuzní modely (např. Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "Kroky Inference",
+        "description": "Počet kroků odšumění. Více kroků zvyšuje kvalitu zvuku za cenu vyšší latence."
+      },
+      "audiocppSeed": {
+        "label": "Deterministické Semínko (Seed)",
+        "description": "Nastavte pevné semínko pro reprodukovatelnou syntézu (-1 pro náhodné).",
+        "randomBtn": "Náhodně"
+      },
+      "audiocppHardware": {
+        "title": "Hardwarové Spuštění a Výpočty",
+        "description": "Konfigurace akcelerace GPU, vláken CPU a indexů zařízení."
+      },
+      "audiocppThreads": {
+        "label": "Vlákna Inference CPU",
+        "description": "Počet výpočetních vláken použitých při inferenci na CPU."
+      },
+      "audiocppDeviceId": {
+        "label": "ID Zařízení GPU",
+        "description": "Index GPU pro CUDA / Vulkan v multi-GPU systémech (výchozí: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "Lokální engine Gemma 4 (Llama.cpp)",
+      "setupRequired": "Vyžadováno nastavení",
+      "brainDescription": "Pro lokální spuštění Brain kompiluje a spouští S2B2S llama.cpp na vašem počítači. Je nutné stáhnout model Gemma 4, draft model MTP a vizuální projektor (celková velikost {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Stáhnout balíček Gemma 4 ({{size}})",
+      "redownloadButton": "Stáhnout / Změnit kvantizaci",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "Architektura a velikost modelu",
+      "quickToggle": {
+        "label": "Model Gemma 4 4B (Vyšší kvalita)",
+        "description": "Přepněte na Gemma 4 4B IT QAT pro hlubší uvažování a vyšší přesnost."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (Výchozí, Rychlý)",
+        "4b": "Gemma 4 4B IT QAT (Pokročilé uvažování)",
+        "mobile": "Gemma 4 2B Mobile (Extrémně nízká VRAM)"
+      },
+      "disabledOption": "Zakázáno (Pouze text / Žádný)",
+      "mmprojToggle": {
+        "label": "Multimodální projektor (Zvuk a Obraz)",
+        "description": "Načte projektor obrazu a zvuku. Vypněte pro režim pouze textu a ušetřete ~1 GB VRAM."
+      },
+      "mtpToggle": {
+        "label": "Akcelerace spekulativního dekódování MTP",
+        "description": "Povolte multi-token koncept pro až 2x rychlejší generování tokenů."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

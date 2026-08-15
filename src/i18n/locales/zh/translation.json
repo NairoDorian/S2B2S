@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp 语音设置"
+      },
+      "audiocppLanguage": {
+        "label": "语言",
+        "description": "用于语音合成的目标语言（Supertonic 支持 31 种语言，Chatterbox 支持 19 种语言，OmniVoice 支持 646+ 种语言）。",
+        "optionAuto": "自动（检测 / 镜像）"
+      },
+      "audiocppInstructions": {
+        "label": "风格 / 情绪提示词",
+        "description": "用于引导语气、情绪和朗读风格的自然语言指令。",
+        "placeholder": "例如：轻声耳语、欢快活泼..."
+      },
+      "audiocppAdvanced": {
+        "title": "高级生成参数",
+        "description": "微调采样温度、核采样概率、重复惩罚和引导强度。"
+      },
+      "audiocppTemperature": {
+        "label": "采样温度 (Temperature)",
+        "description": "控制语音发音的多样性和表现力。数值越低越平稳，数值越高越生动。"
+      },
+      "audiocppTopP": {
+        "label": "Top-P (核采样)",
+        "description": "核采样概率阈值，仅从最高概率质量的候选中采样。"
+      },
+      "audiocppTopK": {
+        "label": "Top-K 采样",
+        "description": "限制仅从前 K 个候选词中采样（0 为禁用）。"
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "重复惩罚",
+        "description": "惩罚重复的音节和词语，防止结巴或循环。"
+      },
+      "audiocppGuidanceScale": {
+        "label": "引导 / 情绪强度",
+        "description": "扩散和流匹配模型（如 Chatterbox）的情绪夸张与引导强度。"
+      },
+      "audiocppInferenceSteps": {
+        "label": "推理步数",
+        "description": "迭代去噪步数。步数越多音质越精细，但会增加生成时间。"
+      },
+      "audiocppSeed": {
+        "label": "确定性随机种子 (Seed)",
+        "description": "设置固定种子以获得完全一致的生成结果（-1 为完全随机）。",
+        "randomBtn": "随机化"
+      },
+      "audiocppHardware": {
+        "title": "硬件与计算执行",
+        "description": "配置 GPU 加速、CPU 推理线程数和设备编号。"
+      },
+      "audiocppThreads": {
+        "label": "CPU 推理线程数",
+        "description": "CPU 推理时使用的计算线程数。"
+      },
+      "audiocppDeviceId": {
+        "label": "GPU 设备 ID",
+        "description": "多 GPU 系统中用于 CUDA / Vulkan 的 GPU 索引（默认：0）。"
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "本地 Gemma 4 引擎 (Llama.cpp)",
+      "setupRequired": "需要设置",
+      "brainDescription": "为了在本地运行 Brain，S2B2S 会在您的机器上编译并执行 llama.cpp。需要下载 Gemma 4 专属模型、MTP 预测草稿模型以及视觉投影器 (总大小 {{size}})。",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "下载 Gemma 4 本地套件 ({{size}})",
+      "redownloadButton": "下载 / 切换量化版本",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "模型架构与规格",
+      "quickToggle": {
+        "label": "Gemma 4 4B 模型 (更高品质)",
+        "description": "切换到 Gemma 4 4B IT QAT 以获得更深层次的推理与更高的准确度。"
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (默认，超快)",
+        "4b": "Gemma 4 4B IT QAT (增强推理)",
+        "mobile": "Gemma 4 2B Mobile (超低显存)"
+      },
+      "disabledOption": "已禁用 (纯文本 / 无)",
+      "mmprojToggle": {
+        "label": "多模态投影器 (声音与视觉)",
+        "description": "加载视觉和音频投影器以支持图像与直接音频输入。关闭以启用纯文本模式并节省约 1 GB 显存。"
+      },
+      "mtpToggle": {
+        "label": "MTP 投机性解码加速",
+        "description": "启用多 Token 投机草稿加速，推理生成速度提升最高达 2 倍。"
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

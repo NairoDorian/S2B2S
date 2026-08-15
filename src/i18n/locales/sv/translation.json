@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp Talinställningar"
+      },
+      "audiocppLanguage": {
+        "label": "Språk",
+        "description": "Språk som används för talsyntes (Supertonic stöder 31 språk, Chatterbox 19 språk, OmniVoice 646+ språk).",
+        "optionAuto": "Auto (Upptäck / Spegla)"
+      },
+      "audiocppInstructions": {
+        "label": "Stil- / Känsloprompt",
+        "description": "Instruktion i naturligt språk för att styra ton, känsla och uttal.",
+        "placeholder": "t.ex. viskande mjukt, energisk och glad..."
+      },
+      "audiocppAdvanced": {
+        "title": "Avancerade Genereringsparametrar",
+        "description": "Finjustera samplingstemperatur, nucleus-sannolikhet, upprepningsstraff och guidningsskala."
+      },
+      "audiocppTemperature": {
+        "label": "Temperatur",
+        "description": "Styr fonetisk variation och uttrycksfullhet. Lägre värden är stabilare, högre mer uttrycksfulla."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Nucleus-sampling)",
+        "description": "Sannolikhetströskel för nucleus-sampling."
+      },
+      "audiocppTopK": {
+        "label": "Top-K Sampling",
+        "description": "Begränsar samplingen till de K mest sannolika kandidaterna (0 för att inaktivera)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "Upprepningsstraff",
+        "description": "Straffar upprepade stavelser för att förhindra stamning."
+      },
+      "audiocppGuidanceScale": {
+        "label": "Guidnings- / Känsloskala",
+        "description": "Styrka för känslomässigt uttryck och guidning för diffusionsmodeller (t.ex. Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "Inferenssteg",
+        "description": "Antal brusreduceringssteg. Fler steg ger högre ljudkvalitet på bekostnad av latens."
+      },
+      "audiocppSeed": {
+        "label": "Deterministiskt Seed",
+        "description": "Ange ett fast slumptal för reproducerbar talsyntes (-1 för slumpmässigt).",
+        "randomBtn": "Slumpa"
+      },
+      "audiocppHardware": {
+        "title": "Hårdvara & Beräkningsexekvering",
+        "description": "Konfigurera GPU-acceleration, CPU-inferenstrådar och enhetsindex."
+      },
+      "audiocppThreads": {
+        "label": "CPU-inferenstrådar",
+        "description": "Antal trådar som används vid CPU-inferens."
+      },
+      "audiocppDeviceId": {
+        "label": "GPU-enhets-ID",
+        "description": "GPU-index för CUDA / Vulkan i system med flera grafikkort (standard: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "Lokal Gemma 4-motor (Llama.cpp)",
+      "setupRequired": "Installation krävs",
+      "brainDescription": "För att köra Brain lokalt kompilerar och kör S2B2S llama.cpp på din dator. Gemma 4-modellen, MTP-utkastmodellen och visionsprojektorn måste laddas ner (total storlek {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Ladda ner Gemma 4-paketet ({{size}})",
+      "redownloadButton": "Ladda ner / Byt kvantisering",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "Modellarkitektur och storlek",
+      "quickToggle": {
+        "label": "Gemma 4 4B-modell (Högre kvalitet)",
+        "description": "Byt till Gemma 4 4B IT QAT för djupare resonemang och högre precision."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (Standard, Snabb)",
+        "4b": "Gemma 4 4B IT QAT (Förbättrat resonemang)",
+        "mobile": "Gemma 4 2B Mobile (Ultra-låg VRAM)"
+      },
+      "disabledOption": "Inaktiverad (Endast text / Ingen)",
+      "mmprojToggle": {
+        "label": "Multimodal projektor (Ljud & Bild)",
+        "description": "Laddar syn- och ljudprojektor. Inaktivera för textläge och spara ~1 GB VRAM."
+      },
+      "mtpToggle": {
+        "label": "MTP Spekulativ Avkodningsacceleration",
+        "description": "Aktivera multi-token utkast för upp till 2x snabbare tokengenerering."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

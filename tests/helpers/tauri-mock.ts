@@ -171,7 +171,6 @@ export async function mockTauriIpc(page: Page) {
               endpoint_preset: "balanced",
               headphone_mode: false,
               auto_listen: false,
-              multimodal_audio_enabled: false,
             },
             long_audio_model: null,
             long_audio_threshold_seconds: 30,

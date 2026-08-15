@@ -1,7 +1,7 @@
 import React from "react";
 
 interface SettingsGroupProps {
-  title?: string;
+  title?: React.ReactNode;
   description?: string;
   children: React.ReactNode;
 }

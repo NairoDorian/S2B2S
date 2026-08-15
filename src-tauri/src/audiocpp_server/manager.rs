@@ -1,3 +1,4 @@
+use crate::settings::get_settings;
 use log::{error, info};
 use std::path::PathBuf;
 use std::process::Command;
@@ -495,6 +496,16 @@ pub fn ensure_running(app: &AppHandle, backend_preference: &str) -> Result<Serve
             cmd.current_dir(parent);
         }
         cmd.arg("--model-spec-override").arg(&specs_dir);
+    }
+
+    let settings = get_settings(app);
+    if settings.tts.audiocpp.threads > 0 {
+        cmd.arg("--threads")
+            .arg(settings.tts.audiocpp.threads.to_string());
+    }
+    if settings.tts.audiocpp.device_id >= 0 {
+        cmd.arg("--device")
+            .arg(settings.tts.audiocpp.device_id.to_string());
     }
 
     #[cfg(windows)]

@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp वाक् सेटिंग्स"
+      },
+      "audiocppLanguage": {
+        "label": "भाषा",
+        "description": "वाक् संश्लेषण के लिए उपयोग की जाने वाली भाषा (Supertonic 31 भाषाओं, Chatterbox 19 भाषाओं, OmniVoice 646+ भाषाओं का समर्थन करता है)।",
+        "optionAuto": "स्वचालित (पहचानें / दर्पण)"
+      },
+      "audiocppInstructions": {
+        "label": "शैली / भाव संकेत",
+        "description": "स्वर, भावना और वाचन शैली को निर्देशित करने के लिए प्राकृतिक भाषा निर्देश।",
+        "placeholder": "उदा. धीमी फुसफुसाहट, ऊर्जावान और हर्षित..."
+      },
+      "audiocppAdvanced": {
+        "title": "उन्नत निर्माण पैरामीटर",
+        "description": "सैंपलिंग तापमान, न्यूक्लियस प्रायिकता, पुनरावृत्ति दंड और मार्गदर्शन स्तर को समायोजित करें।"
+      },
+      "audiocppTemperature": {
+        "label": "तापमान (Temperature)",
+        "description": "ध्वन्यात्मक विविधता और अभिव्यक्ति को नियंत्रित करता है। कम मान अधिक स्थिर होते हैं; उच्च मान अधिक अभिव्यंजक होते हैं।"
+      },
+      "audiocppTopP": {
+        "label": "Top-P (न्यूक्लियस सैंपलिंग)",
+        "description": "न्यूक्लियस सैंपलिंग के लिए प्रायिकता सीमा।"
+      },
+      "audiocppTopK": {
+        "label": "Top-K सैंपलिंग",
+        "description": "शीर्ष K संभावित उम्मीदवारों तक सैंपलिंग को सीमित करता है (अक्षम करने के लिए 0)।"
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "पुनरावृत्ति दंड",
+        "description": "हकलाने या दोहराव को रोकने के लिए दोहराए जाने वाले शब्दांशों पर दंड लगाता है।"
+      },
+      "audiocppGuidanceScale": {
+        "label": "मार्गदर्शन / भाव स्तर",
+        "description": "डिफ्यूजन मॉडल (उदा. Chatterbox) के लिए भावनात्मक अभिव्यक्ति और मार्गदर्शन शक्ति।"
+      },
+      "audiocppInferenceSteps": {
+        "label": "अनुमान चरण (Inference Steps)",
+        "description": "पुनरावृत्त डीनॉइज़िंग चरणों की संख्या। अधिक चरण गुणवत्ता बढ़ाते हैं लेकिन समय लेते हैं।"
+      },
+      "audiocppSeed": {
+        "label": "निश्चित बीज (Seed)",
+        "description": "पुनरुत्पादनीय वाक् संश्लेषण के लिए एक निश्चित बीज सेट करें (यादृच्छिक के लिए -1)।",
+        "randomBtn": "यादृच्छिक"
+      },
+      "audiocppHardware": {
+        "title": "हार्डवेयर और गणना निष्पादन",
+        "description": "GPU त्वरण, CPU इनफ़्रेंस थ्रेड्स और डिवाइस इंडेक्स कॉन्फ़िगर करें।"
+      },
+      "audiocppThreads": {
+        "label": "CPU इनफ़्रेंस थ्रेड्स",
+        "description": "CPU इनफ़्रेंस के दौरान उपयोग किए जाने वाले थ्रेड्स की संख्या।"
+      },
+      "audiocppDeviceId": {
+        "label": "GPU डिवाइस ID",
+        "description": "मल्टी-GPU सिस्टम में CUDA / Vulkan के लिए उपयोग किया जाने वाला GPU इंडेक्स (डिफ़ॉल्ट: 0)।"
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "स्थानीय Gemma 4 इंजन (Llama.cpp)",
+      "setupRequired": "सेटअप आवश्यक",
+      "brainDescription": "Brain को स्थानीय रूप से चलाने के लिए, S2B2S आपके सिस्टम पर llama.cpp निष्पादित करता है। Gemma 4 मॉडल, MTP ड्राफ्ट मॉडल और विज़न प्रोजेक्टर डाउनलोड करना होगा (कुल आकार {{size}})।",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Gemma 4 सुइट डाउनलोड करें ({{size}})",
+      "redownloadButton": "डाउनलोड / क्वांटाइजेशन बदलें",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "मॉडल आर्किटेक्चर और आकार",
+      "quickToggle": {
+        "label": "Gemma 4 4B मॉडल (उन्नत गुणवत्ता)",
+        "description": "गहन तर्क और उच्च सटीकता के लिए Gemma 4 4B IT QAT पर स्विच करें।"
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (डिफ़ॉल्ट, तेज़)",
+        "4b": "Gemma 4 4B IT QAT (उन्नत तर्क)",
+        "mobile": "Gemma 4 2B Mobile (अल्ट्रा-कम VRAM)"
+      },
+      "disabledOption": "अक्षम (केवल टेक्स्ट / कोई नहीं)",
+      "mmprojToggle": {
+        "label": "मल्टीमॉडल प्रोजेक्टर (ध्वनि और दृष्टि)",
+        "description": "छवि और प्रत्यक्ष ऑडियो इनपुट के लिए प्रोजेक्टर लोड करें। ~1 GB VRAM बचाने के लिए टेक्स्ट-ओनली मोड में अक्षम करें।"
+      },
+      "mtpToggle": {
+        "label": "MTP सट्टा डिकोडिंग त्वरण",
+        "description": "2x तेज़ टोकन जनरेशन के लिए मल्टी-टोकन सट्टा ड्राफ्ट सक्षम करें।"
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp 音声設定"
+      },
+      "audiocppLanguage": {
+        "label": "言語",
+        "description": "音声合成に使用される言語（Supertonicは31言語、Chatterboxは19言語、OmniVoiceは646言語以上に対応）。",
+        "optionAuto": "自動（検出 / ミラーリング）"
+      },
+      "audiocppInstructions": {
+        "label": "スタイル / 感情指示プロンプト",
+        "description": "トーン、感情、発声スタイルを制御する自然言語プロンプト。",
+        "placeholder": "例: 囁くように、明るく元気に..."
+      },
+      "audiocppAdvanced": {
+        "title": "高度な生成パラメータ",
+        "description": "サンプリング温度、Nucleus確率、繰り返しペナルティ、ガイダンススケールを微調整します。"
+      },
+      "audiocppTemperature": {
+        "label": "温度 (Temperature)",
+        "description": "音韻の多様性と表現力を制御します。低い値は安定し、高い値は表現豊かになります。"
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Nucleus サンプリング)",
+        "description": "サンプリング時の累積確率の閾値。"
+      },
+      "audiocppTopK": {
+        "label": "Top-K サンプリング",
+        "description": "上位K個のトークン候補にサンプリングを制限（0で無効化）。"
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "繰り返しペナルティ",
+        "description": "音節や単語の不要な重複や吃音を防ぎます。"
+      },
+      "audiocppGuidanceScale": {
+        "label": "ガイダンス / 感情スケール",
+        "description": "拡散モデル（Chatterbox など）の感情誇張および指示追従の強度。"
+      },
+      "audiocppInferenceSteps": {
+        "label": "推論ステップ数",
+        "description": "デノイジングステップ数。ステップ数を増やすと品質が向上しますが遅延が増加します。"
+      },
+      "audiocppSeed": {
+        "label": "シード値 (Seed)",
+        "description": "再現可能な音声合成のための固定シード値（-1でランダム）。",
+        "randomBtn": "ランダム化"
+      },
+      "audiocppHardware": {
+        "title": "ハードウェア & コンピュート実行",
+        "description": "GPUアクセラレーション、CPUスレッド数、デバイス番号を設定します。"
+      },
+      "audiocppThreads": {
+        "label": "CPU 推論スレッド数",
+        "description": "CPU推論時に使用するスレッド数。"
+      },
+      "audiocppDeviceId": {
+        "label": "GPU デバイス ID",
+        "description": "マルチGPU環境で使用するGPU番号（デフォルト: 0）。"
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "ローカル Gemma 4 エンジン (Llama.cpp)",
+      "setupRequired": "セットアップが必要です",
+      "brainDescription": "Brain をローカルで実行するため、S2B2S はマシン上で llama.cpp を実行します。Gemma 4 モデル、MTP ドラフトモデル、ビジョンプロジェクターをダウンロードする必要があります (合計サイズ {{size}})。",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Gemma 4 スイートをダウンロード ({{size}})",
+      "redownloadButton": "ダウンロード / 量子化の切り替え",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "モデルアーキテクチャとサイズ",
+      "quickToggle": {
+        "label": "Gemma 4 4B モデル (高品質推論)",
+        "description": "より深い推論力と高い精度を持つ Gemma 4 4B IT QAT に切り替えます。"
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (標準・高速)",
+        "4b": "Gemma 4 4B IT QAT (高精度推論)",
+        "mobile": "Gemma 4 2B Mobile (超低VRAM)"
+      },
+      "disabledOption": "無効 (テキストのみ / なし)",
+      "mmprojToggle": {
+        "label": "マルチモーダルプロジェクター (音声・画像)",
+        "description": "画像および音声直接入力用のプロジェクターを読み込みます。テキストのみの場合は無効化して約1GBのVRAMを節約できます。"
+      },
+      "mtpToggle": {
+        "label": "MTP投機的デコーディング加速",
+        "description": "マルチトークン投機ドラフトを有効にして生成速度を最大2倍に加速します。"
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

@@ -7,6 +7,36 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Reasoning thought streaming in debug console** (`client.rs`): Both SSE `reasoning_content` delta tokens and inline `<thought>`/`<think>` tag blocks are now captured and streamed live to the terminal with `[Brain:Reasoning]` prefixes and a full summary block (`[Brain] 🧠 Gemma 4 Reasoning Completed`) at turn end. Thought tokens are stripped from TTS output so the internal monologue is never read aloud.
+- **Auto-restart llama-server on reasoning or model changes** (`llama_manager.rs`): `ServerState` now tracks `model_file` and `reasoning_enabled`. `ensure_server_running_with` detects when the model GGUF, reasoning toggle, or mmproj mode has changed and transparently restarts the server — no manual stop/start needed after toggling settings.
+
+### Changed
+
+- **Single mmproj toggle for all multimodal input** (`BrainSettings.tsx`, `llama_manager.rs`, `actions.rs`, `continuous_voice.rs`, `multi_stt.rs`): Replaced the separate per-modality "Audio Input" and "Image Input" toggles with the existing **Multimodal Projector (mmproj)** toggle as the single on/off for all audio, image, and video input to Gemma 4. When mmproj is enabled and the projector file exists, `llama-server` always launches with mmproj loaded so every request is multimodal-ready without a restart.
+- **Deprecated `multimodal_audio_enabled` / `multimodal_image_enabled`** (`settings.rs`, `bindings.ts`): These per-modality fields are now `#[serde(skip_serializing)]` stubs for backwards-compat with saved stores. All runtime logic uses `llama_mmproj_enabled` directly. Fields removed from `bindings.ts` and the Playwright test mock.
+
+### Fixed
+
+- **`multimodal_enabled` gate was always false for normal conversations** (`llama_manager.rs`): The previous logic required `mmproj_required=true` (only set by explicit multimodal requests) to load mmproj at spawn time, meaning users with the mmproj toggle ON still got a text-only server for voice conversations. Fixed: `multimodal_enabled = mmproj_opt_in && mmproj_file.exists()` — the toggle alone controls loading at spawn.
+- **`model` field renamed to `model_file` in `ServerState`** (`llama_manager.rs`): All construction sites and the `get_status` accessor updated.
+
+### Added
+
+- **Gemma 4 Multimodal Projector Isolation & Text-Only Opt-In** (`llama_manager.rs`, `settings.rs`, `BrainSettings.tsx`, `PostProcessingSettings.tsx`, `client.rs`):
+  - Isolated the Gemma 4 4B projector (`mmproj-gemma-4-E4B-F16.gguf`, $n\_embd = 2560$) from the 2B projector (`mmproj-gemma-4-E2B-F16.gguf` / legacy `mmproj-F16.gguf`, $n\_embd = 1536$), preventing projector dimension mismatch crashes when switching models.
+  - Added direct toggle switches for **Multimodal Projector (Sound & Vision)** and **MTP Speculative Decoding Acceleration** in Brain settings, allowing users to run Gemma 4 in pure text-only mode and save ~1 GB VRAM and ~3-4% latency.
+  - Added live streaming of Gemma 4 reasoning thoughts (`<thought>` / `reasoning_content`) to terminal debug logs with `[Brain:Reasoning]` and complete thought summary blocks upon turn completion.
+- **Gemma 4 4B IT QAT Local Brain Support & Easy Model Selection** (`llama_manager.rs`, `commands/brain.rs`, `settings.rs`, `BrainSettings.tsx`, `PostProcessingSettings.tsx`, `download_models.ps1`, `download_models.sh`):
+  - Added support for the **Gemma 4 4B (E4B) IT QAT** model (`unsloth/gemma-4-E4B-it-qat-GGUF`) alongside the lightweight 2B (`unsloth/gemma-4-E2B-it-qat-GGUF`) and 2B Mobile (`unsloth/gemma-4-E2B-it-qat-mobile-GGUF`) models.
+  - Added an intuitive **Model Architecture & Size Selector** and a direct **Gemma 4 4B Quick Toggle** to the local Brain settings for one-click switching between 2B, 4B, and Mobile checkpoints.
+  - Dynamically updates quantization catalog queries (`fetch_gemma4_quants`), model file resolutions, MTP draft models, vision projector, and real-time download status indicators based on active model size.
+  - Updated model download scripts (`download_models.ps1`, `download_models.sh`) to support downloading Gemma 4 4B suites (`-Model brain-4b`).
+  - Added full multilingual translations across all 23 supported languages.
+- **audio.cpp Advanced Generation & Speech Synthesis Parameter Controls** (`settings.rs`, `audiocpp.rs`, `manager.rs`, `AudioCppParameters.tsx`, `SpeechSettings.tsx`):
+  - Exposed 36 target speech languages, natural language emotion & style prompt instructions, advanced sampling parameters (Temperature, Top-P, Top-K, Repetition Penalty, Guidance Scale, Inference Steps, Seed), and compute execution options (CUDA/Vulkan/CPU, Threads, Device ID) in the GUI.
+
 ### Fixed
 
 - **Qwen3-TTS whole-utterance generation and Test Engine button fix** (`qwen3_server.py`, `tts/backends/qwen3.rs`, `tts/manager.rs`, `commands/tts.rs`, `SpeechSettings.tsx`): Restored direct native generation methods in `qwen3_server.py` (`generate_custom_voice`, `generate_voice_clone`, `generate_voice_design`) using FasterQwen3TTS CUDA graph capture and full-utterance token decoding, eliminating sliding-window slicing overhead. Added `tts_test_engine` command to synchronously test and play audio from any engine/voice configuration, providing accurate UI feedback and error reporting.

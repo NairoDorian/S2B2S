@@ -545,10 +545,7 @@ pub async fn transcribe_with_gemma4(
             .try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
             .ok_or_else(|| anyhow::anyhow!("LlamaManager not initialized"))?;
 
-        // Force multimodal audio for Gemma 4 ASR
-        if !settings.brain.multimodal_audio_enabled {
-            warn!("Multi-STT: Gemma 4 ASR requested but multimodal_audio_enabled is false; enabling temporarily");
-        }
+        // ensure_server_running_with(true) will load mmproj if llama_mmproj_enabled is true.
         llama_manager
             .ensure_server_running_with(true)
             .await

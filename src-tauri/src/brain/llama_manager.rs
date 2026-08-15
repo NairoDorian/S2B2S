@@ -43,63 +43,103 @@ pub struct LlamaServerStatus {
 /// Internal bookkeeping for the server we spawned (or detected as running).
 #[derive(Clone)]
 struct ServerState {
-    model: String,
+    model_file: String,
     mmproj_loaded: bool,
+    reasoning_enabled: bool,
     backend: String,
     port: u16,
 }
 
-/// Hugging Face repo hosting the unsloth Gemma 4 GGUF quants, MTP drafts and
+/// Hugging Face repo hosting the unsloth Gemma 4 2B (E2B) GGUF quants, MTP drafts and
 /// mmproj files for the local llama.cpp Brain.
 pub const GEMMA4_HF_REPO: &str = "unsloth/gemma-4-E2B-it-qat-GGUF";
+
+/// Hugging Face repo hosting the unsloth Gemma 4 4B (E4B) GGUF quants, MTP drafts and
+/// mmproj files for the local llama.cpp Brain.
+pub const GEMMA4_E4B_HF_REPO: &str = "unsloth/gemma-4-E4B-it-qat-GGUF";
 
 /// Mobile-optimized variant (Google's mobile QAT checkpoint) — only
 /// UD-Q2_K_XL is published, plus the same shared mmproj/MTP files.
 pub const GEMMA4_MOBILE_HF_REPO: &str = "unsloth/gemma-4-E2B-it-qat-mobile-GGUF";
 
-/// The HF repo for a model variant id ("standard" | "mobile").
+/// The HF repo for a model variant id ("standard" | "2b" | "4b" | "e4b" | "mobile").
 pub fn gemma4_repo(variant: &str) -> &'static str {
-    if variant == "mobile" {
-        GEMMA4_MOBILE_HF_REPO
-    } else {
-        GEMMA4_HF_REPO
+    match variant {
+        "4b" | "e4b" => GEMMA4_E4B_HF_REPO,
+        "mobile" => GEMMA4_MOBILE_HF_REPO,
+        _ => GEMMA4_HF_REPO,
     }
 }
 
-/// File name the main Gemma 4 model GGUF has INSIDE its HF repo (both the
-/// standard and mobile repos publish the same file name).
-fn remote_model_file_name(quant: &str) -> String {
-    format!("gemma-4-E2B-it-qat-UD-{quant}.gguf")
+/// File name the main Gemma 4 model GGUF has INSIDE its HF repo.
+fn remote_model_file_name(variant: &str, quant: &str) -> String {
+    match variant {
+        "4b" | "e4b" => format!("gemma-4-E4B-it-qat-UD-{quant}.gguf"),
+        _ => format!("gemma-4-E2B-it-qat-UD-{quant}.gguf"),
+    }
 }
 
-/// Local file name of the main Gemma 4 model GGUF. The mobile variant shares
-/// its quant file name with the standard variant, so the local copy must be
-/// variant-aware to avoid colliding with a standard file of the same quant.
+/// Local file name of the main Gemma 4 model GGUF.
 pub fn model_file_name(variant: &str, quant: &str) -> String {
-    if variant == "mobile" {
-        format!("gemma-4-E2B-it-qat-mobile-UD-{quant}.gguf")
-    } else {
-        remote_model_file_name(quant)
+    match variant {
+        "4b" | "e4b" => format!("gemma-4-E4B-it-qat-UD-{quant}.gguf"),
+        "mobile" => format!("gemma-4-E2B-it-qat-mobile-UD-{quant}.gguf"),
+        _ => format!("gemma-4-E2B-it-qat-UD-{quant}.gguf"),
     }
 }
 
-/// Local file name of the multimodal projector for a precision id.
-pub fn mmproj_file_name(quant: &str) -> String {
+/// File name the multimodal projector GGUF has INSIDE its HF repo.
+pub fn remote_mmproj_file_name(quant: &str) -> String {
     format!("mmproj-{quant}.gguf")
 }
 
+/// Local file name of the multimodal projector for a given model variant and precision id.
+pub fn mmproj_file_name(variant: &str, quant: &str) -> String {
+    match variant {
+        "4b" | "e4b" => format!("mmproj-gemma-4-E4B-{quant}.gguf"),
+        _ => format!("mmproj-gemma-4-E2B-{quant}.gguf"),
+    }
+}
+
+/// Resolve the multimodal projector path. Legacy 2B installs saved it as bare `mmproj-{quant}.gguf`
+/// — reuse that file for 2B/standard/mobile so existing users don't re-download 940 MB.
+pub fn mmproj_path(models_dir: &std::path::Path, variant: &str, quant: &str) -> PathBuf {
+    let new_path = models_dir.join(mmproj_file_name(variant, quant));
+    if new_path.exists() {
+        return new_path;
+    }
+    if variant == "standard" || variant == "mobile" || variant == "2b" {
+        let legacy = models_dir.join(format!("mmproj-{quant}.gguf"));
+        if legacy.exists() {
+            return legacy;
+        }
+    }
+    new_path
+}
+
 /// Local file name of the MTP draft model for a quantization id.
-pub fn mtp_file_name(quant: &str) -> String {
-    format!("mtp-gemma-4-E2B-it-{quant}.gguf")
+pub fn mtp_file_name(variant: &str, quant: &str) -> String {
+    match variant {
+        "4b" | "e4b" => format!("mtp-gemma-4-E4B-it-{quant}.gguf"),
+        _ => format!("mtp-gemma-4-E2B-it-{quant}.gguf"),
+    }
 }
 
 /// Resolve the MTP draft path. Q4_0 was historically stored as the bare
-/// `mtp-gemma-4-E2B-it.gguf` root file — reuse it so existing installs don't
-/// re-download the same bytes.
-fn mtp_path(models_dir: &std::path::Path, quant: &str) -> PathBuf {
-    let new_path = models_dir.join(mtp_file_name(quant));
-    if quant == "Q4_0" && !new_path.exists() {
+/// root file — reuse it so existing installs don't re-download the same bytes.
+pub fn mtp_path(models_dir: &std::path::Path, variant: &str, quant: &str) -> PathBuf {
+    let new_path = models_dir.join(mtp_file_name(variant, quant));
+    if (variant == "standard" || variant == "mobile" || variant == "2b")
+        && quant == "Q4_0"
+        && !new_path.exists()
+    {
         let legacy = models_dir.join("mtp-gemma-4-E2B-it.gguf");
+        if legacy.exists() {
+            return legacy;
+        }
+    }
+    if (variant == "4b" || variant == "e4b") && quant == "Q4_0" && !new_path.exists() {
+        let legacy = models_dir.join("mtp-gemma-4-E4B-it.gguf");
         if legacy.exists() {
             return legacy;
         }
@@ -127,59 +167,115 @@ pub struct Gemma4QuantCatalog {
 
 /// Hardcoded fallback catalog (current contents of the unsloth repo) used
 /// when the HF API is unreachable.
-fn fallback_quant_catalog() -> Gemma4QuantCatalog {
-    Gemma4QuantCatalog {
-        model: vec![
-            Gemma4QuantOption {
-                id: "Q2_K_XL".to_string(),
-                label: "Q2_K_XL".to_string(),
-                size_mb: 2085.0,
-            },
-            Gemma4QuantOption {
-                id: "Q4_K_XL".to_string(),
-                label: "Q4_K_XL".to_string(),
-                size_mb: 2499.0,
-            },
-        ],
-        mmproj: vec![
-            Gemma4QuantOption {
-                id: "BF16".to_string(),
-                label: "BF16".to_string(),
-                size_mb: 941.0,
-            },
-            Gemma4QuantOption {
-                id: "F16".to_string(),
-                label: "F16".to_string(),
-                size_mb: 940.0,
-            },
-            Gemma4QuantOption {
-                id: "F32".to_string(),
-                label: "F32".to_string(),
-                size_mb: 1815.0,
-            },
-        ],
-        mtp: vec![
-            Gemma4QuantOption {
-                id: "Q4_0".to_string(),
-                label: "Q4_0".to_string(),
-                size_mb: 56.5,
-            },
-            Gemma4QuantOption {
-                id: "Q8_0".to_string(),
-                label: "Q8_0".to_string(),
-                size_mb: 93.3,
-            },
-            Gemma4QuantOption {
-                id: "F16".to_string(),
-                label: "F16".to_string(),
-                size_mb: 162.3,
-            },
-            Gemma4QuantOption {
-                id: "BF16".to_string(),
-                label: "BF16".to_string(),
-                size_mb: 162.3,
-            },
-        ],
+fn fallback_quant_catalog(variant: &str) -> Gemma4QuantCatalog {
+    if variant == "4b" || variant == "e4b" {
+        Gemma4QuantCatalog {
+            model: vec![
+                Gemma4QuantOption {
+                    id: "Q2_K_XL".to_string(),
+                    label: "Q2_K_XL".to_string(),
+                    size_mb: 3070.4,
+                },
+                Gemma4QuantOption {
+                    id: "Q4_K_XL".to_string(),
+                    label: "Q4_K_XL".to_string(),
+                    size_mb: 4020.4,
+                },
+            ],
+            mmproj: vec![
+                Gemma4QuantOption {
+                    id: "BF16".to_string(),
+                    label: "BF16".to_string(),
+                    size_mb: 945.6,
+                },
+                Gemma4QuantOption {
+                    id: "F16".to_string(),
+                    label: "F16".to_string(),
+                    size_mb: 944.5,
+                },
+                Gemma4QuantOption {
+                    id: "F32".to_string(),
+                    label: "F32".to_string(),
+                    size_mb: 1823.9,
+                },
+            ],
+            mtp: vec![
+                Gemma4QuantOption {
+                    id: "Q4_0".to_string(),
+                    label: "Q4_0".to_string(),
+                    size_mb: 56.9,
+                },
+                Gemma4QuantOption {
+                    id: "Q8_0".to_string(),
+                    label: "Q8_0".to_string(),
+                    size_mb: 94.1,
+                },
+                Gemma4QuantOption {
+                    id: "F16".to_string(),
+                    label: "F16".to_string(),
+                    size_mb: 163.8,
+                },
+                Gemma4QuantOption {
+                    id: "BF16".to_string(),
+                    label: "BF16".to_string(),
+                    size_mb: 163.8,
+                },
+            ],
+        }
+    } else {
+        Gemma4QuantCatalog {
+            model: vec![
+                Gemma4QuantOption {
+                    id: "Q2_K_XL".to_string(),
+                    label: "Q2_K_XL".to_string(),
+                    size_mb: 2085.0,
+                },
+                Gemma4QuantOption {
+                    id: "Q4_K_XL".to_string(),
+                    label: "Q4_K_XL".to_string(),
+                    size_mb: 2499.0,
+                },
+            ],
+            mmproj: vec![
+                Gemma4QuantOption {
+                    id: "BF16".to_string(),
+                    label: "BF16".to_string(),
+                    size_mb: 941.0,
+                },
+                Gemma4QuantOption {
+                    id: "F16".to_string(),
+                    label: "F16".to_string(),
+                    size_mb: 940.0,
+                },
+                Gemma4QuantOption {
+                    id: "F32".to_string(),
+                    label: "F32".to_string(),
+                    size_mb: 1815.0,
+                },
+            ],
+            mtp: vec![
+                Gemma4QuantOption {
+                    id: "Q4_0".to_string(),
+                    label: "Q4_0".to_string(),
+                    size_mb: 56.5,
+                },
+                Gemma4QuantOption {
+                    id: "Q8_0".to_string(),
+                    label: "Q8_0".to_string(),
+                    size_mb: 93.3,
+                },
+                Gemma4QuantOption {
+                    id: "F16".to_string(),
+                    label: "F16".to_string(),
+                    size_mb: 162.3,
+                },
+                Gemma4QuantOption {
+                    id: "BF16".to_string(),
+                    label: "BF16".to_string(),
+                    size_mb: 162.3,
+                },
+            ],
+        }
     }
 }
 
@@ -192,8 +288,16 @@ struct HfTreeEntry {
     entry_type: String,
 }
 
-async fn fetch_hf_tree(client: &reqwest::Client, subdir: &str) -> Result<Vec<HfTreeEntry>, String> {
-    let url = format!("https://huggingface.co/api/models/{GEMMA4_HF_REPO}/tree/main/{subdir}");
+async fn fetch_hf_tree(
+    client: &reqwest::Client,
+    repo: &str,
+    subdir: &str,
+) -> Result<Vec<HfTreeEntry>, String> {
+    let url = if subdir.is_empty() {
+        format!("https://huggingface.co/api/models/{repo}/tree/main")
+    } else {
+        format!("https://huggingface.co/api/models/{repo}/tree/main/{subdir}")
+    };
     let resp = client
         .get(&url)
         .send()
@@ -210,7 +314,20 @@ async fn fetch_hf_tree(client: &reqwest::Client, subdir: &str) -> Result<Vec<HfT
 /// Fetch the available Gemma 4 quantizations from the unsloth Hugging Face
 /// repo (model GGUF quants, mmproj precisions, MTP draft quants). Falls back
 /// to a hardcoded snapshot when the HF API is unreachable.
-pub async fn fetch_gemma4_quant_catalog() -> Gemma4QuantCatalog {
+pub async fn fetch_gemma4_quant_catalog(variant: Option<&str>) -> Gemma4QuantCatalog {
+    let var = variant.unwrap_or("standard");
+    let repo = gemma4_repo(var);
+    let model_prefix = if var == "4b" || var == "e4b" {
+        "gemma-4-E4B-it-qat-UD-"
+    } else {
+        "gemma-4-E2B-it-qat-UD-"
+    };
+    let mtp_prefix = if var == "4b" || var == "e4b" {
+        "mtp-gemma-4-E4B-it-"
+    } else {
+        "mtp-gemma-4-E2B-it-"
+    };
+
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -220,22 +337,22 @@ pub async fn fetch_gemma4_quant_catalog() -> Gemma4QuantCatalog {
             log::warn!(
                 "[LlamaManager] Failed to build HTTP client: {e}; using fallback quant catalog"
             );
-            return fallback_quant_catalog();
+            return fallback_quant_catalog(var);
         }
     };
 
     let (root_entries, mtp_entries) = match (
-        fetch_hf_tree(&client, "").await,
-        fetch_hf_tree(&client, "MTP").await,
+        fetch_hf_tree(&client, repo, "").await,
+        fetch_hf_tree(&client, repo, "MTP").await,
     ) {
         (Ok(root), Ok(mtp)) => (root, mtp),
         (root_res, mtp_res) => {
             log::warn!(
-                "[LlamaManager] HF quant catalog unavailable (root={}, mtp={}); using fallback",
+                "[LlamaManager] HF quant catalog unavailable for {repo} (root={}, mtp={}); using fallback",
                 root_res.is_ok(),
                 mtp_res.is_ok()
             );
-            return fallback_quant_catalog();
+            return fallback_quant_catalog(var);
         }
     };
 
@@ -257,9 +374,9 @@ pub async fn fetch_gemma4_quant_catalog() -> Gemma4QuantCatalog {
                 .collect()
         };
 
-    let mut model = to_option(&root_entries, "gemma-4-E2B-it-qat-UD-", ".gguf");
+    let mut model = to_option(&root_entries, model_prefix, ".gguf");
     let mut mmproj = to_option(&root_entries, "mmproj-", ".gguf");
-    let mut mtp = to_option(&mtp_entries, "mtp-gemma-4-E2B-it-", ".gguf");
+    let mut mtp = to_option(&mtp_entries, mtp_prefix, ".gguf");
 
     model.sort_by(|a, b| a.id.cmp(&b.id));
     mmproj.sort_by(|a, b| a.id.cmp(&b.id));
@@ -267,12 +384,12 @@ pub async fn fetch_gemma4_quant_catalog() -> Gemma4QuantCatalog {
 
     if model.is_empty() || mmproj.is_empty() || mtp.is_empty() {
         log::warn!(
-            "[LlamaManager] HF quant catalog parsed empty (model={}, mmproj={}, mtp={}); using fallback",
+            "[LlamaManager] HF quant catalog parsed empty for {repo} (model={}, mmproj={}, mtp={}); using fallback",
             model.len(),
             mmproj.len(),
             mtp.len()
         );
-        return fallback_quant_catalog();
+        return fallback_quant_catalog(var);
     }
 
     Gemma4QuantCatalog { model, mmproj, mtp }
@@ -326,14 +443,31 @@ impl LlamaManager {
     pub fn get_models_status(&self) -> Result<bool, String> {
         let models_dir = self.get_models_dir()?;
         let settings = crate::settings::get_settings(&self.app);
-        let model = models_dir.join(model_file_name(
-            &settings.brain.llama_model_variant,
-            &settings.brain.llama_model_quant,
-        ));
-        let mmproj = models_dir.join(mmproj_file_name(&settings.brain.llama_mmproj_quant));
-        let draft = mtp_path(&models_dir, &settings.brain.llama_mtp_quant);
+        let variant = &settings.brain.llama_model_variant;
+        let model = models_dir.join(model_file_name(variant, &settings.brain.llama_model_quant));
+        if !model.exists() {
+            return Ok(false);
+        }
 
-        Ok(model.exists() && mmproj.exists() && draft.exists())
+        let mmproj_needed = settings.brain.llama_mmproj_enabled
+            && settings.brain.llama_mmproj_quant.to_lowercase() != "disabled";
+        if mmproj_needed {
+            let mmproj = mmproj_path(&models_dir, variant, &settings.brain.llama_mmproj_quant);
+            if !mmproj.exists() {
+                return Ok(false);
+            }
+        }
+
+        let draft_needed = settings.brain.llama_mtp_enabled
+            && settings.brain.llama_mtp_quant.to_lowercase() != "disabled";
+        if draft_needed {
+            let draft = mtp_path(&models_dir, variant, &settings.brain.llama_mtp_quant);
+            if !draft.exists() {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn is_downloading(&self) -> bool {
@@ -370,7 +504,7 @@ impl LlamaManager {
 
     /// Ensure the llama.cpp server is running, upgrading to an mmproj-enabled
     /// (multimodal) instance when `mmproj_required` is true and the current
-    /// server was started text-only.
+    /// server was started without mmproj.
     ///
     /// Shared by every consumer of the local brain model:
     ///   - text-only  (conversation, warmup, post-processing, merge)      → mmproj_required = false
@@ -387,20 +521,29 @@ impl LlamaManager {
         }
 
         let port = self.get_server_port(&provider.base_url);
+        let variant = &settings.brain.llama_model_variant;
+        let target_model_file = model_file_name(variant, &settings.brain.llama_model_quant);
+
+        let mmproj_requested = settings.brain.llama_mmproj_enabled
+            && settings.brain.llama_mmproj_quant.to_lowercase() != "disabled"
+            && mmproj_required;
 
         // Check if responding
         if self.is_port_responding(port).await {
-            let needs_mmproj_upgrade = {
+            let needs_restart = {
                 let state = self.server_state.lock().unwrap();
                 match state.as_ref() {
-                    // We own the server (state was cached by a previous spawn):
-                    // restart only if it is text-only but multimodal is required.
-                    Some(s) => mmproj_required && !s.mmproj_loaded,
-                    // External/unmanaged server on the same port: leave it alone.
+                    Some(s) => {
+                        let model_changed = s.model_file != target_model_file;
+                        let mmproj_upgrade = mmproj_requested && !s.mmproj_loaded;
+                        let reasoning_changed =
+                            s.reasoning_enabled != settings.brain.reasoning_enabled;
+                        model_changed || mmproj_upgrade || reasoning_changed
+                    }
                     None => false,
                 }
             };
-            if !needs_mmproj_upgrade {
+            if !needs_restart {
                 info!(
                     "[LlamaManager] llama-server is already running on port {}",
                     port
@@ -408,7 +551,7 @@ impl LlamaManager {
                 return Ok(());
             }
             info!(
-                "[LlamaManager] llama-server is text-only but multimodal input is required — restarting with mmproj"
+                "[LlamaManager] llama-server configuration changed (model/reasoning/mmproj) — restarting"
             );
         }
 
@@ -420,7 +563,11 @@ impl LlamaManager {
         let already_running_with_correct_mode = {
             let state = self.server_state.lock().unwrap();
             match state.as_ref() {
-                Some(s) => !(mmproj_required && !s.mmproj_loaded),
+                Some(s) => {
+                    s.model_file == target_model_file
+                        && !(mmproj_requested && !s.mmproj_loaded)
+                        && s.reasoning_enabled == settings.brain.reasoning_enabled
+                }
                 None => false,
             }
         };
@@ -434,12 +581,21 @@ impl LlamaManager {
 
         // Check if models exist
         if !self.get_models_status()? {
-            return Err(
-                "Gemma 4 E2B models are missing. Please download them in settings first."
-                    .to_string(),
-            );
+            let variant = &settings.brain.llama_model_variant;
+            return Err(format!(
+                "Gemma 4 ({variant}) models are missing. Please download them in settings first."
+            ));
         }
 
+        self.ensure_server_running_internal(port, mmproj_required)
+            .await
+    }
+
+    async fn ensure_server_running_internal(
+        &self,
+        port: u16,
+        mmproj_required: bool,
+    ) -> Result<(), String> {
         // Resolve the active pre-compiled llama-server path
         let server_bin = if let Some(mgr) = self
             .app
@@ -488,27 +644,36 @@ impl LlamaManager {
 
         let models_dir = self.get_models_dir()?;
         let settings = crate::settings::get_settings(&self.app);
-        let model_file = model_file_name(
-            &settings.brain.llama_model_variant,
-            &settings.brain.llama_model_quant,
-        );
+        let variant = &settings.brain.llama_model_variant;
+        let model_file = model_file_name(variant, &settings.brain.llama_model_quant);
         let model_path = models_dir.join(&model_file);
-        let mmproj_path = models_dir.join(mmproj_file_name(&settings.brain.llama_mmproj_quant));
-        let draft_path = mtp_path(&models_dir, &settings.brain.llama_mtp_quant);
+        let mmproj_file = mmproj_path(&models_dir, variant, &settings.brain.llama_mmproj_quant);
+        let draft_file = mtp_path(&models_dir, variant, &settings.brain.llama_mtp_quant);
 
-        // Load mmproj when multimodal features are enabled (audio/image input,
-        // Gemma 4 ASR, multimodal merge) OR when this caller requires it.
-        let settings = crate::settings::get_settings(&self.app);
-        let multimodal_enabled = settings.brain.multimodal_audio_enabled
-            || settings.brain.multimodal_image_enabled
-            || settings.multi_stt_gemma4_enabled
-            || (settings.multi_stt_use_llama_merge && settings.multi_stt_merge_include_audio)
-            || mmproj_required;
+        let mmproj_opt_in = settings.brain.llama_mmproj_enabled
+            && settings.brain.llama_mmproj_quant.to_lowercase() != "disabled";
 
-        info!(
-            "[LlamaManager] Spawning llama-server on port {} with MTP...",
-            port
-        );
+        // `llama_mmproj_enabled` is the single toggle for all multimodal input
+        // (audio, image, video). When the user turns it on we always load mmproj
+        // so the server is ready for any modality without requiring a restart.
+        // The `mmproj_required` flag is still used by ensure_server_running_with()
+        // for the upgrade-from-text-only restart path, but at spawn time we honour
+        // the toggle unconditionally.
+        let multimodal_enabled = mmproj_opt_in && mmproj_file.exists();
+
+        let draft_opt_in = settings.brain.llama_mtp_enabled
+            && settings.brain.llama_mtp_quant.to_lowercase() != "disabled"
+            && draft_file.exists();
+
+        let has_draft = draft_opt_in;
+        let mut spawn_title = format!("[LlamaManager] Spawning llama-server on port {port}");
+        if has_draft {
+            spawn_title.push_str(" with MTP...");
+        } else {
+            spawn_title.push_str(" without draft acceleration...");
+        }
+        info!("{spawn_title}");
+
         let _ = self.app.emit(
             "llama-server-status",
             LlamaServerStatus {
@@ -534,6 +699,12 @@ impl LlamaManager {
             "off"
         };
 
+        let model_alias = match settings.brain.llama_model_variant.as_str() {
+            "4b" | "e4b" => "unsloth/gemma-4-e4b-it-qat-GGUF".to_string(),
+            "mobile" => "unsloth/gemma-4-e2b-it-qat-mobile-GGUF".to_string(),
+            _ => "unsloth/gemma-4-e2b-it-qat-GGUF".to_string(),
+        };
+
         // Base args
         cmd.args([
             "-m",
@@ -554,14 +725,8 @@ impl LlamaManager {
             "--jinja",
             "--reasoning",
             reasoning_arg,
-            "--model-draft",
-            &draft_path.to_string_lossy(),
-            "--spec-type",
-            "draft-mtp",
-            "--spec-draft-n-max",
-            "2",
             "--alias",
-            "unsloth/gemma-4-e2b-it-qat-GGUF",
+            &model_alias,
             "--metrics",
             "-ctk",
             "f16",
@@ -569,14 +734,28 @@ impl LlamaManager {
             "f16",
         ]);
 
+        if has_draft {
+            cmd.args([
+                "--model-draft",
+                &draft_file.to_string_lossy(),
+                "--spec-type",
+                "draft-mtp",
+                "--spec-draft-n-max",
+                "2",
+            ]);
+        }
+
         // Load mmproj only when multimodal features are enabled.
-        // Skipping mmproj saves ~940 MB VRAM and avoids ~3% speed penalty
+        // Skipping mmproj saves ~1 GB VRAM and avoids ~3% speed penalty
         // from attention rotation overhead on short prompts.
         if multimodal_enabled {
-            info!("[LlamaManager] Multimodal mode — loading mmproj-F16.gguf for audio/image input");
-            cmd.args(["--mmproj", &mmproj_path.to_string_lossy()]);
+            info!(
+                "[LlamaManager] Multimodal mode — loading {} for audio/image input",
+                mmproj_file.display()
+            );
+            cmd.args(["--mmproj", &mmproj_file.to_string_lossy()]);
         } else {
-            info!("[LlamaManager] Text-only mode — skipping mmproj (saves ~940 MB VRAM, ~3% speed gain)");
+            info!("[LlamaManager] Text-only mode — skipping mmproj (saves ~1 GB VRAM, ~3% speed gain)");
         }
 
         if is_gpu_build {
@@ -600,14 +779,14 @@ impl LlamaManager {
         // Wait for port response — poll until ready or child exits
         let start = Instant::now();
         let timeout = std::time::Duration::from_secs(90);
-        let model_alias = "unsloth/gemma-4-e2b-it-qat-GGUF".to_string();
         loop {
             if self.is_port_responding(port).await {
                 info!("[LlamaManager] llama-server started successfully and is responding. (took {:.1}s)", start.elapsed().as_secs_f64());
                 {
                     *self.server_state.lock().unwrap() = Some(ServerState {
-                        model: model_alias.clone(),
+                        model_file: model_file.clone(),
                         mmproj_loaded: multimodal_enabled,
+                        reasoning_enabled: settings.brain.reasoning_enabled,
                         backend: backend.to_string(),
                         port,
                     });
@@ -707,7 +886,7 @@ impl LlamaManager {
             (true, Some(state)) => LlamaServerStatus {
                 running: true,
                 state: "ready".to_string(),
-                model: Some(state.model),
+                model: Some(state.model_file),
                 mmproj_loaded: state.mmproj_loaded,
                 backend: state.backend,
                 port: Some(state.port),
@@ -778,40 +957,58 @@ impl LlamaManager {
         let variant = settings.brain.llama_model_variant.clone();
         let model_quant = settings.brain.llama_model_quant.clone();
         let model_name = model_file_name(&variant, &model_quant);
-        // Both repos publish the model file under the same name; only the
-        // repo path differs between the standard and mobile variants.
         let model_repo = gemma4_repo(&variant);
-        let model_url_name = remote_model_file_name(&model_quant);
-        let mmproj_name = mmproj_file_name(&settings.brain.llama_mmproj_quant);
-        let mtp_name = mtp_file_name(&settings.brain.llama_mtp_quant);
+        let model_url_name = remote_model_file_name(&variant, &model_quant);
 
-        let files: Vec<(String, String)> = vec![
-            (
-                model_name,
-                format!("https://huggingface.co/{model_repo}/resolve/main/{model_url_name}"),
-            ),
-            // mmproj and MTP drafts are identical between both variants —
-            // always fetch the shared copies from the standard repo.
-            (
-                mmproj_name.clone(),
-                format!("https://huggingface.co/{GEMMA4_HF_REPO}/resolve/main/{mmproj_name}"),
-            ),
-            (
-                mtp_name.clone(),
-                format!("https://huggingface.co/{GEMMA4_HF_REPO}/resolve/main/MTP/{mtp_name}"),
-            ),
-        ];
+        let mut files: Vec<(String, String)> = Vec::new();
+
+        // 1. Model GGUF
+        files.push((
+            model_name,
+            format!("https://huggingface.co/{model_repo}/resolve/main/{model_url_name}"),
+        ));
+
+        // 2. Multimodal projector (if enabled)
+        let mmproj_needed = settings.brain.llama_mmproj_enabled
+            && settings.brain.llama_mmproj_quant.to_lowercase() != "disabled";
+        if mmproj_needed {
+            let mmproj_local_name = mmproj_file_name(&variant, &settings.brain.llama_mmproj_quant);
+            let mmproj_remote_name = remote_mmproj_file_name(&settings.brain.llama_mmproj_quant);
+            files.push((
+                mmproj_local_name,
+                format!("https://huggingface.co/{model_repo}/resolve/main/{mmproj_remote_name}"),
+            ));
+        }
+
+        // 3. MTP Speculative draft (if enabled)
+        let draft_needed = settings.brain.llama_mtp_enabled
+            && settings.brain.llama_mtp_quant.to_lowercase() != "disabled";
+        if draft_needed {
+            let mtp_local_name = mtp_file_name(&variant, &settings.brain.llama_mtp_quant);
+            files.push((
+                mtp_local_name.clone(),
+                format!("https://huggingface.co/{model_repo}/resolve/main/MTP/{mtp_local_name}"),
+            ));
+        }
 
         let models_dir = self.get_models_dir()?;
         let client = reqwest::Client::new();
 
         for (name, url) in &files {
             let dest_path = models_dir.join(name);
-            // The Q4_0 draft was historically stored as the bare root file —
-            // treat that legacy file as satisfying the download.
-            let legacy_satisfied = name == "mtp-gemma-4-E2B-it-Q4_0.gguf"
-                && models_dir.join("mtp-gemma-4-E2B-it.gguf").exists();
-            if dest_path.exists() || legacy_satisfied {
+            // Check legacy files so existing installs don't re-download:
+            // 1. MTP Q4_0 draft legacy names
+            let legacy_mtp = (name == "mtp-gemma-4-E2B-it-Q4_0.gguf"
+                && models_dir.join("mtp-gemma-4-E2B-it.gguf").exists())
+                || (name == "mtp-gemma-4-E4B-it-Q4_0.gguf"
+                    && models_dir.join("mtp-gemma-4-E4B-it.gguf").exists());
+            // 2. 2B mmproj legacy name `mmproj-{quant}.gguf` (e.g. `mmproj-F16.gguf` for 2B)
+            let legacy_mmproj = name.starts_with("mmproj-gemma-4-E2B-")
+                && models_dir
+                    .join(name.replacen("mmproj-gemma-4-E2B-", "mmproj-", 1))
+                    .exists();
+
+            if dest_path.exists() || legacy_mtp || legacy_mmproj {
                 info!(
                     "[LlamaManager] File {} already exists, skipping download.",
                     name

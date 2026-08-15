@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "audio.cpp 음성 설정"
+      },
+      "audiocppLanguage": {
+        "label": "언어",
+        "description": "음성 합성에 사용할 언어 (Supertonic은 31개 언어, Chatterbox는 19개 언어, OmniVoice는 646개 이상 언어 지원).",
+        "optionAuto": "자동 (감지 / 미러링)"
+      },
+      "audiocppInstructions": {
+        "label": "스타일 / 감정 지시 프롬프트",
+        "description": "어조, 감정, 발성 스타일을 제어하기 위한 자연어 지시문.",
+        "placeholder": "예: 부드러운 속삭임, 밝고 활기차게..."
+      },
+      "audiocppAdvanced": {
+        "title": "고급 생성 매개변수",
+        "description": "샘플링 온도, Nucleus 확률, 반복 페널티, 가이던스 스케일 미세 조정."
+      },
+      "audiocppTemperature": {
+        "label": "온도 (Temperature)",
+        "description": "발음의 다양성과 표현력을 제어합니다. 낮을수록 안정적이며, 높을수록 표현력이 풍부해집니다."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (Nucleus 샘플링)",
+        "description": "Nucleus 샘플링을 위한 누적 확률 임계값."
+      },
+      "audiocppTopK": {
+        "label": "Top-K 샘플링",
+        "description": "상위 K개 후보로 샘플링 제한 (0은 비활성화)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "반복 페널티",
+        "description": "음절 반복 및 말더듬을 방지합니다."
+      },
+      "audiocppGuidanceScale": {
+        "label": "가이던스 / 감정 스케일",
+        "description": "디퓨전 모델(Chatterbox 등)의 감정 과장 및 지시 강도."
+      },
+      "audiocppInferenceSteps": {
+        "label": "추론 단계 수",
+        "description": "노이즈 제거 단계 수. 단계가 많을수록 음질이 향상되지만 지연 시간이 증가합니다."
+      },
+      "audiocppSeed": {
+        "label": "결정론적 시드 (Seed)",
+        "description": "재현 가능한 음성 생성을 위한 고정 시드 값 (-1은 무작위).",
+        "randomBtn": "무작위화"
+      },
+      "audiocppHardware": {
+        "title": "하드웨어 및 연산 실행",
+        "description": "GPU 가속, CPU 추론 스레드 및 장치 인덱스 설정."
+      },
+      "audiocppThreads": {
+        "label": "CPU 추론 스레드",
+        "description": "CPU 추론 시 사용할 워커 스레드 수."
+      },
+      "audiocppDeviceId": {
+        "label": "GPU 장치 ID",
+        "description": "멀티 GPU 환경에서 사용할 GPU 인덱스 (기본값: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "로컬 Gemma 4 엔진 (Llama.cpp)",
+      "setupRequired": "설정 필요",
+      "brainDescription": "Brain을 로컬에서 실행하기 위해 S2B2S는 llama.cpp를 실행합니다. Gemma 4 모델, MTP 드래프트 모델, 비전 프로젝터를 다운로드해야 합니다 (총 크기 {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "Gemma 4 스위트 다운로드 ({{size}})",
+      "redownloadButton": "다운로드 / 양자화 변경",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "모델 아키텍처 및 크기",
+      "quickToggle": {
+        "label": "Gemma 4 4B 모델 (품질 향상)",
+        "description": "더 깊은 추론과 높은 정확도를 위해 Gemma 4 4B IT QAT 모델로 전환합니다."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (기본, 빠름)",
+        "4b": "Gemma 4 4B IT QAT (향상된 추론)",
+        "mobile": "Gemma 4 2B Mobile (초저 VRAM)"
+      },
+      "disabledOption": "비활성화 (텍스트 전용 / 없음)",
+      "mmprojToggle": {
+        "label": "멀티모달 프로젝터 (음성 및 비전)",
+        "description": "이미지 및 음성 직접 입력을 위한 프로젝터를 로드합니다. 텍스트 전용 모드로 전환하여 약 1GB의 VRAM을 절약하세요."
+      },
+      "mtpToggle": {
+        "label": "MTP 추측 디코딩 가속",
+        "description": "멀티 토큰 추측 드래프트를 활성화하여 최대 2배 빠른 토큰 생성을 지원합니다."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

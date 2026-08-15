@@ -300,7 +300,7 @@ impl TtsBackend for AudioCppBackend {
 
         let effective_speed = if speed > 0.0 { speed } else { self.speed };
 
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "model": model_id,
             "input": trimmed,
             "voice": selected_voice,
@@ -308,11 +308,42 @@ impl TtsBackend for AudioCppBackend {
             "response_format": "wav"
         });
 
+        if !settings.tts.audiocpp.language.is_empty() && settings.tts.audiocpp.language != "auto" {
+            payload["language"] = serde_json::json!(settings.tts.audiocpp.language);
+        }
+        if settings.tts.audiocpp.temperature > 0.0 {
+            payload["temperature"] = serde_json::json!(settings.tts.audiocpp.temperature);
+        }
+        if settings.tts.audiocpp.top_p > 0.0 && settings.tts.audiocpp.top_p <= 1.0 {
+            payload["top_p"] = serde_json::json!(settings.tts.audiocpp.top_p);
+        }
+        if settings.tts.audiocpp.top_k > 0 {
+            payload["top_k"] = serde_json::json!(settings.tts.audiocpp.top_k);
+        }
+        if settings.tts.audiocpp.repetition_penalty > 1.0 {
+            payload["repetition_penalty"] =
+                serde_json::json!(settings.tts.audiocpp.repetition_penalty);
+        }
+        if settings.tts.audiocpp.guidance_scale > 0.0 {
+            payload["guidance_scale"] = serde_json::json!(settings.tts.audiocpp.guidance_scale);
+        }
+        if settings.tts.audiocpp.num_inference_steps > 0 {
+            payload["num_inference_steps"] =
+                serde_json::json!(settings.tts.audiocpp.num_inference_steps);
+        }
+        if settings.tts.audiocpp.seed >= 0 {
+            payload["seed"] = serde_json::json!(settings.tts.audiocpp.seed);
+        }
+        if !settings.tts.audiocpp.instructions.trim().is_empty() {
+            payload["instructions"] = serde_json::json!(settings.tts.audiocpp.instructions.trim());
+        }
+
         log::info!(
-            "[AudioCpp] Synthesizing {} chars with model '{}', voice '{}' on port {}",
+            "[AudioCpp] Synthesizing {} chars with model '{}', voice '{}', lang '{}' on port {}",
             trimmed.len(),
             model_id,
             selected_voice,
+            settings.tts.audiocpp.language,
             handle.port
         );
 

@@ -1096,7 +1096,65 @@
         "label": "Repeat Startup Greeting",
         "description": "Play the startup greeting message out loud"
       },
-      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list."
+      "clonedVoicesHint": "Cloned voices appear with 🎙️ prefix in the voice list.",
+      "audiocppSettings": {
+        "title": "إعدادات الصوت audio.cpp"
+      },
+      "audiocppLanguage": {
+        "label": "اللغة",
+        "description": "اللغة المستخدمة لتوليد الصوت (Supertonic يدعم 31 لغة، Chatterbox يدعم 19 لغة، OmniVoice يدعم 646+ لغة).",
+        "optionAuto": "تلقائي (اكتشاف / مطابقة)"
+      },
+      "audiocppInstructions": {
+        "label": "توجيه النبرة / العاطفة",
+        "description": "تعليمات باللغة الطبيعية لتوجيه النبرة والمشاعر وأسلوب الإلقاء.",
+        "placeholder": "مثال: همس هادئ، حماسي ومبهج..."
+      },
+      "audiocppAdvanced": {
+        "title": "معلمات التوليد المتقدمة",
+        "description": "ضبط درجة حرارة أخذ العينات، واحتمالية nucleus، وعقوبة التكرار، ومقياس التوجيه."
+      },
+      "audiocppTemperature": {
+        "label": "درجة الحرارة (Temperature)",
+        "description": "تتحكم في التنوع الصوتي والتعبير. القيم المنخفضة أكثر استقراراً، والعالية أكثر تعبيراً."
+      },
+      "audiocppTopP": {
+        "label": "Top-P (أخذ عينات Nucleus)",
+        "description": "عتبة الكتلة الاحتمالية لأخذ عينات nucleus."
+      },
+      "audiocppTopK": {
+        "label": "أخذ عينات Top-K",
+        "description": "حصر العينات في أفضل K من المرشحين (0 للتعطيل)."
+      },
+      "audiocppRepetitionPenalty": {
+        "label": "عقوبة التكرار",
+        "description": "معاقبة المقاطع الصوتية المكررة لتجنب التلعثم أو التكرار اللانهائي."
+      },
+      "audiocppGuidanceScale": {
+        "label": "مقياس التوجيه / المشاعر",
+        "description": "قوة التوجيه والتعبير العاطفي لنماذج الانتشار (مثل Chatterbox)."
+      },
+      "audiocppInferenceSteps": {
+        "label": "خطوات الاستنتاج",
+        "description": "عدد خطوات إزالة الضوضاء المتكررة. الخطوات الأعلى تزيد الجودة على حساب زمن الاستجابة."
+      },
+      "audiocppSeed": {
+        "label": "البذرة الحتمية (Seed)",
+        "description": "تعيين بذرة ثابتة لتوليد صوت متطابق وقابل للتكرار (-1 للعشوائية).",
+        "randomBtn": "عشوائي"
+      },
+      "audiocppHardware": {
+        "title": "العتاد والتنفيذ الحسابي",
+        "description": "تهيئة تسريع GPU وخيوط معالجة CPU ومؤشرات الأجهزة."
+      },
+      "audiocppThreads": {
+        "label": "خيوط استنتاج CPU",
+        "description": "عدد خيوط المعالجة المستخدمة أثناء الاستنتاج على المعالج."
+      },
+      "audiocppDeviceId": {
+        "label": "معرّف جهاز GPU",
+        "description": "مؤشر بطاقة الرسومات لـ CUDA / Vulkan في الأنظمة متعددة البطاقات (الافتراضي: 0)."
+      }
     },
     "brain": {
       "group": "Brain Connection",
@@ -1440,12 +1498,12 @@
     "refreshing": "Refreshing...",
     "activeBadge": "ACTIVE",
     "localGemma": {
-      "title": "Local Gemma-4 Engine (Llama.cpp)",
-      "setupRequired": "Setup Required",
-      "brainDescription": "To run the Brain locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
+      "title": "محرك Gemma 4 المحلي (Llama.cpp)",
+      "setupRequired": "الإعداد مطلوب",
+      "brainDescription": "لتشغيل Brain محلياً، يقوم S2B2S بتشغيل llama.cpp. يلزم تنزيل نموذج Gemma 4 ومسودة MTP ومسلاط الرؤية (الحجم الإجمالي {{size}}).",
       "postProcessDescription": "To run post-processing locally, S2B2S compiles and executes llama.cpp on your machine. We need to download the specialized Gemma-4 UD-Q4_K_XL model, draft model for Multi-Token Prediction, and vision projector (total size ~2.2 GB).",
-      "downloadButton": "Download Gemma-4 Local Suite (~2.2 GB)",
-      "redownloadButton": "Download / Switch Quantization",
+      "downloadButton": "تنزيل حزمة Gemma 4 ({{size}})",
+      "redownloadButton": "تنزيل / تغيير التكميم",
       "mobileVariant": {
         "label": "Mobile variant (lower VRAM)",
         "description": "Use Google's mobile-optimized Gemma 4 E2B QAT checkpoint (only Q2_K_XL) to reduce VRAM usage further at some quality cost."
@@ -1465,6 +1523,25 @@
         "visionDisabled": "Disabled by default",
         "executionEngine": "Execution Engine",
         "executionEngineValue": "llama-server (Flash Attention)"
+      },
+      "modelArchitecture": "بنية وحجم النموذج",
+      "quickToggle": {
+        "label": "نموذج Gemma 4 4B (جودة معززة)",
+        "description": "التبديل إلى Gemma 4 4B IT QAT للحصول على استدلال أعمق ودقة أعلى."
+      },
+      "modelVariant": {
+        "2b": "Gemma 4 2B IT QAT (افتراضي، سريع)",
+        "4b": "Gemma 4 4B IT QAT (استدلال متقدم)",
+        "mobile": "Gemma 4 2B Mobile (ذاكرة رسومية منخفضة جداً)"
+      },
+      "disabledOption": "معطل (نص فقط / لا شيء)",
+      "mmprojToggle": {
+        "label": "المسلاط متعدد الوسائط (الصوت والرؤية)",
+        "description": "تحميل مسلاط الرؤية والصوت. قم بالتعطيل لوضع النص فقط لتوفير حوالي 1 غيغابايت من ذاكرة VRAM."
+      },
+      "mtpToggle": {
+        "label": "تسريع فك التشفير التخميني MTP",
+        "description": "تمكين مسودة التخمين متعددة الرموز لتوليد أسرع بمقدار مرتين."
       }
     },
     "downloadSpeed": "{{speed}} MB/s",

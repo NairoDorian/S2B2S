@@ -171,17 +171,36 @@ if ($Model -contains "brain") {
     $BrainDir = Join-Path $Path "Brain\llama_cpp"
     Ensure-Dir $BrainDir
 
-    $gemmaBase = "https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main"
-    $gemmaFiles = @(
-        "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf",
-        "mmproj-F16.gguf",
-        "mtp-gemma-4-E2B-it.gguf"
-    )
-    foreach ($f in $gemmaFiles) {
-        Download-File `
-            -Url "$gemmaBase/$f" `
-            -DestPath (Join-Path $BrainDir $f) `
-            -Description "Brain: $f"
+    if ($Model -contains "brain-4b") {
+        $gemmaBase = "https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF/resolve/main"
+        $gemmaFiles = @(
+            @{ Remote = "gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf"; Local = "gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf" },
+            @{ Remote = "mmproj-F16.gguf"; Local = "mmproj-gemma-4-E4B-F16.gguf" },
+            @{ Remote = "MTP/mtp-gemma-4-E4B-it-Q4_0.gguf"; Local = "mtp-gemma-4-E4B-it-Q4_0.gguf" }
+        )
+        foreach ($item in $gemmaFiles) {
+            $remote = $item.Remote
+            $local = $item.Local
+            Download-File `
+                -Url "$gemmaBase/$remote" `
+                -DestPath (Join-Path $BrainDir $local) `
+                -Description "Brain (4B): $local"
+        }
+    } else {
+        $gemmaBase = "https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF/resolve/main"
+        $gemmaFiles = @(
+            @{ Remote = "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"; Local = "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf" },
+            @{ Remote = "mmproj-F16.gguf"; Local = "mmproj-gemma-4-E2B-F16.gguf" },
+            @{ Remote = "mtp-gemma-4-E2B-it.gguf"; Local = "mtp-gemma-4-E2B-it.gguf" }
+        )
+        foreach ($item in $gemmaFiles) {
+            $remote = $item.Remote
+            $local = $item.Local
+            Download-File `
+                -Url "$gemmaBase/$remote" `
+                -DestPath (Join-Path $BrainDir $local) `
+                -Description "Brain (2B): $local"
+        }
     }
 
     Write-Host ""

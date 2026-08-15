@@ -1417,9 +1417,10 @@ impl ShortcutAction for TranscribeAction {
                                     } else {
                                         processed.final_text.clone()
                                     };
-                                    // When brain-only mode is on, multimodal audio is always required
+                                    // When brain-only mode is on, multimodal audio is always required.
+                                    // Otherwise, follow the mmproj toggle (single on/off for all multimodal input).
                                     let multimodal_audio =
-                                        is_brain_only || settings.brain.multimodal_audio_enabled;
+                                        is_brain_only || settings.brain.llama_mmproj_enabled;
 
                                     // Forward the (effective) STT language so the Brain replies
                                     // in the language it was spoken to (speech-to-speech lang_prompt).
