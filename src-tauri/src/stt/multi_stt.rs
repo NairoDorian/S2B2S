@@ -17,6 +17,7 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tauri::Manager;
 
+use crate::actions::{strip_invisible_chars, strip_think_block};
 use crate::audio_toolkit::encode_wav_bytes;
 use crate::llm_client;
 use crate::managers::model::{EngineType, ModelInfo, ModelManager};
@@ -80,14 +81,14 @@ ${output3}
 
 /// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}
 /// and sends to the LLM API (cloud provider or local llama.cpp server).
-/// When `multi_stt_merge_include_audio` is enabled, the raw audio is also
+/// When the Brain mode is `AudioInMerge`, the raw audio is also
 /// attached as `input_audio` for Gemma 4 (mmproj) multimodal fusion.
 async fn merge_transcriptions(
     settings: &AppSettings,
     results: &[(String, String)],
     audio: Option<&[f32]>,
     app_handle: &AppHandle,
-) -> Option<String> {
+) -> (Option<String>, Option<String>) {
     let raw_prompt = match &settings.multi_stt_merge_prompt {
         Some(p) if !p.prompt.trim().is_empty() => p.prompt.clone(),
         _ => DEFAULT_MULTI_STT_MERGE_PROMPT.to_string(),
@@ -104,6 +105,19 @@ async fn merge_transcriptions(
         .replace("${output2}", output2)
         .replace("${output3}", output3);
 
+    // When the raw audio is attached to the merge request (AudioInMerge mode),
+    // append a note so the model knows it has the raw audio as additional
+    // context for on-the-fly verification.
+    let brain_mode = settings.multi_stt_brain_mode;
+    let prompt = if brain_mode.audio_in_merge_enabled() && audio.is_some() {
+        format!(
+            "{}\n\nAudio Input Context: You also have the raw audio waveform attached as input_audio. Use it to further verify and refine the merged transcription, especially for words or phrases where the transcripts disagree. Prioritize what you hear in the audio.\n",
+            prompt
+        )
+    } else {
+        prompt
+    };
+
     if settings.multi_stt_use_llama_merge {
         merge_with_llama_cpp(settings, &prompt, audio, app_handle).await
     } else {
@@ -116,7 +130,7 @@ pub fn is_multi_stt_active(settings: &AppSettings) -> bool {
     settings.multi_stt_enabled
         && (settings.multi_stt_model_2.is_some()
             || settings.multi_stt_model_3.is_some()
-            || settings.multi_stt_gemma4_enabled)
+            || settings.multi_stt_brain_mode.separate_asr_enabled())
 }
 
 /// Result of a multi-STT pass: the LLM-merged consensus text plus the
@@ -126,6 +140,8 @@ pub fn is_multi_stt_active(settings: &AppSettings) -> bool {
 pub struct MultiSttOutcome {
     pub merged: String,
     pub transcripts: Vec<(String, String)>,
+    /// Chain-of-thought produced by the merge provider (if it streamed any).
+    pub merge_reasoning: Option<String>,
 }
 
 /// Human-friendly short label for a model id (last path segment, no extension).
@@ -137,6 +153,86 @@ pub fn short_model_label(id: &str) -> String {
         .to_string()
 }
 
+/// Format every per-model transcript as a numbered block for the history text.
+pub fn format_transcripts_block(transcripts: &[(String, String)]) -> String {
+    let mut out = String::new();
+    for (i, (model_id, text)) in transcripts.iter().enumerate() {
+        out.push_str(&format!(
+            "Transcription {} — {}:\n\"{}\"\n\n",
+            i + 1,
+            short_model_label(model_id),
+            text.trim()
+        ));
+    }
+    out
+}
+
+/// Format the Brain model line for the history text, including whether the
+/// audio was actually forwarded through the multimodal projector (mmproj).
+pub fn brain_model_header(model: &str, audio_mmproj: bool) -> String {
+    format!(
+        "Brain model: {}{}\n",
+        model,
+        if audio_mmproj {
+            " (received audio via mmproj)"
+        } else {
+            " (text-only — no mmproj audio)"
+        }
+    )
+}
+
+/// Name of the model that performs the multi-STT merge, for history display.
+pub fn merge_model_name(settings: &AppSettings) -> String {
+    if settings.multi_stt_use_llama_merge {
+        settings.brain.active_model()
+    } else {
+        settings
+            .active_post_process_provider()
+            .and_then(|p| settings.post_process_models.get(&p.id).cloned())
+            .filter(|m| !m.trim().is_empty())
+            .unwrap_or_else(|| "cloud post-process model".to_string())
+    }
+}
+
+/// Header identifying the LLM that merged the multi-STT transcripts.
+pub fn merge_model_header(settings: &AppSettings) -> String {
+    format!(
+        "Merge model: {} (reasoning {})\n",
+        merge_model_name(settings),
+        if settings.brain.reasoning_enabled {
+            "on"
+        } else {
+            "off"
+        }
+    )
+}
+
+/// Format the Brain output section for history: reasoning mode + optional
+/// chain-of-thought, then the clean answer. The pasted/output value stays the
+/// clean answer only; this string is for the inspectable history text.
+pub fn format_brain_history_output(
+    reasoning_enabled: bool,
+    reasoning: &str,
+    answer: &str,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Reasoning mode: {}\n",
+        if reasoning_enabled { "on" } else { "off" }
+    ));
+    if !reasoning.trim().is_empty() {
+        out.push_str("Thoughts:\n\"");
+        out.push_str(reasoning.trim());
+        out.push_str("\"\n\n");
+    } else if reasoning_enabled {
+        out.push_str("Thoughts: (none streamed)\n\n");
+    }
+    out.push_str("Brain output:\n\"");
+    out.push_str(answer.trim());
+    out.push('"');
+    out
+}
+
 /// Entry point from actions.rs: run multi-STT and return a single merged text
 /// plus the individual per-model transcripts.
 ///
@@ -144,42 +240,77 @@ pub fn short_model_label(id: &str) -> String {
 /// TranscriptionManager). `audio` is the raw f32 mono samples at 16 kHz.
 ///
 /// Extra models (model_2, model_3) are transcribed in parallel threads. When
-/// `multi_stt_gemma4_enabled` is set, a 4th transcription is obtained from the
+/// the Brain mode is `SeparateAsr`, a dedicated transcription is obtained from the
 /// local Gemma 4 2B multimodal llama.cpp server (mmproj + audio). All results
 /// are then merged via LLM (cloud or local llama.cpp depending on settings).
-pub async fn transcribe_parallel(
+/// Complete a multi-STT pass once the primary and extra results are collected.
+///
+/// Adds the optional Gemma 4 multimodal source, then merges the candidates.
+/// When `merge` is false the merge LLM round-trip is skipped entirely and the
+/// primary (first) result is returned directly — useful for the Brain path,
+/// where the individual transcripts and raw audio are handed to the Brain for
+/// its own fusion instead of paying a second non-streaming LLM call.
+#[allow(dead_code)]
+pub async fn finish_parallel(
     audio: Vec<f32>,
-    output1: String,
+    results: Vec<(String, String)>,
     settings: &AppSettings,
-    model_manager: &Arc<ModelManager>,
     app_handle: &AppHandle,
+    merge: bool,
 ) -> Result<MultiSttOutcome> {
-    let mut results: Vec<(String, String)> = Vec::new();
-    results.push((settings.selected_model.clone(), output1.clone()));
+    finish_parallel_with_gemma(audio, results, settings, app_handle, merge, None).await
+}
 
-    // Collect extra model IDs from slot 2 and slot 3
-    let mut extra_models: Vec<String> = Vec::new();
-    if let Some(ref m2) = settings.multi_stt_model_2 {
-        extra_models.push(m2.clone());
-    }
-    if let Some(ref m3) = settings.multi_stt_model_3 {
-        extra_models.push(m3.clone());
-    }
+/// Spawn the optional Gemma 4 multimodal STT source as a Tokio task so it runs
+/// concurrently with the primary stream finalize and the extra-model OS threads.
+pub fn spawn_gemma4(
+    audio: Vec<f32>,
+    settings: AppSettings,
+    app_handle: AppHandle,
+) -> tauri::async_runtime::JoinHandle<Result<String>> {
+    tauri::async_runtime::spawn(async move {
+        transcribe_with_gemma4(&audio, &settings, &app_handle).await
+    })
+}
 
-    // Run extra models in parallel (blocking threads)
-    let extra_results = run_parallel(&audio, &extra_models, model_manager, app_handle);
-    results.extend(extra_results);
+/// Complete a multi-STT pass once the primary and extra results are collected.
+///
+/// Accepts a pre-spawned Gemma 4 task so it can overlap the other models instead
+/// of running after they finish. When `merge` is false the LLM merge round-trip
+/// is skipped and the primary result is returned directly — useful for the Brain
+/// path, where the individual transcripts and raw audio are handed to the Brain
+/// for its own fusion.
+pub async fn finish_parallel_with_gemma(
+    audio: Vec<f32>,
+    mut results: Vec<(String, String)>,
+    settings: &AppSettings,
+    app_handle: &AppHandle,
+    merge: bool,
+    gemma: Option<tauri::async_runtime::JoinHandle<Result<String>>>,
+) -> Result<MultiSttOutcome> {
+    // Drop empty transcripts from a failed primary/extra so they don't pollute
+    // the merge prompt or the fallback "longest" selection.
+    results.retain(|(_, text)| !text.trim().is_empty());
 
-    // 4th special STT: Gemma 4 2B multimodal via llama.cpp server
-    if settings.multi_stt_gemma4_enabled {
-        match transcribe_with_gemma4(&audio, settings, app_handle).await {
-            Ok(text) => {
-                info!("Multi-STT: Gemma 4 2B ASR → {} chars", text.len());
-                results.push(("gemma-4-2b-multimodal".to_string(), text));
+    // Separate-ASR mode: multimodal Gemma 4 via the llama.cpp server runs its
+    // own transcription in a dedicated prompt. Prefer the concurrently-spawned
+    // task; fall back to an inline call if none was passed.
+    if settings.multi_stt_brain_mode.separate_asr_enabled() {
+        let gemma_result = match gemma {
+            Some(handle) => match handle.await {
+                Ok(result) => result,
+                Err(e) => Err(anyhow::anyhow!("Gemma 4 ASR task panicked: {e}")),
+            },
+            None => transcribe_with_gemma4(&audio, settings, app_handle).await,
+        };
+        match gemma_result {
+            Ok(text) if !text.trim().is_empty() => {
+                let label = format!("gemma-4-multimodal ({})", settings.brain.active_model());
+                info!("Multi-STT: Gemma 4 ASR → {} chars", text.len());
+                results.push((label, text));
             }
-            Err(e) => {
-                error!("Multi-STT: Gemma 4 2B ASR failed: {}", e);
-            }
+            Ok(_) => warn!("Multi-STT: Gemma 4 ASR returned empty transcription"),
+            Err(e) => error!("Multi-STT: Gemma 4 ASR failed: {e}"),
         }
     }
 
@@ -191,6 +322,7 @@ pub async fn transcribe_parallel(
         return Ok(MultiSttOutcome {
             merged: results[0].1.clone(),
             transcripts: results,
+            merge_reasoning: None,
         });
     }
 
@@ -199,11 +331,23 @@ pub async fn transcribe_parallel(
         debug!("Multi-STT: '{}' → {} chars", model_id, text.len());
     }
 
+    if !merge {
+        let primary = results[0].1.clone();
+        return Ok(MultiSttOutcome {
+            merged: primary,
+            transcripts: results,
+            merge_reasoning: None,
+        });
+    }
+
     // Try LLM merge
-    match merge_transcriptions(settings, &results, Some(&audio), app_handle).await {
+    let (merged, reasoning) =
+        merge_transcriptions(settings, &results, Some(&audio), app_handle).await;
+    match merged {
         Some(merged) if !merged.is_empty() => Ok(MultiSttOutcome {
             merged,
             transcripts: results,
+            merge_reasoning: reasoning,
         }),
         _ => {
             warn!("Multi-STT merge skipped or returned empty; falling back to longest result");
@@ -217,6 +361,7 @@ pub async fn transcribe_parallel(
             Ok(MultiSttOutcome {
                 merged: best,
                 transcripts: results,
+                merge_reasoning: reasoning,
             })
         }
     }
@@ -227,12 +372,27 @@ pub async fn transcribe_parallel(
 // ---------------------------------------------------------------------------
 
 /// Run multiple STT models in parallel and return (model_id, text) pairs.
+#[allow(dead_code)]
 pub fn run_parallel(
     audio: &[f32],
     model_ids: &[String],
     model_manager: &Arc<ModelManager>,
     app_handle: &AppHandle,
 ) -> Vec<(String, String)> {
+    join_spawned(spawn_parallel(audio, model_ids, model_manager, app_handle))
+}
+
+/// Spawn one OS thread per extra model and return the in-flight handles.
+///
+/// Callers that also have a primary-model finalize to run can start these
+/// first, run the primary in the meantime, and then [`join_spawned`] — so all
+/// 2-3 STT models transcribe in parallel instead of primary-then-extras.
+pub fn spawn_parallel(
+    audio: &[f32],
+    model_ids: &[String],
+    model_manager: &Arc<ModelManager>,
+    app_handle: &AppHandle,
+) -> Vec<(String, std::thread::JoinHandle<Result<String>>)> {
     if audio.is_empty() || model_ids.is_empty() {
         return vec![];
     }
@@ -309,6 +469,14 @@ pub fn run_parallel(
         handles.push((model_id, handle));
     }
 
+    handles
+}
+
+/// Join extra-model threads spawned by [`spawn_parallel`] and collect the
+/// successful (model_id, text) pairs.
+pub fn join_spawned(
+    handles: Vec<(String, std::thread::JoinHandle<Result<String>>)>,
+) -> Vec<(String, String)> {
     let mut results = Vec::new();
     for (model_id, handle) in handles {
         match handle.join() {
@@ -324,7 +492,6 @@ pub fn run_parallel(
             }
         }
     }
-
     results
 }
 
@@ -622,12 +789,15 @@ pub async fn transcribe_with_gemma4(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to parse Gemma 4 ASR response: {}", e))?;
 
-    let text = body
-        .pointer("/choices/0/message/content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let text = strip_invisible_chars(
+        strip_think_block(
+            body.pointer("/choices/0/message/content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim(),
+        )
+        .trim(),
+    );
 
     if text.is_empty() {
         Err(anyhow::anyhow!("Gemma 4 ASR returned empty transcription"))
@@ -641,30 +811,28 @@ pub async fn transcribe_with_gemma4(
 // ---------------------------------------------------------------------------
 
 /// Merge via the local llama.cpp server (same server used for the Brain).
-/// When `multi_stt_merge_include_audio` is enabled, the raw audio is attached as
+/// When the Brain mode is `AudioInMerge`, the raw audio is attached as
 /// `input_audio` for Gemma 4 (mmproj) multimodal fusion.
 async fn merge_with_llama_cpp(
     settings: &AppSettings,
     prompt: &str,
     audio: Option<&[f32]>,
     app_handle: &AppHandle,
-) -> Option<String> {
+) -> (Option<String>, Option<String>) {
     let llama_manager =
         match app_handle.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() {
             Some(m) => m,
             None => {
                 warn!("Multi-STT llama.cpp merge: LlamaManager not available");
-                return None;
+                return (None, None);
             }
         };
 
-    // Ensure the server is running (with mmproj when the merge includes audio)
-    if let Err(e) = llama_manager
-        .ensure_server_running_with(settings.multi_stt_merge_include_audio)
-        .await
-    {
+    // Ensure the server is running (with mmproj when the mode needs audio)
+    let needs_mmproj = settings.multi_stt_brain_mode.needs_mmproj();
+    if let Err(e) = llama_manager.ensure_server_running_with(needs_mmproj).await {
         warn!("Multi-STT llama.cpp merge: server not running: {}", e);
-        return None;
+        return (None, None);
     }
 
     let cfg = &settings.brain;
@@ -672,8 +840,8 @@ async fn merge_with_llama_cpp(
     let api_key = cfg.active_api_key();
     let model = cfg.active_model();
 
-    // If audio inclusion is enabled and audio samples exist, send multimodal input_audio to Gemma 4 (mmproj)
-    if settings.multi_stt_merge_include_audio {
+    // AudioInMerge mode: attach the raw audio to the merge prompt itself.
+    if settings.multi_stt_brain_mode.audio_in_merge_enabled() {
         if let Some(audio_samples) = audio {
             match encode_wav_bytes(audio_samples) {
                 Ok(wav_bytes) => {
@@ -687,7 +855,7 @@ async fn merge_with_llama_cpp(
                         Ok(c) => c,
                         Err(e) => {
                             error!("Multi-STT llama.cpp merge: HTTP client build failed: {}", e);
-                            return None;
+                            return (None, None);
                         }
                     };
 
@@ -727,18 +895,27 @@ async fn merge_with_llama_cpp(
                     match req.send().await {
                         Ok(response) if response.status().is_success() => {
                             if let Ok(body) = response.json::<serde_json::Value>().await {
-                                let content = body
+                                let raw_content = body
                                     .pointer("/choices/0/message/content")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
-                                    .trim()
-                                    .to_string();
+                                    .trim();
+                                let content =
+                                    strip_invisible_chars(strip_think_block(raw_content).trim());
                                 if !content.is_empty() {
                                     info!(
                                         "Multi-STT multimodal llama.cpp merge succeeded. Output length: {} chars",
                                         content.len()
                                     );
-                                    return Some(content);
+                                    debug!("[Multi-STT] Merge result preview: {:.120}", content);
+                                    let reasoning = body
+                                        .pointer("/choices/0/message/reasoning")
+                                        .or_else(|| {
+                                            body.pointer("/choices/0/message/reasoning_content")
+                                        })
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string());
+                                    return (Some(content), reasoning);
                                 }
                             }
                         }
@@ -776,35 +953,45 @@ async fn merge_with_llama_cpp(
         supports_structured_output: false,
     };
 
-    match llm_client::send_chat_completion(&provider, api_key, &model, prompt.to_string(), false)
-        .await
+    match llm_client::send_chat_completion_with_reasoning(
+        &provider,
+        api_key,
+        &model,
+        prompt.to_string(),
+        false,
+    )
+    .await
     {
-        Ok(Some(content)) => {
-            let content = content.trim().to_string();
+        Ok(Some(outcome)) => {
+            let content = strip_invisible_chars(strip_think_block(&outcome.content).trim());
             info!(
                 "Multi-STT llama.cpp merge succeeded. Output length: {} chars",
                 content.len()
             );
-            Some(content)
+            debug!("[Multi-STT] Merge result preview: {:.120}", content);
+            (Some(content), outcome.reasoning)
         }
         Ok(None) => {
             warn!("Multi-STT llama.cpp merge: response has no content");
-            None
+            (None, None)
         }
         Err(e) => {
             error!("Multi-STT llama.cpp merge failed: {}", e);
-            None
+            (None, None)
         }
     }
 }
 
 /// Merge via a cloud post-process provider (same as regular post-processing).
-async fn merge_with_cloud_provider(settings: &AppSettings, prompt: &str) -> Option<String> {
+async fn merge_with_cloud_provider(
+    settings: &AppSettings,
+    prompt: &str,
+) -> (Option<String>, Option<String>) {
     let provider = match settings.active_post_process_provider().cloned() {
         Some(p) => p,
         None => {
             warn!("Multi-STT cloud merge: no post-process provider configured");
-            return None;
+            return (None, None);
         }
     };
 
@@ -819,7 +1006,7 @@ async fn merge_with_cloud_provider(settings: &AppSettings, prompt: &str) -> Opti
             "Multi-STT cloud merge: no model configured for provider '{}'",
             provider.id
         );
-        return None;
+        return (None, None);
     }
 
     let api_key = settings
@@ -833,24 +1020,30 @@ async fn merge_with_cloud_provider(settings: &AppSettings, prompt: &str) -> Opti
         provider.id, model
     );
 
-    match llm_client::send_chat_completion(&provider, api_key, &model, prompt.to_string(), false)
-        .await
+    match llm_client::send_chat_completion_with_reasoning(
+        &provider,
+        api_key,
+        &model,
+        prompt.to_string(),
+        false,
+    )
+    .await
     {
-        Ok(Some(content)) => {
-            let content = content.trim().to_string();
+        Ok(Some(outcome)) => {
+            let content = strip_invisible_chars(strip_think_block(&outcome.content).trim());
             info!(
                 "Multi-STT cloud merge succeeded. Output length: {} chars",
                 content.len()
             );
-            Some(content)
+            (Some(content), outcome.reasoning)
         }
         Ok(None) => {
             warn!("Multi-STT cloud merge: response has no content");
-            None
+            (None, None)
         }
         Err(e) => {
             error!("Multi-STT cloud merge failed: {}", e);
-            None
+            (None, None)
         }
     }
 }

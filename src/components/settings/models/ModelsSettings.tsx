@@ -36,7 +36,9 @@ const isLegacyModel = (model: ModelInfo): boolean =>
 const isCatalogHfModel = (model: ModelInfo): boolean =>
   typeof model.source === "object" && "HuggingFace" in model.source;
 
-export const ModelsSettings: React.FC = () => {
+export const ModelsSettings: React.FC<{ hideTitle?: boolean }> = ({
+  hideTitle = false,
+}) => {
   const { t } = useTranslation();
   const [switchingModelId, setSwitchingModelId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -243,14 +245,16 @@ export const ModelsSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-4">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold mb-2">
-          {t("settings.models.title")}
-        </h1>
-        <p className="text-sm text-text/60">
-          {t("settings.models.description")}
-        </p>
-      </div>
+      {!hideTitle && (
+        <div className="mb-4">
+          <h1 className="text-xl font-semibold mb-2">
+            {t("settings.models.title")}
+          </h1>
+          <p className="text-sm text-text/60">
+            {t("settings.models.description")}
+          </p>
+        </div>
+      )}
 
       <GpuVramMonitor />
 

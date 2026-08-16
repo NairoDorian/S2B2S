@@ -56,7 +56,10 @@ export const useLlamaState = (): LlamaState => {
     setIsDownloading(true);
 
     try {
-      const res = await commands.downloadLlamaModels();
+      const res = await commands.hubDownloadModel({
+        collection: "brain",
+        id: "gemma4",
+      });
       if (res.status === "error") {
         setError(res.error);
         setIsDownloading(false);

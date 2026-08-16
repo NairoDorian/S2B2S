@@ -747,14 +747,6 @@ pub struct BrainConfig {
     /// Auto-rearm mic after reply in hands-free mode
     #[serde(default)]
     pub auto_listen: bool,
-    /// DEPRECATED — superseded by `llama_mmproj_enabled` (the single on/off for all
-    /// multimodal input: audio, image, video). Kept only for backwards-compat with old
-    /// saved store files; never read by any runtime logic.
-    #[serde(default, skip_serializing)]
-    pub multimodal_audio_enabled: bool,
-    /// DEPRECATED — superseded by `llama_mmproj_enabled`. See `multimodal_audio_enabled`.
-    #[serde(default, skip_serializing)]
-    pub multimodal_image_enabled: bool,
     /// Bypass STT models and send raw audio directly to the multimodal Brain
     /// with a fixed transcription prompt. Gemma 4 handles both transcription
     /// and response using its native audio understanding.
@@ -928,8 +920,6 @@ impl Default for BrainConfig {
             endpoint_preset: default_endpoint_preset(),
             headphone_mode: false,
             auto_listen: false,
-            multimodal_audio_enabled: true,
-            multimodal_image_enabled: false,
             brain_only_transcription: false,
             reply_language: default_brain_reply_language(),
             compaction_enabled: default_compaction_enabled(),
@@ -967,6 +957,39 @@ pub enum OverlayStyle {
     None,
     Minimal,
     Live,
+}
+
+/// How the Brain model participates in a multi-STT pass.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiSttBrainMode {
+    /// The Brain model is used only for the merge/clean step — no audio is
+    /// sent to it. Raw audio is NOT sent with the merge prompt.
+    #[default]
+    TextOnly,
+    /// Gemma 4 transcribes the audio in a separate prompt, then its
+    /// transcript joins the other transcripts in the merge prompt.
+    SeparateAsr,
+    /// The raw audio is attached to the merge prompt itself, and the model
+    /// transcribes on the fly while merging/cleaning.
+    AudioInMerge,
+}
+
+impl MultiSttBrainMode {
+    /// Whether a separate Gemma 4 ASR transcription pass should run.
+    pub fn separate_asr_enabled(&self) -> bool {
+        matches!(self, Self::SeparateAsr)
+    }
+
+    /// Whether the raw audio should be attached to the merge prompt.
+    pub fn audio_in_merge_enabled(&self) -> bool {
+        matches!(self, Self::AudioInMerge)
+    }
+
+    /// Whether the llama.cpp server must run with mmproj for this mode.
+    pub fn needs_mmproj(&self) -> bool {
+        !matches!(self, Self::TextOnly)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
@@ -1488,12 +1511,12 @@ pub struct AppSettings {
     /// When true, use the local llama.cpp server as the LLM merge provider instead of a cloud provider.
     #[serde(default)]
     pub multi_stt_use_llama_merge: bool,
-    /// When true, add a 4th transcription source using Gemma 4 2B multimodal (mmproj + audio).
+    /// How the Brain model participates in the multi-STT pass:
+    /// - `text_only`: no audio — the model only merges/cleans the transcripts.
+    /// - `separate_asr`: Gemma 4 transcribes the audio in a separate prompt, then joins the merge.
+    /// - `audio_in_merge`: the raw audio is attached to the merge prompt for on-the-fly verification.
     #[serde(default)]
-    pub multi_stt_gemma4_enabled: bool,
-    /// When true, include the raw audio in the LLM merge step with the local llama.cpp server (Gemma 4 with mmproj).
-    #[serde(default)]
-    pub multi_stt_merge_include_audio: bool,
+    pub multi_stt_brain_mode: MultiSttBrainMode,
     /// Parakeet streaming toggle: when enabled, all UnifiedParakeet models
     /// (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
     /// results with stateful RNNT decoder. When disabled, uses offline /transcribe.
@@ -2355,8 +2378,7 @@ pub fn get_default_settings() -> AppSettings {
         }),
         multi_stt_selected_merge_prompt_id: Some("merge_and_clean".to_string()),
         multi_stt_use_llama_merge: false,
-        multi_stt_gemma4_enabled: false,
-        multi_stt_merge_include_audio: false,
+        multi_stt_brain_mode: MultiSttBrainMode::TextOnly,
         parakeet_streaming_enabled: default_parakeet_streaming_enabled(),
         control_server_token: None,
         recording_auto_stop_enabled: false,
@@ -2710,6 +2732,42 @@ fn apply_settings_migrations(
         } else {
             OverlayStyle::Live
         };
+        updated = true;
+    }
+
+    // One-time multi-STT brain mode migration: the retired toggles
+    // `multi_stt_gemma4_enabled` / `multi_stt_merge_include_audio` map onto
+    // the new `multi_stt_brain_mode` selector. Only runs when at least one of
+    // the legacy keys is present in the stored JSON (fresh stores already
+    // carry the new key; never rewrite a store that has neither).
+    let has_legacy_gemma4 = settings_value.get("multi_stt_gemma4_enabled").is_some();
+    let has_legacy_include_audio = settings_value
+        .get("multi_stt_merge_include_audio")
+        .is_some();
+    if settings_value.get("multi_stt_brain_mode").is_none()
+        && (has_legacy_gemma4 || has_legacy_include_audio)
+    {
+        let gemma4 = settings_value
+            .get("multi_stt_gemma4_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let include_audio = settings_value
+            .get("multi_stt_merge_include_audio")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        settings.multi_stt_brain_mode = if include_audio {
+            MultiSttBrainMode::AudioInMerge
+        } else if gemma4 {
+            MultiSttBrainMode::SeparateAsr
+        } else {
+            MultiSttBrainMode::TextOnly
+        };
+        log::info!(
+            "[Settings] Migrated multi-STT brain toggles (gemma4={}, include_audio={}) → {:?}",
+            gemma4,
+            include_audio,
+            settings.multi_stt_brain_mode
+        );
         updated = true;
     }
 
@@ -3107,6 +3165,59 @@ mod tests {
         assert!(apply_settings_migrations(&mut settings, &raw));
         assert_eq!(settings.overlay_style, OverlayStyle::Live);
         assert_eq!(settings.overlay_position, OverlayPosition::Top);
+    }
+
+    #[test]
+    fn multi_stt_brain_mode_migrates_legacy_audio_in_merge_combo() {
+        let mut settings = get_default_settings();
+        let raw = serde_json::json!({
+            "multi_stt_gemma4_enabled": true,
+            "multi_stt_merge_include_audio": true
+        });
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(
+            settings.multi_stt_brain_mode,
+            MultiSttBrainMode::AudioInMerge
+        );
+    }
+
+    #[test]
+    fn multi_stt_brain_mode_migrates_legacy_separate_asr_combo() {
+        let mut settings = get_default_settings();
+        let raw = serde_json::json!({
+            "multi_stt_gemma4_enabled": true,
+            "multi_stt_merge_include_audio": false
+        });
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(
+            settings.multi_stt_brain_mode,
+            MultiSttBrainMode::SeparateAsr
+        );
+    }
+
+    #[test]
+    fn multi_stt_brain_mode_migrates_legacy_text_only_combo() {
+        let mut settings = get_default_settings();
+        let raw = serde_json::json!({
+            "multi_stt_gemma4_enabled": false,
+            "multi_stt_merge_include_audio": false
+        });
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(settings.multi_stt_brain_mode, MultiSttBrainMode::TextOnly);
+    }
+
+    #[test]
+    fn multi_stt_brain_mode_migration_is_noop_without_legacy_keys() {
+        let mut settings = get_default_settings();
+        settings.multi_stt_brain_mode = MultiSttBrainMode::AudioInMerge;
+        let raw = serde_json::json!({
+            "settings_schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
+            "onboarding_completed": true,
+            "whats_new_last_seen_version": default_whats_new_last_seen_version(),
+            "overlay_style": "live",
+            "multi_stt_brain_mode": "audio_in_merge"
+        });
+        assert!(!apply_settings_migrations(&mut settings, &raw));
     }
 
     #[test]

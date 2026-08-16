@@ -98,10 +98,14 @@ impl TtsPlayer {
                             match DeviceSinkBuilder::from_default_device()
                                 .and_then(|b| b.open_stream())
                             {
-                                Ok(s) => {
+                                Ok(mut s) => {
                                     let sk = Player::connect_new(s.mixer());
                                     sk.set_volume(volume);
                                     sink = Some(sk);
+                                    // Teardown drops the device sink between
+                                    // utterances by design — silence rodio's
+                                    // "Dropping DeviceSink" warning.
+                                    s.log_on_drop(false);
                                     _stream = Some(s);
                                 }
                                 Err(e) => {
@@ -120,10 +124,14 @@ impl TtsPlayer {
                             match DeviceSinkBuilder::from_default_device()
                                 .and_then(|b| b.open_stream())
                             {
-                                Ok(s) => {
+                                Ok(mut s) => {
                                     let sk = Player::connect_new(s.mixer());
                                     sk.set_volume(volume);
                                     sink = Some(sk);
+                                    // Teardown drops the device sink between
+                                    // utterances by design — silence rodio's
+                                    // "Dropping DeviceSink" warning.
+                                    s.log_on_drop(false);
                                     _stream = Some(s);
                                 }
                                 Err(e) => {

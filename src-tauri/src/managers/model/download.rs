@@ -133,6 +133,7 @@ impl ModelManager {
     ) -> Result<HttpDownloadOutcome> {
         let app_handle = self.app_handle.clone();
         let id = model_id.to_string();
+        let hub_name = self.lookup_model_name(model_id);
         Self::download_http_resumable_with_events(
             model_id,
             url,
@@ -141,17 +142,64 @@ impl ModelManager {
             expected_sha256,
             cancel_token,
             &move |event| {
-                let _ = match event {
+                match event {
                     HttpDownloadEvent::Progress(progress) => {
-                        app_handle.emit("model-download-progress", progress)
+                        let _ = app_handle.emit("model-download-progress", progress);
+                        // Mirror onto the unified hub event bus so the Models
+                        // hub bar renders STT progress without legacy bridging.
+                        crate::model_hub::emit_progress(
+                            &app_handle,
+                            crate::model_hub::ModelHubDownloadProgress {
+                                collection: crate::model_hub::ModelCollection::Stt,
+                                id: id.clone(),
+                                name: hub_name.clone(),
+                                file: None,
+                                downloaded_mb: progress.downloaded as f64 / (1024.0 * 1024.0),
+                                total_mb: progress.total as f64 / (1024.0 * 1024.0),
+                                percent: progress.percentage,
+                                speed_mbps: 0.0,
+                                status: crate::model_hub::HubDownloadStatus::Downloading,
+                                error: None,
+                            },
+                        );
                     }
                     HttpDownloadEvent::VerificationStarted => {
-                        app_handle.emit("model-verification-started", &id)
+                        let _ = app_handle.emit("model-verification-started", &id);
+                        crate::model_hub::emit_progress(
+                            &app_handle,
+                            crate::model_hub::ModelHubDownloadProgress {
+                                collection: crate::model_hub::ModelCollection::Stt,
+                                id: id.clone(),
+                                name: hub_name.clone(),
+                                file: None,
+                                downloaded_mb: 0.0,
+                                total_mb: 0.0,
+                                percent: 0.0,
+                                speed_mbps: 0.0,
+                                status: crate::model_hub::HubDownloadStatus::Verifying,
+                                error: None,
+                            },
+                        );
                     }
                     HttpDownloadEvent::VerificationCompleted => {
-                        app_handle.emit("model-verification-completed", &id)
+                        let _ = app_handle.emit("model-verification-completed", &id);
+                        crate::model_hub::emit_progress(
+                            &app_handle,
+                            crate::model_hub::ModelHubDownloadProgress {
+                                collection: crate::model_hub::ModelCollection::Stt,
+                                id: id.clone(),
+                                name: hub_name.clone(),
+                                file: None,
+                                downloaded_mb: 0.0,
+                                total_mb: 0.0,
+                                percent: 100.0,
+                                speed_mbps: 0.0,
+                                status: crate::model_hub::HubDownloadStatus::Downloading,
+                                error: None,
+                            },
+                        );
                     }
-                };
+                }
             },
         )
         .await

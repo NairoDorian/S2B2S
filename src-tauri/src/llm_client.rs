@@ -133,6 +133,8 @@ struct ChatChoice {
 #[derive(Debug, Deserialize)]
 struct ChatMessageResponse {
     content: Option<String>,
+    #[serde(alias = "reasoning", alias = "reasoning_content")]
+    reasoning_content: Option<String>,
 }
 
 /// Build headers for API requests based on provider type
@@ -319,17 +321,37 @@ pub async fn send_chat_completion(
     .await
 }
 
-/// Send a chat completion request with structured output support.
-/// When json_schema is provided, uses structured outputs mode.
-/// system_prompt is used as the system message when provided.
-///
-/// When disable_reasoning is set, the request carries the reasoning-disable
-/// fields the endpoint is expected to understand. Not every OpenAI-compatible
-/// endpoint accepts them (DeepSeek, Gemini's compat layer, and some OpenRouter
-/// upstreams reject with 400), so a 400/422 answer to such a request triggers
-/// one retry without the fields, and the rejection is remembered per
-/// (base_url, model) so later requests skip the failing attempt entirely.
-pub async fn send_chat_completion_with_schema(
+/// Result carrying the clean answer plus any separately-streamed reasoning text.
+#[derive(Debug, Clone)]
+pub struct ChatCompletionOutcome {
+    pub content: String,
+    pub reasoning: Option<String>,
+}
+
+/// Like [`send_chat_completion`], but also captures `reasoning_content` so
+/// callers that want to persist chain-of-thought can do so without mixing it
+/// into the returned answer.
+pub async fn send_chat_completion_with_reasoning(
+    provider: &PostProcessProvider,
+    api_key: String,
+    model: &str,
+    prompt: String,
+    disable_reasoning: bool,
+) -> Result<Option<ChatCompletionOutcome>, String> {
+    send_chat_completion_with_reasoning_and_schema(
+        provider,
+        api_key,
+        model,
+        prompt,
+        None,
+        None,
+        disable_reasoning,
+    )
+    .await
+}
+
+/// Shared request body for the non-streaming chat-completion helpers.
+async fn perform_chat_completion(
     provider: &PostProcessProvider,
     api_key: String,
     model: &str,
@@ -337,7 +359,7 @@ pub async fn send_chat_completion_with_schema(
     system_prompt: Option<String>,
     json_schema: Option<Value>,
     disable_reasoning: bool,
-) -> Result<Option<String>, String> {
+) -> Result<ChatCompletionResponse, String> {
     let base_url = crate::url_security::canonical_llm_provider_base_url(provider)?;
     let url = format!("{}/chat/completions", base_url);
 
@@ -453,15 +475,79 @@ pub async fn send_chat_completion_with_schema(
         ));
     }
 
-    let completion: ChatCompletionResponse = response
+    response
         .json()
         .await
-        .map_err(|e| report_reqwest_error("Failed to parse API response", &e))?;
+        .map_err(|e| report_reqwest_error("Failed to parse API response", &e))
+}
+
+/// Send a chat completion request with structured output support.
+/// When json_schema is provided, uses structured outputs mode.
+/// system_prompt is used as the system message when provided.
+///
+/// When disable_reasoning is set, the request carries the reasoning-disable
+/// fields the endpoint is expected to understand. Not every OpenAI-compatible
+/// endpoint accepts them (DeepSeek, Gemini's compat layer, and some OpenRouter
+/// upstreams reject with 400), so a 400/422 answer to such a request triggers
+/// one retry without the fields, and the rejection is remembered per
+/// (base_url, model) so later requests skip the failing attempt entirely.
+pub async fn send_chat_completion_with_schema(
+    provider: &PostProcessProvider,
+    api_key: String,
+    model: &str,
+    user_content: String,
+    system_prompt: Option<String>,
+    json_schema: Option<Value>,
+    disable_reasoning: bool,
+) -> Result<Option<String>, String> {
+    let completion = perform_chat_completion(
+        provider,
+        api_key,
+        model,
+        user_content,
+        system_prompt,
+        json_schema,
+        disable_reasoning,
+    )
+    .await?;
 
     Ok(completion
         .choices
         .first()
         .and_then(|choice| choice.message.content.clone()))
+}
+
+/// Structured-output variant that also captures separately-streamed reasoning.
+pub async fn send_chat_completion_with_reasoning_and_schema(
+    provider: &PostProcessProvider,
+    api_key: String,
+    model: &str,
+    user_content: String,
+    system_prompt: Option<String>,
+    json_schema: Option<Value>,
+    disable_reasoning: bool,
+) -> Result<Option<ChatCompletionOutcome>, String> {
+    let completion = perform_chat_completion(
+        provider,
+        api_key,
+        model,
+        user_content,
+        system_prompt,
+        json_schema,
+        disable_reasoning,
+    )
+    .await?;
+
+    let Some(choice) = completion.choices.first() else {
+        return Ok(None);
+    };
+    let Some(content) = choice.message.content.clone() else {
+        return Ok(None);
+    };
+    Ok(Some(ChatCompletionOutcome {
+        content,
+        reasoning: choice.message.reasoning_content.clone(),
+    }))
 }
 
 /// Fetch available models from an OpenAI-compatible API

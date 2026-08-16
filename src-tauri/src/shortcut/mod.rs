@@ -1185,21 +1185,12 @@ pub fn change_multi_stt_use_llama_merge_setting(
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_multi_stt_gemma4_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.multi_stt_gemma4_enabled = enabled;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn change_multi_stt_merge_include_audio_setting(
+pub fn change_multi_stt_brain_mode_setting(
     app: AppHandle,
-    enabled: bool,
+    mode: crate::settings::MultiSttBrainMode,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.multi_stt_merge_include_audio = enabled;
+    settings.multi_stt_brain_mode = mode;
     settings::write_settings(&app, settings);
     Ok(())
 }

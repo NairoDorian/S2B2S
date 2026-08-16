@@ -1064,7 +1064,27 @@ fn run_consumer(
                                     log::info!(
                                         "[ContinuousVoice] VAD detected speech START! (turn {turn_id}, rev {revision})"
                                     );
+                                    // Start a live streaming transcription when
+                                    // the primary model supports it, so the
+                                    // Nemotron overlay keeps working in
+                                    // conversation mode (not just push-to-talk).
                                     if let Some(app) = &app_handle {
+                                        if let Some(tm) = app
+                                            .try_state::<Arc<crate::managers::transcription::TranscriptionManager>>()
+                                            .map(|s| s.inner().clone())
+                                        {
+                                            let settings = crate::settings::get_settings(app);
+                                            let supports_streaming = app
+                                                .try_state::<Arc<crate::managers::model::ModelManager>>()
+                                                .and_then(|mm| {
+                                                    mm.get_model_info(&settings.selected_model)
+                                                        .map(|m| m.supports_streaming)
+                                                })
+                                                .unwrap_or(false);
+                                            if supports_streaming {
+                                                tm.start_stream();
+                                            }
+                                        }
                                         let _ = app.emit(
                                             "continuous-voice:speech-started",
                                             serde_json::json!({
@@ -1096,6 +1116,12 @@ fn run_consumer(
                                             "[ContinuousVoice] Turn reopened during grace (turn {turn_id}, rev {revision})"
                                         );
                                     }
+                                }
+                                // Feed the live streaming worker with the same
+                                // VAD-filtered frame, so the overlay shows
+                                // partial transcription in real time.
+                                if let Some(cb) = &audio_cb {
+                                    cb(buf);
                                 }
                                 pending_end = None;
                                 silence_frames = 0;

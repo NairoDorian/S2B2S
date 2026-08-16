@@ -106,7 +106,10 @@ export const AudioCppModelManager: React.FC<AudioCppModelManagerProps> = ({
   const handleDownload = async (packageId: string) => {
     try {
       setActionInProgress(packageId);
-      const res = await commands.audiocppDownloadModel(packageId);
+      const res = await commands.hubDownloadModel({
+        collection: "tts",
+        id: packageId,
+      });
       if (res.status === "error") {
         console.error("Failed to start download:", res.error);
       }
@@ -119,7 +122,7 @@ export const AudioCppModelManager: React.FC<AudioCppModelManagerProps> = ({
 
   const handleCancelDownload = async (packageId: string) => {
     try {
-      await commands.audiocppCancelDownload(packageId);
+      await commands.hubCancelDownload("tts", packageId);
       setDownloads((prev) => {
         const next = { ...prev };
         delete next[packageId];
@@ -145,7 +148,7 @@ export const AudioCppModelManager: React.FC<AudioCppModelManagerProps> = ({
 
     try {
       setActionInProgress(pkg.id);
-      const res = await commands.audiocppDeleteModel(pkg.id);
+      const res = await commands.hubDeleteModel("tts", pkg.id);
       if (res.status === "ok") {
         await fetchModels();
       } else {

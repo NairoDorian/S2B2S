@@ -25,6 +25,7 @@ mod llm_client;
 mod llm_operation;
 mod managers;
 mod memory;
+pub mod model_hub;
 mod overlay;
 mod overlay_fx;
 mod paste_tx;
@@ -244,6 +245,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(brain_manager.clone());
     app_handle.manage(llama_manager.clone());
     app_handle.manage(llama_server_manager.clone());
+    app_handle.manage(model_hub::HubRegistry::default());
 
     // CopySpeak double-copy trigger (idles cheaply while disabled).
     crate::tts::clipboard_watch::start(app_handle.clone());
@@ -713,8 +715,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_multi_stt_translate_model_2,
             shortcut::change_multi_stt_translate_model_3,
             shortcut::change_multi_stt_use_llama_merge_setting,
-            shortcut::change_multi_stt_gemma4_setting,
-            shortcut::change_multi_stt_merge_include_audio_setting,
+            shortcut::change_multi_stt_brain_mode_setting,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,
@@ -796,6 +797,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::models::get_current_model,
             commands::models::get_transcription_model_status,
             commands::models::is_model_loading,
+            model_hub::commands::hub_get_active_downloads,
+            model_hub::commands::hub_cancel_download,
+            model_hub::commands::hub_delete_model,
+            model_hub::commands::hub_download_model,
 
             commands::models::has_any_models_available,
             commands::models::has_any_models_or_downloads,
@@ -891,6 +896,8 @@ commands::models::rescan_local_models,
             commands::brain::get_brain_server_status,
             commands::brain::warm_brain_server,
             commands::brain::brain_ask_region,
+            commands::brain::get_downloaded_brain_models,
+            commands::brain::cancel_brain_model_download,
             commands::region_capture::region_capture_get_data,
             commands::region_capture::region_capture_confirm,
             commands::region_capture::region_capture_cancel,
@@ -937,6 +944,8 @@ commands::models::rescan_local_models,
             python_env::PythonEnvStatus,
             brain::llama_manager::LlamaServerStatus,
             crate::audiocpp_server::AudioCppDownloadProgress,
+            model_hub::ModelHubDownloadProgress,
+            model_hub::ModelHubNotification,
         ])
 }
 

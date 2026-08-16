@@ -127,6 +127,10 @@ pub struct BrainTiming {
 pub struct BrainResult {
     pub text: String,
     pub timing: Option<BrainTiming>,
+    /// Accumulated reasoning / thought content (`reasoning_content` deltas and
+    /// inline `<thought>` / `<think>` blocks), kept separate from `text` so the
+    /// clean model output never carries the chain-of-thought.
+    pub reasoning: String,
 }
 
 pub struct BrainClient {
@@ -236,6 +240,7 @@ impl BrainClient {
                 return Ok(BrainResult {
                     text: full,
                     timing: final_timing,
+                    reasoning: full_reasoning,
                 });
             }
             let bytes = chunk.map_err(|e| format!("Brain stream error: {e}"))?;
@@ -358,6 +363,7 @@ impl BrainClient {
         Ok(BrainResult {
             text: full,
             timing: final_timing,
+            reasoning: full_reasoning,
         })
     }
 }

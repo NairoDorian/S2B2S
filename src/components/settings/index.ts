@@ -6,6 +6,7 @@ export { HistorySettings } from "./history/HistorySettings";
 export { AboutSettings } from "./about/AboutSettings";
 export { PostProcessingSettings } from "./post-processing/PostProcessingSettings";
 export { ModelsSettings } from "./models/ModelsSettings";
+export { ModelHubSettings } from "./models/ModelHubSettings";
 export { SpeechSettings } from "./speech/SpeechSettings";
 export { BrainSettings } from "./brain/BrainSettings";
 export { LlamaCppSettings } from "./llama-cpp/LlamaCppSettings";

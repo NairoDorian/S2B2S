@@ -73,11 +73,10 @@ const LlamaCppSettings: React.FC = () => {
     setDownloading(`${asset.backend}-${releaseTag}`);
     setError(null);
     try {
-      const res = await commands.downloadLlamaServer(
-        asset.backend,
-        releaseTag,
-        asset.download_url,
-      );
+      const res = await commands.hubDownloadModel({
+        collection: "runtime",
+        id: `${asset.backend}-${releaseTag}`,
+      });
       if (res.status === "ok") {
         await refresh();
         // If no active server, auto-select
@@ -106,7 +105,7 @@ const LlamaCppSettings: React.FC = () => {
 
   const handleRemove = async (backend: string, releaseTag: string) => {
     try {
-      await commands.removeLlamaServer(backend, releaseTag);
+      await commands.hubDeleteModel("runtime", `${backend}-${releaseTag}`);
       await refresh();
     } catch (e) {
       setError(String(e));

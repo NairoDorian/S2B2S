@@ -17,9 +17,20 @@ pub(crate) fn resolve_venv_python() -> String {
         .to_string()
 }
 
-/// Resolve the local TTS models directory (S2B2S/models/TTS/) for HuggingFace cache
-/// and model storage. Returns the path if it exists.
+/// Resolve the local TTS models directory for HuggingFace cache and model
+/// storage. Priority: portable/app-data dir (when an AppHandle is available)
+/// > project root > cwd > parent > legacy — so portable installs don't fall
+/// back to a CWD-relative `models/TTS/` that doesn't exist.
 pub(crate) fn resolve_local_models_dir() -> Option<std::path::PathBuf> {
+    // Portable / installed-app data dir: `<app_data>/models/TTS/`.
+    if let Some(app) = APP_HANDLE.get() {
+        if let Ok(dir) = crate::portable::tts_models_dir(app) {
+            if dir.is_dir() {
+                return Some(dir);
+            }
+        }
+    }
+
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     // 1. Project root: S2B2S/models/TTS/ (canonical dev location)

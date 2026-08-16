@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { type ModelInfo } from "@/bindings";
+import { type ModelInfo, commands } from "@/bindings";
 
 import {
   SettingContainer,
@@ -148,9 +148,7 @@ export const MultiSttSettings: React.FC = () => {
   const multiSttModel3 = getSetting("multi_stt_model_3") ?? null;
   const multiSttMergePrompt = getSetting("multi_stt_merge_prompt") ?? null;
   const useLlamaMerge = getSetting("multi_stt_use_llama_merge") ?? false;
-  const mergeIncludeAudio =
-    getSetting("multi_stt_merge_include_audio") ?? false;
-  const gemma4Enabled = getSetting("multi_stt_gemma4_enabled") ?? false;
+  const brainMode = getSetting("multi_stt_brain_mode") ?? "text_only";
 
   const [draftName, setDraftName] = useState(
     multiSttMergePrompt?.name || DEFAULT_MERGE_PROMPT_PROFILE.name,
@@ -293,50 +291,50 @@ export const MultiSttSettings: React.FC = () => {
                 grouped={false}
               />
             </SettingContainer>
-            {useLlamaMerge && (
-              <SettingContainer
-                title={t("multiStt.mergeProvider.includeAudio.label")}
-                description={t(
-                  "multiStt.mergeProvider.includeAudio.description",
-                )}
-                descriptionMode="tooltip"
-                layout="horizontal"
-                grouped={true}
-              >
-                <ToggleSwitch
-                  checked={mergeIncludeAudio}
-                  onChange={(enabled) =>
-                    updateSetting("multi_stt_merge_include_audio", enabled)
-                  }
-                  isUpdating={isUpdating("multi_stt_merge_include_audio")}
-                  label={t("multiStt.mergeProvider.includeAudio.label")}
-                  description=""
-                  descriptionMode="tooltip"
-                  grouped={false}
-                />
-              </SettingContainer>
-            )}
           </SettingsGroup>
 
-          {/* Gemma 4 4th STT */}
-          <SettingsGroup title={t("multiStt.gemma4.title")}>
+          {/* Brain Model Participation */}
+          <SettingsGroup title={t("multiStt.brainMode.title")}>
             <SettingContainer
-              title={t("multiStt.gemma4.label")}
-              description={t("multiStt.gemma4.description")}
+              title={t("multiStt.brainMode.label")}
+              description={t("multiStt.brainMode.description")}
               descriptionMode="tooltip"
               layout="horizontal"
               grouped={true}
             >
-              <ToggleSwitch
-                checked={gemma4Enabled}
-                onChange={(enabled) =>
-                  updateSetting("multi_stt_gemma4_enabled", enabled)
-                }
-                isUpdating={isUpdating("multi_stt_gemma4_enabled")}
-                label={t("multiStt.gemma4.label")}
-                description=""
-                descriptionMode="tooltip"
-                grouped={false}
+              <Dropdown
+                selectedValue={brainMode}
+                options={[
+                  {
+                    value: "text_only",
+                    label: t("multiStt.brainMode.options.textOnly"),
+                  },
+                  {
+                    value: "separate_asr",
+                    label: t("multiStt.brainMode.options.separateAsr"),
+                  },
+                  {
+                    value: "audio_in_merge",
+                    label: t("multiStt.brainMode.options.audioInMerge"),
+                  },
+                ]}
+                onSelect={(value) => {
+                  updateSetting(
+                    "multi_stt_brain_mode",
+                    value as "text_only" | "separate_asr" | "audio_in_merge",
+                  );
+                  if (value !== "text_only") {
+                    // Both multimodal modes need the mmproj-loaded Brain
+                    // server. Warm it immediately so the first multi-STT turn
+                    // doesn't fail with "audio input is not supported".
+                    void commands
+                      .warmBrainServer(true)
+                      .catch((err) =>
+                        console.error("Failed to warm Brain server:", err),
+                      );
+                  }
+                }}
+                className="min-w-[200px]"
               />
             </SettingContainer>
           </SettingsGroup>
@@ -578,7 +576,7 @@ export const MultiSttSettings: React.FC = () => {
                   </span>
                 </div>
               )}
-              {gemma4Enabled && (
+              {brainMode === "separate_asr" && (
                 <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
                   <span className="w-2 h-2 rounded-full bg-orange-500" />
                   <span className="text-sm">
@@ -587,11 +585,21 @@ export const MultiSttSettings: React.FC = () => {
                   </span>
                 </div>
               )}
-              {!selectedModel2Name && !selectedModel3Name && !gemma4Enabled && (
-                <p className="text-sm text-mid-gray/60">
-                  {t("multiStt.status.noModels")}
-                </p>
+              {brainMode === "audio_in_merge" && (
+                <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+                  <span className="w-2 h-2 rounded-full bg-orange-500" />
+                  <span className="text-sm">
+                    {t("multiStt.status.audioInMerge")}
+                  </span>
+                </div>
               )}
+              {!selectedModel2Name &&
+                !selectedModel3Name &&
+                brainMode === "text_only" && (
+                  <p className="text-sm text-mid-gray/60">
+                    {t("multiStt.status.noModels")}
+                  </p>
+                )}
             </div>
           </SettingsGroup>
         </>

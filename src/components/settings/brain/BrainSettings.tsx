@@ -22,7 +22,7 @@ import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { useBrainProviderState } from "./useBrainProviderState";
 import { useLlamaState } from "../../../hooks/useLlamaState";
 
-const LlamaDownloadPanel: React.FC<{
+export const LlamaDownloadPanel: React.FC<{
   llamaState: ReturnType<typeof useLlamaState>;
 }> = ({ llamaState }) => {
   const { t } = useTranslation();
@@ -357,7 +357,7 @@ const LlamaDownloadPanel: React.FC<{
   );
 };
 
-const LlamaStatusCard: React.FC = () => {
+export const LlamaStatusCard: React.FC = () => {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const variant = settings?.brain?.llama_model_variant ?? "standard";

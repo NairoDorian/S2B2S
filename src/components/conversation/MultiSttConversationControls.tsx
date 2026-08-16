@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Brain, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { Dropdown } from "../ui/Dropdown";
 import { commands, type ModelInfo } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
@@ -22,10 +22,8 @@ export const MultiSttConversationControls: React.FC = () => {
   const enabled = (getSetting("multi_stt_enabled") as boolean) ?? false;
   const model2 = (getSetting("multi_stt_model_2") as string | null) ?? null;
   const model3 = (getSetting("multi_stt_model_3") as string | null) ?? null;
-  const gemma4Enabled =
-    (getSetting("multi_stt_gemma4_enabled") as boolean) ?? false;
-  const includeAudio =
-    (getSetting("multi_stt_merge_include_audio") as boolean) ?? false;
+  const brainMode =
+    (getSetting("multi_stt_brain_mode") as string | null) ?? "text_only";
 
   const downloadedModels = models.filter(
     (m: ModelInfo) => m.is_downloaded || m.is_custom,
@@ -68,7 +66,7 @@ export const MultiSttConversationControls: React.FC = () => {
     await updateSetting("multi_stt_enabled", value);
     if (value) {
       preloadExtras();
-      const needsMmproj = gemma4Enabled || includeAudio;
+      const needsMmproj = brainMode !== "text_only";
       if (needsMmproj) {
         warmBrainWithMmproj(true);
       }
@@ -98,16 +96,11 @@ export const MultiSttConversationControls: React.FC = () => {
     }
   };
 
-  const handleToggleGemma4 = async (value: boolean) => {
-    await updateSetting("multi_stt_gemma4_enabled", value);
-    if (enabled && value) {
-      warmBrainWithMmproj(true);
-    }
-  };
-
-  const handleToggleIncludeAudio = async (value: boolean) => {
-    await updateSetting("multi_stt_merge_include_audio", value);
-    if (enabled && value) {
+  const handleBrainModeChange = async (
+    value: "text_only" | "separate_asr" | "audio_in_merge",
+  ) => {
+    await updateSetting("multi_stt_brain_mode", value);
+    if (enabled && value !== "text_only") {
       warmBrainWithMmproj(true);
     }
   };
@@ -117,7 +110,7 @@ export const MultiSttConversationControls: React.FC = () => {
   useEffect(() => {
     if (enabled) {
       preloadExtras();
-      if (gemma4Enabled || includeAudio) {
+      if (brainMode !== "text_only") {
         warmBrainWithMmproj(true);
       }
     }
@@ -158,36 +151,29 @@ export const MultiSttConversationControls: React.FC = () => {
               className="min-w-[180px]"
             />
 
-            <label
-              className="inline-flex items-center cursor-pointer text-[11px] text-mid-gray hover:text-foreground select-none"
-              title={t("multiStt.gemma4.description")}
-            >
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={gemma4Enabled}
-                onChange={(e) => void handleToggleGemma4(e.target.checked)}
-              />
-              <div className="relative w-8 h-[18px] bg-mid-gray/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-orange-400/80 mr-1"></div>
-              <Brain size={12} className="mr-1 inline-block" />
-              <span>{t("multiStt.gemma4.label")}</span>
-            </label>
-
-            <label
-              className="inline-flex items-center cursor-pointer text-[11px] text-mid-gray hover:text-foreground select-none"
-              title={t("multiStt.mergeProvider.includeAudio.description")}
-            >
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={includeAudio}
-                onChange={(e) =>
-                  void handleToggleIncludeAudio(e.target.checked)
-                }
-              />
-              <div className="relative w-8 h-[18px] bg-mid-gray/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-logo-primary mr-1"></div>
-              <span>{t("multiStt.mergeProvider.includeAudio.label")}</span>
-            </label>
+            <Dropdown
+              selectedValue={brainMode}
+              options={[
+                {
+                  value: "text_only",
+                  label: t("multiStt.brainMode.options.textOnly"),
+                },
+                {
+                  value: "separate_asr",
+                  label: t("multiStt.brainMode.options.separateAsr"),
+                },
+                {
+                  value: "audio_in_merge",
+                  label: t("multiStt.brainMode.options.audioInMerge"),
+                },
+              ]}
+              onSelect={(value) =>
+                void handleBrainModeChange(
+                  value as "text_only" | "separate_asr" | "audio_in_merge",
+                )
+              }
+              className="min-w-[150px]"
+            />
           </div>
         )}
       </div>

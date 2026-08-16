@@ -45,8 +45,7 @@ export const commands = {
 	changeMultiSttTranslateModel2: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_2", { enabled })),
 	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
 	changeMultiSttUseLlamaMergeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_use_llama_merge_setting", { enabled })),
-	changeMultiSttGemma4Setting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_gemma4_setting", { enabled })),
-	changeMultiSttMergeIncludeAudioSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_include_audio_setting", { enabled })),
+	changeMultiSttBrainModeSetting: (mode: MultiSttBrainMode) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_brain_mode_setting", { mode })),
 	changePostProcessBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl })),
 	changePostProcessApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_api_key_setting", { providerId, apiKey })),
 	changePostProcessModelSetting: (providerId: string, model: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_model_setting", { providerId, model })),
@@ -197,6 +196,28 @@ export const commands = {
 	getCurrentModel: () => typedError<string, string>(__TAURI_INVOKE("get_current_model")),
 	getTranscriptionModelStatus: () => typedError<string | null, string>(__TAURI_INVOKE("get_transcription_model_status")),
 	isModelLoading: () => typedError<boolean, string>(__TAURI_INVOKE("is_model_loading")),
+	/**
+	 *  All downloads known to the hub (in-flight and last-seen), for restoring
+	 *  UI state on page mount / app reload.
+	 */
+	hubGetActiveDownloads: () => __TAURI_INVOKE<ModelHubDownloadProgress[]>("hub_get_active_downloads"),
+	/**  Cancel an in-flight download, whatever collection owns it. */
+	hubCancelDownload: (collection: ModelCollection, id: string) => typedError<boolean, string>(__TAURI_INVOKE("hub_cancel_download", { collection, id })),
+	/**  Delete an installed model/package/runtime, whatever collection owns it. */
+	hubDeleteModel: (collection: ModelCollection, id: string) => typedError<null, string>(__TAURI_INVOKE("hub_delete_model", { collection, id })),
+	/**
+	 *  Start a download for any collection through one unified command.
+	 * 
+	 *  The `id` is collection-scoped:
+	 *  - **STT**: a model id (e.g. `"whisper-tiny"`) or a quant variant id
+	 *    (`"repo/filename"` — routed through `download_catalog_quant`).
+	 *  - **Brain**: any non-empty string (the LlamaManager reads its target from
+	 *    settings, so the id is informational only).
+	 *  - **TTS**: a package id from the audio.cpp catalog.
+	 *  - **Runtime**: `"{backend}-{tag}"` (e.g. `"cuda-b9741"`); the command looks
+	 *    up the GitHub release asset URL automatically.
+	 */
+	hubDownloadModel: (request: HubDownloadRequest) => typedError<null, string>(__TAURI_INVOKE("hub_download_model", { request })),
 	/**  Whether any STT model is known to the app (built-in catalog or discovered). */
 	hasAnyModelsAvailable: () => typedError<boolean, string>(__TAURI_INVOKE("has_any_models_available")),
 	/**  Whether any STT model is already on disk (downloaded or discovered locally). */
@@ -341,7 +362,7 @@ export const commands = {
 	/**  List models available at the configured Brain endpoint (Ollama, LM Studio, cloud…). */
 	fetchBrainModels: () => typedError<string[], string>(__TAURI_INVOKE("fetch_brain_models")),
 	/**  Replace the whole Brain configuration (endpoint, model, prompt, toggles). */
-	changeBrainConfig: (config: BrainConfig_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_brain_config", { config })),
+	changeBrainConfig: (config: BrainConfig) => typedError<null, string>(__TAURI_INVOKE("change_brain_config", { config })),
 	setBrainProvider: (providerId: string) => typedError<null, string>(__TAURI_INVOKE("set_brain_provider", { providerId })),
 	changeBrainBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_base_url_setting", { providerId, baseUrl })),
 	changeBrainApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_brain_api_key_setting", { providerId, apiKey })),
@@ -377,6 +398,13 @@ export const commands = {
 	 *  and returns the full reply text.
 	 */
 	brainAskRegion: (question: string) => typedError<string, string>(__TAURI_INVOKE("brain_ask_region", { question })),
+	/**
+	 *  List downloaded Brain model files (GGUF weights: Gemma 4 base, mmproj
+	 *  projectors, MTP draft models) for the Models hub Brain tab.
+	 */
+	getDownloadedBrainModels: () => __TAURI_INVOKE<BrainModelFile[]>("get_downloaded_brain_models"),
+	/**  Cancel an in-flight Brain model download. */
+	cancelBrainModelDownload: () => __TAURI_INVOKE<boolean>("cancel_brain_model_download"),
 	/**
 	 *  Called from the overlay when it is ready to render: returns the virtual
 	 *  screen geometry so the frontend can convert logical → physical pixels.
@@ -454,6 +482,8 @@ export const events = {
 	envProgressEvent: makeEvent<EnvProgressEvent>("env-progress-event"),
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
 	llamaServerStatus: makeEvent<LlamaServerStatus>("llama-server-status"),
+	modelHubDownloadProgress: makeEvent<ModelHubDownloadProgress>("model-hub-download-progress"),
+	modelHubNotification: makeEvent<ModelHubNotification>("model-hub-notification"),
 	pythonEnvStatus: makeEvent<PythonEnvStatus>("python-env-status"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
@@ -593,7 +623,7 @@ export type AppSettings_Deserialize = {
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
 	tts?: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
-	brain?: BrainConfig_Deserialize,
+	brain?: BrainConfig,
 	long_audio_model?: string | null,
 	long_audio_threshold_seconds?: number | null,
 	noise_suppression_enabled?: boolean,
@@ -624,10 +654,13 @@ export type AppSettings_Deserialize = {
 	multi_stt_selected_merge_prompt_id?: string | null,
 	/**  When true, use the local llama.cpp server as the LLM merge provider instead of a cloud provider. */
 	multi_stt_use_llama_merge?: boolean,
-	/**  When true, add a 4th transcription source using Gemma 4 2B multimodal (mmproj + audio). */
-	multi_stt_gemma4_enabled?: boolean,
-	/**  When true, include the raw audio in the LLM merge step with the local llama.cpp server (Gemma 4 with mmproj). */
-	multi_stt_merge_include_audio?: boolean,
+	/**
+	 *  How the Brain model participates in the multi-STT pass:
+	 *  - `text_only`: no audio — the model only merges/cleans the transcripts.
+	 *  - `separate_asr`: Gemma 4 transcribes the audio in a separate prompt, then joins the merge.
+	 *  - `audio_in_merge`: the raw audio is attached to the merge prompt for on-the-fly verification.
+	 */
+	multi_stt_brain_mode?: MultiSttBrainMode,
 	/**
 	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
 	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
@@ -777,7 +810,7 @@ export type AppSettings_Serialize = {
 	/**  Text-to-speech ("Read Anywhere" / CopySpeak) settings. */
 	tts: TtsConfig,
 	/**  Streaming LLM "Brain" subsystem settings (separate from post-processing). */
-	brain: BrainConfig_Serialize,
+	brain: BrainConfig,
 	long_audio_model: string | null,
 	long_audio_threshold_seconds: number | null,
 	noise_suppression_enabled: boolean,
@@ -808,10 +841,13 @@ export type AppSettings_Serialize = {
 	multi_stt_selected_merge_prompt_id: string | null,
 	/**  When true, use the local llama.cpp server as the LLM merge provider instead of a cloud provider. */
 	multi_stt_use_llama_merge: boolean,
-	/**  When true, add a 4th transcription source using Gemma 4 2B multimodal (mmproj + audio). */
-	multi_stt_gemma4_enabled: boolean,
-	/**  When true, include the raw audio in the LLM merge step with the local llama.cpp server (Gemma 4 with mmproj). */
-	multi_stt_merge_include_audio: boolean,
+	/**
+	 *  How the Brain model participates in the multi-STT pass:
+	 *  - `text_only`: no audio — the model only merges/cleans the transcripts.
+	 *  - `separate_asr`: Gemma 4 transcribes the audio in a separate prompt, then joins the merge.
+	 *  - `audio_in_merge`: the raw audio is attached to the merge prompt for on-the-fly verification.
+	 */
+	multi_stt_brain_mode: MultiSttBrainMode,
 	/**
 	 *  Parakeet streaming toggle: when enabled, all UnifiedParakeet models
 	 *  (Unified 0.6B + EOU 120M) use the streaming API for progressive partial
@@ -948,10 +984,7 @@ export type BindingResponse = {
 };
 
 /**  The "Brain": a streaming LLM subsystem, independent of dictation post-processing. */
-export type BrainConfig = BrainConfig_Serialize | BrainConfig_Deserialize;
-
-/**  The "Brain": a streaming LLM subsystem, independent of dictation post-processing. */
-export type BrainConfig_Deserialize = {
+export type BrainConfig = {
 	enabled: boolean,
 	provider_id: string,
 	providers: PostProcessProvider[],
@@ -981,14 +1014,6 @@ export type BrainConfig_Deserialize = {
 	headphone_mode?: boolean,
 	/**  Auto-rearm mic after reply in hands-free mode */
 	auto_listen?: boolean,
-	/**
-	 *  DEPRECATED — superseded by `llama_mmproj_enabled` (the single on/off for all
-	 *  multimodal input: audio, image, video). Kept only for backwards-compat with old
-	 *  saved store files; never read by any runtime logic.
-	 */
-	multimodal_audio_enabled?: boolean,
-	/**  DEPRECATED — superseded by `llama_mmproj_enabled`. See `multimodal_audio_enabled`. */
-	multimodal_image_enabled?: boolean,
 	/**
 	 *  Bypass STT models and send raw audio directly to the multimodal Brain
 	 *  with a fixed transcription prompt. Gemma 4 handles both transcription
@@ -1050,96 +1075,15 @@ export type BrainConfig_Deserialize = {
 	reasoning_enabled?: boolean,
 };
 
-/**  The "Brain": a streaming LLM subsystem, independent of dictation post-processing. */
-export type BrainConfig_Serialize = {
-	enabled: boolean,
-	provider_id: string,
-	providers: PostProcessProvider[],
-	api_keys: SecretMap,
-	models: { [key in string]: string },
-	system_prompt: string,
-	/**  How many prior turns to keep in the context window (0 = stateless). */
-	context_turns: number,
-	/**  Speak the Brain's reply aloud via the TTS subsystem. */
-	read_aloud: boolean,
-	/**
-	 *  Separate system prompt appended when read-aloud is ON.
-	 *  Instructs the model to answer conversationally for listening.
-	 */
-	speakable_output_prompt: string,
-	/**  Dummy prompt sent to warm up the Brain model when it loads into VRAM. */
-	warmup_prompt: string,
-	/**
-	 *  Conversation mode: push_to_talk | toggle | hands_free.
-	 *  Stored for persistence but not yet read by Rust logic —
-	 *  the actual converse shortcut behaviour is controlled by the shortcut keys.
-	 */
-	conversation_mode: string,
-	/**  Endpoint silence preset: snappy(300ms) | balanced(600ms) | patient(1200ms) */
-	endpoint_preset: string,
-	/**  Headphone mode — enables barge-in during TTS playback */
-	headphone_mode: boolean,
-	/**  Auto-rearm mic after reply in hands-free mode */
-	auto_listen: boolean,
-	/**
-	 *  Bypass STT models and send raw audio directly to the multimodal Brain
-	 *  with a fixed transcription prompt. Gemma 4 handles both transcription
-	 *  and response using its native audio understanding.
-	 */
-	brain_only_transcription: boolean,
-	/**
-	 *  Language the Brain should reply in. "auto" (default) mirrors the
-	 *  huggingface/speech-to-speech `--language auto` + `--enable_lang_prompt`
-	 *  behaviour: the conversation passes the effective STT language (the
-	 *  selected language, or the OS input source for "os_input") so the model
-	 *  replies in the same language it was spoken to. Set a concrete BCP-47
-	 *  code (e.g. "es", "fr-FR") to force a fixed reply language regardless of
-	 *  input. Large models usually infer the language from context; this hint
-	 *  mainly helps smaller local models.
-	 */
-	reply_language: string,
-	/**
-	 *  Compress old conversation turns into a short summary when the context
-	 *  window fills up (dense-JSON summarization, single-flight background
-	 *  task). When disabled, oldest turns are simply dropped.
-	 */
-	compaction_enabled: boolean,
-	/**
-	 *  Allow the Brain to invoke built-in offline tools (current time,
-	 *  clipboard read/write) via `<code>` blocks, with results fed back to
-	 *  the model in a follow-up turn.
-	 */
-	tools_enabled: boolean,
-	/**
-	 *  Gemma 4 E2B GGUF quantization for the local llama.cpp Brain (e.g.
-	 *  "Q2_K_XL", "Q4_K_XL"). The matching `gemma-4-E2B-it-qat-UD-<quant>.gguf`
-	 *  is downloaded from the unsloth HF repo and loaded by llama-server.
-	 */
-	llama_model_quant: string,
-	/**  Multimodal projector (mmproj) precision for the local Brain. */
-	llama_mmproj_quant: string,
-	/**
-	 *  Whether the multimodal projector (mmproj) should be loaded.
-	 *  When disabled, llama-server runs text-only saving ~1 GB VRAM and ~3% speed.
-	 */
-	llama_mmproj_enabled: boolean,
-	/**  MTP draft-model quantization for speculative decoding. */
-	llama_mtp_quant: string,
-	/**  Whether MTP speculative decoding draft model should be loaded. */
-	llama_mtp_enabled: boolean,
-	/**
-	 *  Local Brain model variant: "standard" / "2b" (unsloth/gemma-4-E2B-it-qat-GGUF),
-	 *  "4b" / "e4b" (unsloth/gemma-4-E4B-it-qat-GGUF — higher quality/reasoning),
-	 *  or "mobile" (unsloth/gemma-4-E2B-it-qat-mobile-GGUF — Google's
-	 *  mobile-optimized QAT checkpoint, published only as UD-Q2_K_XL, lower
-	 *  VRAM at some quality cost).
-	 */
-	llama_model_variant: string,
-	/**
-	 *  Enable internal reasoning/thinking output for models that support it (e.g. Gemma 4 / DeepSeek).
-	 *  When disabled, passes `--reasoning off` to llama-server.
-	 */
-	reasoning_enabled: boolean,
+/**
+ *  A file in the local Brain models directory (`models/Brain/llama_cpp`),
+ *  listed by `list_downloaded_models` for the Models hub Brain tab.
+ */
+export type BrainModelFile = {
+	filename: string,
+	sizeMb: number | null,
+	/**  Rough classification for UI grouping: "model" | "mmproj" | "mtp". */
+	kind: string,
 };
 
 export type CartesiaConfig = {
@@ -1274,6 +1218,22 @@ export type HistoryEntry = {
 
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number };
 
+/**
+ *  Unified download request dispatched through [`super::commands::hub_download_model`].
+ * 
+ *  The `id` is collection-scoped: a model id for STT, the hub download id for
+ *  Brain, a package id for TTS, or `"{backend}-{tag}"` for Runtime.
+ */
+export type HubDownloadRequest = {
+	collection: ModelCollection,
+	id: string,
+};
+
+/**  Lifecycle phase of a hub download. */
+export type HubDownloadStatus = "downloading" | "verifying" | "extracting" | "completed" | "failed" | "cancelled";
+
+export type HubNotificationKind = "completed" | "failed" | "cancelled" | "deleted";
+
 /**  Result of changing keyboard implementation */
 export type ImplementationChangeResult = {
 	success: boolean,
@@ -1359,6 +1319,50 @@ export type LlmServerInfo = {
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
+/**  Which engine collection a model/download belongs to. */
+export type ModelCollection = 
+/**  Speech-to-text models (transcribe.cpp / transcribe-rs family). */
+"stt" | 
+/**  Local Brain GGUF models (Gemma 4 via llama.cpp). */
+"brain" | 
+/**  Text-to-speech models (audio.cpp packages, Python-engine models). */
+"tts" | 
+/**  Runtime binaries (llama.cpp server builds). */
+"runtime";
+
+/**
+ *  One progress snapshot for a single downloadable entry. Emitted on the
+ *  typed `model-hub-download-progress` event, throttled by each emitter.
+ */
+export type ModelHubDownloadProgress = {
+	collection: ModelCollection,
+	/**  Collection-scoped entry id (model id, package id, or `backend-tag`). */
+	id: string,
+	/**  Human-readable name for the row/card. */
+	name: string,
+	/**  Optional sub-file being fetched (multi-file packages). */
+	file: string | null,
+	downloadedMb: number | null,
+	totalMb: number | null,
+	/**  0–100. */
+	percent: number | null,
+	speedMbps: number | null,
+	status: HubDownloadStatus,
+	error: string | null,
+};
+
+/**
+ *  Terminal notifications (complete/failed/cancelled/deleted) for a hub entry,
+ *  emitted once at the end of an operation.
+ */
+export type ModelHubNotification = {
+	collection: ModelCollection,
+	id: string,
+	name: string,
+	kind: HubNotificationKind,
+	error: string | null,
+};
+
 export type ModelInfo = {
 	id: string,
 	name: string,
@@ -1417,6 +1421,24 @@ export type ModelSource =
 "Local";
 
 export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
+
+/**  How the Brain model participates in a multi-STT pass. */
+export type MultiSttBrainMode = 
+/**
+ *  The Brain model is used only for the merge/clean step — no audio is
+ *  sent to it. Raw audio is NOT sent with the merge prompt.
+ */
+"text_only" | 
+/**
+ *  Gemma 4 transcribes the audio in a separate prompt, then its
+ *  transcript joins the other transcripts in the merge prompt.
+ */
+"separate_asr" | 
+/**
+ *  The raw audio is attached to the merge prompt itself, and the model
+ *  transcribes on the fly while merging/cleaning.
+ */
+"audio_in_merge";
 
 export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cache_aware" | "nemotron_speech_cache_aware";
 

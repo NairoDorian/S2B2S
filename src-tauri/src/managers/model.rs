@@ -466,6 +466,22 @@ impl HfDownloadProgress {
                 percentage,
             },
         );
+
+        // Mirror to the unified hub event bus (STT collection).
+        if let Some(manager) = self
+            .app_handle
+            .try_state::<Arc<ModelManager>>()
+            .map(|s| s.inner().clone())
+        {
+            manager.emit_hub_progress(
+                &self.model_id,
+                None,
+                downloaded,
+                total,
+                percentage,
+                crate::model_hub::HubDownloadStatus::Downloading,
+            );
+        }
     }
 }
 
@@ -2357,6 +2373,16 @@ impl ModelManager {
                 model.is_downloading = true;
             }
         }
+
+        self.emit_hub_progress(
+            model_id,
+            None,
+            0,
+            model_info.size_mb * 1024 * 1024,
+            0.0,
+            crate::model_hub::HubDownloadStatus::Downloading,
+        );
+
         let cancel_flag = CancellationToken::new();
         {
             let mut flags = self.cancel_flags.lock().unwrap();
@@ -2433,6 +2459,11 @@ impl ModelManager {
                         let _ = fs::remove_file(&partial);
                         let _ = fs::remove_dir_all(&temp_dir);
                         info!("HF download cancelled for: {}", model_id);
+                        self.emit_hub_notify(
+                            model_id,
+                            crate::model_hub::HubNotificationKind::Cancelled,
+                            None,
+                        );
                         return Ok(());
                     }
                     let chunk = chunk?;
@@ -2451,6 +2482,16 @@ impl ModelManager {
                         percentage,
                     };
                     let _ = self.app_handle.emit("model-download-progress", &progress);
+
+                    // Throttle hub mirroring to match the legacy 10 Hz cadence.
+                    self.emit_hub_progress(
+                        model_id,
+                        Some(file),
+                        downloaded,
+                        total,
+                        percentage,
+                        crate::model_hub::HubDownloadStatus::Downloading,
+                    );
                 }
                 out_file.flush()?;
                 drop(out_file);
@@ -2469,12 +2510,11 @@ impl ModelManager {
                             continue;
                         }
                         let _ = fs::remove_file(&partial);
-                        return Err(anyhow::anyhow!(
+                        let msg = format!(
                             "HF download incomplete for {}: expected {} bytes, got {}",
-                            file,
-                            total,
-                            actual
-                        ));
+                            file, total, actual
+                        );
+                        return Err(anyhow::anyhow!(msg));
                     }
                 }
                 // Success — rename partial to final
@@ -2502,6 +2542,11 @@ impl ModelManager {
         self.cancel_flags.lock().unwrap().remove(model_id);
 
         let _ = self.app_handle.emit("model-download-complete", model_id);
+        self.emit_hub_notify(
+            model_id,
+            crate::model_hub::HubNotificationKind::Completed,
+            None,
+        );
         info!(
             "Successfully downloaded HF model {} to {:?}",
             model_id, model_path
@@ -2539,6 +2584,15 @@ impl ModelManager {
                 model.is_downloading = true;
             }
         }
+
+        self.emit_hub_progress(
+            &model_id,
+            None,
+            0,
+            model_info.size_mb * 1024 * 1024,
+            0.0,
+            crate::model_hub::HubDownloadStatus::Downloading,
+        );
 
         // Register a cancellation token so `cancel_download` can abort this
         // transfer promptly. The guard removes it on every exit path.
@@ -2654,6 +2708,11 @@ impl ModelManager {
                     // drops the token; `cancel_download` already emitted
                     // `model-download-cancelled`.
                     info!("HF download cancelled for: {}", model_id);
+                    self.emit_hub_notify(
+                        &model_id,
+                        crate::model_hub::HubNotificationKind::Cancelled,
+                        None,
+                    );
                     return Ok(());
                 }
                 Err(hf_hub::api::tokio::ApiError::Cancelled) => {
@@ -2683,6 +2742,11 @@ impl ModelManager {
                         _ = tokio::time::sleep(delay) => {}
                         _ = cancel_token.cancelled() => {
                             info!("HF download cancelled for: {}", model_id);
+                            self.emit_hub_notify(
+                                &model_id,
+                                crate::model_hub::HubNotificationKind::Cancelled,
+                                None,
+                            );
                             return Ok(());
                         }
                     }
@@ -2710,6 +2774,11 @@ impl ModelManager {
                         _ = tokio::time::sleep(delay) => {}
                         _ = cancel_token.cancelled() => {
                             info!("HF download cancelled for: {}", model_id);
+                            self.emit_hub_notify(
+                                &model_id,
+                                crate::model_hub::HubNotificationKind::Cancelled,
+                                None,
+                            );
                             return Ok(());
                         }
                     }
@@ -2726,11 +2795,11 @@ impl ModelManager {
             );
             let mirrors = crate::catalog::mirror_fallbacks(&model_id);
             if mirrors.is_empty() {
-                return Err(anyhow::anyhow!(
+                let msg = format!(
                     "Hugging Face download failed after {} attempt(s): {}",
-                    attempt,
-                    hf_error
-                ));
+                    attempt, hf_error
+                );
+                return Err(anyhow::anyhow!(msg));
             }
             let mut completed = false;
             for mirror in &mirrors {
@@ -2745,6 +2814,11 @@ impl ModelManager {
                     }
                     Ok(false) => {
                         info!("Mirror download cancelled for: {}", model_id);
+                        self.emit_hub_notify(
+                            &model_id,
+                            crate::model_hub::HubNotificationKind::Cancelled,
+                            None,
+                        );
                         return Ok(());
                     }
                     Err(e) => {
@@ -2756,11 +2830,12 @@ impl ModelManager {
                 }
             }
             if !completed {
-                return Err(anyhow::anyhow!(
+                let msg = format!(
                     "Download failed from Hugging Face ({}) and {} mirror(s)",
                     hf_error,
                     mirrors.len()
-                ));
+                );
+                return Err(anyhow::anyhow!(msg));
             }
         }
 
@@ -2768,6 +2843,11 @@ impl ModelManager {
         self.update_download_status()?;
         self.cancel_flags.lock().unwrap().remove(&model_id);
         let _ = self.app_handle.emit("model-download-complete", &model_id);
+        self.emit_hub_notify(
+            &model_id,
+            crate::model_hub::HubNotificationKind::Completed,
+            None,
+        );
         info!("HF model {} downloaded", model_id);
         Ok(())
     }
@@ -2840,7 +2920,7 @@ impl ModelManager {
         self.download_model(model_id).await
     }
 
-    pub async fn download_model(&self, model_id: &str) -> Result<()> {
+    async fn download_model_inner(&self, model_id: &str) -> Result<()> {
         let model_info = {
             let models = self.available_models.lock().unwrap();
             models.get(model_id).cloned()
@@ -2897,6 +2977,21 @@ impl ModelManager {
             }
         }
 
+        // Emit hub progress so the unified Models hub bar shows STT downloads.
+        self.emit_hub_progress(
+            model_id,
+            None,
+            model_info.partial_size,
+            model_info.size_mb * 1024 * 1024,
+            if model_info.size_mb > 0 {
+                (model_info.partial_size as f64 / (model_info.size_mb as f64 * 1024.0 * 1024.0))
+                    * 100.0
+            } else {
+                0.0
+            },
+            crate::model_hub::HubDownloadStatus::Downloading,
+        );
+
         // Create cancellation token for this download
         let cancel_token = CancellationToken::new();
         {
@@ -2930,6 +3025,11 @@ impl ModelManager {
                 info!("Download cancelled for: {}", model_id);
                 // Keep partial file for resume functionality.
                 // Guard handles is_downloading + cancel_flags cleanup on drop.
+                self.emit_hub_notify(
+                    model_id,
+                    crate::model_hub::HubNotificationKind::Cancelled,
+                    None,
+                );
                 return Ok(());
             }
             HttpDownloadOutcome::Completed => {}
@@ -2945,6 +3045,14 @@ impl ModelManager {
 
             // Emit extraction started event
             let _ = self.app_handle.emit("model-extraction-started", model_id);
+            self.emit_hub_progress(
+                model_id,
+                None,
+                0,
+                0,
+                100.0,
+                crate::model_hub::HubDownloadStatus::Extracting,
+            );
             info!("Extracting archive for directory-based model: {}", model_id);
 
             // Use a temporary extraction directory to ensure atomic operations
@@ -3020,6 +3128,14 @@ impl ModelManager {
             }
             // Emit extraction completed event
             let _ = self.app_handle.emit("model-extraction-completed", model_id);
+            self.emit_hub_progress(
+                model_id,
+                None,
+                0,
+                0,
+                100.0,
+                crate::model_hub::HubDownloadStatus::Completed,
+            );
 
             // Remove the downloaded tar.gz file
             let _ = fs::remove_file(&partial_path);
@@ -3043,6 +3159,11 @@ impl ModelManager {
 
         // Emit completion event
         let _ = self.app_handle.emit("model-download-complete", model_id);
+        self.emit_hub_notify(
+            model_id,
+            crate::model_hub::HubNotificationKind::Completed,
+            None,
+        );
 
         info!(
             "Successfully downloaded model {} to {:?}",
@@ -3050,6 +3171,17 @@ impl ModelManager {
         );
 
         Ok(())
+    }
+
+    pub async fn download_model(&self, model_id: &str) -> Result<()> {
+        self.download_model_inner(model_id).await.map_err(|e| {
+            self.emit_hub_notify(
+                model_id,
+                crate::model_hub::HubNotificationKind::Failed,
+                Some(e.to_string()),
+            );
+            e
+        })
     }
 
     pub fn delete_model(&self, model_id: &str) -> Result<()> {
@@ -3288,6 +3420,65 @@ impl ModelManager {
 
         info!("Download cancellation initiated for: {}", model_id);
         Ok(())
+    }
+
+    /// Look up the human-readable name for a model id, falling back to the id
+    /// itself when the model isn't registered (e.g. a quant variant that was
+    /// pruned). Used to label hub events consistently.
+    pub fn lookup_model_name(&self, model_id: &str) -> String {
+        self.available_models
+            .lock()
+            .unwrap()
+            .get(model_id)
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| model_id.to_string())
+    }
+
+    /// Emit a typed hub-progress event for the STT collection, so the unified
+    /// ModelHubSettings bar can render STT downloads without legacy bridging.
+    fn emit_hub_progress(
+        &self,
+        model_id: &str,
+        file: Option<&str>,
+        downloaded: u64,
+        total: u64,
+        percent: f64,
+        status: crate::model_hub::HubDownloadStatus,
+    ) {
+        let name = self.lookup_model_name(model_id);
+        crate::model_hub::emit_progress(
+            &self.app_handle,
+            crate::model_hub::ModelHubDownloadProgress {
+                collection: crate::model_hub::ModelCollection::Stt,
+                id: model_id.to_string(),
+                name,
+                file: file.map(|s| s.to_string()),
+                downloaded_mb: downloaded as f64 / (1024.0 * 1024.0),
+                total_mb: total as f64 / (1024.0 * 1024.0),
+                percent,
+                speed_mbps: 0.0,
+                status,
+                error: None,
+            },
+        );
+    }
+
+    /// Emit a terminal hub notification for the STT collection.
+    fn emit_hub_notify(
+        &self,
+        model_id: &str,
+        kind: crate::model_hub::HubNotificationKind,
+        error: Option<String>,
+    ) {
+        let name = self.lookup_model_name(model_id);
+        crate::model_hub::notify(
+            &self.app_handle,
+            crate::model_hub::ModelCollection::Stt,
+            model_id,
+            &name,
+            kind,
+            error,
+        );
     }
 }
 

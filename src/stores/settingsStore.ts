@@ -229,10 +229,10 @@ const settingUpdaters: {
     ),
   multi_stt_use_llama_merge: (value) =>
     commands.changeMultiSttUseLlamaMergeSetting(value as boolean),
-  multi_stt_gemma4_enabled: (value) =>
-    commands.changeMultiSttGemma4Setting(value as boolean),
-  multi_stt_merge_include_audio: (value) =>
-    commands.changeMultiSttMergeIncludeAudioSetting(value as boolean),
+  multi_stt_brain_mode: (value) =>
+    commands.changeMultiSttBrainModeSetting(
+      value as "text_only" | "separate_asr" | "audio_in_merge",
+    ),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),

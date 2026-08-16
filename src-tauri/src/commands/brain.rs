@@ -302,3 +302,26 @@ pub async fn warm_brain_server(app: AppHandle, mmproj: bool) -> Result<(), Strin
         Err("LlamaManager not initialized".to_string())
     }
 }
+
+/// List downloaded Brain model files (GGUF weights: Gemma 4 base, mmproj
+/// projectors, MTP draft models) for the Models hub Brain tab.
+#[tauri::command]
+#[specta::specta]
+pub fn get_downloaded_brain_models(
+    app: AppHandle,
+) -> Vec<crate::brain::llama_manager::BrainModelFile> {
+    let Some(manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() else {
+        return Vec::new();
+    };
+    manager.list_downloaded_models()
+}
+
+/// Cancel an in-flight Brain model download.
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_brain_model_download(app: AppHandle) -> bool {
+    let Some(manager) = app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>() else {
+        return false;
+    };
+    manager.cancel_download()
+}

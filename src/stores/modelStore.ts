@@ -184,7 +184,10 @@ export const useModelStore = create<ModelsStore>()(
             };
           }),
         );
-        const result = await commands.downloadModel(modelId);
+        const result = await commands.hubDownloadModel({
+          collection: "stt",
+          id: modelId,
+        });
         if (result.status !== "ok") {
           cancelModelDownloadActivationIntent(modelId);
           set(
@@ -224,7 +227,10 @@ export const useModelStore = create<ModelsStore>()(
             };
           }),
         );
-        const result = await commands.downloadModelQuant(modelId);
+        const result = await commands.hubDownloadModel({
+          collection: "stt",
+          id: modelId,
+        });
         if (result.status !== "ok") {
           cancelModelDownloadActivationIntent(modelId);
           set(
@@ -253,7 +259,7 @@ export const useModelStore = create<ModelsStore>()(
       try {
         set({ error: null });
         cancelModelDownloadActivationIntent(modelId);
-        const result = await commands.cancelDownload(modelId);
+        const result = await commands.hubCancelDownload("stt", modelId);
         if (result.status === "ok") {
           set(
             produce((state) => {
@@ -279,7 +285,7 @@ export const useModelStore = create<ModelsStore>()(
     deleteModel: async (modelId: string) => {
       try {
         set({ error: null });
-        const result = await commands.deleteModel(modelId);
+        const result = await commands.hubDeleteModel("stt", modelId);
         if (result.status === "ok") {
           await get().loadModels();
           await get().loadCurrentModel();

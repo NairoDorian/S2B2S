@@ -272,7 +272,27 @@
       "quants": "Quantizations",
       "quantDownload": "Download {{quant}} ({{size}})",
       "quantSelect": "Use {{quant}}",
-      "latencyConfigurable": "Streaming latency configurable: Fastest · Fast · Balanced · Accurate (Model settings)"
+      "latencyConfigurable": "Streaming latency configurable: Fastest · Fast · Balanced · Accurate (Model settings)",
+      "hub": {
+        "activeDownloads": "Active Downloads",
+        "noActiveDownloads": "No active downloads",
+        "tabs": {
+          "speech": "Speech (STT)",
+          "brain": "Brain (LLM)",
+          "tts": "Voice (TTS)",
+          "runtimes": "Runtimes"
+        },
+        "collection": {
+          "stt": "Speech-to-text",
+          "brain": "Brain",
+          "tts": "Text-to-speech",
+          "runtime": "Runtime"
+        },
+        "cancel": "Cancel",
+        "remove": "Remove",
+        "open": "Open in Settings",
+        "ttsOpenSettings": "audio.cpp voice models are configured under Settings » Speech."
+      }
     },
     "sound": {
       "title": "Dźwięk",
@@ -1305,10 +1325,16 @@
       "useLlama": {
         "label": "Use llama.cpp for merge",
         "description": "When enabled, the LLM merge uses the local llama.cpp server (Gemma 4) instead of a cloud provider."
-      },
-      "includeAudio": {
-        "label": "Include audio in merge (Multimodal)",
-        "description": "Feeds the recorded audio alongside candidate transcriptions to the local Gemma 4 model (with mmproj) during the merge step."
+      }
+    },
+    "brainMode": {
+      "title": "Brain Model Participation",
+      "label": "Brain model mode",
+      "description": "How the Brain model (Gemma 4) participates in the multi-STT pass.",
+      "options": {
+        "textOnly": "Text-only merge (no audio)",
+        "separateAsr": "Separate ASR + merge (audio transcribed in its own prompt)",
+        "audioInMerge": "Audio in merge prompt (transcribe on the fly)"
       }
     },
     "gemma4": {
@@ -1336,6 +1362,7 @@
       "tertiary": "Tertiary",
       "gemma4": "Gemma 4",
       "gemma4Model": "Gemma 4 2B Multimodal",
+      "audioInMerge": "Audio in merge prompt (Gemma 4 transcribes on the fly)",
       "noModels": "No extra models selected."
     }
   },

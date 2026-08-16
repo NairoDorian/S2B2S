@@ -1,9 +1,12 @@
 use crate::audiocpp_server::{
-    ensure_running, get_engine_status, list_voices as server_list_voices, unload as server_unload,
+    ensure_running, get_audiocpp_catalog, get_engine_status, list_voices as server_list_voices,
+    unload as server_unload,
 };
 use crate::settings::get_settings;
 use crate::tts::status::{EngineStatus, WarmEngine};
 use crate::tts::{TtsBackend, Voice};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
@@ -197,6 +200,16 @@ impl AudioCppBackend {
             .as_secs();
         self.last_used.store(now, Ordering::Relaxed);
     }
+
+    fn supports_streaming(&self, model_id: &str) -> bool {
+        if let Ok(catalog) = get_audiocpp_catalog(&self.app) {
+            catalog
+                .iter()
+                .any(|fam| fam.family == model_id && fam.modes.iter().any(|m| m == "streaming"))
+        } else {
+            false
+        }
+    }
 }
 
 impl TtsBackend for AudioCppBackend {
@@ -305,7 +318,6 @@ impl TtsBackend for AudioCppBackend {
             "input": trimmed,
             "voice": selected_voice,
             "speed": effective_speed,
-            "response_format": "wav"
         });
 
         if !settings.tts.audiocpp.language.is_empty() && settings.tts.audiocpp.language != "auto" {
@@ -346,6 +358,42 @@ impl TtsBackend for AudioCppBackend {
             settings.tts.audiocpp.language,
             handle.port
         );
+
+        if self.supports_streaming(&model_id) {
+            payload["response_format"] = serde_json::json!("pcm");
+            payload["stream_format"] = serde_json::json!("sse");
+
+            let resp = handle
+                .client
+                .post(&url)
+                .header("Accept", "text/event-stream")
+                .json(&payload)
+                .timeout(Duration::from_secs(60))
+                .send()
+                .map_err(|e| format!("HTTP request to audiocpp_server failed: {e}"))?;
+
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body = resp.text().unwrap_or_default();
+                if body.contains("unknown model id") {
+                    return Err(format!(
+                        "Model '{}' is not installed yet on disk. Please select an installed model (Supertonic 3, Qwen3-TTS, PocketTTS) or wait for its download to finish.",
+                        model_id
+                    ));
+                }
+                return Err(format!("audiocpp_server returned HTTP {status}: {body}"));
+            }
+
+            let body = resp
+                .text()
+                .map_err(|e| format!("Failed to read streaming audio from audiocpp_server: {e}"))?;
+            let pcm = parse_sse_audio(&body)?;
+            let bytes = pcm16_to_wav(&pcm, 44100, 1);
+            self.touch_last_used();
+            return Ok(bytes);
+        }
+
+        payload["response_format"] = serde_json::json!("wav");
 
         let resp = handle
             .client
@@ -402,4 +450,71 @@ impl WarmEngine for AudioCppBackend {
             _ => EngineStatus::Stopped,
         }
     }
+}
+
+/// Parse an SSE (`text/event-stream`) body from audio.cpp's streaming speech
+/// endpoint, accumulating the base64 PCM16 payload of each `speech.audio.delta`.
+fn parse_sse_audio(body: &str) -> Result<Vec<u8>, String> {
+    let mut pcm = Vec::new();
+    let mut saw_delta = false;
+
+    for event in body.split("\n\n") {
+        for line in event.lines() {
+            let line = line.trim();
+            if let Some(data) = line.strip_prefix("data:") {
+                let data = data.trim();
+                if data.is_empty() || data == "[DONE]" {
+                    continue;
+                }
+                let value: serde_json::Value = serde_json::from_str(data)
+                    .map_err(|e| format!("Invalid SSE event from audiocpp_server: {e}"))?;
+                match value["type"].as_str() {
+                    Some("speech.audio.delta") => {
+                        saw_delta = true;
+                        if let Some(b64) = value["audio"].as_str() {
+                            let chunk = BASE64.decode(b64).map_err(|e| {
+                                format!(
+                                    "Failed to decode streaming audio from audiocpp_server: {e}"
+                                )
+                            })?;
+                            pcm.extend_from_slice(&chunk);
+                        }
+                    }
+                    Some("speech.audio.done") => return Ok(pcm),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if saw_delta && !pcm.is_empty() {
+        Ok(pcm)
+    } else {
+        Err("audiocpp_server stream ended without audio".to_string())
+    }
+}
+
+/// Wrap raw 16-bit little-endian PCM in a canonical WAV container.
+fn pcm16_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
+    let byte_rate = sample_rate * channels as u32 * 2;
+    let block_align = channels * 2;
+    let data_len = pcm.len() as u32;
+    let riff_len = 36 + data_len;
+
+    let mut out = Vec::with_capacity(44 + pcm.len());
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&riff_len.to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&sample_rate.to_le_bytes());
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    out.extend_from_slice(pcm);
+    out
 }

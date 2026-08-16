@@ -270,8 +270,8 @@ export async function mockTauriIpc(page: Page) {
             : null;
         case "is_model_loading":
           return false;
-        case "download_model":
-          const modelId = args.modelId || "parakeet-v3";
+        case "hub_download_model": {
+          const modelId = args?.request?.id || "parakeet-v3";
           setTimeout(() => {
             (window as any).__mockEmit("model-download-progress", {
               model_id: modelId,
@@ -297,7 +297,14 @@ export async function mockTauriIpc(page: Page) {
               }, 200);
             }, 200);
           }, 100);
-          return true;
+          return { status: "ok" };
+        }
+        case "hub_get_active_downloads":
+          return [];
+        case "hub_cancel_download":
+          return { status: "ok" };
+        case "hub_delete_model":
+          return { status: "ok" };
         case "select_model":
         case "set_active_model":
           return true;

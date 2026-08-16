@@ -324,6 +324,7 @@ impl TranscriptionManager {
 
                     let settings = get_settings(&app_handle_cloned);
                     let timeout = settings.model_unload_timeout;
+                    let multi_stt_active = crate::stt::multi_stt::is_multi_stt_active(&settings);
 
                     // Skip Immediately — that variant is handled by
                     // maybe_unload_immediately() after each transcription.
@@ -349,6 +350,16 @@ impl TranscriptionManager {
                         let limit_ms = limit_seconds * 1000;
 
                         if idle_ms > limit_ms {
+                            // Multi-STT keeps the primary and every extra model
+                            // resident so turns hit them instantly in parallel.
+                            // Unloading them on idle defeats that; keep them warm
+                            // while multi-STT is enabled. Disabling multi-STT (or
+                            // an explicit unload command) frees the VRAM.
+                            if multi_stt_active {
+                                manager_cloned.touch_activity();
+                                continue;
+                            }
+
                             // idle -> unload
                             if manager_cloned.is_model_loaded() {
                                 let unload_start = std::time::Instant::now();
@@ -480,6 +491,11 @@ impl TranscriptionManager {
     /// Unloads the model immediately if the setting is enabled and the model is loaded
     pub fn maybe_unload_immediately(&self, context: &str) {
         let settings = get_settings(&self.app_handle);
+        // Multi-STT keeps models resident between turns; honoring
+        // `Immediately` here would reload all 2-3 models on every turn.
+        if crate::stt::multi_stt::is_multi_stt_active(&settings) {
+            return;
+        }
         if settings.model_unload_timeout == ModelUnloadTimeout::Immediately
             && self.is_model_loaded()
         {

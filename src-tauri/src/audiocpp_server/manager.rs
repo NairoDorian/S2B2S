@@ -340,6 +340,7 @@ fn generate_server_config(app: &AppHandle, port: u16, backend: &str) -> PathBuf 
             for pkg in &pkgs {
                 if let Some(ref local_path) = pkg.local_path {
                     let task = resolve_task_for_family(&fam.family);
+                    let supports_streaming = fam.modes.iter().any(|m| m == "streaming");
 
                     // Build optional voice presets for cloning models
                     let mut voice_presets_obj = None;
@@ -371,14 +372,22 @@ fn generate_server_config(app: &AppHandle, port: u16, backend: &str) -> PathBuf 
 
                     // Register the family ID (e.g. "supertonic", "qwen3_tts", "chatterbox")
                     if registered_ids.insert(fam.family.clone()) {
+                        let mode = if supports_streaming {
+                            "streaming"
+                        } else {
+                            "offline"
+                        };
                         let mut obj = serde_json::json!({
                             "id": fam.family.clone(),
                             "family": fam.family.clone(),
                             "path": local_path,
                             "task": task,
-                            "mode": "offline",
+                            "mode": mode,
                             "lazy": true
                         });
+                        if supports_streaming && fam.family == "supertonic" {
+                            obj["default_voice_preset"] = serde_json::json!({ "voice_id": "M1" });
+                        }
                         if let Some(ref s) = specs_dir {
                             obj["model_spec_override"] = serde_json::Value::String(
                                 s.join(format!("{}.json", fam.family))

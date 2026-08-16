@@ -29,6 +29,7 @@ dist-ssr
 *.sw?
 
 .claude/
+.commandcode/
 
 /target/
 recording_*

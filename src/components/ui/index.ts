@@ -11,6 +11,7 @@ export { Select } from "./Select";
 export { SettingContainer } from "./SettingContainer";
 export { SettingsGroup } from "./SettingsGroup";
 export { Slider } from "./Slider";
+export { Tabs, TabsContent, TabsList, TabsTrigger } from "./Tabs";
 export { Textarea } from "./Textarea";
 export { ToggleSwitch } from "./ToggleSwitch";
 export { Tooltip } from "./Tooltip";

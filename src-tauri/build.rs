@@ -191,7 +191,7 @@ fn generate_tray_translations() {
     fs::write(Path::new(&out_dir).join("tray_translations.rs"), out).unwrap();
 
     println!(
-        "cargo:warning=Generated tray translations: {} languages, {} fields",
+        "cargo:info=Generated tray translations: {} languages, {} fields",
         translations.len(),
         fields.len()
     );
@@ -523,5 +523,5 @@ fn stage_transcribe_runtime_libs() {
              compute devices"
         );
     }
-    println!("cargo:warning=Staged {copied} transcribe-cpp runtime library file(s)");
+    println!("cargo:info=Staged {copied} transcribe-cpp runtime library file(s)");
 }

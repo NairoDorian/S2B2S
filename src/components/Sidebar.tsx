@@ -25,7 +25,7 @@ import {
   DebugSettings,
   AboutSettings,
   PostProcessingSettings,
-  ModelsSettings,
+  ModelHubSettings,
   SpeechSettings,
   BrainSettings,
   LlamaCppSettings,
@@ -68,7 +68,7 @@ export const SECTIONS_CONFIG = {
   models: {
     labelKey: "sidebar.models",
     icon: Cpu,
-    component: ModelsSettings,
+    component: ModelHubSettings,
     enabled: () => true,
   },
   pythonEnv: {

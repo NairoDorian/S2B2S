@@ -75,6 +75,11 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const checkForUpdates = async () => {
     if (!updateChecksEnabled || isChecking) return;
 
+    // Dev builds point at an unsigned/absent updater endpoint and always fail
+    // with "could not fetch a valid release JSON" — skip the automatic check;
+    // manual checks still run so the flow stays testable in dev.
+    if (import.meta.env.DEV && !isManualCheckRef.current) return;
+
     try {
       setIsChecking(true);
       const update = await check();

@@ -98,9 +98,9 @@ superseded by the M0–M5 tracker.
 
 ### Phase 3 — Reduce the Maintenance Surface
 
-- [ ] **Split the God Files**: Refactor `settings.rs` (2,048 lines), `managers/model.rs` (2,012 lines), `actions.rs` (1,347 lines), `shortcut/mod.rs` (1,327 lines), and `clipboard.rs` (1,034 lines) into smaller, single-responsibility modules.
+- [ ] **Split the God Files**: Refactor `settings.rs` (2,048 lines), `managers/model.rs` (2,012 lines), `actions.rs` (1,347 lines), `shortcut/mod.rs` (1,327 lines), and `clipboard.rs` (1,034 lines) into smaller, single-responsibility modules. _(Progress: extracted a new `model_hub/` module with a shared resumable download transport and typed cross-collection events, reducing the future god-file scope; `managers/model.rs` split still pending.)_
 - [ ] **Settings Schema Versioning**: Group settings into sub-structs (audio, brain, etc.) and add explicit migrations.
-- [ ] **Extract Model Catalog**: Move hardcoded model definitions from `managers/model.rs` to a JSON/TOML manifest (addresses `// TODO` at line 149).
+- [ ] **Extract Model Catalog**: Move hardcoded model definitions from `managers/model.rs` to a JSON/TOML manifest (addresses `// TODO` at line 149). _(Progress: STT is already driven by `catalog.json`; the new `model_hub/transport.rs` centralizes download lifecycle; Brain hard-coded fallback catalog extraction deferred.)_
 
 ### Phase 4 — Ambitious Features
 

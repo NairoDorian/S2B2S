@@ -108,13 +108,82 @@ pub fn process_continuous_samples(
         None
     };
 
-    // 3. Transcribe
+    // 3. Transcribe (multi-STT when enabled: primary + extras in parallel)
     let is_brain_only = settings.brain.brain_only_transcription;
     let stt_start = std::time::Instant::now();
+    let mut multi_stt_transcripts: Vec<(String, String)> = Vec::new();
+    let mut multi_stt_merge_reasoning: Option<String> = None;
     let transcription_result = if is_brain_only {
         Ok("[STT Bypassed]".to_string())
+    } else if crate::stt::multi_stt::is_multi_stt_active(&settings) {
+        let mm = app
+            .try_state::<Arc<crate::managers::model::ModelManager>>()
+            .map(|s| s.inner().clone());
+        match mm {
+            Some(model_manager) => {
+                let mut extra_ids: Vec<String> = Vec::new();
+                if let Some(ref m2) = settings.multi_stt_model_2 {
+                    extra_ids.push(m2.clone());
+                }
+                if let Some(ref m3) = settings.multi_stt_model_3 {
+                    extra_ids.push(m3.clone());
+                }
+                // Spawn extras first so they transcribe while the primary
+                // finalizes its live streaming session.
+                let extra_handles = crate::stt::multi_stt::spawn_parallel(
+                    &samples,
+                    &extra_ids,
+                    &model_manager,
+                    app,
+                );
+                let gemma_task = if settings.multi_stt_brain_mode.separate_asr_enabled() {
+                    Some(crate::stt::multi_stt::spawn_gemma4(
+                        samples.clone(),
+                        settings.clone(),
+                        app.clone(),
+                    ))
+                } else {
+                    None
+                };
+                let primary = match tm.finalize_stream() {
+                    Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                    Ok(_) => tm.transcribe(samples.clone()),
+                    Err(err) => Err(err),
+                };
+                let mut results =
+                    vec![(settings.selected_model.clone(), primary.unwrap_or_default())];
+                results.extend(crate::stt::multi_stt::join_spawned(extra_handles));
+
+                // The Brain fuses the individual transcripts and raw audio
+                // itself, so do NOT pay a separate non-streaming merge LLM call
+                // here — that only delays the Brain request.
+                match tauri::async_runtime::block_on(
+                    crate::stt::multi_stt::finish_parallel_with_gemma(
+                        samples.clone(),
+                        results,
+                        &settings,
+                        app,
+                        false,
+                        gemma_task,
+                    ),
+                ) {
+                    Ok(outcome) => {
+                        multi_stt_transcripts = outcome.transcripts;
+                        multi_stt_merge_reasoning = outcome.merge_reasoning;
+                        Ok(outcome.merged)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            None => Err(anyhow::anyhow!("ModelManager not registered")),
+        }
     } else {
-        tm.transcribe(samples.clone())
+        // Single-model: prefer the finalized live stream, else batch.
+        match tm.finalize_stream() {
+            Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+            Ok(_) => tm.transcribe(samples.clone()),
+            Err(err) => Err(err),
+        }
     };
     let stt_ms = stt_start.elapsed().as_millis() as u64;
 
@@ -172,11 +241,28 @@ pub fn process_continuous_samples(
         crate::text_replacement::apply_replacements_from_settings(app, &transcription);
 
     // 4. Save STT entry in history
+    let is_multi_stt = !multi_stt_transcripts.is_empty();
+    let history_text = if is_multi_stt {
+        let mut text = crate::stt::multi_stt::format_transcripts_block(&multi_stt_transcripts);
+        text.push_str(&crate::stt::multi_stt::merge_model_header(&settings));
+        text.push_str(&transcription);
+        if let Some(reasoning) = &multi_stt_merge_reasoning {
+            if !reasoning.trim().is_empty() {
+                text.push_str("\n\nMerge model thoughts:\n\"");
+                text.push_str(reasoning.trim());
+                text.push('"');
+            }
+        }
+        text
+    } else {
+        transcription.clone()
+    };
+    let mut history_id: Option<i64> = None;
     if wav_saved {
         let stt_model = tm.get_current_model();
-        if let Err(err) = hm.save_entry(
+        match hm.save_entry(
             file_name,
-            transcription.clone(),
+            history_text.clone(),
             false,
             None,
             None,
@@ -185,7 +271,10 @@ pub fn process_continuous_samples(
             None,
             None,
         ) {
-            log::error!("Failed to save history entry for continuous voice: {}", err);
+            Ok(entry) => history_id = Some(entry.id),
+            Err(err) => {
+                log::error!("Failed to save history entry for continuous voice: {}", err);
+            }
         }
     }
 
@@ -221,6 +310,15 @@ pub fn process_continuous_samples(
     } else {
         None
     };
+    let stt_sources_for_brain = if is_brain_only {
+        Vec::new()
+    } else {
+        multi_stt_transcripts.clone()
+    };
+    let brain_model = settings.brain.active_model();
+    let history_id_for_brain = history_id;
+    let history_text_for_brain = history_text.clone();
+    let brain_audio_mmproj = multimodal_audio;
 
     // Clone for async block — rm used both inside and after
     let rm_for_after = rm.clone();
@@ -266,7 +364,7 @@ pub fn process_continuous_samples(
                                     Some(b64),
                                     None,
                                     reply_language.clone(),
-                                    Vec::new(),
+                                    stt_sources_for_brain.clone(),
                                 )
                                 .await
                         }
@@ -287,6 +385,22 @@ pub fn process_continuous_samples(
             log::info!("[ContinuousVoice] Multimodal audio disabled — text-only ask");
             bm_clone.ask(transcription_clone).await
         };
+
+        // Persist the Brain's reply under the same history entry so the
+        // per-model transcripts and the final answer are inspectable together.
+        if let (Some(entry_id), Ok(reply)) = (history_id_for_brain, &ask_result) {
+            let header =
+                crate::stt::multi_stt::brain_model_header(&brain_model, brain_audio_mmproj);
+            let reasoning = bm_clone.last_reasoning();
+            let output = crate::stt::multi_stt::format_brain_history_output(
+                settings.brain.reasoning_enabled,
+                &reasoning,
+                reply,
+            );
+            let combined = format!("{}{}\n{}", history_text_for_brain, header, output);
+            let _ = hm.update_transcription(entry_id, combined, None, None);
+        }
+
         // Whether the Brain produced anything to speak this turn.
         let has_reply = ask_result
             .as_ref()

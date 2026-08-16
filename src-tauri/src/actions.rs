@@ -69,7 +69,7 @@ struct TranscribeAction {
 const TRANSCRIPTION_FIELD: &str = "transcription";
 
 /// Strip invisible Unicode characters that some LLMs may insert
-fn strip_invisible_chars(s: &str) -> String {
+pub(crate) fn strip_invisible_chars(s: &str) -> String {
     s.replace(['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'], "")
 }
 
@@ -77,7 +77,7 @@ fn strip_invisible_chars(s: &str) -> String {
 /// reasoning, and some local servers put the reasoning text into `content`
 /// instead of a separate field — without this the user would get the model's
 /// chain of thought pasted along with the cleaned transcription.
-fn strip_think_block(s: &str) -> &str {
+pub(crate) fn strip_think_block(s: &str) -> &str {
     if let Some(rest) = s.trim_start().strip_prefix("<think>") {
         if let Some(end) = rest.find("</think>") {
             return rest[end + "</think>".len()..].trim_start();
@@ -1226,32 +1226,64 @@ impl ShortcutAction for TranscribeAction {
                     // Individual per-model transcripts from multi-STT; forwarded to
                     // the multimodal Brain so Gemma 4 can fuse them with the audio.
                     let mut multi_stt_transcripts: Vec<(String, String)> = Vec::new();
+                    let mut multi_stt_merge_reasoning: Option<String> = None;
                     let transcription_result = if route_to_brain
                         && settings.brain.brain_only_transcription
                     {
                         Ok("[STT Bypassed]".to_string())
                     } else if multi_stt::is_multi_stt_active(&settings) {
-                        // Multi-STT: transcribe the primary model, then run extras
-                        // (model_2, model_3, optional Gemma 4) in parallel and merge.
+                        // Multi-STT: run the primary and every extra model in
+                        // parallel. Spawn the extras first so they transcribe
+                        // while the primary finalizes its live stream (or runs
+                        // batch), then join everything and hand the individual
+                        // transcripts + raw audio to the Brain for fusion.
                         let mm =
                             Arc::clone(&ah.state::<Arc<crate::managers::model::ModelManager>>());
+                        let mut extra_ids: Vec<String> = Vec::new();
+                        if let Some(ref m2) = settings.multi_stt_model_2 {
+                            extra_ids.push(m2.clone());
+                        }
+                        if let Some(ref m3) = settings.multi_stt_model_3 {
+                            extra_ids.push(m3.clone());
+                        }
+                        let extra_handles =
+                            multi_stt::spawn_parallel(&samples, &extra_ids, &mm, &ah);
+                        // Start Gemma 4 STT concurrently with the primary
+                        // finalize and the extra-model threads (SeparateAsr mode).
+                        let gemma_task = if settings.multi_stt_brain_mode.separate_asr_enabled() {
+                            Some(multi_stt::spawn_gemma4(
+                                samples.clone(),
+                                settings.clone(),
+                                ah.clone(),
+                            ))
+                        } else {
+                            None
+                        };
                         let primary_result = match tm.finalize_stream() {
                             Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
                             Ok(_) => tm.transcribe(samples.clone()),
                             Err(err) => Err(err),
                         };
                         let primary_text = primary_result.unwrap_or_default();
-                        match multi_stt::transcribe_parallel(
+                        let mut results = vec![(settings.selected_model.clone(), primary_text)];
+                        results.extend(multi_stt::join_spawned(extra_handles));
+                        // Brain mode skips the separate LLM merge (the Brain
+                        // fuses the transcripts + audio itself). Paste mode
+                        // still merges so the pasted text is the consensus.
+                        let should_merge = !route_to_brain;
+                        match multi_stt::finish_parallel_with_gemma(
                             samples.clone(),
-                            primary_text,
+                            results,
                             &settings,
-                            &mm,
                             &ah,
+                            should_merge,
+                            gemma_task,
                         )
                         .await
                         {
                             Ok(outcome) => {
                                 multi_stt_transcripts = outcome.transcripts;
+                                multi_stt_merge_reasoning = outcome.merge_reasoning;
                                 Ok(outcome.merged)
                             }
                             Err(e) => Err(e),
@@ -1367,13 +1399,29 @@ impl ShortcutAction for TranscribeAction {
                                     }
                                 };
 
+                                let is_multi_stt = !multi_stt_transcripts.is_empty();
+                                // For multi-STT, the history text starts with
+                                // every per-model transcript so the individual
+                                // reads are inspectable, then the merged text.
+                                let history_text = if is_multi_stt {
+                                    format!(
+                                        "{}{}",
+                                        crate::stt::multi_stt::format_transcripts_block(
+                                            &multi_stt_transcripts
+                                        ),
+                                        transcription
+                                    )
+                                } else {
+                                    transcription.clone()
+                                };
+                                let mut history_id: Option<i64> = None;
                                 if wav_saved {
                                     let stt_model = tm.get_current_model();
                                     let stt_duration =
                                         Some(transcription_time.elapsed().as_millis() as i64);
-                                    if let Err(err) = hm.save_entry(
-                                        file_name,
-                                        transcription.clone(),
+                                    match hm.save_entry(
+                                        file_name.clone(),
+                                        history_text.clone(),
                                         use_post_process,
                                         processed.post_processed_text.clone(),
                                         processed.post_process_prompt.clone(),
@@ -1382,7 +1430,8 @@ impl ShortcutAction for TranscribeAction {
                                         None,
                                         stt_duration,
                                     ) {
-                                        error!("Failed to save history entry: {}", err);
+                                        Ok(entry) => history_id = Some(entry.id),
+                                        Err(err) => error!("Failed to save history entry: {}", err),
                                     }
                                 }
                                 utils::hide_recording_overlay(&ah);
@@ -1439,6 +1488,9 @@ impl ShortcutAction for TranscribeAction {
                                         } else {
                                             multi_stt_transcripts.clone()
                                         };
+                                        let brain_model = settings.brain.active_model();
+                                        let history_id_for_brain = history_id;
+                                        let history_text_for_brain = history_text.clone();
                                         tauri::async_runtime::spawn(async move {
                                             let result = if multimodal_audio {
                                                 if is_brain_only {
@@ -1513,8 +1565,43 @@ impl ShortcutAction for TranscribeAction {
                                                 )
                                                 .await
                                             };
-                                            if let Err(e) = result {
+                                            if let Err(e) = &result {
                                                 error!("Brain ask failed: {e}");
+                                            }
+                                            // Persist the Brain's reply under the
+                                            // multi-STT history entry so the user can
+                                            // inspect both the per-model transcripts
+                                            // and the Brain's final answer together.
+                                            if let (Some(entry_id), Ok(reply)) =
+                                                (history_id_for_brain, &result)
+                                            {
+                                                let header =
+                                                    crate::stt::multi_stt::brain_model_header(
+                                                        &brain_model,
+                                                        multimodal_audio,
+                                                    );
+                                                let reasoning = if let Some(bm_state) = ah.try_state::<Arc<crate::brain::manager::BrainManager>>() {
+                                                    bm_state.last_reasoning()
+                                                } else {
+                                                    String::new()
+                                                };
+                                                let output = crate::stt::multi_stt::format_brain_history_output(
+                                                    settings.brain.reasoning_enabled,
+                                                    &reasoning,
+                                                    reply,
+                                                );
+                                                let combined = format!(
+                                                    "{}{}\n{}",
+                                                    history_text_for_brain, header, output
+                                                );
+                                                if let Some(hm_state) =
+                                                    ah.try_state::<Arc<HistoryManager>>()
+                                                {
+                                                    let hm = hm_state.inner().clone();
+                                                    let _ = hm.update_transcription(
+                                                        entry_id, combined, None, None,
+                                                    );
+                                                }
                                             }
                                         });
                                     } else {
@@ -1568,9 +1655,30 @@ impl ShortcutAction for TranscribeAction {
                                 let stt_model = tm.get_current_model();
                                 let stt_duration =
                                     Some(transcription_time.elapsed().as_millis() as i64);
+                                let history_text = if multi_stt_transcripts.is_empty() {
+                                    transcription.clone()
+                                } else {
+                                    let mut text = crate::stt::multi_stt::format_transcripts_block(
+                                        &multi_stt_transcripts,
+                                    );
+                                    text.push_str(&crate::stt::multi_stt::merge_model_header(
+                                        &settings,
+                                    ));
+                                    text.push_str(&transcription);
+                                    // The merge provider's chain-of-thought (if
+                                    // any) is recorded here but never pasted.
+                                    if let Some(reasoning) = &multi_stt_merge_reasoning {
+                                        if !reasoning.trim().is_empty() {
+                                            text.push_str("\n\nMerge model thoughts:\n\"");
+                                            text.push_str(reasoning.trim());
+                                            text.push('"');
+                                        }
+                                    }
+                                    text
+                                };
                                 if let Err(err) = hm.save_entry(
                                     file_name,
-                                    transcription,
+                                    history_text,
                                     post_process,
                                     processed.post_processed_text.clone(),
                                     processed.post_process_prompt.clone(),

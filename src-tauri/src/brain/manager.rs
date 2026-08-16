@@ -80,6 +80,9 @@ pub struct BrainManager {
     history_generation: AtomicU64,
     /// Single-flight guard for the background compaction task.
     compaction_in_flight: AtomicBool,
+    /// Chain-of-thought captured from the most recent turn (empty when the
+    /// provider didn't stream reasoning). Kept out of the returned answer.
+    last_reasoning: Mutex<String>,
 }
 
 impl BrainManager {
@@ -91,7 +94,13 @@ impl BrainManager {
             current_abort: Mutex::new(Arc::new(AtomicBool::new(false))),
             history_generation: AtomicU64::new(0),
             compaction_in_flight: AtomicBool::new(false),
+            last_reasoning: Mutex::new(String::new()),
         }
+    }
+
+    /// Chain-of-thought from the most recent completed Brain turn.
+    pub fn last_reasoning(&self) -> String {
+        self.last_reasoning.lock().unwrap().clone()
     }
 
     /// Abort the in-flight stream (barge-in) and stop any speech it queued.
@@ -586,7 +595,14 @@ impl BrainManager {
         }
 
         match result {
-            Ok(BrainResult { text: full, timing }) => {
+            Ok(BrainResult {
+                text: full,
+                timing,
+                reasoning,
+            }) => {
+                // Capture chain-of-thought for inspection (history, debugging),
+                // but never include it in the returned/pasted answer.
+                *self.last_reasoning.lock().unwrap() = reasoning;
                 // Tool results collected during this stream.
                 let tool_lines = if tools_enabled {
                     std::mem::take(&mut *tool_results.lock().unwrap())

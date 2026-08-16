@@ -4,18 +4,16 @@
 //! quantization variants, and async streaming downloads from Hugging Face.
 
 use anyhow::Result;
-use futures_util::StreamExt;
 use log::{info, warn};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs::{self};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+
+use crate::model_hub::transport::TransportEvent;
+use hf_hub::api::tokio::CancellationToken;
 use tauri::{AppHandle, Emitter};
 
 use super::manager::{resolve_model_specs_dir, resolve_models_dir};
@@ -72,7 +70,7 @@ pub struct AudioCppDownloadProgress {
 
 use once_cell::sync::Lazy;
 
-static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>> =
+static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, CancellationToken>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// Approximate package sizes for prominent audio.cpp models (in MB) when remote size query is skipped.
@@ -403,7 +401,7 @@ pub fn start_package_download(app: AppHandle, package_id: String) -> Result<(), 
     let pkg = target_pkg.ok_or_else(|| format!("Package '{package_id}' not found in catalog"))?;
 
     // Verify if already downloading
-    let cancel_token = Arc::new(AtomicBool::new(false));
+    let cancel_token = CancellationToken::new();
     {
         let mut active = ACTIVE_DOWNLOADS.lock().unwrap();
         if active.contains_key(&package_id) {
@@ -414,6 +412,7 @@ pub fn start_package_download(app: AppHandle, package_id: String) -> Result<(), 
 
     let app_clone = app.clone();
     let pkg_id_clone = package_id.clone();
+    let pkg_name_clone = pkg.display_name.clone();
 
     tauri::async_runtime::spawn(async move {
         let result = download_package_task(&app_clone, &pkg, &cancel_token).await;
@@ -430,10 +429,12 @@ pub fn start_package_download(app: AppHandle, package_id: String) -> Result<(), 
                     "[AudioCppDownload] Package '{}' downloaded successfully",
                     pkg_id_clone
                 );
+                // Dual-emit during the frontend migration: legacy typed event
+                // (existing listener) + the unified hub notification.
                 let _ = app_clone.emit(
                     "audiocpp-download-progress",
                     AudioCppDownloadProgress {
-                        package_id: pkg_id_clone,
+                        package_id: pkg_id_clone.clone(),
                         downloaded_bytes: 100,
                         total_bytes: 100,
                         percent: 100.0,
@@ -442,9 +443,17 @@ pub fn start_package_download(app: AppHandle, package_id: String) -> Result<(), 
                         error: None,
                     },
                 );
+                crate::model_hub::notify(
+                    &app_clone,
+                    crate::model_hub::ModelCollection::Tts,
+                    &pkg_id_clone,
+                    &pkg_name_clone,
+                    crate::model_hub::HubNotificationKind::Completed,
+                    None,
+                );
             }
             Err(err) => {
-                let is_cancelled = cancel_token.load(Ordering::SeqCst);
+                let is_cancelled = cancel_token.is_cancelled();
                 let status = if is_cancelled { "canceled" } else { "error" };
                 warn!(
                     "[AudioCppDownload] Package '{}' finished with {status}: {err}",
@@ -453,14 +462,26 @@ pub fn start_package_download(app: AppHandle, package_id: String) -> Result<(), 
                 let _ = app_clone.emit(
                     "audiocpp-download-progress",
                     AudioCppDownloadProgress {
-                        package_id: pkg_id_clone,
+                        package_id: pkg_id_clone.clone(),
                         downloaded_bytes: 0,
                         total_bytes: 0,
                         percent: 0.0,
                         speed_mbps: 0.0,
                         status: status.to_string(),
-                        error: Some(err),
+                        error: Some(err.clone()),
                     },
+                );
+                crate::model_hub::notify(
+                    &app_clone,
+                    crate::model_hub::ModelCollection::Tts,
+                    &pkg_id_clone,
+                    &pkg_name_clone,
+                    if is_cancelled {
+                        crate::model_hub::HubNotificationKind::Cancelled
+                    } else {
+                        crate::model_hub::HubNotificationKind::Failed
+                    },
+                    if is_cancelled { None } else { Some(err) },
                 );
             }
         }
@@ -472,20 +493,19 @@ pub fn start_package_download(app: AppHandle, package_id: String) -> Result<(), 
 async fn download_package_task(
     app: &AppHandle,
     pkg: &AudioCppPackageVariant,
-    cancel_token: &Arc<AtomicBool>,
+    cancel: &CancellationToken,
 ) -> Result<(), String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(300))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
-
     let destination_root = resolve_models_dir(app);
     let target_dir = destination_root.join(&pkg.target_directory);
     fs::create_dir_all(&target_dir)
         .map_err(|e| format!("Failed to create directory {}: {e}", target_dir.display()))?;
 
+    let app_for_emit = app.clone();
+    let pkg_id = pkg.id.clone();
+    let pkg_name = pkg.display_name.clone();
+
     for remote_file in &pkg.files {
-        if cancel_token.load(Ordering::SeqCst) {
+        if cancel.is_cancelled() {
             return Err("Download canceled by user".to_string());
         }
 
@@ -508,75 +528,70 @@ async fn download_package_task(
             dest_file.display()
         );
 
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed for {url}: {e}"))?;
-
-        if !resp.status().is_success() {
-            return Err(format!("Failed to download {url}: HTTP {}", resp.status()));
-        }
-
-        let total_size = resp.content_length().unwrap_or(pkg.size_mb * 1024 * 1024);
-        let mut downloaded: u64 = 0;
-        let start_time = Instant::now();
-        let mut last_emit = Instant::now();
-
-        let mut file = File::create(&temp_file)
-            .map_err(|e| format!("Failed to create temp file {}: {e}", temp_file.display()))?;
-
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk_res) = stream.next().await {
-            if cancel_token.load(Ordering::SeqCst) {
-                let _ = fs::remove_file(&temp_file);
-                return Err("Download canceled by user".to_string());
-            }
-
-            let chunk = chunk_res.map_err(|e| format!("Error reading response stream: {e}"))?;
-            file.write_all(&chunk)
-                .map_err(|e| format!("Error writing chunk: {e}"))?;
-            downloaded += chunk.len() as u64;
-
-            if last_emit.elapsed() >= Duration::from_millis(200) {
-                let elapsed_secs = start_time.elapsed().as_secs_f32();
-                let speed_mbps = if elapsed_secs > 0.0 {
-                    (downloaded as f32 / (1024.0 * 1024.0)) / elapsed_secs
+        // audio.cpp specs don't ship sha256 hashes, so verification stays
+        // best-effort (None => skipped by the transport).
+        let emit = |event: TransportEvent| {
+            if let TransportEvent::Progress(p) = event {
+                let percent = if p.total > 0 {
+                    (p.downloaded as f64 / p.total as f64) * 100.0
                 } else {
                     0.0
                 };
-                let percent = if total_size > 0 {
-                    (downloaded as f32 / total_size as f32) * 100.0
-                } else {
-                    0.0
-                };
-
-                let _ = app.emit(
+                // Legacy typed event (existing listener) + hub typed event.
+                let _ = app_for_emit.emit(
                     "audiocpp-download-progress",
                     AudioCppDownloadProgress {
-                        package_id: pkg.id.clone(),
-                        downloaded_bytes: downloaded,
-                        total_bytes: total_size,
-                        percent: percent.clamp(0.0, 99.9),
-                        speed_mbps,
+                        package_id: pkg_id.clone(),
+                        downloaded_bytes: p.downloaded,
+                        total_bytes: p.total,
+                        percent: (percent as f32).clamp(0.0, 99.9),
+                        speed_mbps: p.speed_mbps as f32,
                         status: "downloading".to_string(),
                         error: None,
                     },
                 );
-                last_emit = Instant::now();
+                crate::model_hub::emit_progress(
+                    &app_for_emit,
+                    crate::model_hub::ModelHubDownloadProgress {
+                        collection: crate::model_hub::ModelCollection::Tts,
+                        id: pkg_id.clone(),
+                        name: pkg_name.clone(),
+                        file: Some(filename.to_string()),
+                        downloaded_mb: p.downloaded as f64 / (1024.0 * 1024.0),
+                        total_mb: p.total as f64 / (1024.0 * 1024.0),
+                        percent,
+                        speed_mbps: p.speed_mbps,
+                        status: crate::model_hub::HubDownloadStatus::Downloading,
+                        error: None,
+                    },
+                );
+            }
+        };
+
+        match crate::model_hub::transport::download_file_resumable(
+            &format!("{} ({})", pkg.id, filename),
+            &url,
+            &temp_file,
+            None,
+            cancel,
+            &emit,
+        )
+        .await
+        {
+            Ok(crate::model_hub::transport::TransportOutcome::Completed) => {
+                if dest_file.exists() {
+                    let _ = fs::remove_file(&dest_file);
+                }
+                fs::rename(&temp_file, &dest_file)
+                    .map_err(|e| format!("Failed to rename temp file to destination: {e}"))?;
+            }
+            Ok(crate::model_hub::transport::TransportOutcome::Cancelled) => {
+                return Err("Download canceled by user".to_string());
+            }
+            Err(e) => {
+                return Err(format!("Failed to download {url}: {e}"));
             }
         }
-
-        file.flush()
-            .map_err(|e| format!("Failed to flush temp file: {e}"))?;
-        drop(file);
-
-        // Atomically rename temp file to final destination
-        if dest_file.exists() {
-            let _ = fs::remove_file(&dest_file);
-        }
-        fs::rename(&temp_file, &dest_file)
-            .map_err(|e| format!("Failed to rename temp file to destination: {e}"))?;
     }
 
     Ok(())
@@ -586,7 +601,7 @@ async fn download_package_task(
 pub fn cancel_package_download(package_id: &str) -> bool {
     let active = ACTIVE_DOWNLOADS.lock().unwrap();
     if let Some(token) = active.get(package_id) {
-        token.store(true, Ordering::SeqCst);
+        token.cancel();
         true
     } else {
         false

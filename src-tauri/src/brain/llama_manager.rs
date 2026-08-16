@@ -1,15 +1,24 @@
-use futures_util::StreamExt;
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
+
+/// A file in the local Brain models directory (`models/Brain/llama_cpp`),
+/// listed by `list_downloaded_models` for the Models hub Brain tab.
+#[derive(Serialize, Deserialize, Clone, Debug, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BrainModelFile {
+    pub filename: String,
+    pub size_mb: f64,
+    /// Rough classification for UI grouping: "model" | "mmproj" | "mtp".
+    pub kind: String,
+}
 
 #[derive(serde::Serialize, Clone)]
 struct DownloadProgressPayload {
@@ -286,6 +295,14 @@ struct HfTreeEntry {
     size: u64,
     #[serde(rename = "type")]
     entry_type: String,
+    /// Present for LFS-backed files (GGUFs): `oid` is the content SHA256.
+    #[serde(default)]
+    lfs: Option<HfLfsInfo>,
+}
+
+#[derive(Deserialize)]
+struct HfLfsInfo {
+    oid: String,
 }
 
 async fn fetch_hf_tree(
@@ -398,7 +415,12 @@ pub async fn fetch_gemma4_quant_catalog(variant: Option<&str>) -> Gemma4QuantCat
 pub struct LlamaManager {
     app: AppHandle,
     child: Mutex<Option<std::process::Child>>,
+    /// Path of the llama-server binary we spawned (None when stopped), so the
+    /// server manager can refuse to delete the install of a running server.
+    spawned_bin: Mutex<Option<PathBuf>>,
     downloading: Arc<AtomicBool>,
+    /// Cancellation token for the active model download (None when idle).
+    download_cancel: Mutex<Option<hf_hub::api::tokio::CancellationToken>>,
     /// Serializes server startup so concurrent callers don't spawn duplicates.
     start_lock: tokio::sync::Mutex<()>,
     /// Cached details of the currently-running server, so status queries and
@@ -423,7 +445,9 @@ impl LlamaManager {
         Self {
             app,
             child: Mutex::new(None),
+            spawned_bin: Mutex::new(None),
             downloading: Arc::new(AtomicBool::new(false)),
+            download_cancel: Mutex::new(None),
             start_lock: tokio::sync::Mutex::new(()),
             server_state: Mutex::new(None),
         }
@@ -474,6 +498,79 @@ impl LlamaManager {
         self.downloading.load(Ordering::SeqCst)
     }
 
+    /// Cancel the in-flight model download (keeps partials for resume).
+    /// Returns whether a download was actually active.
+    pub fn cancel_download(&self) -> bool {
+        if let Some(token) = self
+            .download_cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            token.cancel();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Delete one downloaded model file from the Brain models dir by
+    /// filename (GGUF model, mmproj or MTP draft). Refuses path traversal.
+    pub fn delete_model_file(&self, filename: &str) -> Result<(), String> {
+        if filename.is_empty()
+            || filename.contains('/')
+            || filename.contains('\\')
+            || filename.contains("..")
+        {
+            return Err(format!("Invalid model filename '{filename}'"));
+        }
+        let dir = self.get_models_dir()?;
+        let path = dir.join(filename);
+        if !path.exists() {
+            return Err(format!("'{filename}' is not downloaded"));
+        }
+        fs::remove_file(&path).map_err(|e| format!("Failed to delete {filename}: {e}"))?;
+        info!("[LlamaManager] Deleted brain model file {filename}");
+        Ok(())
+    }
+
+    /// List downloaded Brain model files (GGUFs) with sizes and a coarse
+    /// kind classification, for the Models hub Brain tab.
+    pub fn list_downloaded_models(&self) -> Vec<BrainModelFile> {
+        let Ok(dir) = self.get_models_dir() else {
+            return Vec::new();
+        };
+        let mut files = Vec::new();
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = match path.file_name().and_then(|n| n.to_str()) {
+                    Some(n) => n.to_string(),
+                    None => continue,
+                };
+                if !name.ends_with(".gguf") {
+                    continue;
+                }
+                let kind = if name.starts_with("mmproj-") {
+                    "mmproj"
+                } else if name.starts_with("mtp-") {
+                    "mtp"
+                } else {
+                    "model"
+                };
+                let size_mb =
+                    entry.metadata().map(|m| m.len()).unwrap_or(0) as f64 / (1024.0 * 1024.0);
+                files.push(BrainModelFile {
+                    filename: name,
+                    size_mb,
+                    kind: kind.to_string(),
+                });
+            }
+        }
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        files
+    }
+
     pub fn stop(&self) {
         let mut guard = self.child.lock().unwrap();
         if let Some(mut child) = guard.take() {
@@ -482,6 +579,7 @@ impl LlamaManager {
             // Don't block on wait() — the Drop impl ensures cleanup,
             // and child.wait() can hang if the process is stuck.
         }
+        *self.spawned_bin.lock().unwrap() = None;
         *self.server_state.lock().unwrap() = None;
         let _ = self.app.emit(
             "llama-server-status",
@@ -594,7 +692,7 @@ impl LlamaManager {
     async fn ensure_server_running_internal(
         &self,
         port: u16,
-        mmproj_required: bool,
+        _mmproj_required: bool,
     ) -> Result<(), String> {
         // Resolve the active pre-compiled llama-server path
         let server_bin = if let Some(mgr) = self
@@ -853,7 +951,18 @@ impl LlamaManager {
         }
 
         *self.child.lock().unwrap() = Some(child);
+        *self.spawned_bin.lock().unwrap() = Some(server_bin);
         Ok(())
+    }
+
+    /// Directory of the llama-server install currently running (if any).
+    /// Used to guard against deleting a live server's files.
+    pub fn running_server_dir(&self) -> Option<PathBuf> {
+        self.spawned_bin
+            .lock()
+            .ok()?
+            .as_ref()
+            .and_then(|bin| bin.parent().map(|p| p.to_path_buf()))
     }
 
     /// Snapshot the current server state for the UI (footer Brain indicator).
@@ -917,11 +1026,23 @@ impl LlamaManager {
             return; // Already downloading
         }
 
+        // Fresh cancellation token for this run.
+        let token = hf_hub::api::tokio::CancellationToken::new();
+        *self
+            .download_cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
+
         let manager = self.clone();
         tauri::async_runtime::spawn(async move {
-            let result = manager.download_all_files().await;
+            let result = manager.download_all_files(&token).await;
             manager.downloading.store(false, Ordering::SeqCst);
+            *manager
+                .download_cancel
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = None;
 
+            let cancelled = token.is_cancelled();
             match result {
                 Ok(_) => {
                     let _ = manager.app.emit(
@@ -934,49 +1055,111 @@ impl LlamaManager {
                             error: None,
                         },
                     );
+                    crate::model_hub::notify(
+                        &manager.app,
+                        crate::model_hub::ModelCollection::Brain,
+                        &manager.hub_download_id(),
+                        "Gemma 4",
+                        crate::model_hub::HubNotificationKind::Completed,
+                        None,
+                    );
                 }
                 Err(e) => {
                     error!("[LlamaManager] Download failed: {}", e);
+                    let status = if cancelled { "cancelled" } else { "error" };
                     let _ = manager.app.emit(
                         "llama-download-state",
                         DownloadProgressPayload {
-                            status: "error".to_string(),
+                            status: status.to_string(),
                             file: "".to_string(),
                             percentage: 0.0,
                             speed_mbps: 0.0,
-                            error: Some(e),
+                            error: Some(e.clone()),
                         },
+                    );
+                    crate::model_hub::notify(
+                        &manager.app,
+                        crate::model_hub::ModelCollection::Brain,
+                        &manager.hub_download_id(),
+                        "Gemma 4",
+                        if cancelled {
+                            crate::model_hub::HubNotificationKind::Cancelled
+                        } else {
+                            crate::model_hub::HubNotificationKind::Failed
+                        },
+                        if cancelled { None } else { Some(e) },
                     );
                 }
             }
         });
     }
 
-    async fn download_all_files(&self) -> Result<(), String> {
+    /// Stable hub id for the currently-configured Brain download target.
+    fn hub_download_id(&self) -> String {
+        let settings = crate::settings::get_settings(&self.app);
+        let variant = &settings.brain.llama_model_variant;
+        model_file_name(variant, &settings.brain.llama_model_quant)
+    }
+
+    /// SHA256 hashes for every LFS file in `repo`, keyed by repo-relative
+    /// path. Best-effort: an unreachable API yields an empty map and the
+    /// downloads proceed unverified (as before).
+    async fn hf_file_hashes(repo: &str) -> std::collections::HashMap<String, String> {
+        let mut hashes = std::collections::HashMap::new();
+        let Ok(client) = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+        else {
+            return hashes;
+        };
+        let mut entries = match fetch_hf_tree(&client, repo, "").await {
+            Ok(e) => e,
+            Err(e) => {
+                warn!(
+                    "[LlamaManager] HF tree unavailable for {repo} ({e}); skipping sha256 pinning"
+                );
+                return hashes;
+            }
+        };
+        if let Ok(mtp) = fetch_hf_tree(&client, repo, "MTP").await {
+            entries.extend(mtp.into_iter().map(|mut e| {
+                e.path = format!("MTP/{}", e.path);
+                e
+            }));
+        }
+        for entry in entries {
+            if let Some(lfs) = entry.lfs {
+                hashes.insert(entry.path, lfs.oid);
+            }
+        }
+        hashes
+    }
+
+    async fn download_all_files(
+        &self,
+        cancel: &hf_hub::api::tokio::CancellationToken,
+    ) -> Result<(), String> {
         let settings = crate::settings::get_settings(&self.app);
         let variant = settings.brain.llama_model_variant.clone();
         let model_quant = settings.brain.llama_model_quant.clone();
         let model_name = model_file_name(&variant, &model_quant);
         let model_repo = gemma4_repo(&variant);
         let model_url_name = remote_model_file_name(&variant, &model_quant);
+        let hub_id = self.hub_download_id();
 
+        // (local name, repo-relative remote path)
         let mut files: Vec<(String, String)> = Vec::new();
 
         // 1. Model GGUF
-        files.push((
-            model_name,
-            format!("https://huggingface.co/{model_repo}/resolve/main/{model_url_name}"),
-        ));
+        files.push((model_name.clone(), model_url_name));
 
         // 2. Multimodal projector (if enabled)
         let mmproj_needed = settings.brain.llama_mmproj_enabled
             && settings.brain.llama_mmproj_quant.to_lowercase() != "disabled";
         if mmproj_needed {
-            let mmproj_local_name = mmproj_file_name(&variant, &settings.brain.llama_mmproj_quant);
-            let mmproj_remote_name = remote_mmproj_file_name(&settings.brain.llama_mmproj_quant);
             files.push((
-                mmproj_local_name,
-                format!("https://huggingface.co/{model_repo}/resolve/main/{mmproj_remote_name}"),
+                mmproj_file_name(&variant, &settings.brain.llama_mmproj_quant),
+                remote_mmproj_file_name(&settings.brain.llama_mmproj_quant),
             ));
         }
 
@@ -985,16 +1168,19 @@ impl LlamaManager {
             && settings.brain.llama_mtp_quant.to_lowercase() != "disabled";
         if draft_needed {
             let mtp_local_name = mtp_file_name(&variant, &settings.brain.llama_mtp_quant);
-            files.push((
-                mtp_local_name.clone(),
-                format!("https://huggingface.co/{model_repo}/resolve/main/MTP/{mtp_local_name}"),
-            ));
+            files.push((mtp_local_name.clone(), format!("MTP/{mtp_local_name}")));
         }
 
         let models_dir = self.get_models_dir()?;
-        let client = reqwest::Client::new();
 
-        for (name, url) in &files {
+        // Pin revisions with LFS sha256 hashes so every file is verified
+        // after download (mirrors the STT catalog trust model).
+        let hashes = Self::hf_file_hashes(&model_repo).await;
+
+        for (name, remote_path) in &files {
+            if cancel.is_cancelled() {
+                return Err("cancelled".to_string());
+            }
             let dest_path = models_dir.join(name);
             // Check legacy files so existing installs don't re-download:
             // 1. MTP Q4_0 draft legacy names
@@ -1016,75 +1202,91 @@ impl LlamaManager {
                 continue;
             }
 
+            let url = format!("https://huggingface.co/{model_repo}/resolve/main/{remote_path}");
+            let partial_path = models_dir.join(format!("{name}.partial"));
+            let sha256 = hashes.get(remote_path).cloned();
             info!("[LlamaManager] Downloading {} from {}", name, url);
-            let response = client
-                .get(url)
-                .send()
-                .await
-                .map_err(|e| format!("Failed to initiate download for {}: {}", name, e))?;
 
-            if !response.status().is_success() {
-                return Err(format!(
-                    "Server returned HTTP {} for {}",
-                    response.status(),
-                    name
-                ));
-            }
-
-            let total_size = response.content_length().unwrap_or(0);
-            let mut stream = response.bytes_stream();
-
-            let partial_path = models_dir.join(format!("{}.partial", name));
-            let mut file = File::create(&partial_path)
-                .map_err(|e| format!("Failed to create partial file for {}: {}", name, e))?;
-
-            let mut downloaded = 0u64;
-            let start_time = Instant::now();
-            let mut last_emit = Instant::now();
-
-            while let Some(chunk_result) = stream.next().await {
-                let chunk = chunk_result
-                    .map_err(|e| format!("Stream error during download of {}: {}", name, e))?;
-                file.write_all(&chunk)
-                    .map_err(|e| format!("Failed to write chunk to disk for {}: {}", name, e))?;
-
-                downloaded += chunk.len() as u64;
-
-                // Emit progress every 300ms to avoid spamming Tauri events
-                if last_emit.elapsed().as_millis() > 300 {
-                    last_emit = Instant::now();
-                    let elapsed = start_time.elapsed().as_secs_f64();
-                    let speed = if elapsed > 0.0 {
-                        (downloaded as f64 / 1024.0 / 1024.0) / elapsed
+            // Emit both the legacy per-file event and the typed hub event.
+            let app = self.app.clone();
+            let file_label = name.clone();
+            let hub_id_label = hub_id.clone();
+            let emit = move |event: crate::model_hub::transport::TransportEvent| match event {
+                crate::model_hub::transport::TransportEvent::Progress(p) => {
+                    let percent = if p.total > 0 {
+                        (p.downloaded as f64 / p.total as f64) * 100.0
                     } else {
                         0.0
                     };
-
-                    let percentage = if total_size > 0 {
-                        (downloaded as f64 / total_size as f64) * 100.0
-                    } else {
-                        0.0
-                    };
-
-                    let _ = self.app.emit(
+                    let _ = app.emit(
                         "llama-download-state",
                         DownloadProgressPayload {
                             status: "downloading".to_string(),
-                            file: name.to_string(),
-                            percentage,
-                            speed_mbps: speed,
+                            file: file_label.clone(),
+                            percentage: percent,
+                            speed_mbps: p.speed_mbps,
+                            error: None,
+                        },
+                    );
+                    crate::model_hub::emit_progress(
+                        &app,
+                        crate::model_hub::ModelHubDownloadProgress {
+                            collection: crate::model_hub::ModelCollection::Brain,
+                            id: hub_id_label.clone(),
+                            name: "Gemma 4".to_string(),
+                            file: Some(file_label.clone()),
+                            downloaded_mb: p.downloaded as f64 / (1024.0 * 1024.0),
+                            total_mb: p.total as f64 / (1024.0 * 1024.0),
+                            percent,
+                            speed_mbps: p.speed_mbps,
+                            status: crate::model_hub::HubDownloadStatus::Downloading,
                             error: None,
                         },
                     );
                 }
+                crate::model_hub::transport::TransportEvent::VerifyStart => {
+                    crate::model_hub::emit_progress(
+                        &app,
+                        crate::model_hub::ModelHubDownloadProgress {
+                            collection: crate::model_hub::ModelCollection::Brain,
+                            id: hub_id_label.clone(),
+                            name: "Gemma 4".to_string(),
+                            file: Some(file_label.clone()),
+                            downloaded_mb: 0.0,
+                            total_mb: 0.0,
+                            percent: 100.0,
+                            speed_mbps: 0.0,
+                            status: crate::model_hub::HubDownloadStatus::Verifying,
+                            error: None,
+                        },
+                    );
+                }
+                crate::model_hub::transport::TransportEvent::VerifyEnd => {}
+            };
+
+            match crate::model_hub::transport::download_file_resumable(
+                name,
+                &url,
+                &partial_path,
+                sha256.as_deref(),
+                cancel,
+                &emit,
+            )
+            .await
+            {
+                Ok(crate::model_hub::transport::TransportOutcome::Completed) => {
+                    fs::rename(&partial_path, &dest_path).map_err(|e| {
+                        format!("Failed to finalize downloaded file {}: {}", name, e)
+                    })?;
+                    info!("[LlamaManager] Completed download of {}", name);
+                }
+                Ok(crate::model_hub::transport::TransportOutcome::Cancelled) => {
+                    return Err("cancelled".to_string());
+                }
+                Err(e) => {
+                    return Err(format!("Failed to download {name}: {e}"));
+                }
             }
-
-            // Rename partial to final destination
-            drop(file);
-            fs::rename(&partial_path, &dest_path)
-                .map_err(|e| format!("Failed to finalize downloaded file {}: {}", name, e))?;
-
-            info!("[LlamaManager] Completed download of {}", name);
         }
 
         Ok(())
