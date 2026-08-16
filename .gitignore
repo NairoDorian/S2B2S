@@ -33,6 +33,9 @@ src-tauri/transcribe-libs/
 recording_*
 .crush/
 
+# TypeScript build info (tsc -b project references)
+*.tsbuildinfo
+
 # Playwright
 playwright-report/
 test-results/

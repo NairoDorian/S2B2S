@@ -39,7 +39,7 @@ tauri-plugin-fs = "2.5.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 rdev = { git = "https://github.com/rustdesk-org/rdev" }
-cpal = "0.18.1"
+cpal = "^0.18.2"
 anyhow = "1.0.104"
 rubato = "4.0.0"
 audioadapter = "4.0"
