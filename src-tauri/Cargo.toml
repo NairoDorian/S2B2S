@@ -52,17 +52,17 @@ vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
 reqwest = { version = "0.13.4", features = ["json", "stream", "gzip", "brotli", "deflate"] }
-futures-util = "0.3.33"
+futures-util = "^0.3.34"
 rustfft = "6.4.1"
 strsim = "0.11.1"
 natural = "0.5.0"
 regex = "1.13.1"
 # Text-based language ID (filler-word removal fallback); isolang bridges the
 # ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
-whatlang = "0.16"
-isolang = "2"
+whatlang = "^0.18.0"
+isolang = "^2.4.0"
 chrono = "0.4.45"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite = { version = "^0.40.2", features = ["bundled"] }
 tar = "0.4.46"
 flate2 = "1.1.9"
 sha2 = "0.11.0"
@@ -71,9 +71,9 @@ sha2 = "0.11.0"
 # Canary, Cohere). Per-platform backend features are added in the target tables.
 transcribe-rs = { version = "0.3.11", features = ["onnx"] }
 transcribe-cpp = { version = "*", default-features = false }
-handy-keys = "0.3.3"
+handy-keys = "^0.3.4"
 ferrous-opencc = "0.4.0"
-clap = { version = "4.6.4", features = ["derive"] }
+clap = { version = "^4.6.6", features = ["derive"] }
 specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
@@ -121,9 +121,9 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }
 # Used by the receipt-sequenced ("reliable") paste path for lazy NSPasteboard
 # promises. Versions track what Tauri already pulls in.
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-app-kit = "0.3"
+objc2 = "^0.6.4"
+objc2-foundation = "^0.3.2"
+objc2-app-kit = "^0.3.2"
 objc2-service-management = "0.3.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]

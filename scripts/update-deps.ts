@@ -611,6 +611,16 @@ async function updateEverything() {
   }
   console.log("");
 
+  // --- Capture Direct Spec Snapshot AFTER steps 1-3 ---
+  // bun add (steps 1-2) may have rewritten specs for upgraded deps. This
+  // snapshot feeds the step 4b clobber guard, which restores EVERY prerelease
+  // pin that `bun update --latest` downgrades — including ones this run never
+  // targeted (e.g. an already-pinned `typescript 7.1.0-dev.*`).
+  const specSnapshot = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+
   // --- Step 4: Refreshing All Transitive Sub-Crates & Sub-Packages ---
   console.log(
     "🔒 Step 4/6: Refreshing All Sub-Crates & Transitive Sub-Dependencies (bun update & cargo update)...",
@@ -635,6 +645,47 @@ async function updateEverything() {
 
   const afterCargoLock = parseCargoLock(cargoLockPath);
   const afterBunLock = parseBunInstalledVersions();
+
+  // --- Step 4b: Re-pin Prerelease Pins (Clobber Guard) ---
+  // `bun update --latest` resolves the `latest` dist-tag and REWRITES
+  // package.json specs (e.g. `react-dom 19.3.0-canary-* -> 19.2.8`), silently
+  // downgrading ANY exact prerelease pin — including ones this run did not
+  // touch — and stripping range operators. Stable mode is unaffected (`@latest`
+  // pins survive unchanged), so this re-pin only runs in prerelease mode and
+  // restores every direct NPM dependency whose snapshot spec is a prerelease.
+  if (PRERELEASE_MODE) {
+    const pkgNow = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const repinRuntime: string[] = [];
+    const repinDev: string[] = [];
+    const specs = { ...specSnapshot.dependencies, ...specSnapshot.devDependencies };
+    for (const [name, spec] of Object.entries(specs)) {
+      if (!isPrereleaseVersion(cleanVersion(spec))) continue;
+      const currentSpec = pkgNow.dependencies?.[name] ?? pkgNow.devDependencies?.[name];
+      if (currentSpec === spec) continue;
+      const isDev = (specSnapshot.devDependencies ?? {})[name] !== undefined;
+      (isDev ? repinDev : repinRuntime).push(`${name}@${spec}`);
+    }
+    if (repinRuntime.length > 0) {
+      const { success: repinRuntimeOk } = runCmd("bun", ["add", ...repinRuntime]);
+      if (!repinRuntimeOk) {
+        console.error("❌ Error: prerelease runtime re-pin failed after bun update --latest!");
+        process.exit(1);
+      }
+    }
+    if (repinDev.length > 0) {
+      const { success: repinDevOk } = runCmd("bun", ["add", "-d", ...repinDev]);
+      if (!repinDevOk) {
+        console.error("❌ Error: prerelease dev re-pin failed after bun update --latest!");
+        process.exit(1);
+      }
+    }
+    if (repinRuntime.length > 0 || repinDev.length > 0) {
+      console.log("🔄 Step 4b/6: Re-pinned exact prerelease targets (bun update --latest clobber guard)\n");
+    }
+  }
 
   const subDepChanges: SubDepDiff[] = [];
 

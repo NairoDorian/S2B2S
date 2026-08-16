@@ -38,7 +38,9 @@ pub fn init() {
                 std::fs::create_dir_all(&data_dir).ok()?;
             }
             let hf_home = hugging_face_home(&data_dir);
-            std::env::set_var("HF_HOME", &hf_home);
+            // SAFETY: called once at startup, before any threads spawn; the
+            // process is single-threaded at this point so set_var cannot race.
+            unsafe { std::env::set_var("HF_HOME", &hf_home) };
             eprintln!("[portable] data dir: {}", data_dir.display());
             eprintln!("[portable] Hugging Face home: {}", hf_home.display());
             Some(data_dir)
