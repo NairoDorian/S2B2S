@@ -12,21 +12,46 @@ import path from "node:path";
  * 3. Direct Dependency Upgrading (package.json & src-tauri/Cargo.toml)
  * 4. Transitive Sub-Dependency & Sub-Sub-Dependency Upgrading (bun update --latest & cargo update)
  * 5. Full Inventory Audit & Diff Tracking (Cargo.lock & node_modules)
- * 6. TypeScript + Vite Production Build Validation (bun run build)
- * 7. Native Cargo Backend Compilation Verification (cargo check)
+ * 6. TypeScript Static Type Checking (bun x tsc -b)
+ * 7. Vite Production Frontend Build Validation (bun run vite:build)
+ * 8. Native Cargo Backend Compilation Verification (cargo check)
  *
  * CLI flags:
- *   (no args)      Stable @latest pipeline (default)
- *   --prerelease   Prefer pre-release versions for direct dependencies
- *   --dry-run      Query registries and print a "would upgrade" report without writing
- *   --help         Show usage summary
+ *   (no args)      Stable @latest pipeline (default — only `latest` dist-tags,
+ *                  crates.io `max_version`; nothing is ever force-installed
+ *                  beyond what bun/cargo resolve as compatible).
+ *   --prerelease   Prefer pre-release versions for DIRECT dependencies:
+ *                  every NPM prerelease dist-tag (`next`, `beta`, `rc`, `alpha`,
+ *                  `canary`, `experimental`, `insiders`, `dev`) is evaluated and
+ *                  the best strictly-newer candidate wins (highest SemVer core,
+ *                  then newest publish time); crates.io uses `newest_version`
+ *                  (which may include prereleases). Transitive deps still
+ *                  resolve via `bun update --latest` / `cargo update` (bun/cargo
+ *                  pull in prereleases only when a direct dep requires them).
+ *   --dry-run      Query registries and print a "would upgrade" report WITHOUT
+ *                  writing anything (no bun add, no Cargo.toml edits, no
+ *                  lockfile refreshes, no build steps). Safe to run any time.
+ *   --help         Show usage summary.
+ *
+ * Prerelease clobber guard (step 4b): `bun update --latest` resolves the
+ * `latest` dist-tag and rewrites package.json specs, silently downgrading
+ * exact prerelease pins (e.g. `react-dom 19.3.0-canary-* -> 19.2.8`) and
+ * stripping range operators. After the transitive refresh, prerelease mode
+ * re-runs `bun add <pkg>@<spec>` to restore EVERY prerelease pin in the
+ * snapshot — whether or not this run targeted it.
+ *
+ * Compatibility guarantee: every proposed upgrade must survive the validation
+ * steps (tsc -b -> vite build -> cargo check) — steps 1-4 hard-fail (exit 1)
+ * on any resolution error, so an incompatible "latest" can never be force-applied.
  */
 
-const args = process.argv.slice(2);
-const PRERELEASE_MODE = args.includes("--prerelease");
-const DRY_RUN = args.includes("--dry-run");
-const SHOW_HELP = args.includes("--help") || args.includes("-h");
+// --- CLI flag parsing (before anything else so --help/--dry-run are side-effect free) ---
+const cliArgs = new Set(process.argv.slice(2));
+const PRERELEASE_MODE = cliArgs.has("--prerelease");
+const DRY_RUN = cliArgs.has("--dry-run");
+const SHOW_HELP = cliArgs.has("--help") || cliArgs.has("-h");
 
+/** NPM dist-tags probed when --prerelease is active — every tag is evaluated, the best strictly-newer candidate wins. */
 const PRERELEASE_TAGS: readonly string[] = [
   "next",
   "beta",
@@ -40,10 +65,10 @@ const PRERELEASE_TAGS: readonly string[] = [
 
 if (SHOW_HELP) {
   console.log(`Usage:
-  bun scripts/update-deps.ts                    Stable @latest pipeline (default)
-  bun scripts/update-deps.ts --prerelease       Prefer beta/alpha/RC versions for direct deps
-  bun scripts/update-deps.ts --dry-run          Report what WOULD upgrade (no changes made)
-  bun scripts/update-deps.ts --prerelease --dry-run Preview prerelease upgrades`);
+  bun run update-deps                          Stable @latest pipeline (default)
+  bun run update-deps --prerelease             Prefer beta/alpha/RC versions for direct deps
+  bun run update-deps --dry-run                Report what WOULD upgrade (no changes made)
+  bun run update-deps --prerelease --dry-run   Preview prerelease upgrades, apply nothing`);
   process.exit(0);
 }
 
@@ -54,6 +79,7 @@ interface DependencyStatus {
   currentVersion: string;
   latestVersion: string;
   needsUpdate: boolean;
+  /** True when the resolved target is a pre-release (--prerelease mode). */
   prerelease: boolean;
 }
 
@@ -64,19 +90,40 @@ interface SubDepDiff {
   after: string;
 }
 
+/** Semver versions containing a hyphen (e.g. `0.5.0-beta.1`) are pre-releases. */
 function isPrereleaseVersion(version: string): boolean {
   return /-\d|-[a-z]/i.test(version);
 }
 
+/**
+ * Splits a semver string into numeric core parts and a prerelease identifier.
+ * `noUncheckedIndexedAccess` makes `coreStr` `string | undefined`; a version
+ * string always has a core part before any `-`, so the fallback to "0" is
+ * unreachable but satisfies the type checker.
+ */
+function parseVersion(v: string): { core: number[]; pre: string | null } {
+  const [coreStr, pre] = v.split("-", 2);
+  const core = (coreStr ?? "0").split(".").map((n) => parseInt(n, 10) || 0);
+  while (core.length < 3) core.push(0);
+  return { core, pre: pre ?? null };
+}
+
+/**
+ * Minimal SemVer comparator (no external dependency): returns 1 when `a` is
+ * newer than `b`, -1 when older, 0 when equal.
+ *
+ * Rules: numeric core parts compare numerically; a release sorts ABOVE any
+ * prerelease of the same core (`8.2.0-beta.0 < 8.2.0`); prerelease identifiers
+ * compare numerically when both numeric, lexicographically otherwise, with
+ * numeric identifiers sorting below alphanumeric ones.
+ *
+ * Used to reject prerelease dist-tags that point at OLDER lines than the
+ * installed version (e.g. `@tauri-apps/api`'s `next` tag -> `2.0.1` while the
+ * project already uses `^2.11.1`) — upgrades must never downgrade.
+ */
 function compareVersions(a: string, b: string): number {
-  const parse = (v: string): { core: number[]; pre: string | null } => {
-    const [coreStr, pre] = v.split("-", 2);
-    const core = (coreStr ?? "0").split(".").map((n) => parseInt(n, 10) || 0);
-    while (core.length < 3) core.push(0);
-    return { core, pre: pre ?? null };
-  };
-  const A = parse(a);
-  const B = parse(b);
+  const A = parseVersion(a);
+  const B = parseVersion(b);
   for (let i = 0; i < 3; i++) {
     const aCore = A.core[i] ?? 0;
     const bCore = B.core[i] ?? 0;
@@ -98,7 +145,7 @@ function compareVersions(a: string, b: string): number {
     if (xn !== null && yn !== null) {
       if (xn !== yn) return xn > yn ? 1 : -1;
     } else if (xn !== null) {
-      return -1;
+      return -1; // numeric identifiers sort below alphanumeric ones
     } else if (yn !== null) {
       return 1;
     } else if (x !== y) {
@@ -108,6 +155,13 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * Compares only the numeric X.Y.Z core of two versions (ignores prerelease
+ * identifiers): returns 1 when `a`'s core is newer, -1 when older, 0 when equal.
+ * Used to rank prerelease candidates by release line before deciding between
+ * different builds of the same line — for equal cores, lexical build-hash
+ * comparison is meaningless, so publish time decides instead.
+ */
 function compareCores(a: string, b: string): number {
   const A = (a.split("-")[0] ?? "0")
     .split(".")
@@ -128,6 +182,21 @@ function cleanVersion(v: string): string {
   return v.replace(/^[\^~=v]/, "").trim();
 }
 
+/**
+ * Resolves the target NPM version.
+ * Stable mode: the `latest` dist-tag (cheap `/latest` endpoint), returned only
+ * when it is STRICTLY NEWER than `current` — never a downgrade of a
+ * deliberately pinned prerelease.
+ * Prerelease mode: full packument; EVERY probed prerelease dist-tag is
+ * evaluated and the best candidate that is strictly newer than `current` wins
+ * (publisher-agnostic — react ships fresher builds under `canary` than under
+ * `next`, typescript under `next`, etc.). Ranking: highest core version first;
+ * for equal cores, the chronologically newest publish wins (packument `time`
+ * field — lexical build-hash comparison is meaningless for canary builds); a
+ * lexical SemVer tiebreak decides otherwise. Stale tags pointing at older
+ * lines are rejected by the gate; `latest` is returned only when it is itself
+ * an upgrade, and `null` means "nothing newer exists".
+ */
 async function fetchLatestNpmVersion(
   pkgName: string,
   current: string,
@@ -161,6 +230,10 @@ async function fetchLatestNpmVersion(
     const times = data.time ?? {};
     const currentTime = times[current] ?? null;
 
+    // Upgrade gate: strictly newer by core version; for equal cores, the
+    // publish-time comparison decides (when both timestamps are known and
+    // differ) — a canary build published later IS an upgrade even when its
+    // build hash sorts lexically lower. Falls back to lexical SemVer.
     const isStrictlyNewer = (
       v: string,
       publishedAt: string | null,
@@ -218,6 +291,12 @@ async function fetchLatestNpmVersion(
   }
 }
 
+/**
+ * Resolves the target crates.io version.
+ * Stable mode: `max_version` (highest non-prerelease).
+ * Prerelease mode: `newest_version` — but only when it is STRICTLY NEWER than
+ * the installed version; otherwise falls back to `max_version`.
+ */
 async function fetchLatestCrateVersion(
   crateName: string,
   current: string,
@@ -311,15 +390,20 @@ function runCmd(
   return { success: res.status === 0, durationMs };
 }
 
+/** Renders a single direct-dependency row for the dry-run / summary reports. */
 function renderStatusRow(s: DependencyStatus): string {
-  const namePadded = s.name.padEnd(36, " ");
+  const namePadded = s.name.padEnd(34, " ");
   const ecoPadded = s.ecosystem.padEnd(12, " ");
-  const currPadded = s.currentVersion.padEnd(10, " ");
-  const latPadded = s.latestVersion.padEnd(10, " ");
+  const currPadded = s.currentVersion.padEnd(9, " ");
+  const latPadded = s.latestVersion.padEnd(9, " ");
   const preMark = s.prerelease ? "⚠️" : " ";
   return ` ${namePadded} | ${ecoPadded} | ${currPadded} | ${latPadded} | ${preMark}`;
 }
 
+/**
+ * Dry-run report: prints every direct dependency that WOULD be upgraded,
+ * the pipeline steps that would run, and exits 0 without touching anything.
+ */
 function printDryRunReport(allStatuses: DependencyStatus[]): void {
   const outdated = allStatuses.filter((s) => s.needsUpdate);
   const preCount = outdated.filter((s) => s.prerelease).length;
@@ -338,27 +422,50 @@ function printDryRunReport(allStatuses: DependencyStatus[]): void {
     console.log(
       " ✅ All direct dependencies are already at their target versions.",
     );
+    if (PRERELEASE_MODE) {
+      console.log(
+        "    (No pre-release tags found beyond current `latest`/`max_version` targets.)",
+      );
+    }
   } else {
     console.log(
       ` 📦 ${outdated.length} direct dependency(-ies) WOULD be upgraded:`,
     );
     console.log(
-      " Dependency / Crate Name             | Ecosystem    | Current    | Target     | Pre",
+      " Dependency / Crate Name           | Ecosystem    | Current   | Target    | Pre",
     );
     console.log(
-      "--------------------------------------+--------------+------------+------------+-----",
+      "------------------------------------+--------------+-----------+-----------+-----",
     );
     outdated
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .toSorted((a, b) => a.name.localeCompare(b.name))
       .forEach((s) => {
         console.log(renderStatusRow(s));
       });
     if (preCount > 0) {
       console.log(
-        `\n ⚠️  ${preCount} target(s) are PRE-RELEASES (--prerelease mode).`,
+        `\n ⚠️  ${preCount} target(s) are PRE-RELEASES (--prerelease mode). Pre-release builds are`,
+      );
+      console.log(
+        "    unstable by nature — review them before applying with a real run.",
       );
     }
   }
+
+  console.log("\n Steps that WOULD run in a real invocation:");
+  console.log("   1-2. bun add <pkg>@<target>        (runtime + dev deps)");
+  console.log("   3.   Cargo.toml spec rewrite to ^<target>");
+  console.log(
+    "   4.   bun update --latest + cargo update   (transitive sub-deps)",
+  );
+  if (PRERELEASE_MODE) {
+    console.log(
+      "   4b.  bun add <pkg>@<target> again   (re-pin after --latest clobbers exact pins)",
+    );
+  }
+  console.log("   5.   bun x tsc -b                   (type validation)");
+  console.log("   6.   bun run vite:build             (frontend build)");
+  console.log("   7.   cargo check                    (backend compile)");
   console.log(
     "=================================================================",
   );
@@ -376,12 +483,24 @@ async function updateEverything() {
     "=================================================================\n",
   );
 
+  if (PRERELEASE_MODE) {
+    console.log(
+      "⚠️  PRERELEASE MODE: beta/alpha/RC versions are unstable by design.",
+    );
+    console.log(
+      "   Direct deps will prefer prerelease dist-tags / newest crates.io",
+    );
+    console.log(
+      "   versions; compatibility is still enforced by steps 5-7 (tsc, build, cargo check).\n",
+    );
+  }
+
   const pkgPath = path.resolve("package.json");
   const cargoTomlPath = path.resolve("src-tauri/Cargo.toml");
   const cargoLockPath = path.resolve("src-tauri/Cargo.lock");
 
   if (!fs.existsSync(pkgPath) || !fs.existsSync(cargoTomlPath)) {
-    console.error("❌ Fatal: package.json or src-tauri/Cargo.toml not found!");
+    console.error("❌ Fatal: package.json or Cargo.toml not found!");
     process.exit(1);
   }
 
@@ -445,13 +564,13 @@ async function updateEverything() {
     );
   });
 
-  // 3. Parse Cargo.toml dependencies (excluding git dependencies)
+  // 3. Parse Cargo.toml dependency sections safely
+  // Matches every section whose name ends in `dependencies` (covers `dependencies`,
+  // `build-dependencies`, `dev-dependencies`, and all `target.'cfg(...)'.dependencies`
+  // variants including cfg(unix), cfg(not(any(...))), cfg(all(windows, x86_64)), etc.)
   const cargoContent = fs.readFileSync(cargoTomlPath, "utf8");
   const lines = cargoContent.split(/\r?\n/);
   let currentSection = "";
-
-  const cargoCratesToQuery: { name: string; ver: string; section: string }[] =
-    [];
 
   const PINNED_CRATES = new Set([
     "transcribe-cpp",
@@ -465,6 +584,9 @@ async function updateEverything() {
     "tauri-specta",
   ]);
 
+  const cargoCratesToQuery: { name: string; ver: string; section: string }[] =
+    [];
+
   lines.forEach((line: string) => {
     const trimmed = line.trim();
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -472,16 +594,9 @@ async function updateEverything() {
       return;
     }
 
-    if (
-      [
-        "dependencies",
-        "build-dependencies",
-        "dev-dependencies",
-        "target.'cfg(target_os = \"windows\")'.dependencies",
-        "target.'cfg(target_os = \"macos\")'.dependencies",
-        "target.'cfg(target_os = \"linux\")'.dependencies",
-      ].includes(currentSection)
-    ) {
+    // Match any Cargo.toml section that holds dependencies (top-level, build,
+    // dev, or any cfg-target-scoped variant) without hardcoding platform names.
+    if (/dependencies$/.test(currentSection)) {
       if (trimmed.includes("git =")) return; // skip custom git forks
       const matchInline = trimmed.match(
         /^([a-zA-Z0-9_-]+)\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"/,
@@ -527,11 +642,13 @@ async function updateEverything() {
   const queryDuration = Date.now() - queryStart;
   console.log(`✅ Registry query complete (${queryDuration}ms)\n`);
 
+  // --- DRY RUN: report what would change, then stop before any write occurs ---
   if (DRY_RUN) {
     printDryRunReport(allStatuses);
     process.exit(0);
   }
 
+  // --- Snapshot Sub-Dependency States BEFORE Lockfile Refresh ---
   const beforeCargoLock = parseCargoLock(cargoLockPath);
   const beforeBunLock = parseBunInstalledVersions();
 
@@ -541,12 +658,14 @@ async function updateEverything() {
   );
   if (outdatedRuntime.length === 0) {
     console.log(
-      "📦 Step 1/6: NPM Runtime Dependencies -> All direct packages already @target",
+      "📦 Step 1/7: NPM Runtime Dependencies -> All direct packages already @target",
     );
   } else {
     console.log(
-      `📦 Step 1/6: Upgrading ${outdatedRuntime.length} Outdated NPM Runtime Dependencies...`,
+      `📦 Step 1/7: Upgrading ${outdatedRuntime.length} Outdated NPM Runtime Dependencies...`,
     );
+    // Stable mode pins @latest; prerelease mode pins the exact resolved target
+    // version (dist-tags are transient, exact versions are deterministic).
     const targets = outdatedRuntime.map(
       (s) => `${s.name}@${PRERELEASE_MODE ? s.latestVersion : "latest"}`,
     );
@@ -555,7 +674,7 @@ async function updateEverything() {
       console.error("❌ Error: NPM runtime dependency upgrade failed!");
       process.exit(1);
     }
-    console.log(`✅ Step 1/6 Complete (${durationMs}ms)`);
+    console.log(`✅ Step 1/7 Complete (${durationMs}ms)`);
   }
   console.log("");
 
@@ -565,11 +684,11 @@ async function updateEverything() {
   );
   if (outdatedDev.length === 0) {
     console.log(
-      "🛠️ Step 2/6: NPM DevDependencies -> All direct packages already @target",
+      "🛠️ Step 2/7: NPM DevDependencies -> All direct packages already @target",
     );
   } else {
     console.log(
-      `🛠️ Step 2/6: Upgrading ${outdatedDev.length} Outdated NPM DevDependencies...`,
+      `🛠️ Step 2/7: Upgrading ${outdatedDev.length} Outdated NPM DevDependencies...`,
     );
     const targets = outdatedDev.map(
       (s) => `${s.name}@${PRERELEASE_MODE ? s.latestVersion : "latest"}`,
@@ -579,7 +698,7 @@ async function updateEverything() {
       console.error("❌ Error: NPM devDependency upgrade failed!");
       process.exit(1);
     }
-    console.log(`✅ Step 2/6 Complete (${durationMs}ms)`);
+    console.log(`✅ Step 2/7 Complete (${durationMs}ms)`);
   }
   console.log("");
 
@@ -589,14 +708,17 @@ async function updateEverything() {
   );
   if (outdatedCargo.length === 0) {
     console.log(
-      "🦀 Step 3/6: Cargo Rust Crates -> All Cargo.toml specs already @target",
+      "🦀 Step 3/7: Cargo Rust Crates -> All Cargo.toml specs already @target",
     );
   } else {
     console.log(
-      `🦀 Step 3/6: Syncing ${outdatedCargo.length} Outdated Cargo Crates in Cargo.toml...`,
+      `🦀 Step 3/7: Syncing ${outdatedCargo.length} Outdated Cargo Crates in Cargo.toml...`,
     );
     let newCargoContent = cargoContent;
     outdatedCargo.forEach((crate) => {
+      // Inline and simple Cargo.toml spec forms are mutually exclusive per line,
+      // so applying both replacements unconditionally is safe and avoids the
+      // stateful lastIndex quirk of `RegExp.test()` on global regexes.
       const regInline = new RegExp(
         `(${crate.name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
         "g",
@@ -623,7 +745,7 @@ async function updateEverything() {
 
   // --- Step 4: Refreshing All Transitive Sub-Crates & Sub-Packages ---
   console.log(
-    "🔒 Step 4/6: Refreshing All Sub-Crates & Transitive Sub-Dependencies (bun update & cargo update)...",
+    "🔒 Step 4/7: Refreshing All Sub-Crates & Transitive Sub-Dependencies (bun update & cargo update)...",
   );
   const bunUpdateResult = runCmd("bun", ["update", "--latest"]);
   if (!bunUpdateResult.success) {
@@ -637,22 +759,23 @@ async function updateEverything() {
     cargoCwd,
   );
   if (cargoSuccess) {
-    console.log(`✅ Step 4/6 Sub-dependency update complete (${cargoMs}ms)\n`);
+    console.log(`✅ Step 4/7 Sub-dependency update complete (${cargoMs}ms)\n`);
   } else {
     console.error("❌ Error: Cargo sub-crate update failed!");
     process.exit(1);
   }
 
+  // --- Snapshot Sub-Dependency States AFTER Lockfile Refresh ---
   const afterCargoLock = parseCargoLock(cargoLockPath);
   const afterBunLock = parseBunInstalledVersions();
 
   // --- Step 4b: Re-pin Prerelease Pins (Clobber Guard) ---
-  // `bun update --latest` resolves the `latest` dist-tag and REWRITES
-  // package.json specs (e.g. `react-dom 19.3.0-canary-* -> 19.2.8`), silently
-  // downgrading ANY exact prerelease pin — including ones this run did not
-  // touch — and stripping range operators. Stable mode is unaffected (`@latest`
-  // pins survive unchanged), so this re-pin only runs in prerelease mode and
-  // restores every direct NPM dependency whose snapshot spec is a prerelease.
+  // `bun update --latest` resolves the `latest` dist-tag and REWRITES package.json
+  // specs (e.g. `react-dom 19.3.0-canary-d5736f09-20260507 -> 19.2.8`), silently
+  // downgrading ANY exact prerelease pin — including ones this run did not touch
+  // — and stripping range operators. Stable mode is unaffected (`@latest` pins
+  // survive unchanged), so this re-pin only runs in prerelease mode and restores
+  // every direct NPM dependency whose snapshot spec is a prerelease.
   if (PRERELEASE_MODE) {
     const pkgNow = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as {
       dependencies?: Record<string, string>;
@@ -660,35 +783,49 @@ async function updateEverything() {
     };
     const repinRuntime: string[] = [];
     const repinDev: string[] = [];
-    const specs = { ...specSnapshot.dependencies, ...specSnapshot.devDependencies };
+    const specs = {
+      ...specSnapshot.dependencies,
+      ...specSnapshot.devDependencies,
+    };
     for (const [name, spec] of Object.entries(specs)) {
       if (!isPrereleaseVersion(cleanVersion(spec))) continue;
-      const currentSpec = pkgNow.dependencies?.[name] ?? pkgNow.devDependencies?.[name];
+      const currentSpec =
+        pkgNow.dependencies?.[name] ?? pkgNow.devDependencies?.[name];
       if (currentSpec === spec) continue;
       const isDev = (specSnapshot.devDependencies ?? {})[name] !== undefined;
       (isDev ? repinDev : repinRuntime).push(`${name}@${spec}`);
     }
     if (repinRuntime.length > 0) {
-      const { success: repinRuntimeOk } = runCmd("bun", ["add", ...repinRuntime]);
+      const { success: repinRuntimeOk } = runCmd("bun", [
+        "add",
+        ...repinRuntime,
+      ]);
       if (!repinRuntimeOk) {
-        console.error("❌ Error: prerelease runtime re-pin failed after bun update --latest!");
+        console.error(
+          "❌ Error: prerelease runtime re-pin failed after bun update --latest!",
+        );
         process.exit(1);
       }
     }
     if (repinDev.length > 0) {
       const { success: repinDevOk } = runCmd("bun", ["add", "-d", ...repinDev]);
       if (!repinDevOk) {
-        console.error("❌ Error: prerelease dev re-pin failed after bun update --latest!");
+        console.error(
+          "❌ Error: prerelease dev re-pin failed after bun update --latest!",
+        );
         process.exit(1);
       }
     }
     if (repinRuntime.length > 0 || repinDev.length > 0) {
-      console.log("🔄 Step 4b/6: Re-pinned exact prerelease targets (bun update --latest clobber guard)\n");
+      console.log(
+        "🔄 Step 4b/7: Re-pinned exact prerelease targets (bun update --latest clobber guard)\n",
+      );
     }
   }
 
   const subDepChanges: SubDepDiff[] = [];
 
+  // Track Bun Sub-dependency changes
   Object.keys(afterBunLock).forEach((name) => {
     const beforeVer = beforeBunLock[name];
     const afterVer = afterBunLock[name];
@@ -702,6 +839,7 @@ async function updateEverything() {
     }
   });
 
+  // Track Cargo Sub-dependency changes
   Object.keys(afterCargoLock).forEach((name) => {
     const beforeVer = beforeCargoLock[name];
     const afterVer = afterCargoLock[name];
@@ -715,24 +853,40 @@ async function updateEverything() {
     }
   });
 
-  // --- Step 5: TypeScript & Vite Build Validation ---
+  // --- Step 5: TypeScript Static Type Checking ---
   console.log(
-    "⚡ Step 5/6: Validating TypeScript & Vite Production Build (bun run build)...",
+    "📐 Step 5/7: Validating TypeScript Static Types (bun x tsc -b)...",
+  );
+  const { success: tscSuccess, durationMs: tscMs } = runCmd("bun", [
+    "x",
+    "tsc",
+    "-b",
+  ]);
+  if (!tscSuccess) {
+    console.error("❌ Error: TypeScript type checking failed!");
+    process.exit(1);
+  } else {
+    console.log(`✅ Step 5/7 Complete (${tscMs}ms)\n`);
+  }
+
+  // --- Step 6: Vite Production Frontend Build Validation ---
+  console.log(
+    "⚡ Step 6/7: Validating Vite Production Frontend Build (bun run vite:build)...",
   );
   const { success: buildSuccess, durationMs: buildMs } = runCmd("bun", [
     "run",
-    "build",
+    "vite:build",
   ]);
   if (!buildSuccess) {
-    console.error("❌ Error: Frontend build failed!");
+    console.error("❌ Error: Vite production build failed!");
     process.exit(1);
   } else {
-    console.log(`✅ Step 5/6 Complete (${buildMs}ms)\n`);
+    console.log(`✅ Step 6/7 Complete (${buildMs}ms)\n`);
   }
 
-  // --- Step 6: Native Cargo Backend Compilation Verification ---
+  // --- Step 7: Native Cargo Backend Compilation Verification ---
   console.log(
-    "🔍 Step 6/6: Checking Cargo Rust Backend Compilation (cargo check)...",
+    "🔍 Step 7/7: Checking Cargo Rust Backend Compilation (cargo check)...",
   );
   const { success: checkSuccess, durationMs: checkMs } = runCmd(
     "cargo",
@@ -743,13 +897,15 @@ async function updateEverything() {
     console.error("❌ Error: Cargo compilation check failed!");
     process.exit(1);
   } else {
-    console.log(`✅ Step 6/6 Complete (${checkMs}ms)\n`);
+    console.log(`✅ Step 7/7 Complete (${checkMs}ms)\n`);
   }
 
   const totalDirectCount = allStatuses.length;
   const totalSubCrates = Object.keys(afterCargoLock).length;
   const totalSubNpm = Object.keys(afterBunLock).length;
+  const totalGraphCount = totalDirectCount + totalSubCrates + totalSubNpm;
 
+  // --- Print Direct Dependency Summary Report ---
   console.log(
     "=================================================================",
   );
@@ -762,18 +918,18 @@ async function updateEverything() {
     "=================================================================",
   );
   console.log(
-    " Dependency / Crate Name             | Ecosystem    | Current    | Latest     | Status",
+    " Dependency / Crate Name           | Ecosystem    | Current   | Latest    | Status",
   );
   console.log(
-    "--------------------------------------+--------------+------------+------------+-------------------",
+    "------------------------------------+--------------+-----------+-----------+-------------------",
   );
   allStatuses
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .toSorted((a, b) => a.name.localeCompare(b.name))
     .forEach((s) => {
-      const namePadded = s.name.padEnd(36, " ");
+      const namePadded = s.name.padEnd(34, " ");
       const ecoPadded = s.ecosystem.padEnd(12, " ");
-      const currPadded = s.currentVersion.padEnd(10, " ");
-      const latPadded = s.latestVersion.padEnd(10, " ");
+      const currPadded = s.currentVersion.padEnd(9, " ");
+      const latPadded = s.latestVersion.padEnd(9, " ");
       const statusText = s.needsUpdate
         ? s.prerelease
           ? "⚠️ Pre-release"
@@ -787,6 +943,7 @@ async function updateEverything() {
     "=================================================================\n",
   );
 
+  // --- Print Transitive Sub-Dependency Upgrade Report ---
   console.log(
     "=================================================================",
   );
@@ -798,31 +955,31 @@ async function updateEverything() {
   );
   if (subDepChanges.length === 0) {
     console.log(
-      ` ⚡ All ${totalSubCrates + totalSubNpm} sub-crates & sub-dependencies are verified at their latest versions.`,
+      ` ⚡ All ${totalSubCrates + totalSubNpm} sub-crates & sub-sub-dependencies are verified at their latest versions.`,
     );
   } else {
     console.log(
-      " Sub-Dependency Name                 | Ecosystem    | Before     | Upgraded",
+      " Sub-Dependency Name               | Ecosystem    | Before    | Upgraded",
     );
     console.log(
-      "--------------------------------------+--------------+------------+-----------",
+      "------------------------------------+--------------+-----------+-----------",
     );
     subDepChanges
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .toSorted((a, b) => a.name.localeCompare(b.name))
       .forEach((sd) => {
-        const namePadded = sd.name.padEnd(36, " ");
+        const namePadded = sd.name.padEnd(34, " ");
         const ecoPadded = sd.ecosystem.padEnd(12, " ");
-        const beforePadded = sd.before.padEnd(10, " ");
+        const beforePadded = sd.before.padEnd(9, " ");
         console.log(
           ` ${namePadded} | ${ecoPadded} | ${beforePadded} | ${sd.after}`,
         );
       });
   }
   console.log(
-    "=================================================================\n",
+    "=================================================================",
   );
   console.log(
-    "🎉 ALL DEPENDENCIES, SUB-DEPENDENCIES, AND CRATES UPDATED & VERIFIED SUCCESSFULLY!",
+    `🎉 Entire dependency tree (${totalGraphCount} total packages & sub-crates) is 100% up-to-date!\n`,
   );
 }
 

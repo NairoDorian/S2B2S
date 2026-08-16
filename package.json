@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "vite:build": "vite build",
+    "typecheck": "bun x tsc -b",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint src",
@@ -17,6 +19,7 @@
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
+    "update-deps": "bun scripts/update-deps.ts",
     "postinstall": "bun scripts/check-nix-deps.ts"
   },
   "dependencies": {
