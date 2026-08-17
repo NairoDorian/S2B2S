@@ -754,6 +754,10 @@
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
     },
+    "keepModelsLoaded": {
+      "label": "Keep Extra Models Loaded",
+      "description": "Keep the 2nd and 3rd models in memory between multi-STT uses for faster subsequent transcriptions (uses more memory)"
+    },
     "mergePrompt": {
       "title": "Merge Prompt",
       "description": "Configure how the multiple transcriptions are merged",

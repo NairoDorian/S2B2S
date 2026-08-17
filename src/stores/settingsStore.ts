@@ -198,6 +198,8 @@ const settingUpdaters: {
     commands.changeMultiSttTranslateModel2(value as boolean),
   multi_stt_translate_model_3: (value) =>
     commands.changeMultiSttTranslateModel3(value as boolean),
+  multi_stt_keep_extra_models_loaded: (value) =>
+    commands.changeMultiSttKeepExtraModelsLoadedSetting(value as boolean),
   multi_stt_merge_prompt: (value) =>
     commands.changeMultiSttMergePrompt(value as LLMPrompt | null),
   mic_idle_timeout_value: (value) =>

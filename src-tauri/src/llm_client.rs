@@ -528,6 +528,60 @@ pub async fn fetch_models(
     Ok(models)
 }
 
+/// Best-effort cleanup of server-side conversation state on llama.cpp servers.
+///
+/// The OpenAI-compatible `/chat/completions` endpoint is stateless, so each
+/// request already starts fresh.  However, llama.cpp's *stateful* `/chat/*` API
+/// can accumulate conversation slots in memory.  This function calls the
+/// llama.cpp-specific `/chat/erase_all` endpoint to release those slots after a
+/// merge or post-processing round-trip, preventing gradual memory growth when
+/// many transcriptions share one local server.
+///
+/// For backends that don't expose `/chat/erase_all` (every non-llama.cpp
+/// provider, or a minimal llama.cpp build), the call returns 404 which is
+/// logged at `debug` level and otherwise ignored — cleanup is always
+/// non-blocking and never affects the transcription result.
+pub async fn erase_llama_server_conversations(base_url: &str) {
+    let url = format!("{}/chat/erase_all", base_url.trim_end_matches('/'));
+    debug!(
+        "Cleaning up llama.cpp server conversations at: {}",
+        sanitized_url_for_log(&url)
+    );
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            debug!(
+                "Failed to build HTTP client for conversation cleanup: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let response = client.post(&url).send().await;
+    match response {
+        Ok(resp) => {
+            let status = resp.status();
+            if status.is_success() {
+                debug!("Successfully erased llama.cpp server conversations");
+            } else if status.as_u16() == 404 {
+                debug!(
+                    "Conversation erase endpoint not found (non-llama.cpp server or minimal build)"
+                );
+            } else {
+                debug!("Conversation erase returned status {}", status);
+            }
+        }
+        Err(e) => {
+            debug!("Failed to erase llama.cpp server conversations: {}", e);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -735,5 +789,24 @@ mod tests {
         assert!(is_known_rejected(&key));
         // A different model on the same endpoint is tracked separately
         assert!(!is_known_rejected(&endpoint_key(&deepseek, "other-model")));
+    }
+
+    #[tokio::test]
+    async fn erase_conversations_handles_404_gracefully() {
+        let base_url = serve_one_response("404 Not Found", r#"{"error":"File Not Found"}"#).await;
+        // Should not return an error even when the endpoint is missing
+        erase_llama_server_conversations(&base_url).await;
+    }
+
+    #[tokio::test]
+    async fn erase_conversations_handles_success() {
+        let base_url = serve_one_response("200 OK", "{}").await;
+        erase_llama_server_conversations(&base_url).await;
+    }
+
+    #[tokio::test]
+    async fn erase_conversations_handles_connection_failure() {
+        // Point at a port nothing is listening on — should not panic
+        erase_llama_server_conversations("http://127.0.0.1:1").await;
     }
 }

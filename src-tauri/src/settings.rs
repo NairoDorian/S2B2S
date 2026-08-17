@@ -520,6 +520,8 @@ pub struct AppSettings {
     pub multi_stt_translate_model_2: bool,
     #[serde(default = "default_multi_stt_translate")]
     pub multi_stt_translate_model_3: bool,
+    #[serde(default = "default_multi_stt_keep_models")]
+    pub multi_stt_keep_extra_models_loaded: bool,
     #[serde(default)]
     pub multi_stt_merge_prompt: Option<LLMPrompt>,
     #[serde(default)]
@@ -546,6 +548,10 @@ fn default_settings_schema_version() -> u32 {
 }
 
 fn default_multi_stt_translate() -> bool {
+    true
+}
+
+fn default_multi_stt_keep_models() -> bool {
     true
 }
 
@@ -1006,6 +1012,7 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_language_model_3: None,
         multi_stt_translate_model_2: true,
         multi_stt_translate_model_3: true,
+        multi_stt_keep_extra_models_loaded: true,
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,
         mic_idle_timeout_value: default_mic_idle_timeout_value(),

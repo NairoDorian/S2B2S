@@ -84,7 +84,7 @@ decimal places).
 
 The 24-layer decoder makes this the slowest canary variant for decode-bound
 workloads — roughly 1.5× the wall time of canary-1b-flash on the same
-backend, and the GPU win over CPU is smaller here than on the *flash
+backend, and the GPU win over CPU is smaller here than on the \*flash
 variants because the autoregressive decoder pass dominates and a
 batch-1 / single-token forward is too small to amortize Vulkan dispatch
 overhead.

@@ -156,12 +156,11 @@ up work rather than shipped-and-broken.
   side copy at `src/arch/qwen3_asr/model.cpp` trims the padded rows
   off the last chunk down to `T_enc_real = (n_chunks-1) *
 per_chunk_aftercnn + last_chunk_aftercnn`, matching the reference's
-  ragged selection. Everything downstream (LM prefill, dec.* dumps)
-  sees the trimmed T_enc. The graph-level `enc.*` dumps still carry
+  ragged selection. Everything downstream (LM prefill, dec._ dumps)
+  sees the trimmed T_enc. The graph-level `enc._`dumps still carry
   the padded shape — numerical validation in the golden manifest
-  runs on `jfk.wav` (single-chunk, no ragged tail) only. Multi-chunk
-  audio is validated transcript-level: `tests/qwen3_asr_e2e_smoke.cpp`
-  runs both `jfk.wav` and `dots.wav` (35.3s Steve-Jobs-commencement
+  runs on`jfk.wav`(single-chunk, no ragged tail) only. Multi-chunk
+  audio is validated transcript-level:`tests/qwen3_asr_e2e_smoke.cpp`  runs both`jfk.wav`and`dots.wav` (35.3s Steve-Jobs-commencement
   excerpt, multi-chunk ragged tail) through the public ABI and
   asserts edit-distance-zero against checked-in reference transcripts,
   so a regression in the ragged-tail trim path fails the e2e smoke.

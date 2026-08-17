@@ -70,10 +70,10 @@ math to `qwen3_asr` via `src/causal_lm/` (`BlockView`/`block_prefill`/`block_ste
 
 - Encoder is whisper (conv stem + learned PE + gelu LayerNorm blocks), NOT
   qwen3_asr's conv2d-subsample encoder. Reuse whisper's `mha_encoder` shape.
-- Audio injection is a **blend** (`x*keep_mask + audio_dense`), not qwen3_asr's
+- Audio injection is a **blend** (`x*keep_mask + audio_dense`), not qwen3*asr's
   single-shot 3-way concat: MOSS audio-pad positions are non-contiguous because
   the processor interleaves time-marker digit tokens into the span. The blend is
-  exactly qwen3_asr's _batched_ prefill injection, reused for single prefill too.
+  exactly qwen3_asr's \_batched* prefill injection, reused for single prefill too.
 - Prompt: fixed Chinese diarize instruction with a `system` block and
   `<|audio_start|>/<|audio_end|>` wrapper. Prefix/suffix token ids + digit ids are
   baked into the GGUF by the converter (from the reference tokenizer); C++ only

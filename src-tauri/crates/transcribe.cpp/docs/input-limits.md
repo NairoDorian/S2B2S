@@ -145,9 +145,9 @@ reports a smaller `effective_n_ctx` and `max_kv_bytes` when `n_ctx` is lowered,
 but `effective_max_audio_ms` stays pinned to the encoder input bound.
 
 **Chunked / unbounded families (bucket 1) ignore `n_ctx` entirely.** whisper,
-parakeet, and voxtral_realtime have no lowerable context ceiling, so a non-zero
+parakeet, and voxtral*realtime have no lowerable context ceiling, so a non-zero
 `n_ctx` is a documented no-op and `transcribe_session_get_limits()` keeps
-reporting them unbounded. voxtral_realtime is the subtle case: it _does_ have an
+reporting them unbounded. voxtral_realtime is the subtle case: it \_does* have an
 absolute decoder position cap (`dec_max_position`, ~2.9 h of audio), but that is
 the model's true RoPE wall — not a memory ceiling a caller can lower — so
 `n_ctx` does not narrow it (its decoder KV is a constant-memory sliding ring;

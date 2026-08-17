@@ -169,7 +169,7 @@ be resolved before the corresponding port enters porting-3-convert:
 1. **TDT_CTC head disposition** (`tdt_ctc-1.1b`, `tdt_ctc-110m`):
    ship the TDT head only at runtime, or expose both? Recommended:
    TDT-only for v1 since the pure CTC variants (`ctc-*`) cover that
-   path. Drop unused CTC head weights from the GGUF to save ~vocab*d
+   path. Drop unused CTC head weights from the GGUF to save ~vocab\*d
    floats per model.
 2. **CTC variant intake routes through `.nemo`, not HF config/safetensors**
    (`ctc-1.1b`, `ctc-0.6b`): both repos ship a `.nemo` archive alongside the
@@ -385,12 +385,12 @@ Per-variant decisions surfaced during Stage 3 (`porting-3-convert`).
   the existing TDT KV path; runtime fails at the same `(num_mels=80,
 subsampling_factor=8)` geometry as tdt-1.1b.
 - **Local attention on tdt_ctc-1.1b only** — uniquely among the 10
-  variants, tdt_ctc-1.1b uses NeMo's `LocalAttRelPositionalEncoding`
+  variants, tdt*ctc-1.1b uses NeMo's `LocalAttRelPositionalEncoding`
   with `att_context_size=[128,128]`. The pos_emb buffer is sized
   `[2W+1, d]` (257 instead of 2T-1) and attention is band-restricted
   to ±128 frames per query. C++ honors this via two new GGUF KVs
-  (`stt.parakeet.encoder.att_context_{left,right}`, default `-1` =
-  full attention) and a -INF row pad on `matrix_bd` before `rel_shift`,
+  (`stt.parakeet.encoder.att_context*{left,right}`, default `-1`=
+full attention) and a -INF row pad on`matrix_bd`before`rel_shift`,
   which moves out-of-band keys to -INF in the post-softmax scores.
   Math is exact for any T (including T > 2W+1).
 

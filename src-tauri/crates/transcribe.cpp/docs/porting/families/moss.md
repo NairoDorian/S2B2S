@@ -164,10 +164,10 @@ uv run scripts/bench/run.py \
   staged in `handy-computer/moss-transcribe-diarize-gguf`; the repo is planned
   to become public after this PR merges.
 - WER, LibriSpeech test-clean, batch 1, CUDA/L4 (Modal): BF16 **2.08%**,
-  F16 **2.07%**, Q8_0 **1.93%**, Q6_K **1.96%**, Q5_K_M **1.99%**, Q4_K_M
+  F16 **2.07%**, Q8*0 **1.93%**, Q6_K **1.96%**, Q5_K_M **1.99%**, Q4_K_M
   **2.59%** (2.37% excluding one runaway; **2.16%** on Metal). These dataset
   scores are not a general quality ranking. The Q8/Q6/Q5 tiers
-  scoring _below_ BF16 is not a quality gain: it is one 31.6s utterance
+  scoring \_below* BF16 is not a quality gain: it is one 31.6s utterance
   (`4507-16021-0026`) where BF16/F16 _and the torch reference itself_ take an
   immediate-EOS first-token near-tie and emit empty, while quant rounding noise
   perturbs that tie and recovers the 65 words. Same bf16-near-tie mechanism as the
@@ -183,8 +183,8 @@ uv run scripts/bench/run.py \
   smallest tier stays available. A repetition/no-repeat decoding guard is a
   possible future mitigation for the most aggressive quants (separate decoding-
   policy discussion, out of Stage 5 scope).
-- **Harness fix (`examples/cli/main.cpp`, batch mode).** The Q4_K_M runaway first
-  surfaced as a _sweep abort_: the batch CLI returned `EXIT_FAILURE` whenever any
+- **Harness fix (`examples/cli/main.cpp`, batch mode).** The Q4*K_M runaway first
+  surfaced as a \_sweep abort*: the batch CLI returned `EXIT_FAILURE` whenever any
   single utterance failed, so run.py discarded all 2620 hyps over one truncation.
   Fixed to collect per-utterance errors instead: `OUTPUT_TRUNCATED` is
   result-bearing (the preserved partial hyp is emitted as `text` and scored, still

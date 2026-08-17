@@ -21,6 +21,7 @@ import {
 import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
+import { commands } from "@/bindings";
 
 /** Inline language selector for an extra multi-STT model slot. */
 interface PerModelLanguageSelectorProps {
@@ -93,7 +94,7 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
 export const MultiSttSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const { models, currentModel } = useModelStore();
+  const { models, currentModel, loadModels } = useModelStore();
 
   const multiSttEnabled = getSetting("multi_stt_enabled") ?? false;
   const multiSttModel2 = getSetting("multi_stt_model_2") ?? null;
@@ -166,6 +167,15 @@ export const MultiSttSettings: React.FC = () => {
     updateSetting("multi_stt_merge_prompt", null);
     setDraftName("");
     setDraftText("");
+  };
+
+  const handleUnloadModel = async (modelId: string) => {
+    try {
+      await commands.unloadExtraModel(modelId);
+      loadModels();
+    } catch (err) {
+      console.error("Failed to unload model:", err);
+    }
   };
 
   const primaryModelName = primaryModelId
@@ -242,13 +252,22 @@ export const MultiSttSettings: React.FC = () => {
                     className="flex-1 min-w-0"
                   />
                   {multiSttModel2 && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleModel2Select(null)}
-                    >
-                      {t("multiStt.models.disableModel")}
-                    </Button>
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleModel2Select(null)}
+                      >
+                        {t("multiStt.models.disableModel")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleUnloadModel(multiSttModel2)}
+                      >
+                        {t("multiStt.models.unloadModel")}
+                      </Button>
+                    </>
                   )}
                 </div>
                 <PerModelLanguageSelector
@@ -295,13 +314,22 @@ export const MultiSttSettings: React.FC = () => {
                     className="flex-1 min-w-0"
                   />
                   {multiSttModel3 && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleModel3Select(null)}
-                    >
-                      {t("multiStt.models.disableModel")}
-                    </Button>
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleModel3Select(null)}
+                      >
+                        {t("multiStt.models.disableModel")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleUnloadModel(multiSttModel3)}
+                      >
+                        {t("multiStt.models.unloadModel")}
+                      </Button>
+                    </>
                   )}
                 </div>
                 <PerModelLanguageSelector
@@ -330,6 +358,24 @@ export const MultiSttSettings: React.FC = () => {
                 )}
               </SettingContainer>
             </div>
+          </SettingsGroup>
+
+          {/* Keep Extra Models Loaded */}
+          <SettingsGroup title={t("multiStt.keepModelsLoaded.label")}>
+            <ToggleSwitch
+              checked={
+                (getSetting("multi_stt_keep_extra_models_loaded") as boolean) ??
+                true
+              }
+              onChange={(enabled) =>
+                updateSetting("multi_stt_keep_extra_models_loaded", enabled)
+              }
+              isUpdating={isUpdating("multi_stt_keep_extra_models_loaded")}
+              label={t("multiStt.keepModelsLoaded.label")}
+              description={t("multiStt.keepModelsLoaded.description")}
+              descriptionMode="tooltip"
+              grouped={true}
+            />
           </SettingsGroup>
 
           {/* Merge Prompt */}

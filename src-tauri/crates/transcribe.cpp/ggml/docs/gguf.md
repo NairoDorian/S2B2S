@@ -683,7 +683,6 @@ The following sections describe the metadata for each model architecture. Each k
 ###### Optional
 
 - `falcon.tensor_data_layout`:
-
   - `jploski` (author of the original GGML implementation of Falcon):
 
     ```python

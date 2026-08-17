@@ -166,7 +166,7 @@ Mirrored into the golden manifest; cross-checked by preflight against GGUF
 `general.languages` and `stt.capability.*`.
 
 | Field                                       | Filled by      | Notes                                                                                                                                                                                     |
-| ------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------- |
 | `capabilities.languages`                    | script + human | BCP-47 codes. Script auto-extracts from common config fields (`languages`, `supported_languages`, `language_list`, `text_config.languages`). Falls back to human-fill from the model card |
 | `capabilities.language_detection`           | human          | Auto-detects input language without a hint (Whisper-style `<                                                                                                                              | detect | >` tokens, Qwen3-ASR's detection branch) |
 | `capabilities.translation`                  | human          | Produces output in a different language than the input audio. Most transducers don't; encoder-decoder + audio-LLM often do                                                                |

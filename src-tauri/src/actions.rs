@@ -1001,27 +1001,85 @@ async fn multi_stt_merge_transcriptions(
     );
 
     // Use legacy chat completion for merging
-    match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt, false).await {
-        Ok(Some(content)) => {
-            let content = content.trim().to_string();
-            debug!(
-                "Multi-STT merge succeeded. Output length: {} chars",
-                content.len()
-            );
-            Some(content)
-        }
-        Ok(None) => {
-            error!("Multi-STT merge: LLM API response has no content");
-            None
-        }
-        Err(e) => {
-            error!(
-                "Multi-STT merge failed for provider '{}': {}",
-                provider.id, e
-            );
-            None
-        }
+    let merge_result =
+        match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt, false)
+            .await
+        {
+            Ok(Some(content)) => {
+                let content = content.trim().to_string();
+                debug!(
+                    "Multi-STT merge succeeded. Output length: {} chars",
+                    content.len()
+                );
+                Some(content)
+            }
+            Ok(None) => {
+                error!("Multi-STT merge: LLM API response has no content");
+                None
+            }
+            Err(e) => {
+                error!(
+                    "Multi-STT merge failed for provider '{}': {}",
+                    provider.id, e
+                );
+                None
+            }
+        };
+
+    // Clean up server-side conversation state on llama.cpp servers to prevent
+    // memory accumulation across many merge round-trips.  This is a no-op for
+    // backends that don't expose `/chat/erase_all`.
+    crate::llm_client::erase_llama_server_conversations(&provider.base_url).await;
+
+    merge_result
+}
+
+/// Pre-load extra STT models in parallel on the blocking thread pool.
+/// Called from `start()` so models are ready before `stop()` runs,
+/// eliminating loading latency from the transcription path.
+async fn preload_extra_models_parallel(
+    tm: &Arc<TranscriptionManager>,
+    model_2: &Option<String>,
+    model_3: &Option<String>,
+) {
+    let extra_models: Vec<String> = [model_2, model_3]
+        .iter()
+        .filter_map(|m| m.as_ref())
+        .cloned()
+        .collect();
+
+    if extra_models.is_empty() {
+        return;
     }
+
+    let load_start = Instant::now();
+    info!(
+        "Multi-STT: pre-loading {} extra model(s) in parallel",
+        extra_models.len()
+    );
+
+    let mut handles = Vec::new();
+    for model_id in &extra_models {
+        if tm.is_extra_model_loaded(model_id) {
+            continue;
+        }
+        let tm_clone = Arc::clone(tm);
+        let model_id = model_id.clone();
+        handles.push(tauri::async_runtime::spawn_blocking(move || {
+            if let Err(e) = tm_clone.load_extra_model(&model_id) {
+                warn!("Multi-STT: pre-load failed for '{}': {}", model_id, e);
+            }
+        }));
+    }
+
+    for h in handles {
+        let _ = h.await;
+    }
+
+    info!(
+        "Multi-STT: pre-loading completed in {:?}",
+        load_start.elapsed()
+    );
 }
 
 impl ShortcutAction for MultiSttAction {
@@ -1045,6 +1103,20 @@ impl ShortcutAction for MultiSttAction {
         change_tray_icon(app, TrayIconState::Recording);
         let settings = get_settings(app);
         let is_always_on = settings.always_on_microphone;
+
+        // Pre-load extra STT models in parallel while the primary model loads
+        // and the user records, so they're ready before transcription starts.
+        // Extra models follow the same idle-timeout lifecycle as the primary
+        // model — they stay loaded until the primary unloads (which may be
+        // infinite depending on the user's ModelUnloadTimeout setting).
+        if settings.multi_stt_enabled {
+            let tm_pre = Arc::clone(&tm);
+            let model_2 = settings.multi_stt_model_2.clone();
+            let model_3 = settings.multi_stt_model_3.clone();
+            tauri::async_runtime::spawn(async move {
+                preload_extra_models_parallel(&tm_pre, &model_2, &model_3).await;
+            });
+        }
 
         // Start recording
         let selected_model_info = app
@@ -1199,15 +1271,41 @@ impl ShortcutAction for MultiSttAction {
                     crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
                 });
 
-                // === LOAD EXTRA MODELS SEQUENTIALLY (avoid VRAM spike) ===
+                // === LOAD EXTRA MODELS IN PARALLEL (fastest first-run) ===
+                // Both models load concurrently on the blocking pool so the async
+                // worker stays free for events/UI. Models already loaded (e.g. by
+                // the pre-load in start()) are skipped immediately.
                 let settings = get_settings(&ah);
                 let extra_model_2 = settings.multi_stt_model_2.clone();
                 let extra_model_3 = settings.multi_stt_model_3.clone();
 
-                if let Some(ref model_id) = extra_model_2 {
-                    if !tm.is_extra_model_loaded(model_id) {
+                let need_load_2 = extra_model_2
+                    .as_ref()
+                    .is_some_and(|id| !tm.is_extra_model_loaded(id));
+                let need_load_3 = extra_model_3
+                    .as_ref()
+                    .is_some_and(|id| !tm.is_extra_model_loaded(id));
+
+                if !need_load_2 {
+                    if let Some(ref id) = extra_model_2 {
+                        info!("Multi-STT: extra model 2 '{}' already loaded, skipping", id);
+                    }
+                }
+                if !need_load_3 {
+                    if let Some(ref id) = extra_model_3 {
+                        info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
+                    }
+                }
+
+                let tm_load_2 = Arc::clone(&tm);
+                let tm_load_3 = Arc::clone(&tm);
+                let load_start = Instant::now();
+
+                let load_handle_2 = if need_load_2 {
+                    let model_id = extra_model_2.clone().unwrap();
+                    Some(tauri::async_runtime::spawn_blocking(move || {
                         info!("Multi-STT: loading extra model 2: {}", model_id);
-                        match tm.load_extra_model(model_id) {
+                        match tm_load_2.load_extra_model(&model_id) {
                             Ok(name) => {
                                 info!("Multi-STT: extra model 2 '{}' loaded successfully", name)
                             }
@@ -1216,18 +1314,16 @@ impl ShortcutAction for MultiSttAction {
                                 model_id, e
                             ),
                         }
-                    } else {
-                        info!(
-                            "Multi-STT: extra model 2 '{}' already loaded, skipping",
-                            model_id
-                        );
-                    }
-                }
+                    }))
+                } else {
+                    None
+                };
 
-                if let Some(ref model_id) = extra_model_3 {
-                    if !tm.is_extra_model_loaded(model_id) {
+                let load_handle_3 = if need_load_3 {
+                    let model_id = extra_model_3.clone().unwrap();
+                    Some(tauri::async_runtime::spawn_blocking(move || {
                         info!("Multi-STT: loading extra model 3: {}", model_id);
-                        match tm.load_extra_model(model_id) {
+                        match tm_load_3.load_extra_model(&model_id) {
                             Ok(name) => {
                                 info!("Multi-STT: extra model 3 '{}' loaded successfully", name)
                             }
@@ -1236,13 +1332,24 @@ impl ShortcutAction for MultiSttAction {
                                 model_id, e
                             ),
                         }
-                    } else {
-                        info!(
-                            "Multi-STT: extra model 3 '{}' already loaded, skipping",
-                            model_id
-                        );
-                    }
+                    }))
+                } else {
+                    None
+                };
+
+                // Both loads are spawned before awaiting — they run concurrently
+                // in the blocking pool, so total time = max(load_2, load_3).
+                if let Some(h) = load_handle_2 {
+                    let _ = h.await;
                 }
+                if let Some(h) = load_handle_3 {
+                    let _ = h.await;
+                }
+
+                info!(
+                    "Multi-STT: extra model loading complete in {:?}",
+                    load_start.elapsed()
+                );
 
                 // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
                 // Inference is CPU/GPU-bound blocking work: run it on the
@@ -1410,7 +1517,7 @@ impl ShortcutAction for MultiSttAction {
                     combined
                 };
 
-                // Save to history
+                // Save to history in background (parallel with paste for speed)
                 let multi_transcript = format!(
                     "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\n=== Merged ===\n{}",
                     settings.selected_model,
@@ -1421,21 +1528,26 @@ impl ShortcutAction for MultiSttAction {
                     output3,
                     merged
                 );
+                let hm_clone = Arc::clone(&hm);
+                let file_name = format!("handy-multi-{recording_timestamp}.wav");
+                let merge_prompt_text = settings
+                    .multi_stt_merge_prompt
+                    .as_ref()
+                    .map(|p| p.prompt.clone());
+                let merged_for_history = merged.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(err) = hm_clone.save_entry(
+                        file_name,
+                        multi_transcript,
+                        merge_requested,
+                        Some(merged_for_history),
+                        merge_prompt_text,
+                    ) {
+                        error!("Failed to save multi-STT history entry: {}", err);
+                    }
+                });
 
-                if let Err(err) = hm.save_entry(
-                    format!("handy-multi-{recording_timestamp}.wav"),
-                    multi_transcript,
-                    merge_requested,
-                    Some(merged.clone()),
-                    settings
-                        .multi_stt_merge_prompt
-                        .as_ref()
-                        .map(|p| p.prompt.clone()),
-                ) {
-                    error!("Failed to save multi-STT history entry: {}", err);
-                }
-
-                // Paste merged result
+                // Paste merged result (runs concurrently with background history save)
                 if merged.is_empty() {
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
