@@ -229,6 +229,10 @@ Microphone → TripleVAD → Parakeet V3 STT → ITN Normalization → LLM (Brai
 
 ```
 
+### Bluetooth Headset Microphones (macOS)
+
+Using a Bluetooth headset microphone on macOS may temporarily reduce playback quality or volume while recording because Bluetooth switches to bidirectional audio. Keep your headphones as the output device and select your Mac's built-in or an external microphone in Handy to avoid this.
+
 ### Read Aloud Pipeline
 
 ```
