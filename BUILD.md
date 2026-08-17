@@ -2,6 +2,8 @@
 
 This guide covers how to set up the development environment and build Handy from source across different platforms.
 
+> **NOTE:** This is the `Handy_Multi_STT` fork. In addition to upstream Handy features, this branch adds **Multi-STT** mode (running up to three STT models in parallel with optional LLM-based merging). See [README.md](README.md#multi-stt-mode-fork-feature) for details on the Multi-STT feature.
+
 ## Prerequisites
 
 ### All Platforms

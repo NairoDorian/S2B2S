@@ -1,5 +1,9 @@
 # Contributing Translations to Handy
 
+> **NOTE:** This is the `Handy_Multi_STT` fork. This branch adds Multi-STT mode
+> with dedicated translation keys under the `multi_stt` prefix in
+> `src/i18n/locales/en/translation.json`. See [AGENTS.md](AGENTS.md).
+
 Thank you for helping translate Handy! This guide explains how to add or improve translations.
 
 ## Quick Start

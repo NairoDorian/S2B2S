@@ -32,6 +32,23 @@ The process is entirely local:
   - **Parakeet V3** - CPU-optimized model with excellent performance and automatic language detection
 - Works on Windows, macOS, and Linux
 
+### Multi-STT Mode (Fork Feature)
+
+This fork adds **Multi-STT** — run up to three speech-to-text models simultaneously and merge their outputs for higher accuracy. Each extra model runs on its own inference engine in parallel, and results are combined either by concatenation or via an LLM merge prompt.
+
+**Key capabilities:**
+
+- **Parallel transcription**: Primary + two extra models all transcribe the same audio concurrently
+- **Per-model language selection**: Each extra model can use a different recognition language
+- **Per-model translation**: Each extra model can optionally translate to English
+- **Parallel model loading**: Extra models are pre-loaded in parallel during the recording phase
+- **LLM merge prompt**: Optionally merge multiple transcriptions through an OpenAI-compatible LLM (including local llama.cpp servers) using `${output}`, `${output2}`, and `${output3}` placeholders
+- **Keep models loaded**: Option to retain extra models in memory between uses for faster repeat transcriptions
+- **Manual model unload**: Free model memory on demand via the settings UI
+- **Dedicated shortcut**: Configurable `multi_stt_transcribe` binding separate from the standard transcription shortcut
+
+**To enable:** Open Settings → Multi-STT, toggle on, select your second and third models, and optionally configure a merge prompt using the same post-processing LLM provider.
+
 ## Quick Start
 
 ### Installation

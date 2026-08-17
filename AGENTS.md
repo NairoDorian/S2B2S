@@ -2,6 +2,12 @@
 
 This file provides guidance to AI coding assistants working with code in this repository.
 
+> **NOTE**: This is the `Handy_Multi_STT` fork. In addition to upstream Handy
+> features, this branch adds **Multi-STT** mode — running up to three speech-to-text
+> models in parallel and optionally merging their outputs via an LLM. See the
+> Architecture Overview and Settings System sections below for fork-specific
+> additions.
+
 ## Development Commands
 
 **Prerequisites:**
@@ -66,10 +72,14 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `vad/` - Voice Activity Detection (Silero VAD)
 - `commands/` - Tauri command handlers for frontend communication
 - `cli.rs` - CLI argument definitions (clap derive)
-- `shortcut.rs` - Global keyboard shortcut handling
-- `settings.rs` - Application settings management
+- `shortcut/mod.rs` - Global keyboard shortcut handling (includes multi-STT shortcut registration)
+- `settings.rs` - Application settings management (includes Multi-STT settings)
 - `overlay.rs` - Recording overlay window (platform-specific)
 - `signal_handle.rs` - `send_transcription_input()` reusable function
+- `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`
+  - `MultiSttAction` runs primary + two extra models in parallel, merges outputs via LLM
+- `llm_client.rs` - OpenAI-compatible API client for post-processing and Multi-STT merge
+  - Includes `erase_llama_server_conversations()` for llama.cpp conversation cleanup
 - `utils.rs` - Platform detection helpers
 
 ### Frontend Structure (src/)
@@ -77,6 +87,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `App.tsx` - Main component with onboarding flow
 - `components/` - React UI components:
   - `settings/` - Settings UI
+    - `multi-stt/MultiSttSettings.tsx` - Multi-STT configuration (fork feature)
   - `model-selector/` - Model management interface
   - `onboarding/` - First-run experience
   - `overlay/` - Recording overlay UI
@@ -84,6 +95,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `shared/`, `ui/`, `icons/`, `footer/` - Shared components
 - `hooks/useSettings.ts` - Settings state management hook
 - `stores/settingsStore.ts` - Zustand store for settings
+- `stores/modelStore.ts` - Model store with load/unload operations
 - `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta)
 - `overlay/` - Recording overlay window entry point
 - `lib/types.ts` - Shared TypeScript type definitions
@@ -118,6 +130,13 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 4. **Processing:** Audio sent to Whisper model for transcription
 5. **Output:** Text pasted to active application via system clipboard
 
+**Multi-STT mode** (fork feature): When `multi_stt_enabled` is on, the dedicated `multi_stt_transcribe` shortcut triggers a parallel transcription pipeline:
+1. Pre-loads extra models (if not already loaded) in parallel on the blocking thread pool
+2. Records audio with VAD filtering (same as standard mode)
+3. Transcribes with primary + two extra models concurrently on separate engines
+4. Optionally merges outputs via an LLM (using `${output}`, `${output2}`, `${output3}` placeholders)
+5. Saves history entry and pastes merged result concurrently
+
 ### Settings System
 
 Settings are stored using Tauri's store plugin with reactive updates:
@@ -126,6 +145,19 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Audio devices (microphone/output selection)
 - Model preferences (Small/Medium/Turbo/Large Whisper variants)
 - Audio feedback and translation options
+
+**Multi-STT settings** (fork addition):
+
+- `multi_stt_enabled` - Global toggle for multi-model transcription mode
+- `multi_stt_model_2` / `multi_stt_model_3` - Select extra STT models
+- `multi_stt_language_model_2` / `multi_stt_language_model_3` - Per-model language override
+- `multi_stt_translate_model_2` / `multi_stt_translate_model_3` - Per-model English translation
+- `multi_stt_keep_extra_models_loaded` - Keep extra models resident between uses (memory/speed tradeoff)
+- `multi_stt_merge_prompt` - LLM prompt for merging outputs (`${output}`, `${output2}`, `${output3}`)
+- `multi_stt_selected_merge_prompt_id` - Active merge prompt selector
+
+Extra models are managed by `TranscriptionManager` (`extra_engines` HashMap) with explicit
+load/unload lifecycle, separate from the primary model.
 
 ### Single Instance Architecture
 

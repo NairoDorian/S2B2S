@@ -1,5 +1,11 @@
 # Contributing to Handy
 
+> **NOTE:** This is the `Handy_Multi_STT` fork. In addition to upstream Handy
+> features, this branch adds **Multi-STT** mode — running up to three
+> speech-to-text models in parallel with optional LLM-based merge. See
+> [AGENTS.md](AGENTS.md) for the full architecture. Contributions to
+> Multi-STT features are welcome.
+
 Thank you for your interest in contributing to Handy! This guide will help you get started with contributing to this open source speech-to-text application.
 
 ## ⚠️ Feature Freeze
@@ -74,17 +80,22 @@ Handy follows a clean architecture pattern:
 
 - `lib.rs` - Main application entry point with Tauri setup
 - `managers/` - Core business logic (audio, model, transcription)
+  - `transcription.rs` - Includes `extra_engines` HashMap for Multi-STT parallel model inference
 - `audio_toolkit/` - Low-level audio processing (recording, VAD)
 - `commands/` - Tauri command handlers for frontend communication
-- `shortcut.rs` - Global keyboard shortcut handling
-- `settings.rs` - Application settings management
+- `shortcut/mod.rs` - Global keyboard shortcut handling (includes multi-STT shortcut registration)
+- `actions.rs` - Shortcut actions (`TranscribeAction`, `MultiSttAction`, `CancelAction`) — `MultiSttAction` runs parallel multi-model transcription with optional LLM merge
+- `llm_client.rs` - LLM API client for post-processing and multi-STT merge
+- `settings.rs` - Application settings management (includes multi-STT settings)
 
 **Frontend (React/TypeScript - `src/`):**
 
 - `App.tsx` - Main application component
 - `components/` - React UI components
+  - `settings/multi-stt/MultiSttSettings.tsx` - Multi-STT configuration UI
 - `hooks/` - Reusable React hooks
 - `lib/types.ts` - Shared TypeScript types
+- `stores/modelStore.ts` - Model store with load/unload for extra models
 
 For more details, see the Architecture section in [README.md](README.md) or [AGENTS.md](AGENTS.md).
 
