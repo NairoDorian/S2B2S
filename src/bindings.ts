@@ -170,6 +170,26 @@ export const commands = {
 	 *  since launch
 	 */
 	rescanLocalModels: () => typedError<null, string>(__TAURI_INVOKE("rescan_local_models")),
+	/**
+	 *  Benchmark all downloaded quantization variants of the model identified by
+	 *  `model_id`.  Uses the latest completed recording as the reference audio.
+	 * 
+	 *  For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) the model is loaded
+	 *  on a temporary engine, a warmup transcription is discarded, three timed
+	 *  transcriptions are averaged, and the engine is dropped before the next
+	 *  variant.  Progress events are emitted on the `benchmark-progress` channel
+	 *  and the full result vector is returned when all variants are done.
+	 */
+	benchmarkModelQuantizations: (modelId: string) => typedError<BenchmarkResult[], string>(__TAURI_INVOKE("benchmark_model_quantizations", { modelId })),
+	/**
+	 *  Benchmark a single quantization variant of the current model.
+	 *  Uses the latest completed recording as the reference audio.
+	 * 
+	 *  The engine is loaded from a clean state (primary model unloaded first),
+	 *  a warmup transcription is discarded, three timed runs are averaged,
+	 *  and the engine is dropped after the run.
+	 */
+	benchmarkSingleQuantization: (modelId: string) => typedError<BenchmarkResult, string>(__TAURI_INVOKE("benchmark_single_quantization", { modelId })),
 	updateMicrophoneMode: (alwaysOn: boolean) => typedError<null, string>(__TAURI_INVOKE("update_microphone_mode", { alwaysOn })),
 	getMicrophoneMode: () => typedError<boolean, string>(__TAURI_INVOKE("get_microphone_mode")),
 	getWindowsMicrophonePermissionStatus: () => __TAURI_INVOKE<WindowsMicrophonePermissionStatus>("get_windows_microphone_permission_status"),
@@ -198,6 +218,22 @@ export const commands = {
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
+	/**
+	 *  Return the most recent history entry with non-empty transcription text,
+	 *  so the frontend can tell the user which recording will be used as the
+	 *  benchmark reference before starting the run.
+	 */
+	getLatestRecordingInfo: () => typedError<{
+	id: number,
+	file_name: string,
+	timestamp: number | null,
+	saved: boolean,
+	title: string,
+	transcription_text: string,
+	post_processed_text: string | null,
+	post_process_prompt: string | null,
+	post_process_requested: boolean,
+} | null, string>(__TAURI_INVOKE("get_latest_recording_info")),
 	/**
 	 *  Stub implementation for non-macOS platforms
 	 *  Always returns false since laptop detection is macOS-specific
@@ -460,6 +496,19 @@ export type AvailableAccelerators = {
 	transcribe: string[],
 	ort: string[],
 	gpu_devices: GpuDeviceOption[],
+};
+
+/**
+ *  Result of benchmarking a single quantization variant — returned to the
+ *  frontend so it can render per-quant timings next to each variant chip.
+ */
+export type BenchmarkResult = {
+	quant: string,
+	model_id: string,
+	filename: string,
+	size_mb: number,
+	avg_time_ms: number | null,
+	is_default: boolean,
 };
 
 export type BindingResponse = {

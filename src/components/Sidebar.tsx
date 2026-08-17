@@ -20,6 +20,7 @@ import {
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
+  BenchmarkSettings,
   MultiSttSettings,
 } from "./settings";
 
@@ -57,6 +58,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.models",
     icon: Cpu,
     component: ModelsSettings,
+    enabled: () => true,
+  },
+  benchmark: {
+    labelKey: "sidebar.benchmark",
+    icon: FlaskConical,
+    component: BenchmarkSettings,
     enabled: () => true,
   },
   multiStt: {

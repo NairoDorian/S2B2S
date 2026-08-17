@@ -1,6 +1,6 @@
 use crate::actions::process_transcription_output;
 use crate::managers::{
-    history::{HistoryManager, PaginatedHistory},
+    history::{HistoryEntry, HistoryManager, PaginatedHistory},
     transcription::TranscriptionManager,
 };
 use std::sync::Arc;
@@ -151,4 +151,17 @@ pub async fn update_recording_retention_period(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Return the most recent history entry with non-empty transcription text,
+/// so the frontend can tell the user which recording will be used as the
+/// benchmark reference before starting the run.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_latest_recording_info(
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> Result<Option<HistoryEntry>, String> {
+    history_manager
+        .get_latest_completed_entry()
+        .map_err(|e| e.to_string())
 }

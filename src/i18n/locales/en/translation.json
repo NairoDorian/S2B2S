@@ -17,6 +17,7 @@
     "history": "History",
     "debug": "Debug",
     "about": "About",
+    "benchmark": "Benchmark",
     "multiStt": "Multi STT"
   },
   "onboarding": {
@@ -243,6 +244,29 @@
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Handy"
       },
       "noModelsMatch": "No models match this filter."
+    },
+    "benchmark": {
+      "title": "Quantization Benchmark",
+      "description": "Benchmark your downloaded model quantizations against your latest recording to compare transcription speed. A warmup run is discarded, then 3 timed runs are averaged for each quantization.",
+      "button": "Run Benchmark",
+      "buttonRunning": "Benchmarking…",
+      "noCurrentModel": "No model selected",
+      "noDownloadedQuants": "No downloaded quantizations found for this model",
+      "downloadedQuants": "{{count}} quantization variant(s) downloaded",
+      "noRecording": "No recordings found. Record audio first to use as benchmark reference.",
+      "usingRecording": "Benchmarking using your latest recording:",
+      "results": {
+        "title": "Results",
+        "timeMs": "{{ms}} ms",
+        "sizeMb": "{{size}} MB",
+        "default": "Default",
+        "realTimeFactor": "{{x}}× real-time",
+        "ranIn": "{{ms}} ms (avg of 3 runs)"
+      },
+      "variantError": "Failed",
+      "noResults": "No benchmark results yet. Click \"Run Benchmark\" to start.",
+      "singleButton": "Benchmark this quantization",
+      "singleRunning": "Benchmarking..."
     },
     "sound": {
       "title": "Sound",

@@ -1,9 +1,11 @@
+use crate::managers::history::HistoryManager;
 use crate::managers::model::{ModelInfo, ModelManager};
-use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
+use crate::managers::transcription::{BenchmarkResult, ModelStateEvent, TranscriptionManager};
 use crate::settings::{
     ModelUnloadTimeout, NativeStreamingLatencyPreset, get_settings, write_settings,
 };
 use log::error;
+use log::info;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
@@ -271,4 +273,101 @@ pub async fn cancel_download(
     model_manager
         .cancel_download(&model_id)
         .map_err(|e| e.to_string())
+}
+
+/// Benchmark all downloaded quantization variants of the model identified by
+/// `model_id`.  Uses the latest completed recording as the reference audio.
+///
+/// For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) the model is loaded
+/// on a temporary engine, a warmup transcription is discarded, three timed
+/// transcriptions are averaged, and the engine is dropped before the next
+/// variant.  Progress events are emitted on the `benchmark-progress` channel
+/// and the full result vector is returned when all variants are done.
+#[tauri::command]
+#[specta::specta]
+pub async fn benchmark_model_quantizations(
+    _model_manager: State<'_, Arc<ModelManager>>,
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    model_id: String,
+) -> Result<Vec<BenchmarkResult>, String> {
+    // Find the latest completed recording to use as reference audio.
+    let entry = history_manager
+        .get_latest_completed_entry()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "No completed recordings found. Record audio first to use the benchmark.".to_string()
+        })?;
+
+    let audio_path = history_manager.get_audio_file_path(&entry.file_name);
+    let samples = crate::audio_toolkit::read_wav_samples(&audio_path)
+        .map_err(|e| format!("Failed to load audio: {}", e))?;
+
+    if samples.is_empty() {
+        return Err("Recording has no audio samples".to_string());
+    }
+
+    info!(
+        "Starting quantization benchmark for model '{}' using recording '{}' ({} samples)",
+        model_id,
+        entry.file_name,
+        samples.len()
+    );
+
+    let tm = Arc::clone(&transcription_manager);
+    let model_id_clone = model_id.clone();
+    let results = tauri::async_runtime::spawn_blocking(move || {
+        tm.benchmark_quantizations(&model_id_clone, &samples)
+    })
+    .await
+    .map_err(|e| format!("Benchmark task panicked: {}", e))?
+    .map_err(|e| e.to_string())?;
+
+    Ok(results)
+}
+
+/// Benchmark a single quantization variant of the current model.
+/// Uses the latest completed recording as the reference audio.
+///
+/// The engine is loaded from a clean state (primary model unloaded first),
+/// a warmup transcription is discarded, three timed runs are averaged,
+/// and the engine is dropped after the run.
+#[tauri::command]
+#[specta::specta]
+pub async fn benchmark_single_quantization(
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    model_id: String,
+) -> Result<BenchmarkResult, String> {
+    let entry = history_manager
+        .get_latest_completed_entry()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "No completed recordings found. Record audio first to use the benchmark."
+                .to_string()
+        })?;
+
+    let audio_path = history_manager.get_audio_file_path(&entry.file_name);
+    let samples = crate::audio_toolkit::read_wav_samples(&audio_path)
+        .map_err(|e| format!("Failed to load audio: {}", e))?;
+
+    if samples.is_empty() {
+        return Err("Recording has no audio samples".to_string());
+    }
+
+    info!(
+        "Starting single-quant benchmark for model '{}' using recording '{}' ({} samples)",
+        model_id, entry.file_name, samples.len()
+    );
+
+    let tm = Arc::clone(&transcription_manager);
+    let model_id_clone = model_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        tm.benchmark_single_quantization(&model_id_clone, &samples)
+    })
+    .await
+    .map_err(|e| format!("Benchmark task panicked: {}", e))?
+    .map_err(|e| e.to_string())?;
+
+    Ok(result)
 }

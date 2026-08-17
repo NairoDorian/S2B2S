@@ -6,6 +6,7 @@ export { HistorySettings } from "./history/HistorySettings";
 export { AboutSettings } from "./about/AboutSettings";
 export { PostProcessingSettings } from "./post-processing/PostProcessingSettings";
 export { ModelsSettings } from "./models/ModelsSettings";
+export { BenchmarkSettings } from "./benchmark/BenchmarkSettings";
 export { MultiSttSettings } from "./multi-stt/MultiSttSettings";
 
 // Individual setting components

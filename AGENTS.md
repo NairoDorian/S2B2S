@@ -131,6 +131,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 5. **Output:** Text pasted to active application via system clipboard
 
 **Multi-STT mode** (fork feature): When `multi_stt_enabled` is on, the dedicated `multi_stt_transcribe` shortcut triggers a parallel transcription pipeline:
+
 1. Pre-loads extra models (if not already loaded) in parallel on the blocking thread pool
 2. Records audio with VAD filtering (same as standard mode)
 3. Transcribes with primary + two extra models concurrently on separate engines
