@@ -25,7 +25,7 @@ import { commands } from "@/bindings";
 
 /** Inline language selector for an extra multi-STT model slot. */
 interface PerModelLanguageSelectorProps {
-  slot: 2 | 3;
+  slot: 2 | 3 | 4;
   modelId: string | null;
   modelInfo: ModelInfo | undefined;
 }
@@ -38,7 +38,11 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
   const settingKey =
-    slot === 2 ? "multi_stt_language_model_2" : "multi_stt_language_model_3";
+    slot === 2
+      ? "multi_stt_language_model_2"
+      : slot === 3
+        ? "multi_stt_language_model_3"
+        : "multi_stt_language_model_4";
   const currentLang = (getSetting(settingKey) as string | null) ?? null;
 
   // Build lang options from the model's supported languages + auto
@@ -77,7 +81,9 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
       <label className="text-xs text-mid-gray/70 whitespace-nowrap">
         {slot === 2
           ? t("multiStt.models.model2Language")
-          : t("multiStt.models.model3Language")}
+          : slot === 3
+            ? t("multiStt.models.model3Language")
+            : t("multiStt.models.model4Language")}
       </label>
       <Dropdown
         selectedValue={currentLang}
@@ -99,12 +105,13 @@ export const MultiSttSettings: React.FC = () => {
   const multiSttEnabled = getSetting("multi_stt_enabled") ?? false;
   const multiSttModel2 = getSetting("multi_stt_model_2") ?? null;
   const multiSttModel3 = getSetting("multi_stt_model_3") ?? null;
+  const multiSttModel4 = getSetting("multi_stt_model_4") ?? null;
   const multiSttMergePrompt = getSetting("multi_stt_merge_prompt") ?? null;
 
   const [draftName, setDraftName] = useState("");
   const [draftText, setDraftText] = useState("");
 
-  // Filter out primary model + already-selected models for model 2/3 dropdowns
+  // Filter out primary model + already-selected models for model 2/3/4 dropdowns
   const downloadedModels = models.filter(
     (m: ModelInfo) => m.is_downloaded || m.is_custom,
   );
@@ -112,13 +119,28 @@ export const MultiSttSettings: React.FC = () => {
 
   const modelOptionsForSlot2 = downloadedModels
     .filter(
-      (m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel3,
+      (m: ModelInfo) =>
+        m.id !== primaryModelId &&
+        m.id !== multiSttModel3 &&
+        m.id !== multiSttModel4,
     )
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
 
   const modelOptionsForSlot3 = downloadedModels
     .filter(
-      (m: ModelInfo) => m.id !== primaryModelId && m.id !== multiSttModel2,
+      (m: ModelInfo) =>
+        m.id !== primaryModelId &&
+        m.id !== multiSttModel2 &&
+        m.id !== multiSttModel4,
+    )
+    .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
+
+  const modelOptionsForSlot4 = downloadedModels
+    .filter(
+      (m: ModelInfo) =>
+        m.id !== primaryModelId &&
+        m.id !== multiSttModel2 &&
+        m.id !== multiSttModel3,
     )
     .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
 
@@ -128,6 +150,10 @@ export const MultiSttSettings: React.FC = () => {
 
   const model3Info = multiSttModel3
     ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)
+    : undefined;
+
+  const model4Info = multiSttModel4
+    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel4)
     : undefined;
 
   // Initialize draft from existing merge prompt. Keyed on the saved values
@@ -149,6 +175,10 @@ export const MultiSttSettings: React.FC = () => {
 
   const handleModel3Select = (value: string | null) => {
     updateSetting("multi_stt_model_3", value || null);
+  };
+
+  const handleModel4Select = (value: string | null) => {
+    updateSetting("multi_stt_model_4", value || null);
   };
 
   const handleSaveMergePrompt = () => {
@@ -191,6 +221,11 @@ export const MultiSttSettings: React.FC = () => {
   const selectedModel3Name = multiSttModel3
     ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)?.name ||
       multiSttModel3
+    : null;
+
+  const selectedModel4Name = multiSttModel4
+    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel4)?.name ||
+      multiSttModel4
     : null;
 
   return (
@@ -357,6 +392,68 @@ export const MultiSttSettings: React.FC = () => {
                   </div>
                 )}
               </SettingContainer>
+
+              {/* Model 4 Selection */}
+              <SettingContainer
+                title={t("multiStt.models.model4")}
+                description={t("multiStt.models.model4Description")}
+                descriptionMode="tooltip"
+                layout="horizontal"
+                grouped={true}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Dropdown
+                    selectedValue={multiSttModel4}
+                    options={modelOptionsForSlot4}
+                    onSelect={(value) => handleModel4Select(value)}
+                    placeholder={t("multiStt.models.notSelected")}
+                    disabled={modelOptionsForSlot4.length === 0}
+                    className="flex-1 min-w-0"
+                  />
+                  {multiSttModel4 && (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleModel4Select(null)}
+                      >
+                        {t("multiStt.models.disableModel")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleUnloadModel(multiSttModel4)}
+                      >
+                        {t("multiStt.models.unloadModel")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <PerModelLanguageSelector
+                  slot={4}
+                  modelId={multiSttModel4}
+                  modelInfo={model4Info}
+                />
+                {multiSttModel4 && model4Info?.supports_translation && (
+                  <div className="flex items-center gap-2 mt-1 ml-1">
+                    <ToggleSwitch
+                      checked={
+                        (getSetting(
+                          "multi_stt_translate_model_4",
+                        ) as boolean) ?? true
+                      }
+                      onChange={(enabled) =>
+                        updateSetting("multi_stt_translate_model_4", enabled)
+                      }
+                      isUpdating={isUpdating("multi_stt_translate_model_4")}
+                      label={t("multiStt.models.translateToEnglish")}
+                      description=""
+                      descriptionMode="tooltip"
+                      grouped={false}
+                    />
+                  </div>
+                )}
+              </SettingContainer>
             </div>
           </SettingsGroup>
 
@@ -386,6 +483,7 @@ export const MultiSttSettings: React.FC = () => {
                 output: "${output}",
                 output2: "${output2}",
                 output3: "${output3}",
+                output4: "${output4}",
               })}
               descriptionMode="tooltip"
               layout="stacked"
@@ -424,6 +522,7 @@ export const MultiSttSettings: React.FC = () => {
                         output: "${output}",
                         output2: "${output2}",
                         output3: "${output3}",
+                        output4: "${output4}",
                       }}
                     />
                   </p>
@@ -485,7 +584,17 @@ export const MultiSttSettings: React.FC = () => {
                   </span>
                 </div>
               )}
-              {!selectedModel2Name && !selectedModel3Name && (
+              {selectedModel4Name && (
+                <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+                  <span className="w-2 h-2 rounded-full bg-orange-500" />
+                  <span className="text-sm">
+                    {t("multiStt.status.quaternary")}: {selectedModel4Name}
+                  </span>
+                </div>
+              )}
+              {!selectedModel2Name &&
+                !selectedModel3Name &&
+                !selectedModel4Name && (
                 <p className="text-sm text-mid-gray/60">
                   {t("multiStt.status.noModels")}
                 </p>

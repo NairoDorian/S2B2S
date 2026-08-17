@@ -933,13 +933,14 @@ impl ShortcutAction for TestAction {
 
 struct MultiSttAction;
 
-/// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}
+/// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}, ${output4}
 /// and sends to the LLM API (same provider as post-processing).
 async fn multi_stt_merge_transcriptions(
     settings: &AppSettings,
     output1: &str,
     output2: &str,
     output3: &str,
+    output4: &str,
 ) -> Option<String> {
     let merge_prompt = match &settings.multi_stt_merge_prompt {
         Some(p) => p.clone(),
@@ -960,7 +961,8 @@ async fn multi_stt_merge_transcriptions(
         .replace("${output}", output1)
         .replace("${output1}", output1)
         .replace("${output2}", output2)
-        .replace("${output3}", output3);
+        .replace("${output3}", output3)
+        .replace("${output4}", output4);
 
     debug!(
         "Multi-STT merge prompt prepared, length: {} chars",
@@ -1041,8 +1043,9 @@ async fn preload_extra_models_parallel(
     tm: &Arc<TranscriptionManager>,
     model_2: &Option<String>,
     model_3: &Option<String>,
+    model_4: &Option<String>,
 ) {
-    let extra_models: Vec<String> = [model_2, model_3]
+    let extra_models: Vec<String> = [model_2, model_3, model_4]
         .iter()
         .filter_map(|m| m.as_ref())
         .cloned()
@@ -1113,8 +1116,9 @@ impl ShortcutAction for MultiSttAction {
             let tm_pre = Arc::clone(&tm);
             let model_2 = settings.multi_stt_model_2.clone();
             let model_3 = settings.multi_stt_model_3.clone();
+            let model_4 = settings.multi_stt_model_4.clone();
             tauri::async_runtime::spawn(async move {
-                preload_extra_models_parallel(&tm_pre, &model_2, &model_3).await;
+                preload_extra_models_parallel(&tm_pre, &model_2, &model_3, &model_4).await;
             });
         }
 
@@ -1278,11 +1282,15 @@ impl ShortcutAction for MultiSttAction {
                 let settings = get_settings(&ah);
                 let extra_model_2 = settings.multi_stt_model_2.clone();
                 let extra_model_3 = settings.multi_stt_model_3.clone();
+                let extra_model_4 = settings.multi_stt_model_4.clone();
 
                 let need_load_2 = extra_model_2
                     .as_ref()
                     .is_some_and(|id| !tm.is_extra_model_loaded(id));
                 let need_load_3 = extra_model_3
+                    .as_ref()
+                    .is_some_and(|id| !tm.is_extra_model_loaded(id));
+                let need_load_4 = extra_model_4
                     .as_ref()
                     .is_some_and(|id| !tm.is_extra_model_loaded(id));
 
@@ -1296,9 +1304,15 @@ impl ShortcutAction for MultiSttAction {
                         info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
                     }
                 }
+                if !need_load_4 {
+                    if let Some(ref id) = extra_model_4 {
+                        info!("Multi-STT: extra model 4 '{}' already loaded, skipping", id);
+                    }
+                }
 
                 let tm_load_2 = Arc::clone(&tm);
                 let tm_load_3 = Arc::clone(&tm);
+                let tm_load_4 = Arc::clone(&tm);
                 let load_start = Instant::now();
 
                 let load_handle_2 = if need_load_2 {
@@ -1337,12 +1351,33 @@ impl ShortcutAction for MultiSttAction {
                     None
                 };
 
-                // Both loads are spawned before awaiting — they run concurrently
-                // in the blocking pool, so total time = max(load_2, load_3).
+                let load_handle_4 = if need_load_4 {
+                    let model_id = extra_model_4.clone().unwrap();
+                    Some(tauri::async_runtime::spawn_blocking(move || {
+                        info!("Multi-STT: loading extra model 4: {}", model_id);
+                        match tm_load_4.load_extra_model(&model_id) {
+                            Ok(name) => {
+                                info!("Multi-STT: extra model 4 '{}' loaded successfully", name)
+                            }
+                            Err(e) => error!(
+                                "Multi-STT: failed to load extra model 4 '{}': {}",
+                                model_id, e
+                            ),
+                        }
+                    }))
+                } else {
+                    None
+                };
+
+                // All loads are spawned before awaiting — they run concurrently
+                // in the blocking pool, so total time = max(load_2, load_3, load_4).
                 if let Some(h) = load_handle_2 {
                     let _ = h.await;
                 }
                 if let Some(h) = load_handle_3 {
+                    let _ = h.await;
+                }
+                if let Some(h) = load_handle_4 {
                     let _ = h.await;
                 }
 
@@ -1358,9 +1393,11 @@ impl ShortcutAction for MultiSttAction {
                 let tm1 = Arc::clone(&tm);
                 let tm2 = Arc::clone(&tm);
                 let tm3 = Arc::clone(&tm);
+                let tm4 = Arc::clone(&tm);
                 let s1 = samples.clone();
                 let s2 = samples.clone();
                 let s3 = samples.clone();
+                let s4 = samples.clone();
 
                 let task1 =
                     tauri::async_runtime::spawn_blocking(move || match tm1.finalize_stream() {
@@ -1442,6 +1479,35 @@ impl ShortcutAction for MultiSttAction {
                     None
                 };
 
+                let task4 = if let Some(ref model_id) = extra_model_4 {
+                    let model_id = model_id.clone();
+                    Some(tauri::async_runtime::spawn_blocking(move || {
+                        if tm4.is_extra_model_loaded(&model_id) {
+                            match tm4.transcribe_with_extra(&model_id, s4) {
+                                Ok(text) => {
+                                    info!(
+                                        "Multi-STT: Model 4 '{}' transcription: '{}'",
+                                        model_id, text
+                                    );
+                                    text
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Multi-STT: Model 4 '{}' transcription failed: {}",
+                                        model_id, e
+                                    );
+                                    String::new()
+                                }
+                            }
+                        } else {
+                            warn!("Multi-STT: Model 4 '{}' not loaded, skipping", model_id);
+                            String::new()
+                        }
+                    }))
+                } else {
+                    None
+                };
+
                 let output1 = task1.await.unwrap_or_else(|e| {
                     error!("Multi-STT: Model 1 task failed: {}", e);
                     String::new()
@@ -1460,12 +1526,20 @@ impl ShortcutAction for MultiSttAction {
                     }),
                     None => String::new(),
                 };
+                let output4 = match task4 {
+                    Some(t) => t.await.unwrap_or_else(|e| {
+                        error!("Multi-STT: Model 4 task failed: {}", e);
+                        String::new()
+                    }),
+                    None => String::new(),
+                };
 
                 info!(
-                    "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars",
+                    "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars, Output4={} chars",
                     output1.len(),
                     output2.len(),
-                    output3.len()
+                    output3.len(),
+                    output4.len()
                 );
 
                 // === MERGE TRANSCRIPTIONS ===
@@ -1483,6 +1557,7 @@ impl ShortcutAction for MultiSttAction {
                         &output1,
                         &output2,
                         &output3,
+                        &output4,
                     )
                     .await
                     .unwrap_or_else(|| {
@@ -1496,6 +1571,10 @@ impl ShortcutAction for MultiSttAction {
                         if !output3.is_empty() {
                             if !combined.is_empty() { combined.push('\n'); }
                             combined.push_str(&output3);
+                        }
+                        if !output4.is_empty() {
+                            if !combined.is_empty() { combined.push('\n'); }
+                            combined.push_str(&output4);
                         }
                         combined
                     })
@@ -1514,18 +1593,26 @@ impl ShortcutAction for MultiSttAction {
                         }
                         combined.push_str(&output3);
                     }
+                    if !output4.is_empty() {
+                        if !combined.is_empty() {
+                            combined.push('\n');
+                        }
+                        combined.push_str(&output4);
+                    }
                     combined
                 };
 
                 // Save to history in background (parallel with paste for speed)
                 let multi_transcript = format!(
-                    "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\n=== Merged ===\n{}",
+                    "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\nModel 4: {}\n{}\n=== Merged ===\n{}",
                     settings.selected_model,
                     output1,
                     settings.multi_stt_model_2.as_deref().unwrap_or("none"),
                     output2,
                     settings.multi_stt_model_3.as_deref().unwrap_or("none"),
                     output3,
+                    settings.multi_stt_model_4.as_deref().unwrap_or("none"),
+                    output4,
                     merged
                 );
                 let hm_clone = Arc::clone(&hm);

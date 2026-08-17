@@ -647,6 +647,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_multi_stt_merge_prompt,
             shortcut::change_multi_stt_translate_model_2,
             shortcut::change_multi_stt_translate_model_3,
+            shortcut::change_multi_stt_translate_model_4,
             shortcut::change_multi_stt_keep_extra_models_loaded_setting,
             shortcut::change_mic_idle_timeout_settings,
             shortcut::change_post_process_enabled_setting,

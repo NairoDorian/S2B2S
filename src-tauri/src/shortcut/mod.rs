@@ -1029,9 +1029,10 @@ pub fn change_multi_stt_extra_model(
     let old_model = match slot {
         2 => settings.multi_stt_model_2.clone(),
         3 => settings.multi_stt_model_3.clone(),
+        4 => settings.multi_stt_model_4.clone(),
         other => {
             return Err(format!(
-                "Invalid extra model slot: {} (must be 2 or 3)",
+                "Invalid extra model slot: {} (must be 2, 3, or 4)",
                 other
             ));
         }
@@ -1060,6 +1061,7 @@ pub fn change_multi_stt_extra_model(
     match slot {
         2 => settings.multi_stt_model_2 = model_id,
         3 => settings.multi_stt_model_3 = model_id,
+        4 => settings.multi_stt_model_4 = model_id,
         _ => unreachable!(),
     }
     settings::write_settings(&app, settings);
@@ -1077,9 +1079,10 @@ pub fn change_multi_stt_extra_model_language(
     match slot {
         2 => settings.multi_stt_language_model_2 = language,
         3 => settings.multi_stt_language_model_3 = language,
+        4 => settings.multi_stt_language_model_4 = language,
         other => {
             return Err(format!(
-                "Invalid extra model slot: {} (must be 2 or 3)",
+                "Invalid extra model slot: {} (must be 2, 3, or 4)",
                 other
             ));
         }
@@ -1114,6 +1117,15 @@ pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Resu
 pub fn change_multi_stt_translate_model_3(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_translate_model_3 = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_translate_model_4(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_translate_model_4 = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }

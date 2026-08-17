@@ -343,8 +343,7 @@ pub async fn benchmark_single_quantization(
         .get_latest_completed_entry()
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            "No completed recordings found. Record audio first to use the benchmark."
-                .to_string()
+            "No completed recordings found. Record audio first to use the benchmark.".to_string()
         })?;
 
     let audio_path = history_manager.get_audio_file_path(&entry.file_name);
@@ -357,7 +356,9 @@ pub async fn benchmark_single_quantization(
 
     info!(
         "Starting single-quant benchmark for model '{}' using recording '{}' ({} samples)",
-        model_id, entry.file_name, samples.len()
+        model_id,
+        entry.file_name,
+        samples.len()
     );
 
     let tm = Arc::clone(&transcription_manager);

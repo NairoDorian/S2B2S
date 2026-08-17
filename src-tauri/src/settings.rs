@@ -513,13 +513,19 @@ pub struct AppSettings {
     #[serde(default)]
     pub multi_stt_model_3: Option<String>,
     #[serde(default)]
+    pub multi_stt_model_4: Option<String>,
+    #[serde(default)]
     pub multi_stt_language_model_2: Option<String>,
     #[serde(default)]
     pub multi_stt_language_model_3: Option<String>,
+    #[serde(default)]
+    pub multi_stt_language_model_4: Option<String>,
     #[serde(default = "default_multi_stt_translate")]
     pub multi_stt_translate_model_2: bool,
     #[serde(default = "default_multi_stt_translate")]
     pub multi_stt_translate_model_3: bool,
+    #[serde(default = "default_multi_stt_translate")]
+    pub multi_stt_translate_model_4: bool,
     #[serde(default = "default_multi_stt_keep_models")]
     pub multi_stt_keep_extra_models_loaded: bool,
     #[serde(default)]
@@ -1008,10 +1014,13 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_enabled: false,
         multi_stt_model_2: None,
         multi_stt_model_3: None,
+        multi_stt_model_4: None,
         multi_stt_language_model_2: None,
         multi_stt_language_model_3: None,
+        multi_stt_language_model_4: None,
         multi_stt_translate_model_2: true,
         multi_stt_translate_model_3: true,
+        multi_stt_translate_model_4: true,
         multi_stt_keep_extra_models_loaded: true,
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,

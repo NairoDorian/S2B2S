@@ -3,7 +3,7 @@
 This file provides guidance to AI coding assistants working with code in this repository.
 
 > **NOTE**: This is the `Handy_Multi_STT` fork. In addition to upstream Handy
-> features, this branch adds **Multi-STT** mode — running up to three speech-to-text
+> features, this branch adds **Multi-STT** mode — running up to four speech-to-text
 > models in parallel and optionally merging their outputs via an LLM. See the
 > Architecture Overview and Settings System sections below for fork-specific
 > additions.
@@ -77,7 +77,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `overlay.rs` - Recording overlay window (platform-specific)
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`
-  - `MultiSttAction` runs primary + two extra models in parallel, merges outputs via LLM
+  - `MultiSttAction` runs primary + three extra models in parallel, merges outputs via LLM
 - `llm_client.rs` - OpenAI-compatible API client for post-processing and Multi-STT merge
   - Includes `erase_llama_server_conversations()` for llama.cpp conversation cleanup
 - `utils.rs` - Platform detection helpers
@@ -134,8 +134,8 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 
 1. Pre-loads extra models (if not already loaded) in parallel on the blocking thread pool
 2. Records audio with VAD filtering (same as standard mode)
-3. Transcribes with primary + two extra models concurrently on separate engines
-4. Optionally merges outputs via an LLM (using `${output}`, `${output2}`, `${output3}` placeholders)
+3. Transcribes with primary + three extra models concurrently on separate engines
+4. Optionally merges outputs via an LLM (using `${output}`, `${output2}`, `${output3}`, and `${output4}` placeholders)
 5. Saves history entry and pastes merged result concurrently
 
 ### Settings System
@@ -150,11 +150,11 @@ Settings are stored using Tauri's store plugin with reactive updates:
 **Multi-STT settings** (fork addition):
 
 - `multi_stt_enabled` - Global toggle for multi-model transcription mode
-- `multi_stt_model_2` / `multi_stt_model_3` - Select extra STT models
-- `multi_stt_language_model_2` / `multi_stt_language_model_3` - Per-model language override
-- `multi_stt_translate_model_2` / `multi_stt_translate_model_3` - Per-model English translation
+- `multi_stt_model_2` / `multi_stt_model_3` / `multi_stt_model_4` - Select extra STT models
+- `multi_stt_language_model_2` / `multi_stt_language_model_3` / `multi_stt_language_model_4` - Per-model language override
+- `multi_stt_translate_model_2` / `multi_stt_translate_model_3` / `multi_stt_translate_model_4` - Per-model English translation
 - `multi_stt_keep_extra_models_loaded` - Keep extra models resident between uses (memory/speed tradeoff)
-- `multi_stt_merge_prompt` - LLM prompt for merging outputs (`${output}`, `${output2}`, `${output3}`)
+- `multi_stt_merge_prompt` - LLM prompt for merging outputs (`${output}`, `${output2}`, `${output3}`, `${output4}`)
 - `multi_stt_selected_merge_prompt_id` - Active merge prompt selector
 
 Extra models are managed by `TranscriptionManager` (`extra_engines` HashMap) with explicit

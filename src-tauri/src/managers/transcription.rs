@@ -2026,7 +2026,7 @@ impl TranscriptionManager {
     }
 
     /// Unload all extra (multi-STT) model engines at once. Used during app
-    /// shutdown so the 2nd and 3rd models are freed just like the primary model.
+    /// shutdown so the 2nd, 3rd, and 4th models are freed just like the primary model.
     ///
     /// Engines sitting in `extra_engines` are dropped directly. Engines
     /// currently leased out for an in-flight `transcribe_with_extra` are not in
@@ -2090,6 +2090,8 @@ impl TranscriptionManager {
             settings.multi_stt_language_model_2.clone()
         } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
             settings.multi_stt_language_model_3.clone()
+        } else if Some(model_id) == settings.multi_stt_model_4.as_deref() {
+            settings.multi_stt_language_model_4.clone()
         } else {
             None
         };
@@ -2102,6 +2104,8 @@ impl TranscriptionManager {
             Some(settings.multi_stt_translate_model_2)
         } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
             Some(settings.multi_stt_translate_model_3)
+        } else if Some(model_id) == settings.multi_stt_model_4.as_deref() {
+            Some(settings.multi_stt_translate_model_4)
         } else {
             None
         };
@@ -2490,13 +2494,7 @@ impl TranscriptionManager {
         // Warmup — discarded (first run after load is slow: cache misses,
         // lazy initialization, etc.).
         let _ = catch_unwind(AssertUnwindSafe(|| {
-            transcribe_with_engine(
-                &mut engine,
-                &settings,
-                audio,
-                model_id,
-                &self.model_manager,
-            )
+            transcribe_with_engine(&mut engine, &settings, audio, model_id, &self.model_manager)
         }));
 
         // Three timed runs — skip the warmup, average these.
@@ -2504,13 +2502,7 @@ impl TranscriptionManager {
         for run_idx in 0..3 {
             let start = std::time::Instant::now();
             let result = catch_unwind(AssertUnwindSafe(|| {
-                transcribe_with_engine(
-                    &mut engine,
-                    &settings,
-                    audio,
-                    model_id,
-                    &self.model_manager,
-                )
+                transcribe_with_engine(&mut engine, &settings, audio, model_id, &self.model_manager)
             }));
             let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -2519,7 +2511,9 @@ impl TranscriptionManager {
                     times_ms.push(elapsed_ms);
                     info!(
                         "Benchmark [{}] run {}: {:.0}ms",
-                        file.quant, run_idx + 1, elapsed_ms
+                        file.quant,
+                        run_idx + 1,
+                        elapsed_ms
                     );
                 }
                 Ok(Err(e)) => {
@@ -2535,7 +2529,9 @@ impl TranscriptionManager {
                     let panic_msg = panic_payload_message(p.as_ref());
                     error!(
                         "Benchmark [{}] run {} panicked: {}",
-                        file.quant, run_idx + 1, panic_msg
+                        file.quant,
+                        run_idx + 1,
+                        panic_msg
                     );
                     break;
                 }
@@ -2559,7 +2555,11 @@ impl TranscriptionManager {
 
         info!(
             "Benchmark: {} transcribed {:.2}s of audio in {:.0}ms (avg of {} runs, {:.2}x real-time)",
-            file.quant, audio_secs, avg_ms, times_ms.len(), speedup
+            file.quant,
+            audio_secs,
+            avg_ms,
+            times_ms.len(),
+            speedup
         );
 
         let result = BenchmarkResult {

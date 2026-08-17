@@ -190,14 +190,20 @@ const settingUpdaters: {
     commands.changeMultiSttExtraModel(2, value as string | null),
   multi_stt_model_3: (value) =>
     commands.changeMultiSttExtraModel(3, value as string | null),
+  multi_stt_model_4: (value) =>
+    commands.changeMultiSttExtraModel(4, value as string | null),
   multi_stt_language_model_2: (value) =>
     commands.changeMultiSttExtraModelLanguage(2, value as string | null),
   multi_stt_language_model_3: (value) =>
     commands.changeMultiSttExtraModelLanguage(3, value as string | null),
+  multi_stt_language_model_4: (value) =>
+    commands.changeMultiSttExtraModelLanguage(4, value as string | null),
   multi_stt_translate_model_2: (value) =>
     commands.changeMultiSttTranslateModel2(value as boolean),
   multi_stt_translate_model_3: (value) =>
     commands.changeMultiSttTranslateModel3(value as boolean),
+  multi_stt_translate_model_4: (value) =>
+    commands.changeMultiSttTranslateModel4(value as boolean),
   multi_stt_keep_extra_models_loaded: (value) =>
     commands.changeMultiSttKeepExtraModelsLoadedSetting(value as boolean),
   multi_stt_merge_prompt: (value) =>

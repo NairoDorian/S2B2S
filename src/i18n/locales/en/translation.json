@@ -757,8 +757,10 @@
       "title": "Additional Models",
       "model2": "Second Model",
       "model3": "Third Model",
+      "model4": "Fourth Model",
       "model2Description": "Select a second STT model to run alongside the primary model",
       "model3Description": "Select a third STT model to run alongside the primary model",
+      "model4Description": "Select a fourth STT model to run alongside the primary model",
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
@@ -772,15 +774,17 @@
       "unloadingModel": "Unloading...",
       "model2Language": "Language for Second Model",
       "model3Language": "Language for Third Model",
+      "model4Language": "Language for Fourth Model",
       "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
       "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
+      "model4LanguageDescription": "Preferred recognition language for the fourth model (only if the model supports language selection)",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
     },
     "keepModelsLoaded": {
       "label": "Keep Extra Models Loaded",
-      "description": "Keep the 2nd and 3rd models in memory between multi-STT uses for faster subsequent transcriptions (uses more memory)"
+      "description": "Keep the 2nd, 3rd, and 4th models in memory between multi-STT uses for faster subsequent transcriptions (uses more memory)"
     },
     "mergePrompt": {
       "title": "Merge Prompt",
@@ -789,7 +793,7 @@
       "promptNamePlaceholder": "e.g. Merge Prompt",
       "promptLabel": "Merge Instructions",
       "promptPlaceholder": "Enter instructions for merging the transcriptions...",
-      "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, and <code>{{output3}}</code> for the third model",
+      "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, <code>{{output3}}</code> for the third model, and <code>{{output4}}</code> for the fourth model",
       "savePrompt": "Save Merge Prompt",
       "noPrompt": "Without a merge prompt, outputs will be concatenated",
       "clearPrompt": "Clear Merge Prompt"
@@ -800,7 +804,8 @@
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
-      "tertiary": "Tertiary"
+      "tertiary": "Tertiary",
+      "quaternary": "Quaternary"
     }
   },
   "bindings": {

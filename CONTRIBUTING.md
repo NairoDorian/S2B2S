@@ -1,7 +1,7 @@
 # Contributing to Handy
 
 > **NOTE:** This is the `Handy_Multi_STT` fork. In addition to upstream Handy
-> features, this branch adds **Multi-STT** mode — running up to three
+> features, this branch adds **Multi-STT** mode — running up to four
 > speech-to-text models in parallel with optional LLM-based merge. See
 > [AGENTS.md](AGENTS.md) for the full architecture. Contributions to
 > Multi-STT features are welcome.
