@@ -647,6 +647,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_multi_stt_merge_prompt,
             shortcut::change_multi_stt_translate_model_2,
             shortcut::change_multi_stt_translate_model_3,
+            shortcut::change_multi_stt_keep_extra_models_loaded_setting,
             shortcut::change_mic_idle_timeout_settings,
             shortcut::change_post_process_enabled_setting,
             shortcut::change_experimental_enabled_setting,
@@ -882,6 +883,7 @@ pub fn run(cli_args: CliArgs) {
                     // are still alive at C++ static-destructor time.
                     if let Some(tm) = handle.try_state::<Arc<TranscriptionManager>>() {
                         let _ = tm.unload_model();
+                        tm.unload_all_extra_models();
                     }
                     // process::exit (not app.exit, which exits 0 regardless) so the
                     // exit code propagates to the shell for CI gating. Flush first
@@ -1022,6 +1024,7 @@ pub fn run(cli_args: CliArgs) {
             tauri::RunEvent::Exit => {
                 if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                     let _ = tm.unload_model();
+                    tm.unload_all_extra_models();
                 }
             }
             _ => {}

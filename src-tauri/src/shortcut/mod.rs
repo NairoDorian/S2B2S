@@ -1023,15 +1023,44 @@ pub fn change_multi_stt_extra_model(
     model_id: Option<String>,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    match slot {
-        2 => settings.multi_stt_model_2 = model_id,
-        3 => settings.multi_stt_model_3 = model_id,
+
+    // If the previously-selected model in this slot is currently loaded in
+    // memory, unload it so we don't leak a stale engine alongside the new one.
+    let old_model = match slot {
+        2 => settings.multi_stt_model_2.clone(),
+        3 => settings.multi_stt_model_3.clone(),
         other => {
             return Err(format!(
                 "Invalid extra model slot: {} (must be 2 or 3)",
                 other
             ));
         }
+    };
+    if let Some(ref old_id) = old_model {
+        if model_id.as_deref() != Some(old_id.as_str()) {
+            let tm =
+                app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
+            if tm.is_extra_model_loaded(old_id) {
+                info!(
+                    "Multi-STT: unloading extra model in slot {} ('{}') before switching to '{}'",
+                    slot,
+                    old_id,
+                    model_id.as_deref().unwrap_or("none")
+                );
+                if let Err(e) = tm.unload_extra_model(old_id) {
+                    warn!(
+                        "Multi-STT: failed to unload extra model '{}' in slot {}: {}",
+                        old_id, slot, e
+                    );
+                }
+            }
+        }
+    }
+
+    match slot {
+        2 => settings.multi_stt_model_2 = model_id,
+        3 => settings.multi_stt_model_3 = model_id,
+        _ => unreachable!(),
     }
     settings::write_settings(&app, settings);
     Ok(())
@@ -1085,6 +1114,18 @@ pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Resu
 pub fn change_multi_stt_translate_model_3(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_translate_model_3 = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_keep_extra_models_loaded_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_keep_extra_models_loaded = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }

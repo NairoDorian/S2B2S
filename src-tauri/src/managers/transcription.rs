@@ -2002,6 +2002,45 @@ impl TranscriptionManager {
         Ok(())
     }
 
+    /// Unload all extra (multi-STT) model engines at once. Used during app
+    /// shutdown so the 2nd and 3rd models are freed just like the primary model.
+    ///
+    /// Engines sitting in `extra_engines` are dropped directly. Engines
+    /// currently leased out for an in-flight `transcribe_with_extra` are not in
+    /// the map, so their IDs are recorded in `extra_unload_requests` — the
+    /// transcription caller drops them instead of re-inserting.
+    pub fn unload_all_extra_models(&self) {
+        let to_unload: Vec<String> = {
+            let mut extra = self.extra_engines.lock().unwrap();
+            let ids: Vec<String> = extra.keys().cloned().collect();
+            extra.clear();
+            ids
+        };
+
+        // Record unload requests for any models that might be leased out
+        // (mid-transcription) so transcribe_with_extra drops them on return
+        // instead of re-inserting them into the now-drained map.
+        if !to_unload.is_empty() {
+            let mut pending = self.extra_unload_requests.lock().unwrap();
+            for id in &to_unload {
+                pending.insert(id.clone());
+            }
+        }
+
+        for model_id in &to_unload {
+            info!("Extra model '{}' unloaded during full cleanup", model_id);
+            let _ = self.app_handle.emit(
+                "model-state-changed",
+                ModelStateEvent {
+                    event_type: "multi_stt_model_unloaded".to_string(),
+                    model_id: Some(model_id.clone()),
+                    model_name: None,
+                    error: None,
+                },
+            );
+        }
+    }
+
     /// Transcribe audio with one of the extra model engines.
     /// The engine is temporarily removed from the map, used, and returned.
     pub fn transcribe_with_extra(&self, model_id: &str, audio: Vec<f32>) -> Result<String> {
@@ -2088,13 +2127,14 @@ impl TranscriptionManager {
 
         // Decide whether the surviving engine returns to the map. It is dropped
         // (freed) when an unload was requested while it was leased out, or when
-        // the unload timeout is Immediately (mirrors the primary model's
-        // maybe_unload_immediately).
+        // the unload timeout is Immediately AND multi_stt_keep_extra_models_loaded
+        // is false (mirrors the primary model's maybe_unload_immediately).
         if let Some(eng) = engine_to_return {
             let mut extra = self.extra_engines.lock().unwrap();
             let unload_requested = self.extra_unload_requests.lock().unwrap().remove(model_id);
-            let unload_immediately =
-                settings.model_unload_timeout == ModelUnloadTimeout::Immediately;
+            let unload_immediately = settings.model_unload_timeout
+                == ModelUnloadTimeout::Immediately
+                && !settings.multi_stt_keep_extra_models_loaded;
             if unload_requested || unload_immediately {
                 if unload_immediately {
                     info!(
