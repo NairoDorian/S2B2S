@@ -966,9 +966,30 @@ impl TranscriptionManager {
             // call `session.model()` once it exists.
             let backend = session.model().backend();
 
-            // StreamOptions::default() uses CommitPolicy::Auto and lets the
-            // family pick its own streaming strategy (no family-specific ext).
-            let mut stream = match session.stream(&run_options, &StreamOptions::default()) {
+            // Resolve family-specific streaming extension (e.g. Parakeet Buffered,
+            // Nemotron cache-aware) from the user's latency preset, if any.
+            let stream_ext = {
+                let latency_kind = self
+                    .model_manager
+                    .get_model_info(&model_id)
+                    .and_then(|info| info.native_streaming_latency_kind);
+                let preset = settings
+                    .native_streaming_latency_presets
+                    .get(&model_id)
+                    .copied()
+                    .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate);
+                crate::managers::native_streaming_latency::stream_extension(
+                    &session.model(),
+                    &model_id,
+                    latency_kind,
+                    preset,
+                )
+            };
+            let stream_options = StreamOptions {
+                family: stream_ext,
+                ..Default::default()
+            };
+            let mut stream = match session.stream(&run_options, &stream_options) {
                 Ok(s) => s,
                 Err(e) => {
                     error!("Failed to begin stream: {}", e);
@@ -1244,7 +1265,6 @@ impl TranscriptionManager {
         // Feature::InitialPrompt yet reject the whisper-kind run extension
         // with INVALID_ARG, so the whisper extension must be gated on the
         // arch, not on the feature (see #1601).
-        let mut model_takes_initial_prompt = false;
         let mut model_is_whisper = false;
 
         // Perform transcription with the appropriate engine.
@@ -1285,7 +1305,7 @@ impl TranscriptionManager {
             if let LoadedEngine::TranscribeCpp(session) = &engine {
                 let model = session.model();
                 let caps = model.capabilities();
-                model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
+                let model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
                 model_is_whisper = model.arch() == "whisper";
                 model_supports_translate = caps.supports_translate;
                 model_languages = caps.languages;

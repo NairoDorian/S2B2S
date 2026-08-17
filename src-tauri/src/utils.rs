@@ -1,7 +1,7 @@
+use crate::TranscriptionCoordinator;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::shortcut;
-use crate::TranscriptionCoordinator;
 use log::info;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
@@ -43,10 +43,10 @@ pub fn is_windows_x64_emulated_on_arm64() -> bool {
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 fn native_windows_machine() -> Option<u16> {
-    use windows::core::{s, w, BOOL};
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
     use windows::Win32::System::Threading::GetCurrentProcess;
+    use windows::core::{BOOL, s, w};
 
     type IsWow64Process2 = unsafe extern "system" fn(HANDLE, *mut u16, *mut u16) -> BOOL;
 

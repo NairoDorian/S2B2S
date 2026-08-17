@@ -1,22 +1,23 @@
 use std::{
     io::Error,
     sync::{
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc,
     },
     time::{Duration, Instant},
 };
 
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
     Device, Sample, SizedSample,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 
 use crate::audio_toolkit::{
+    VoiceActivityDetector,
     audio::{AudioVisualiser, FrameResampler},
     constants,
     vad::{self, VadFrame},
-    VoiceActivityDetector,
 };
 
 enum Cmd {
@@ -209,7 +210,10 @@ impl AudioRecorder {
 
                 log::info!(
                     "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
-                    thread_device.description().map(|d| d.name().to_string()).unwrap_or_default(),
+                    thread_device
+                        .description()
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_default(),
                     sample_rate,
                     channels,
                     config.sample_format()
@@ -559,7 +563,7 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_microphone_access_denied, is_no_input_device_error, AudioRecorder};
+    use super::{AudioRecorder, is_microphone_access_denied, is_no_input_device_error};
 
     #[test]
     fn unopened_recorder_is_not_reported_dead() {

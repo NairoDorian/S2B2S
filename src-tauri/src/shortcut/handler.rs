@@ -7,11 +7,11 @@ use log::warn;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
+use crate::TranscriptionCoordinator;
 use crate::actions::ACTION_MAP;
 use crate::managers::audio::AudioRecordingManager;
 use crate::settings::get_settings;
 use crate::transcription_coordinator::is_transcribe_binding;
-use crate::TranscriptionCoordinator;
 
 /// Handle a shortcut event from either implementation.
 ///

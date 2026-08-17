@@ -79,8 +79,8 @@ pub fn get_current_theme(app: &AppHandle) -> AppTheme {
 /// guessing).
 #[cfg(target_os = "windows")]
 fn windows_taskbar_theme() -> Option<AppTheme> {
-    use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
+    use winreg::enums::HKEY_CURRENT_USER;
 
     let personalize = RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize")

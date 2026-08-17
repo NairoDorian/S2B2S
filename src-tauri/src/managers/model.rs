@@ -21,7 +21,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 mod download;
 
-use download::{HttpDownloadOutcome, DOWNLOAD_STALL_TIMEOUT};
+use download::{DOWNLOAD_STALL_TIMEOUT, HttpDownloadOutcome};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum EngineType {
@@ -57,6 +57,33 @@ pub enum ModelSource {
     Local,
 }
 
+/// Which transcribe-cpp stream extension a catalog streaming model exposes for
+/// low-latency tuning. `None` means the model has no configurable latency
+/// extension (non-streaming models, or ONNX engines).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeStreamingLatencyKind {
+    ParakeetBuffered,
+    #[serde(rename = "nemotron_3_5_cache_aware")]
+    Nemotron35CacheAware,
+    NemotronSpeechCacheAware,
+}
+
+/// Infer the stream-extension family from a model id hint. Matches on the HF
+/// repo slug so it works for both catalog seeds and on-disk discoveries.
+pub fn native_streaming_latency_kind(hint: &str) -> Option<NativeStreamingLatencyKind> {
+    let hint = hint.to_ascii_lowercase();
+    if hint.contains("parakeet-unified") {
+        Some(NativeStreamingLatencyKind::ParakeetBuffered)
+    } else if hint.contains("nemotron-3.5-asr-streaming") {
+        Some(NativeStreamingLatencyKind::Nemotron35CacheAware)
+    } else if hint.contains("nemotron-speech-streaming") {
+        Some(NativeStreamingLatencyKind::NemotronSpeechCacheAware)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ModelInfo {
     pub id: String,
@@ -79,6 +106,10 @@ pub struct ModelInfo {
     pub is_custom: bool,            // Whether this is a user-provided custom model
     pub supports_streaming: bool, // Whether this model supports live streaming preview (transcribe-cpp)
     pub supports_language_detection: bool, // Whether the model can auto-detect language (gates the "Auto" option)
+    /// Which native streaming latency extension the model supports (if any).
+    /// Populated for catalog streaming models; `None` for legacy/Onnx/custom.
+    #[serde(default)]
+    pub native_streaming_latency_kind: Option<NativeStreamingLatencyKind>,
 }
 
 const CHINESE_LANGUAGE_CODE: &str = "zh";
@@ -231,7 +262,9 @@ impl ModelDescriptor {
             description: self.description.clone(),
             filename: file.map(|f| f.filename.clone()).unwrap_or_default(),
             source: self.source.clone(),
-            size_mb: file.map(|f| (f.size_bytes / (1024 * 1024)) as u32).unwrap_or(0),
+            size_mb: file
+                .map(|f| (f.size_bytes / (1024 * 1024)) as u32)
+                .unwrap_or(0),
             is_downloaded: status.is_downloaded,
             is_downloading: status.is_downloading,
             partial_size: status.partial_size,
@@ -248,6 +281,7 @@ impl ModelDescriptor {
             is_custom: false,
             supports_streaming: self.caps.supports_streaming.unwrap_or(false),
             supports_language_detection: self.caps.supports_language_detect.unwrap_or(false),
+            native_streaming_latency_kind: native_streaming_latency_kind(&self.id),
         }
     }
 }
@@ -570,6 +604,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -603,6 +638,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -635,6 +671,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -667,6 +704,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -700,6 +738,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -733,6 +772,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -775,6 +815,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -807,6 +848,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -840,6 +882,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -873,6 +916,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -906,6 +950,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -945,6 +990,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -980,6 +1026,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -1020,6 +1067,7 @@ impl ModelManager {
                 supports_streaming: false,
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -1063,6 +1111,7 @@ impl ModelManager {
                 supports_streaming: false,
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -1102,6 +1151,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -1415,7 +1465,8 @@ impl ModelManager {
 
                 // Get partial file size if it exists (for the .tar.gz being downloaded)
                 if partial_path.exists() {
-                    model.partial_size = partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
+                    model.partial_size =
+                        partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
                 } else {
                     model.partial_size = 0;
                 }
@@ -1429,7 +1480,8 @@ impl ModelManager {
 
                 // Get partial file size if it exists
                 if partial_path.exists() {
-                    model.partial_size = partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
+                    model.partial_size =
+                        partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
                 } else {
                     model.partial_size = 0;
                 }
@@ -1682,6 +1734,7 @@ impl ModelManager {
                     is_custom: true,
                     supports_streaming: caps.supports_streaming,
                     supports_language_detection: caps.supports_language_detection,
+                    native_streaming_latency_kind: None,
                 },
             );
         }
@@ -1800,6 +1853,7 @@ impl ModelManager {
                     .unwrap_or_else(|| fname.trim_end_matches(".gguf").to_string());
 
                 info!("Discovered HF cache model: {} ({})", model_id, repo_id);
+                let latency_kind = native_streaming_latency_kind(&model_id);
                 available_models.insert(
                     model_id.clone(),
                     ModelInfo {
@@ -1826,6 +1880,7 @@ impl ModelManager {
                         is_custom: false,
                         supports_streaming: caps.supports_streaming,
                         supports_language_detection: caps.supports_language_detection,
+                        native_streaming_latency_kind: latency_kind,
                     },
                 );
             }
@@ -1845,7 +1900,6 @@ impl ModelManager {
             }
         })
     }
-
 
     /// Download a Hugging Face-sourced model into the shared HF cache via
     /// hf-hub, reporting progress through the same `model-download-progress`
@@ -2149,6 +2203,28 @@ impl ModelManager {
                 Ok(true)
             }
         }
+    }
+
+    /// Registers a specific quantization variant of a catalog model in
+    /// [`Self::available_models`] (if not already present) and then delegates
+    /// to [`Self::download_model`]. This lets users pick a non-default quant
+    /// (e.g. Q5_K_M instead of Q4_K_M) from the UI.
+    pub async fn download_catalog_quant(&self, model_id: &str) -> Result<()> {
+        let (repo_id, filename) = model_id
+            .rsplit_once('/')
+            .ok_or_else(|| anyhow::anyhow!("Invalid model id: {}", model_id))?;
+
+        let (descriptor, file) = crate::catalog::file_in_catalog(filename, Some(repo_id))
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' is not a catalog model", model_id))?;
+
+        // Register the quant variant so the download pipeline recognises it.
+        {
+            let info = descriptor.to_model_info_for_file(file, &DiskStatus::default());
+            let mut models = self.available_models.lock().unwrap();
+            models.entry(model_id.to_string()).or_insert(info);
+        }
+
+        self.download_model(model_id).await
     }
 
     pub async fn download_model(&self, model_id: &str) -> Result<()> {
@@ -2711,6 +2787,7 @@ mod tests {
                 // Legacy entry: preserve the historical "Auto offered" behavior.
                 // (Catalog GGUFs and on-disk probes derive this from metadata.)
                 supports_language_detection: true,
+                native_streaming_latency_kind: None,
             },
         );
 
@@ -2890,7 +2967,7 @@ mod tests {
         out.extend_from_slice(&3u32.to_le_bytes()); // version
         out.extend_from_slice(&0u64.to_le_bytes()); // tensor_count
         out.extend_from_slice(&2u64.to_le_bytes()); // kv_count
-                                                    // general.architecture : string
+        // general.architecture : string
         push_gguf_str(&mut out, "general.architecture");
         out.extend_from_slice(&8u32.to_le_bytes()); // STRING
         push_gguf_str(&mut out, arch);

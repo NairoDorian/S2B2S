@@ -8,6 +8,28 @@ use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
+
+/// User-facing latency preset for native streaming models (Parakeet Buffered,
+/// Nemotron cache-aware). Stored per-model-id in
+/// [`AppSettings::native_streaming_latency_presets`]. `Accurate` is the default
+/// (runtime default — no stream extension attached), so it is the unit value.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeStreamingLatencyPreset {
+    Fastest,
+    Fast,
+    Balanced,
+    #[default]
+    Accurate,
+}
+
+impl NativeStreamingLatencyPreset {
+    /// All presets in the slider order the UI iterates (fastest → most accurate).
+    #[allow(dead_code)]
+    pub fn all_presets() -> [Self; 4] {
+        [Self::Fastest, Self::Fast, Self::Balanced, Self::Accurate]
+    }
+}
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -509,6 +531,8 @@ pub struct AppSettings {
     pub mic_idle_timeout_unit: MicIdleTimeoutUnit,
     #[serde(default)]
     pub mic_idle_infinite: bool,
+    #[serde(default)]
+    pub native_streaming_latency_presets: HashMap<String, NativeStreamingLatencyPreset>,
 }
 
 fn default_model() -> String {
@@ -987,6 +1011,7 @@ pub fn get_default_settings() -> AppSettings {
         mic_idle_timeout_value: default_mic_idle_timeout_value(),
         mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
         mic_idle_infinite: false,
+        native_streaming_latency_presets: HashMap::new(),
     }
 }
 

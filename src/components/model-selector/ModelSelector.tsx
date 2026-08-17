@@ -2,13 +2,61 @@ import React, { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/bindings";
+import type { QuantVariant, NativeStreamingLatencyPreset } from "@/bindings";
 import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
 import { useModelStore } from "../../stores/modelStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import ModelStatusButton from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
 import DownloadProgressDisplay from "./DownloadProgressDisplay";
 
 import { ModelStateEvent } from "@/lib/types/events";
+
+const quantColorMap: Record<string, string> = {
+  Q2_K: "bg-red-500",
+  Q3_K_S: "bg-red-500",
+  Q3_K_M: "bg-red-400",
+  Q3_K_L: "bg-red-400",
+  Q4_0: "bg-green-500",
+  Q4_K_M: "bg-green-500",
+  Q4_K_S: "bg-green-600",
+  Q5_0: "bg-blue-500",
+  Q5_K_M: "bg-blue-500",
+  Q5_K_S: "bg-blue-600",
+  Q6_K: "bg-purple-500",
+  Q8_0: "bg-yellow-500",
+  F16: "bg-orange-400",
+  F32: "bg-teal-400",
+  BF16: "bg-cyan-400",
+};
+
+function getQuantColor(quant: string): string {
+  return quantColorMap[quant] || "bg-gray-500";
+}
+
+const LATENCY_PRESET_ORDER: NativeStreamingLatencyPreset[] = [
+  "fastest",
+  "fast",
+  "balanced",
+  "accurate",
+];
+
+const LATENCY_PRESET_LABELS: Record<NativeStreamingLatencyPreset, string> = {
+  fastest: "modelSelector.latencySelector.fastest",
+  fast: "modelSelector.latencySelector.fast",
+  balanced: "modelSelector.latencySelector.balanced",
+  accurate: "modelSelector.latencySelector.accurate",
+};
+
+const LATENCY_PRESET_DESCRIPTIONS: Record<
+  NativeStreamingLatencyPreset,
+  string
+> = {
+  fastest: "modelSelector.latencySelector.descriptions.fastest",
+  fast: "modelSelector.latencySelector.descriptions.fast",
+  balanced: "modelSelector.latencySelector.descriptions.balanced",
+  accurate: "modelSelector.latencySelector.descriptions.accurate",
+};
 
 type ModelStatus =
   | "ready"
@@ -43,6 +91,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   const [pendingModelId, setPendingModelId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const [quantVariants, setQuantVariants] = useState<QuantVariant[] | null>(
+    null,
+  );
+  const [quantDownloading, setQuantDownloading] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const settings = useSettingsStore((s) => s.settings);
+  const setLatencyPreset = useSettingsStore((s) => s.setLatencyPreset);
 
   const displayModelId = pendingModelId || currentModel;
 
@@ -139,6 +197,58 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
       downloadCompleteUnlisten.then((fn) => fn());
     };
   }, [selectModel]);
+
+  // Fetch quant variants for the current model when it changes
+  useEffect(() => {
+    const id = displayModelId;
+    if (!id || !id.includes("/")) {
+      setQuantVariants(null);
+      return;
+    }
+    let cancelled = false;
+    commands.getModelQuantVariants(id).then((result) => {
+      if (!cancelled && result.status === "ok") {
+        setQuantVariants(result.data ?? null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [displayModelId]);
+
+  const currentModelInfo = models.find((m) => m.id === displayModelId);
+  const latencyKind = currentModelInfo?.native_streaming_latency_kind;
+  const currentPreset =
+    settings?.native_streaming_latency_presets?.[displayModelId ?? ""] ??
+    ("accurate" as NativeStreamingLatencyPreset);
+
+  const handleQuantClick = (variant: QuantVariant) => {
+    if (variant.model_id === displayModelId) return;
+    const downloaded = models.some(
+      (m) => m.id === variant.model_id && m.is_downloaded,
+    );
+    if (downloaded) {
+      void handleModelSelect(variant.model_id);
+    } else {
+      setQuantDownloading((prev) => new Set(prev).add(variant.model_id));
+      void commands.downloadModelQuant(variant.model_id).then((result) => {
+        setQuantDownloading((prev) => {
+          const next = new Set(prev);
+          next.delete(variant.model_id);
+          return next;
+        });
+        if (result.status === "error") {
+          console.error("Failed to download quant:", result.error);
+        }
+      });
+    }
+  };
+
+  const handleLatencyPresetClick = (preset: NativeStreamingLatencyPreset) => {
+    if (displayModelId) {
+      void setLatencyPreset(displayModelId, preset);
+    }
+  };
 
   const handleModelSelect = async (modelId: string) => {
     setPendingModelId(modelId);
@@ -262,6 +372,100 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           />
         )}
       </div>
+
+      {/* Quantization Picker — shows variants for the current model */}
+      {quantVariants && quantVariants.length > 0 && (
+        <div className="mt-1">
+          <div className="text-xs font-medium text-text/60 mb-1">
+            {t("modelSelector.quantPicker.title")}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {quantVariants.map((variant) => {
+              const isCurrent = variant.model_id === displayModelId;
+              const isDownloaded = models.some(
+                (m) => m.id === variant.model_id && m.is_downloaded,
+              );
+              const isDownloading = quantDownloading.has(variant.model_id);
+              const isSelected = isCurrent;
+              const chipBase =
+                "inline-flex items-center gap-1 px-2 py-1 rounded text-xs";
+              const chipClass = isSelected
+                ? "bg-logo-primary/10 border border-logo-primary/30 text-logo-primary font-medium"
+                : isDownloading
+                  ? "bg-mid-gray/5 border border-mid-gray/20 text-text/50 cursor-wait"
+                  : isDownloaded
+                    ? "bg-mid-gray/5 border border-mid-gray/20 text-text/80 hover:bg-mid-gray/10 cursor-pointer"
+                    : "bg-mid-gray/5 border border-mid-gray/20 text-text/80 hover:bg-mid-gray/10 cursor-pointer";
+              return (
+                <button
+                  key={variant.model_id}
+                  onClick={() => handleQuantClick(variant)}
+                  disabled={isSelected || isDownloading}
+                  className={chipBase + " " + chipClass}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full flex-shrink-0 ${getQuantColor(variant.quant)}`}
+                  />
+                  <span>{variant.quant}</span>
+                  {variant.is_default && (
+                    <span className="text-text/40">·</span>
+                  )}
+                  <span className="text-text/40">{variant.size_mb} MB</span>
+                  {isCurrent && (
+                    <svg
+                      className="w-3 h-3 text-logo-primary"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L7 11.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                  {!isCurrent && !isDownloaded && !isDownloading && (
+                    <span>↓</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Native Streaming Latency Selector — shown for models that support
+          configurable streaming latency (e.g. Nemotron, Parakeet Unified) */}
+      {latencyKind && (
+        <div className="mt-2">
+          <div className="text-xs font-medium text-text/60 mb-1">
+            {t("modelSelector.latencySelector.title")}
+          </div>
+          <div className="flex gap-1 text-xs">
+            {LATENCY_PRESET_ORDER.map((preset) => {
+              const isSelected = currentPreset === preset;
+              return (
+                <button
+                  key={preset}
+                  onClick={() => handleLatencyPresetClick(preset)}
+                  className={
+                    isSelected
+                      ? "flex-1 px-2 py-1 bg-logo-primary/10 border border-logo-primary/30 text-logo-primary font-medium rounded"
+                      : "flex-1 px-2 py-1 bg-mid-gray/5 border border-mid-gray/20 text-text/80 hover:bg-mid-gray/10 rounded"
+                  }
+                >
+                  {t(LATENCY_PRESET_LABELS[preset])}
+                </button>
+              );
+            })}
+          </div>
+          {currentPreset !== "accurate" && (
+            <div className="text-xs text-text/40 mt-1">
+              {t(LATENCY_PRESET_DESCRIPTIONS[currentPreset])}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Download Progress Bar for Models */}
       <DownloadProgressDisplay

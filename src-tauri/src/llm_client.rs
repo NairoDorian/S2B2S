@@ -1,6 +1,6 @@
 use crate::settings::PostProcessProvider;
 use log::{debug, error, info};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -433,7 +433,8 @@ pub async fn send_chat_completion_with_schema(
         if status.is_success() {
             info!(
                 "Retry without reasoning fields succeeded; '{}' (model '{}') will skip them from now on",
-                sanitized_url_for_log(base_url), model
+                sanitized_url_for_log(base_url),
+                model
             );
             remember_rejection(key);
         }
@@ -708,16 +709,20 @@ mod tests {
     #[test]
     fn reasoning_params_is_empty_tracks_all_fields() {
         assert!(ReasoningParams::default().is_empty());
-        assert!(!ReasoningParams {
-            reasoning_effort: Some("none".to_string()),
-            ..Default::default()
-        }
-        .is_empty());
-        assert!(!ReasoningParams {
-            thinking: Some(serde_json::json!({ "type": "disabled" })),
-            ..Default::default()
-        }
-        .is_empty());
+        assert!(
+            !ReasoningParams {
+                reasoning_effort: Some("none".to_string()),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !ReasoningParams {
+                thinking: Some(serde_json::json!({ "type": "disabled" })),
+                ..Default::default()
+            }
+            .is_empty()
+        );
     }
 
     #[test]

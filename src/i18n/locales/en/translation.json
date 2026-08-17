@@ -153,6 +153,30 @@
       "translation": "Can translate to English",
       "translate": "Translate",
       "streaming": "Shows live transcription as you speak"
+    },
+    "quantPicker": {
+      "title": "Quantization",
+      "default": "Default",
+      "download": "Download",
+      "downloading": "Downloading",
+      "cancelDownload": "Cancel download",
+      "size": "{{size}} MB",
+      "switchTo": "Switch to {{quant}}",
+      "current": "{{quant}} selected",
+      "noQuantsAvailable": "No quantizations available for this model"
+    },
+    "latencySelector": {
+      "title": "Streaming Latency",
+      "fastest": "Fastest",
+      "fast": "Fast",
+      "balanced": "Balanced",
+      "accurate": "Accurate",
+      "descriptions": {
+        "fastest": "Lowest latency, may affect accuracy",
+        "fast": "Low latency, good balance",
+        "balanced": "Balanced latency and accuracy",
+        "accurate": "Best accuracy, higher latency"
+      }
     }
   },
   "settings": {

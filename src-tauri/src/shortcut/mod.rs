@@ -21,9 +21,9 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ClipboardHandling, KeyboardImplementation, LLMPrompt,
-    OverlayPosition, OverlayStyle, PasteMethod, ShortcutBinding, SoundTheme, Theme, TypingTool,
-    APPLE_INTELLIGENCE_PROVIDER_ID,
+    self, APPLE_INTELLIGENCE_PROVIDER_ID, AutoSubmitKey, ClipboardHandling, KeyboardImplementation,
+    LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod, ShortcutBinding, SoundTheme, Theme,
+    TypingTool, get_settings,
 };
 use crate::tray;
 
@@ -42,7 +42,9 @@ pub fn init_shortcuts(app: &AppHandle) {
             if let Err(e) = handy_keys::init_shortcuts(app) {
                 error!("Failed to initialize handy-keys shortcuts: {}", e);
                 // Fall back to Tauri implementation and persist this fallback
-                warn!("Falling back to Tauri global shortcut implementation and saving fallback to settings");
+                warn!(
+                    "Falling back to Tauri global shortcut implementation and saving fallback to settings"
+                );
 
                 // Update settings to persist the fallback so we don't retry HandyKeys on next launch
                 let mut settings = settings::get_settings(app);
@@ -993,11 +995,7 @@ pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result
     settings::write_settings(&app, settings.clone());
 
     // Register or unregister the multi-stt shortcut
-    if let Some(binding) = settings
-        .bindings
-        .get("multi_stt_transcribe")
-        .cloned()
-    {
+    if let Some(binding) = settings.bindings.get("multi_stt_transcribe").cloned() {
         if enabled {
             let _ = register_shortcut(&app, binding);
         } else {
@@ -1028,7 +1026,12 @@ pub fn change_multi_stt_extra_model(
     match slot {
         2 => settings.multi_stt_model_2 = model_id,
         3 => settings.multi_stt_model_3 = model_id,
-        other => return Err(format!("Invalid extra model slot: {} (must be 2 or 3)", other)),
+        other => {
+            return Err(format!(
+                "Invalid extra model slot: {} (must be 2 or 3)",
+                other
+            ));
+        }
     }
     settings::write_settings(&app, settings);
     Ok(())
@@ -1045,7 +1048,12 @@ pub fn change_multi_stt_extra_model_language(
     match slot {
         2 => settings.multi_stt_language_model_2 = language,
         3 => settings.multi_stt_language_model_3 = language,
-        other => return Err(format!("Invalid extra model slot: {} (must be 2 or 3)", other)),
+        other => {
+            return Err(format!(
+                "Invalid extra model slot: {} (must be 2 or 3)",
+                other
+            ));
+        }
     }
     settings::write_settings(&app, settings);
     Ok(())
@@ -1065,10 +1073,7 @@ pub fn change_multi_stt_merge_prompt(
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_multi_stt_translate_model_2(
-    app: AppHandle,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_translate_model_2 = enabled;
     settings::write_settings(&app, settings);
@@ -1077,10 +1082,7 @@ pub fn change_multi_stt_translate_model_2(
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_multi_stt_translate_model_3(
-    app: AppHandle,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn change_multi_stt_translate_model_3(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_translate_model_3 = enabled;
     settings::write_settings(&app, settings);

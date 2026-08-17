@@ -1,9 +1,77 @@
 use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
-use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
+use crate::settings::{
+    ModelUnloadTimeout, NativeStreamingLatencyPreset, get_settings, write_settings,
+};
 use log::error;
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
+
+/// A single quantization variant of a catalog model — returned to the frontend
+/// so the UI can render a quant picker (chips / dropdown) and let the user
+/// select or download a non-default quant.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct QuantVariant {
+    pub quant: String,
+    pub filename: String,
+    pub model_id: String,
+    #[specta(type = u32)]
+    pub size_mb: u32,
+    pub is_default: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_model_quant_variants(
+    _model_manager: State<'_, Arc<ModelManager>>,
+    model_id: String,
+) -> Result<Vec<QuantVariant>, String> {
+    let (repo_id, filename) = model_id
+        .rsplit_once('/')
+        .ok_or_else(|| format!("Invalid model id: {}", model_id))?;
+    let (descriptor, _) = crate::catalog::file_in_catalog(filename, Some(repo_id))
+        .ok_or_else(|| format!("Model '{}' is not a catalog model", model_id))?;
+    Ok(descriptor
+        .files
+        .iter()
+        .map(|f| QuantVariant {
+            quant: f.quant.clone(),
+            filename: f.filename.clone(),
+            model_id: format!("{}/{}", repo_id, f.filename),
+            size_mb: f.size_bytes.div_ceil(1024 * 1024) as u32,
+            is_default: f.quant == descriptor.default_quant.clone().unwrap_or_default(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn download_model_quant(
+    model_manager: State<'_, Arc<ModelManager>>,
+    model_id: String,
+) -> Result<(), String> {
+    model_manager
+        .download_catalog_quant(&model_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_native_streaming_latency_preset_setting(
+    app: AppHandle,
+    model_id: String,
+    preset: NativeStreamingLatencyPreset,
+) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings
+        .native_streaming_latency_presets
+        .insert(model_id, preset);
+    write_settings(&app, settings);
+    Ok(())
+}
 
 #[tauri::command]
 #[specta::specta]

@@ -8,6 +8,7 @@ import type {
   OrtAcceleratorSetting,
   LLMPrompt,
   MicIdleTimeoutUnit,
+  NativeStreamingLatencyPreset,
 } from "@/bindings";
 import { commands } from "@/bindings";
 
@@ -27,6 +28,10 @@ interface SettingsStore {
   updateSetting: <K extends keyof Settings>(
     key: K,
     value: Settings[K],
+  ) => Promise<void>;
+  setLatencyPreset: (
+    modelId: string,
+    preset: NativeStreamingLatencyPreset,
   ) => Promise<void>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
@@ -168,6 +173,7 @@ const settingUpdaters: {
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>
     commands.changeShowTrayIconSetting(value as boolean),
+  native_streaming_latency_presets: () => Promise.resolve(),
   transcribe_accelerator: (value) =>
     commands.changeTranscribeAcceleratorSetting(
       value as TranscribeAcceleratorSetting,
@@ -366,6 +372,44 @@ export const useSettingsStore = create<SettingsStore>()(
         if (defaultValue !== undefined) {
           await get().updateSetting(key, defaultValue as any);
         }
+      }
+    },
+
+    // Set native streaming latency preset for a specific model
+    setLatencyPreset: async (modelId, preset) => {
+      const { settings } = get();
+      const currentPresets = settings?.native_streaming_latency_presets ?? {};
+      const originalPreset = currentPresets[modelId];
+
+      set((state) => ({
+        settings: state.settings
+          ? {
+              ...state.settings,
+              native_streaming_latency_presets: {
+                ...state.settings.native_streaming_latency_presets,
+                [modelId]: preset,
+              },
+            }
+          : null,
+      }));
+
+      const result = await commands.changeNativeStreamingLatencyPresetSetting(
+        modelId,
+        preset,
+      );
+      if (result.status === "error") {
+        set((state) => ({
+          settings: state.settings
+            ? {
+                ...state.settings,
+                native_streaming_latency_presets: {
+                  ...state.settings.native_streaming_latency_presets,
+                  [modelId]: originalPreset,
+                },
+              }
+            : null,
+        }));
+        console.error("Failed to set latency preset:", result.error);
       }
     },
 

@@ -1,19 +1,18 @@
 use crate::audio_toolkit::{
-    list_input_devices,
+    AudioRecorder, SileroVad, VadPolicy, list_input_devices,
     vad::{
         SmoothedVad, VAD_OFFLINE_HANGOVER_FRAMES, VAD_ONSET_FRAMES, VAD_PREFILL_FRAMES,
         VAD_STREAMING_HANGOVER_FRAMES,
     },
-    AudioRecorder, SileroVad, VadPolicy,
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
-use crate::settings::{get_settings, AppSettings, MicIdleTimeoutUnit};
+use crate::settings::{AppSettings, MicIdleTimeoutUnit, get_settings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -44,10 +43,10 @@ fn set_mute(mute: bool) {
         unsafe {
             use windows::Win32::{
                 Media::Audio::{
-                    eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator,
-                    MMDeviceEnumerator,
+                    Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator, MMDeviceEnumerator,
+                    eMultimedia, eRender,
                 },
-                System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
+                System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx},
             };
 
             macro_rules! unwrap_or_return {
@@ -131,10 +130,10 @@ fn get_mute() -> Option<bool> {
     unsafe {
         use windows::Win32::{
             Media::Audio::{
-                eMultimedia, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator,
-                MMDeviceEnumerator,
+                Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator, MMDeviceEnumerator,
+                eMultimedia, eRender,
             },
-            System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED},
+            System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx},
         };
 
         // Matches set_mute: no-op if COM is already initialized on this thread.
@@ -488,10 +487,7 @@ impl AudioRecordingManager {
             {
                 // stop_microphone_stream does not acquire the state lock,
                 // so holding it here is safe (no deadlock).
-                info!(
-                    "Closing idle microphone stream after {:?}",
-                    idle_timeout
-                );
+                info!("Closing idle microphone stream after {:?}", idle_timeout);
                 rm.stop_microphone_stream();
             }
         });

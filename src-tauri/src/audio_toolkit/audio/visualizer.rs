@@ -1,4 +1,4 @@
-use rustfft::{num_complex::Complex32, Fft, FftPlanner};
+use rustfft::{Fft, FftPlanner, num_complex::Complex32};
 use std::sync::Arc;
 
 // `db` below is not true dBFS: it's a per-bin average divided by the FFT

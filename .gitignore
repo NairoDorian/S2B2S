@@ -27,6 +27,7 @@ dist-ssr
 *.sw?
 
 .claude/
+.commandcode/
 
 /target/
 src-tauri/transcribe-libs/

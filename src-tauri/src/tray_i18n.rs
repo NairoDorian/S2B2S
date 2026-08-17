@@ -55,7 +55,7 @@ pub fn get_tray_translations(locale: Option<String>) -> TrayStrings {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_tray_translations, TRANSLATIONS};
+    use super::{TRANSLATIONS, get_tray_translations};
 
     #[test]
     fn resolves_locale_fallbacks() {

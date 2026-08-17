@@ -148,8 +148,16 @@ export const commands = {
 	is_custom: boolean,
 	supports_streaming: boolean,
 	supports_language_detection: boolean,
+	/**
+	 *  Which native streaming latency extension the model supports (if any).
+	 *  Populated for catalog streaming models; `None` for legacy/Onnx/custom.
+	 */
+	native_streaming_latency_kind?: NativeStreamingLatencyKind | null,
 } | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
 	downloadModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model", { modelId })),
+	downloadModelQuant: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model_quant", { modelId })),
+	getModelQuantVariants: (modelId: string) => typedError<QuantVariant[], string>(__TAURI_INVOKE("get_model_quant_variants", { modelId })),
+	changeNativeStreamingLatencyPresetSetting: (modelId: string, preset: NativeStreamingLatencyPreset) => typedError<null, string>(__TAURI_INVOKE("change_native_streaming_latency_preset_setting", { modelId, preset })),
 	deleteModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("delete_model", { modelId })),
 	cancelDownload: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("cancel_download", { modelId })),
 	setActiveModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("set_active_model", { modelId })),
@@ -322,6 +330,7 @@ export type AppSettings_Deserialize = {
 	mic_idle_timeout_value?: number,
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
+	native_streaming_latency_presets?: { [key in string]: NativeStreamingLatencyPreset },
 };
 
 /**
@@ -433,6 +442,7 @@ export type AppSettings_Serialize = {
 	mic_idle_timeout_value: number,
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,
+	native_streaming_latency_presets: { [key in string]: NativeStreamingLatencyPreset },
 };
 
 export type AudioDevice = {
@@ -542,6 +552,11 @@ export type ModelInfo = {
 	is_custom: boolean,
 	supports_streaming: boolean,
 	supports_language_detection: boolean,
+	/**
+	 *  Which native streaming latency extension the model supports (if any).
+	 *  Populated for catalog streaming models; `None` for legacy/Onnx/custom.
+	 */
+	native_streaming_latency_kind?: NativeStreamingLatencyKind | null,
 };
 
 export type ModelLoadStatus = {
@@ -577,6 +592,21 @@ export type ModelSource =
 
 export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
 
+/**
+ *  Which transcribe-cpp stream extension a catalog streaming model exposes for
+ *  low-latency tuning. `None` means the model has no configurable latency
+ *  extension (non-streaming models, or ONNX engines).
+ */
+export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cache_aware" | "nemotron_speech_cache_aware";
+
+/**
+ *  User-facing latency preset for native streaming models (Parakeet Buffered,
+ *  Nemotron cache-aware). Stored per-model-id in
+ *  [`AppSettings::native_streaming_latency_presets`]. `Accurate` is the default
+ *  (runtime default — no stream extension attached), so it is the unit value.
+ */
+export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "accurate";
+
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm";
 
 export type OverlayPosition = OverlayPosition_Serialize | OverlayPosition_Deserialize;
@@ -609,6 +639,19 @@ export type PostProcessProvider = {
 	allow_base_url_edit?: boolean,
 	models_endpoint?: string | null,
 	supports_structured_output?: boolean,
+};
+
+/**
+ *  A single quantization variant of a catalog model — returned to the frontend
+ *  so the UI can render a quant picker (chips / dropdown) and let the user
+ *  select or download a non-default quant.
+ */
+export type QuantVariant = {
+	quant: string,
+	filename: string,
+	model_id: string,
+	size_mb: number,
+	is_default: boolean,
 };
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";

@@ -28,15 +28,15 @@ mod utils;
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
 use specta_typescript::Typescript;
-use tauri_specta::{collect_commands, collect_events, Builder};
+use tauri_specta::{Builder, collect_commands, collect_events};
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use tauri::image::Image;
 pub use transcription_coordinator::TranscriptionCoordinator;
 
@@ -700,6 +700,9 @@ pub fn run(cli_args: CliArgs) {
             commands::models::get_available_models,
             commands::models::get_model_info,
             commands::models::download_model,
+            commands::models::download_model_quant,
+            commands::models::get_model_quant_variants,
+            commands::models::change_native_streaming_latency_preset_setting,
             commands::models::delete_model,
             commands::models::cancel_download,
             commands::models::set_active_model,

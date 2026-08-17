@@ -32,20 +32,14 @@ impl SileroVad {
         let metadata = std::fs::metadata(path)
             .map_err(|e| anyhow::anyhow!("Failed to stat VAD model '{}': {}", path.display(), e))?;
         let file_size_mb = metadata.len() as f64 / 1_048_576.0;
-        info!(
-            "SileroVad: model file size = {:.2} MB",
-            file_size_mb
-        );
+        info!("SileroVad: model file size = {:.2} MB", file_size_mb);
 
         let engine = Vad::new(path, constants::WHISPER_SAMPLE_RATE as usize)
             .map_err(|e| anyhow::anyhow!("Failed to create VAD: {e}"))?;
 
         info!("SileroVad: model loaded and ready");
 
-        Ok(Self {
-            engine,
-            threshold,
-        })
+        Ok(Self { engine, threshold })
     }
 }
 

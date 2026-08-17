@@ -19,7 +19,7 @@ use once_cell::sync::Lazy;
 use serde::Deserialize;
 
 use crate::managers::model::{
-    default_quant_file, EngineType, ModelDescriptor, ModelSource, QuantFile,
+    EngineType, ModelDescriptor, ModelSource, QuantFile, default_quant_file,
 };
 use crate::managers::model_capabilities::{CapabilityProbe, Compatibility};
 

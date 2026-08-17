@@ -1,6 +1,6 @@
-use rubato::{Fft, FixedSync, Resampler};
 use rubato::audioadapter::Adapter;
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Fft, FixedSync, Resampler};
 use std::time::Duration;
 
 const RESAMPLER_CHUNK_SIZE: usize = 1024;
