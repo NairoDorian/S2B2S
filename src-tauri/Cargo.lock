@@ -7253,7 +7253,7 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp"
 version = "0.2.0"
-source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#c9bd43b2999fb9b0276776440f2734c2d614a97a"
+source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#c9736a586176bae907fc32f53ed1e00a8cd4cf11"
 dependencies = [
  "log",
  "thiserror 2.0.20",
@@ -7263,7 +7263,7 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp-sys"
 version = "0.2.0"
-source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#c9bd43b2999fb9b0276776440f2734c2d614a97a"
+source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#c9736a586176bae907fc32f53ed1e00a8cd4cf11"
 dependencies = [
  "cmake",
  "serde_json",

@@ -9,7 +9,7 @@
     "vite:build": "vite build",
     "typecheck": "bun x tsc -b",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "bun scripts/check-transcribe-deps.ts && tauri",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write . && cd src-tauri && cargo fmt",

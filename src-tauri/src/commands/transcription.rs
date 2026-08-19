@@ -2,6 +2,7 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{ModelUnloadTimeout, get_settings, write_settings};
 use serde::Serialize;
 use specta::Type;
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 #[derive(Serialize, Type)]
@@ -21,7 +22,7 @@ pub fn set_model_unload_timeout(app: AppHandle, timeout: ModelUnloadTimeout) {
 #[tauri::command]
 #[specta::specta]
 pub fn get_model_load_status(
-    transcription_manager: State<TranscriptionManager>,
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
 ) -> Result<ModelLoadStatus, String> {
     Ok(ModelLoadStatus {
         is_loaded: transcription_manager.is_model_loaded(),
@@ -32,7 +33,7 @@ pub fn get_model_load_status(
 #[tauri::command]
 #[specta::specta]
 pub fn unload_model_manually(
-    transcription_manager: State<TranscriptionManager>,
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
 ) -> Result<(), String> {
     transcription_manager
         .unload_model()
@@ -42,10 +43,34 @@ pub fn unload_model_manually(
 #[tauri::command]
 #[specta::specta]
 pub fn unload_extra_model(
-    transcription_manager: State<TranscriptionManager>,
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
 ) -> Result<(), String> {
     transcription_manager
         .unload_extra_model(&model_id)
         .map_err(|e| format!("Failed to unload extra model: {}", e))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_extra_loaded_models(
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+) -> Result<Vec<String>, String> {
+    Ok(transcription_manager.get_extra_loaded_models())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn load_extra_model(
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    model_id: String,
+) -> Result<(), String> {
+    let tm = Arc::clone(&*transcription_manager);
+    let model_id_clone = model_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = tm.load_extra_model(&model_id_clone);
+    })
+    .await
+    .map_err(|e| format!("Load task panicked: {}", e))?;
+    Ok(())
 }

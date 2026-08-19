@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
+import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { type ModelInfo } from "@/bindings";
 
 import {
@@ -22,6 +24,7 @@ import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
 import { commands } from "@/bindings";
+import { ModelStateEvent } from "@/lib/types/events";
 
 /** Inline language selector for an extra multi-STT model slot. */
 interface PerModelLanguageSelectorProps {
@@ -110,6 +113,51 @@ export const MultiSttSettings: React.FC = () => {
 
   const [draftName, setDraftName] = useState("");
   const [draftText, setDraftText] = useState("");
+
+  // Track which extra models are loaded in memory, plus per-model
+  // loading/unloading spinners so the UI reflects in-flight operations.
+  const [loadedExtraModels, setLoadedExtraModels] = useState<Set<string>>(
+    new Set(),
+  );
+  const [loadingModelIds, setLoadingModelIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [unloadingModelIds, setUnloadingModelIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const fetchLoadedExtraModels = async () => {
+    const result = await commands.getExtraLoadedModels();
+    if (result.status === "ok") {
+      setLoadedExtraModels(new Set(result.data));
+    }
+  };
+
+  // Sync loaded extra-model state with the backend on mount and react to
+  // load/unload events emitted by the transcription manager.
+  useEffect(() => {
+    fetchLoadedExtraModels();
+
+    const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
+      const { event_type, model_id } = event.payload;
+      if (event_type === "multi_stt_model_loaded" && model_id) {
+        setLoadedExtraModels((prev) => {
+          const next = new Set(prev);
+          next.add(model_id);
+          return next;
+        });
+      } else if (event_type === "multi_stt_model_unloaded" && model_id) {
+        setLoadedExtraModels((prev) => {
+          const next = new Set(prev);
+          next.delete(model_id);
+          return next;
+        });
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Filter out primary model + already-selected models for model 2/3/4 dropdowns
   const downloadedModels = models.filter(
@@ -200,13 +248,67 @@ export const MultiSttSettings: React.FC = () => {
   };
 
   const handleUnloadModel = async (modelId: string) => {
+    setUnloadingModelIds((prev) => new Set([...prev, modelId]));
     try {
-      await commands.unloadExtraModel(modelId);
-      loadModels();
+      const result = await commands.unloadExtraModel(modelId);
+      if (result.status === "ok") {
+        toast.success(t("multiStt.models.unloadedSuccessfully"), {
+          description: modelId,
+        });
+        await fetchLoadedExtraModels();
+      } else {
+        toast.error(t("multiStt.models.unloadFailed"), {
+          description: result.error,
+        });
+      }
     } catch (err) {
-      console.error("Failed to unload model:", err);
+      toast.error(t("multiStt.models.unloadFailed"), {
+        description: String(err),
+      });
+    } finally {
+      setUnloadingModelIds((prev) => {
+        const next = new Set(prev);
+        next.delete(modelId);
+        return next;
+      });
     }
   };
+
+  const handleLoadModel = async (modelId: string) => {
+    setLoadingModelIds((prev) => new Set([...prev, modelId]));
+    try {
+      const result = await commands.loadExtraModel(modelId);
+      if (result.status === "ok") {
+        toast.success(t("multiStt.models.loadedSuccessfully"), {
+          description: modelId,
+        });
+        await fetchLoadedExtraModels();
+      } else {
+        toast.error(t("multiStt.models.loadFailed"), {
+          description: result.error,
+        });
+      }
+    } catch (err) {
+      toast.error(t("multiStt.models.loadFailed"), {
+        description: String(err),
+      });
+    } finally {
+      setLoadingModelIds((prev) => {
+        const next = new Set(prev);
+        next.delete(modelId);
+        return next;
+      });
+    }
+  };
+
+  const isExtraModelLoaded = (modelId: string | null): boolean =>
+    modelId != null && loadedExtraModels.has(modelId);
+
+  const isModelLoading = (modelId: string | null): boolean =>
+    modelId != null && loadingModelIds.has(modelId);
+
+  const isModelUnloading = (modelId: string | null): boolean =>
+    modelId != null && unloadingModelIds.has(modelId);
 
   const primaryModelName = primaryModelId
     ? downloadedModels.find((m: ModelInfo) => m.id === primaryModelId)?.name ||
@@ -288,19 +390,48 @@ export const MultiSttSettings: React.FC = () => {
                   />
                   {multiSttModel2 && (
                     <>
+                      <span
+                        className={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel2) ? "text-green-500" : "text-mid-gray/50"}`}
+                      >
+                        {isExtraModelLoaded(multiSttModel2)
+                          ? t("multiStt.models.loaded")
+                          : t("multiStt.models.notLoaded")}
+                      </span>
+                      {isExtraModelLoaded(multiSttModel2) ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleUnloadModel(multiSttModel2)}
+                          disabled={
+                            isModelUnloading(multiSttModel2) ||
+                            isModelLoading(multiSttModel2)
+                          }
+                        >
+                          {isModelUnloading(multiSttModel2)
+                            ? t("multiStt.models.unloadingModel")
+                            : t("multiStt.models.unloadModel")}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleLoadModel(multiSttModel2)}
+                          disabled={
+                            isModelLoading(multiSttModel2) ||
+                            isModelUnloading(multiSttModel2)
+                          }
+                        >
+                          {isModelLoading(multiSttModel2)
+                            ? t("multiStt.models.loadingModel")
+                            : t("multiStt.models.loadModel")}
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => handleModel2Select(null)}
                       >
                         {t("multiStt.models.disableModel")}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleUnloadModel(multiSttModel2)}
-                      >
-                        {t("multiStt.models.unloadModel")}
                       </Button>
                     </>
                   )}
@@ -350,19 +481,48 @@ export const MultiSttSettings: React.FC = () => {
                   />
                   {multiSttModel3 && (
                     <>
+                      <span
+                        className={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel3) ? "text-green-500" : "text-mid-gray/50"}`}
+                      >
+                        {isExtraModelLoaded(multiSttModel3)
+                          ? t("multiStt.models.loaded")
+                          : t("multiStt.models.notLoaded")}
+                      </span>
+                      {isExtraModelLoaded(multiSttModel3) ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleUnloadModel(multiSttModel3)}
+                          disabled={
+                            isModelUnloading(multiSttModel3) ||
+                            isModelLoading(multiSttModel3)
+                          }
+                        >
+                          {isModelUnloading(multiSttModel3)
+                            ? t("multiStt.models.unloadingModel")
+                            : t("multiStt.models.unloadModel")}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleLoadModel(multiSttModel3)}
+                          disabled={
+                            isModelLoading(multiSttModel3) ||
+                            isModelUnloading(multiSttModel3)
+                          }
+                        >
+                          {isModelLoading(multiSttModel3)
+                            ? t("multiStt.models.loadingModel")
+                            : t("multiStt.models.loadModel")}
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => handleModel3Select(null)}
                       >
                         {t("multiStt.models.disableModel")}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleUnloadModel(multiSttModel3)}
-                      >
-                        {t("multiStt.models.unloadModel")}
                       </Button>
                     </>
                   )}
@@ -412,19 +572,48 @@ export const MultiSttSettings: React.FC = () => {
                   />
                   {multiSttModel4 && (
                     <>
+                      <span
+                        className={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel4) ? "text-green-500" : "text-mid-gray/50"}`}
+                      >
+                        {isExtraModelLoaded(multiSttModel4)
+                          ? t("multiStt.models.loaded")
+                          : t("multiStt.models.notLoaded")}
+                      </span>
+                      {isExtraModelLoaded(multiSttModel4) ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleUnloadModel(multiSttModel4)}
+                          disabled={
+                            isModelUnloading(multiSttModel4) ||
+                            isModelLoading(multiSttModel4)
+                          }
+                        >
+                          {isModelUnloading(multiSttModel4)
+                            ? t("multiStt.models.unloadingModel")
+                            : t("multiStt.models.unloadModel")}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleLoadModel(multiSttModel4)}
+                          disabled={
+                            isModelLoading(multiSttModel4) ||
+                            isModelUnloading(multiSttModel4)
+                          }
+                        >
+                          {isModelLoading(multiSttModel4)
+                            ? t("multiStt.models.loadingModel")
+                            : t("multiStt.models.loadModel")}
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => handleModel4Select(null)}
                       >
                         {t("multiStt.models.disableModel")}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleUnloadModel(multiSttModel4)}
-                      >
-                        {t("multiStt.models.unloadModel")}
                       </Button>
                     </>
                   )}
@@ -570,35 +759,62 @@ export const MultiSttSettings: React.FC = () => {
               </div>
               {selectedModel2Name && (
                 <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  <span
+                    className={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel2) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                  />
                   <span className="text-sm">
                     {t("multiStt.status.secondary")}: {selectedModel2Name}
+                  </span>
+                  <span
+                    className={`text-xs ${isExtraModelLoaded(multiSttModel2) ? "text-green-500" : "text-mid-gray/50"}`}
+                  >
+                    {isExtraModelLoaded(multiSttModel2)
+                      ? t("multiStt.models.loaded")
+                      : t("multiStt.models.notLoaded")}
                   </span>
                 </div>
               )}
               {selectedModel3Name && (
                 <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                  <span className="w-2 h-2 rounded-full bg-purple-500" />
+                  <span
+                    className={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel3) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                  />
                   <span className="text-sm">
                     {t("multiStt.status.tertiary")}: {selectedModel3Name}
+                  </span>
+                  <span
+                    className={`text-xs ${isExtraModelLoaded(multiSttModel3) ? "text-green-500" : "text-mid-gray/50"}`}
+                  >
+                    {isExtraModelLoaded(multiSttModel3)
+                      ? t("multiStt.models.loaded")
+                      : t("multiStt.models.notLoaded")}
                   </span>
                 </div>
               )}
               {selectedModel4Name && (
                 <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                  <span className="w-2 h-2 rounded-full bg-orange-500" />
+                  <span
+                    className={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel4) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                  />
                   <span className="text-sm">
                     {t("multiStt.status.quaternary")}: {selectedModel4Name}
+                  </span>
+                  <span
+                    className={`text-xs ${isExtraModelLoaded(multiSttModel4) ? "text-green-500" : "text-mid-gray/50"}`}
+                  >
+                    {isExtraModelLoaded(multiSttModel4)
+                      ? t("multiStt.models.loaded")
+                      : t("multiStt.models.notLoaded")}
                   </span>
                 </div>
               )}
               {!selectedModel2Name &&
                 !selectedModel3Name &&
                 !selectedModel4Name && (
-                <p className="text-sm text-mid-gray/60">
-                  {t("multiStt.status.noModels")}
-                </p>
-              )}
+                  <p className="text-sm text-mid-gray/60">
+                    {t("multiStt.status.noModels")}
+                  </p>
+                )}
             </div>
           </SettingsGroup>
         </>
