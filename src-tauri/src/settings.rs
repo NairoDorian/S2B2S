@@ -2744,7 +2744,21 @@ fn apply_settings_migrations(
         if settings.bindings.remove("pause").is_some() {
             log::info!("[Settings] Removed legacy 'pause' binding (duplicate of 'toggle_pause')");
         }
+    }
+    if stored_schema_version < 2 {
+        // transcribe.cpp 0.2 replaced integer registry indices with opaque
+        // process-local handles. Clear every old index once.
+        settings.transcribe_gpu_device = default_transcribe_gpu_device();
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
+
+    // The generic GPU choice was removed in favor of Auto or an exact device.
+    // Normalize settings created by builds that exposed that short-lived option.
+    if settings.transcribe_accelerator == TranscribeAcceleratorSetting::Gpu
+        && settings.transcribe_gpu_device.is_none()
+    {
+        settings.transcribe_accelerator = TranscribeAcceleratorSetting::Auto;
         updated = true;
     }
 
@@ -2981,8 +2995,8 @@ mod tests {
         assert_eq!(settings.sound_theme, SoundTheme::Pop);
         assert!(settings.filler_word_removal_enabled);
 
-        // The 0.1 integer device index is cleared once for transcribe.cpp 0.2,
-        // while preserving this user's explicit GPU accelerator preference.
+        // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
+        // Without an exact device, the retired generic GPU choice becomes Auto.
         assert!(apply_settings_migrations(&mut settings, &stored));
         assert_eq!(
             settings.settings_schema_version,
@@ -2990,7 +3004,7 @@ mod tests {
         );
         assert_eq!(
             settings.transcribe_accelerator,
-            TranscribeAcceleratorSetting::Gpu
+            TranscribeAcceleratorSetting::Auto
         );
         assert_eq!(settings.transcribe_gpu_device, None);
     }
@@ -3034,10 +3048,6 @@ mod tests {
         assert_ne!(
             settings.bindings["multi_stt_transcribe"].current_binding,
             settings.bindings["transcribe_with_post_process"].current_binding
-        );
-        assert_eq!(
-            settings.settings_schema_version,
-            CURRENT_SETTINGS_SCHEMA_VERSION
         );
         #[cfg(not(target_os = "macos"))]
         assert_eq!(
@@ -3285,7 +3295,7 @@ mod tests {
     }
 
     #[test]
-    fn gpu_device_migration_clears_v1_index_but_keeps_gpu_preference() {
+    fn gpu_device_migration_maps_v1_automatic_gpu_to_auto() {
         let raw = serde_json::json!({
             "settings_schema_version": 1,
             "transcribe_accelerator": "gpu",
@@ -3296,7 +3306,27 @@ mod tests {
         assert!(apply_settings_migrations(&mut settings, &raw));
         assert_eq!(
             settings.transcribe_accelerator,
-            TranscribeAcceleratorSetting::Gpu
+            TranscribeAcceleratorSetting::Auto
+        );
+        assert_eq!(settings.transcribe_gpu_device, None);
+    }
+
+    #[test]
+    fn gpu_device_migration_maps_current_automatic_gpu_to_auto() {
+        let raw = serde_json::json!({
+            "settings_schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
+            "onboarding_completed": false,
+            "whats_new_last_seen_version": default_whats_new_last_seen_version(),
+            "overlay_style": "live",
+            "transcribe_accelerator": "gpu",
+            "transcribe_gpu_device": null
+        });
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).unwrap();
+
+        assert!(apply_settings_migrations(&mut settings, &raw));
+        assert_eq!(
+            settings.transcribe_accelerator,
+            TranscribeAcceleratorSetting::Auto
         );
         assert_eq!(settings.transcribe_gpu_device, None);
     }
