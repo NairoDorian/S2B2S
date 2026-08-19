@@ -1,1 +1,18 @@
 [build]
+
+[env]
+# ggml's CMake auto-detects sccache on PATH and uses it as a global
+# compiler launcher (RULE_LAUNCH_COMPILE). On Windows + MSVC this can
+# corrupt object files. Disable sccache for the transcribe-cpp native
+# build so CMake invokes the compiler directly. This is forwarded via the
+# build.rs TRANSCRIBE_CMAKE_ARGS passthrough, which is the documented ggml
+# escape hatch.
+#
+# CUDA 13.3 + MSVC 2026 (VS 2026, MSBuild 18.x) also requires two flags:
+#   /Zc:preprocessor   — nvcc 13.3's CCCL errors out without MSVC's
+#                        standard-conforming preprocessor, producing corrupt
+#                        .obj files (LNK1136).
+#   -std=c++17         — CUB (pulled in by cuda/std) requires C++17.
+# Both are passed via CMAKE_CUDA_FLAGS; -Xcompiler forwards
+# /Zc:preprocessor to the host cl.exe invoked by nvcc.
+TRANSCRIBE_CMAKE_ARGS = "-DCMAKE_CUDA_FLAGS=\"-std=c++17 -Xcompiler=/Zc:preprocessor\" -DGGML_CCACHE=OFF"
