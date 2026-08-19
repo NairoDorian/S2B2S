@@ -627,10 +627,7 @@ impl TranscriptionManager {
                     .as_ref()
                     .map(transcribe_device_label)
                     .unwrap_or_else(|| "automatic".to_string());
-                let model_options = ModelOptions {
-                    backend,
-                    device,
-                };
+                let model_options = ModelOptions { backend, device };
                 let model = Model::load_with(&model_path, &model_options).map_err(|e| {
                     let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
                     emit_loading_failed(&error_msg);
@@ -2640,19 +2637,14 @@ impl TranscriptionManager {
             EngineType::TranscribeCpp => {
                 let settings = get_settings(&self.app_handle);
                 let accelerator = settings.transcribe_accelerator;
-                let device = resolve_gpu_device(
-                    accelerator,
-                    settings.transcribe_gpu_device.as_deref(),
-                );
+                let device =
+                    resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref());
                 let backend = if device.is_some() {
                     Backend::Auto
                 } else {
                     select_transcribe_backend(accelerator)
                 };
-                let model_options = ModelOptions {
-                    backend,
-                    device,
-                };
+                let model_options = ModelOptions { backend, device };
                 let model = Model::load_with(model_path, &model_options)
                     .map_err(|e| anyhow::anyhow!("Failed to load model {}: {}", model_id, e))?;
                 let session = model.session().map_err(|e| {
