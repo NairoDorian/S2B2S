@@ -17,7 +17,6 @@
     "history": "History",
     "debug": "Debug",
     "about": "About",
-    "benchmark": "Benchmark",
     "multiStt": "Multi STT"
   },
   "onboarding": {
@@ -143,7 +142,6 @@
     "modelUnloaded": "Model Unloaded",
     "noModelDownloadRequired": "No Model - Download Required",
     "deleteModel": "Delete {{modelName}}",
-    "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Cancel",
     "cancelDownload": "Cancel download",
     "capabilities": {
@@ -157,17 +155,29 @@
     },
     "quantPicker": {
       "title": "Quantization",
+      "pillLabel": "Quantization: {{quant}}",
       "default": "Default",
-      "download": "Download",
-      "downloading": "Downloading",
-      "cancelDownload": "Cancel download",
-      "size": "{{size}} MB",
+      "download": "Download {{quant}}",
+      "downloadingPercent": "{{percentage}}%",
       "switchTo": "Switch to {{quant}}",
-      "current": "{{quant}} selected",
-      "noQuantsAvailable": "No quantizations available for this model"
+      "current": "{{quant}} is active"
+    },
+    "benchmark": {
+      "runAll": "Benchmark",
+      "runOne": "Benchmark {{quant}}",
+      "runProgress": "{{done}}/{{total}}",
+      "reference": "Timed against your recording from {{when}}",
+      "noRecording": "Record something first — the benchmark replays your latest recording",
+      "method": "One warmup run is discarded, then {{runs}} timed runs are averaged.",
+      "fastest": "Fastest",
+      "failed": "Failed",
+      "realTime": "{{factor}}× real-time",
+      "milliseconds": "{{value}} ms",
+      "seconds": "{{value}} s"
     },
     "latencySelector": {
       "title": "Streaming Latency",
+      "pillLabel": "Streaming latency: {{preset}}",
       "fastest": "Fastest",
       "fast": "Fast",
       "balanced": "Balanced",
@@ -244,29 +254,6 @@
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Handy"
       },
       "noModelsMatch": "No models match this filter."
-    },
-    "benchmark": {
-      "title": "Quantization Benchmark",
-      "description": "Benchmark your downloaded model quantizations against your latest recording to compare transcription speed. A warmup run is discarded, then 3 timed runs are averaged for each quantization.",
-      "button": "Run Benchmark",
-      "buttonRunning": "Benchmarking…",
-      "noCurrentModel": "No model selected",
-      "noDownloadedQuants": "No downloaded quantizations found for this model",
-      "downloadedQuants": "{{count}} quantization variant(s) downloaded",
-      "noRecording": "No recordings found. Record audio first to use as benchmark reference.",
-      "usingRecording": "Benchmarking using your latest recording:",
-      "results": {
-        "title": "Results",
-        "timeMs": "{{ms}} ms",
-        "sizeMb": "{{size}} MB",
-        "default": "Default",
-        "realTimeFactor": "{{x}}× real-time",
-        "ranIn": "{{ms}} ms (avg of 3 runs)"
-      },
-      "variantError": "Failed",
-      "noResults": "No benchmark results yet. Click \"Run Benchmark\" to start.",
-      "singleButton": "Benchmark this quantization",
-      "singleRunning": "Benchmarking..."
     },
     "sound": {
       "title": "Sound",
@@ -691,6 +678,9 @@
   },
   "common": {
     "loading": "Loading...",
+    "downloading": "Downloading...",
+    "downloadingCount": "{{count}} downloading...",
+    "downloadSpeed": "{{speed}} MB/s",
     "delete": "Delete",
     "close": "Close",
     "open": "Open",

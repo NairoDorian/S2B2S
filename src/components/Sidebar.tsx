@@ -20,7 +20,6 @@ import {
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
-  BenchmarkSettings,
   MultiSttSettings,
 } from "./settings";
 
@@ -60,17 +59,11 @@ export const SECTIONS_CONFIG = {
     component: ModelsSettings,
     enabled: () => true,
   },
-  benchmark: {
-    labelKey: "sidebar.benchmark",
-    icon: FlaskConical,
-    component: BenchmarkSettings,
-    enabled: () => true,
-  },
   multiStt: {
     labelKey: "sidebar.multiStt",
     icon: Mic,
     component: MultiSttSettings,
-    enabled: (settings) => true,
+    enabled: () => true,
   },
   advanced: {
     labelKey: "sidebar.advanced",
@@ -111,7 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { settings } = useSettings();
 
   const availableSections = Object.entries(SECTIONS_CONFIG)
-    .filter(([_, config]) => config.enabled(settings))
+    .filter(([, config]) => config.enabled(settings))
     .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
   return (

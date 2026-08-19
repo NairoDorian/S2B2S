@@ -58,6 +58,10 @@ pub struct ModelStateEvent {
     pub error: Option<String>,
 }
 
+/// Number of timed transcription runs averaged per quantization variant. A
+/// warmup run (discarded) always precedes these.
+pub const BENCHMARK_TIMED_RUNS: usize = 3;
+
 /// Result of benchmarking a single quantization variant — returned to the
 /// frontend so it can render per-quant timings next to each variant chip.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -67,17 +71,32 @@ pub struct BenchmarkResult {
     pub filename: String,
     pub size_mb: u32,
     pub avg_time_ms: f64,
+    /// Duration of the reference recording, so the frontend can render a
+    /// real-time factor (`audio_secs / (avg_time_ms / 1000)`) alongside the
+    /// raw timing.
+    pub audio_secs: f64,
     pub is_default: bool,
 }
 
 /// Progress event emitted from the backend during a benchmark run so the
 /// frontend can show live status (which variant is being tested, etc.).
-#[derive(Debug, Clone, Serialize)]
+///
+/// Every field except `event_type` is optional; construct with
+/// `..Default::default()` and only set what the event actually carries.
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct BenchmarkProgressEvent {
     pub event_type: String,
     pub quant: Option<String>,
     pub model_id: Option<String>,
+    /// For `run_completed` this is the elapsed time of that single run; for
+    /// `variant_completed` it is the average across all timed runs.
     pub avg_time_ms: Option<f64>,
+    /// Duration of the reference recording (see [`BenchmarkResult::audio_secs`]).
+    pub audio_secs: Option<f64>,
+    /// 1-based index of the run that just finished (`run_completed` only).
+    pub run_index: Option<u32>,
+    /// Total timed runs per variant, so the UI can render "2 / 3".
+    pub total_runs: Option<u32>,
     pub error: Option<String>,
 }
 
@@ -1697,6 +1716,12 @@ impl StreamPerf {
     }
 }
 
+/// Duration of benchmark reference audio. Recordings handed to the benchmark
+/// are always already resampled to the 16 kHz the engines consume.
+fn benchmark_audio_secs(audio: &[f32]) -> f64 {
+    audio.len() as f64 / 16_000.0
+}
+
 fn real_time_factor(audio_secs: f64, compute_secs: f64) -> f64 {
     if compute_secs > 0.0 {
         audio_secs / compute_secs
@@ -2220,19 +2245,186 @@ impl TranscriptionManager {
         transcription
     }
 
+    /// Emit a `benchmark-progress` event to the frontend, ignoring transport
+    /// errors (a closed window must never abort a benchmark run).
+    fn emit_benchmark_progress(&self, event: BenchmarkProgressEvent) {
+        let _ = self.app_handle.emit("benchmark-progress", event);
+    }
+
+    /// Load `variant_id` on a throwaway engine, run one discarded warmup pass
+    /// and [`BENCHMARK_TIMED_RUNS`] timed passes over `audio`, then drop the
+    /// engine and let the OS reclaim its memory.
+    ///
+    /// Each completed run emits a `run_completed` event so the UI can show live
+    /// progress. A failing or panicking run emits `variant_error` and stops the
+    /// remaining runs; whatever timings were already collected are returned, so
+    /// an empty vector means the variant produced no usable measurement.
+    fn time_variant_runs(
+        &self,
+        variant_id: &str,
+        quant: &str,
+        model_path: &std::path::PathBuf,
+        model_info: &crate::managers::model::ModelInfo,
+        settings: &AppSettings,
+        audio: &[f32],
+    ) -> Result<Vec<f64>> {
+        let audio_secs = benchmark_audio_secs(audio);
+
+        // A temporary engine — deliberately not installed in the primary slot,
+        // so benchmarking never disturbs the model the user actually dictates
+        // with (beyond the unload the caller already performed).
+        let mut engine = self.create_engine(variant_id, model_path, model_info)?;
+
+        // Warmup: the first transcription after a load is slow (cold caches,
+        // lazy initialization). Per the benchmark spec it is discarded.
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            transcribe_with_engine(
+                &mut engine,
+                settings,
+                audio,
+                variant_id,
+                &self.model_manager,
+            )
+        }));
+
+        let mut times_ms: Vec<f64> = Vec::with_capacity(BENCHMARK_TIMED_RUNS);
+        for run_idx in 0..BENCHMARK_TIMED_RUNS {
+            let start = Instant::now();
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                transcribe_with_engine(
+                    &mut engine,
+                    settings,
+                    audio,
+                    variant_id,
+                    &self.model_manager,
+                )
+            }));
+            let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+            let failure = match result {
+                Ok(Ok(_)) => {
+                    times_ms.push(elapsed_ms);
+                    debug!(
+                        "Benchmark [{}] run {}/{}: {:.0}ms",
+                        quant,
+                        run_idx + 1,
+                        BENCHMARK_TIMED_RUNS,
+                        elapsed_ms
+                    );
+                    None
+                }
+                Ok(Err(e)) => Some(format!("Transcription run {} failed: {}", run_idx + 1, e)),
+                Err(panic_payload) => Some(format!(
+                    "Engine panicked during run {}: {}",
+                    run_idx + 1,
+                    panic_payload_message(panic_payload.as_ref())
+                )),
+            };
+
+            if let Some(message) = failure {
+                error!("Benchmark [{}]: {}", quant, message);
+                self.emit_benchmark_progress(BenchmarkProgressEvent {
+                    event_type: "variant_error".to_string(),
+                    quant: Some(quant.to_string()),
+                    model_id: Some(variant_id.to_string()),
+                    error: Some(message),
+                    ..Default::default()
+                });
+                break;
+            }
+
+            self.emit_benchmark_progress(BenchmarkProgressEvent {
+                event_type: "run_completed".to_string(),
+                quant: Some(quant.to_string()),
+                model_id: Some(variant_id.to_string()),
+                avg_time_ms: Some(elapsed_ms),
+                audio_secs: Some(audio_secs),
+                run_index: Some(run_idx as u32 + 1),
+                total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+                ..Default::default()
+            });
+        }
+
+        // Free GPU/CPU memory before the next variant is loaded, then pause
+        // briefly so the OS can actually release it — memory pressure carried
+        // into the next load would skew its timings.
+        drop(engine);
+        thread::sleep(Duration::from_millis(200));
+
+        Ok(times_ms)
+    }
+
+    /// Turn a set of timed runs into a [`BenchmarkResult`], logging the summary.
+    fn summarize_benchmark(
+        quant_file: &crate::managers::model::QuantFile,
+        variant_id: &str,
+        is_default: bool,
+        times_ms: &[f64],
+        audio_secs: f64,
+    ) -> BenchmarkResult {
+        let avg_ms: f64 = times_ms.iter().sum::<f64>() / times_ms.len() as f64;
+
+        info!(
+            "Benchmark: {} transcribed {:.2}s of audio in {:.0}ms (avg of {} runs, {:.2}x real-time)",
+            quant_file.quant,
+            audio_secs,
+            avg_ms,
+            times_ms.len(),
+            real_time_factor(audio_secs, avg_ms / 1000.0)
+        );
+
+        BenchmarkResult {
+            quant: quant_file.quant.clone(),
+            model_id: variant_id.to_string(),
+            filename: quant_file.filename.clone(),
+            size_mb: (quant_file.size_bytes.div_ceil(1024 * 1024)) as u32,
+            avg_time_ms: avg_ms,
+            audio_secs,
+            is_default,
+        }
+    }
+
     /// Benchmark all downloaded quantization variants of a model family.
     ///
     /// For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) of the model
     /// identified by `model_id`, this method:
     ///   1. Loads the quant's engine on a temporary basis (not the primary slot).
     ///   2. Runs one warmup transcription (discarded).
-    ///   3. Runs three timed transcriptions.
-    ///   4. Averages the three timings.
+    ///   3. Runs [`BENCHMARK_TIMED_RUNS`] timed transcriptions.
+    ///   4. Averages the timings.
     ///   5. Drops the engine to free memory before moving to the next variant.
+    ///
+    /// The primary model is unloaded first so every variant is measured from
+    /// the same clean state; it is reloaded in the background afterwards if it
+    /// was loaded when the run started.
     ///
     /// Progress is reported via `benchmark-progress` events. Results are also
     /// returned so the caller can present a complete table at once.
+    ///
+    /// A run that aborts before it can report per-variant progress still emits
+    /// `benchmark_failed`, so listeners that only watch the event stream (rather
+    /// than awaiting this call) can clear their in-progress state.
     pub fn benchmark_quantizations(
+        &self,
+        model_id: &str,
+        audio: &[f32],
+    ) -> Result<Vec<BenchmarkResult>> {
+        self.benchmark_quantizations_inner(model_id, audio)
+            .inspect_err(|e| self.emit_benchmark_failed(model_id, e))
+    }
+
+    /// Emit the terminal `benchmark_failed` event for an aborted run.
+    fn emit_benchmark_failed(&self, model_id: &str, error: &anyhow::Error) {
+        error!("Benchmark aborted for '{}': {}", model_id, error);
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "benchmark_failed".to_string(),
+            model_id: Some(model_id.to_string()),
+            error: Some(error.to_string()),
+            ..Default::default()
+        });
+    }
+
+    fn benchmark_quantizations_inner(
         &self,
         model_id: &str,
         audio: &[f32],
@@ -2247,20 +2439,19 @@ impl TranscriptionManager {
             .ok_or_else(|| anyhow::anyhow!("Model '{}' is not a catalog model", model_id))?;
 
         let settings = get_settings(&self.app_handle);
-        let audio_len = audio.len();
-        let audio_secs = audio_len as f64 / 16_000.0;
+        let audio_secs = benchmark_audio_secs(audio);
+        let default_quant = descriptor.default_quant.clone().unwrap_or_default();
 
-        // Emit benchmark started
-        let _ = self.app_handle.emit(
-            "benchmark-progress",
-            BenchmarkProgressEvent {
-                event_type: "benchmark_started".to_string(),
-                quant: None,
-                model_id: None,
-                avg_time_ms: None,
-                error: None,
-            },
-        );
+        // Remember whether the user had a model resident so we can restore it
+        // once the run is over instead of leaving them with a cold start.
+        let had_primary_model = self.is_model_loaded();
+
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "benchmark_started".to_string(),
+            audio_secs: Some(audio_secs),
+            total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+            ..Default::default()
+        });
 
         let mut results: Vec<BenchmarkResult> = Vec::new();
 
@@ -2273,31 +2464,25 @@ impl TranscriptionManager {
                 _ => continue,
             };
 
-            // Emit variant started
-            let _ = self.app_handle.emit(
-                "benchmark-progress",
-                BenchmarkProgressEvent {
-                    event_type: "variant_started".to_string(),
-                    quant: Some(file.quant.clone()),
-                    model_id: Some(variant_id.clone()),
-                    avg_time_ms: None,
-                    error: None,
-                },
-            );
+            self.emit_benchmark_progress(BenchmarkProgressEvent {
+                event_type: "variant_started".to_string(),
+                quant: Some(file.quant.clone()),
+                model_id: Some(variant_id.clone()),
+                audio_secs: Some(audio_secs),
+                total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+                ..Default::default()
+            });
 
             let model_path = match self.model_manager.get_model_path(&variant_id) {
                 Ok(p) => p,
                 Err(e) => {
-                    let _ = self.app_handle.emit(
-                        "benchmark-progress",
-                        BenchmarkProgressEvent {
-                            event_type: "variant_error".to_string(),
-                            quant: Some(file.quant.clone()),
-                            model_id: Some(variant_id.clone()),
-                            avg_time_ms: None,
-                            error: Some(e.to_string()),
-                        },
-                    );
+                    self.emit_benchmark_progress(BenchmarkProgressEvent {
+                        event_type: "variant_error".to_string(),
+                        quant: Some(file.quant.clone()),
+                        model_id: Some(variant_id.clone()),
+                        error: Some(e.to_string()),
+                        ..Default::default()
+                    });
                     continue;
                 }
             };
@@ -2308,164 +2493,59 @@ impl TranscriptionManager {
             // timing measurements.
             let _ = self.unload_model();
 
-            // Create a temporary engine (does NOT touch the primary engine slot)
-            let mut engine = match self.create_engine(&variant_id, &model_path, &model_info) {
-                Ok(e) => e,
+            let times_ms = match self.time_variant_runs(
+                &variant_id,
+                &file.quant,
+                &model_path,
+                &model_info,
+                &settings,
+                audio,
+            ) {
+                Ok(times) => times,
                 Err(e) => {
-                    let _ = self.app_handle.emit(
-                        "benchmark-progress",
-                        BenchmarkProgressEvent {
-                            event_type: "variant_error".to_string(),
-                            quant: Some(file.quant.clone()),
-                            model_id: Some(variant_id.clone()),
-                            avg_time_ms: None,
-                            error: Some(format!("Failed to load model: {}", e)),
-                        },
-                    );
+                    self.emit_benchmark_progress(BenchmarkProgressEvent {
+                        event_type: "variant_error".to_string(),
+                        quant: Some(file.quant.clone()),
+                        model_id: Some(variant_id.clone()),
+                        error: Some(format!("Failed to load model: {}", e)),
+                        ..Default::default()
+                    });
                     continue;
                 }
             };
-
-            // Warmup: the first transcription after load is slow (cache misses,
-            // lazy initialization, etc.). Per the benchmark spec we skip it and
-            // only time the subsequent runs.
-            let _ = catch_unwind(AssertUnwindSafe(|| {
-                transcribe_with_engine(
-                    &mut engine,
-                    &settings,
-                    audio,
-                    &variant_id,
-                    &self.model_manager,
-                )
-            }));
-
-            // Three timed runs — skip the warmup, take the average of these.
-            let mut times_ms: Vec<f64> = Vec::with_capacity(3);
-            for run_idx in 0..3 {
-                let start = std::time::Instant::now();
-                let result = catch_unwind(AssertUnwindSafe(|| {
-                    transcribe_with_engine(
-                        &mut engine,
-                        &settings,
-                        audio,
-                        &variant_id,
-                        &self.model_manager,
-                    )
-                }));
-                let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-
-                match result {
-                    Ok(Ok(_)) => {
-                        times_ms.push(elapsed_ms);
-                    }
-                    Ok(Err(e)) => {
-                        let _ = self.app_handle.emit(
-                            "benchmark-progress",
-                            BenchmarkProgressEvent {
-                                event_type: "variant_error".to_string(),
-                                quant: Some(file.quant.clone()),
-                                model_id: Some(variant_id.clone()),
-                                avg_time_ms: None,
-                                error: Some(format!(
-                                    "Transcription run {} failed: {}",
-                                    run_idx + 1,
-                                    e
-                                )),
-                            },
-                        );
-                        break;
-                    }
-                    Err(panic_payload) => {
-                        let panic_msg = panic_payload_message(panic_payload.as_ref());
-                        let _ = self.app_handle.emit(
-                            "benchmark-progress",
-                            BenchmarkProgressEvent {
-                                event_type: "variant_error".to_string(),
-                                quant: Some(file.quant.clone()),
-                                model_id: Some(variant_id.clone()),
-                                avg_time_ms: None,
-                                error: Some(format!(
-                                    "Engine panicked during run {}: {}",
-                                    run_idx + 1,
-                                    panic_msg
-                                )),
-                            },
-                        );
-                        break;
-                    }
-                }
-
-                // Emit per-run progress for the frontend (~10 ms+ granularity)
-                let _ = self.app_handle.emit(
-                    "benchmark-progress",
-                    BenchmarkProgressEvent {
-                        event_type: "run_completed".to_string(),
-                        quant: Some(file.quant.clone()),
-                        model_id: Some(variant_id.clone()),
-                        avg_time_ms: Some(elapsed_ms),
-                        error: None,
-                    },
-                );
-            }
-
-            // Drop engine to free GPU/CPU memory before the next variant.
-            drop(engine);
-            // Brief pause so the OS can release GPU memory / file handles
-            // before the next variant is loaded. This prevents memory pressure
-            // from skewing subsequent timing measurements.
-            std::thread::sleep(std::time::Duration::from_millis(200));
 
             if times_ms.is_empty() {
                 continue;
             }
 
-            let is_default = file.quant == descriptor.default_quant.as_deref().unwrap_or_default();
-            let avg_ms: f64 = times_ms.iter().sum::<f64>() / times_ms.len() as f64;
-            let speedup = real_time_factor(audio_secs, avg_ms / 1000.0);
-
-            info!(
-                "Benchmark: {} transcribed {:.2}s of audio in {:.0}ms (avg of {} runs, {:.2}x real-time)",
-                file.quant,
+            let result = Self::summarize_benchmark(
+                file,
+                &variant_id,
+                file.quant == default_quant,
+                &times_ms,
                 audio_secs,
-                avg_ms,
-                times_ms.len(),
-                speedup
             );
 
-            let result = BenchmarkResult {
-                quant: file.quant.clone(),
-                model_id: variant_id.clone(),
-                filename: file.filename.clone(),
-                size_mb: (file.size_bytes.div_ceil(1024 * 1024)) as u32,
-                avg_time_ms: avg_ms,
-                is_default,
-            };
-
-            let _ = self.app_handle.emit(
-                "benchmark-progress",
-                BenchmarkProgressEvent {
-                    event_type: "variant_completed".to_string(),
-                    quant: Some(file.quant.clone()),
-                    model_id: Some(variant_id.clone()),
-                    avg_time_ms: Some(avg_ms),
-                    error: None,
-                },
-            );
+            self.emit_benchmark_progress(BenchmarkProgressEvent {
+                event_type: "variant_completed".to_string(),
+                quant: Some(result.quant.clone()),
+                model_id: Some(result.model_id.clone()),
+                avg_time_ms: Some(result.avg_time_ms),
+                audio_secs: Some(audio_secs),
+                ..Default::default()
+            });
 
             results.push(result);
         }
 
-        // Emit benchmark completed
-        let _ = self.app_handle.emit(
-            "benchmark-progress",
-            BenchmarkProgressEvent {
-                event_type: "benchmark_completed".to_string(),
-                quant: None,
-                model_id: None,
-                avg_time_ms: None,
-                error: None,
-            },
-        );
+        if had_primary_model {
+            self.initiate_model_load();
+        }
+
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "benchmark_completed".to_string(),
+            ..Default::default()
+        });
 
         Ok(results)
     }
@@ -2473,19 +2553,27 @@ impl TranscriptionManager {
     /// Benchmark a single quantization variant.
     ///
     /// Loads the model from a clean state (unloading any primary engine first),
-    /// runs a warmup transcription (discarded), then performs three timed
-    /// transcription runs and returns the average.
+    /// runs a warmup transcription (discarded), then performs
+    /// [`BENCHMARK_TIMED_RUNS`] timed transcription runs and returns the
+    /// average. The primary model is reloaded in the background afterwards if
+    /// it was loaded when the run started.
+    ///
+    /// Like [`benchmark_quantizations`](Self::benchmark_quantizations), an abort
+    /// emits `benchmark_failed` so event-only listeners can recover.
     pub fn benchmark_single_quantization(
         &self,
         model_id: &str,
         audio: &[f32],
     ) -> Result<BenchmarkResult> {
-        // Unload any currently loaded primary model to free GPU/CPU memory.
-        let _ = self.unload_model();
+        self.benchmark_single_quantization_inner(model_id, audio)
+            .inspect_err(|e| self.emit_benchmark_failed(model_id, e))
+    }
 
-        let audio_len = audio.len();
-        let audio_secs = audio_len as f64 / 16_000.0;
-
+    fn benchmark_single_quantization_inner(
+        &self,
+        model_id: &str,
+        audio: &[f32],
+    ) -> Result<BenchmarkResult> {
         // Split model_id into repo_id + filename for catalog lookup.
         let (repo_id, filename) = model_id
             .rsplit_once('/')
@@ -2503,60 +2591,37 @@ impl TranscriptionManager {
         let model_path = self.model_manager.get_model_path(model_id)?;
 
         let settings = get_settings(&self.app_handle);
+        let audio_secs = benchmark_audio_secs(audio);
 
-        // Load the engine for this quantization variant.
-        let mut engine = self.create_engine(model_id, &model_path, &model_info)?;
+        let had_primary_model = self.is_model_loaded();
 
-        // Warmup — discarded (first run after load is slow: cache misses,
-        // lazy initialization, etc.).
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            transcribe_with_engine(&mut engine, &settings, audio, model_id, &self.model_manager)
-        }));
+        // Unload any currently loaded primary model to free GPU/CPU memory, so
+        // this variant is measured from the same clean state a full run uses.
+        let _ = self.unload_model();
 
-        // Three timed runs — skip the warmup, average these.
-        let mut times_ms: Vec<f64> = Vec::with_capacity(3);
-        for run_idx in 0..3 {
-            let start = std::time::Instant::now();
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                transcribe_with_engine(&mut engine, &settings, audio, model_id, &self.model_manager)
-            }));
-            let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "variant_started".to_string(),
+            quant: Some(file.quant.clone()),
+            model_id: Some(model_id.to_string()),
+            audio_secs: Some(audio_secs),
+            total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+            ..Default::default()
+        });
 
-            match result {
-                Ok(Ok(_)) => {
-                    times_ms.push(elapsed_ms);
-                    info!(
-                        "Benchmark [{}] run {}: {:.0}ms",
-                        file.quant,
-                        run_idx + 1,
-                        elapsed_ms
-                    );
-                }
-                Ok(Err(e)) => {
-                    error!(
-                        "Benchmark [{}] run {} transcription failed: {}",
-                        file.quant,
-                        run_idx + 1,
-                        e
-                    );
-                    break;
-                }
-                Err(p) => {
-                    let panic_msg = panic_payload_message(p.as_ref());
-                    error!(
-                        "Benchmark [{}] run {} panicked: {}",
-                        file.quant,
-                        run_idx + 1,
-                        panic_msg
-                    );
-                    break;
-                }
-            }
+        let times_ms = self.time_variant_runs(
+            model_id,
+            &file.quant,
+            &model_path,
+            &model_info,
+            &settings,
+            audio,
+        );
+
+        if had_primary_model {
+            self.initiate_model_load();
         }
 
-        // Drop the engine and pause to let GPU memory settle.
-        drop(engine);
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        let times_ms = times_ms?;
 
         if times_ms.is_empty() {
             return Err(anyhow::anyhow!(
@@ -2565,39 +2630,22 @@ impl TranscriptionManager {
             ));
         }
 
-        let is_default = file.quant == descriptor.default_quant.as_deref().unwrap_or_default();
-        let avg_ms: f64 = times_ms.iter().sum::<f64>() / times_ms.len() as f64;
-        let speedup = real_time_factor(audio_secs, avg_ms / 1000.0);
-
-        info!(
-            "Benchmark: {} transcribed {:.2}s of audio in {:.0}ms (avg of {} runs, {:.2}x real-time)",
-            file.quant,
+        let result = Self::summarize_benchmark(
+            file,
+            model_id,
+            file.quant == descriptor.default_quant.clone().unwrap_or_default(),
+            &times_ms,
             audio_secs,
-            avg_ms,
-            times_ms.len(),
-            speedup
         );
 
-        let result = BenchmarkResult {
-            quant: file.quant.clone(),
-            model_id: model_id.to_string(),
-            filename: file.filename.clone(),
-            size_mb: (file.size_bytes.div_ceil(1024 * 1024)) as u32,
-            avg_time_ms: avg_ms,
-            is_default,
-        };
-
-        // Emit a single-variant completed event for the frontend.
-        let _ = self.app_handle.emit(
-            "benchmark-progress",
-            BenchmarkProgressEvent {
-                event_type: "variant_completed".to_string(),
-                quant: Some(file.quant.clone()),
-                model_id: Some(model_id.to_string()),
-                avg_time_ms: Some(avg_ms),
-                error: None,
-            },
-        );
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "variant_completed".to_string(),
+            quant: Some(result.quant.clone()),
+            model_id: Some(result.model_id.clone()),
+            avg_time_ms: Some(result.avg_time_ms),
+            audio_secs: Some(audio_secs),
+            ..Default::default()
+        });
 
         Ok(result)
     }

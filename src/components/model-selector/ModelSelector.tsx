@@ -1,68 +1,31 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "sonner";
+import { Gauge, LoaderCircle, Zap } from "lucide-react";
 import { commands } from "@/bindings";
-import type {
-  QuantVariant,
-  BenchmarkResult,
-  NativeStreamingLatencyPreset,
-} from "@/bindings";
+import type { NativeStreamingLatencyPreset, QuantVariant } from "@/bindings";
 import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
 import { useModelStore } from "../../stores/modelStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import ModelStatusButton from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
 import DownloadProgressDisplay from "./DownloadProgressDisplay";
+import StatusBarPopover from "./StatusBarPopover";
+import QuantizationPanel from "./QuantizationPanel";
+import LatencyPanel, {
+  DEFAULT_LATENCY_PRESET,
+  latencyPresetLabelKey,
+} from "./LatencyPanel";
+import { getQuantColor } from "./quantColors";
+import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
 
-import { ModelStateEvent, BenchmarkProgressEvent } from "@/lib/types/events";
-import type { HistoryEntry } from "@/bindings";
-
-const quantColorMap: Record<string, string> = {
-  Q2_K: "bg-red-500",
-  Q3_K_S: "bg-red-500",
-  Q3_K_M: "bg-red-400",
-  Q3_K_L: "bg-red-400",
-  Q4_0: "bg-green-500",
-  Q4_K_M: "bg-green-500",
-  Q4_K_S: "bg-green-600",
-  Q5_0: "bg-blue-500",
-  Q5_K_M: "bg-blue-500",
-  Q5_K_S: "bg-blue-600",
-  Q6_K: "bg-purple-500",
-  Q8_0: "bg-yellow-500",
-  F16: "bg-orange-400",
-  F32: "bg-teal-400",
-  BF16: "bg-cyan-400",
-};
-
-function getQuantColor(quant: string): string {
-  return quantColorMap[quant] || "bg-gray-500";
-}
-
-const LATENCY_PRESET_ORDER: NativeStreamingLatencyPreset[] = [
-  "fastest",
-  "fast",
-  "balanced",
-  "accurate",
-];
-
-const LATENCY_PRESET_LABELS: Record<NativeStreamingLatencyPreset, string> = {
-  fastest: "modelSelector.latencySelector.fastest",
-  fast: "modelSelector.latencySelector.fast",
-  balanced: "modelSelector.latencySelector.balanced",
-  accurate: "modelSelector.latencySelector.accurate",
-};
-
-const LATENCY_PRESET_DESCRIPTIONS: Record<
-  NativeStreamingLatencyPreset,
-  string
-> = {
-  fastest: "modelSelector.latencySelector.descriptions.fastest",
-  fast: "modelSelector.latencySelector.descriptions.fast",
-  balanced: "modelSelector.latencySelector.descriptions.balanced",
-  accurate: "modelSelector.latencySelector.descriptions.accurate",
-};
+import { ModelStateEvent } from "@/lib/types/events";
 
 type ModelStatus =
   | "ready"
@@ -73,6 +36,9 @@ type ModelStatus =
   | "error"
   | "unloaded"
   | "none";
+
+/** Which status-bar panel is expanded. Only ever one at a time. */
+type StatusPanel = "model" | "quant" | "latency";
 
 interface ModelSelectorProps {
   onError?: (error: string) => void;
@@ -92,34 +58,29 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
 
   const [modelStatus, setModelStatus] = useState<ModelStatus>("unloaded");
   const [modelError, setModelError] = useState<string | null>(null);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [openPanel, setOpenPanel] = useState<StatusPanel | null>(null);
   // Track pending model switch for optimistic display
   const [pendingModelId, setPendingModelId] = useState<string | null>(null);
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
 
   const [quantVariants, setQuantVariants] = useState<QuantVariant[] | null>(
     null,
   );
-  const [quantDownloading, setQuantDownloading] = useState<Set<string>>(
+  const [pendingDownloads, setPendingDownloads] = useState<Set<string>>(
     new Set(),
   );
 
-  const [isBenchmarking, setIsBenchmarking] = useState(false);
-  const [singleBenchmarkQuant, setSingleBenchmarkQuant] = useState<
-    string | null
-  >(null);
-  const [benchmarkResults, setBenchmarkResults] = useState<
-    Record<string, number>
-  >({});
-  const [latestRecording, setLatestRecording] = useState<HistoryEntry | null>(
-    null,
-  );
+  const benchmark = useQuantBenchmark();
 
   const settings = useSettingsStore((s) => s.settings);
   const setLatencyPreset = useSettingsStore((s) => s.setLatencyPreset);
 
   const displayModelId = pendingModelId || currentModel;
+
+  const togglePanel = useCallback((panel: StatusPanel) => {
+    setOpenPanel((current) => (current === panel ? null : panel));
+  }, []);
 
   // Check model status when currentModel changes
   useEffect(() => {
@@ -177,13 +138,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
       "model-download-complete",
       (event) => {
         const modelId = event.payload;
+        setPendingDownloads((prev) => {
+          if (!prev.has(modelId)) return prev;
+          const next = new Set(prev);
+          next.delete(modelId);
+          return next;
+        });
         setTimeout(async () => {
           try {
             const isRecording = await commands.isRecording();
             if (!isRecording) {
               setPendingModelId(modelId);
               setModelError(null);
-              setShowModelDropdown(false);
               const success = await selectModel(modelId);
               if (!success) {
                 setPendingModelId(null);
@@ -196,24 +162,33 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
       },
     );
 
-    // Click outside to close dropdown
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowModelDropdown(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
       modelStateUnlisten.then((fn) => fn());
       downloadCompleteUnlisten.then((fn) => fn());
     };
   }, [selectModel]);
+
+  // Dismissal for every status-bar panel lives here, so the pills behave as one
+  // mutually-exclusive group instead of three independent dropdowns.
+  useEffect(() => {
+    if (!openPanel) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (barRef.current && !barRef.current.contains(event.target as Node)) {
+        setOpenPanel(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenPanel(null);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openPanel]);
 
   // Fetch quant variants for the current model when it changes
   useEffect(() => {
@@ -233,150 +208,44 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     };
   }, [displayModelId]);
 
-  // Listen for benchmark-progress events from the backend
-  useEffect(() => {
-    const unlisten = listen<BenchmarkProgressEvent>(
-      "benchmark-progress",
-      (event) => {
-        const { event_type, quant, avg_time_ms, error } = event.payload;
-        if (event_type === "benchmark_started") {
-          setIsBenchmarking(true);
-          setBenchmarkResults({});
-        } else if (event_type === "variant_completed") {
-          if (quant && avg_time_ms != null) {
-            setBenchmarkResults((prev) => ({
-              ...prev,
-              [quant]: avg_time_ms,
-            }));
-          }
-        } else if (
-          event_type === "benchmark_completed" ||
-          event_type === "benchmark_failed"
-        ) {
-          setIsBenchmarking(false);
-          if (error) {
-            toast.error(error);
-          }
-        }
-      },
-    );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
-
-  // Fetch the latest recording info so we can show it as the benchmark reference
-  useEffect(() => {
-    let cancelled = false;
-    commands.getLatestRecordingInfo().then((result) => {
-      if (!cancelled && result.status === "ok") {
-        setLatestRecording(result.data ?? null);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleBenchmarkClick = async () => {
-    if (!displayModelId) return;
-
-    // Verify we have at least one downloaded quant to benchmark
-    const downloadedCount = quantVariants
-      ? quantVariants.filter((v) =>
-          models.some((m) => m.id === v.model_id && m.is_downloaded),
-        ).length
-      : 0;
-
-    if (downloadedCount === 0) {
-      toast.error(t("settings.benchmark.noDownloadedQuants"));
-      return;
-    }
-
-    if (!latestRecording) {
-      toast.error(t("settings.benchmark.noRecording"));
-      return;
-    }
-
-    setIsBenchmarking(true);
-    setBenchmarkResults({});
-
-    const result = await commands.benchmarkModelQuantizations(displayModelId);
-    if (result.status === "ok") {
-      const newResults: Record<string, number> = {};
-      result.data.forEach((r) => {
-        newResults[r.quant] = r.avg_time_ms ?? 0;
-      });
-      setBenchmarkResults(newResults);
-      setIsBenchmarking(false);
-    } else {
-      setIsBenchmarking(false);
-      toast.error(result.error);
-    }
-  };
-
-  const handleSingleQuantBenchmark = async (variant: QuantVariant) => {
-    const isDownloaded = models.some(
-      (m) => m.id === variant.model_id && m.is_downloaded,
-    );
-    if (!isDownloaded || isBenchmarking || singleBenchmarkQuant) return;
-
-    if (!latestRecording) {
-      toast.error(t("settings.benchmark.noRecording"));
-      return;
-    }
-
-    setSingleBenchmarkQuant(variant.quant);
-    const result = await commands.benchmarkSingleQuantization(variant.model_id);
-    setSingleBenchmarkQuant(null);
-    if (result.status === "ok") {
-      setBenchmarkResults((prev) => ({
-        ...prev,
-        [variant.quant]: result.data.avg_time_ms ?? 0,
-      }));
-    } else {
-      toast.error(result.error);
-    }
-  };
-
   const currentModelInfo = models.find((m) => m.id === displayModelId);
   const latencyKind = currentModelInfo?.native_streaming_latency_kind;
-  const currentPreset =
+  const currentPreset: NativeStreamingLatencyPreset =
     settings?.native_streaming_latency_presets?.[displayModelId ?? ""] ??
-    ("accurate" as NativeStreamingLatencyPreset);
+    DEFAULT_LATENCY_PRESET;
 
-  const handleQuantClick = (variant: QuantVariant) => {
-    if (variant.model_id === displayModelId) return;
-    const downloaded = models.some(
-      (m) => m.id === variant.model_id && m.is_downloaded,
-    );
-    if (downloaded) {
-      void handleModelSelect(variant.model_id);
-    } else {
-      setQuantDownloading((prev) => new Set(prev).add(variant.model_id));
-      void commands.downloadModelQuant(variant.model_id).then((result) => {
-        setQuantDownloading((prev) => {
-          const next = new Set(prev);
-          next.delete(variant.model_id);
-          return next;
-        });
-        if (result.status === "error") {
-          console.error("Failed to download quant:", result.error);
-        }
-      });
+  const downloadPercentages = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const progress of Object.values(downloadProgress)) {
+      map[progress.model_id] = progress.percentage;
     }
-  };
+    return map;
+  }, [downloadProgress]);
 
-  const handleLatencyPresetClick = (preset: NativeStreamingLatencyPreset) => {
-    if (displayModelId) {
-      void setLatencyPreset(displayModelId, preset);
-    }
-  };
+  const currentVariant = quantVariants?.find(
+    (variant) => variant.model_id === displayModelId,
+  );
+
+  const downloadedVariantCount = useMemo(
+    () =>
+      quantVariants?.filter((variant) =>
+        models.some((m) => m.id === variant.model_id && m.is_downloaded),
+      ).length ?? 0,
+    [quantVariants, models],
+  );
+
+  const measuredVariantCount = useMemo(
+    () =>
+      quantVariants?.filter(
+        (variant) => benchmark.results[variant.model_id] !== undefined,
+      ).length ?? 0,
+    [quantVariants, benchmark.results],
+  );
 
   const handleModelSelect = async (modelId: string) => {
     setPendingModelId(modelId);
     setModelError(null);
-    setShowModelDropdown(false);
+    setOpenPanel(null);
     const success = await selectModel(modelId);
     if (!success) {
       setPendingModelId(null);
@@ -384,6 +253,43 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
       setModelError("Failed to switch model");
       onError?.("Failed to switch model");
     }
+  };
+
+  const handleQuantSelect = (variant: QuantVariant) => {
+    if (variant.model_id === displayModelId) return;
+    // Keep the panel open: the check mark moving to the new row is the
+    // confirmation, and comparing quants usually means several switches.
+    setPendingModelId(variant.model_id);
+    setModelError(null);
+    void selectModel(variant.model_id).then((success) => {
+      if (!success) {
+        setPendingModelId(null);
+        setModelStatus("error");
+        setModelError("Failed to switch model");
+        onError?.("Failed to switch model");
+      }
+    });
+  };
+
+  const handleQuantDownload = (variant: QuantVariant) => {
+    setPendingDownloads((prev) => new Set(prev).add(variant.model_id));
+    void commands.downloadModelQuant(variant.model_id).then((result) => {
+      if (result.status === "error") {
+        console.error("Failed to download quant:", result.error);
+        setPendingDownloads((prev) => {
+          const next = new Set(prev);
+          next.delete(variant.model_id);
+          return next;
+        });
+      }
+    });
+  };
+
+  const handleLatencyPresetSelect = (preset: NativeStreamingLatencyPreset) => {
+    if (displayModelId) {
+      void setLatencyPreset(displayModelId, preset);
+    }
+    setOpenPanel(null);
   };
 
   const getModelDisplayText = (): string => {
@@ -433,8 +339,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
       }
     }
 
-    const currentModelInfo = models.find((m) => m.id === displayModelId);
-
     switch (modelStatus) {
       case "ready":
         return currentModelInfo
@@ -475,19 +379,33 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     return modelStatus;
   };
 
+  const referenceRecording = benchmark.referenceRecording;
+  const canBenchmark =
+    !!displayModelId && !!referenceRecording && downloadedVariantCount > 0;
+
+  const quantSubtitle = referenceRecording
+    ? t("modelSelector.benchmark.reference", {
+        when: new Date(
+          (referenceRecording.timestamp ?? 0) * 1000,
+        ).toLocaleString(undefined, {
+          dateStyle: "short",
+          timeStyle: "short",
+        }),
+      })
+    : t("modelSelector.benchmark.noRecording");
+
   return (
-    <>
+    <div ref={barRef} className="flex min-w-0 flex-wrap items-center gap-2">
       {/* Model Status and Switcher */}
-      <div className="relative" ref={dropdownRef}>
+      <div className="relative shrink-0">
         <ModelStatusButton
           status={getDisplayStatus()}
           displayText={getModelDisplayText()}
-          isDropdownOpen={showModelDropdown}
-          onClick={() => setShowModelDropdown(!showModelDropdown)}
+          isDropdownOpen={openPanel === "model"}
+          onClick={() => togglePanel("model")}
         />
 
-        {/* Model Dropdown */}
-        {showModelDropdown && (
+        {openPanel === "model" && (
           <ModelDropdown
             models={models}
             currentModelId={displayModelId}
@@ -496,152 +414,104 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         )}
       </div>
 
-      {/* Quantization Picker — shows variants for the current model */}
+      {/* Quantization picker — the variants of the current model, with their
+          benchmark timings attached to the rows they describe. */}
       {quantVariants && quantVariants.length > 0 && (
-        <div className="mt-1">
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-xs font-medium text-text/60">
-              {t("modelSelector.quantPicker.title")}
-            </div>
+        <StatusBarPopover
+          open={openPanel === "quant"}
+          onToggle={() => togglePanel("quant")}
+          label={t("modelSelector.quantPicker.pillLabel", {
+            quant:
+              currentVariant?.quant ?? t("modelSelector.quantPicker.title"),
+          })}
+          title={t("modelSelector.quantPicker.title")}
+          subtitle={quantSubtitle}
+          trigger={
+            <>
+              {benchmark.isBusy ? (
+                <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-text/50" />
+              ) : (
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(currentVariant?.quant ?? "")}`}
+                />
+              )}
+              <span className="max-w-24 truncate">
+                {currentVariant?.quant ?? t("modelSelector.quantPicker.title")}
+              </span>
+            </>
+          }
+          headerAction={
             <button
               type="button"
-              onClick={handleBenchmarkClick}
-              disabled={isBenchmarking || !displayModelId}
-              className="text-xs px-2 py-0.5 rounded bg-mid-gray/10 hover:bg-mid-gray/20 text-text/60 hover:text-text/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={t("settings.benchmark.description")}
+              onClick={() =>
+                displayModelId && void benchmark.runAll(displayModelId)
+              }
+              disabled={!canBenchmark || benchmark.isBusy}
+              title={t("modelSelector.benchmark.method", {
+                runs: DEFAULT_TIMED_RUNS,
+              })}
+              className="flex shrink-0 items-center gap-1 rounded-md border border-mid-gray/25 bg-mid-gray/10 px-2 py-1 text-[11px] font-medium text-text/75 transition-colors hover:bg-mid-gray/20 hover:text-text/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {isBenchmarking
-                ? t("settings.benchmark.buttonRunning")
-                : t("settings.benchmark.button")}
+              {benchmark.isRunningAll ? (
+                <>
+                  <LoaderCircle className="h-3 w-3 animate-spin" />
+                  <span className="tabular-nums">
+                    {t("modelSelector.benchmark.runProgress", {
+                      done: measuredVariantCount,
+                      total: downloadedVariantCount,
+                    })}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3 w-3" />
+                  <span>{t("modelSelector.benchmark.runAll")}</span>
+                </>
+              )}
             </button>
+          }
+        >
+          <QuantizationPanel
+            variants={quantVariants}
+            models={models}
+            currentModelId={displayModelId}
+            downloadPercentages={downloadPercentages}
+            pendingDownloads={pendingDownloads}
+            benchmark={benchmark}
+            onSelect={handleQuantSelect}
+            onDownload={handleQuantDownload}
+          />
+          <div className="border-t border-mid-gray/20 px-3 py-1.5 text-[10px] leading-snug text-text/40">
+            {t("modelSelector.benchmark.method", { runs: DEFAULT_TIMED_RUNS })}
           </div>
-          <div className="flex flex-wrap gap-1">
-            {quantVariants.map((variant) => {
-              const isCurrent = variant.model_id === displayModelId;
-              const isDownloaded = models.some(
-                (m) => m.id === variant.model_id && m.is_downloaded,
-              );
-              const isDownloading = quantDownloading.has(variant.model_id);
-              const isSelected = isCurrent;
-              const benchTime = benchmarkResults[variant.quant];
-              const isBenchmarkingThis =
-                (isBenchmarking && benchTime === undefined) ||
-                singleBenchmarkQuant === variant.quant;
-              const chipBase =
-                "inline-flex items-center gap-1 px-2 py-1 rounded text-xs";
-              const chipClass = isSelected
-                ? "bg-logo-primary/10 border border-logo-primary/30 text-logo-primary font-medium"
-                : isDownloading
-                  ? "bg-mid-gray/5 border border-mid-gray/20 text-text/50 cursor-wait"
-                  : isDownloaded
-                    ? "bg-mid-gray/5 border border-mid-gray/20 text-text/80 hover:bg-mid-gray/10 cursor-pointer"
-                    : "bg-mid-gray/5 border border-mid-gray/20 text-text/80 hover:bg-mid-gray/10 cursor-pointer";
-              return (
-                <button
-                  key={variant.model_id}
-                  onClick={() => handleQuantClick(variant)}
-                  disabled={isSelected || isDownloading}
-                  className={chipBase + " " + chipClass}
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${getQuantColor(variant.quant)}`}
-                  />
-                  <span>{variant.quant}</span>
-                  {variant.is_default && (
-                    <span className="text-text/40">·</span>
-                  )}
-                  <span className="text-text/40">{variant.size_mb} MB</span>
-                  {/* Benchmark result shown next to each quant */}
-                  {isBenchmarkingThis ? (
-                    <span className="text-text/40">
-                      <svg
-                        className="w-3 h-3 animate-spin inline-block"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path d="M10 3a7 7 0 0 1 7 7h-2a5 5 0 1 0-5 5v2a7 7 0 1 0 0-14z" />
-                      </svg>
-                    </span>
-                  ) : benchTime !== undefined ? (
-                    <span className="text-text/60 font-mono">
-                      {Math.round(benchTime)}ms
-                    </span>
-                  ) : null}
-                  {isCurrent && (
-                    <svg
-                      className="w-3 h-3 text-logo-primary"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L7 11.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  )}
-                  {!isCurrent && !isDownloaded && !isDownloading && (
-                    <span>↓</span>
-                  )}
-                  {isDownloaded &&
-                    !isCurrent &&
-                    !isBenchmarking &&
-                    !singleBenchmarkQuant && (
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleSingleQuantBenchmark(variant);
-                        }}
-                        className="ml-1 flex-shrink-0 cursor-pointer text-text/40 hover:text-text/80"
-                        title={t("settings.benchmark.singleButton")}
-                      >
-                        <svg
-                          className="w-3 h-3"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                        >
-                          <path d="M8 5v10l8-5z" />
-                        </svg>
-                      </span>
-                    )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        </StatusBarPopover>
       )}
 
-      {/* Native Streaming Latency Selector — shown for models that support
-          configurable streaming latency (e.g. Nemotron, Parakeet Unified) */}
+      {/* Native streaming latency — only for models that expose a configurable
+          streaming latency extension (e.g. Nemotron, Parakeet Unified). */}
       {latencyKind && (
-        <div className="mt-2">
-          <div className="text-xs font-medium text-text/60 mb-1">
-            {t("modelSelector.latencySelector.title")}
-          </div>
-          <div className="flex gap-1 text-xs">
-            {LATENCY_PRESET_ORDER.map((preset) => {
-              const isSelected = currentPreset === preset;
-              return (
-                <button
-                  key={preset}
-                  onClick={() => handleLatencyPresetClick(preset)}
-                  className={
-                    isSelected
-                      ? "flex-1 px-2 py-1 bg-logo-primary/10 border border-logo-primary/30 text-logo-primary font-medium rounded"
-                      : "flex-1 px-2 py-1 bg-mid-gray/5 border border-mid-gray/20 text-text/80 hover:bg-mid-gray/10 rounded"
-                  }
-                >
-                  {t(LATENCY_PRESET_LABELS[preset])}
-                </button>
-              );
-            })}
-          </div>
-          {currentPreset !== "accurate" && (
-            <div className="text-xs text-text/40 mt-1">
-              {t(LATENCY_PRESET_DESCRIPTIONS[currentPreset])}
-            </div>
-          )}
-        </div>
+        <StatusBarPopover
+          open={openPanel === "latency"}
+          onToggle={() => togglePanel("latency")}
+          label={t("modelSelector.latencySelector.pillLabel", {
+            preset: t(latencyPresetLabelKey(currentPreset)),
+          })}
+          title={t("modelSelector.latencySelector.title")}
+          widthClass="w-[min(17rem,calc(100vw-2rem))]"
+          trigger={
+            <>
+              <Gauge className="h-3 w-3 shrink-0 text-text/50" />
+              <span className="truncate">
+                {t(latencyPresetLabelKey(currentPreset))}
+              </span>
+            </>
+          }
+        >
+          <LatencyPanel
+            selected={currentPreset}
+            onSelect={handleLatencyPresetSelect}
+          />
+        </StatusBarPopover>
       )}
 
       {/* Download Progress Bar for Models */}
@@ -649,7 +519,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         downloadProgress={downloadProgress}
         downloadStats={downloadStats}
       />
-    </>
+    </div>
   );
 };
 

@@ -530,6 +530,12 @@ export type BenchmarkResult = {
 	filename: string,
 	size_mb: number,
 	avg_time_ms: number | null,
+	/**
+	 *  Duration of the reference recording, so the frontend can render a
+	 *  real-time factor (`audio_secs / (avg_time_ms / 1000)`) alongside the
+	 *  raw timing.
+	 */
+	audio_secs: number | null,
 	is_default: boolean,
 };
 
