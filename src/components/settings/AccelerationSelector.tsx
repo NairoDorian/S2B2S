@@ -117,9 +117,9 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
   )
     ? currentTranscribe
     : currentAccelerator === "gpu" &&
-      transcribeOptions.some((option) => option.value === "gpu")
-    ? "gpu"
-    : (transcribeOptions[0]?.value ?? null);
+        transcribeOptions.some((option) => option.value === "gpu")
+      ? "gpu"
+      : (transcribeOptions[0]?.value ?? null);
   const currentOrt = getSetting("ort_accelerator") ?? "auto";
 
   const handleTranscribeChange = async (value: string) => {

@@ -306,7 +306,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             <div className="flex items-center gap-2">
               {downloadSpeed !== undefined && downloadSpeed > 0 && (
                 <span className="tabular-nums text-text/50">
-                  {t("modelSelector.downloadSpeed", {
+                  {t("common.downloadSpeed", {
                     speed: downloadSpeed.toFixed(1),
                   })}
                 </span>

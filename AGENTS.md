@@ -88,7 +88,12 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `components/` - React UI components:
   - `settings/` - Settings UI
     - `multi-stt/MultiSttSettings.tsx` - Multi-STT configuration (fork feature)
-  - `model-selector/` - Model management interface
+  - `model-selector/` - Status-bar model controls (footer). Three mutually
+    exclusive popovers: model switcher, quantization picker
+    (`QuantizationPanel.tsx`, which also hosts the quantization benchmark via
+    `useQuantBenchmark.ts`), and native streaming latency (`LatencyPanel.tsx`).
+    There is deliberately no benchmark settings page — the benchmark lives
+    beside the quant list it compares.
   - `onboarding/` - First-run experience
   - `overlay/` - Recording overlay UI
   - `update-checker/` - App update notifications
@@ -167,6 +172,27 @@ The app enforces single instance behavior — launching when already running bri
 ## Internationalization (i18n)
 
 All user-facing strings must use i18next translations. ESLint enforces this (no hardcoded strings in JSX).
+
+> **Linter note:** this fork uses **oxlint** (`.oxlintrc.json`), not ESLint.
+> typescript-eslint hard-throws on TypeScript >= 7, which this fork pins, so
+> ESLint could not parse the codebase at all. oxlint ships its own parser and is
+> immune to that. `eslint-plugin-i18next` is still a dependency — oxlint loads
+> it through `jsPlugins` and enforces `i18next/no-literal-string` exactly as
+> before, plus a set of built-in correctness rules ESLint was never configured
+> for.
+>
+> Two caveats when adding suppressions:
+>
+> - `jsPlugins` is an alpha oxlint API. If it ever stops loading the plugin,
+>   oxlint fails the config outright (exit 1) rather than silently skipping the
+>   rule, so a regression surfaces in CI instead of leaking hardcoded strings.
+> - `src/` carries **no lint suppressions at all**, and it should stay that way.
+>   `// eslint-disable-next-line i18next/no-literal-string` is unreliable here
+>   anyway — oxlint honours it for JSX text on a single line but not when the
+>   flagged element spans multiple lines. For literal data (file paths, version
+>   strings) use a JSX expression container instead: `{"%APPDATA%/handy"}` or
+>   ``{`v${version}`}``. It needs no suppression, works in every linter, and
+>   reads as "data, not prose". See `settings/debug/DebugPaths.tsx`.
 
 **Adding new text:**
 

@@ -80,6 +80,33 @@ const DEFAULT_AUDIO_DEVICE: AudioDevice = {
   is_default: true,
 };
 
+/**
+ * Rewrite one binding's `current_binding`, leaving the rest of the settings
+ * untouched. Returns `null` when there is nothing to update.
+ *
+ * A missing binding is skipped rather than created: spreading an absent entry
+ * would store a `ShortcutBinding` carrying only `current_binding`, so the
+ * shortcut UI would then render `undefined` for its name and description.
+ * `bindings` is optional on `AppSettings` (the Rust side fills defaults for
+ * missing keys), so this really can be absent.
+ */
+const withBindingValue = (
+  settings: Settings | null,
+  id: string,
+  currentBinding: string,
+): Settings | null => {
+  const existing = settings?.bindings?.[id];
+  if (!settings || !existing) return null;
+
+  return {
+    ...settings,
+    bindings: {
+      ...settings.bindings,
+      [id]: { ...existing, current_binding: currentBinding },
+    },
+  };
+};
+
 const settingUpdaters: {
   [K in keyof Settings]?: (value: Settings[K]) => Promise<unknown>;
 } = {
@@ -433,20 +460,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       try {
         // Optimistic update
-        set((state) => ({
-          settings: state.settings
-            ? {
-                ...state.settings,
-                bindings: {
-                  ...state.settings.bindings,
-                  [id]: {
-                    ...state.settings.bindings?.[id]!,
-                    current_binding: binding,
-                  },
-                },
-              }
-            : null,
-        }));
+        set((state) => {
+          const settings = withBindingValue(state.settings, id, binding);
+          return settings ? { settings } : {};
+        });
 
         const result = await commands.changeBinding(id, binding);
 
@@ -463,21 +480,15 @@ export const useSettingsStore = create<SettingsStore>()(
         console.error(`Failed to update binding ${id}:`, error);
 
         // Rollback on error
-        if (originalBinding && get().settings) {
-          set((state) => ({
-            settings: state.settings
-              ? {
-                  ...state.settings,
-                  bindings: {
-                    ...state.settings.bindings,
-                    [id]: {
-                      ...state.settings.bindings?.[id]!,
-                      current_binding: originalBinding,
-                    },
-                  },
-                }
-              : null,
-          }));
+        if (originalBinding) {
+          set((state) => {
+            const settings = withBindingValue(
+              state.settings,
+              id,
+              originalBinding,
+            );
+            return settings ? { settings } : {};
+          });
         }
 
         // Re-throw to let the caller know it failed

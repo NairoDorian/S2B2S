@@ -103,7 +103,7 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
 export const MultiSttSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const { models, currentModel, loadModels } = useModelStore();
+  const { models, currentModel } = useModelStore();
 
   const multiSttEnabled = getSetting("multi_stt_enabled") ?? false;
   const multiSttModel2 = getSetting("multi_stt_model_2") ?? null;

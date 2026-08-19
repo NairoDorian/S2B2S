@@ -18,7 +18,9 @@ export const AppendTrailingNewline: React.FC<AppendTrailingNewlineProps> =
     return (
       <ToggleSwitch
         checked={enabled}
-        onChange={(enabled) => updateSetting("append_trailing_newline", enabled)}
+        onChange={(enabled) =>
+          updateSetting("append_trailing_newline", enabled)
+        }
         isUpdating={isUpdating("append_trailing_newline")}
         label={t("settings.debug.appendTrailingNewline.label")}
         description={t("settings.debug.appendTrailingNewline.description")}

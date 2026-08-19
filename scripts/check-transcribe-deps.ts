@@ -37,7 +37,9 @@ let lockContent: string;
 try {
   lockContent = readFileSync(cargoLockPath, "utf-8");
 } catch {
-  console.warn("[check-transcribe-deps] Could not read Cargo.lock — skipping check.");
+  console.warn(
+    "[check-transcribe-deps] Could not read Cargo.lock — skipping check.",
+  );
   process.exit(0);
 }
 
@@ -75,7 +77,9 @@ const remoteOutput = lsResult.stdout.toString().trim();
 // Expected format: <40-hex-sha>\trefs/heads/main
 const remoteCommit = remoteOutput.split("\t")[0]?.trim();
 if (!remoteCommit) {
-  console.warn("[check-transcribe-deps] Could not parse remote ref — skipping.");
+  console.warn(
+    "[check-transcribe-deps] Could not parse remote ref — skipping.",
+  );
   process.exit(0);
 }
 
