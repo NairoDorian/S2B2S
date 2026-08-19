@@ -586,6 +586,10 @@
         "label": "Append Trailing Space",
         "description": "Add a space after pasted transcription"
       },
+      "appendTrailingNewline": {
+        "label": "Append Trailing New Line",
+        "description": "Add a newline after pasted transcription"
+      },
       "keyboardImplementation": {
         "title": "Keyboard Implementation",
         "description": "Choose the keyboard shortcut backend.",

@@ -734,6 +734,13 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
         text
     };
 
+    // Append trailing newline if setting is enabled
+    let text = if settings.append_trailing_newline {
+        format!("{}\n", text)
+    } else {
+        text
+    };
+
     info!(
         "Using paste method: {:?}, delay before: {}ms, delay after: {}ms",
         paste_method, paste_delay_ms, paste_delay_after_ms

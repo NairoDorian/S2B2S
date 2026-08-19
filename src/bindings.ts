@@ -65,6 +65,7 @@ export const commands = {
 	resumeAllBindings: () => typedError<null, string>(__TAURI_INVOKE("resume_all_bindings")),
 	changeMuteWhileRecordingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mute_while_recording_setting", { enabled })),
 	changeAppendTrailingSpaceSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_append_trailing_space_setting", { enabled })),
+	changeAppendTrailingNewlineSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_append_trailing_newline_setting", { enabled })),
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
@@ -327,6 +328,7 @@ export type AppSettings_Deserialize = {
 	post_process_selected_prompt_id?: string | null,
 	mute_while_recording?: boolean,
 	append_trailing_space?: boolean,
+	append_trailing_newline?: boolean,
 	app_language?: string,
 	theme?: Theme,
 	experimental_enabled?: boolean,
@@ -348,9 +350,9 @@ export type AppSettings_Deserialize = {
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	ort_accelerator?: OrtAcceleratorSetting,
 	/**
-	 * Stable transcribe.cpp device selector. This is derived from the backend's
-	 * `device_id` when available (or its name for backends such as Metal),
-	 * never from the process-local device registry index.
+	 *  Stable transcribe.cpp device selector. This is derived from the backend's
+	 *  `device_id` when available (or its name for backends such as Metal),
+	 *  never from the process-local device registry index.
 	 */
 	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
@@ -448,6 +450,7 @@ export type AppSettings_Serialize = {
 	post_process_selected_prompt_id: string | null,
 	mute_while_recording: boolean,
 	append_trailing_space: boolean,
+	append_trailing_newline: boolean,
 	app_language: string,
 	theme: Theme,
 	experimental_enabled: boolean,
@@ -469,9 +472,9 @@ export type AppSettings_Serialize = {
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	ort_accelerator: OrtAcceleratorSetting,
 	/**
-	 * Stable transcribe.cpp device selector. This is derived from the backend's
-	 * `device_id` when available (or its name for backends such as Metal),
-	 * never from the process-local device registry index.
+	 *  Stable transcribe.cpp device selector. This is derived from the backend's
+	 *  `device_id` when available (or its name for backends such as Metal),
+	 *  never from the process-local device registry index.
 	 */
 	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,

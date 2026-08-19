@@ -461,6 +461,8 @@ pub struct AppSettings {
     pub mute_while_recording: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
+    #[serde(default)]
+    pub append_trailing_newline: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
     #[serde(default = "default_theme")]
@@ -501,6 +503,7 @@ pub struct AppSettings {
         default = "default_transcribe_gpu_device",
         deserialize_with = "deserialize_transcribe_gpu_device"
     )]
+    #[specta(type = Option<String>)]
     pub transcribe_gpu_device: Option<String>,
     #[serde(default)]
     pub extra_recording_buffer_ms: u32,
@@ -1015,6 +1018,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_selected_prompt_id: None,
         mute_while_recording: false,
         append_trailing_space: false,
+        append_trailing_newline: false,
         app_language: default_app_language(),
         theme: default_theme(),
         experimental_enabled: false,
