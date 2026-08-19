@@ -84,7 +84,7 @@ export const commands = {
 	changeShowTrayIconSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_tray_icon_setting", { enabled })),
 	changeTranscribeAcceleratorSetting: (accelerator: TranscribeAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_accelerator_setting", { accelerator })),
 	changeOrtAcceleratorSetting: (accelerator: OrtAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_ort_accelerator_setting", { accelerator })),
-	changeTranscribeGpuDevice: (device: number) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_gpu_device", { device })),
+	changeTranscribeGpuDevice: (device: string | null) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_gpu_device", { device })),
 	/**
 	 *  Return which accelerators and GPU devices are available for this build.
 	 * 
@@ -347,7 +347,12 @@ export type AppSettings_Deserialize = {
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	ort_accelerator?: OrtAcceleratorSetting,
-	transcribe_gpu_device?: number,
+	/**
+	 * Stable transcribe.cpp device selector. This is derived from the backend's
+	 * `device_id` when available (or its name for backends such as Metal),
+	 * never from the process-local device registry index.
+	 */
+	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
 	vad_enabled?: boolean,
 	/**
@@ -463,7 +468,12 @@ export type AppSettings_Serialize = {
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	ort_accelerator: OrtAcceleratorSetting,
-	transcribe_gpu_device: number,
+	/**
+	 * Stable transcribe.cpp device selector. This is derived from the backend's
+	 * `device_id` when available (or its name for backends such as Metal),
+	 * never from the process-local device registry index.
+	 */
+	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,
 	vad_enabled: boolean,
 	/**
@@ -540,7 +550,7 @@ export type EngineType =
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere";
 
 export type GpuDeviceOption = {
-	id: number,
+	id: string,
 	name: string,
 	total_vram_mb: number,
 };
