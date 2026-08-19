@@ -94,7 +94,7 @@ export const commands = {
 	changeTranscribeAcceleratorSetting: (accelerator: TranscribeAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_accelerator_setting", { accelerator })),
 	changeOrtAcceleratorSetting: (accelerator: OrtAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_ort_accelerator_setting", { accelerator })),
 	changeParakeetStreamingSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_parakeet_streaming_setting", { enabled })),
-	changeWhisperGpuDevice: (device: number) => typedError<null, string>(__TAURI_INVOKE("change_whisper_gpu_device", { device })),
+	changeTranscribeGpuDevice: (device: string | null) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_gpu_device", { device })),
 	/**
 	 *  Return which accelerators and GPU devices are available for this build.
 	 * 
@@ -615,7 +615,7 @@ export type AppSettings_Deserialize = {
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	ort_accelerator?: OrtAcceleratorSetting,
-	transcribe_gpu_device?: number,
+	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
 	native_streaming_live_output_models?: string[],
 	native_streaming_show_interim_longer?: boolean,
@@ -802,7 +802,7 @@ export type AppSettings_Serialize = {
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	ort_accelerator: OrtAcceleratorSetting,
-	transcribe_gpu_device: number,
+	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,
 	native_streaming_live_output_models: string[],
 	native_streaming_show_interim_longer: boolean,
@@ -1175,7 +1175,7 @@ export type Gemma4QuantOption = {
 };
 
 export type GpuDeviceOption = {
-	id: number,
+	id: string,
 	name: string,
 	total_vram_mb: number,
 };

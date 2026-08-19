@@ -250,7 +250,7 @@ const settingUpdaters: {
   parakeet_streaming_enabled: (value) =>
     commands.changeParakeetStreamingSetting(value as boolean),
   transcribe_gpu_device: (value) =>
-    commands.changeWhisperGpuDevice(value as number),
+    commands.changeTranscribeGpuDevice(value as string | null),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
   tts: (value) => commands.changeTtsConfig(value as TtsConfig),

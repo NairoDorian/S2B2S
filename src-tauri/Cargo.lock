@@ -7866,7 +7866,8 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp"
 version = "0.2.0"
-source = "git+https://github.com/handy-computer/transcribe.cpp?branch=main#856d7c10a1a864b900e066b7c9801edf373f5148"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cff7b2aaacac97e5f7abb3898d91ad885c87c15dc433907b8045ff5c4ca8440"
 dependencies = [
  "log",
  "thiserror 2.0.20",
@@ -7876,7 +7877,8 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp-sys"
 version = "0.2.0"
-source = "git+https://github.com/handy-computer/transcribe.cpp?branch=main#856d7c10a1a864b900e066b7c9801edf373f5148"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02f9a1f1be01b78806a3546a751aa094b8144ac3032474a1e8e783d22bd26281"
 dependencies = [
  "cmake",
  "serde_json",
@@ -9804,3 +9806,13 @@ dependencies = [
  "syn 3.0.3",
  "winnow 1.0.4",
 ]
+
+[[patch.unused]]
+name = "transcribe-cpp"
+version = "0.2.1"
+source = "git+https://github.com/handy-computer/transcribe.cpp?branch=main#ea077b87590bcfb090d7c38c03ab36cd1c7005d3"
+
+[[patch.unused]]
+name = "transcribe-cpp-sys"
+version = "0.2.1"
+source = "git+https://github.com/handy-computer/transcribe.cpp?branch=main#ea077b87590bcfb090d7c38c03ab36cd1c7005d3"
