@@ -1,0 +1,26 @@
+# Bun 1.4 configuration
+# See: https://bun.com/docs/bunfig
+#
+# Bun 1.4 rewrites Bun in Rust, adds a global virtual store for faster installs,
+# native streams, Bun.Image, Bun.markdown, Bun.cron, Bun.Terminal, and many
+# Node.js 26.x compatibility improvements.
+
+[install]
+# Opt into the global virtual store — up to 7x faster installs in Bun 1.4.
+# Packages are stored in a shared global cache and hardlinked/symlinked into
+# node_modules/.bun/ instead of being copied per-project.
+globalVirtualStore = true
+
+# Peer dependency auto-install (Bun 1.4 default for new projects).
+peer = true
+
+[env]
+# Skip automatic .env file loading — Handy is a Tauri desktop app and uses
+# Tauri's own env/secret management (tauri.conf.json, build scripts). This
+# prevents stray .env files from injecting vars into the dev server / build.
+# System environment variables (e.g. TAURI_DEV_HOST) are unaffected.
+env = false
+
+[run]
+# Bun 1.4 flag mapping for `bun run` / `bunx`.
+# (No changes needed — defaults are sane for a Tauri + Vite project.)
