@@ -22,4 +22,7 @@ linker = "isolated"
 peer = true
 
 [run]
-# No overrides needed — defaults are sane for a Tauri + Vite project.
+# When the parent process (e.g. terminal, tauri CLI) dies, recursively
+# SIGKILL all descendant Bun processes. Prevents orphaned Vite dev servers
+# from lingering after `tauri dev` crashes. Works on Linux, macOS, Windows.
+noOrphans = true
