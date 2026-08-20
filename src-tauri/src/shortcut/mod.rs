@@ -23,7 +23,7 @@ use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
     self, APPLE_INTELLIGENCE_PROVIDER_ID, AutoSubmitKey, ClipboardHandling, KeyboardImplementation,
     LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod, ShortcutBinding, SoundTheme, Theme,
-    TypingTool, get_settings,
+    TypingTool, get_settings, normalize_binding,
 };
 use crate::tray;
 
@@ -253,12 +253,26 @@ pub fn suspend_all_shortcuts(app: &AppHandle) {
 /// implementations, so this is idempotent and safe on every exit path.
 pub fn resume_all_shortcuts(app: &AppHandle) {
     let settings = get_settings(app);
+    let perf_full = normalize_binding(&settings.multi_stt_performance_mode_full_power_shortcut);
+    let perf_normal = normalize_binding(&settings.multi_stt_performance_mode_normal_shortcut);
+
     for (id, binding) in &settings.bindings {
         if id == "cancel" {
             continue;
         }
-        if id == "transcribe_with_post_process" && !settings.post_process_enabled {
+        if binding.current_binding.is_empty() {
             continue;
+        }
+        // Skip shortcuts that conflict with the Multi-STT performance-mode
+        // simulated keystrokes (ctrl+space / ctrl+alt+space).
+        if id == "transcribe"
+            || id == "multi_stt_transcribe"
+            || id == "transcribe_with_post_process"
+        {
+            let normalized = normalize_binding(&binding.current_binding);
+            if normalized == perf_full || normalized == perf_normal {
+                continue;
+            }
         }
         if let Err(e) = register_shortcut(app, binding.clone()) {
             debug!("resume_all_shortcuts: could not register '{}': {}", id, e);
@@ -442,14 +456,15 @@ fn register_all_shortcuts_for_implementation(
     let default_bindings = settings::get_default_settings().bindings;
     let mut current_settings = settings::get_settings(app);
 
+    let perf_full = settings::normalize_binding(
+        &current_settings.multi_stt_performance_mode_full_power_shortcut,
+    );
+    let perf_normal =
+        settings::normalize_binding(&current_settings.multi_stt_performance_mode_normal_shortcut);
+
     for (id, default_binding) in &default_bindings {
         // Skip cancel shortcut as it's dynamically registered
         if id == "cancel" {
-            continue;
-        }
-
-        // Skip post-processing shortcut when the feature is disabled
-        if id == "transcribe_with_post_process" && !current_settings.post_process_enabled {
             continue;
         }
 
@@ -463,6 +478,22 @@ fn register_all_shortcuts_for_implementation(
             .get(id)
             .cloned()
             .unwrap_or_else(|| default_binding.clone());
+
+        if binding.current_binding.is_empty() {
+            continue;
+        }
+
+        // Skip shortcuts that conflict with the Multi-STT performance-mode
+        // simulated keystrokes (ctrl+space / ctrl+alt+space).
+        if id == "transcribe"
+            || id == "multi_stt_transcribe"
+            || id == "transcribe_with_post_process"
+        {
+            let normalized = settings::normalize_binding(&binding.current_binding);
+            if normalized == perf_full || normalized == perf_normal {
+                continue;
+            }
+        }
 
         // Validate the shortcut for the target implementation
         if let Err(e) =
@@ -994,14 +1025,11 @@ pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result
     settings.multi_stt_enabled = enabled;
     settings::write_settings(&app, settings.clone());
 
-    // Register or unregister the multi-stt shortcut
-    if let Some(binding) = settings.bindings.get("multi_stt_transcribe").cloned() {
-        if enabled {
-            let _ = register_shortcut(&app, binding);
-        } else {
-            let _ = unregister_shortcut(&app, binding);
-        }
-    }
+    // multi_stt_transcribe is NOT registered as a global shortcut — it
+    // conflicts with the Multi-STT performance-mode simulated shortcuts
+    // (ctrl+space / ctrl+alt+space). The performance-mode actions fire it
+    // programmatically instead.
+    let _ = enabled;
 
     // Emit event for frontend
     let _ = app.emit(
@@ -1144,6 +1172,42 @@ pub fn change_multi_stt_keep_extra_models_loaded_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_multi_stt_performance_mode_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_performance_mode_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_performance_mode_full_power_shortcut(
+    app: AppHandle,
+    shortcut: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_performance_mode_full_power_shortcut = shortcut;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_performance_mode_normal_shortcut(
+    app: AppHandle,
+    shortcut: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_performance_mode_normal_shortcut = shortcut;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_mic_idle_timeout_settings(
     app: AppHandle,
     value: u32,
@@ -1165,19 +1229,10 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
     settings.post_process_enabled = enabled;
     settings::write_settings(&app, settings.clone());
 
-    // Register or unregister the post-processing shortcut
-    if let Some(binding) = settings
-        .bindings
-        .get("transcribe_with_post_process")
-        .cloned()
-    {
-        if enabled {
-            let _ = register_shortcut(&app, binding);
-        } else {
-            let _ = unregister_shortcut(&app, binding);
-        }
-    }
-
+    // transcribe_with_post_process is NOT registered/unregistered here —
+    // it is not registered as a global shortcut, matching the treatment of
+    // "transcribe" and "multi_stt_transcribe". When the user sets a custom
+    // shortcut via the UI, change_binding_setting() handles registration.
     crate::secure_input::reconcile_fallback(&app);
     Ok(())
 }

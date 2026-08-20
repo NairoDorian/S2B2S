@@ -18,10 +18,17 @@ pub fn init_shortcuts(app: &AppHandle) {
     let default_bindings = settings::get_default_settings().bindings;
     let user_settings = settings::load_or_create_app_settings(app);
 
+    let perf_full = crate::settings::normalize_binding(
+        &user_settings.multi_stt_performance_mode_full_power_shortcut,
+    );
+    let perf_normal = crate::settings::normalize_binding(
+        &user_settings.multi_stt_performance_mode_normal_shortcut,
+    );
+
     // Register all default shortcuts, applying user customizations
     for (id, default_binding) in default_bindings {
         if id == "cancel" {
-            continue; // Skip cancel shortcut, it will be registered dynamically
+            continue;
         }
         // Skip post-processing shortcut when the feature is disabled
         if id == "transcribe_with_post_process" && !user_settings.post_process_enabled {
@@ -32,6 +39,28 @@ pub fn init_shortcuts(app: &AppHandle) {
             .get(&id)
             .cloned()
             .unwrap_or(default_binding);
+
+        if binding.current_binding.is_empty() {
+            continue;
+        }
+
+        // Skip shortcuts that conflict with the Multi-STT performance-mode
+        // simulated keystrokes (ctrl+space / ctrl+alt+space). The performance
+        // mode sends these keystrokes via Enigo, which would retrigger any
+        // global shortcut matching them — creating a recursive loop.
+        if id == "transcribe"
+            || id == "multi_stt_transcribe"
+            || id == "transcribe_with_post_process"
+        {
+            let normalized = crate::settings::normalize_binding(&binding.current_binding);
+            if normalized == perf_full || normalized == perf_normal {
+                debug!(
+                    "tauri-impl: skipping '{}' with conflicting binding '{}'",
+                    id, binding.current_binding
+                );
+                continue;
+            }
+        }
 
         if let Err(e) = register_shortcut(app, binding) {
             error!("Failed to register shortcut {} during init: {}", id, e);

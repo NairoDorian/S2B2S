@@ -541,6 +541,15 @@ pub struct AppSettings {
     pub multi_stt_merge_prompt: Option<LLMPrompt>,
     #[serde(default)]
     pub multi_stt_selected_merge_prompt_id: Option<String>,
+    /// Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
+    /// to boost CPU performance before transcription starts (FULL POWER) and
+    /// restore normal power after the merge/paste completes.
+    #[serde(default)]
+    pub multi_stt_performance_mode_enabled: bool,
+    #[serde(default = "default_multi_stt_full_power_shortcut")]
+    pub multi_stt_performance_mode_full_power_shortcut: String,
+    #[serde(default = "default_multi_stt_normal_shortcut")]
+    pub multi_stt_performance_mode_normal_shortcut: String,
     // Microphone idle timeout
     #[serde(default = "default_mic_idle_timeout_value")]
     pub mic_idle_timeout_value: u32,
@@ -556,7 +565,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 5;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -568,6 +577,14 @@ fn default_multi_stt_translate() -> bool {
 
 fn default_multi_stt_keep_models() -> bool {
     true
+}
+
+fn default_multi_stt_full_power_shortcut() -> String {
+    "ctrl+space".to_string()
+}
+
+fn default_multi_stt_normal_shortcut() -> String {
+    "ctrl+alt+space".to_string()
 }
 
 fn default_push_to_talk() -> bool {
@@ -930,7 +947,7 @@ pub fn get_default_settings() -> AppSettings {
             name: "Transcribe".to_string(),
             description: "Converts your speech into text.".to_string(),
             default_binding: default_shortcut.to_string(),
-            current_binding: default_shortcut.to_string(),
+            current_binding: String::new(),
         },
     );
     #[cfg(target_os = "windows")]
@@ -972,7 +989,7 @@ pub fn get_default_settings() -> AppSettings {
                 "Transcribes with multiple STT models simultaneously and merges the results."
                     .to_string(),
             default_binding: default_multi_stt_shortcut.to_string(),
-            current_binding: default_multi_stt_shortcut.to_string(),
+            current_binding: String::new(),
         },
     );
 
@@ -1051,6 +1068,9 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_keep_extra_models_loaded: true,
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,
+        multi_stt_performance_mode_enabled: false,
+        multi_stt_performance_mode_full_power_shortcut: default_multi_stt_full_power_shortcut(),
+        multi_stt_performance_mode_normal_shortcut: default_multi_stt_normal_shortcut(),
         mic_idle_timeout_value: default_mic_idle_timeout_value(),
         mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
         mic_idle_infinite: false,
@@ -1227,7 +1247,7 @@ fn apply_settings_migrations(
         // accelerator preference for schema-1 users preserves their intent and
         // lets the backend choose a valid GPU automatically.
         settings.transcribe_gpu_device = default_transcribe_gpu_device();
-        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        settings.settings_schema_version = 2;
         updated = true;
     }
 
@@ -1249,7 +1269,103 @@ fn apply_settings_migrations(
         updated = true;
     }
 
+    // Schema 3: Clear the default global shortcuts for the regular transcription
+    // and Multi-STT triggers ("transcribe" and "multi_stt_transcribe"). These
+    // were registered globally by default and now conflict with the Multi-STT
+    // performance-mode simulated shortcuts (Ctrl+Space / Ctrl+Alt+Space).
+    // The default_binding is preserved so the user can manually restore them,
+    // but no shortcut is registered until the user explicitly sets one.
+    if stored_schema_version < 3 {
+        for binding_id in ["transcribe", "multi_stt_transcribe"] {
+            if let Some(binding) = settings.bindings.get_mut(binding_id) {
+                if !binding.current_binding.is_empty() {
+                    debug!(
+                        "Schema 3 migration: clearing default binding for '{}'",
+                        binding_id
+                    );
+                    binding.current_binding = String::new();
+                    updated = true;
+                }
+            }
+        }
+        settings.settings_schema_version = 3;
+    }
+
+    // Schema 4: Catch users who already had schema_version 3 (stamped by a
+    // build that bumped CURRENT_SETTINGS_SCHEMA_VERSION before adding the
+    // schema 3 migration body). For those users the < 3 check above was
+    // skipped, so their "transcribe" and "multi_stt_transcribe" bindings
+    // still carried the old default shortcuts and would shadow the
+    // performance-mode simulated keys. This re-applies the same clearing
+    // on top of schema 3, then stamps the version to 4.
+    if stored_schema_version < 4 {
+        for binding_id in ["transcribe", "multi_stt_transcribe"] {
+            if let Some(binding) = settings.bindings.get_mut(binding_id) {
+                if !binding.current_binding.is_empty() {
+                    debug!(
+                        "Schema 4 migration: clearing leftover binding for '{}'",
+                        binding_id
+                    );
+                    binding.current_binding = String::new();
+                    updated = true;
+                }
+            }
+        }
+        settings.settings_schema_version = 4;
+    }
+
+    // Schema 5: Clear transcribe_with_post_process.current_binding when it
+    // conflicts with the Multi-STT performance-mode simulated shortcuts
+    // (ctrl+space / ctrl+alt+space). The performance mode simulates these
+    // keystrokes, so any global shortcut matching them causes recursive
+    // triggering. We skip transcribe_with_post_process entirely in shortcut
+    // registration now, but we also clear the stored value so the UI doesn't
+    // show a misleading binding and so that future registrations (via
+    // change_binding_setting) default to a non-conflicting slot.
+    if stored_schema_version < 5 {
+        let perf_full = settings
+            .multi_stt_performance_mode_full_power_shortcut
+            .clone();
+        let perf_normal = settings.multi_stt_performance_mode_normal_shortcut.clone();
+        if let Some(binding) = settings.bindings.get_mut("transcribe_with_post_process") {
+            let normalized = normalize_binding(&binding.current_binding);
+            if normalized == normalize_binding(&perf_full)
+                || normalized == normalize_binding(&perf_normal)
+            {
+                debug!(
+                    "Schema 5 migration: clearing 'transcribe_with_post_process' binding '{}' (conflicts with performance-mode shortcut)",
+                    binding.current_binding
+                );
+                binding.current_binding = String::new();
+                updated = true;
+            }
+        }
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+    }
+
     updated
+}
+
+/// Normalize a hotkey string for comparison: lowercase, sort modifier
+/// tokens, strip `_left`/`_right` suffixes. E.g. "ctrl_left+alt_left+space"
+/// becomes "alt+ctrl+space" — same as "ctrl+alt+space".
+pub fn normalize_binding(s: &str) -> String {
+    let parts: Vec<&str> = s.split('+').map(|p| p.trim()).collect();
+    let mut normalized: Vec<String> = parts
+        .iter()
+        .map(|p| {
+            let lower = p.to_lowercase();
+            if lower.ends_with("_left") {
+                lower.trim_end_matches("_left").to_string()
+            } else if lower.ends_with("_right") {
+                lower.trim_end_matches("_right").to_string()
+            } else {
+                lower
+            }
+        })
+        .collect();
+    normalized.sort();
+    normalized.join("+")
 }
 
 pub fn write_settings(app: &AppHandle, settings: AppSettings) {
@@ -1433,6 +1549,11 @@ mod tests {
             TranscribeAcceleratorSetting::Gpu
         );
         assert_eq!(settings.transcribe_gpu_device, None);
+
+        // Schema 3 clears the default global shortcuts for "transcribe" and
+        // "multi_stt_transcribe" to avoid conflicts with the Multi-STT
+        // performance-mode simulated shortcuts.
+        assert_eq!(settings.bindings["transcribe"].current_binding, "");
     }
 
     #[test]
@@ -1677,5 +1798,135 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn schema_3_migration_clears_transcribe_and_multi_stt_bindings() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("settings_schema_version".into(), serde_json::json!(2));
+        map.insert(
+            "multi_stt_transcribe_binding".into(),
+            serde_json::json!("ctrl+alt+space"),
+        );
+        // Simulate a user who has manually set the global transcribe and
+        // multi-stt bindings — these should be cleared by the schema 3
+        // migration to avoid conflicts with performance-mode simulated
+        // shortcuts (ctrl+space / ctrl+alt+space).
+        stored["bindings"]["transcribe"]["current_binding"] = serde_json::json!("ctrl+space");
+        stored["bindings"]["multi_stt_transcribe"] = serde_json::json!({
+            "id": "multi_stt_transcribe",
+            "name": "Multi STT Transcribe",
+            "description": "Transcribes with multiple STT models.",
+            "default_binding": "ctrl+alt+space",
+            "current_binding": "ctrl+alt+space"
+        });
+
+        let mut settings: AppSettings = serde_json::from_value(stored.clone())
+            .expect("valid settings parse with extra bindings");
+
+        assert_eq!(
+            settings.bindings["transcribe"].current_binding,
+            "ctrl+space"
+        );
+        assert_eq!(
+            settings.bindings["multi_stt_transcribe"].current_binding,
+            "ctrl+alt+space"
+        );
+
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+
+        // Both bindings should have their current_binding cleared
+        assert_eq!(settings.bindings["transcribe"].current_binding, "");
+        assert_eq!(
+            settings.bindings["multi_stt_transcribe"].current_binding,
+            ""
+        );
+
+        // But default_binding must be preserved for manual restore
+        assert!(!settings.bindings["transcribe"].default_binding.is_empty());
+        assert!(
+            !settings.bindings["multi_stt_transcribe"]
+                .default_binding
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn schema_4_migration_clears_bindings_for_users_already_on_schema_3() {
+        // Users who ran a build that bumped CURRENT_SETTINGS_SCHEMA_VERSION
+        // to 3 before the schema 3 migration body existed would have
+        // settings_schema_version: 3 in their store but with the old
+        // default shortcuts still set. The schema 4 migration must catch
+        // these users and clear the bindings.
+        let mut stored = default_settings_json();
+        stored["settings_schema_version"] = serde_json::json!(3);
+        stored["bindings"]["transcribe"]["current_binding"] = serde_json::json!("ctrl+space");
+        stored["bindings"]["multi_stt_transcribe"] = serde_json::json!({
+            "id": "multi_stt_transcribe",
+            "name": "Multi STT Transcribe",
+            "description": "Transcribes with multiple STT models.",
+            "default_binding": "ctrl+alt+space",
+            "current_binding": "ctrl+alt+space"
+        });
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("valid settings parse with schema 3");
+
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+        assert_eq!(settings.bindings["transcribe"].current_binding, "");
+        assert_eq!(
+            settings.bindings["multi_stt_transcribe"].current_binding,
+            ""
+        );
+    }
+
+    #[test]
+    fn schema_5_migration_clears_post_process_binding_conflicting_with_performance_mode() {
+        // Users on schema 4 may still have transcribe_with_post_process
+        // bound to ctrl+alt+space (or ctrl_left+alt_left+space), which
+        // conflicts with the performance-mode simulated keystrokes.
+        let mut stored = default_settings_json();
+        stored["settings_schema_version"] = serde_json::json!(4);
+        stored["bindings"]["transcribe_with_post_process"]["current_binding"] =
+            serde_json::json!("ctrl_left+alt_left+space");
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("valid settings parse with schema 4");
+
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+        assert_eq!(
+            settings.bindings["transcribe_with_post_process"].current_binding,
+            ""
+        );
+    }
+
+    #[test]
+    fn schema_5_migration_preserves_non_conflicting_post_process_binding() {
+        let mut stored = default_settings_json();
+        stored["settings_schema_version"] = serde_json::json!(4);
+        stored["bindings"]["transcribe_with_post_process"]["current_binding"] =
+            serde_json::json!("ctrl+shift+space");
+
+        let mut settings: AppSettings =
+            serde_json::from_value(stored.clone()).expect("valid settings parse with schema 4");
+
+        assert!(!apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.bindings["transcribe_with_post_process"].current_binding,
+            "ctrl+shift+space"
+        );
     }
 }

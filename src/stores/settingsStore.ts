@@ -235,6 +235,12 @@ const settingUpdaters: {
     commands.changeMultiSttTranslateModel4(value as boolean),
   multi_stt_keep_extra_models_loaded: (value) =>
     commands.changeMultiSttKeepExtraModelsLoadedSetting(value as boolean),
+  multi_stt_performance_mode_enabled: (value) =>
+    commands.changeMultiSttPerformanceModeEnabledSetting(value as boolean),
+  multi_stt_performance_mode_full_power_shortcut: (value) =>
+    commands.changeMultiSttPerformanceModeFullPowerShortcut(value as string),
+  multi_stt_performance_mode_normal_shortcut: (value) =>
+    commands.changeMultiSttPerformanceModeNormalShortcut(value as string),
   multi_stt_merge_prompt: (value) =>
     commands.changeMultiSttMergePrompt(value as LLMPrompt | null),
   mic_idle_timeout_value: (value) =>

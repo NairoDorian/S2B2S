@@ -3,7 +3,7 @@ use crate::input::{self, EnigoState};
 use crate::settings::TypingTool;
 use crate::settings::{AutoSubmitKey, ClipboardHandling, PasteMethod, get_settings};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use log::info;
+use log::{info, warn};
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::sync::OnceLock;
@@ -26,6 +26,17 @@ fn with_enigo<T>(
         .lock()
         .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
     f(&mut enigo)
+}
+
+/// Best-effort simulation of a keyboard shortcut (e.g. "ctrl+space") using
+/// the managed enigo instance. Logs a warning on failure rather than
+/// propagating — performance-mode toggling must never break transcription.
+pub fn simulate_key_combination(app_handle: &AppHandle, shortcut: &str) {
+    if let Err(e) = with_enigo(app_handle, |enigo| {
+        input::simulate_shortcut(enigo, shortcut)
+    }) {
+        warn!("Failed to simulate shortcut '{}': {}", shortcut, e);
+    }
 }
 
 fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), String> {

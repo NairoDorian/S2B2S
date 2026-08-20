@@ -1263,6 +1263,21 @@ impl ShortcutAction for MultiSttAction {
                     return;
                 }
 
+                // === PERFORMANCE MODE: FULL POWER ===
+                // Signal the user's performance-mode shortcut (e.g. Ctrl+Space)
+                // before the heavy transcription workload starts, giving the OS
+                // a chance to ramp up CPU clocks ahead of the 4-way inference.
+                let perf_settings = get_settings(&ah);
+                if perf_settings.multi_stt_performance_mode_enabled {
+                    let full_power_shortcut = perf_settings
+                        .multi_stt_performance_mode_full_power_shortcut
+                        .clone();
+                    let ah_clone = ah.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::clipboard::simulate_key_combination(&ah_clone, &full_power_shortcut);
+                    });
+                }
+
                 // Save WAV concurrently. The timestamp is shared with the
                 // history entry below so the recorded file name always matches.
                 let recording_timestamp = chrono::Utc::now().timestamp();
@@ -1545,14 +1560,14 @@ impl ShortcutAction for MultiSttAction {
                 // === MERGE TRANSCRIPTIONS ===
                 let settings_for_merge = get_settings(&ah);
                 let merge_requested = has_merge_prompt(&settings_for_merge);
-                let merged = if merge_requested {
+                let (merged, llm_merge_succeeded) = if merge_requested {
                     if use_streaming_overlay {
                         tm.emit_stream_working(StreamWorkKind::Polishing);
                     } else {
                         show_processing_overlay(&ah);
                     }
 
-                    multi_stt_merge_transcriptions(
+                    match multi_stt_merge_transcriptions(
                         &settings_for_merge,
                         &output1,
                         &output2,
@@ -1560,24 +1575,35 @@ impl ShortcutAction for MultiSttAction {
                         &output4,
                     )
                     .await
-                    .unwrap_or_else(|| {
-                        // Fallback: concatenate with newlines
-                        warn!("Multi-STT: Merge prompt failed or not configured, concatenating outputs");
-                        let mut combined = output1.clone();
-                        if !output2.is_empty() {
-                            if !combined.is_empty() { combined.push('\n'); }
-                            combined.push_str(&output2);
+                    {
+                        Some(content) => (content, true),
+                        None => {
+                            // Fallback: concatenate with newlines
+                            warn!(
+                                "Multi-STT: Merge prompt failed or not configured, concatenating outputs"
+                            );
+                            let mut combined = output1.clone();
+                            if !output2.is_empty() {
+                                if !combined.is_empty() {
+                                    combined.push('\n');
+                                }
+                                combined.push_str(&output2);
+                            }
+                            if !output3.is_empty() {
+                                if !combined.is_empty() {
+                                    combined.push('\n');
+                                }
+                                combined.push_str(&output3);
+                            }
+                            if !output4.is_empty() {
+                                if !combined.is_empty() {
+                                    combined.push('\n');
+                                }
+                                combined.push_str(&output4);
+                            }
+                            (combined, false)
                         }
-                        if !output3.is_empty() {
-                            if !combined.is_empty() { combined.push('\n'); }
-                            combined.push_str(&output3);
-                        }
-                        if !output4.is_empty() {
-                            if !combined.is_empty() { combined.push('\n'); }
-                            combined.push_str(&output4);
-                        }
-                        combined
-                    })
+                    }
                 } else {
                     // No merge prompt: concatenate
                     let mut combined = output1.clone();
@@ -1599,8 +1625,25 @@ impl ShortcutAction for MultiSttAction {
                         }
                         combined.push_str(&output4);
                     }
-                    combined
+                    (combined, false)
                 };
+
+                // === PERFORMANCE MODE: NORMAL after LLM merge succeeds ===
+                // If the Brain LLM merged the outputs, signal normal power mode
+                // immediately after merge completes.
+                let normal_settings = get_settings(&ah);
+                if normal_settings.multi_stt_performance_mode_enabled && llm_merge_succeeded {
+                    let normal_shortcut = normal_settings
+                        .multi_stt_performance_mode_normal_shortcut
+                        .clone();
+                    let ah_for_normal = ah.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::clipboard::simulate_key_combination(
+                            &ah_for_normal,
+                            &normal_shortcut,
+                        );
+                    });
+                }
 
                 // Save to history in background (parallel with paste for speed)
                 let multi_transcript = format!(
@@ -1638,10 +1681,28 @@ impl ShortcutAction for MultiSttAction {
                 if merged.is_empty() {
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
+                    // LLM didn't respond and nothing to paste — still restore power.
+                    if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
+                        let normal_shortcut = normal_settings
+                            .multi_stt_performance_mode_normal_shortcut
+                            .clone();
+                        let ah_for_normal = ah.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            crate::clipboard::simulate_key_combination(
+                                &ah_for_normal,
+                                &normal_shortcut,
+                            );
+                        });
+                    }
                 } else {
                     let ah_clone = ah.clone();
                     let final_text = merged;
                     let rm_for_paste = Arc::clone(&rm);
+                    let need_normal_mode =
+                        normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded;
+                    let normal_shortcut = normal_settings
+                        .multi_stt_performance_mode_normal_shortcut
+                        .clone();
                     ah.run_on_main_thread(move || {
                         if rm_for_paste.was_cancelled_since(cancel_generation) {
                             debug!("Multi-STT: Cancelled before paste");
@@ -1655,6 +1716,17 @@ impl ShortcutAction for MultiSttAction {
                                 error!("Multi-STT: Failed to paste transcription: {}", e);
                                 let _ = ah_clone.emit("paste-error", ());
                             }
+                        }
+                        // LLM didn't respond — restore normal power after paste.
+                        if need_normal_mode {
+                            let ah_for_normal = ah_clone.clone();
+                            let shortcut = normal_shortcut.clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                crate::clipboard::simulate_key_combination(
+                                    &ah_for_normal,
+                                    &shortcut,
+                                );
+                            });
                         }
                         utils::hide_recording_overlay(&ah_clone);
                         change_tray_icon(&ah_clone, TrayIconState::Idle);

@@ -804,6 +804,18 @@
       "secondary": "Secondary",
       "tertiary": "Tertiary",
       "quaternary": "Quaternary"
+    },
+    "performanceMode": {
+      "title": "Performance Mode",
+      "description": "When enabled, simulate a keyboard shortcut to boost CPU performance (FULL POWER) before transcription starts, and restore normal power (NORMAL MODE) after the merge or paste completes",
+      "fullPowerLabel": "Full Power Shortcut",
+      "fullPowerDescription": "Shortcut to simulate when Multi-STT recording finishes and audio is sent to models",
+      "normalModeLabel": "Normal Mode Shortcut",
+      "normalModeDescription": "Shortcut to simulate after the LLM merge succeeds, or after paste if the LLM doesn't respond",
+      "enabled": {
+        "label": "Enable Performance Mode",
+        "description": "Automatically toggle performance mode during Multi-STT transcription"
+      }
     }
   },
   "bindings": {

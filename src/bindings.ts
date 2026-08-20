@@ -43,6 +43,9 @@ export const commands = {
 	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
 	changeMultiSttTranslateModel4: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_4", { enabled })),
 	changeMultiSttKeepExtraModelsLoadedSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_keep_extra_models_loaded_setting", { enabled })),
+	changeMultiSttPerformanceModeEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_enabled_setting", { enabled })),
+	changeMultiSttPerformanceModeFullPowerShortcut: (shortcut: string) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_full_power_shortcut", { shortcut })),
+	changeMultiSttPerformanceModeNormalShortcut: (shortcut: string) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_normal_shortcut", { shortcut })),
 	changeMicIdleTimeoutSettings: (value: number, unit: MicIdleTimeoutUnit, infinite: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mic_idle_timeout_settings", { value, unit, infinite })),
 	changePostProcessEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_post_process_enabled_setting", { enabled })),
 	changeExperimentalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_experimental_enabled_setting", { enabled })),
@@ -378,6 +381,14 @@ export type AppSettings_Deserialize = {
 	multi_stt_keep_extra_models_loaded?: boolean,
 	multi_stt_merge_prompt?: LLMPrompt | null,
 	multi_stt_selected_merge_prompt_id?: string | null,
+	/**
+	 *  Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
+	 *  to boost CPU performance before transcription starts (FULL POWER) and
+	 *  restore normal power after the merge/paste completes.
+	 */
+	multi_stt_performance_mode_enabled?: boolean,
+	multi_stt_performance_mode_full_power_shortcut?: string,
+	multi_stt_performance_mode_normal_shortcut?: string,
 	mic_idle_timeout_value?: number,
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
@@ -500,6 +511,14 @@ export type AppSettings_Serialize = {
 	multi_stt_keep_extra_models_loaded: boolean,
 	multi_stt_merge_prompt: LLMPrompt | null,
 	multi_stt_selected_merge_prompt_id: string | null,
+	/**
+	 *  Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
+	 *  to boost CPU performance before transcription starts (FULL POWER) and
+	 *  restore normal power after the merge/paste completes.
+	 */
+	multi_stt_performance_mode_enabled: boolean,
+	multi_stt_performance_mode_full_power_shortcut: string,
+	multi_stt_performance_mode_normal_shortcut: string,
 	mic_idle_timeout_value: number,
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,

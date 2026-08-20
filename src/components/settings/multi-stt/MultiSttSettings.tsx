@@ -21,6 +21,7 @@ import {
 } from "@/lib/constants/languages";
 
 import { ShortcutInput } from "../ShortcutInput";
+import { KeyComboInput } from "../KeyComboInput";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
 import { commands } from "@/bindings";
@@ -663,6 +664,55 @@ export const MultiSttSettings: React.FC = () => {
               grouped={true}
             />
           </SettingsGroup>
+
+          {/* Performance Mode */}
+          <SettingsGroup title={t("multiStt.performanceMode.title")}>
+            <ToggleSwitch
+              checked={
+                (getSetting("multi_stt_performance_mode_enabled") as boolean) ??
+                false
+              }
+              onChange={(enabled) =>
+                updateSetting("multi_stt_performance_mode_enabled", enabled)
+              }
+              isUpdating={isUpdating("multi_stt_performance_mode_enabled")}
+              label={t("multiStt.performanceMode.enabled.label")}
+              description={t("multiStt.performanceMode.enabled.description")}
+              descriptionMode="tooltip"
+              grouped={true}
+            />
+          </SettingsGroup>
+
+          {((getSetting("multi_stt_performance_mode_enabled") as boolean) ??
+          false) ? (
+            <SettingsGroup title={t("multiStt.performanceMode.title")}>
+              <div className="space-y-3">
+                <SettingContainer
+                  title={t("multiStt.performanceMode.fullPowerLabel")}
+                  description={t(
+                    "multiStt.performanceMode.fullPowerDescription",
+                  )}
+                  descriptionMode="tooltip"
+                  layout="horizontal"
+                  grouped={true}
+                >
+                  <KeyComboInput settingKey="multi_stt_performance_mode_full_power_shortcut" />
+                </SettingContainer>
+
+                <SettingContainer
+                  title={t("multiStt.performanceMode.normalModeLabel")}
+                  description={t(
+                    "multiStt.performanceMode.normalModeDescription",
+                  )}
+                  descriptionMode="tooltip"
+                  layout="horizontal"
+                  grouped={true}
+                >
+                  <KeyComboInput settingKey="multi_stt_performance_mode_normal_shortcut" />
+                </SettingContainer>
+              </div>
+            </SettingsGroup>
+          ) : null}
 
           {/* Merge Prompt */}
           <SettingsGroup title={t("multiStt.mergePrompt.title")}>

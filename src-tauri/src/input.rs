@@ -1,4 +1,5 @@
 use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
+use log::warn;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
@@ -269,6 +270,107 @@ pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
     enigo
         .text(text)
         .map_err(|e| format!("Failed to send text directly: {}", e))?;
+
+    Ok(())
+}
+
+/// Parse a single key token (e.g. "ctrl", "space", "f1") into an enigo `Key`.
+fn parse_key_token(token: &str) -> Option<Key> {
+    let token = token.to_lowercase();
+    match token.as_str() {
+        "ctrl" | "control" => Some(Key::Control),
+        "shift" => Some(Key::Shift),
+        "alt" | "option" => Some(Key::Alt),
+        "cmd" | "command" | "super" | "win" | "windows" | "meta" => Some(Key::Meta),
+        "space" => Some(Key::Space),
+        "enter" | "return" => Some(Key::Return),
+        "esc" | "escape" => Some(Key::Escape),
+        "tab" => Some(Key::Tab),
+        "backspace" => Some(Key::Backspace),
+        "delete" => Some(Key::Delete),
+        "up" => Some(Key::UpArrow),
+        "down" => Some(Key::DownArrow),
+        "left" => Some(Key::LeftArrow),
+        "right" => Some(Key::RightArrow),
+        "capslock" | "caps_lock" | "caps lock" => Some(Key::CapsLock),
+        "f1" => Some(Key::F1),
+        "f2" => Some(Key::F2),
+        "f3" => Some(Key::F3),
+        "f4" => Some(Key::F4),
+        "f5" => Some(Key::F5),
+        "f6" => Some(Key::F6),
+        "f7" => Some(Key::F7),
+        "f8" => Some(Key::F8),
+        "f9" => Some(Key::F9),
+        "f10" => Some(Key::F10),
+        "f11" => Some(Key::F11),
+        "f12" => Some(Key::F12),
+        "f13" => Some(Key::F13),
+        "f14" => Some(Key::F14),
+        "f15" => Some(Key::F15),
+        "f16" => Some(Key::F16),
+        "f17" => Some(Key::F17),
+        "f18" => Some(Key::F18),
+        "f19" => Some(Key::F19),
+        "f20" => Some(Key::F20),
+        "f21" => Some(Key::F21),
+        "f22" => Some(Key::F22),
+        "f23" => Some(Key::F23),
+        "f24" => Some(Key::F24),
+        _ if token.len() == 1 => token.chars().next().map(Key::Unicode),
+        _ => None,
+    }
+}
+
+/// Check if a Key is a modifier key (Control, Shift, Alt/Meta).
+fn is_modifier_key(key: &Key) -> bool {
+    matches!(key, Key::Control | Key::Shift | Key::Alt | Key::Meta)
+}
+
+/// Simulate a keyboard shortcut (e.g. "ctrl+space", "ctrl+alt+space") by
+/// pressing the modifier keys, clicking the main key, and releasing the
+/// modifiers in reverse order.
+pub fn simulate_shortcut(enigo: &mut Enigo, shortcut: &str) -> Result<(), String> {
+    let parts: Vec<&str> = shortcut.split('+').map(|p| p.trim()).collect();
+
+    let mut modifiers: Vec<Key> = Vec::new();
+    let mut main_keys: Vec<Key> = Vec::new();
+
+    for part in &parts {
+        if part.is_empty() {
+            continue;
+        }
+        match parse_key_token(part) {
+            Some(key) if is_modifier_key(&key) => modifiers.push(key),
+            Some(key) => main_keys.push(key),
+            None => warn!("simulate_shortcut: unknown key token '{}'", part),
+        }
+    }
+
+    if main_keys.is_empty() {
+        return Err("Shortcut must contain at least one non-modifier key".into());
+    }
+
+    // Press modifiers
+    for modifier in &modifiers {
+        enigo
+            .key(*modifier, enigo::Direction::Press)
+            .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    }
+
+    // Click main keys (non-modifiers)
+    for key in &main_keys {
+        enigo
+            .key(*key, enigo::Direction::Click)
+            .map_err(|e| format!("Failed to click key: {}", e))?;
+    }
+
+    // Release modifiers in reverse order
+    for modifier in modifiers.iter().rev() {
+        enigo
+            .key(*modifier, enigo::Direction::Release)
+            .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    }
 
     Ok(())
 }
