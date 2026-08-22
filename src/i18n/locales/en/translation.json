@@ -342,6 +342,14 @@
             "bottom": "Bottom",
             "top": "Top"
           }
+        },
+        "directMode": {
+          "label": "Direct Streaming",
+          "description": "Reveal streaming transcription character-by-character as you speak for an instant typing feel."
+        },
+        "directSpeed": {
+          "label": "Direct Streaming Speed",
+          "description": "Speed at which characters appear during direct live streaming (in characters per second)."
         }
       },
       "pasteMethod": {

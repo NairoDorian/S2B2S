@@ -724,6 +724,24 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_overlay_direct_mode_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.overlay_direct_mode = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_overlay_direct_speed_setting(app: AppHandle, speed: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.overlay_direct_speed = speed.clamp(10, 60);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_debug_mode_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.debug_mode = enabled;

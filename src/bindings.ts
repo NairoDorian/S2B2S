@@ -18,6 +18,8 @@ export const commands = {
 	changeSelectedLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_selected_language_setting", { language })),
 	changeOverlayPositionSetting: (position: string) => typedError<null, string>(__TAURI_INVOKE("change_overlay_position_setting", { position })),
 	changeOverlayStyleSetting: (style: string) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style })),
+	changeOverlayDirectModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled })),
+	changeOverlayDirectSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_speed_setting", { speed })),
 	changeDebugModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_debug_mode_setting", { enabled })),
 	changeWordCorrectionThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_word_correction_threshold_setting", { threshold })),
 	changeExtraRecordingBufferSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_extra_recording_buffer_setting", { ms })),
@@ -369,6 +371,13 @@ export type AppSettings_Deserialize = {
 	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style?: OverlayStyle,
+	/**
+	 *  Whether the live streaming overlay should reveal text character-by-character
+	 *  in direct/typewriter mode instead of chunk-by-chunk / word-by-word.
+	 */
+	overlay_direct_mode?: boolean,
+	/**  Speed at which characters appear in direct streaming mode (characters per second). */
+	overlay_direct_speed?: number,
 	multi_stt_enabled?: boolean,
 	multi_stt_model_2?: string | null,
 	multi_stt_model_3?: string | null,
@@ -500,6 +509,13 @@ export type AppSettings_Serialize = {
 	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style: OverlayStyle,
+	/**
+	 *  Whether the live streaming overlay should reveal text character-by-character
+	 *  in direct/typewriter mode instead of chunk-by-chunk / word-by-word.
+	 */
+	overlay_direct_mode: boolean,
+	/**  Speed at which characters appear in direct streaming mode (characters per second). */
+	overlay_direct_speed: number,
 	multi_stt_enabled: boolean,
 	multi_stt_model_2: string | null,
 	multi_stt_model_3: string | null,

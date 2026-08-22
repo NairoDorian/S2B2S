@@ -514,6 +514,13 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Whether the live streaming overlay should reveal text character-by-character
+    /// in direct/typewriter mode instead of chunk-by-chunk / word-by-word.
+    #[serde(default)]
+    pub overlay_direct_mode: bool,
+    /// Speed at which characters appear in direct streaming mode (characters per second).
+    #[serde(default = "default_overlay_direct_speed")]
+    pub overlay_direct_speed: u32,
     // Multi STT settings
     #[serde(default)]
     pub multi_stt_enabled: bool,
@@ -638,6 +645,10 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::None;
     #[cfg(not(target_os = "linux"))]
     return OverlayStyle::Live;
+}
+
+fn default_overlay_direct_speed() -> u32 {
+    30
 }
 
 fn default_mic_idle_timeout_value() -> u32 {
@@ -1057,6 +1068,8 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         overlay_style: default_overlay_style(),
+        overlay_direct_mode: false,
+        overlay_direct_speed: default_overlay_direct_speed(),
         multi_stt_enabled: false,
         multi_stt_model_2: None,
         multi_stt_model_3: None,

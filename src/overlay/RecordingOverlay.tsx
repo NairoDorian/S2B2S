@@ -52,6 +52,108 @@ const RecordingOverlay: React.FC = () => {
   const pinnedRef = useRef(true);
   const direction = getLanguageDirection(i18n.language);
 
+  const directModeRef = useRef(false);
+  const directSpeedRef = useRef(30);
+  const targetTextRef = useRef<StreamTextEvent>({
+    committed: "",
+    tentative: "",
+  });
+  const displayedTextRef = useRef<StreamTextEvent>({
+    committed: "",
+    tentative: "",
+  });
+  const typewriterTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+
+  const stopTypewriter = () => {
+    if (typewriterTimerRef.current !== null) {
+      clearInterval(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+  };
+
+  const flushTypewriter = () => {
+    stopTypewriter();
+    displayedTextRef.current = { ...targetTextRef.current };
+    setStreamText({ ...targetTextRef.current });
+  };
+
+  const stepTypewriter = () => {
+    const target = targetTextRef.current;
+    const current = displayedTextRef.current;
+
+    if (
+      current.committed === target.committed &&
+      current.tentative === target.tentative
+    ) {
+      stopTypewriter();
+      return;
+    }
+
+    let nextCommitted = current.committed;
+    let nextTentative = current.tentative;
+    const threshold = Math.max(
+      15,
+      Math.round((directSpeedRef.current || 50) * 0.6),
+    );
+
+    if (current.committed !== target.committed) {
+      if (target.committed.startsWith(current.committed)) {
+        const remaining = target.committed.length - current.committed.length;
+        const step =
+          remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
+        nextCommitted = target.committed.slice(
+          0,
+          current.committed.length + step,
+        );
+      } else {
+        nextCommitted = target.committed;
+      }
+    } else if (current.tentative !== target.tentative) {
+      if (target.tentative.startsWith(current.tentative)) {
+        const remaining = target.tentative.length - current.tentative.length;
+        const step =
+          remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
+        nextTentative = target.tentative.slice(
+          0,
+          current.tentative.length + step,
+        );
+      } else {
+        let prefixLen = 0;
+        while (
+          prefixLen < current.tentative.length &&
+          prefixLen < target.tentative.length &&
+          current.tentative[prefixLen] === target.tentative[prefixLen]
+        ) {
+          prefixLen++;
+        }
+        if (current.tentative.length > prefixLen) {
+          nextTentative = target.tentative.slice(0, prefixLen);
+        } else {
+          const remaining = target.tentative.length - prefixLen;
+          const step =
+            remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
+          nextTentative = target.tentative.slice(0, prefixLen + step);
+        }
+      }
+    }
+
+    displayedTextRef.current = {
+      committed: nextCommitted,
+      tentative: nextTentative,
+    };
+    setStreamText({ committed: nextCommitted, tentative: nextTentative });
+  };
+
+  const startTypewriterIfNeeded = () => {
+    if (typewriterTimerRef.current === null) {
+      const speed = directSpeedRef.current || 30;
+      const intervalMs = Math.max(8, Math.min(100, Math.round(1000 / speed)));
+      typewriterTimerRef.current = setInterval(stepTypewriter, intervalMs);
+    }
+  };
+
   useEffect(() => {
     const setupEventListeners = async () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
@@ -63,6 +165,9 @@ const RecordingOverlay: React.FC = () => {
           setCaptureReady(false);
           smoothedLevelsRef.current = Array(16).fill(0);
           setLevels(Array(WAVE_BARS).fill(0));
+          stopTypewriter();
+          targetTextRef.current = { committed: "", tentative: "" };
+          displayedTextRef.current = { committed: "", tentative: "" };
           setStreamText({ committed: "", tentative: "" });
         }
 
@@ -75,6 +180,8 @@ const RecordingOverlay: React.FC = () => {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
+            directModeRef.current = settings.data.overlay_direct_mode ?? false;
+            directSpeedRef.current = settings.data.overlay_direct_speed ?? 30;
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -92,6 +199,7 @@ const RecordingOverlay: React.FC = () => {
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setCaptureReady(false);
+        stopTypewriter();
       });
 
       const unlistenReady = await listen("recording-ready", () => {
@@ -112,16 +220,26 @@ const RecordingOverlay: React.FC = () => {
       });
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
-        setStreamText(event.payload);
+        targetTextRef.current = event.payload;
+        if (!directModeRef.current) {
+          displayedTextRef.current = event.payload;
+          setStreamText(event.payload);
+        } else {
+          startTypewriterIfNeeded();
+        }
       });
 
       const unlistenPhase = await events.streamPhaseEvent.listen((event) => {
         const payload: StreamPhaseEvent = event.payload;
         setPhase(payload.phase);
         if (payload.kind) setWorkKind(payload.kind);
+        if (payload.phase === "working") {
+          flushTypewriter();
+        }
       });
 
       return () => {
+        stopTypewriter();
         unlistenShow();
         unlistenHide();
         unlistenReady();

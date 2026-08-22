@@ -197,6 +197,10 @@ const settingUpdaters: {
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
+  overlay_direct_mode: (value) =>
+    commands.changeOverlayDirectModeSetting(value as boolean),
+  overlay_direct_speed: (value) =>
+    commands.changeOverlayDirectSpeedSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
