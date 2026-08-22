@@ -95,6 +95,16 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // Unload model if immediate unload is enabled
     tm.maybe_unload_immediately("cancellation");
 
+    // Restore normal power mode if performance mode is enabled
+    let settings = crate::settings::get_settings(app);
+    if settings.multi_stt_performance_mode_enabled {
+        let normal_shortcut = settings.multi_stt_performance_mode_normal_shortcut.clone();
+        let app_handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::clipboard::simulate_key_combination(&app_handle, &normal_shortcut);
+        });
+    }
+
     // Notify coordinator so it can keep lifecycle state coherent.
     if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
         coordinator.notify_cancel(recording_was_active);

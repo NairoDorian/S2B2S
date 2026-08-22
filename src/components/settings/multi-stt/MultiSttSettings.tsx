@@ -707,6 +707,29 @@ export const MultiSttSettings: React.FC = () => {
           false) ? (
             <SettingsGroup title={t("multiStt.performanceMode.title")}>
               <div className="space-y-3">
+                <ToggleSwitch
+                  checked={
+                    (getSetting(
+                      "multi_stt_performance_mode_trigger_on_start",
+                    ) as boolean) ?? false
+                  }
+                  onChange={(enabled) =>
+                    updateSetting(
+                      "multi_stt_performance_mode_trigger_on_start",
+                      enabled,
+                    )
+                  }
+                  isUpdating={isUpdating(
+                    "multi_stt_performance_mode_trigger_on_start",
+                  )}
+                  label={t("multiStt.performanceMode.triggerOnStart.label")}
+                  description={t(
+                    "multiStt.performanceMode.triggerOnStart.description",
+                  )}
+                  descriptionMode="tooltip"
+                  grouped={true}
+                />
+
                 <SettingContainer
                   title={t("multiStt.performanceMode.fullPowerLabel")}
                   description={t(

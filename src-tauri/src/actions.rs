@@ -1122,6 +1122,19 @@ impl ShortcutAction for MultiSttAction {
             });
         }
 
+        // === PERFORMANCE MODE: FULL POWER (Trigger at 1st keybind / recording start) ===
+        if settings.multi_stt_performance_mode_enabled
+            && settings.multi_stt_performance_mode_trigger_on_start
+        {
+            let full_power_shortcut = settings
+                .multi_stt_performance_mode_full_power_shortcut
+                .clone();
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::clipboard::simulate_key_combination(&app_clone, &full_power_shortcut);
+            });
+        }
+
         // Start recording
         let selected_model_info = app
             .state::<Arc<ModelManager>>()
@@ -1182,6 +1195,15 @@ impl ShortcutAction for MultiSttAction {
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             change_tray_icon(app, TrayIconState::Idle);
+            if settings.multi_stt_performance_mode_enabled
+                && settings.multi_stt_performance_mode_trigger_on_start
+            {
+                let normal_shortcut = settings.multi_stt_performance_mode_normal_shortcut.clone();
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    crate::clipboard::simulate_key_combination(&app_clone, &normal_shortcut);
+                });
+            }
             if let Some(err) = recording_error {
                 let error_type = if is_microphone_access_denied(&err) {
                     "microphone_permission_denied"
@@ -1252,6 +1274,21 @@ impl ShortcutAction for MultiSttAction {
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
+                    let perf_settings = get_settings(&ah);
+                    if perf_settings.multi_stt_performance_mode_enabled
+                        && perf_settings.multi_stt_performance_mode_trigger_on_start
+                    {
+                        let normal_shortcut = perf_settings
+                            .multi_stt_performance_mode_normal_shortcut
+                            .clone();
+                        let ah_for_normal = ah.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            crate::clipboard::simulate_key_combination(
+                                &ah_for_normal,
+                                &normal_shortcut,
+                            );
+                        });
+                    }
                     return;
                 }
 
@@ -1260,6 +1297,21 @@ impl ShortcutAction for MultiSttAction {
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
+                    let perf_settings = get_settings(&ah);
+                    if perf_settings.multi_stt_performance_mode_enabled
+                        && perf_settings.multi_stt_performance_mode_trigger_on_start
+                    {
+                        let normal_shortcut = perf_settings
+                            .multi_stt_performance_mode_normal_shortcut
+                            .clone();
+                        let ah_for_normal = ah.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            crate::clipboard::simulate_key_combination(
+                                &ah_for_normal,
+                                &normal_shortcut,
+                            );
+                        });
+                    }
                     return;
                 }
 
@@ -1267,8 +1319,11 @@ impl ShortcutAction for MultiSttAction {
                 // Signal the user's performance-mode shortcut (e.g. Ctrl+Space)
                 // before the heavy transcription workload starts, giving the OS
                 // a chance to ramp up CPU clocks ahead of the 4-way inference.
+                // If trigger_on_start is enabled, it was already triggered in start().
                 let perf_settings = get_settings(&ah);
-                if perf_settings.multi_stt_performance_mode_enabled {
+                if perf_settings.multi_stt_performance_mode_enabled
+                    && !perf_settings.multi_stt_performance_mode_trigger_on_start
+                {
                     let full_power_shortcut = perf_settings
                         .multi_stt_performance_mode_full_power_shortcut
                         .clone();

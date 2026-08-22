@@ -44,6 +44,7 @@ export const commands = {
 	changeMultiSttTranslateModel4: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_4", { enabled })),
 	changeMultiSttKeepExtraModelsLoadedSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_keep_extra_models_loaded_setting", { enabled })),
 	changeMultiSttPerformanceModeEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_enabled_setting", { enabled })),
+	changeMultiSttPerformanceModeTriggerOnStartSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_trigger_on_start_setting", { enabled })),
 	changeMultiSttPerformanceModeFullPowerShortcut: (shortcut: string) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_full_power_shortcut", { shortcut })),
 	changeMultiSttPerformanceModeNormalShortcut: (shortcut: string) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_normal_shortcut", { shortcut })),
 	changeMicIdleTimeoutSettings: (value: number, unit: MicIdleTimeoutUnit, infinite: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mic_idle_timeout_settings", { value, unit, infinite })),
@@ -387,6 +388,7 @@ export type AppSettings_Deserialize = {
 	 *  restore normal power after the merge/paste completes.
 	 */
 	multi_stt_performance_mode_enabled?: boolean,
+	multi_stt_performance_mode_trigger_on_start?: boolean,
 	multi_stt_performance_mode_full_power_shortcut?: string,
 	multi_stt_performance_mode_normal_shortcut?: string,
 	mic_idle_timeout_value?: number,
@@ -517,6 +519,7 @@ export type AppSettings_Serialize = {
 	 *  restore normal power after the merge/paste completes.
 	 */
 	multi_stt_performance_mode_enabled: boolean,
+	multi_stt_performance_mode_trigger_on_start: boolean,
 	multi_stt_performance_mode_full_power_shortcut: string,
 	multi_stt_performance_mode_normal_shortcut: string,
 	mic_idle_timeout_value: number,

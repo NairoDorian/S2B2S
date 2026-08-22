@@ -815,6 +815,10 @@
       "enabled": {
         "label": "Enable Performance Mode",
         "description": "Automatically toggle performance mode during Multi-STT transcription"
+      },
+      "triggerOnStart": {
+        "label": "Trigger Performance Mode at 1st Keybind",
+        "description": "Trigger the Full Power shortcut immediately upon starting Multi-STT recording instead of waiting until recording ends"
       }
     }
   },

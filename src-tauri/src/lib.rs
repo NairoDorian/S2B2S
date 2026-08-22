@@ -650,6 +650,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_multi_stt_translate_model_4,
             shortcut::change_multi_stt_keep_extra_models_loaded_setting,
             shortcut::change_multi_stt_performance_mode_enabled_setting,
+            shortcut::change_multi_stt_performance_mode_trigger_on_start_setting,
             shortcut::change_multi_stt_performance_mode_full_power_shortcut,
             shortcut::change_multi_stt_performance_mode_normal_shortcut,
             shortcut::change_mic_idle_timeout_settings,

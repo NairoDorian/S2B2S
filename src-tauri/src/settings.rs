@@ -546,6 +546,8 @@ pub struct AppSettings {
     /// restore normal power after the merge/paste completes.
     #[serde(default)]
     pub multi_stt_performance_mode_enabled: bool,
+    #[serde(default)]
+    pub multi_stt_performance_mode_trigger_on_start: bool,
     #[serde(default = "default_multi_stt_full_power_shortcut")]
     pub multi_stt_performance_mode_full_power_shortcut: String,
     #[serde(default = "default_multi_stt_normal_shortcut")]
@@ -1069,6 +1071,7 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,
         multi_stt_performance_mode_enabled: false,
+        multi_stt_performance_mode_trigger_on_start: false,
         multi_stt_performance_mode_full_power_shortcut: default_multi_stt_full_power_shortcut(),
         multi_stt_performance_mode_normal_shortcut: default_multi_stt_normal_shortcut(),
         mic_idle_timeout_value: default_mic_idle_timeout_value(),
@@ -1928,5 +1931,14 @@ mod tests {
             settings.bindings["transcribe_with_post_process"].current_binding,
             "ctrl+shift+space"
         );
+    }
+
+    #[test]
+    fn test_multi_stt_performance_mode_trigger_on_start_defaults_to_false() {
+        let default_settings = get_default_settings();
+        assert!(!default_settings.multi_stt_performance_mode_trigger_on_start);
+
+        let parsed: AppSettings = serde_json::from_str("{}").expect("deserializes empty json");
+        assert!(!parsed.multi_stt_performance_mode_trigger_on_start);
     }
 }

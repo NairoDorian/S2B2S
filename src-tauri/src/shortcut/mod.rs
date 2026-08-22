@@ -1184,6 +1184,18 @@ pub fn change_multi_stt_performance_mode_enabled_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_multi_stt_performance_mode_trigger_on_start_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_performance_mode_trigger_on_start = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_multi_stt_performance_mode_full_power_shortcut(
     app: AppHandle,
     shortcut: String,

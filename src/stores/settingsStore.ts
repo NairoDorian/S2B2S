@@ -237,6 +237,10 @@ const settingUpdaters: {
     commands.changeMultiSttKeepExtraModelsLoadedSetting(value as boolean),
   multi_stt_performance_mode_enabled: (value) =>
     commands.changeMultiSttPerformanceModeEnabledSetting(value as boolean),
+  multi_stt_performance_mode_trigger_on_start: (value) =>
+    commands.changeMultiSttPerformanceModeTriggerOnStartSetting(
+      value as boolean,
+    ),
   multi_stt_performance_mode_full_power_shortcut: (value) =>
     commands.changeMultiSttPerformanceModeFullPowerShortcut(value as string),
   multi_stt_performance_mode_normal_shortcut: (value) =>
