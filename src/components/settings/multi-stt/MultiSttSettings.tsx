@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
+  effectiveLanguage,
   getLanguageLabel,
   SELECTABLE_LANGUAGES,
   supportsLanguageCode,
@@ -49,7 +50,7 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
         : "multi_stt_language_model_4";
   const currentLang = (getSetting(settingKey) as string | null) ?? null;
 
-  // Build lang options from the model's supported languages + auto
+  // Build lang options from the model's supported languages + auto (if detection supported)
   // NOTE: useMemo must be called BEFORE any early return (React hooks rule).
   const langOptions = useMemo(() => {
     if (!modelInfo || !modelId) return [];
@@ -58,13 +59,22 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
       modelInfo.supported_languages.length === 0
     )
       return [];
-    const entries = SELECTABLE_LANGUAGES.filter(
-      (lang) =>
-        lang.value === "auto" ||
-        supportsLanguageCode(modelInfo.supported_languages, lang.value),
+    const entries = SELECTABLE_LANGUAGES.filter((lang) =>
+      lang.value === "auto"
+        ? modelInfo.supports_language_detection
+        : supportsLanguageCode(modelInfo.supported_languages, lang.value),
     );
     return entries.map((lang) => ({ value: lang.value, label: lang.label }));
   }, [modelId, modelInfo]);
+
+  const effectiveLang = useMemo(() => {
+    if (!modelInfo) return "auto";
+    return effectiveLanguage(
+      currentLang || "auto",
+      modelInfo.supported_languages,
+      modelInfo.supports_language_detection,
+    );
+  }, [currentLang, modelInfo]);
 
   if (!modelId || !modelInfo) return null;
 
@@ -79,6 +89,16 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
     );
   }
 
+  const selectedValue = modelInfo.supports_language_detection
+    ? currentLang
+    : currentLang && currentLang !== "auto"
+      ? currentLang
+      : effectiveLang;
+
+  const placeholder = modelInfo.supports_language_detection
+    ? (getLanguageLabel("auto") ?? "Auto")
+    : (getLanguageLabel(effectiveLang) ?? "Select language");
+
   // Show a language dropdown
   return (
     <div className="flex items-center gap-2 mt-2 ml-1">
@@ -90,10 +110,10 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
             : t("multiStt.models.model4Language")}
       </label>
       <Dropdown
-        selectedValue={currentLang}
+        selectedValue={selectedValue}
         options={langOptions}
         onSelect={(value) => updateSetting(settingKey, value || null)}
-        placeholder={getLanguageLabel("auto") ?? "Auto"}
+        placeholder={placeholder}
         disabled={langOptions.length === 0}
         className="min-w-[140px]"
       />
@@ -448,7 +468,7 @@ export const MultiSttSettings: React.FC = () => {
                       checked={
                         (getSetting(
                           "multi_stt_translate_model_2",
-                        ) as boolean) ?? true
+                        ) as boolean) ?? false
                       }
                       onChange={(enabled) =>
                         updateSetting("multi_stt_translate_model_2", enabled)
@@ -539,7 +559,7 @@ export const MultiSttSettings: React.FC = () => {
                       checked={
                         (getSetting(
                           "multi_stt_translate_model_3",
-                        ) as boolean) ?? true
+                        ) as boolean) ?? false
                       }
                       onChange={(enabled) =>
                         updateSetting("multi_stt_translate_model_3", enabled)
@@ -630,7 +650,7 @@ export const MultiSttSettings: React.FC = () => {
                       checked={
                         (getSetting(
                           "multi_stt_translate_model_4",
-                        ) as boolean) ?? true
+                        ) as boolean) ?? false
                       }
                       onChange={(enabled) =>
                         updateSetting("multi_stt_translate_model_4", enabled)

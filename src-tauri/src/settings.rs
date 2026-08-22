@@ -572,7 +572,7 @@ fn default_settings_schema_version() -> u32 {
 }
 
 fn default_multi_stt_translate() -> bool {
-    true
+    false
 }
 
 fn default_multi_stt_keep_models() -> bool {
@@ -1062,9 +1062,9 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_language_model_2: None,
         multi_stt_language_model_3: None,
         multi_stt_language_model_4: None,
-        multi_stt_translate_model_2: true,
-        multi_stt_translate_model_3: true,
-        multi_stt_translate_model_4: true,
+        multi_stt_translate_model_2: false,
+        multi_stt_translate_model_3: false,
+        multi_stt_translate_model_4: false,
         multi_stt_keep_extra_models_loaded: true,
         multi_stt_merge_prompt: None,
         multi_stt_selected_merge_prompt_id: None,

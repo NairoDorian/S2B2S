@@ -170,3 +170,22 @@ export const getUniqueCapabilityLanguages = (
 
 export const getLanguageLabel = (languageCode: string): string | undefined =>
   LANGUAGE_LABELS.get(languageCode);
+
+// Mirrors the matching logic of `effective_language` in
+// src-tauri/src/managers/model.rs. The Rust function is authoritative for the
+// *concrete* code the engine receives (e.g. "en-US"); this resolves the
+// canonical *base* code ("en") so the highlighted picker item matches an entry
+// in the LANGUAGES list. Matching is base-aware (`supportsLanguageCode` strips
+// region/script subtags), so a model advertising full locales still resolves.
+export const effectiveLanguage = (
+  intent: string,
+  supported: string[],
+  supportsDetection: boolean,
+): string => {
+  if (supported.length === 0) return intent;
+  if (intent !== "auto" && supportsLanguageCode(supported, intent))
+    return intent;
+  if (supportsDetection) return "auto";
+  if (supportsLanguageCode(supported, "en")) return "en";
+  return recognitionLanguage(supported[0]);
+};
