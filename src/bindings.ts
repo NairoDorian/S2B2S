@@ -117,6 +117,7 @@ export const commands = {
 	getLogDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_log_dir_path")),
 	setLogLevel: (level: LogLevel) => typedError<null, string>(__TAURI_INVOKE("set_log_level", { level })),
 	openRecordingsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_recordings_folder")),
+	openModelsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_models_folder")),
 	openLogDir: () => typedError<null, string>(__TAURI_INVOKE("open_log_dir")),
 	openAppDataDir: () => typedError<null, string>(__TAURI_INVOKE("open_app_data_dir")),
 	/**
@@ -225,6 +226,7 @@ export const commands = {
 	toggleHistoryEntrySaved: (id: number) => typedError<null, string>(__TAURI_INVOKE("toggle_history_entry_saved", { id })),
 	getAudioFilePath: (fileName: string) => typedError<string, string>(__TAURI_INVOKE("get_audio_file_path", { fileName })),
 	deleteHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("delete_history_entry", { id })),
+	deleteAllRecordings: () => typedError<null, string>(__TAURI_INVOKE("delete_all_recordings")),
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
@@ -616,7 +618,7 @@ export type HistoryEntry = {
 	post_process_requested: boolean,
 };
 
-export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number };
+export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number } | { action: "cleared" };
 
 /**  Result of changing keyboard implementation */
 export type ImplementationChangeResult = {

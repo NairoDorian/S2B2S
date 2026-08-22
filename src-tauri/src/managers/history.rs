@@ -52,6 +52,8 @@ pub enum HistoryUpdatePayload {
     Deleted { id: i32 },
     #[serde(rename = "toggled")]
     Toggled { id: i32 },
+    #[serde(rename = "cleared")]
+    Cleared,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -376,6 +378,12 @@ impl HistoryManager {
             }
         }
 
+        if deleted_count > 0 {
+            if let Err(e) = conn.execute("VACUUM", []) {
+                error!("Failed to VACUUM database after deleting entries: {}", e);
+            }
+        }
+
         Ok(deleted_count)
     }
 
@@ -630,11 +638,71 @@ impl HistoryManager {
             params![id],
         )?;
 
+        if let Err(e) = conn.execute("VACUUM", []) {
+            error!(
+                "Failed to VACUUM database after deleting entry {}: {}",
+                id, e
+            );
+        }
+
         debug!("Deleted history entry with id: {}", id);
 
         // Emit history updated event
         if let Err(e) = (HistoryUpdatePayload::Deleted { id }).emit(&self.app_handle) {
             error!("Failed to emit history-updated event: {}", e);
+        }
+
+        Ok(())
+    }
+
+    pub async fn delete_all_recordings(&self) -> Result<()> {
+        // Clear all files and subdirectories in the recordings directory, keeping the folder itself
+        if self.recordings_dir.exists() {
+            match fs::read_dir(&self.recordings_dir) {
+                Ok(entries) => {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            if let Err(e) = fs::remove_dir_all(&path) {
+                                error!("Failed to remove directory {:?}: {}", path, e);
+                            }
+                        } else if let Err(e) = fs::remove_file(&path) {
+                            error!("Failed to remove file {:?}: {}", path, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to read recordings directory {:?}: {}",
+                        self.recordings_dir, e
+                    );
+                }
+            }
+        } else {
+            fs::create_dir_all(&self.recordings_dir)?;
+        }
+
+        // Clear database table and reset autoincrement sequence
+        let conn = self.get_connection()?;
+        conn.execute("DELETE FROM transcription_history", [])?;
+        let _ = conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name = 'transcription_history'",
+            [],
+        );
+
+        // VACUUM to shrink the database file on disk down to minimal schema size
+        if let Err(e) = conn.execute("VACUUM", []) {
+            error!(
+                "Failed to VACUUM database after delete_all_recordings: {}",
+                e
+            );
+        }
+
+        debug!("Deleted all recordings and cleared transcription history database");
+
+        // Emit history cleared event
+        if let Err(e) = HistoryUpdatePayload::Cleared.emit(&self.app_handle) {
+            error!("Failed to emit history cleared event: {}", e);
         }
 
         Ok(())
@@ -735,5 +803,37 @@ mod tests {
 
         assert!((entry.timestamp - 100.0).abs() < f64::EPSILON);
         assert_eq!(entry.transcription_text, "completed");
+    }
+
+    #[test]
+    fn clear_database_removes_all_entries_and_vacuums() {
+        let conn = setup_conn();
+        insert_entry(&conn, 100.0, "entry 1", None);
+        insert_entry(&conn, 200.0, "entry 2", None);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+                row.get(0)
+            })
+            .expect("count entries before clear");
+        assert_eq!(count, 2);
+
+        conn.execute("DELETE FROM transcription_history", [])
+            .expect("delete all entries");
+        let _ = conn.execute(
+            "DELETE FROM sqlite_sequence WHERE name = 'transcription_history'",
+            [],
+        );
+        conn.execute("VACUUM", []).expect("vacuum database");
+
+        let count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transcription_history", [], |row| {
+                row.get(0)
+            })
+            .expect("count entries after clear");
+        assert_eq!(count_after, 0);
+
+        let latest = HistoryManager::get_latest_entry_with_conn(&conn).expect("fetch latest entry");
+        assert!(latest.is_none());
     }
 }

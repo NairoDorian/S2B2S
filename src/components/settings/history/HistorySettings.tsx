@@ -14,6 +14,7 @@ import { useOsType } from "@/hooks/useOsType";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { Dialog } from "../../ui/Dialog";
 
 const IconButton: React.FC<{
   onClick: () => void;
@@ -59,12 +60,38 @@ const OpenRecordingsButton: React.FC<OpenRecordingsButtonProps> = ({
   </Button>
 );
 
+interface DeleteRecordingsButtonProps {
+  onClick: () => void;
+  label: string;
+  disabled?: boolean;
+}
+
+const DeleteRecordingsButton: React.FC<DeleteRecordingsButtonProps> = ({
+  onClick,
+  label,
+  disabled,
+}) => (
+  <Button
+    onClick={onClick}
+    variant="secondary"
+    size="sm"
+    className="flex items-center gap-2 text-red-400 hover:text-red-300 hover:border-red-500/40"
+    title={label}
+    disabled={disabled}
+  >
+    <Trash2 className="w-4 h-4" />
+    <span>{label}</span>
+  </Button>
+);
+
 export const HistorySettings: React.FC = () => {
   const { t } = useTranslation();
   const osType = useOsType();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const entriesRef = useRef<HistoryEntry[]>([]);
   const loadingRef = useRef(false);
@@ -140,6 +167,9 @@ export const HistorySettings: React.FC = () => {
         setEntries((prev) =>
           prev.map((e) => (e.id === payload.entry.id ? payload.entry : e)),
         );
+      } else if (payload.action === "cleared") {
+        setEntries([]);
+        setHasMore(false);
       }
       // "deleted" and "toggled" are handled by optimistic updates only,
       // so we intentionally ignore them here to avoid double-mutation.
@@ -216,6 +246,26 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
+  const handleDeleteAllRecordings = async () => {
+    try {
+      setIsDeleting(true);
+      const result = await commands.deleteAllRecordings();
+      if (result.status === "ok") {
+        setEntries([]);
+        setHasMore(false);
+        setShowDeleteConfirm(false);
+        toast.success(t("settings.history.deleteRecordingsSuccess"));
+      } else {
+        toast.error(t("settings.history.deleteRecordingsError"));
+      }
+    } catch (error) {
+      console.error("Failed to delete recordings:", error);
+      toast.error(t("settings.history.deleteRecordingsError"));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const retryHistoryEntry = async (id: number) => {
     const result = await commands.retryHistoryEntryTranscription(id);
     if (result.status !== "ok") {
@@ -281,15 +331,60 @@ export const HistorySettings: React.FC = () => {
               {t("settings.history.title")}
             </h2>
           </div>
-          <OpenRecordingsButton
-            onClick={openRecordingsFolder}
-            label={t("settings.history.openFolder")}
-          />
+          <div className="flex items-center gap-2">
+            <DeleteRecordingsButton
+              onClick={() => setShowDeleteConfirm(true)}
+              label={t("settings.history.deleteRecordings")}
+              disabled={loading || (entries.length === 0 && !hasMore)}
+            />
+            <OpenRecordingsButton
+              onClick={openRecordingsFolder}
+              label={t("settings.history.openFolder")}
+            />
+          </div>
         </div>
         <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
           {content}
         </div>
       </div>
+
+      <Dialog
+        open={showDeleteConfirm}
+        title={t("settings.history.deleteRecordingsConfirmTitle")}
+        description={t("settings.history.deleteRecordingsConfirmMessage")}
+        closeLabel={t("common.cancel")}
+        onOpenChange={setShowDeleteConfirm}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isDeleting}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteAllRecordings}
+              disabled={isDeleting}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>
+                {isDeleting
+                  ? t("settings.history.deleting")
+                  : t("settings.history.deleteRecordingsConfirmButton")}
+              </span>
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text/80">
+          {t("settings.history.deleteRecordingsConfirmMessage")}
+        </p>
+      </Dialog>
     </div>
   );
 };

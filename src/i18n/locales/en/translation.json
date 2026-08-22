@@ -253,6 +253,7 @@
         "label": "Rescan",
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Handy"
       },
+      "openFolder": "Open Models Folder",
       "noModelsMatch": "No models match this filter."
     },
     "sound": {
@@ -494,6 +495,13 @@
     "history": {
       "title": "History",
       "openFolder": "Open Recordings Folder",
+      "deleteRecordings": "Delete Recordings",
+      "deleteRecordingsConfirmTitle": "Delete All Recordings",
+      "deleteRecordingsConfirmMessage": "Are you sure you want to delete all audio recordings and clear your transcription history? This action cannot be undone.",
+      "deleteRecordingsConfirmButton": "Delete Everything",
+      "deleteRecordingsSuccess": "All recordings and history have been deleted.",
+      "deleteRecordingsError": "Failed to delete recordings. Please try again.",
+      "deleting": "Deleting...",
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
       "copyToClipboard": "Copy transcription to clipboard",
@@ -690,6 +698,7 @@
     "downloadingCount": "{{count}} downloading...",
     "downloadSpeed": "{{speed}} MB/s",
     "delete": "Delete",
+    "cancel": "Cancel",
     "close": "Close",
     "open": "Open",
     "copy": "Copy",

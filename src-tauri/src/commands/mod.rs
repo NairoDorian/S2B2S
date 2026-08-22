@@ -86,6 +86,26 @@ pub fn open_recordings_folder(app: AppHandle) -> Result<(), String> {
 
 #[specta::specta]
 #[tauri::command]
+pub fn open_models_folder(app: AppHandle) -> Result<(), String> {
+    let app_data_dir = crate::portable::app_data_dir(&app)
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+
+    let models_dir = app_data_dir.join("models");
+    if !models_dir.exists() {
+        std::fs::create_dir_all(&models_dir)
+            .map_err(|e| format!("Failed to create models folder: {}", e))?;
+    }
+
+    let path = models_dir.to_string_lossy().as_ref().to_string();
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|e| format!("Failed to open models folder: {}", e))?;
+
+    Ok(())
+}
+
+#[specta::specta]
+#[tauri::command]
 pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
     let log_dir = crate::portable::app_log_dir(&app)
         .map_err(|e| format!("Failed to get log directory: {}", e))?;

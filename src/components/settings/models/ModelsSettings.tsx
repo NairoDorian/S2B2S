@@ -4,6 +4,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import {
   AudioLines,
   ChevronDown,
+  FolderOpen,
   Globe,
   Languages,
   RefreshCw,
@@ -17,7 +18,7 @@ import {
   MODEL_CAPABILITY_LANGUAGES,
   supportsLanguageCode,
 } from "@/lib/constants/languages.ts";
-import type { ModelInfo } from "@/bindings";
+import { commands, type ModelInfo } from "@/bindings";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -235,6 +236,17 @@ export const ModelsSettings: React.FC = () => {
     );
   }
 
+  const openModelsFolder = async () => {
+    try {
+      const result = await commands.openModelsFolder();
+      if (result.status !== "ok") {
+        throw new Error(String(result.error));
+      }
+    } catch (error) {
+      console.error("Failed to open models folder:", error);
+    }
+  };
+
   return (
     <div className="max-w-3xl w-full mx-auto space-y-4">
       <div className="mb-4">
@@ -266,6 +278,17 @@ export const ModelsSettings: React.FC = () => {
               {t("settings.models.yourModels")}
             </h2>
             <div className="flex items-center gap-2">
+              {/* Open models directory in native file explorer */}
+              <button
+                type="button"
+                onClick={openModelsFolder}
+                title={t("settings.models.openFolder")}
+                aria-label={t("settings.models.openFolder")}
+                className="flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20 transition-colors"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+              </button>
+
               {/* Rescan local sources for models added outside Handy */}
               <button
                 type="button"
