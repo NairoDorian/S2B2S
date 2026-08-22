@@ -91,12 +91,36 @@ pub fn open_models_folder(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
 
     let models_dir = app_data_dir.join("models");
-    if !models_dir.exists() {
+    let hf_cache = hf_hub::Cache::from_env().path().to_path_buf();
+
+    let has_hf_models = hf_cache.exists()
+        && std::fs::read_dir(&hf_cache)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    name.starts_with("models--")
+                })
+            })
+            .unwrap_or(false);
+
+    let has_custom_models = models_dir.exists()
+        && std::fs::read_dir(&models_dir)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false);
+
+    let target_dir = if has_hf_models && !has_custom_models {
+        hf_cache
+    } else if models_dir.exists() {
+        models_dir
+    } else if hf_cache.exists() {
+        hf_cache
+    } else {
         std::fs::create_dir_all(&models_dir)
             .map_err(|e| format!("Failed to create models folder: {}", e))?;
-    }
+        models_dir
+    };
 
-    let path = models_dir.to_string_lossy().as_ref().to_string();
+    let path = target_dir.to_string_lossy().as_ref().to_string();
     app.opener()
         .open_path(path, None::<String>)
         .map_err(|e| format!("Failed to open models folder: {}", e))?;
