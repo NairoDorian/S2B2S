@@ -13,7 +13,7 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::overlay::hide_recording_overlay;
 use crate::settings::AppSettings;
 use crate::shortcut;
-use crate::tray::{change_tray_icon, TrayIconState};
+use crate::tray::{set_tray_state, TrayIconState};
 use log::{debug, warn};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -228,7 +228,7 @@ impl Drop for RecordingSession {
         self.do_cleanup();
         // Also hide overlay and reset tray on unexpected drop (e.g., cancel)
         hide_recording_overlay(&self.app);
-        change_tray_icon(&self.app, TrayIconState::Idle);
+        set_tray_state(&self.app, TrayIconState::Idle);
     }
 }
 
