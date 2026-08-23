@@ -158,7 +158,7 @@ tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
 
 [profile.release]
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 16
 strip = true
 panic = "unwind"
