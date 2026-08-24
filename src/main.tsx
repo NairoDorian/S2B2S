@@ -7,6 +7,9 @@ import {
   applyTheme,
   getStoredTheme,
   syncThemeFromSettings,
+  applyAccentColor,
+  getStoredAccentColor,
+  syncAccentColorFromSettings,
 } from "./lib/utils/theme";
 
 installCompatShims();
@@ -14,10 +17,12 @@ installCompatShims();
 // Set platform before render so CSS can scope per-platform (e.g. scrollbar styles)
 document.documentElement.dataset.platform = platform();
 
-// Apply the last-known theme synchronously before render to avoid a flash of
+// Apply the last-known theme & accent synchronously before render to avoid a flash of
 // the wrong palette, then reconcile with the persisted setting once it loads.
 applyTheme(getStoredTheme());
 syncThemeFromSettings();
+applyAccentColor(getStoredAccentColor());
+syncAccentColorFromSettings();
 
 // Initialize i18n
 import "./i18n";

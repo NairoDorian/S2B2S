@@ -6,17 +6,26 @@ import {
   applyTheme,
   getStoredTheme,
   syncThemeFromSettings,
+  applyAccentColor,
+  getStoredAccentColor,
+  syncAccentColorFromSettings,
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import "@/i18n";
 
 // A separate webview from the settings window, so the overlay has to set
-// `data-theme` on its own document: last-known theme before render (shared
-// localStorage) to avoid a flash, reconcile with the persisted setting in case
-// the overlay booted first, then follow live changes.
+// `data-theme` and accent CSS properties on its own document: last-known theme/accent
+// before render (shared localStorage) to avoid a flash, reconcile with the persisted
+// setting in case the overlay booted first, then follow live changes.
 applyTheme(getStoredTheme());
 syncThemeFromSettings();
+applyAccentColor(getStoredAccentColor());
+syncAccentColorFromSettings();
+
 listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
+listen<string>("accent-color-changed", (event) =>
+  applyAccentColor(event.payload),
+);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -745,6 +745,22 @@
       "dark": "Dark"
     }
   },
+  "accentColor": {
+    "title": "Accent Color",
+    "description": "Choose a custom color for the interface, logos, and recording overlay",
+    "custom": "Custom Color",
+    "reset": "Reset to Default",
+    "presets": {
+      "gold": "Gold",
+      "pink": "Rose",
+      "amber": "Amber",
+      "emerald": "Emerald",
+      "sky": "Sky Blue",
+      "indigo": "Indigo",
+      "crimson": "Crimson",
+      "purple": "Purple"
+    }
+  },
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing..."

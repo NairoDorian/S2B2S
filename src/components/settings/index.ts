@@ -35,3 +35,5 @@ export { AutostartToggle } from "./AutostartToggle";
 export { UpdateChecksToggle } from "./UpdateChecksToggle";
 export { ShowWhatsNewOnUpdate } from "./ShowWhatsNewOnUpdate";
 export { MicIdleTimeout } from "./MicIdleTimeout";
+export { ThemeSelector } from "./ThemeSelector";
+export { AccentColorSelector } from "./AccentColorSelector";

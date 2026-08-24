@@ -1,4 +1,6 @@
 import { commands, type Theme } from "@/bindings";
+import { emit } from "@tauri-apps/api/event";
+import { computeAccentPalette, DEFAULT_ACCENT_COLOR, parseHex } from "./color";
 
 /**
  * Appearance theme handling.
@@ -17,6 +19,7 @@ import { commands, type Theme } from "@/bindings";
  */
 
 export const THEME_STORAGE_KEY = "handy.theme";
+export const ACCENT_COLOR_STORAGE_KEY = "handy.accent_color";
 
 export const THEME_OPTIONS: Theme[] = ["system", "light", "dark"];
 
@@ -59,5 +62,58 @@ export const syncThemeFromSettings = async (): Promise<void> => {
     }
   } catch (e) {
     console.warn("Failed to sync theme from settings:", e);
+  }
+};
+
+/** Apply an accent color palette dynamically to the document root. */
+export const applyAccentColor = (hex: string, broadcast = false): void => {
+  if (!parseHex(hex)) {
+    hex = DEFAULT_ACCENT_COLOR;
+  }
+  const palette = computeAccentPalette(hex);
+  const root = document.documentElement;
+
+  root.style.setProperty(
+    "--light-color-logo-primary",
+    palette.lightLogoPrimary,
+  );
+  root.style.setProperty("--light-color-logo-stroke", palette.lightLogoStroke);
+  root.style.setProperty("--dark-color-logo-primary", palette.darkLogoPrimary);
+  root.style.setProperty("--dark-color-logo-stroke", palette.darkLogoStroke);
+  root.style.setProperty("--color-background-ui", palette.backgroundUi);
+  root.style.setProperty("--color-logo-highlight", palette.logoHighlight);
+
+  try {
+    localStorage.setItem(ACCENT_COLOR_STORAGE_KEY, hex);
+  } catch {
+    // ignore
+  }
+
+  if (broadcast) {
+    emit("accent-color-changed", hex).catch(console.warn);
+  }
+};
+
+/** Read the last-applied accent color for synchronous boot-time application. */
+export const getStoredAccentColor = (): string => {
+  try {
+    const stored = localStorage.getItem(ACCENT_COLOR_STORAGE_KEY);
+    if (stored && parseHex(stored)) return stored;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_ACCENT_COLOR;
+};
+
+/** Apply the persisted accent color from AppSettings (the source of truth). */
+export const syncAccentColorFromSettings = async (): Promise<void> => {
+  try {
+    const result = await commands.getAppSettings();
+    if (result.status === "ok") {
+      const color = result.data.custom_accent_color || DEFAULT_ACCENT_COLOR;
+      applyAccentColor(color, false);
+    }
+  } catch (e) {
+    console.warn("Failed to sync accent color from settings:", e);
   }
 };

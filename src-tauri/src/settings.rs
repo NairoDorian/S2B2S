@@ -469,6 +469,8 @@ pub struct AppSettings {
     #[serde(default = "default_theme")]
     pub theme: Theme,
     #[serde(default)]
+    pub custom_accent_color: Option<String>,
+    #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
     pub lazy_stream_close: bool,
@@ -1059,6 +1061,7 @@ pub fn get_default_settings() -> AppSettings {
         append_trailing_newline: false,
         app_language: default_app_language(),
         theme: default_theme(),
+        custom_accent_color: None,
         experimental_enabled: false,
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),
