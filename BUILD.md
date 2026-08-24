@@ -112,9 +112,18 @@ bun tauri dev
 
 ### 4. Build for Production
 
+Handy provides two release build commands:
+
 ```bash
-bun run tauri build
+# Fast local build (auto-detects and compiles CUDA kernels only for your local GPU):
+bun run build:fast
+
+# Full distribution build (compiles complete multi-architecture CUDA matrix):
+bun run build:full
 ```
+
+- **`build:fast` (`bun run build:fast` or `bun run tauri build --fast`)**: Ideal for local development release testing. Automatically sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto` to target solely the active system GPU, dramatically cutting compile time.
+- **`build:full` (`bun run build:full` or `bun run tauri build`)**: Used for releasing distribution packages. Compiles the full matrix of CUDA architectures to run across all supported NVIDIA GPU generations.
 
 This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; msi on Windows).
 

@@ -2,10 +2,10 @@
 //
 // Wraps `@tauri-apps/cli` with:
 // 1. Automatic `check-transcribe-deps` check before running Tauri.
-// 2. Custom `--local-gpu` / `--local` / `-localgpu` flag support:
-//    When passed to `tauri build`, sets TRANSCRIBE_CUDA_ARCHITECTURES=auto
-//    so release builds auto-detect the local system GPU (for fast local release builds)
-//    instead of compiling the full multi-arch distribution set.
+// 2. Fast local GPU build flag support (`--fast` / `--local-gpu` / `--local` / `-localgpu`):
+//    When passed to `tauri build` (via `bun run build:fast`), sets TRANSCRIBE_CUDA_ARCHITECTURES=auto
+//    so release builds auto-detect only the local system GPU (for fast local release builds)
+//    instead of compiling the full multi-arch distribution set (via `bun run build:full`).
 
 import { resolve, join } from "path";
 import { readFileSync } from "fs";
@@ -70,7 +70,13 @@ const filteredArgs: string[] = [];
 let localGpuRequested = false;
 
 for (const arg of rawArgs) {
-  if (arg === "--local-gpu" || arg === "--local" || arg === "-localgpu") {
+  if (
+    arg === "--fast" ||
+    arg === "-fast" ||
+    arg === "--local-gpu" ||
+    arg === "--local" ||
+    arg === "-localgpu"
+  ) {
     localGpuRequested = true;
   } else {
     filteredArgs.push(arg);
@@ -80,7 +86,7 @@ for (const arg of rawArgs) {
 if (localGpuRequested) {
   process.env.TRANSCRIBE_CUDA_ARCHITECTURES = "auto";
   console.log(
-    "[tauri-runner] Local GPU mode enabled (TRANSCRIBE_CUDA_ARCHITECTURES=auto): auto-detecting system GPU for this build.",
+    "[tauri-runner] Fast build mode enabled (TRANSCRIBE_CUDA_ARCHITECTURES=auto): auto-detecting system GPU for this build.",
   );
 }
 

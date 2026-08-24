@@ -27,7 +27,8 @@ bun run tauri dev
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 
 # Build for production
-bun run tauri build
+bun run build:fast  # Fast local build (auto-detects local GPU arch)
+bun run build:full  # Full multi-arch distribution build
 
 # Frontend only development
 bun run dev        # Start Vite dev server
