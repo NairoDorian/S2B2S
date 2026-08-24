@@ -1095,7 +1095,7 @@ impl TranscriptionManager {
                                     perf.record_emit();
                                     self.emit_stream_text(&text.committed, &text.tentative);
                                     if let Some(writer) = &direct_writer {
-                                        writer.update_target(text.full);
+                                        writer.update_target(text.display());
                                     }
                                 }
                                 perf.maybe_log();
@@ -1119,9 +1119,9 @@ impl TranscriptionManager {
                                     update.audio_committed_ms,
                                     update.buffered_ms,
                                 );
-                                let full_text = stream.text().full;
+                                let finalized_text = stream.text().display();
                                 if let Some(writer) = direct_writer.take() {
-                                    writer.flush(Some(full_text.clone()));
+                                    writer.flush(Some(finalized_text.clone()));
                                 }
                                 // In auto mode the model's own LID is the best
                                 // remaining evidence; the snapshot is only
@@ -1136,7 +1136,7 @@ impl TranscriptionManager {
                                     resolved => resolved.clone(),
                                 };
                                 Some(FinalizedStreamText {
-                                    text: full_text,
+                                    text: finalized_text,
                                     output_language,
                                     supported_languages: languages.clone(),
                                 })
