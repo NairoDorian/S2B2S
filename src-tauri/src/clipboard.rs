@@ -726,6 +726,25 @@ pub(crate) fn paste_direct(
     with_enigo(app_handle, |enigo| input::paste_text_direct(enigo, text))
 }
 
+/// Sends backspace keystrokes directly.
+pub(crate) fn backspace_direct(
+    count: usize,
+    app_handle: &AppHandle,
+    #[cfg(target_os = "linux")] _typing_tool: TypingTool,
+) -> Result<(), String> {
+    if count == 0 {
+        return Ok(());
+    }
+    with_enigo(app_handle, |enigo| {
+        for _ in 0..count {
+            enigo
+                .key(Key::Backspace, Direction::Click)
+                .map_err(|e| format!("Failed to send backspace: {}", e))?;
+        }
+        Ok(())
+    })
+}
+
 pub(crate) fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), String> {
     match key_type {
         AutoSubmitKey::Enter => {

@@ -1,14 +1,13 @@
-use crate::clipboard::paste_direct;
+use crate::clipboard::{backspace_direct, paste_direct};
 use crate::settings::AppSettings;
 use log::{debug, warn};
-use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tauri::AppHandle;
 
 enum DirectStreamCmd {
-    Feed(String),
+    UpdateTarget(String),
     Flush(Option<String>, Sender<()>),
     Cancel,
 }
@@ -31,17 +30,17 @@ impl DirectStreamWriter {
         }
     }
 
-    pub fn feed(&self, text: String) {
+    pub fn update_target(&self, text: String) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(DirectStreamCmd::Feed(text));
+            let _ = tx.send(DirectStreamCmd::UpdateTarget(text));
         }
     }
 
-    pub fn flush(mut self, remaining_tail: Option<String>) {
+    pub fn flush(mut self, final_text: Option<String>) {
         if let Some(tx) = self.tx.take() {
             let (reply_tx, reply_rx) = mpsc::channel();
             if tx
-                .send(DirectStreamCmd::Flush(remaining_tail, reply_tx))
+                .send(DirectStreamCmd::Flush(final_text, reply_tx))
                 .is_ok()
             {
                 // Wait briefly for flush to complete (up to 3 seconds)
@@ -71,6 +70,126 @@ impl Drop for DirectStreamWriter {
     }
 }
 
+fn common_prefix_char_len(a: &str, b: &str) -> usize {
+    a.chars()
+        .zip(b.chars())
+        .take_while(|(c1, c2)| c1 == c2)
+        .count()
+}
+
+fn step_typewriter(
+    target: &str,
+    typed: &mut String,
+    threshold: usize,
+    app_handle: &AppHandle,
+    #[cfg(target_os = "linux")] typing_tool: crate::settings::TypingTool,
+) {
+    if typed.as_str() == target {
+        return;
+    }
+
+    let common_chars = common_prefix_char_len(typed, target);
+    let typed_char_count = typed.chars().count();
+    let target_char_count = target.chars().count();
+
+    // If typed has characters beyond the common prefix, backspace them out
+    if typed_char_count > common_chars {
+        let backspaces = typed_char_count - common_chars;
+        if let Err(e) = backspace_direct(
+            backspaces,
+            app_handle,
+            #[cfg(target_os = "linux")]
+            typing_tool,
+        ) {
+            warn!("DirectStreamWriter: failed to backspace: {}", e);
+        }
+        let byte_pos = typed
+            .char_indices()
+            .nth(common_chars)
+            .map(|(idx, _)| idx)
+            .unwrap_or(typed.len());
+        typed.truncate(byte_pos);
+    }
+
+    // Advance 1, 2, or 3 characters from target
+    let current_char_count = typed.chars().count();
+    let remaining_chars = target_char_count.saturating_sub(current_char_count);
+    if remaining_chars > 0 {
+        let step = if remaining_chars > threshold * 2 {
+            3
+        } else if remaining_chars > threshold {
+            2
+        } else {
+            1
+        };
+
+        let chars_to_take = step.min(remaining_chars);
+        let chunk: String = target
+            .chars()
+            .skip(current_char_count)
+            .take(chars_to_take)
+            .collect();
+
+        if !chunk.is_empty() {
+            if let Err(e) = paste_direct(
+                &chunk,
+                app_handle,
+                #[cfg(target_os = "linux")]
+                typing_tool,
+            ) {
+                warn!("DirectStreamWriter: failed to type chunk: {}", e);
+            }
+            typed.push_str(&chunk);
+        }
+    }
+}
+
+fn sync_to_target(
+    target: &str,
+    typed: &mut String,
+    app_handle: &AppHandle,
+    #[cfg(target_os = "linux")] typing_tool: crate::settings::TypingTool,
+) {
+    if typed.as_str() == target {
+        return;
+    }
+
+    let common_chars = common_prefix_char_len(typed, target);
+    let typed_char_count = typed.chars().count();
+
+    if typed_char_count > common_chars {
+        let backspaces = typed_char_count - common_chars;
+        if let Err(e) = backspace_direct(
+            backspaces,
+            app_handle,
+            #[cfg(target_os = "linux")]
+            typing_tool,
+        ) {
+            warn!("DirectStreamWriter: failed to backspace on sync: {}", e);
+        }
+        let byte_pos = typed
+            .char_indices()
+            .nth(common_chars)
+            .map(|(idx, _)| idx)
+            .unwrap_or(typed.len());
+        typed.truncate(byte_pos);
+    }
+
+    let current_char_count = typed.chars().count();
+    let chunk: String = target.chars().skip(current_char_count).collect();
+    if !chunk.is_empty() {
+        if let Err(e) = paste_direct(
+            &chunk,
+            app_handle,
+            #[cfg(target_os = "linux")]
+            typing_tool,
+        ) {
+            warn!("DirectStreamWriter: failed to type sync chunk: {}", e);
+        }
+        typed.push_str(&chunk);
+    }
+}
+
 fn run_direct_stream_worker(
     app_handle: AppHandle,
     rx: Receiver<DirectStreamCmd>,
@@ -82,100 +201,62 @@ fn run_direct_stream_worker(
     let tick_duration = Duration::from_millis(interval_ms);
     let threshold = 15.max(((speed as f32) * 0.6).round() as usize);
 
-    let mut queue: VecDeque<char> = VecDeque::new();
+    let mut target_text = String::new();
+    let mut typed_text = String::new();
     let flush_reply: Option<Sender<()>>;
 
     'worker: loop {
-        // Process any pending commands without blocking if queue is not empty,
-        // or block for tick_duration if queue has items, or block indefinitely if queue is empty.
-        let cmd = if queue.is_empty() {
+        // If caught up with target, block until next command; otherwise wait up to tick_duration
+        let cmd = if typed_text == target_text {
             match rx.recv() {
-                Ok(c) => c,
+                Ok(c) => Some(c),
                 Err(_) => return,
             }
         } else {
             match rx.recv_timeout(tick_duration) {
-                Ok(c) => c,
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Time to type the next chunk
-                    let step = if queue.len() > threshold * 2 {
-                        3
-                    } else if queue.len() > threshold {
-                        2
-                    } else {
-                        1
-                    };
-
-                    let chunk: String = (0..step).filter_map(|_| queue.pop_front()).collect();
-                    if !chunk.is_empty() {
-                        if let Err(e) = paste_direct(
-                            &chunk,
-                            &app_handle,
-                            #[cfg(target_os = "linux")]
-                            settings.typing_tool,
-                        ) {
-                            warn!("DirectStreamWriter: failed to type chunk: {}", e);
-                        }
-                    }
-                    continue 'worker;
-                }
+                Ok(c) => Some(c),
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
             }
         };
 
-        match cmd {
-            DirectStreamCmd::Feed(text) => {
-                queue.extend(text.chars());
-            }
-            DirectStreamCmd::Flush(tail, reply) => {
-                if let Some(tail_text) = tail {
-                    queue.extend(tail_text.chars());
+        if let Some(cmd) = cmd {
+            match cmd {
+                DirectStreamCmd::UpdateTarget(new_target) => {
+                    target_text = new_target;
                 }
-                flush_reply = Some(reply);
-                break 'worker;
-            }
-            DirectStreamCmd::Cancel => {
-                queue.clear();
-                return;
-            }
-        }
-
-        // Type the next characters if queue has items
-        if !queue.is_empty() {
-            let step = if queue.len() > threshold * 2 {
-                3
-            } else if queue.len() > threshold {
-                2
-            } else {
-                1
-            };
-
-            let chunk: String = (0..step).filter_map(|_| queue.pop_front()).collect();
-            if !chunk.is_empty() {
-                if let Err(e) = paste_direct(
-                    &chunk,
-                    &app_handle,
-                    #[cfg(target_os = "linux")]
-                    settings.typing_tool,
-                ) {
-                    warn!("DirectStreamWriter: failed to type chunk: {}", e);
+                DirectStreamCmd::Flush(final_text, reply) => {
+                    if let Some(text) = final_text {
+                        target_text = text;
+                    }
+                    flush_reply = Some(reply);
+                    break 'worker;
+                }
+                DirectStreamCmd::Cancel => {
+                    return;
                 }
             }
         }
-    }
 
-    // Flush any remaining characters at once
-    if !queue.is_empty() {
-        let remaining: String = queue.drain(..).collect();
-        if let Err(e) = paste_direct(
-            &remaining,
+        // Advance typewriter step towards target_text
+        step_typewriter(
+            &target_text,
+            &mut typed_text,
+            threshold,
             &app_handle,
             #[cfg(target_os = "linux")]
             settings.typing_tool,
-        ) {
-            warn!("DirectStreamWriter: failed to flush remaining text: {}", e);
-        }
+        );
     }
+
+    // Flush any remaining characters immediately so output is 100% synchronized
+    sync_to_target(
+        &target_text,
+        &mut typed_text,
+        &app_handle,
+        #[cfg(target_os = "linux")]
+        settings.typing_tool,
+    );
 
     // Trailing space
     if settings.append_trailing_space {

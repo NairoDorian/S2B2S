@@ -1073,7 +1073,6 @@ impl TranscriptionManager {
             } else {
                 None
             };
-            let mut last_committed_len = 0;
 
             let mut perf = StreamPerf::new();
             while let Ok(cmd) = rx.recv() {
@@ -1096,11 +1095,7 @@ impl TranscriptionManager {
                                     perf.record_emit();
                                     self.emit_stream_text(&text.committed, &text.tentative);
                                     if let Some(writer) = &direct_writer {
-                                        if text.committed.len() > last_committed_len {
-                                            let delta = &text.committed[last_committed_len..];
-                                            writer.feed(delta.to_string());
-                                            last_committed_len = text.committed.len();
-                                        }
+                                        writer.update_target(text.full);
                                     }
                                 }
                                 perf.maybe_log();
@@ -1126,12 +1121,7 @@ impl TranscriptionManager {
                                 );
                                 let full_text = stream.text().full;
                                 if let Some(writer) = direct_writer.take() {
-                                    let tail = if full_text.len() > last_committed_len {
-                                        Some(full_text[last_committed_len..].to_string())
-                                    } else {
-                                        None
-                                    };
-                                    writer.flush(tail);
+                                    writer.flush(Some(full_text.clone()));
                                 }
                                 // In auto mode the model's own LID is the best
                                 // remaining evidence; the snapshot is only
