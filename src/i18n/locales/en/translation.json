@@ -361,8 +361,13 @@
           "clipboardCtrlShiftV": "Clipboard (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Clipboard (Shift+Insert)",
           "direct": "Direct",
+          "directStreaming": "Direct Streaming",
           "none": "None",
           "externalScript": "External Script"
+        },
+        "directStreamingSpeed": {
+          "label": "Direct Streaming Speed",
+          "description": "Speed at which characters are typed directly into the active application (in characters per second)."
         },
         "externalScriptPlaceholder": "/path/to/your/script.sh"
       },

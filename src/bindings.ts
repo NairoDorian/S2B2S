@@ -20,6 +20,7 @@ export const commands = {
 	changeOverlayStyleSetting: (style: string) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style })),
 	changeOverlayDirectModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled })),
 	changeOverlayDirectSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_speed_setting", { speed })),
+	changeDirectStreamingSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_direct_streaming_speed_setting", { speed })),
 	changeDebugModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_debug_mode_setting", { enabled })),
 	changeWordCorrectionThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_word_correction_threshold_setting", { threshold })),
 	changeExtraRecordingBufferSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_extra_recording_buffer_setting", { ms })),
@@ -380,6 +381,8 @@ export type AppSettings_Deserialize = {
 	overlay_direct_mode?: boolean,
 	/**  Speed at which characters appear in direct streaming mode (characters per second). */
 	overlay_direct_speed?: number,
+	/**  Speed at which characters are typed in direct streaming paste method (characters per second). */
+	direct_streaming_speed?: number,
 	multi_stt_enabled?: boolean,
 	multi_stt_model_2?: string | null,
 	multi_stt_model_3?: string | null,
@@ -518,6 +521,8 @@ export type AppSettings_Serialize = {
 	overlay_direct_mode: boolean,
 	/**  Speed at which characters appear in direct streaming mode (characters per second). */
 	overlay_direct_speed: number,
+	/**  Speed at which characters are typed in direct streaming paste method (characters per second). */
+	direct_streaming_speed: number,
 	multi_stt_enabled: boolean,
 	multi_stt_model_2: string | null,
 	multi_stt_model_3: string | null,
@@ -748,7 +753,7 @@ export type PaginatedHistory = {
 	has_more: boolean,
 };
 
-export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script";
+export type PasteMethod = "ctrl_v" | "direct" | "direct_streaming" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script";
 
 export type PermissionAccess = "allowed" | "denied" | "unknown";
 

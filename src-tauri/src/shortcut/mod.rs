@@ -742,6 +742,15 @@ pub fn change_overlay_direct_speed_setting(app: AppHandle, speed: u32) -> Result
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_direct_streaming_speed_setting(app: AppHandle, speed: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.direct_streaming_speed = speed.clamp(10, 60);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_debug_mode_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.debug_mode = enabled;
@@ -929,6 +938,7 @@ pub fn change_paste_method_setting(app: AppHandle, method: String) -> Result<(),
     let parsed = match method.as_str() {
         "ctrl_v" => PasteMethod::CtrlV,
         "direct" => PasteMethod::Direct,
+        "direct_streaming" => PasteMethod::DirectStreaming,
         "none" => PasteMethod::None,
         "shift_insert" => PasteMethod::ShiftInsert,
         "ctrl_shift_v" => PasteMethod::CtrlShiftV,

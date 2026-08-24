@@ -718,7 +718,13 @@ impl ShortcutAction for TranscribeAction {
                     // running, finalize it and use its text (all audio was already
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
-                    let transcription_result = match tm.finalize_stream() {
+                    let stream_finalized = tm.finalize_stream();
+                    let was_direct_stream_written = matches!(&stream_finalized, Ok(Some(text)) if !text.trim().is_empty())
+                        && get_settings(&ah).paste_method
+                            == crate::settings::PasteMethod::DirectStreaming
+                        && !post_process;
+
+                    let transcription_result = match stream_finalized {
                         // A finalized stream with usable text wins. An empty result
                         // (no active stream, produced nothing, or a finalize error
                         // after the engine was returned) falls back to a full batch
@@ -808,7 +814,11 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
 
-                            if processed.final_text.is_empty() {
+                            if processed.final_text.is_empty() || was_direct_stream_written {
+                                debug!(
+                                    "Direct streaming or empty output - skipping final paste action (direct_streamed: {})",
+                                    was_direct_stream_written
+                                );
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                             } else {

@@ -8,6 +8,7 @@ mod catalog;
 pub mod cli;
 mod clipboard;
 mod commands;
+pub mod direct_stream_writer;
 mod helpers;
 mod input;
 mod llm_client;
@@ -630,6 +631,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_overlay_style_setting,
             shortcut::change_overlay_direct_mode_setting,
             shortcut::change_overlay_direct_speed_setting,
+            shortcut::change_direct_streaming_speed_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
             shortcut::change_extra_recording_buffer_setting,

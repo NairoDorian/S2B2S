@@ -201,6 +201,8 @@ const settingUpdaters: {
     commands.changeOverlayDirectModeSetting(value as boolean),
   overlay_direct_speed: (value) =>
     commands.changeOverlayDirectSpeedSetting(value as number),
+  direct_streaming_speed: (value) =>
+    commands.changeDirectStreamingSpeedSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),

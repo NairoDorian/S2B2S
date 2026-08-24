@@ -1062,6 +1062,19 @@ impl TranscriptionManager {
                 model_id, backend
             );
 
+            let is_direct_streaming_paste =
+                settings.paste_method == crate::settings::PasteMethod::DirectStreaming;
+            let mut direct_writer = if is_direct_streaming_paste {
+                Some(crate::direct_stream_writer::DirectStreamWriter::new(
+                    self.app_handle.clone(),
+                    settings.direct_streaming_speed,
+                    settings.clone(),
+                ))
+            } else {
+                None
+            };
+            let mut last_committed_len = 0;
+
             let mut perf = StreamPerf::new();
             while let Ok(cmd) = rx.recv() {
                 match cmd {
@@ -1082,6 +1095,13 @@ impl TranscriptionManager {
                                     let text = stream.text();
                                     perf.record_emit();
                                     self.emit_stream_text(&text.committed, &text.tentative);
+                                    if let Some(writer) = &direct_writer {
+                                        if text.committed.len() > last_committed_len {
+                                            let delta = &text.committed[last_committed_len..];
+                                            writer.feed(delta.to_string());
+                                            last_committed_len = text.committed.len();
+                                        }
+                                    }
                                 }
                                 perf.maybe_log();
                             }
@@ -1104,6 +1124,15 @@ impl TranscriptionManager {
                                     update.audio_committed_ms,
                                     update.buffered_ms,
                                 );
+                                let full_text = stream.text().full;
+                                if let Some(writer) = direct_writer.take() {
+                                    let tail = if full_text.len() > last_committed_len {
+                                        Some(full_text[last_committed_len..].to_string())
+                                    } else {
+                                        None
+                                    };
+                                    writer.flush(tail);
+                                }
                                 // In auto mode the model's own LID is the best
                                 // remaining evidence; the snapshot is only
                                 // materialized when it can change the outcome.
@@ -1117,12 +1146,15 @@ impl TranscriptionManager {
                                     resolved => resolved.clone(),
                                 };
                                 Some(FinalizedStreamText {
-                                    text: stream.text().full,
+                                    text: full_text,
                                     output_language,
                                     supported_languages: languages.clone(),
                                 })
                             }
                             Err(e) => {
+                                if let Some(writer) = direct_writer.take() {
+                                    writer.cancel();
+                                }
                                 perf.record_compute(finalize_start.elapsed());
                                 error!(
                                     "stream finalize failed: {}; falling back to batch transcription",
@@ -1141,10 +1173,17 @@ impl TranscriptionManager {
                         break;
                     }
                     StreamCmd::Cancel => {
+                        if let Some(writer) = direct_writer.take() {
+                            writer.cancel();
+                        }
                         stream.reset();
                         break;
                     }
                 }
+            }
+
+            if let Some(writer) = direct_writer.take() {
+                writer.cancel();
             }
 
             true

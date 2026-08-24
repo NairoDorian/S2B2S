@@ -14,7 +14,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(target_os = "linux")]
 use crate::utils::{is_kde_wayland, is_wayland};
 
-fn with_enigo<T>(
+pub(crate) fn with_enigo<T>(
     app_handle: &AppHandle,
     f: impl FnOnce(&mut Enigo) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -710,7 +710,7 @@ fn paste_via_external_script(text: &str, script_path: &str) -> Result<(), String
 }
 
 /// Types text directly by simulating individual key presses.
-fn paste_direct(
+pub(crate) fn paste_direct(
     text: &str,
     app_handle: &AppHandle,
     #[cfg(target_os = "linux")] typing_tool: TypingTool,
@@ -803,7 +803,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
         PasteMethod::None => {
             info!("PasteMethod::None selected - skipping paste action");
         }
-        PasteMethod::Direct => {
+        PasteMethod::Direct | PasteMethod::DirectStreaming => {
             paste_direct(
                 &text,
                 &app_handle,
@@ -958,6 +958,10 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
     fn auto_submit_requires_setting_enabled() {
         assert!(!should_send_auto_submit(false, PasteMethod::CtrlV));
         assert!(!should_send_auto_submit(false, PasteMethod::Direct));
+        assert!(!should_send_auto_submit(
+            false,
+            PasteMethod::DirectStreaming
+        ));
     }
 
     #[test]
@@ -969,6 +973,7 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
     fn auto_submit_runs_for_active_paste_methods() {
         assert!(should_send_auto_submit(true, PasteMethod::CtrlV));
         assert!(should_send_auto_submit(true, PasteMethod::Direct));
+        assert!(should_send_auto_submit(true, PasteMethod::DirectStreaming));
         assert!(should_send_auto_submit(true, PasteMethod::CtrlShiftV));
         assert!(should_send_auto_submit(true, PasteMethod::ShiftInsert));
     }
