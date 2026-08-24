@@ -50,3 +50,6 @@ result
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Windows shortcuts
+*.lnk

@@ -1,7 +1,7 @@
 {
   "name": "handy-app",
   "private": true,
-  "version": "0.9.5",
+  "version": "0.9.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
     "update-deps": "bun scripts/update-deps.ts",
+    "update:rtk": "bun scripts/update-rtk.ts",
     "postinstall": "bun scripts/check-nix-deps.ts"
   },
   "dependencies": {
@@ -40,9 +41,9 @@
     "@tauri-apps/plugin-updater": "~2.10.1",
     "i18next": "26.4.0",
     "immer": "11.1.18",
-    "lucide-react": "1.33.0",
-    "react": "19.3.0-canary-eafeac09-20260819",
-    "react-dom": "19.3.0-canary-eafeac09-20260819",
+    "lucide-react": "1.34.0",
+    "react": "19.3.0-canary-bd6ea412-20260824",
+    "react-dom": "19.3.0-canary-bd6ea412-20260824",
     "react-i18next": "17.0.12",
     "react-markdown": "^10.1.0",
     "react-select": "^5.10.2",
@@ -50,21 +51,21 @@
     "sonner": "2.0.8",
     "tailwindcss": "^4.3.3",
     "tauri-plugin-macos-permissions-api": "2.3.0",
-    "zod": "4.5.0-canary.20260820T155656",
+    "zod": "4.5.0-canary.20260824T214023",
     "zustand": "5.0.15"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0-alpha-2026-08-20",
+    "@playwright/test": "1.63.0-alpha-2026-08-24",
     "@tauri-apps/cli": "^2.11.4",
-    "@types/node": "26.2.0",
+    "@types/node": "26.3.0",
     "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.4",
+    "@types/react-dom": "19.2.5",
     "@types/react-select": "^5.0.1",
     "@vitejs/plugin-react": "6.1.0",
     "eslint-plugin-i18next": "^6.1.5",
-    "oxlint": "1.79.0",
+    "oxlint": "1.80.0",
     "prettier": "4.0.0-alpha.13",
-    "typescript": "7.1.0-dev.20260819.1",
+    "typescript": "7.1.0-dev.20260824.1",
     "vite": "8.2.2"
   }
 }

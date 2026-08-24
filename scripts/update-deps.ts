@@ -716,17 +716,20 @@ async function updateEverything() {
     );
     let newCargoContent = cargoContent;
     outdatedCargo.forEach((crate) => {
-      // Inline and simple Cargo.toml spec forms are mutually exclusive per line,
-      // so applying both replacements unconditionally is safe and avoids the
-      // stateful lastIndex quirk of `RegExp.test()` on global regexes.
+      // Inline and simple Cargo.toml spec forms are mutually exclusive per line.
+      // Anchor to line boundaries to prevent substring matching (e.g. `dialog` matching `log`).
+      const escaped = crate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regInline = new RegExp(
-        `(${crate.name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
+        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
         "g",
       );
-      const regSimple = new RegExp(`(${crate.name}\\s*=\\s*")([^"]+)(")`, "g");
+      const regSimple = new RegExp(
+        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*")([^"]+)(")`,
+        "g",
+      );
       newCargoContent = newCargoContent
-        .replace(regInline, `$1^${crate.latestVersion}$3`)
-        .replace(regSimple, `$1^${crate.latestVersion}$3`);
+        .replace(regInline, `$1$2^${crate.latestVersion}$4`)
+        .replace(regSimple, `$1$2^${crate.latestVersion}$4`);
     });
     fs.writeFileSync(cargoTomlPath, newCargoContent, "utf8");
     console.log("✅ Cargo.toml specifications updated to @target!");
