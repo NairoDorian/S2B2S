@@ -249,6 +249,10 @@ impl VoiceActivityDetector for SileroVad {
         }
     }
 
+    fn frame_samples(&self) -> usize {
+        PIPELINE_FRAME_SAMPLES
+    }
+
     /// Reset RNN state and buffers so each new recording starts fresh.
     fn reset(&mut self) {
         match &mut self.engine {

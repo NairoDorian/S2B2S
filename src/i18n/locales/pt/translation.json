@@ -467,6 +467,14 @@
         "title": "Voice Activity Detection",
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
+      "vadBackend": {
+        "title": "Backend de detecção de voz",
+        "description": "Escolha o detector usado para filtrar o silêncio. O Earshot é experimental; volte para o Silero se a fala for cortada ou o ruído for mantido.",
+        "options": {
+          "silero": "Silero",
+          "earshot": "Earshot"
+        }
+      },
       "fillerWordRemoval": {
         "title": "Remover palavras de preenchimento",
         "description": "Remove hesitações comuns das transcrições. Desative para mantê-las."

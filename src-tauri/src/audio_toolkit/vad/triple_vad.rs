@@ -39,6 +39,10 @@ impl TripleVad {
 }
 
 impl VoiceActivityDetector for TripleVad {
+    fn frame_samples(&self) -> usize {
+        SILERO_FRAME_SAMPLES
+    }
+
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
         if frame.len() != SILERO_FRAME_SAMPLES {
             anyhow::bail!(

@@ -467,6 +467,14 @@
         "title": "Voice Activity Detection",
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
+      "vadBackend": {
+        "title": "Backend för röstdetektering",
+        "description": "Välj detektorn som används för att filtrera bort tystnad. Earshot är experimentell; byt tillbaka till Silero om tal klipps eller brus behålls.",
+        "options": {
+          "silero": "Silero",
+          "earshot": "Earshot"
+        }
+      },
       "fillerWordRemoval": {
         "title": "Ta bort utfyllnadsord",
         "description": "Tar bort vanliga tvekljud från transkriberingar. Stäng av för att behålla dem."

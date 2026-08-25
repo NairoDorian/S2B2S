@@ -13,8 +13,10 @@ import type {
   OrtAcceleratorSetting,
   TtsConfig,
   BrainConfig,
+  VadBackend,
 } from "@/bindings";
 import { commands } from "@/bindings";
+import { toast } from "sonner";
 import { invalidateModelDownloadActivationIntent } from "@/lib/modelDownloadActivation";
 
 interface SettingsStore {
@@ -237,6 +239,15 @@ const settingUpdaters: {
     commands.changeLazyStreamCloseSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
+  vad_backend: async (value) => {
+    const result = await commands.changeVadBackendSetting(value as VadBackend);
+    if (result.status === "error") {
+      // Rejected switches (e.g. mid-recording) roll the dropdown back via the
+      // throw below; the toast tells the user why.
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>

@@ -75,6 +75,7 @@ export const commands = {
 	changeAppendTrailingSpaceSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_append_trailing_space_setting", { enabled })),
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
+	changeVadBackendSetting: (backend: VadBackend) => typedError<null, string>(__TAURI_INVOKE("change_vad_backend_setting", { backend })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeAiReplaceInstructionSetting: (instruction: string) => typedError<null, string>(__TAURI_INVOKE("change_ai_replace_instruction_setting", { instruction })),
@@ -615,6 +616,11 @@ export type AppSettings_Deserialize = {
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	ort_accelerator?: OrtAcceleratorSetting,
+	/**
+	 *  Stable transcribe.cpp device selector. This is derived from the backend's
+	 *  `device_id` when available (or its name for backends such as Metal),
+	 *  never from the process-local device registry index.
+	 */
 	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
 	native_streaming_live_output_models?: string[],
@@ -678,6 +684,8 @@ export type AppSettings_Deserialize = {
 	text_replacement_decapitalize_timeout_ms?: number,
 	text_replacement_decapitalize_standard_post_recording_monitor_ms?: number,
 	vad_enabled?: boolean,
+	/**  Experimental detector implementation. Silero remains the stable default. */
+	vad_backend?: VadBackend,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -802,6 +810,11 @@ export type AppSettings_Serialize = {
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	ort_accelerator: OrtAcceleratorSetting,
+	/**
+	 *  Stable transcribe.cpp device selector. This is derived from the backend's
+	 *  `device_id` when available (or its name for backends such as Metal),
+	 *  never from the process-local device registry index.
+	 */
 	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,
 	native_streaming_live_output_models: string[],
@@ -865,6 +878,8 @@ export type AppSettings_Serialize = {
 	text_replacement_decapitalize_timeout_ms: number,
 	text_replacement_decapitalize_standard_post_recording_monitor_ms: number,
 	vad_enabled: boolean,
+	/**  Experimental detector implementation. Silero remains the stable default. */
+	vad_backend: VadBackend,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -1816,6 +1831,8 @@ export type TtsGreetingConfig = {
 };
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
+
+export type VadBackend = "silero" | "earshot";
 
 /**  Information about the virtual screen (all monitors combined). */
 export type VirtualScreenInfo = {

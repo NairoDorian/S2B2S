@@ -1251,6 +1251,14 @@ fn default_native_streaming_show_interim_longer() -> bool {
     true
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VadBackend {
+    #[default]
+    Silero,
+    Earshot,
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub(crate) struct SecretMap(HashMap<String, String>);
@@ -1456,6 +1464,7 @@ pub struct AppSettings {
         default = "default_transcribe_gpu_device",
         deserialize_with = "deserialize_transcribe_gpu_device"
     )]
+    #[specta(type = Option<String>)]
     pub transcribe_gpu_device: Option<String>,
     #[serde(default)]
     #[specta(type = u32)]
@@ -1550,6 +1559,9 @@ pub struct AppSettings {
     pub text_replacement_decapitalize_standard_post_recording_monitor_ms: u32,
     #[serde(default = "default_vad_enabled")]
     pub vad_enabled: bool,
+    /// Experimental detector implementation. Silero remains the stable default.
+    #[serde(default)]
+    pub vad_backend: VadBackend,
     /// Which recording overlay to show: None / Minimal / Live. Streaming mode is
     /// not gated on this — that follows model capability. Migrated from the old
     /// `overlay_position` (position `none` → style `None`).
@@ -2418,6 +2430,7 @@ pub fn get_default_settings() -> AppSettings {
         text_replacement_decapitalize_standard_post_recording_monitor_ms:
             default_text_replacement_decapitalize_standard_post_recording_monitor_ms(),
         vad_enabled: default_vad_enabled(),
+        vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
     }
 }
@@ -2994,6 +3007,7 @@ mod tests {
         assert_eq!(settings.log_level, LogLevel::Debug);
         assert_eq!(settings.sound_theme, SoundTheme::Pop);
         assert!(settings.filler_word_removal_enabled);
+        assert_eq!(settings.vad_backend, VadBackend::Silero);
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2.
         // Without an exact device, the retired generic GPU choice becomes Auto.

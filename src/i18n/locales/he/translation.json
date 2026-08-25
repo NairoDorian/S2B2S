@@ -467,6 +467,14 @@
         "title": "Voice Activity Detection",
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
+      "vadBackend": {
+        "title": "מנוע זיהוי פעילות קולית",
+        "description": "בחרו את הגלאי המשמש לסינון שקט. Earshot ניסיוני; חזרו ל-Silero אם הדיבור נחתך או שרעש נשמר.",
+        "options": {
+          "silero": "Silero",
+          "earshot": "Earshot"
+        }
+      },
       "fillerWordRemoval": {
         "title": "הסרת מילות מילוי",
         "description": "מסיר מילות היסוס נפוצות מתמלולים. השבת כדי להשאיר אותן."
