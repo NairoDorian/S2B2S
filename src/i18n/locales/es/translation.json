@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "Motor de detección de actividad de voz",
+        "description": "Implementación experimental del detector. Silero sigue siendo el predeterminado estable.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (experimental)"
       }
     },
     "postProcessing": {

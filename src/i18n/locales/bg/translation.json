@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "Бекенд за откриване на гласова активност",
+        "description": "Експериментална имплементация на детектор. Silero остава стабилният по подразбиране.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (експериментален)"
       }
     },
     "postProcessing": {

@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "音声活動検出バックエンド",
+        "description": "実験的な検出器の実装。Sileroが安定したデフォルトのままです。",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD（実験的）"
       }
     },
     "postProcessing": {

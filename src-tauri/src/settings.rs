@@ -326,6 +326,14 @@ pub enum OrtAcceleratorSetting {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum VadBackend {
+    #[default]
+    Silero,
+    Earshot,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum MicIdleTimeoutUnit {
     #[default]
     Seconds,
@@ -514,6 +522,9 @@ pub struct AppSettings {
     pub extra_recording_buffer_ms: u32,
     #[serde(default = "default_vad_enabled")]
     pub vad_enabled: bool,
+    /// Experimental detector implementation. Silero remains the stable default.
+    #[serde(default)]
+    pub vad_backend: VadBackend,
     /// Which recording overlay to show: None / Minimal / Live. Streaming mode is
     /// not gated on this — that follows model capability. Migrated from the old
     /// `overlay_position` (position `none` → style `None`).
@@ -1104,6 +1115,7 @@ pub fn get_default_settings() -> AppSettings {
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
+        vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
         overlay_direct_mode: false,
         overlay_direct_speed: default_overlay_direct_speed(),
@@ -1592,6 +1604,7 @@ mod tests {
         assert_eq!(settings.log_level, LogLevel::Debug);
         assert_eq!(settings.sound_theme, SoundTheme::Pop);
         assert!(settings.filler_word_removal_enabled);
+        assert_eq!(settings.vad_backend, VadBackend::Silero);
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2,
         // while preserving this user's explicit GPU accelerator preference.

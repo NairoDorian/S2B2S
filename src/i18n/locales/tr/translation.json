@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "Ses Aktivitesi Algılama Arka Ucu",
+        "description": "Deneysel dedektör uygulaması. Silero kararlı varsayılan olarak kalır.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (Deneysel)"
       }
     },
     "postProcessing": {

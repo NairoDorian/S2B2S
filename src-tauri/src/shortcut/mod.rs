@@ -762,7 +762,7 @@ pub fn change_overlay_speech_stats_setting(app: AppHandle, enabled: bool) -> Res
 #[specta::specta]
 pub fn change_speech_pause_hold_setting(app: AppHandle, ms: u32) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.speech_pause_hold_ms = ms.clamp(100, 2000);
+    settings.speech_pause_hold_ms = ms.clamp(10, 2000);
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1582,6 +1582,34 @@ pub fn change_vad_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     let mut settings = settings::get_settings(&app);
     settings.vad_enabled = enabled;
     settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn change_vad_backend_setting(
+    app: AppHandle,
+    backend: settings::VadBackend,
+) -> Result<(), String> {
+    if settings::get_settings(&app).vad_backend == backend {
+        return Ok(());
+    }
+
+    // Construct/swap the detector and, when necessary, reopen cpal away from
+    // the webview thread. Persist only after the runtime change succeeds so a
+    // rejected in-progress switch or failed microphone reopen rolls back cleanly.
+    let manager = app
+        .state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .inner()
+        .clone();
+    tokio::task::spawn_blocking(move || manager.update_vad_backend(backend))
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))?
+        .map_err(|e| format!("Failed to update VAD backend: {e}"))?;
+
+    let mut current_settings = settings::get_settings(&app);
+    current_settings.vad_backend = backend;
+    settings::write_settings(&app, current_settings);
     Ok(())
 }
 

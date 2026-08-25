@@ -259,7 +259,7 @@ and the running average words per minute.
 Settings:
 
 - `overlay_speech_stats` - Show the stats in the Minimal and Live overlays
-- `speech_pause_hold_ms` - Pause tolerance (100-2000 ms, default 500)
+- `speech_pause_hold_ms` - Pause tolerance (10-2000 ms, default 500)
 - `save_raw_audio` - Save raw uncompressed microphone audio before resampling and VAD filtering
 
 **Raw Uncompressed Audio Recording** (fork addition):

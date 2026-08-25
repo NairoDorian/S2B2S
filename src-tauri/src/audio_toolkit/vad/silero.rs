@@ -201,6 +201,10 @@ impl VoiceActivityDetector for SileroVad {
         }
     }
 
+    fn frame_samples(&self) -> usize {
+        VAD_FRAME_SAMPLES
+    }
+
     fn last_frame_voiced(&self) -> bool {
         self.last_voiced
     }

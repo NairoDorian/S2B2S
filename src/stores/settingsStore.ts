@@ -9,6 +9,7 @@ import type {
   LLMPrompt,
   MicIdleTimeoutUnit,
   NativeStreamingLatencyPreset,
+  VadBackend,
 } from "@/bindings";
 import { commands } from "@/bindings";
 
@@ -210,6 +211,7 @@ const settingUpdaters: {
   speech_pause_hold_ms: (value) =>
     commands.changeSpeechPauseHoldSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
+  vad_backend: (value) => commands.changeVadBackendSetting(value as VadBackend),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>

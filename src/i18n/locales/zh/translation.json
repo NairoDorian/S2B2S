@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "语音活动检测后端",
+        "description": "实验性检测器实现。Silero 仍然是稳定的默认值。",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD（实验性）"
       }
     },
     "postProcessing": {

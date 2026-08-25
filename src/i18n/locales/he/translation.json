@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "מנוע זיהוי פעילות קולית",
+        "description": "מימוש גלאי ניסיוני. Silero נשאר ברירת המחדל היציבה.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (ניסיוני)"
       }
     },
     "postProcessing": {

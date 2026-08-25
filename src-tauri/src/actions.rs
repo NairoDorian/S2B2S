@@ -822,7 +822,7 @@ impl ShortcutAction for TranscribeAction {
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
                                 transcription_time.elapsed(),
-                                transcription
+                                utils::redact_text(&transcription)
                             );
 
                             if post_process {
@@ -1560,12 +1560,18 @@ impl ShortcutAction for MultiSttAction {
                 let task1 =
                     tauri::async_runtime::spawn_blocking(move || match tm1.finalize_stream() {
                         Ok(Some(text)) if !text.trim().is_empty() => {
-                            info!("Multi-STT: Model 1 (primary) transcription: '{}'", text);
+                            info!(
+                                "Multi-STT: Model 1 (primary) transcription: '{}'",
+                                utils::redact_text(&text)
+                            );
                             text
                         }
                         Ok(_) => match tm1.transcribe(s1) {
                             Ok(text) => {
-                                info!("Multi-STT: Model 1 (primary) transcription: '{}'", text);
+                                info!(
+                                    "Multi-STT: Model 1 (primary) transcription: '{}'",
+                                    utils::redact_text(&text)
+                                );
                                 text
                             }
                             Err(e) => {
@@ -1587,7 +1593,8 @@ impl ShortcutAction for MultiSttAction {
                                 Ok(text) => {
                                     info!(
                                         "Multi-STT: Model 2 '{}' transcription: '{}'",
-                                        model_id, text
+                                        model_id,
+                                        utils::redact_text(&text)
                                     );
                                     text
                                 }
@@ -1616,7 +1623,8 @@ impl ShortcutAction for MultiSttAction {
                                 Ok(text) => {
                                     info!(
                                         "Multi-STT: Model 3 '{}' transcription: '{}'",
-                                        model_id, text
+                                        model_id,
+                                        utils::redact_text(&text)
                                     );
                                     text
                                 }
@@ -1645,7 +1653,8 @@ impl ShortcutAction for MultiSttAction {
                                 Ok(text) => {
                                     info!(
                                         "Multi-STT: Model 4 '{}' transcription: '{}'",
-                                        model_id, text
+                                        model_id,
+                                        utils::redact_text(&text)
                                     );
                                     text
                                 }

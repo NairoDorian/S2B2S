@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "語音活動偵測後端",
+        "description": "實驗性偵測器實作。Silero 仍為穩定的預設值。",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD（實驗性）"
       }
     },
     "postProcessing": {

@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "Backend för röstaktivitetsdetektering",
+        "description": "Experimentell detektorimplementering. Silero förblir den stabila standarden.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (experimentell)"
       }
     },
     "postProcessing": {

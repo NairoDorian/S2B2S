@@ -8,6 +8,7 @@ use crate::settings::{
     AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting, TranscribeAcceleratorSetting,
     get_settings,
 };
+use crate::utils;
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -1630,7 +1631,10 @@ impl TranscriptionManager {
         if final_result.is_empty() {
             info!("Transcription result is empty");
         } else {
-            info!("Transcription result: {}", final_result);
+            info!(
+                "Transcription result: {}",
+                utils::redact_text(&final_result)
+            );
         }
 
         self.maybe_unload_immediately("transcription");
@@ -2267,7 +2271,11 @@ impl TranscriptionManager {
             let speedup = real_time_factor(audio_secs, elapsed_secs);
             info!(
                 "Multi-STT: extra model '{}' transcribed in {:.2}s for {:.2}s of audio ({:.2}x real-time): '{}'",
-                model_id, elapsed_secs, audio_secs, speedup, text
+                model_id,
+                elapsed_secs,
+                audio_secs,
+                speedup,
+                utils::redact_text(text)
             );
         }
 

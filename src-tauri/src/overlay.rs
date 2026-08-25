@@ -76,6 +76,7 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 }
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
+static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
 
 #[cfg(target_os = "macos")]
@@ -499,6 +500,8 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 }
 
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
+    OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
+
     // Whether the overlay shows at all is governed by overlay_style; position
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
     // so the common overlay-disabled case never pays for a main-thread hop.
@@ -695,8 +698,15 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         let _ = overlay_window.emit("hide-overlay", ());
         // Hide the window after a short delay to allow animation to complete
         let window_clone = overlay_window.clone();
+        let generation = OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst);
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(300));
+            // A new recording that started during the 300 ms fade-out bumped the
+            // generation: abort the hide so it does not pull the rug from under
+            // the fresh overlay.
+            if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) != generation {
+                return;
+            }
             let _ = window_clone.hide();
         });
     }

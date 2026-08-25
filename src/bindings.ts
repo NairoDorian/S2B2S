@@ -78,6 +78,7 @@ export const commands = {
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeSaveRawAudioSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_save_raw_audio_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
+	changeVadBackendSetting: (backend: VadBackend) => typedError<null, string>(__TAURI_INVOKE("change_vad_backend_setting", { backend })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
@@ -374,6 +375,8 @@ export type AppSettings_Deserialize = {
 	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
 	vad_enabled?: boolean,
+	/**  Experimental detector implementation. Silero remains the stable default. */
+	vad_backend?: VadBackend,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -529,6 +532,8 @@ export type AppSettings_Serialize = {
 	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,
 	vad_enabled: boolean,
+	/**  Experimental detector implementation. Silero remains the stable default. */
+	vad_backend: VadBackend,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -924,6 +929,8 @@ export type Theme = "system" | "light" | "dark";
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
+
+export type VadBackend = "silero" | "earshot";
 
 export type WindowsMicrophonePermissionStatus = {
 	supported: boolean,

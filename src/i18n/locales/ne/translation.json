@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "ध्वनि गतिविधि पहिचान ब्याकइन्ड",
+        "description": "प्रयोगात्मक डिटेक्टर कार्यान्वयन। Silero स्थिर पूर्वनिर्धारित रहन्छ।",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (प्रयोगात्मक)"
       }
     },
     "postProcessing": {

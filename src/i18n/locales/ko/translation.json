@@ -392,6 +392,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "음성 활동 감지 백엔드",
+        "description": "실험적 감지기 구현입니다. Silero가 안정적인 기본값으로 유지됩니다.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (실험적)"
       }
     },
     "postProcessing": {

@@ -17,13 +17,21 @@ enum PttAction {
     CancelRelease,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PendingRelease {
     binding_id: String,
     hotkey_string: String,
     deadline: Instant,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingPress {
+    binding_id: String,
+    hotkey_string: String,
+}
+
 /// Commands processed sequentially by the coordinator thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
     Input {
         binding_id: String,
@@ -31,17 +39,219 @@ enum Command {
         is_pressed: bool,
         push_to_talk: bool,
     },
+    ExternalInput {
+        binding_id: String,
+    },
     Cancel {
         recording_was_active: bool,
     },
     ProcessingFinished,
+    Timeout,
 }
 
 /// Pipeline lifecycle, owned exclusively by the coordinator thread.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 enum Stage {
+    #[default]
     Idle,
     Recording(String), // binding_id
     Processing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Effect {
+    Start {
+        binding_id: String,
+        hotkey_string: String,
+    },
+    Stop {
+        binding_id: String,
+        hotkey_string: String,
+    },
+}
+
+#[derive(Debug, Default)]
+struct CoordinatorState {
+    stage: Stage,
+    last_press: Option<Instant>,
+    pending_release: Option<PendingRelease>,
+    pending_press: Option<PendingPress>,
+}
+
+impl CoordinatorState {
+    fn timeout_deadline(&self) -> Option<Instant> {
+        self.pending_release.as_ref().map(|p| p.deadline)
+    }
+
+    fn step(&mut self, cmd: Command, now: Instant) -> Option<Effect> {
+        match cmd {
+            Command::Timeout => {
+                if let Some(pending) = self.pending_release.take() {
+                    if matches!(&self.stage, Stage::Recording(id) if id == &pending.binding_id) {
+                        self.stage = Stage::Processing;
+                        return Some(Effect::Stop {
+                            binding_id: pending.binding_id,
+                            hotkey_string: pending.hotkey_string,
+                        });
+                    }
+                }
+                None
+            }
+            Command::ExternalInput { binding_id } => {
+                // External input (CLI / signal / RPC) is always toggle-mode and
+                // uses a dummy hotkey string since no physical key was pressed.
+                self.step(
+                    Command::Input {
+                        binding_id,
+                        hotkey_string: String::new(),
+                        is_pressed: true,
+                        push_to_talk: false,
+                    },
+                    now,
+                )
+            }
+            Command::Input {
+                binding_id,
+                hotkey_string,
+                is_pressed,
+                push_to_talk,
+            } => {
+                let pending_release_binding = self
+                    .pending_release
+                    .as_ref()
+                    .map(|pending| pending.binding_id.as_str());
+                let recording_binding = match &self.stage {
+                    Stage::Recording(id) => Some(id.as_str()),
+                    _ => None,
+                };
+
+                match classify_ptt_event(
+                    pending_release_binding,
+                    is_pressed,
+                    push_to_talk,
+                    &binding_id,
+                    recording_binding,
+                ) {
+                    PttAction::CancelRelease => {
+                        self.pending_release = None;
+                        return None;
+                    }
+                    PttAction::DeferRelease => {
+                        self.pending_release = Some(PendingRelease {
+                            binding_id,
+                            hotkey_string,
+                            deadline: now + RELEASE_GRACE,
+                        });
+                        return None;
+                    }
+                    PttAction::Passthrough => {}
+                }
+
+                // Debounce rapid-fire press events (key repeat / double-tap).
+                // Push-to-talk releases may be deferred above to absorb X11 auto-repeat.
+                if is_pressed {
+                    if self
+                        .last_press
+                        .is_some_and(|t| now.duration_since(t) < DEBOUNCE)
+                    {
+                        debug!("Debounced press for '{binding_id}'");
+                        return None;
+                    }
+                    self.last_press = Some(now);
+                }
+
+                if push_to_talk {
+                    if is_pressed && matches!(self.stage, Stage::Idle) {
+                        self.stage = Stage::Recording(binding_id.clone());
+                        Some(Effect::Start {
+                            binding_id,
+                            hotkey_string,
+                        })
+                    } else if !is_pressed
+                        && matches!(&self.stage, Stage::Recording(id) if id == &binding_id)
+                    {
+                        self.stage = Stage::Processing;
+                        Some(Effect::Stop {
+                            binding_id,
+                            hotkey_string,
+                        })
+                    } else {
+                        None
+                    }
+                } else if is_pressed {
+                    match &self.stage {
+                        Stage::Idle => {
+                            self.stage = Stage::Recording(binding_id.clone());
+                            Some(Effect::Start {
+                                binding_id,
+                                hotkey_string,
+                            })
+                        }
+                        Stage::Recording(id) if id == &binding_id => {
+                            self.stage = Stage::Processing;
+                            Some(Effect::Stop {
+                                binding_id,
+                                hotkey_string,
+                            })
+                        }
+                        Stage::Processing => {
+                            // Queue a single pending press while processing. If the
+                            // user presses the shortcut again mid-inference or
+                            // paste, they want to start a new recording as soon as
+                            // the pipeline becomes idle, rather than having their
+                            // press dropped and having to guess when to press again.
+                            if self.pending_press.is_none() {
+                                debug!(
+                                    "Queued pending press for '{binding_id}': pipeline currently processing"
+                                );
+                                self.pending_press = Some(PendingPress {
+                                    binding_id,
+                                    hotkey_string,
+                                });
+                            } else {
+                                debug!(
+                                    "Ignoring additional press for '{binding_id}': already have pending press"
+                                );
+                            }
+                            None
+                        }
+                        _ => {
+                            debug!("Ignoring press for '{binding_id}': different binding active");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            Command::Cancel {
+                recording_was_active,
+            } => {
+                self.pending_release = None;
+                self.pending_press = None;
+                // Don't reset during processing — wait for the pipeline to finish.
+                if !matches!(self.stage, Stage::Processing)
+                    && (recording_was_active || matches!(self.stage, Stage::Recording(_)))
+                {
+                    self.stage = Stage::Idle;
+                }
+                None
+            }
+            Command::ProcessingFinished => {
+                self.stage = Stage::Idle;
+                if let Some(pending) = self.pending_press.take() {
+                    debug!("Dispatching queued press for '{}'", pending.binding_id);
+                    self.stage = Stage::Recording(pending.binding_id.clone());
+                    Some(Effect::Start {
+                        binding_id: pending.binding_id,
+                        hotkey_string: pending.hotkey_string,
+                    })
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }
 
 fn classify_ptt_event(
@@ -85,30 +295,13 @@ impl TranscriptionCoordinator {
 
         thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut stage = Stage::Idle;
-                let mut last_press: Option<Instant> = None;
-                let mut pending_release: Option<PendingRelease> = None;
+                let mut state = CoordinatorState::default();
 
                 loop {
-                    let cmd = if let Some(pending) = &pending_release {
-                        match rx.recv_timeout(
-                            pending.deadline.saturating_duration_since(Instant::now()),
-                        ) {
+                    let cmd = if let Some(deadline) = state.timeout_deadline() {
+                        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                             Ok(cmd) => cmd,
-                            Err(mpsc::RecvTimeoutError::Timeout) => {
-                                if let Some(pending) = pending_release.take() {
-                                    if matches!(&stage, Stage::Recording(id) if id == &pending.binding_id)
-                                    {
-                                        stop(
-                                            &app,
-                                            &mut stage,
-                                            &pending.binding_id,
-                                            &pending.hotkey_string,
-                                        );
-                                    }
-                                }
-                                continue;
-                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => Command::Timeout,
                             Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         }
                     } else {
@@ -118,89 +311,20 @@ impl TranscriptionCoordinator {
                         }
                     };
 
-                    match cmd {
-                        Command::Input {
-                            binding_id,
-                            hotkey_string,
-                            is_pressed,
-                            push_to_talk,
-                        } => {
-                            let pending_release_binding = pending_release
-                                .as_ref()
-                                .map(|pending| pending.binding_id.as_str());
-                            let recording_binding = match &stage {
-                                Stage::Recording(id) => Some(id.as_str()),
-                                _ => None,
-                            };
-
-                            match classify_ptt_event(
-                                pending_release_binding,
-                                is_pressed,
-                                push_to_talk,
-                                &binding_id,
-                                recording_binding,
-                            ) {
-                                PttAction::CancelRelease => {
-                                    pending_release = None;
-                                    continue;
-                                }
-                                PttAction::DeferRelease => {
-                                    pending_release = Some(PendingRelease {
-                                        binding_id,
-                                        hotkey_string,
-                                        deadline: Instant::now() + RELEASE_GRACE,
-                                    });
-                                    continue;
-                                }
-                                PttAction::Passthrough => {}
+                    if let Some(effect) = state.step(cmd, Instant::now()) {
+                        match effect {
+                            Effect::Start {
+                                binding_id,
+                                hotkey_string,
+                            } => {
+                                start(&app, &mut state.stage, &binding_id, &hotkey_string);
                             }
-
-                            // Debounce rapid-fire press events (key repeat / double-tap).
-                            // Push-to-talk releases may be deferred above to absorb X11 auto-repeat.
-                            if is_pressed {
-                                let now = Instant::now();
-                                if last_press.is_some_and(|t| now.duration_since(t) < DEBOUNCE) {
-                                    debug!("Debounced press for '{binding_id}'");
-                                    continue;
-                                }
-                                last_press = Some(now);
+                            Effect::Stop {
+                                binding_id,
+                                hotkey_string,
+                            } => {
+                                stop(&app, &mut state.stage, &binding_id, &hotkey_string);
                             }
-
-                            if push_to_talk {
-                                if is_pressed && matches!(stage, Stage::Idle) {
-                                    start(&app, &mut stage, &binding_id, &hotkey_string);
-                                } else if !is_pressed
-                                    && matches!(&stage, Stage::Recording(id) if id == &binding_id)
-                                {
-                                    stop(&app, &mut stage, &binding_id, &hotkey_string);
-                                }
-                            } else if is_pressed {
-                                match &stage {
-                                    Stage::Idle => {
-                                        start(&app, &mut stage, &binding_id, &hotkey_string);
-                                    }
-                                    Stage::Recording(id) if id == &binding_id => {
-                                        stop(&app, &mut stage, &binding_id, &hotkey_string);
-                                    }
-                                    _ => {
-                                        debug!("Ignoring press for '{binding_id}': pipeline busy")
-                                    }
-                                }
-                            }
-                        }
-                        Command::Cancel {
-                            recording_was_active,
-                        } => {
-                            pending_release = None;
-                            // Don't reset during processing — wait for the pipeline to finish.
-                            if !matches!(stage, Stage::Processing)
-                                && (recording_was_active || matches!(stage, Stage::Recording(_)))
-                            {
-                                stage = Stage::Idle;
-                            }
-                        }
-                        Command::ProcessingFinished => {
-                            stage = Stage::Idle;
                         }
                     }
                 }
@@ -214,8 +338,7 @@ impl TranscriptionCoordinator {
         Self { tx }
     }
 
-    /// Send a keyboard/signal input event for a transcribe binding.
-    /// For signal-based toggles, use `is_pressed: true` and `push_to_talk: false`.
+    /// Send a keyboard input event for a transcribe binding.
     pub fn send_input(
         &self,
         binding_id: &str,
@@ -230,6 +353,19 @@ impl TranscriptionCoordinator {
                 hotkey_string: hotkey_string.to_string(),
                 is_pressed,
                 push_to_talk,
+            })
+            .is_err()
+        {
+            warn!("Transcription coordinator channel closed");
+        }
+    }
+
+    /// Send an external (CLI/signal/RPC) transcription trigger.
+    pub fn send_external_input(&self, binding_id: &str) {
+        if self
+            .tx
+            .send(Command::ExternalInput {
+                binding_id: binding_id.to_string(),
             })
             .is_err()
         {
@@ -517,5 +653,159 @@ mod tests {
             "a genuine release should stop recording exactly once"
         );
         assert_eq!(result.stage, SimStage::Processing);
+    }
+
+    #[test]
+    fn toggle_press_while_processing_queues_pending_press_and_starts_after_processing_finished() {
+        let mut state = CoordinatorState::default();
+        let now = Instant::now();
+
+        // Start recording
+        let effect = state.step(
+            Command::Input {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+                is_pressed: true,
+                push_to_talk: false,
+            },
+            now,
+        );
+        assert_eq!(
+            effect,
+            Some(Effect::Start {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+            })
+        );
+        assert_eq!(state.stage, Stage::Recording("transcribe".to_string()));
+
+        // Stop recording -> transitions to Processing
+        let effect = state.step(
+            Command::Input {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+                is_pressed: true,
+                push_to_talk: false,
+            },
+            now + Duration::from_millis(100),
+        );
+        assert_eq!(
+            effect,
+            Some(Effect::Stop {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+            })
+        );
+        assert_eq!(state.stage, Stage::Processing);
+
+        // Press again while processing -> should queue pending press and return None
+        let effect = state.step(
+            Command::Input {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+                is_pressed: true,
+                push_to_talk: false,
+            },
+            now + Duration::from_millis(200),
+        );
+        assert_eq!(effect, None);
+        assert_eq!(state.stage, Stage::Processing);
+        assert!(state.pending_press.is_some());
+
+        // Processing completes -> should dispatch queued start effect
+        let effect = state.step(
+            Command::ProcessingFinished,
+            now + Duration::from_millis(300),
+        );
+        assert_eq!(
+            effect,
+            Some(Effect::Start {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+            })
+        );
+        assert_eq!(state.stage, Stage::Recording("transcribe".to_string()));
+        assert!(state.pending_press.is_none());
+    }
+
+    #[test]
+    fn subsequent_toggle_presses_while_processing_are_ignored() {
+        let mut state = CoordinatorState::default();
+        let now = Instant::now();
+
+        state.stage = Stage::Processing;
+
+        // First press while processing queues
+        state.step(
+            Command::Input {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+                is_pressed: true,
+                push_to_talk: false,
+            },
+            now,
+        );
+        assert_eq!(
+            state.pending_press,
+            Some(PendingPress {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+            })
+        );
+
+        // Second press while processing is ignored
+        state.step(
+            Command::Input {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+                is_pressed: true,
+                push_to_talk: false,
+            },
+            now + Duration::from_millis(100),
+        );
+        assert_eq!(
+            state.pending_press,
+            Some(PendingPress {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn cancel_clears_pending_press() {
+        let mut state = CoordinatorState::default();
+        let now = Instant::now();
+
+        state.stage = Stage::Processing;
+        state.step(
+            Command::Input {
+                binding_id: "transcribe".to_string(),
+                hotkey_string: "ctrl+space".to_string(),
+                is_pressed: true,
+                push_to_talk: false,
+            },
+            now,
+        );
+        assert!(state.pending_press.is_some());
+
+        state.step(
+            Command::Cancel {
+                recording_was_active: false,
+            },
+            now + Duration::from_millis(50),
+        );
+        assert!(state.pending_press.is_none());
+    }
+
+    #[test]
+    fn processing_finished_without_pending_press_returns_to_idle() {
+        let mut state = CoordinatorState::default();
+        let now = Instant::now();
+
+        state.stage = Stage::Processing;
+        let effect = state.step(Command::ProcessingFinished, now);
+        assert_eq!(effect, None);
+        assert_eq!(state.stage, Stage::Idle);
     }
 }

@@ -48,9 +48,9 @@ export const SpeechStats: React.FC<SpeechStatsProps> = React.memo(
             onChange={(value) =>
               updateSetting("speech_pause_hold_ms", Math.round(value))
             }
-            min={100}
+            min={10}
             max={2000}
-            step={50}
+            step={10}
             label={t("settings.advanced.speechStats.pauseHold.label")}
             description={t(
               "settings.advanced.speechStats.pauseHold.description",

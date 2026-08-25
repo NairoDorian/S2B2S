@@ -47,6 +47,7 @@ enum Cmd {
 /// v5/v6 accepts exactly 512 samples at 16 kHz, so the capture pipeline is
 /// framed to match and one frame is one VAD decision. Shared with the speech
 /// clock so the two can never disagree about how much audio a decision covers.
+#[cfg(test)]
 const FRAME_MS: u64 = constants::VAD_FRAME_MS;
 
 /// Default pause tolerance: how long silence must last before the speech clock
@@ -128,6 +129,8 @@ struct VadConfig {
     detector: Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>,
     offline_hangover_frames: usize,
     streaming_hangover_frames: usize,
+    onset_frames: usize,
+    frame_samples: usize,
 }
 
 impl VadConfig {
@@ -177,6 +180,8 @@ pub type SpeechActivityCallback = Arc<dyn Fn(SpeechActivity) + Send + Sync + 'st
 /// which is far less jarring than a timer that visibly rewinds.
 #[derive(Debug)]
 pub struct SpeechClock {
+    /// Milliseconds per audio frame (e.g. 32ms for Silero, 16ms for Earshot).
+    frame_ms: u64,
     /// Consecutive voiced frames needed to enter speech, matching the VAD's own
     /// onset debounce so a single noisy frame cannot start the clock.
     onset_frames: usize,
@@ -203,9 +208,15 @@ pub struct SpeechClock {
 }
 
 impl SpeechClock {
-    pub fn new(onset_frames: usize, hold_ms: u64, published: Arc<AtomicU64>) -> Self {
+    pub fn new(
+        onset_frames: usize,
+        hold_ms: u64,
+        frame_ms: u64,
+        published: Arc<AtomicU64>,
+    ) -> Self {
         published.store(0, Ordering::Relaxed);
         Self {
+            frame_ms: frame_ms.max(1),
             onset_frames: onset_frames.max(1),
             hold_ms,
             published,
@@ -216,6 +227,11 @@ impl SpeechClock {
             ms_since_emit: 0,
             last_emitted_ms: 0,
         }
+    }
+
+    #[cfg(test)]
+    pub fn frame_ms(&self) -> u64 {
+        self.frame_ms
     }
 
     /// Clear all state for a new recording, adopting a new pause tolerance.
@@ -243,7 +259,7 @@ impl SpeechClock {
         let was_speaking = self.speaking;
         self.advance(voiced);
         self.published.store(self.speech_ms, Ordering::Relaxed);
-        self.ms_since_emit += FRAME_MS;
+        self.ms_since_emit += self.frame_ms;
 
         // Report a flip immediately; otherwise only once the timer has both
         // moved and gone stale. Silence — including the pause-tolerance window,
@@ -265,7 +281,7 @@ impl SpeechClock {
             if self.speaking {
                 // Crossing a gap shorter than the tolerance: bill this frame
                 // plus the gap we just bridged.
-                self.speech_ms += FRAME_MS + self.pending_silence_ms;
+                self.speech_ms += self.frame_ms + self.pending_silence_ms;
                 self.pending_silence_ms = 0;
             } else {
                 self.onset_counter += 1;
@@ -273,7 +289,7 @@ impl SpeechClock {
                     self.speaking = true;
                     // Count every frame that established the onset, not just
                     // the one that crossed the threshold.
-                    self.speech_ms += FRAME_MS * self.onset_counter as u64;
+                    self.speech_ms += self.frame_ms * self.onset_counter as u64;
                     self.onset_counter = 0;
                     self.pending_silence_ms = 0;
                 }
@@ -281,7 +297,7 @@ impl SpeechClock {
         } else {
             self.onset_counter = 0;
             if self.speaking {
-                self.pending_silence_ms += FRAME_MS;
+                self.pending_silence_ms += self.frame_ms;
                 if self.pending_silence_ms >= self.hold_ms {
                     self.speaking = false;
                     self.pending_silence_ms = 0;
@@ -341,11 +357,15 @@ impl AudioRecorder {
         detector: Box<dyn VoiceActivityDetector>,
         offline_hangover_frames: usize,
         streaming_hangover_frames: usize,
+        onset_frames: usize,
     ) -> Self {
+        let frame_samples = detector.frame_samples();
         self.vad = Some(VadConfig {
             detector: Arc::new(Mutex::new(detector)),
             offline_hangover_frames,
             streaming_hangover_frames,
+            onset_frames,
+            frame_samples,
         });
         self
     }
@@ -716,46 +736,15 @@ impl AudioRecorder {
             let mut eos_sent = false;
 
             move |data: &[T], _: &cpal::InputCallbackInfo| {
-                if stop_flag.load(Ordering::Relaxed) {
-                    if !eos_sent {
-                        let _ = sample_tx.send(AudioChunk::EndOfStream);
-                        eos_sent = true;
-                    }
-                    return;
-                }
-                eos_sent = false;
-
-                output_buffer.clear();
-
-                if channels == 1 {
-                    output_buffer.extend(data.iter().map(|&sample| sample.to_sample::<f32>()));
-                } else {
-                    let frame_count = data.len() / channels;
-                    output_buffer.reserve(frame_count);
-
-                    if let Some(ch) = use_channel {
-                        for frame in data.chunks_exact(channels) {
-                            let mono_sample = frame[ch].to_sample::<f32>();
-                            output_buffer.push(mono_sample);
-                        }
-                    } else {
-                        for frame in data.chunks_exact(channels) {
-                            let mono_sample = frame
-                                .iter()
-                                .map(|&sample| sample.to_sample::<f32>())
-                                .sum::<f32>()
-                                / channels as f32;
-                            output_buffer.push(mono_sample);
-                        }
-                    }
-                }
-
-                if sample_tx
-                    .send(AudioChunk::Samples(output_buffer.clone()))
-                    .is_err()
-                {
-                    log::error!("Failed to send samples");
-                }
+                handle_input_block(
+                    data,
+                    channels,
+                    use_channel,
+                    &stop_flag,
+                    &mut eos_sent,
+                    &mut output_buffer,
+                    &sample_tx,
+                );
             }
         };
 
@@ -861,6 +850,73 @@ impl AudioRecorder {
     }
 }
 
+/// Body of the cpal input callback, extracted for testing without a device.
+/// Converts the block to mono and forwards it. The block that first observes
+/// the stop flag was captured before the stop, so it is still forwarded —
+/// dropping it loses up to a callback period of tail audio (worst on
+/// Bluetooth) — followed by the end-of-stream sentinel; later blocks are
+/// dropped until the flag clears.
+fn handle_input_block<T>(
+    data: &[T],
+    channels: usize,
+    use_channel: Option<usize>,
+    stop_flag: &AtomicBool,
+    eos_sent: &mut bool,
+    output_buffer: &mut Vec<f32>,
+    sample_tx: &mpsc::Sender<AudioChunk>,
+) where
+    T: Sample,
+    f32: cpal::FromSample<T>,
+{
+    let stopping = stop_flag.load(Ordering::Relaxed);
+    if stopping && *eos_sent {
+        return;
+    }
+
+    output_buffer.clear();
+
+    if channels == 1 {
+        output_buffer.extend(data.iter().map(|&sample| sample.to_sample::<f32>()));
+    } else {
+        let frame_count = data.len() / channels;
+        output_buffer.reserve(frame_count);
+
+        if let Some(ch) = use_channel {
+            for frame in data.chunks_exact(channels) {
+                let mono_sample = frame[ch].to_sample::<f32>();
+                output_buffer.push(mono_sample);
+            }
+        } else {
+            for frame in data.chunks_exact(channels) {
+                let mono_sample = frame
+                    .iter()
+                    .map(|&sample| sample.to_sample::<f32>())
+                    .sum::<f32>()
+                    / channels as f32;
+                output_buffer.push(mono_sample);
+            }
+        }
+    }
+
+    // A failed send means the consumer thread is gone. During shutdown that is
+    // expected (the consumer exits before the stream is dropped), so only
+    // report it when capture was supposed to be live.
+    if sample_tx
+        .send(AudioChunk::Samples(output_buffer.clone()))
+        .is_err()
+        && !stopping
+    {
+        log::error!("Failed to send samples");
+    }
+
+    if stopping {
+        let _ = sample_tx.send(AudioChunk::EndOfStream);
+        *eos_sent = true;
+    } else {
+        *eos_sent = false;
+    }
+}
+
 pub fn is_microphone_access_denied(error_message: &str) -> bool {
     let normalized = error_message.to_lowercase();
     normalized.contains("access is denied")
@@ -878,8 +934,8 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioRecorder, Cmd, FRAME_MS, SPEECH_HEARTBEAT_MS, SpeechClock,
-        is_microphone_access_denied, is_no_input_device_error, run_consumer,
+        AudioChunk, AudioRecorder, Cmd, FRAME_MS, SPEECH_HEARTBEAT_MS, SpeechClock,
+        handle_input_block, is_microphone_access_denied, is_no_input_device_error, run_consumer,
     };
     use std::{
         sync::{
@@ -905,6 +961,39 @@ mod tests {
         let recorder = AudioRecorder::new().expect("recorder");
         recorder.stream_error.store(true, Ordering::Relaxed);
         assert!(recorder.needs_reopen());
+    }
+
+    #[test]
+    fn boundary_block_forwarded_before_eos() {
+        let (tx, rx) = mpsc::channel();
+        let stop_flag = AtomicBool::new(false);
+        let mut eos_sent = false;
+        let mut scratch = Vec::new();
+        let mut push = |flag: &AtomicBool, eos: &mut bool, block: &[f32]| {
+            handle_input_block::<f32>(block, 1, None, flag, eos, &mut scratch, &tx)
+        };
+
+        // Running: blocks forwarded, no sentinel.
+        push(&stop_flag, &mut eos_sent, &[0.1]);
+        assert!(matches!(rx.try_recv(), Ok(AudioChunk::Samples(_))));
+        assert!(rx.try_recv().is_err());
+
+        // The block observing the stop flag is still forwarded, then EOS.
+        stop_flag.store(true, Ordering::Relaxed);
+        push(&stop_flag, &mut eos_sent, &[0.5, 0.5]);
+        match rx.try_recv() {
+            Ok(AudioChunk::Samples(samples)) => assert_eq!(samples, vec![0.5, 0.5]),
+            _ => panic!("boundary block must be forwarded, not dropped"),
+        }
+        assert!(matches!(rx.try_recv(), Ok(AudioChunk::EndOfStream)));
+
+        // Later blocks are dropped until the flag clears, then capture resumes.
+        push(&stop_flag, &mut eos_sent, &[0.9]);
+        assert!(rx.try_recv().is_err(), "blocks after EOS must be dropped");
+        stop_flag.store(false, Ordering::Relaxed);
+        push(&stop_flag, &mut eos_sent, &[0.2]);
+        assert!(matches!(rx.try_recv(), Ok(AudioChunk::Samples(_))));
+        assert!(rx.try_recv().is_err(), "no sentinel while running");
     }
 
     #[test]
@@ -940,7 +1029,7 @@ mod tests {
 
     /// A clock wired to a throwaway published counter.
     fn clock(hold_ms: u64) -> SpeechClock {
-        SpeechClock::new(2, hold_ms, Arc::new(AtomicU64::new(0)))
+        SpeechClock::new(2, hold_ms, FRAME_MS, Arc::new(AtomicU64::new(0)))
     }
 
     /// Feed `n` frames of one verdict, discarding emissions.
@@ -963,6 +1052,23 @@ mod tests {
         let activity = clock.tick(true).expect("onset flips the state");
         assert!(activity.speaking);
         assert_eq!(activity.speech_ms, 2 * FRAME_MS);
+    }
+
+    #[test]
+    fn speech_clock_earshot_16ms_frames_measure_time_accurately() {
+        let published = Arc::new(AtomicU64::new(0));
+        // Earshot uses 16ms frames (256 samples at 16kHz)
+        let mut earshot_clock = SpeechClock::new(2, 500, 16, Arc::clone(&published));
+        assert_eq!(earshot_clock.frame_ms(), 16);
+
+        // 2 onset frames = 2 * 16ms = 32ms
+        feed(&mut earshot_clock, true, 2);
+        assert_eq!(earshot_clock.snapshot().speech_ms, 32);
+
+        // 50 voiced frames = 50 * 16ms = 800ms of audio
+        feed(&mut earshot_clock, true, 48); // total 50 frames
+        assert_eq!(earshot_clock.snapshot().speech_ms, 50 * 16);
+        assert_eq!(published.load(Ordering::Relaxed), 800);
     }
 
     #[test]
@@ -1047,7 +1153,7 @@ mod tests {
         // The skip-decode guard reads this after stop(), independently of the
         // overlay callback, which is gated on settings.
         let published = Arc::new(AtomicU64::new(0));
-        let mut clock = SpeechClock::new(2, 500, Arc::clone(&published));
+        let mut clock = SpeechClock::new(2, 500, FRAME_MS, Arc::clone(&published));
 
         feed(&mut clock, true, 10);
         assert_eq!(
@@ -1215,18 +1321,29 @@ fn run_consumer(
     stop_flag: Arc<AtomicBool>,
     stream_running_at: Instant,
 ) {
+    let frame_samples = vad.as_ref().map_or(
+        (constants::WHISPER_SAMPLE_RATE * 30 / 1000) as usize,
+        |config| config.frame_samples,
+    );
+    let frame_duration =
+        Duration::from_secs_f64(frame_samples as f64 / constants::WHISPER_SAMPLE_RATE as f64);
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
         constants::WHISPER_SAMPLE_RATE as usize,
-        Duration::from_millis(FRAME_MS),
+        frame_duration,
     );
+
+    let frame_ms = (frame_samples as u64 * 1000) / constants::WHISPER_SAMPLE_RATE as u64;
+    let onset_frames = vad
+        .as_ref()
+        .map_or(vad::VAD_ONSET_FRAMES, |v| v.onset_frames);
 
     let mut processed_samples = Vec::<f32>::new();
     let mut raw_captured_samples = Vec::<f32>::new();
     let mut recording = false;
     let mut vad_policy = VadPolicy::Offline;
     // Reset on every Cmd::Start, which also supplies the session pause tolerance.
-    let mut speech_clock = SpeechClock::new(vad::VAD_ONSET_FRAMES, 0, speech_ms);
+    let mut speech_clock = SpeechClock::new(onset_frames, 0, frame_ms, speech_ms);
     // Per-session count of VAD failures, so a broken detector is reported once
     // rather than per frame.
     let mut vad_errors: u64 = 0;
@@ -1444,6 +1561,27 @@ fn run_consumer(
                             &mut processed_samples,
                         )
                     });
+
+                    // Diagnostic only: evidence for whether the VAD was
+                    // still withholding tail audio when capture stopped.
+                    // Suggestive, not conclusive, in either direction.
+                    if vad_policy != VadPolicy::Disabled {
+                        if let Some(cfg) = &vad {
+                            let report = cfg.detector.lock().unwrap().tail_report();
+                            if let Some(report) = report {
+                                log::debug!(
+                                    "VAD at stop: withheld tail {} frames (~{}ms, {} voiced), in_speech={}, onset_counter={}, hangover_counter={}",
+                                    report.withheld_frames,
+                                    report.withheld_frames * cfg.frame_samples * 1000
+                                        / constants::WHISPER_SAMPLE_RATE as usize,
+                                    report.withheld_voiced_frames,
+                                    report.in_speech,
+                                    report.onset_counter,
+                                    report.hangover_counter
+                                );
+                            }
+                        }
+                    }
 
                     let _ = reply_tx.send(RecordedAudio {
                         stt_samples: std::mem::take(&mut processed_samples),

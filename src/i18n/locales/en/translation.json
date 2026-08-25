@@ -431,6 +431,12 @@
         "title": "Voice Activity Detection",
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
+      "vadBackend": {
+        "title": "Use Earshot VAD (Experimental)",
+        "description": "Switch from Silero VAD to Earshot VAD (pure Rust, lower latency 16ms frames). When off, uses Silero VAD.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (Experimental)"
+      },
       "speechStats": {
         "title": "Speech Stats in Overlay",
         "description": "Show live speech statistics in the recording overlay: whether you are speaking or paused, a timer that counts only while you are actually talking, and your running average words per minute. Words per minute needs a streaming-capable model, since it is measured from the live transcription.",

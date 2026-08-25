@@ -53,6 +53,7 @@ tokio = "1.53.1"
 # Silero v4 tensor interface, and the model shipped here is v6).
 ort = { version = "2.0.0-rc.12", default-features = false }
 ndarray = "0.17"
+earshot = "1.2.2"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
 reqwest = { version = "0.13.4", features = ["json", "stream", "gzip", "brotli", "deflate"] }

@@ -369,6 +369,12 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "vadBackend": {
+        "title": "محرك اكتشاف النشاط الصوتي",
+        "description": "تطبيق كاشف تجريبي. يظل Silero هو الخيار الافتراضي المستقر.",
+        "silero": "Silero VAD",
+        "earshot": "Earshot VAD (تجريبي)"
       }
     },
     "postProcessing": {
