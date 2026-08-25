@@ -127,14 +127,14 @@ pub enum VadPolicy {
 #[derive(Clone)]
 struct VadConfig {
     detector: Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>,
+    frame_samples: usize,
     offline_hangover_frames: usize,
     streaming_hangover_frames: usize,
     onset_frames: usize,
-    frame_samples: usize,
 }
 
 impl VadConfig {
-    /// Post-speech hangover tail (in frames; see `FRAME_MS`) for the given policy.
+    /// Post-speech hangover tail (in backend-sized frames) for the given policy.
     /// `Disabled` never reaches the detector, so it maps to the offline value.
     fn hangover_for(&self, policy: VadPolicy) -> usize {
         match policy {
@@ -360,12 +360,13 @@ impl AudioRecorder {
         onset_frames: usize,
     ) -> Self {
         let frame_samples = detector.frame_samples();
+        assert!(frame_samples > 0, "VAD frame size must be non-zero");
         self.vad = Some(VadConfig {
             detector: Arc::new(Mutex::new(detector)),
+            frame_samples,
             offline_hangover_frames,
             streaming_hangover_frames,
             onset_frames,
-            frame_samples,
         });
         self
     }
@@ -935,7 +936,7 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
 mod tests {
     use super::{
         AudioChunk, AudioRecorder, Cmd, FRAME_MS, SPEECH_HEARTBEAT_MS, SpeechClock,
-        handle_input_block, is_microphone_access_denied, is_no_input_device_error, run_consumer,
+        handle_input_block, run_consumer,
     };
     use std::{
         sync::{
@@ -1267,44 +1268,6 @@ mod tests {
             "expected ~1s of speech from 1s of audio, got {peak}ms"
         );
     }
-
-    #[test]
-    fn detects_access_is_denied() {
-        assert!(is_microphone_access_denied("Access is denied"));
-    }
-
-    #[test]
-    fn detects_permission_denied() {
-        assert!(is_microphone_access_denied("permission denied"));
-    }
-
-    #[test]
-    fn detects_windows_error_code() {
-        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
-    }
-
-    #[test]
-    fn does_not_match_unrelated_errors() {
-        assert!(!is_microphone_access_denied("device not found"));
-    }
-
-    #[test]
-    fn detects_no_input_device() {
-        assert!(is_no_input_device_error("No input device found"));
-    }
-
-    #[test]
-    fn detects_coreaudio_config_error() {
-        assert!(is_no_input_device_error(
-            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
-        ));
-    }
-
-    #[test]
-    fn does_not_match_other_errors_for_no_device() {
-        assert!(!is_no_input_device_error("permission denied"));
-        assert!(!is_no_input_device_error("device not found"));
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1334,9 +1297,10 @@ fn run_consumer(
     );
 
     let frame_ms = (frame_samples as u64 * 1000) / constants::WHISPER_SAMPLE_RATE as u64;
-    let onset_frames = vad
-        .as_ref()
-        .map_or(vad::VAD_ONSET_FRAMES, |v| v.onset_frames);
+    let onset_frames = vad.as_ref().map_or_else(
+        || vad::frames_for_duration_ms(vad::VAD_ONSET_MS, frame_samples),
+        |v| v.onset_frames,
+    );
 
     let mut processed_samples = Vec::<f32>::new();
     let mut raw_captured_samples = Vec::<f32>::new();

@@ -8,7 +8,10 @@ use handy_app_lib::audio_toolkit::{
     SileroVad, VoiceActivityDetector,
     audio::read_wav_samples,
     constants::VAD_FRAME_SAMPLES,
-    vad::{SmoothedVad, VAD_ONSET_FRAMES, VAD_PREFILL_FRAMES, VAD_STREAMING_HANGOVER_FRAMES},
+    vad::{
+        SmoothedVad, VAD_ONSET_MS, VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
+        frames_for_duration_ms,
+    },
 };
 
 #[test]
@@ -22,11 +25,15 @@ fn real_vad_chain_reports_speech_over_real_audio() {
 
     let samples = read_wav_samples(&wav).expect("read wav");
     let silero = SileroVad::new(&model, 0.3).expect("load silero");
+    let prefill_frames = frames_for_duration_ms(VAD_PREFILL_MS, VAD_FRAME_SAMPLES);
+    let streaming_hangover_frames =
+        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, VAD_FRAME_SAMPLES);
+    let onset_frames = frames_for_duration_ms(VAD_ONSET_MS, VAD_FRAME_SAMPLES);
     let mut vad: Box<dyn VoiceActivityDetector> = Box::new(SmoothedVad::new(
         Box::new(silero),
-        VAD_PREFILL_FRAMES,
-        VAD_STREAMING_HANGOVER_FRAMES,
-        VAD_ONSET_FRAMES,
+        prefill_frames,
+        streaming_hangover_frames,
+        onset_frames,
     ));
 
     let (mut frames, mut kept, mut raw_voiced, mut errors) = (0usize, 0usize, 0usize, 0usize);

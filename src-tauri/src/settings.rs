@@ -339,7 +339,6 @@ pub enum MicIdleTimeoutUnit {
     Seconds,
     Minutes,
 }
-
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub struct SecretMap(pub(crate) HashMap<String, String>);

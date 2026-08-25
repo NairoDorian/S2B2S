@@ -2,12 +2,12 @@ use hound::WavWriter;
 use std::io::{self, Write};
 
 use handy_app_lib::audio_toolkit::{
-    audio::{list_input_devices, CpalDeviceInfo},
+    AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, SileroVad, VadPolicy, VoiceActivityDetector,
+    audio::{CpalDeviceInfo, list_input_devices},
     vad::{
-        SmoothedVad, VAD_OFFLINE_HANGOVER_FRAMES, VAD_ONSET_FRAMES, VAD_PREFILL_FRAMES,
-        VAD_STREAMING_HANGOVER_FRAMES,
+        SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_PREFILL_MS,
+        VAD_STREAMING_HANGOVER_MS, frames_for_duration_ms,
     },
-    AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, SileroVad, VadPolicy,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -180,16 +180,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_help();
 
     let silero = SileroVad::new("./resources/models/silero_vad_v6.2.onnx", 0.5)?;
+    let frame_samples = silero.frame_samples();
+    let offline_hangover_frames = frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, frame_samples);
     let smoothed_vad = SmoothedVad::new(
         Box::new(silero),
-        VAD_PREFILL_FRAMES,
-        VAD_OFFLINE_HANGOVER_FRAMES,
-        VAD_ONSET_FRAMES,
+        frames_for_duration_ms(VAD_PREFILL_MS, frame_samples),
+        offline_hangover_frames,
+        frames_for_duration_ms(VAD_ONSET_MS, frame_samples),
     );
     let recorder = AudioRecorder::new()?.with_vad(
         Box::new(smoothed_vad),
-        VAD_OFFLINE_HANGOVER_FRAMES,
-        VAD_STREAMING_HANGOVER_FRAMES,
+        offline_hangover_frames,
+        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, frame_samples),
     );
     let mut state = RecorderState::new(recorder);
 

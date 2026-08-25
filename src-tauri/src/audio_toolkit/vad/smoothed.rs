@@ -159,7 +159,6 @@ impl VoiceActivityDetector for SmoothedVad {
     fn last_frame_voiced(&self) -> bool {
         self.inner_vad.last_frame_voiced()
     }
-
     fn reset(&mut self) {
         self.inner_vad.reset();
         self.frame_buffer.clear();
@@ -197,7 +196,7 @@ mod tests {
         }
 
         fn frame_samples(&self) -> usize {
-            480
+            4
         }
     }
 

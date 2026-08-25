@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { ToggleSwitch } from "../ui/ToggleSwitch";
-import { useSettings } from "../../hooks/useSettings";
 import type { VadBackend } from "@/bindings";
+import { useSettings } from "@/hooks/useSettings";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { SettingContainer } from "@/components/ui/SettingContainer";
 
 interface VadBackendSelectorProps {
   descriptionMode?: "tooltip" | "inline";
@@ -15,23 +16,36 @@ export const VadBackendSelector: React.FC<VadBackendSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const currentBackend = (getSetting("vad_backend") ?? "silero") as VadBackend;
-  const isEarshot = currentBackend === "earshot";
+  const selectedBackend = getSetting("vad_backend") ?? "silero";
+
+  const options = useMemo<DropdownOption[]>(
+    () => [
+      {
+        value: "silero",
+        label: t("settings.advanced.vadBackend.options.silero"),
+      },
+      {
+        value: "earshot",
+        label: t("settings.advanced.vadBackend.options.earshot"),
+      },
+    ],
+    [t],
+  );
 
   return (
-    <ToggleSwitch
-      checked={isEarshot}
-      onChange={(checked) =>
-        updateSetting(
-          "vad_backend",
-          (checked ? "earshot" : "silero") as VadBackend,
-        )
-      }
-      isUpdating={isUpdating("vad_backend")}
-      label={t("settings.advanced.vadBackend.title")}
+    <SettingContainer
+      title={t("settings.advanced.vadBackend.title")}
       description={t("settings.advanced.vadBackend.description")}
       descriptionMode={descriptionMode}
       grouped={grouped}
-    />
+      layout="horizontal"
+    >
+      <Dropdown
+        options={options}
+        selectedValue={selectedBackend}
+        onSelect={(value) => updateSetting("vad_backend", value as VadBackend)}
+        disabled={isUpdating("vad_backend")}
+      />
+    </SettingContainer>
   );
 };

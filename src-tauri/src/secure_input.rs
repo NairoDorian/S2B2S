@@ -476,7 +476,6 @@ mod imp {
     pub fn reconcile_fallback(app: &AppHandle) {
         let state = app.state::<SecureInputState>();
         let _operation = state.fallback_operation.lock().unwrap();
-        let warning_was_active = state.warning_active();
 
         let previous = {
             let mut fallback = state.fallback.lock().unwrap();

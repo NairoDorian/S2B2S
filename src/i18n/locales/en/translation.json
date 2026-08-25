@@ -432,10 +432,12 @@
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
       "vadBackend": {
-        "title": "Use Earshot VAD (Experimental)",
-        "description": "Switch from Silero VAD to Earshot VAD (pure Rust, lower latency 16ms frames). When off, uses Silero VAD.",
-        "silero": "Silero VAD",
-        "earshot": "Earshot VAD (Experimental)"
+        "title": "Voice Activity Backend",
+        "description": "Choose the detector used to filter silence. Earshot is experimental; switch back to Silero if speech is clipped or noise is retained.",
+        "options": {
+          "silero": "Silero",
+          "earshot": "Earshot"
+        }
       },
       "speechStats": {
         "title": "Speech Stats in Overlay",

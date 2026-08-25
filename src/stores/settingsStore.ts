@@ -12,6 +12,7 @@ import type {
   VadBackend,
 } from "@/bindings";
 import { commands } from "@/bindings";
+import { toast } from "sonner";
 
 interface SettingsStore {
   settings: Settings | null;
@@ -211,7 +212,15 @@ const settingUpdaters: {
   speech_pause_hold_ms: (value) =>
     commands.changeSpeechPauseHoldSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
-  vad_backend: (value) => commands.changeVadBackendSetting(value as VadBackend),
+  vad_backend: async (value) => {
+    const result = await commands.changeVadBackendSetting(value as VadBackend);
+    if (result.status === "error") {
+      // Rejected switches (e.g. mid-recording) roll the dropdown back via the
+      // throw below; the toast tells the user why.
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>

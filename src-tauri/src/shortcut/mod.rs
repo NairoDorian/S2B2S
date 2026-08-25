@@ -23,7 +23,7 @@ use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
     self, APPLE_INTELLIGENCE_PROVIDER_ID, AutoSubmitKey, ClipboardHandling, KeyboardImplementation,
     LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod, ShortcutBinding, SoundTheme, Theme,
-    TypingTool, get_settings, normalize_binding,
+    TypingTool, VadBackend, get_settings, normalize_binding,
 };
 use crate::tray;
 
@@ -1587,10 +1587,7 @@ pub fn change_vad_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
 
 #[tauri::command]
 #[specta::specta]
-pub async fn change_vad_backend_setting(
-    app: AppHandle,
-    backend: settings::VadBackend,
-) -> Result<(), String> {
+pub async fn change_vad_backend_setting(app: AppHandle, backend: VadBackend) -> Result<(), String> {
     if settings::get_settings(&app).vad_backend == backend {
         return Ok(());
     }

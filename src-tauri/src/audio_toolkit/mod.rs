@@ -15,4 +15,4 @@ pub use text::{
     OutputLanguageEvidence, apply_custom_words, normalize_transcription_output, remove_filler_words,
 };
 pub use utils::get_cpal_host;
-pub use vad::{SileroVad, VoiceActivityDetector};
+pub use vad::{EarshotVad, SileroVad, VoiceActivityDetector};

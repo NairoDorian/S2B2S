@@ -1,10 +1,13 @@
 use crate::audio_toolkit::{
-    AudioRecorder, VadPolicy, list_input_devices,
-    vad::{self, EarshotVad, SileroVad, SmoothedVad, VoiceActivityDetector},
+    AudioRecorder, SileroVad, VadPolicy, VoiceActivityDetector, list_input_devices,
+    vad::{
+        EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_PREFILL_MS,
+        VAD_STREAMING_HANGOVER_MS, frames_for_duration_ms,
+    },
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
-use crate::settings::{self, AppSettings, MicIdleTimeoutUnit, get_settings, write_settings};
+use crate::settings::{AppSettings, MicIdleTimeoutUnit, VadBackend, get_settings, write_settings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -285,13 +288,13 @@ const SILERO_VAD_THRESHOLD: f32 = 0.3;
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
 
 fn create_audio_recorder(
-    backend: settings::VadBackend,
+    backend: VadBackend,
     app_handle: &tauri::AppHandle,
     selected_channel: Option<u16>,
     stream_router: Arc<StreamRouter>,
 ) -> Result<AudioRecorder, anyhow::Error> {
     let detector: Box<dyn VoiceActivityDetector> = match backend {
-        settings::VadBackend::Silero => {
+        VadBackend::Silero => {
             let vad_path = app_handle
                 .path()
                 .resolve(
@@ -304,7 +307,7 @@ fn create_audio_recorder(
                     .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {e}"))?,
             )
         }
-        settings::VadBackend::Earshot => Box::new(
+        VadBackend::Earshot => Box::new(
             EarshotVad::new(EARSHOT_VAD_THRESHOLD)
                 .map_err(|e| anyhow::anyhow!("Failed to create EarshotVad: {e}"))?,
         ),
@@ -314,12 +317,11 @@ fn create_audio_recorder(
     // time-based capture profile to each detector's frame size so selecting a
     // backend does not shorten pre-roll, onset, or post-speech audio.
     let frame_samples = detector.frame_samples();
-    let prefill_frames = vad::frames_for_duration_ms(vad::VAD_PREFILL_MS, frame_samples);
-    let offline_hangover_frames =
-        vad::frames_for_duration_ms(vad::VAD_OFFLINE_HANGOVER_MS, frame_samples);
+    let prefill_frames = frames_for_duration_ms(VAD_PREFILL_MS, frame_samples);
+    let offline_hangover_frames = frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, frame_samples);
     let streaming_hangover_frames =
-        vad::frames_for_duration_ms(vad::VAD_STREAMING_HANGOVER_MS, frame_samples);
-    let onset_frames = vad::frames_for_duration_ms(vad::VAD_ONSET_MS, frame_samples);
+        frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, frame_samples);
+    let onset_frames = frames_for_duration_ms(VAD_ONSET_MS, frame_samples);
     let smoothed_vad = SmoothedVad::new(
         detector,
         prefill_frames,
@@ -885,7 +887,7 @@ impl AudioRecordingManager {
     /// currently warm (always-on or lazy-close mode), reopen it with the new
     /// detector before reporting success. A failed reopen restores the previous
     /// recorder so the persisted setting can remain unchanged.
-    pub fn update_vad_backend(&self, backend: settings::VadBackend) -> Result<(), anyhow::Error> {
+    pub fn update_vad_backend(&self, backend: VadBackend) -> Result<(), anyhow::Error> {
         let state = self.state.lock().unwrap();
         if !matches!(*state, RecordingState::Idle) {
             return Err(anyhow::anyhow!(

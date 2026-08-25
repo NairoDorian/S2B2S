@@ -7,11 +7,6 @@ pub const VAD_OFFLINE_HANGOVER_MS: u64 = 450;
 pub const VAD_STREAMING_HANGOVER_MS: u64 = 1650;
 pub const VAD_ONSET_MS: u64 = 60;
 
-pub const VAD_PREFILL_FRAMES: usize = 15;
-pub const VAD_OFFLINE_HANGOVER_FRAMES: usize = 15;
-pub const VAD_STREAMING_HANGOVER_FRAMES: usize = 55;
-pub const VAD_ONSET_FRAMES: usize = 2;
-
 /// Convert a VAD timing duration to whole detector frames, rounding up so an
 /// alternate backend never shortens Handy's onset, pre-roll, or hangover tail.
 pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> usize {
@@ -55,14 +50,12 @@ pub trait VoiceActivityDetector: Send + Sync {
     ///
     /// This is deliberately not the same as `push_frame` returning
     /// [`VadFrame::Speech`]: the smoothing wrapper keeps reporting speech
-    /// throughout its hangover tail (up to [`VAD_STREAMING_HANGOVER_FRAMES`],
-    /// i.e. 1.76 s, so that a streaming decoder keeps receiving audio across a
-    /// pause). Speech-time metrics must not count that tail, so they read this
-    /// instead.
+    /// throughout its hangover tail, so that a streaming decoder keeps
+    /// receiving audio across a pause. Speech-time metrics must not count
+    /// that tail, so they read this instead.
     fn last_frame_voiced(&self) -> bool {
         false
     }
-
     /// End-of-recording diagnostic snapshot, taken after the final frame.
     /// Purely observational — implementations must not change what they emit.
     /// Detectors without smoothing state return None.

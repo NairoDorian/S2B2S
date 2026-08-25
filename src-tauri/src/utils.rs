@@ -69,7 +69,6 @@ pub fn init_windows_process_performance() {
         }
     }
 }
-
 #[cfg(any(test, all(target_os = "windows", target_arch = "x86_64")))]
 const IMAGE_FILE_MACHINE_ARM64: u16 = 0xaa64;
 

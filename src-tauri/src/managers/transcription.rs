@@ -1633,7 +1633,7 @@ impl TranscriptionManager {
         } else {
             info!(
                 "Transcription result: {}",
-                utils::redact_text(&final_result)
+                crate::utils::redact_text(&final_result)
             );
         }
 
