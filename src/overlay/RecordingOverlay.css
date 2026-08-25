@@ -307,12 +307,36 @@
   grid-template-columns: minmax(22px, 1fr) auto minmax(22px, 1fr);
   align-items: center;
 }
-/* With stats on, the right-hand cluster runs ~120px wide. Mirroring that on the
-   left to keep the waveform dead-centre would push the pill ~90px wider than its
-   content needs, so anchor the waveform beside the dot and let the stats take up
-   the slack instead. */
+/* With stats on, the row stops being a three-zone grid. Mirroring the ~120px
+   readout cluster on the left to keep the waveform dead-centre would push the
+   pill ~90px wider than its content needs; and leaving the readouts inside the
+   right-hand cluster would strand them against the far edge, putting all the
+   slack between the waveform and the numbers it describes.
+
+   So: one flex line, evenly spaced, with only the cancel button pushed to the
+   edge. The lamp, the level and the readouts read as a single unit, and the
+   growing gap sits before the action instead of through the middle. */
 .sbase.has-stats {
-  grid-template-columns: auto auto 1fr;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* The trailing padding exists to separate the bars from the right-hand cluster
+   in the grid layout; here the flex gap does that job. */
+.sbase.has-stats .swave {
+  padding-right: 0;
+}
+.sbase.has-stats .sbase-r {
+  margin-left: auto;
+}
+
+/* Readouts group: tighter within itself than the row gap, so the numbers read
+   as one run rather than three separate items. */
+.smeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .sbase-l {

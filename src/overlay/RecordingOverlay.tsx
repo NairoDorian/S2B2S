@@ -411,8 +411,23 @@ const RecordingOverlay: React.FC = () => {
     </span>
   );
 
-  // dot (left) | waveform (center) | stats + timer + cancel (right) — same
-  // structure for pill & panel, so the Live morph is a pure width change.
+  // The numeric readouts, in reading order: total elapsed, then the speech
+  // clock and rate.
+  const readouts = (showTimer: boolean) => (
+    <>
+      {showTimer && <span className="stimer">{fmtTime(elapsed)}</span>}
+      {showStats && statsCluster}
+    </>
+  );
+
+  // Without stats: dot (left) | waveform (center) | timer + cancel (right),
+  // the original three-zone grid that keeps the waveform centered.
+  //
+  // With stats: dot, waveform and readouts run together as one evenly spaced
+  // group, and only the cancel button is pinned to the right edge. Keeping the
+  // readouts in the right-hand cluster instead would put every pixel of slack
+  // between the waveform and the numbers — separating things that belong
+  // together, by a gap that grows with the card.
   const listeningRow = (showTimer: boolean, showCancel: boolean) => (
     <div className={`sbase ${showStats ? "has-stats" : ""}`}>
       <div className="sbase-l">
@@ -423,9 +438,9 @@ const RecordingOverlay: React.FC = () => {
         />
       </div>
       {waveform}
+      {showStats && <div className="smeta">{readouts(showTimer)}</div>}
       <div className="sbase-r">
-        {showTimer && <span className="stimer">{fmtTime(elapsed)}</span>}
-        {showStats && statsCluster}
+        {!showStats && readouts(showTimer)}
         {showCancel && cancelBtn}
       </div>
     </div>
