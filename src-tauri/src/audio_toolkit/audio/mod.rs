@@ -7,9 +7,9 @@ mod visualizer;
 
 pub use device::{CpalDeviceInfo, list_input_devices, list_output_devices};
 pub use recorder::{
-    AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, SpeechActivity, VadPolicy,
+    AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, RecordedAudio, SpeechActivity, VadPolicy,
     is_microphone_access_denied, is_no_input_device_error,
 };
 pub use resampler::FrameResampler;
-pub use utils::{read_wav_samples, save_wav_file, verify_wav_file};
+pub use utils::{read_wav_samples, save_raw_wav_file, save_wav_file, verify_wav_file};
 pub use visualizer::AudioVisualiser;

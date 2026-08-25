@@ -589,6 +589,10 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(cli_args: CliArgs) {
+    // Elevate process priority, disable EcoQoS throttling, and set 1ms timer resolution on Windows.
+    #[cfg(target_os = "windows")]
+    utils::init_windows_process_performance();
+
     // Avoid ggml-metal residency-set teardown assertions when a native engine
     // outlives the Tauri shutdown sequence (#1902). This must happen before
     // transcribe-cpp initializes its Metal device. Advanced users can restore
@@ -678,6 +682,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_append_trailing_space_setting,
             shortcut::change_append_trailing_newline_setting,
             shortcut::change_lazy_stream_close_setting,
+            shortcut::change_save_raw_audio_setting,
             shortcut::change_vad_enabled_setting,
             shortcut::change_filler_word_removal_enabled_setting,
             shortcut::change_app_language_setting,

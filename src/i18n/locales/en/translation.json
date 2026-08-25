@@ -297,6 +297,10 @@
         "label": "Experimental Features",
         "description": "Enable experimental features that are still in development."
       },
+      "saveRawAudio": {
+        "label": "Save Raw Uncompressed Audio",
+        "description": "Saves recordings in their native microphone sample rate and bit depth without downsampling or silence removal."
+      },
       "lazyStreamClose": {
         "label": "Keep Mic Open Between Transcriptions",
         "description": "Keeps the microphone stream open for 30 seconds after recording stops, reducing latency for back-to-back transcriptions. May degrade Bluetooth audio quality while active."

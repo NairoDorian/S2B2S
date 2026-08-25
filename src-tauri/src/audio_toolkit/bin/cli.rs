@@ -141,7 +141,8 @@ impl RecorderState {
             return Err("No recording in progress.".into());
         }
 
-        let samples = self.recorder.stop()?;
+        let recorded = self.recorder.stop()?;
+        let samples = recorded.stt_samples;
         self.is_recording = false;
 
         match self.mode {

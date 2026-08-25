@@ -196,6 +196,8 @@ const settingUpdaters: {
     commands.changeExperimentalEnabledSetting(value as boolean),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
+  save_raw_audio: (value) =>
+    commands.changeSaveRawAudioSetting(value as boolean),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   overlay_direct_mode: (value) =>
     commands.changeOverlayDirectModeSetting(value as boolean),

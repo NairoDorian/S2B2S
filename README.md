@@ -43,6 +43,8 @@ This fork adds **Multi-STT** — run up to four speech-to-text models simultaneo
 - **Per-model translation**: Each extra model can optionally translate to English
 - **Parallel model loading**: Extra models are pre-loaded in parallel during the recording phase
 - **LLM merge prompt**: Optionally merge multiple transcriptions through an OpenAI-compatible LLM (including local llama.cpp servers) using `${output}`, `${output2}`, `${output3}`, and `${output4}` placeholders
+- **Raw uncompressed audio saving**: Hardware-agnostic capture saving 32-bit float, 24-bit PCM, or 16-bit PCM WAVs directly before resampling and VAD filtering with zero latency impact
+- **Windows real-time low latency**: High priority process class, 1ms multimedia timer resolution, MMCSS capture thread scheduling, and hardware buffer size minimization
 - **Keep models loaded**: Option to retain extra models in memory between uses for faster repeat transcriptions
 - **Manual model unload**: Free model memory on demand via the settings UI
 - **Dedicated shortcut**: Configurable `multi_stt_transcribe` binding separate from the standard transcription shortcut

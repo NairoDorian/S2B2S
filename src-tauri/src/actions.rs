@@ -695,11 +695,13 @@ impl ShortcutAction for TranscribeAction {
             );
 
             let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
+            if let Some(recorded) = rm.stop_recording(&binding_id, cancel_generation) {
+                let samples = recorded.stt_samples;
                 debug!(
-                    "Recording stopped and samples retrieved in {:?}, sample count: {}",
+                    "Recording stopped and samples retrieved in {:?}, STT sample count: {}, raw sample count: {}",
                     stop_recording_time.elapsed(),
-                    samples.len()
+                    samples.len(),
+                    recorded.raw_samples.len()
                 );
 
                 if rm.was_cancelled_since(cancel_generation) {
@@ -724,14 +726,42 @@ impl ShortcutAction for TranscribeAction {
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
                 } else {
+                    let settings = get_settings(&ah);
+                    let raw_count = recorded.raw_samples.len();
+                    let (samples_for_wav, sample_count, save_is_raw, raw_rate, raw_format) =
+                        if settings.save_raw_audio && raw_count > 0 {
+                            (
+                                recorded.raw_samples,
+                                raw_count,
+                                true,
+                                recorded.native_sample_rate,
+                                recorded.native_sample_format,
+                            )
+                        } else {
+                            (
+                                samples.clone(),
+                                samples.len(),
+                                false,
+                                16000,
+                                cpal::SampleFormat::I16,
+                            )
+                        };
+
                     // Save WAV concurrently with transcription
-                    let sample_count = samples.len();
                     let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
-                    let samples_for_wav = samples.clone();
                     let wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                        crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
+                        if save_is_raw {
+                            crate::audio_toolkit::save_raw_wav_file(
+                                &wav_path,
+                                &samples_for_wav,
+                                raw_rate,
+                                raw_format,
+                            )
+                        } else {
+                            crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
+                        }
                     });
 
                     // Transcribe concurrently with WAV save. If a live stream was
@@ -1293,10 +1323,12 @@ impl ShortcutAction for MultiSttAction {
             );
 
             let _stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
+            if let Some(recorded) = rm.stop_recording(&binding_id, cancel_generation) {
+                let samples = recorded.stt_samples;
                 debug!(
-                    "Multi-STT: Recording stopped, sample count: {}",
-                    samples.len()
+                    "Multi-STT: Recording stopped, STT sample count: {}, raw sample count: {}",
+                    samples.len(),
+                    recorded.raw_samples.len()
                 );
 
                 if rm.was_cancelled_since(cancel_generation) {
@@ -1368,6 +1400,19 @@ impl ShortcutAction for MultiSttAction {
                     });
                 }
 
+                let settings = get_settings(&ah);
+                let (samples_for_wav, save_is_raw, raw_rate, raw_format) =
+                    if settings.save_raw_audio && !recorded.raw_samples.is_empty() {
+                        (
+                            recorded.raw_samples,
+                            true,
+                            recorded.native_sample_rate,
+                            recorded.native_sample_format,
+                        )
+                    } else {
+                        (samples.clone(), false, 16000, cpal::SampleFormat::I16)
+                    };
+
                 // Save WAV concurrently. The timestamp is shared with the
                 // history entry below so the recorded file name always matches.
                 let recording_timestamp = chrono::Utc::now().timestamp();
@@ -1375,9 +1420,17 @@ impl ShortcutAction for MultiSttAction {
                     .recordings_dir()
                     .join(format!("handy-multi-{recording_timestamp}.wav"));
                 let wav_for_save = wav_path.clone();
-                let samples_for_wav = samples.clone();
                 let _wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                    crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
+                    if save_is_raw {
+                        crate::audio_toolkit::save_raw_wav_file(
+                            &wav_for_save,
+                            &samples_for_wav,
+                            raw_rate,
+                            raw_format,
+                        )
+                    } else {
+                        crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
+                    }
                 });
 
                 // === LOAD EXTRA MODELS IN PARALLEL (fastest first-run) ===

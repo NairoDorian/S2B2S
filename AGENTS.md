@@ -260,6 +260,15 @@ Settings:
 
 - `overlay_speech_stats` - Show the stats in the Minimal and Live overlays
 - `speech_pause_hold_ms` - Pause tolerance (100-2000 ms, default 500)
+- `save_raw_audio` - Save raw uncompressed microphone audio before resampling and VAD filtering
+
+**Raw Uncompressed Audio Recording** (fork addition):
+When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow$ History, Handy saves audio in its native captured format:
+
+- **Pre-resampling / pre-VAD capture**: Raw audio samples are tapped directly from the hardware stream before being converted to 16 kHz mono or filtered by Silero VAD.
+- **Hardware-agnostic bit-depth detection**: Automatically saves 32-bit float (`F32`), 24-bit PCM (`I32`), or 16-bit PCM (`I16`) WAV files matching the microphone's native format and sampling rate (e.g. 48 kHz).
+- **Zero latency impact**: WAV serialization runs asynchronously on background blocking threads via `tauri::async_runtime::spawn_blocking`, allowing model transcription inference to execute immediately in parallel with no latency overhead.
+- **Universal reader**: `read_wav_samples` decodes 16-bit, 24-bit, and 32-bit float WAVs, automatically downsampling to 16 kHz for playback, acoustic model inference, and benchmarks.
 
 **Multi-STT settings** (fork addition):
 
@@ -365,7 +374,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: Vulkan acceleration, code signing
+- **Windows**: Vulkan acceleration, code signing, real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization)
 - **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay uses GTK layer shell (disable with `HANDY_NO_GTK_LAYER_SHELL=1`)
 
 ## Troubleshooting
