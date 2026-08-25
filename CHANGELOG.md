@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Skip transcription when a recording contains no speech.** `SpeechClock`
+  now publishes its running total to a lock-free counter that both shortcut
+  actions read after stopping; below 200 ms of measured speech the recording is
+  discarded without running a model. Beyond the saved decode, this prevents the
+  failure mode where a Whisper-family model hallucinates confident text out of
+  silence and it gets pasted into whatever the user was typing in. The threshold
+  sits below Silero's own 250 ms `min_speech_duration_ms` default so a clipped
+  short word still transcribes, and it can never fire when VAD is disabled
+  (every frame counts as speech in that mode).
+
+### Changed
+
+- **VAD thresholding now uses hysteresis.** Speech is entered at the configured
+  threshold (0.3) but only left once the probability drops below
+  `max(threshold - 0.15, 0.01)`, matching silero-vad's own reference pipeline.
+  A single value for both edges makes a signal hovering near the threshold flap
+  frame to frame, which showed up as a stuttering speech/silence indicator and a
+  speech clock that stalled mid-word. Measured across three real recordings, the
+  gate recovers ~1% more voiced time and removes the flapping entirely.
+
 ### Fixed
 
 - **Silero VAD was silently doing nothing; it now actually filters.** Voice

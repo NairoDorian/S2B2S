@@ -467,6 +467,20 @@ pub(crate) async fn process_transcription_output(
     }
 }
 
+/// Minimum measured speech in a recording for it to be worth decoding.
+///
+/// Below this, running a model costs a GPU decode and risks something worse
+/// than nothing: Whisper-family models hallucinate confidently on silence, and
+/// that invented text goes straight into whatever the user was typing in.
+/// Silence measures 0 ms exactly, so this only has to clear stray onset frames
+/// while staying under the shortest real word — Silero's own
+/// `min_speech_duration_ms` default is 250 ms, and this sits deliberately below
+/// it so a clipped "yes" still transcribes.
+///
+/// With VAD disabled every frame counts as speech, so this can never suppress a
+/// recording the user made with filtering turned off.
+const MIN_SPEECH_MS_TO_TRANSCRIBE: u64 = 200;
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
@@ -696,8 +710,14 @@ impl ShortcutAction for TranscribeAction {
                     return;
                 }
 
-                if samples.is_empty() {
-                    debug!("Recording produced no audio samples; skipping persistence");
+                let speech_ms = rm.last_speech_ms();
+                if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
+                    debug!(
+                        "Recording has no usable speech ({} samples, {}ms voiced); \
+                         skipping transcription",
+                        samples.len(),
+                        speech_ms
+                    );
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
@@ -1302,8 +1322,13 @@ impl ShortcutAction for MultiSttAction {
                     return;
                 }
 
-                if samples.is_empty() {
-                    debug!("Multi-STT: Recording produced no audio samples");
+                let speech_ms = rm.last_speech_ms();
+                if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
+                    debug!(
+                        "Multi-STT: Recording has no usable speech ({} samples, {}ms voiced)",
+                        samples.len(),
+                        speech_ms
+                    );
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);

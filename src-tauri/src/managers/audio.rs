@@ -924,6 +924,17 @@ impl AudioRecordingManager {
         self.cancel_generation.load(Ordering::Acquire) != generation
     }
 
+    /// Milliseconds of speech the VAD measured in the most recent recording.
+    /// Valid once [`Self::stop_recording`] has returned.
+    pub fn last_speech_ms(&self) -> u64 {
+        self.recorder
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|rec| rec.speech_ms())
+            .unwrap_or(0)
+    }
+
     pub fn stop_recording(&self, binding_id: &str, cancel_generation: u64) -> Option<Vec<f32>> {
         self.invalidate_recording_readiness();
         let mut state = self.state.lock().unwrap();

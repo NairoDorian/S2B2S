@@ -10,6 +10,46 @@ use crate::audio_toolkit::constants::{
     VAD_CONTEXT_SAMPLES, VAD_FRAME_SAMPLES, WHISPER_SAMPLE_RATE,
 };
 
+/// Dual-threshold gate, mirroring silero-vad's own reference pipeline: speech
+/// is *entered* at `threshold`, but only *left* once the probability drops below
+/// a lower exit threshold.
+///
+/// A single value for both edges makes a signal hovering near the threshold flap
+/// frame to frame — which surfaces directly as a stuttering speech/silence
+/// indicator and a speech clock that stalls mid-word.
+#[derive(Debug, Clone, Copy)]
+struct Hysteresis {
+    enter: f32,
+    exit: f32,
+    in_speech: bool,
+}
+
+impl Hysteresis {
+    /// The exit threshold follows the reference implementation: 0.15 below the
+    /// entry threshold, floored at 0.01 so it stays above the ~0.0005 the model
+    /// emits for true silence.
+    fn new(threshold: f32) -> Self {
+        Self {
+            enter: threshold,
+            exit: (threshold - 0.15).max(0.01),
+            in_speech: false,
+        }
+    }
+
+    fn update(&mut self, prob: f32) -> bool {
+        self.in_speech = if self.in_speech {
+            prob >= self.exit
+        } else {
+            prob >= self.enter
+        };
+        self.in_speech
+    }
+
+    fn reset(&mut self) {
+        self.in_speech = false;
+    }
+}
+
 /// Recurrent state carried between frames. Silero v5/v6 replaced v4's separate
 /// `h`/`c` LSTM tensors with a single packed `state` of shape (2, batch, 128).
 const STATE_SHAPE: (usize, usize, usize) = (2, 1, 128);
@@ -36,7 +76,7 @@ pub struct SileroVad {
     sample_rate: ArrayBase<OwnedRepr<i64>, Ix1>,
     /// Tail of the previous window, prepended to the next one.
     context: Vec<f32>,
-    threshold: f32,
+    gate: Hysteresis,
     /// Raw voiced/not decision for the most recent frame, before any smoothing
     /// wrapper widens it into a speech segment. Read by speech-time metrics.
     last_voiced: bool,
@@ -97,7 +137,7 @@ impl SileroVad {
             state: Array3::<f32>::zeros(STATE_SHAPE),
             sample_rate: Array1::from_vec(vec![i64::from(WHISPER_SAMPLE_RATE)]),
             context: vec![0.0; VAD_CONTEXT_SAMPLES],
-            threshold,
+            gate: Hysteresis::new(threshold),
             last_voiced: false,
         })
     }
@@ -153,7 +193,7 @@ impl VoiceActivityDetector for SileroVad {
 
         let prob = self.compute(frame)?;
 
-        self.last_voiced = prob > self.threshold;
+        self.last_voiced = self.gate.update(prob);
         if self.last_voiced {
             Ok(VadFrame::Speech(frame))
         } else {
@@ -167,9 +207,68 @@ impl VoiceActivityDetector for SileroVad {
 
     fn reset(&mut self) {
         self.last_voiced = false;
+        self.gate.reset();
         // Clear the recurrent state and the carried context so a new session
         // doesn't inherit anything from the previous recording.
         self.state.fill(0.0);
         self.context.fill(0.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Hysteresis;
+
+    #[test]
+    fn entry_uses_the_high_threshold_and_exit_the_low_one() {
+        let mut gate = Hysteresis::new(0.3);
+        assert_eq!(gate.exit, 0.15);
+
+        // Below the entry threshold, silence stays silence...
+        assert!(!gate.update(0.25));
+        // ...but at it, speech starts.
+        assert!(gate.update(0.30));
+        // Once speaking, the same 0.25 now counts as continuing speech, because
+        // it is still above the exit threshold. This is the whole point.
+        assert!(gate.update(0.25));
+        assert!(gate.update(0.16));
+        // Only below the exit threshold does it end.
+        assert!(!gate.update(0.14));
+        // And re-entry needs the high threshold again.
+        assert!(!gate.update(0.25));
+    }
+
+    #[test]
+    fn does_not_flap_on_a_signal_sitting_between_the_thresholds() {
+        let mut gate = Hysteresis::new(0.3);
+        gate.update(0.9); // enter speech
+
+        // A signal oscillating in the band between exit and enter would toggle
+        // on every frame with a single threshold; here it holds steady.
+        for prob in [0.29f32, 0.16, 0.28, 0.17, 0.25] {
+            assert!(gate.update(prob), "flapped at {prob}");
+        }
+    }
+
+    #[test]
+    fn exit_threshold_is_floored_above_the_models_silence_output() {
+        // A low entry threshold must not drive the exit threshold to zero or
+        // negative, where the model's ~0.0005 silence output would read as
+        // speech forever.
+        let gate = Hysteresis::new(0.1);
+        assert_eq!(gate.exit, 0.01);
+
+        let mut gate = Hysteresis::new(0.1);
+        gate.update(0.5);
+        assert!(!gate.update(0.0005), "silence read as speech");
+    }
+
+    #[test]
+    fn reset_returns_to_requiring_the_entry_threshold() {
+        let mut gate = Hysteresis::new(0.3);
+        gate.update(0.9);
+        gate.reset();
+        // Mid-band, which would have continued speech before the reset.
+        assert!(!gate.update(0.2));
     }
 }

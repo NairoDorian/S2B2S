@@ -190,6 +190,26 @@ own:
 3. **`state` must be carried forward** from each run's `stateN` output, and
    cleared on `reset()` so a new recording starts fresh.
 
+**Thresholding uses hysteresis**, as the reference pipeline does: speech is
+entered at `VAD_THRESHOLD` (0.3) but only left once the probability falls below
+`max(threshold - 0.15, 0.01)` — 0.15 here. A single value for both edges makes a
+signal hovering near it flap frame to frame, which shows up directly as a
+stuttering speech/silence indicator and a speech clock that stalls mid-word. The
+floor keeps the exit threshold above the ~0.0005 the model emits for true
+silence. `Hysteresis` in `silero.rs` is a pure struct, unit-tested without the
+model.
+
+**Recordings with no speech never reach a decoder.** `SpeechClock` publishes its
+running total to an `Arc<AtomicU64>`, which `AudioRecorder::speech_ms()` and
+`AudioRecordingManager::last_speech_ms()` expose; both shortcut actions check it
+alongside `samples.is_empty()` and skip transcription below
+`MIN_SPEECH_MS_TO_TRANSCRIBE` (200 ms, `actions.rs`). This is not just a saved
+GPU decode: Whisper-family models hallucinate confidently on silence, and that
+invented text would be pasted into whatever the user was typing in. The
+threshold sits deliberately below Silero's own 250 ms `min_speech_duration_ms`
+so a clipped "yes" still transcribes, and with VAD disabled every frame counts
+as speech, so it can never suppress a recording made with filtering off.
+
 `SileroVad::new` validates the model's input names up front, so a mismatched
 model fails loudly at load instead of once per frame. `handle_frame` still
 treats a per-frame VAD error as "keep this audio" (losing speech is worse than
