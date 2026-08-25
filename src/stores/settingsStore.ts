@@ -203,6 +203,10 @@ const settingUpdaters: {
     commands.changeOverlayDirectSpeedSetting(value as number),
   direct_streaming_speed: (value) =>
     commands.changeDirectStreamingSpeedSetting(value as number),
+  overlay_speech_stats: (value) =>
+    commands.changeOverlaySpeechStatsSetting(value as boolean),
+  speech_pause_hold_ms: (value) =>
+    commands.changeSpeechPauseHoldSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),

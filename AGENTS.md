@@ -70,12 +70,18 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `history.rs` - Transcription history storage
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling
-  - `vad/` - Voice Activity Detection (Silero VAD)
+    - `recorder.rs` also hosts `SpeechClock`, which measures how long the user
+      has actually been speaking (see Speech Stats below)
+  - `vad/` - Voice Activity Detection (Silero VAD) — see Voice Activity
+    Detection below; `silero.rs` drives the ONNX session directly rather than
+    through `vad-rs`
 - `commands/` - Tauri command handlers for frontend communication
 - `cli.rs` - CLI argument definitions (clap derive)
 - `shortcut/mod.rs` - Global keyboard shortcut handling (includes multi-STT shortcut registration)
 - `settings.rs` - Application settings management (includes Multi-STT settings)
-- `overlay.rs` - Recording overlay window (platform-specific)
+- `overlay.rs` - Recording overlay window (platform-specific), plus
+  `SpeechActivityEvent` and the cached emit gates for `mic-level` /
+  speech-activity events
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`
   - `MultiSttAction` runs primary + three extra models in parallel, merges outputs via LLM
@@ -123,7 +129,8 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `transcribe-cpp` - Local Whisper-family inference (GGML/GGUF) with GPU acceleration
 - `transcribe-rs` - ONNX speech recognition (Parakeet, Moonshine, SenseVoice, etc.)
 - `cpal` - Cross-platform audio I/O
-- `vad-rs` - Voice Activity Detection
+- `ort` - ONNX Runtime bindings; runs the Silero VAD graph directly (see
+  Voice Activity Detection)
 - `rdev` - Global keyboard shortcuts
 - `rubato` - Audio resampling
 - `rodio` - Audio playback for feedback sounds
@@ -152,6 +159,87 @@ Settings are stored using Tauri's store plugin with reactive updates:
 - Audio devices (microphone/output selection)
 - Model preferences (Small/Medium/Turbo/Large Whisper variants)
 - Audio feedback and translation options
+
+### Voice Activity Detection
+
+Handy ships **Silero VAD v6.2** (`silero_vad_v6.2.onnx`, ~2.2 MB), run on the
+audio consumer thread once per 32 ms frame. It is what makes `vad_enabled`
+mean anything: frames it scores below threshold never reach the decoder, so a
+recording carries speech instead of speech-plus-silence. That matters more than
+it sounds — Whisper-family models are prone to hallucinating text on silent
+audio, and every second of dropped silence is a second the model doesn't spend
+decoding.
+
+`audio_toolkit/vad/silero.rs` runs the Silero ONNX graph directly via `ort`.
+It deliberately does **not** use `vad-rs`: that crate only speaks Silero **v4**'s
+tensor interface (`input`/`sr`/`h`/`c` in, `hn`/`cn` out), while the model
+shipped here is **v6** (`input`/`state`/`sr` in, `output`/`stateN` out). Against
+a v6 model every `vad-rs` call fails with `Invalid input name: h`.
+
+Three parts of the v5/v6 contract must all hold, and each fails quietly on its
+own:
+
+1. **Window size is fixed** at `constants::VAD_FRAME_SAMPLES` (512 samples =
+   32 ms at 16 kHz). Other sizes still run, but return ~0.0005 for speech and
+   silence alike. The whole capture pipeline is framed to 32 ms
+   (`constants::VAD_FRAME_MS`) so one resampled frame is exactly one VAD
+   decision — `FRAME_MS` in `recorder.rs` is derived from it, not chosen.
+2. **A 64-sample context** (`constants::VAD_CONTEXT_SAMPLES`) from the previous
+   window must be prepended to each chunk, so the tensor fed is 576 long. Omit
+   it and the model cannot distinguish speech from silence at all.
+3. **`state` must be carried forward** from each run's `stateN` output, and
+   cleared on `reset()` so a new recording starts fresh.
+
+`SileroVad::new` validates the model's input names up front, so a mismatched
+model fails loudly at load instead of once per frame. `handle_frame` still
+treats a per-frame VAD error as "keep this audio" (losing speech is worse than
+keeping silence), but now logs the first failure of each recording — a VAD that
+fails on every frame otherwise looks exactly like a VAD that is switched off.
+
+**Why this is written out at length:** the v4-wrapper-against-a-v6-model
+combination above was live for an unknown period and produced _no_ symptom a
+user could see. `compute()` failed on every single frame, `handle_frame` mapped
+the error to "keep this audio", and VAD degraded into a pass-through — the
+setting appeared to work, recordings just silently contained everything. It only
+surfaced when Speech Stats became the first consumer of the raw per-frame
+verdict, which a pass-through cannot fake. Measured afterwards on a real 33.8 s
+recording: 24.6 s of raw voiced audio, 32.9 s kept once the streaming hangover
+tail is included.
+
+`src-tauri/tests/vad_speech_clock_probe.rs` is an opt-in regression check: point
+`HANDY_PROBE_WAV` at a 16 kHz mono speech recording and it asserts the real
+chain reports a sane fraction of voiced frames. It skips when the variable is
+unset.
+
+**Speech Stats** (fork addition): the recording overlay can show a
+speech/silence indicator, a timer that runs only while you are actually talking,
+and the running average words per minute.
+
+- Driven by `SpeechClock` in `audio_toolkit/audio/recorder.rs`, fed by
+  `VoiceActivityDetector::last_frame_voiced` — the **raw** per-frame Silero
+  verdict, deliberately _not_ what `push_frame` returns. `SmoothedVad` keeps
+  reporting speech through a hangover tail up to 1.76 s long in streaming mode,
+  and counting that would add more than a second of phantom speech per pause.
+- Gaps shorter than `speech_pause_hold_ms` are billed as part of the same
+  utterance once speech resumes; longer gaps are dropped. The clock therefore
+  only moves forward — it catches up rather than rewinding.
+- Reaches the overlay as `SpeechActivityEvent`, emitted on speaking/silent flips
+  and on a ~150 ms heartbeat while speech continues (never during silence), so it
+  adds roughly a fifth of the `mic-level` event volume. Gated on both
+  `OVERLAY_ENABLED` and `SPEECH_STATS_ENABLED` to keep the issue #1279 emit path
+  quiet when the overlay is off.
+- Words per minute is computed in `RecordingOverlay.tsx` from the live
+  `StreamTextEvent` word count, so it needs a streaming-capable model. It works
+  in the Minimal overlay too, because `start_stream()` follows model capability
+  rather than overlay style. Non-streaming models show the timers and the
+  indicator with `—` in place of the rate.
+- With VAD disabled every frame counts as speech, so the speech clock degrades
+  into a wall clock instead of needing a separate UI case.
+
+Settings:
+
+- `overlay_speech_stats` - Show the stats in the Minimal and Live overlays
+- `speech_pause_hold_ms` - Pause tolerance (100-2000 ms, default 500)
 
 **Multi-STT settings** (fork addition):
 

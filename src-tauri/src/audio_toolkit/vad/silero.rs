@@ -1,19 +1,45 @@
 use anyhow::Result;
 use log::info;
+use ndarray::{Array1, Array2, Array3, ArrayBase, Ix1, Ix3, OwnedRepr};
+use ort::session::{Session, builder::GraphOptimizationLevel};
+use ort::value::Value;
 use std::path::Path;
 
-use vad_rs::Vad;
-
 use super::{VadFrame, VoiceActivityDetector};
-use crate::audio_toolkit::constants;
+use crate::audio_toolkit::constants::{
+    VAD_CONTEXT_SAMPLES, VAD_FRAME_SAMPLES, WHISPER_SAMPLE_RATE,
+};
 
-const SILERO_FRAME_MS: u32 = 30;
-const SILERO_FRAME_SAMPLES: usize =
-    (constants::WHISPER_SAMPLE_RATE * SILERO_FRAME_MS / 1000) as usize;
+/// Recurrent state carried between frames. Silero v5/v6 replaced v4's separate
+/// `h`/`c` LSTM tensors with a single packed `state` of shape (2, batch, 128).
+const STATE_SHAPE: (usize, usize, usize) = (2, 1, 128);
 
+/// Silero voice activity detection, driven directly against the ONNX session.
+///
+/// This deliberately does not use `vad-rs`: that crate speaks Silero **v4**'s
+/// tensor interface (`input`/`sr`/`h`/`c` in, `hn`/`cn` out), while the model
+/// shipped here is v6, which takes a single packed `state` and returns `stateN`.
+/// Against a v6 model every `vad-rs` call fails with "Invalid input name: h" —
+/// and because callers treat a VAD error as "keep this audio", that failure is
+/// invisible: VAD silently passes everything through.
+///
+/// Two details of the v5/v6 contract are easy to miss, and getting either wrong
+/// yields a model that runs without error but reports ~0.0005 for speech and
+/// silence alike:
+///
+/// * the window must be exactly [`VAD_FRAME_SAMPLES`] (512 at 16 kHz), and
+/// * the last [`VAD_CONTEXT_SAMPLES`] samples of the previous window must be
+///   prepended to each chunk, so the tensor actually fed is 576 long.
 pub struct SileroVad {
-    engine: Vad,
+    session: Session,
+    state: ArrayBase<OwnedRepr<f32>, Ix3>,
+    sample_rate: ArrayBase<OwnedRepr<i64>, Ix1>,
+    /// Tail of the previous window, prepended to the next one.
+    context: Vec<f32>,
     threshold: f32,
+    /// Raw voiced/not decision for the most recent frame, before any smoothing
+    /// wrapper widens it into a speech segment. Read by speech-time metrics.
+    last_voiced: bool,
 }
 
 impl SileroVad {
@@ -34,39 +60,116 @@ impl SileroVad {
         let file_size_mb = metadata.len() as f64 / 1_048_576.0;
         info!("SileroVad: model file size = {:.2} MB", file_size_mb);
 
-        let engine = Vad::new(path, constants::WHISPER_SAMPLE_RATE as usize)
-            .map_err(|e| anyhow::anyhow!("Failed to create VAD: {e}"))?;
+        // One thread each way: the VAD runs per frame on the audio consumer
+        // thread, where scheduling overhead costs more than this small graph
+        // gains from parallelism.
+        let session = (|| -> ort::Result<Session> {
+            Session::builder()?
+                .with_optimization_level(GraphOptimizationLevel::Level3)
+                .map_err(|e| -> ort::Error { e.into() })?
+                .with_intra_threads(1)
+                .map_err(|e| -> ort::Error { e.into() })?
+                .with_inter_threads(1)
+                .map_err(|e| -> ort::Error { e.into() })?
+                .commit_from_file(path)
+        })()
+        .map_err(|e| anyhow::anyhow!("Failed to create VAD session: {e}"))?;
 
-        info!("SileroVad: model loaded and ready");
+        // Fail loudly at load time rather than once per frame, so a mismatched
+        // model can never degrade into a silently-disabled VAD.
+        let inputs: Vec<&str> = session.inputs().iter().map(|i| i.name()).collect();
+        for required in ["input", "state", "sr"] {
+            if !inputs.contains(&required) {
+                anyhow::bail!(
+                    "VAD model '{}' is missing the '{}' input (has: {:?}); \
+                     expected a Silero v5/v6 model",
+                    path.display(),
+                    required,
+                    inputs
+                );
+            }
+        }
 
-        Ok(Self { engine, threshold })
+        info!("SileroVad: model loaded and ready (inputs: {:?})", inputs);
+
+        Ok(Self {
+            session,
+            state: Array3::<f32>::zeros(STATE_SHAPE),
+            sample_rate: Array1::from_vec(vec![i64::from(WHISPER_SAMPLE_RATE)]),
+            context: vec![0.0; VAD_CONTEXT_SAMPLES],
+            threshold,
+            last_voiced: false,
+        })
+    }
+
+    /// Run one frame through the network, returning the speech probability.
+    fn compute(&mut self, frame: &[f32]) -> Result<f32> {
+        let mut input = Vec::with_capacity(VAD_CONTEXT_SAMPLES + frame.len());
+        input.extend_from_slice(&self.context);
+        input.extend_from_slice(frame);
+        // Carry this window's tail forward as the next window's context.
+        self.context
+            .copy_from_slice(&input[input.len() - VAD_CONTEXT_SAMPLES..]);
+
+        let samples = Array2::from_shape_vec((1, input.len()), input)?;
+
+        let outputs = self
+            .session
+            .run(ort::inputs![
+                "input" => Value::from_array(samples)?,
+                "state" => Value::from_array(self.state.clone())?,
+                "sr" => Value::from_array(self.sample_rate.clone())?,
+            ])
+            .map_err(|e| anyhow::anyhow!("Silero VAD inference failed: {e}"))?;
+
+        // Carry the recurrent state forward, so the network sees the utterance
+        // rather than one window at a time.
+        let next_state = outputs
+            .get("stateN")
+            .ok_or_else(|| anyhow::anyhow!("VAD output 'stateN' missing"))?
+            .try_extract_tensor::<f32>()
+            .map_err(|e| anyhow::anyhow!("Failed to read VAD state: {e}"))?;
+        self.state = Array3::from_shape_vec(STATE_SHAPE, next_state.1.to_vec())?;
+
+        let output = outputs
+            .get("output")
+            .ok_or_else(|| anyhow::anyhow!("VAD output 'output' missing"))?
+            .try_extract_tensor::<f32>()
+            .map_err(|e| anyhow::anyhow!("Failed to read VAD output: {e}"))?;
+
+        output
+            .1
+            .first()
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("VAD produced an empty probability"))
     }
 }
 
 impl VoiceActivityDetector for SileroVad {
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
-        if frame.len() != SILERO_FRAME_SAMPLES {
-            anyhow::bail!(
-                "expected {SILERO_FRAME_SAMPLES} samples, got {}",
-                frame.len()
-            );
+        if frame.len() != VAD_FRAME_SAMPLES {
+            anyhow::bail!("expected {VAD_FRAME_SAMPLES} samples, got {}", frame.len());
         }
 
-        let result = self
-            .engine
-            .compute(frame)
-            .map_err(|e| anyhow::anyhow!("Silero VAD error: {e}"))?;
+        let prob = self.compute(frame)?;
 
-        if result.prob > self.threshold {
+        self.last_voiced = prob > self.threshold;
+        if self.last_voiced {
             Ok(VadFrame::Speech(frame))
         } else {
             Ok(VadFrame::Noise)
         }
     }
 
+    fn last_frame_voiced(&self) -> bool {
+        self.last_voiced
+    }
+
     fn reset(&mut self) {
-        // Clear the Silero LSTM hidden/cell state so a new session doesn't
-        // inherit recurrent context from the previous recording.
-        self.engine.reset();
+        self.last_voiced = false;
+        // Clear the recurrent state and the carried context so a new session
+        // doesn't inherit anything from the previous recording.
+        self.state.fill(0.0);
+        self.context.fill(0.0);
     }
 }

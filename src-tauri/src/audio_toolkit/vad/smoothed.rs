@@ -99,6 +99,13 @@ impl VoiceActivityDetector for SmoothedVad {
         self.hangover_frames = frames;
     }
 
+    /// Delegate to the wrapped detector: the whole point of this method is to
+    /// see the decision *before* this wrapper's onset debounce and hangover tail
+    /// widen it into a speech segment.
+    fn last_frame_voiced(&self) -> bool {
+        self.inner_vad.last_frame_voiced()
+    }
+
     fn reset(&mut self) {
         self.inner_vad.reset();
         self.frame_buffer.clear();

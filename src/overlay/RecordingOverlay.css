@@ -55,6 +55,9 @@
   --ov-pill-w: 184px; /* base width / Live pill before it opens or collapses */
   --ov-work-w: 216px; /* working pill (transcribing / polishing) -- wide enough to
                          center longer labels; shared by Live (collapsed) + minimal */
+  --ov-stats-w: 244px; /* resting pill carrying speech stats (minimal, or Live
+                          before it opens) -- fits "10:08 - 142 wpm" + cancel.
+                          Mirrored by OVERLAY_STATS_WIDTH in overlay.rs */
   --ov-open-w: 392px; /* Live panel, expanded */
   --ov-base-h: 40px; /* control-row height (.sbase) */
   --ov-cap-max-h: 64px; /* max height of the scrolling live-text region */
@@ -217,6 +220,16 @@
   width: var(--ov-work-w);
 }
 
+/* Speech stats sit in the pill's right-hand cluster, so the resting pill needs
+   more room than the bare waveform does. Applied only when the stats are
+   actually rendered (never on the working pill, which shows a label instead, and
+   never on the open Live panel, which already has room inside its 392px card).
+   Declared after the .compact rules so it wins for the compact form at equal
+   specificity. */
+.scard.has-stats {
+  width: var(--ov-stats-w);
+}
+
 /* text region — auto-height open via grid-rows trick; region fades as a whole */
 .stext {
   display: grid;
@@ -294,6 +307,14 @@
   grid-template-columns: minmax(22px, 1fr) auto minmax(22px, 1fr);
   align-items: center;
 }
+/* With stats on, the right-hand cluster runs ~120px wide. Mirroring that on the
+   left to keep the waveform dead-centre would push the pill ~90px wider than its
+   content needs, so anchor the waveform beside the dot and let the stats take up
+   the slack instead. */
+.sbase.has-stats {
+  grid-template-columns: auto auto 1fr;
+}
+
 .sbase-l {
   display: flex;
   padding-left: 5px;
@@ -327,6 +348,14 @@
   opacity: 0.45;
   animation: none;
 }
+/* Capture is live, but the VAD hears no speech. Distinct from arming: the dot
+   keeps a little more presence, and it is the pulse — not the dot — that stops.
+   Only reachable when speech stats are on; otherwise the dot stays "ready". */
+.sdot.silent {
+  background: var(--s-muted);
+  opacity: 0.6;
+  animation: none;
+}
 @keyframes sdot-pulse {
   0% {
     box-shadow: 0 0 0 0 var(--s-accent-soft);
@@ -345,6 +374,44 @@
 }
 .scard.open .stimer {
   opacity: 1;
+}
+
+/* Speech stats — a clock that runs only while you are talking, and the running
+   average speaking rate. Tabular figures so the row never jitters as digits
+   change. */
+.sstats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sstat-speech {
+  color: var(--s-accent);
+  transition: opacity 180ms ease;
+}
+/* The clock is frozen during silence; dimming it says so without changing the
+   row's width. */
+.sstats.quiet .sstat-speech {
+  opacity: 0.5;
+}
+.sstat-sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--s-faint);
+  flex: none;
+}
+.sstat-wpm {
+  color: var(--s-muted);
+}
+/* Placeholder shown until there is enough speech for the average to mean
+   anything. Reserves roughly the width of the number it becomes. */
+.sstat-pending {
+  display: inline-block;
+  min-width: 46px;
+  color: var(--s-faint);
 }
 
 /* Waveform — reactive only after the first microphone callback. While arming,
@@ -368,6 +435,13 @@
     height 80ms linear,
     background-color 180ms ease,
     opacity 180ms ease;
+}
+/* Silence: the bars stay reactive (the microphone still has a level, and room
+   tone should still register) but drop to the neutral colour, so speech vs.
+   silence reads at a glance from the corner of the eye. */
+.swave.quiet i {
+  background: var(--s-muted);
+  opacity: 0.55;
 }
 .swave.arming i {
   height: 6px !important;

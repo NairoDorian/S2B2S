@@ -48,7 +48,11 @@ hound = "3.5.1"
 log = "^0.4.34"
 env_filter = "2.0.0"
 tokio = "1.53.1"
-vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
+# Silero VAD is driven directly against the ONNX session; see
+# audio_toolkit/vad/silero.rs for why vad-rs is not used (it only speaks the
+# Silero v4 tensor interface, and the model shipped here is v6).
+ort = { version = "2.0.0-rc.12", default-features = false }
+ndarray = "0.17"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
 reqwest = { version = "0.13.4", features = ["json", "stream", "gzip", "brotli", "deflate"] }

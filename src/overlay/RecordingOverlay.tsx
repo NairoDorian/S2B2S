@@ -18,6 +18,25 @@ type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
 const WAVE_BARS = 9;
 
+// Ideographs, kana and halfwidth katakana. These scripts are written without
+// spaces, so splitting on whitespace would score a whole Japanese sentence as
+// one word; counting each character instead matches the characters-per-minute
+// convention those languages actually use.
+const CJK_CHARS =
+  /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/gu;
+
+const countWords = (text: string): number => {
+  const ideographs = text.match(CJK_CHARS)?.length ?? 0;
+  const spaced = text.replace(CJK_CHARS, " ").trim();
+  return ideographs + (spaced === "" ? 0 : spaced.split(/\s+/).length);
+};
+
+// Below this much speech the words-per-minute ratio swings wildly on a single
+// word, and the streaming model's own decode lag dominates it. Show a placeholder
+// until there is enough signal for the average to mean something.
+const WPM_MIN_SPEECH_MS = 2500;
+const WPM_MIN_WORDS = 3;
+
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
@@ -34,6 +53,14 @@ const RecordingOverlay: React.FC = () => {
   const [phase, setPhase] = useState<StreamPhase>("listening");
   const [workKind, setWorkKind] = useState<StreamWorkKind>("transcribing");
   const [elapsed, setElapsed] = useState(0);
+  // Speech statistics, driven by the backend VAD (see SpeechActivityEvent).
+  // `speechMs` counts only time the user was actually talking, so dividing the
+  // transcribed word count by it gives a speaking rate rather than a
+  // recording-length average.
+  const [statsEnabled, setStatsEnabled] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [speechMs, setSpeechMs] = useState(0);
+  const [wordCount, setWordCount] = useState(0);
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
   const [session, setSession] = useState(0);
@@ -169,6 +196,9 @@ const RecordingOverlay: React.FC = () => {
           targetTextRef.current = { committed: "", tentative: "" };
           displayedTextRef.current = { committed: "", tentative: "" };
           setStreamText({ committed: "", tentative: "" });
+          setSpeaking(false);
+          setSpeechMs(0);
+          setWordCount(0);
         }
 
         await syncLanguageFromSettings();
@@ -182,6 +212,7 @@ const RecordingOverlay: React.FC = () => {
             );
             directModeRef.current = settings.data.overlay_direct_mode ?? false;
             directSpeedRef.current = settings.data.overlay_direct_speed ?? 30;
+            setStatsEnabled(settings.data.overlay_speech_stats ?? true);
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -221,6 +252,15 @@ const RecordingOverlay: React.FC = () => {
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
         targetTextRef.current = event.payload;
+        // Count from the backend text, not the typewriter's partial reveal, so
+        // direct mode cannot make the speaking rate read artificially low. This
+        // runs even in the minimal overlay, which never renders the text but
+        // still receives it whenever the model streams.
+        setWordCount(
+          countWords(
+            `${event.payload.committed} ${event.payload.tentative}`.trim(),
+          ),
+        );
         if (!directModeRef.current) {
           displayedTextRef.current = event.payload;
           setStreamText(event.payload);
@@ -228,6 +268,13 @@ const RecordingOverlay: React.FC = () => {
           startTypewriterIfNeeded();
         }
       });
+
+      const unlistenSpeech = await events.speechActivityEvent.listen(
+        (event) => {
+          setSpeaking(event.payload.speaking);
+          setSpeechMs(event.payload.speech_ms);
+        },
+      );
 
       const unlistenPhase = await events.streamPhaseEvent.listen((event) => {
         const payload: StreamPhaseEvent = event.payload;
@@ -245,11 +292,25 @@ const RecordingOverlay: React.FC = () => {
         unlistenReady();
         unlistenLevel();
         unlistenStream();
+        unlistenSpeech();
         unlistenPhase();
       };
     };
 
     setupEventListeners();
+
+    // Prime the stats setting before the first show, so the card opens at its
+    // final width instead of visibly growing once the settings read lands.
+    commands
+      .getAppSettings()
+      .then((settings) => {
+        if (settings.status === "ok") {
+          setStatsEnabled(settings.data.overlay_speech_stats ?? true);
+        }
+      })
+      .catch(() => {
+        // Default (off) until the first show reads settings again.
+      });
   }, []);
 
   // Elapsed capture timer starts only once microphone samples are flowing.
@@ -287,9 +348,23 @@ const RecordingOverlay: React.FC = () => {
   const fmtTime = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
+  // Speech stats ride along in both overlay forms. Rendered from the moment the
+  // card appears rather than waiting for the first sample, so the Live card
+  // steps its width once (pill -> panel) instead of twice.
+  const showStats = statsEnabled;
+  // "Nobody is talking right now." The arming case (microphone not started yet)
+  // is handled separately below and takes visual precedence.
+  const quiet = showStats && !speaking;
+  const wpm =
+    speechMs >= WPM_MIN_SPEECH_MS && wordCount >= WPM_MIN_WORDS
+      ? Math.round(wordCount / (speechMs / 60000))
+      : null;
+
   // ---- Shared building blocks (one visual language for every overlay form) ----
   const waveform = (
-    <div className={`swave ${captureReady ? "ready" : "arming"}`}>
+    <div
+      className={`swave ${captureReady ? "ready" : "arming"} ${quiet ? "quiet" : ""}`}
+    >
       {levels.map((v, i) => (
         <i
           key={i}
@@ -318,16 +393,39 @@ const RecordingOverlay: React.FC = () => {
     </button>
   );
 
-  // dot (left) | waveform (center) | timer + cancel (right) — same structure for
-  // pill & panel, so the Live morph is a pure width change.
+  // Speech-only clock and running words-per-minute. The clock freezes on
+  // silence, which is the whole point — it measures talking, not recording.
+  const statsCluster = (
+    <span className={`sstats ${quiet ? "quiet" : ""}`}>
+      <span className="sstat-speech">
+        {fmtTime(Math.floor(speechMs / 1000))}
+      </span>
+      <span className="sstat-sep" aria-hidden="true" />
+      <span className="sstat-wpm">
+        {wpm === null ? (
+          <span className="sstat-pending">{"—"}</span>
+        ) : (
+          `${wpm} ${t("overlay.wpm")}`
+        )}
+      </span>
+    </span>
+  );
+
+  // dot (left) | waveform (center) | stats + timer + cancel (right) — same
+  // structure for pill & panel, so the Live morph is a pure width change.
   const listeningRow = (showTimer: boolean, showCancel: boolean) => (
-    <div className="sbase">
+    <div className={`sbase ${showStats ? "has-stats" : ""}`}>
       <div className="sbase-l">
-        <span className={`sdot ${captureReady ? "ready" : "arming"}`} />
+        <span
+          className={`sdot ${
+            !captureReady ? "arming" : quiet ? "silent" : "ready"
+          }`}
+        />
       </div>
       {waveform}
       <div className="sbase-r">
         {showTimer && <span className="stimer">{fmtTime(elapsed)}</span>}
+        {showStats && statsCluster}
         {showCancel && cancelBtn}
       </div>
     </div>
@@ -362,8 +460,8 @@ const RecordingOverlay: React.FC = () => {
         <div
           key={session}
           className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
-            isVisible ? "" : "leaving"
-          }`}
+            showStats && !open && !collapsed ? "has-stats" : ""
+          } ${isVisible ? "" : "leaving"}`}
         >
           <div className="stext">
             <div className="stext-clip">
@@ -412,7 +510,9 @@ const RecordingOverlay: React.FC = () => {
       className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
     >
       <div
-        className={`scard compact ${working && isVisible ? "cworking" : ""}`}
+        className={`scard compact ${working && isVisible ? "cworking" : ""} ${
+          showStats && !working ? "has-stats" : ""
+        }`}
       >
         {working ? workingRow(workLabel, true) : listeningRow(false, true)}
       </div>

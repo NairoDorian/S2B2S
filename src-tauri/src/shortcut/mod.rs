@@ -742,6 +742,33 @@ pub fn change_overlay_direct_speed_setting(app: AppHandle, speed: u32) -> Result
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_overlay_speech_stats_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.overlay_speech_stats = enabled;
+    settings::write_settings(&app, settings);
+
+    // Keep the cached flag in sync so the audio path stops (or resumes) emitting
+    // speech-activity events on the next frame.
+    crate::overlay::update_speech_stats_enabled_cache(enabled);
+
+    // The stats live in the overlay's control row, so turning them on or off
+    // changes how wide the card needs to be.
+    crate::utils::update_overlay_position(&app);
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_speech_pause_hold_setting(app: AppHandle, ms: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.speech_pause_hold_ms = ms.clamp(100, 2000);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_direct_streaming_speed_setting(app: AppHandle, speed: u32) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.direct_streaming_speed = speed.clamp(10, 60);

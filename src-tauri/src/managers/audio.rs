@@ -322,6 +322,12 @@ fn create_audio_recorder(
                 utils::emit_levels(&app_handle, &levels);
             }
         })
+        .with_speech_activity_callback({
+            let app_handle = app_handle.clone();
+            move |activity| {
+                utils::emit_speech_activity(&app_handle, activity);
+            }
+        })
         .with_audio_callback({
             let router = stream_router;
             move |frame| {
@@ -824,8 +830,11 @@ impl AudioRecordingManager {
                 return Err(msg);
             }
 
+            // Read once per session rather than per frame: the speech clock
+            // keeps the tolerance it was started with for the whole recording.
+            let pause_hold_ms = get_settings(&self.app_handle).speech_pause_hold_ms;
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                match rec.start(vad_policy) {
+                match rec.start(vad_policy, pause_hold_ms) {
                     Ok(receiver) => {
                         let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
                         *self.is_recording.lock().unwrap() = true;

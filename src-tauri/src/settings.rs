@@ -527,6 +527,17 @@ pub struct AppSettings {
     /// Speed at which characters are typed in direct streaming paste method (characters per second).
     #[serde(default = "default_direct_streaming_speed")]
     pub direct_streaming_speed: u32,
+    /// Whether the overlay shows live speech statistics: a speech/silence
+    /// indicator, a timer that counts only while you are actually speaking, and
+    /// the running average words per minute. Applies to both the Minimal and
+    /// Live overlays; ignored when the overlay is off.
+    #[serde(default = "default_overlay_speech_stats")]
+    pub overlay_speech_stats: bool,
+    /// How long silence must last before the speech timer stops counting.
+    /// Shorter gaps are treated as part of the same utterance, so the timer does
+    /// not stall on the pauses between words.
+    #[serde(default = "default_speech_pause_hold_ms")]
+    pub speech_pause_hold_ms: u32,
     // Multi STT settings
     #[serde(default)]
     pub multi_stt_enabled: bool,
@@ -659,6 +670,14 @@ fn default_overlay_direct_speed() -> u32 {
 
 fn default_direct_streaming_speed() -> u32 {
     30
+}
+
+fn default_overlay_speech_stats() -> bool {
+    true
+}
+
+fn default_speech_pause_hold_ms() -> u32 {
+    crate::audio_toolkit::DEFAULT_SPEECH_PAUSE_HOLD_MS
 }
 
 fn default_mic_idle_timeout_value() -> u32 {
@@ -1082,6 +1101,8 @@ pub fn get_default_settings() -> AppSettings {
         overlay_direct_mode: false,
         overlay_direct_speed: default_overlay_direct_speed(),
         direct_streaming_speed: default_direct_streaming_speed(),
+        overlay_speech_stats: default_overlay_speech_stats(),
+        speech_pause_hold_ms: default_speech_pause_hold_ms(),
         multi_stt_enabled: false,
         multi_stt_model_2: None,
         multi_stt_model_3: None,

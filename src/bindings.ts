@@ -20,6 +20,8 @@ export const commands = {
 	changeOverlayStyleSetting: (style: string) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style })),
 	changeOverlayDirectModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled })),
 	changeOverlayDirectSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_speed_setting", { speed })),
+	changeOverlaySpeechStatsSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_speech_stats_setting", { enabled })),
+	changeSpeechPauseHoldSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_speech_pause_hold_setting", { ms })),
 	changeDirectStreamingSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_direct_streaming_speed_setting", { speed })),
 	changeDebugModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_debug_mode_setting", { enabled })),
 	changeWordCorrectionThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_word_correction_threshold_setting", { threshold })),
@@ -257,6 +259,7 @@ export const commands = {
 /** Events */
 export const events = {
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
+	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
 };
@@ -384,6 +387,19 @@ export type AppSettings_Deserialize = {
 	overlay_direct_speed?: number,
 	/**  Speed at which characters are typed in direct streaming paste method (characters per second). */
 	direct_streaming_speed?: number,
+	/**
+	 *  Whether the overlay shows live speech statistics: a speech/silence
+	 *  indicator, a timer that counts only while you are actually speaking, and
+	 *  the running average words per minute. Applies to both the Minimal and
+	 *  Live overlays; ignored when the overlay is off.
+	 */
+	overlay_speech_stats?: boolean,
+	/**
+	 *  How long silence must last before the speech timer stops counting.
+	 *  Shorter gaps are treated as part of the same utterance, so the timer does
+	 *  not stall on the pauses between words.
+	 */
+	speech_pause_hold_ms?: number,
 	multi_stt_enabled?: boolean,
 	multi_stt_model_2?: string | null,
 	multi_stt_model_3?: string | null,
@@ -525,6 +541,19 @@ export type AppSettings_Serialize = {
 	overlay_direct_speed: number,
 	/**  Speed at which characters are typed in direct streaming paste method (characters per second). */
 	direct_streaming_speed: number,
+	/**
+	 *  Whether the overlay shows live speech statistics: a speech/silence
+	 *  indicator, a timer that counts only while you are actually speaking, and
+	 *  the running average words per minute. Applies to both the Minimal and
+	 *  Live overlays; ignored when the overlay is off.
+	 */
+	overlay_speech_stats: boolean,
+	/**
+	 *  How long silence must last before the speech timer stops counting.
+	 *  Shorter gaps are treated as part of the same utterance, so the timer does
+	 *  not stall on the pauses between words.
+	 */
+	speech_pause_hold_ms: number,
 	multi_stt_enabled: boolean,
 	multi_stt_model_2: string | null,
 	multi_stt_model_3: string | null,
@@ -820,6 +849,27 @@ export type ShortcutBinding = {
 };
 
 export type SoundTheme = "marimba" | "pop" | "custom";
+
+/**
+ *  Live speech statistics for the recording overlay.
+ * 
+ *  Unlike `mic-level`, this is not a fixed-rate stream: the recorder sends it
+ *  when the speaking/silent state flips, and roughly every 150 ms while speech
+ *  continues. A silent stretch produces no events at all.
+ */
+export type SpeechActivityEvent = {
+	/**
+	 *  Whether the user is speaking right now, debounced by the configured
+	 *  pause tolerance so it does not flicker between words.
+	 */
+	speaking: boolean,
+	/**
+	 *  Milliseconds of speech so far in this recording, excluding pauses long
+	 *  enough to count as silence. The overlay divides its word count by this
+	 *  to get words per minute.
+	 */
+	speech_ms: number,
+};
 
 /**  Phase of the streaming overlay card, emitted to drive its UI state. */
 export type StreamPhase = 

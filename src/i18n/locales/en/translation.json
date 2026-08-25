@@ -427,6 +427,14 @@
         "title": "Voice Activity Detection",
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
+      "speechStats": {
+        "title": "Speech Stats in Overlay",
+        "description": "Show live speech statistics in the recording overlay: whether you are speaking or paused, a timer that counts only while you are actually talking, and your running average words per minute. Words per minute needs a streaming-capable model, since it is measured from the live transcription.",
+        "pauseHold": {
+          "label": "Pause Tolerance",
+          "description": "How long silence must last before the speech timer stops counting. Shorter gaps are treated as part of the same sentence, so the timer does not stall between words."
+        }
+      },
       "fillerWordRemoval": {
         "title": "Remove Filler Words",
         "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
@@ -763,7 +771,8 @@
   },
   "overlay": {
     "transcribing": "Transcribing...",
-    "processing": "Processing..."
+    "processing": "Processing...",
+    "wpm": "wpm"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} may be blocking 1 shortcut",

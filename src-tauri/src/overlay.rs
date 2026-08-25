@@ -1,9 +1,13 @@
+use crate::audio_toolkit::SpeechActivity;
 use crate::input;
 use crate::settings;
 use crate::settings::{OverlayPosition, OverlayStyle};
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
+use tauri_specta::Event;
 
 #[cfg(not(target_os = "macos"))]
 use log::debug;
@@ -46,6 +50,12 @@ tauri_panel! {
 const OVERLAY_WIDTH: f64 = 256.0;
 const OVERLAY_HEIGHT: f64 = 46.0;
 
+// Speech stats (timer + words-per-minute) ride in the pill's right-hand cluster,
+// which grows the resting pill to 244 (--ov-stats-w) — past --ov-work-w, so the
+// window has to fit that instead. Only the compact overlay needs a bigger
+// window: the Live panel already has room for the stats inside its 392px card.
+const OVERLAY_STATS_WIDTH: f64 = 288.0;
+
 // Actual is 394x118, just a little extra
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
@@ -53,10 +63,16 @@ const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
     if state == "streaming" {
-        (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
-    } else {
-        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        return (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT);
     }
+    // Read the cached flag rather than the store: this runs on the main thread
+    // inside the show path, where a settings read is pure added latency.
+    let width = if SPEECH_STATS_ENABLED.load(Ordering::Relaxed) {
+        OVERLAY_STATS_WIDTH
+    } else {
+        OVERLAY_WIDTH
+    };
+    (width, OVERLAY_HEIGHT)
 }
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
@@ -697,11 +713,55 @@ static OVERLAY_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static LAYER_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// Cached "speech stats are enabled" flag, kept in sync with
+/// `overlay_speech_stats`. Read on the audio path (every frame produces a
+/// candidate update) and in the overlay show path, so neither has to touch the
+/// Tauri store.
+static SPEECH_STATS_ENABLED: AtomicBool = AtomicBool::new(false);
+
 /// Update the cached overlay-enabled flag. Called from `lib.rs` at
 /// startup after settings load, and from `change_overlay_style_setting`
 /// whenever the user changes whether the overlay is shown.
 pub fn update_overlay_enabled_cache(enabled: bool) {
     OVERLAY_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// Update the cached speech-stats flag. Called from `lib.rs` at startup and
+/// from `change_overlay_speech_stats_setting`.
+pub fn update_speech_stats_enabled_cache(enabled: bool) {
+    SPEECH_STATS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// Live speech statistics for the recording overlay.
+///
+/// Unlike `mic-level`, this is not a fixed-rate stream: the recorder sends it
+/// when the speaking/silent state flips, and roughly every 150 ms while speech
+/// continues. A silent stretch produces no events at all.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct SpeechActivityEvent {
+    /// Whether the user is speaking right now, debounced by the configured
+    /// pause tolerance so it does not flicker between words.
+    pub speaking: bool,
+    /// Milliseconds of speech so far in this recording, excluding pauses long
+    /// enough to count as silence. The overlay divides its word count by this
+    /// to get words per minute.
+    pub speech_ms: u32,
+}
+
+/// Forward a speech-clock update to the overlay.
+pub fn emit_speech_activity(app_handle: &AppHandle, activity: SpeechActivity) {
+    // Same rationale as emit_levels: the overlay window exists even when it is
+    // never shown, and every event delivered to it costs WebKit allocations that
+    // accumulate (issue #1279). No overlay, or stats turned off, means no event.
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) || !SPEECH_STATS_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+
+    let _ = SpeechActivityEvent {
+        speaking: activity.speaking,
+        speech_ms: activity.speech_ms.min(u64::from(u32::MAX)) as u32,
+    }
+    .emit_to(app_handle, "recording_overlay");
 }
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {

@@ -21,13 +21,31 @@ use crate::audio_toolkit::{
 };
 
 enum Cmd {
-    /// Begin capturing. Carries the send timestamp so the consumer can log how
-    /// long the command sat in the channel, plus a one-shot acknowledgement
-    /// sent only after the first microphone sample chunk is processed.
-    Start(VadPolicy, Instant, mpsc::Sender<()>),
+    /// Begin capturing. Carries the pause tolerance for this session's speech
+    /// clock and the send timestamp so the consumer can log how long the command
+    /// sat in the channel, plus a one-shot acknowledgement sent only after the
+    /// first microphone sample chunk is processed.
+    Start(VadPolicy, u32, Instant, mpsc::Sender<()>),
     Stop(mpsc::Sender<Vec<f32>>),
     Shutdown,
 }
+
+/// Length of one resampled frame handed to the VAD. Not a free choice: Silero
+/// v5/v6 accepts exactly 512 samples at 16 kHz, so the capture pipeline is
+/// framed to match and one frame is one VAD decision. Shared with the speech
+/// clock so the two can never disagree about how much audio a decision covers.
+const FRAME_MS: u64 = constants::VAD_FRAME_MS;
+
+/// Default pause tolerance: how long silence must last before the speech clock
+/// stops counting. Long enough to ride out the gaps between words and a breath,
+/// short enough that a real pause registers promptly. Overridable per session
+/// via the `speech_pause_hold_ms` setting.
+pub const DEFAULT_SPEECH_PAUSE_HOLD_MS: u32 = 500;
+
+/// How often the speech clock reports in while speech is ongoing. State flips
+/// are always reported immediately, so this only bounds how stale a running
+/// timer can look: ~6.7 Hz, roughly a fifth of the mic-level rate.
+const SPEECH_HEARTBEAT_MS: u64 = 150;
 
 enum AudioChunk {
     Samples(Vec<f32>),
@@ -57,7 +75,7 @@ struct VadConfig {
 }
 
 impl VadConfig {
-    /// Post-speech hangover tail (in 30 ms frames) for the given policy.
+    /// Post-speech hangover tail (in frames; see `FRAME_MS`) for the given policy.
     /// `Disabled` never reaches the detector, so it maps to the offline value.
     fn hangover_for(&self, policy: VadPolicy) -> usize {
         match policy {
@@ -71,6 +89,143 @@ impl VadConfig {
 /// policy while recording. Used to feed a live streaming transcription as audio arrives.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 
+/// A snapshot of how much of this recording has actually been speech.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpeechActivity {
+    /// Whether the user is currently considered to be speaking. Debounced by
+    /// the session's pause tolerance, so it does not flicker on the gaps
+    /// between words.
+    pub speaking: bool,
+    /// Milliseconds of speech in this recording, excluding confirmed pauses.
+    pub speech_ms: u64,
+}
+
+/// Callback invoked when the speech clock has news: the speaking/silent state
+/// flipped, or the heartbeat interval elapsed while speech is ongoing. Runs on
+/// the recorder's consumer thread — keep it cheap.
+pub type SpeechActivityCallback = Arc<dyn Fn(SpeechActivity) + Send + Sync + 'static>;
+
+/// Tracks how long the user has actually been speaking, in frame-sized steps.
+///
+/// Driven by [`VoiceActivityDetector::last_frame_voiced`] — the *raw* per-frame
+/// verdict — rather than by what `push_frame` returns. The smoothing wrapper
+/// keeps reporting speech through a hangover tail up to 1.76 s long in
+/// streaming mode, and counting that would inflate the measured speech time by
+/// more than a second per pause, which in turn deflates the words-per-minute
+/// figure computed from it.
+///
+/// Gaps shorter than `hold_ms` are treated as part of the same utterance and
+/// counted retroactively once speech resumes; gaps that reach `hold_ms` end the
+/// utterance and are never counted. The clock therefore only ever moves
+/// forward — resuming after a short gap makes it catch up by at most `hold_ms`,
+/// which is far less jarring than a timer that visibly rewinds.
+#[derive(Debug)]
+pub struct SpeechClock {
+    /// Consecutive voiced frames needed to enter speech, matching the VAD's own
+    /// onset debounce so a single noisy frame cannot start the clock.
+    onset_frames: usize,
+    /// How long silence must persist before the utterance is considered over.
+    hold_ms: u64,
+
+    speaking: bool,
+    onset_counter: usize,
+    /// Silence accumulated since the last voiced frame, still provisional: it
+    /// becomes speech if the user resumes, or is discarded if it reaches
+    /// `hold_ms`.
+    pending_silence_ms: u64,
+    speech_ms: u64,
+    ms_since_emit: u64,
+    /// `speech_ms` as of the last emission, so a heartbeat is skipped when the
+    /// clock has not actually moved — notably through the whole pause-tolerance
+    /// window, where the state is still "speaking" but the timer is frozen.
+    last_emitted_ms: u64,
+}
+
+impl SpeechClock {
+    pub fn new(onset_frames: usize, hold_ms: u64) -> Self {
+        Self {
+            onset_frames: onset_frames.max(1),
+            hold_ms,
+            speaking: false,
+            onset_counter: 0,
+            pending_silence_ms: 0,
+            speech_ms: 0,
+            ms_since_emit: 0,
+            last_emitted_ms: 0,
+        }
+    }
+
+    /// Clear all state for a new recording, adopting a new pause tolerance.
+    pub fn reset(&mut self, hold_ms: u64) {
+        self.hold_ms = hold_ms;
+        self.speaking = false;
+        self.onset_counter = 0;
+        self.pending_silence_ms = 0;
+        self.speech_ms = 0;
+        self.ms_since_emit = 0;
+        self.last_emitted_ms = 0;
+    }
+
+    pub fn snapshot(&self) -> SpeechActivity {
+        SpeechActivity {
+            speaking: self.speaking,
+            speech_ms: self.speech_ms,
+        }
+    }
+
+    /// Advance the clock by one frame. Returns a snapshot only when the UI has
+    /// something new to show, so a silent stretch costs nothing.
+    pub fn tick(&mut self, voiced: bool) -> Option<SpeechActivity> {
+        let was_speaking = self.speaking;
+        self.advance(voiced);
+        self.ms_since_emit += FRAME_MS;
+
+        // Report a flip immediately; otherwise only once the timer has both
+        // moved and gone stale. Silence — including the pause-tolerance window,
+        // where the state still reads as speaking — produces no traffic.
+        let due = self.speaking != was_speaking
+            || (self.speech_ms != self.last_emitted_ms
+                && self.ms_since_emit >= SPEECH_HEARTBEAT_MS);
+        if due {
+            self.ms_since_emit = 0;
+            self.last_emitted_ms = self.speech_ms;
+            Some(self.snapshot())
+        } else {
+            None
+        }
+    }
+
+    fn advance(&mut self, voiced: bool) {
+        if voiced {
+            if self.speaking {
+                // Crossing a gap shorter than the tolerance: bill this frame
+                // plus the gap we just bridged.
+                self.speech_ms += FRAME_MS + self.pending_silence_ms;
+                self.pending_silence_ms = 0;
+            } else {
+                self.onset_counter += 1;
+                if self.onset_counter >= self.onset_frames {
+                    self.speaking = true;
+                    // Count every frame that established the onset, not just
+                    // the one that crossed the threshold.
+                    self.speech_ms += FRAME_MS * self.onset_counter as u64;
+                    self.onset_counter = 0;
+                    self.pending_silence_ms = 0;
+                }
+            }
+        } else {
+            self.onset_counter = 0;
+            if self.speaking {
+                self.pending_silence_ms += FRAME_MS;
+                if self.pending_silence_ms >= self.hold_ms {
+                    self.speaking = false;
+                    self.pending_silence_ms = 0;
+                }
+            }
+        }
+    }
+}
+
 pub struct AudioRecorder {
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
@@ -78,6 +233,7 @@ pub struct AudioRecorder {
     vad: Option<VadConfig>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     audio_cb: Option<AudioFrameCallback>,
+    speech_cb: Option<SpeechActivityCallback>,
     /// Which input channel to use. None = average all (original behavior).
     selected_channel: Option<usize>,
     /// Preferred stream config cached per device name. The two HAL property
@@ -100,6 +256,7 @@ impl AudioRecorder {
             vad: None,
             level_cb: None,
             audio_cb: None,
+            speech_cb: None,
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
@@ -143,6 +300,18 @@ impl AudioRecorder {
         self
     }
 
+    /// Register a callback that receives speech-clock updates while recording:
+    /// whether the user is currently speaking, and how much speech this session
+    /// has accumulated. Fires on state flips and on a ~150 ms heartbeat while
+    /// speech is ongoing, and stays quiet through silence.
+    pub fn with_speech_activity_callback<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(SpeechActivity) + Send + Sync + 'static,
+    {
+        self.speech_cb = Some(Arc::new(cb));
+        self
+    }
+
     pub fn with_selected_channel(mut self, channel: Option<u16>) -> Self {
         self.set_selected_channel(channel);
         self
@@ -181,6 +350,7 @@ impl AudioRecorder {
         let level_cb = self.level_cb.clone();
         // Move the optional real-time audio frame callback into the worker thread
         let audio_cb = self.audio_cb.clone();
+        let speech_cb = self.speech_cb.clone();
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
@@ -329,6 +499,7 @@ impl AudioRecorder {
                         cmd_rx,
                         level_cb,
                         audio_cb,
+                        speech_cb,
                         stop_flag,
                         stream_running_at,
                     );
@@ -374,16 +545,25 @@ impl AudioRecorder {
     /// after the first real microphone sample chunk has entered the capture path.
     /// `Stream::play()` returning is not sufficient: some Bluetooth and USB
     /// devices take much longer to begin delivering callbacks.
+    /// Begin a recording session. `pause_hold_ms` is how long silence must
+    /// last before this session's speech clock stops counting (see
+    /// [`SpeechClock`]).
     pub fn start(
         &self,
         vad_policy: VadPolicy,
+        pause_hold_ms: u32,
     ) -> Result<mpsc::Receiver<()>, Box<dyn std::error::Error>> {
         let tx = self
             .cmd_tx
             .as_ref()
             .ok_or_else(|| Error::other("Recorder is not open"))?;
         let (ready_tx, ready_rx) = mpsc::channel();
-        tx.send(Cmd::Start(vad_policy, Instant::now(), ready_tx))?;
+        tx.send(Cmd::Start(
+            vad_policy,
+            pause_hold_ms,
+            Instant::now(),
+            ready_tx,
+        ))?;
         Ok(ready_rx)
     }
 
@@ -574,11 +754,12 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioRecorder, Cmd, is_microphone_access_denied, is_no_input_device_error, run_consumer,
+        AudioRecorder, Cmd, FRAME_MS, SPEECH_HEARTBEAT_MS, SpeechClock,
+        is_microphone_access_denied, is_no_input_device_error, run_consumer,
     };
     use std::{
         sync::{
-            Arc,
+            Arc, Mutex,
             atomic::{AtomicBool, Ordering},
             mpsc,
         },
@@ -615,6 +796,7 @@ mod tests {
                 cmd_rx,
                 None,
                 None,
+                None,
                 Arc::new(AtomicBool::new(false)),
                 Instant::now(),
             );
@@ -628,6 +810,200 @@ mod tests {
         drop(sample_tx);
         worker.join().expect("join consumer");
         assert!(stopped.is_ok(), "shutdown waited for an audio sample");
+    }
+
+    /// Feed `n` frames of one verdict, discarding emissions.
+    fn feed(clock: &mut SpeechClock, voiced: bool, frames: usize) {
+        for _ in 0..frames {
+            clock.tick(voiced);
+        }
+    }
+
+    #[test]
+    fn speech_clock_needs_onset_frames_before_counting() {
+        let mut clock = SpeechClock::new(2, 500);
+        // A lone voiced frame is noise, not speech.
+        assert_eq!(clock.tick(true), None);
+        assert_eq!(clock.snapshot().speech_ms, 0);
+        assert!(!clock.snapshot().speaking);
+
+        // The second consecutive voiced frame opens the utterance, and both
+        // onset frames are billed.
+        let activity = clock.tick(true).expect("onset flips the state");
+        assert!(activity.speaking);
+        assert_eq!(activity.speech_ms, 2 * FRAME_MS);
+    }
+
+    #[test]
+    fn speech_clock_bridges_gaps_shorter_than_the_hold() {
+        let mut clock = SpeechClock::new(2, 500);
+        let ten = 10 * FRAME_MS;
+        feed(&mut clock, true, 10);
+        assert_eq!(clock.snapshot().speech_ms, ten);
+
+        // Ten frames of silence is under the 500ms tolerance: the clock
+        // freezes...
+        feed(&mut clock, false, 10);
+        assert_eq!(clock.snapshot().speech_ms, ten);
+        assert!(clock.snapshot().speaking, "still mid-utterance");
+
+        // ...and the bridged gap is billed once speech resumes, so the utterance
+        // measures end-to-end rather than dropping its internal pauses.
+        clock.tick(true);
+        assert_eq!(clock.snapshot().speech_ms, ten + ten + FRAME_MS);
+    }
+
+    #[test]
+    fn speech_clock_discards_pauses_that_reach_the_hold() {
+        let mut clock = SpeechClock::new(2, 500);
+        let ten = 10 * FRAME_MS;
+        feed(&mut clock, true, 10);
+        feed(&mut clock, false, 20); // well past the 500ms tolerance
+        assert!(!clock.snapshot().speaking);
+        assert_eq!(clock.snapshot().speech_ms, ten, "the pause is not speech");
+
+        // The next utterance re-runs the onset debounce and resumes from there.
+        feed(&mut clock, true, 2);
+        assert_eq!(clock.snapshot().speech_ms, ten + 2 * FRAME_MS);
+    }
+
+    #[test]
+    fn speech_clock_never_moves_backwards() {
+        let mut clock = SpeechClock::new(2, 500);
+        let mut last = 0;
+        // Alternating verdicts are the worst case for the bridging logic.
+        for i in 0..200 {
+            clock.tick(i % 3 != 0);
+            let now = clock.snapshot().speech_ms;
+            assert!(now >= last, "speech clock rewound: {last} -> {now}");
+            last = now;
+        }
+    }
+
+    #[test]
+    fn speech_clock_stays_quiet_through_silence() {
+        let mut clock = SpeechClock::new(2, 500);
+        // Silence before any speech produces no traffic at all.
+        for _ in 0..100 {
+            assert_eq!(clock.tick(false), None);
+        }
+
+        feed(&mut clock, true, 2); // open an utterance
+        // Only the flip to silent is reported; the rest of the pause is quiet.
+        let mut emissions = 0;
+        for _ in 0..100 {
+            if clock.tick(false).is_some() {
+                emissions += 1;
+            }
+        }
+        assert_eq!(emissions, 1);
+    }
+
+    #[test]
+    fn speech_clock_heartbeats_while_speech_continues() {
+        let mut clock = SpeechClock::new(2, 500);
+        feed(&mut clock, true, 2); // opening flip
+
+        let frames = 100;
+        let emissions = (0..frames).filter(|_| clock.tick(true).is_some()).count();
+        // One report per heartbeat window, not one per frame.
+        let frames_per_emit = SPEECH_HEARTBEAT_MS.div_ceil(FRAME_MS) as usize;
+        assert_eq!(emissions, frames / frames_per_emit);
+    }
+
+    #[test]
+    fn speech_clock_reset_adopts_the_new_hold() {
+        let mut clock = SpeechClock::new(2, 500);
+        feed(&mut clock, true, 10);
+        clock.reset(150);
+        assert_eq!(clock.snapshot().speech_ms, 0);
+        assert!(!clock.snapshot().speaking);
+
+        feed(&mut clock, true, 2);
+        // 150ms of silence now ends the utterance rather than being bridged.
+        feed(&mut clock, false, 5);
+        assert!(!clock.snapshot().speaking);
+        assert_eq!(clock.snapshot().speech_ms, 2 * FRAME_MS);
+    }
+
+    /// End-to-end through the consumer thread: Cmd::Start, real sample chunks,
+    /// speech-activity callbacks out. Guards the whole plumbing path (builder ->
+    /// worker clone -> run_consumer -> handle_frame -> callback), which unit
+    /// tests on SpeechClock alone cannot see.
+    #[test]
+    fn consumer_reports_speech_activity_while_recording() {
+        let (sample_tx, sample_rx) = mpsc::channel();
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let seen: Arc<Mutex<Vec<super::SpeechActivity>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let speech_cb: super::SpeechActivityCallback = Arc::new(move |activity| {
+            sink.lock().unwrap().push(activity);
+        });
+
+        let worker = thread::spawn(move || {
+            run_consumer(
+                16_000,
+                None, // no VAD: every frame counts as speech
+                sample_rx,
+                cmd_rx,
+                None,
+                None,
+                Some(speech_cb),
+                Arc::new(AtomicBool::new(false)),
+                Instant::now(),
+            );
+            let _ = done_tx.send(());
+        });
+
+        let (ready_tx, _ready_rx) = mpsc::channel();
+        cmd_tx
+            .send(Cmd::Start(
+                super::VadPolicy::Offline,
+                500,
+                Instant::now(),
+                ready_tx,
+            ))
+            .expect("send start");
+
+        // One second of audio at 16 kHz, in 100 ms chunks.
+        for _ in 0..10 {
+            sample_tx
+                .send(super::AudioChunk::Samples(vec![0.1f32; 1_600]))
+                .expect("send samples");
+        }
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).expect("send stop");
+        sample_tx
+            .send(super::AudioChunk::EndOfStream)
+            .expect("send eos");
+        let captured = stop_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("stop reply");
+
+        cmd_tx.send(Cmd::Shutdown).expect("send shutdown");
+        let _ = done_rx.recv_timeout(Duration::from_secs(2));
+        drop(sample_tx);
+        worker.join().expect("join consumer");
+
+        assert!(!captured.is_empty(), "no audio captured");
+
+        let activity = seen.lock().unwrap().clone();
+        assert!(
+            !activity.is_empty(),
+            "consumer never reported speech activity"
+        );
+        assert!(
+            activity.iter().any(|a| a.speaking),
+            "speech activity never reported speaking"
+        );
+        let peak = activity.iter().map(|a| a.speech_ms).max().unwrap_or(0);
+        assert!(
+            peak >= 800,
+            "expected ~1s of speech from 1s of audio, got {peak}ms"
+        );
     }
 
     #[test]
@@ -677,18 +1053,24 @@ fn run_consumer(
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     audio_cb: Option<AudioFrameCallback>,
+    speech_cb: Option<SpeechActivityCallback>,
     stop_flag: Arc<AtomicBool>,
     stream_running_at: Instant,
 ) {
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
         constants::WHISPER_SAMPLE_RATE as usize,
-        Duration::from_millis(30),
+        Duration::from_millis(FRAME_MS),
     );
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
     let mut vad_policy = VadPolicy::Offline;
+    // Reset on every Cmd::Start, which also supplies the session pause tolerance.
+    let mut speech_clock = SpeechClock::new(vad::VAD_ONSET_FRAMES, 0);
+    // Per-session count of VAD failures, so a broken detector is reported once
+    // rather than per frame.
+    let mut vad_errors: u64 = 0;
 
     // ---------- latency instrumentation ---------------------------------- //
     // First-chunk arrival exposes the play()->samples-flowing gap; the
@@ -719,12 +1101,16 @@ fn run_consumer(
         4000.0, // vocal_max_hz
     );
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_frame(
         samples: &[f32],
         recording: bool,
         vad_policy: VadPolicy,
         vad: &Option<VadConfig>,
         audio_cb: &Option<AudioFrameCallback>,
+        speech_clock: &mut SpeechClock,
+        speech_cb: &Option<SpeechActivityCallback>,
+        vad_errors: &mut u64,
         out_buf: &mut Vec<f32>,
     ) {
         if !recording {
@@ -738,19 +1124,47 @@ fn run_consumer(
             }
         };
 
-        if vad_policy == VadPolicy::Disabled {
+        // The raw per-frame verdict, which drives the speech clock. With VAD off
+        // every frame is kept, so every frame counts as speech and the clock
+        // degrades into a wall clock — the UI needs no separate case for it.
+        let voiced = if vad_policy == VadPolicy::Disabled {
             emit(samples);
-            return;
-        }
-
-        if let Some(cfg) = vad {
+            true
+        } else if let Some(cfg) = vad {
             let mut det = cfg.detector.lock().unwrap();
-            match det.push_frame(samples).unwrap_or(VadFrame::Speech(samples)) {
+            // A detector error means "keep this audio" — losing speech is worse
+            // than keeping silence. But it must never pass unnoticed: a VAD that
+            // fails on every frame looks exactly like a VAD that is switched
+            // off, which is how a model/wrapper mismatch once went unseen for a
+            // long time. Log the first failure of each session loudly.
+            let decision = match det.push_frame(samples) {
+                Ok(frame) => frame,
+                Err(e) => {
+                    if *vad_errors == 0 {
+                        log::error!(
+                            "VAD failed on a frame; passing audio through unfiltered                              for the rest of this recording: {e}"
+                        );
+                    }
+                    *vad_errors += 1;
+                    VadFrame::Speech(samples)
+                }
+            };
+            match decision {
                 VadFrame::Speech(buf) => emit(buf),
                 VadFrame::Noise => {}
             }
+            // Deliberately not "did push_frame return Speech": that stays true
+            // through the hangover tail. See SpeechClock's docs.
+            det.last_frame_voiced()
         } else {
             emit(samples);
+            true
+        };
+
+        if let Some(activity) = speech_clock.tick(voiced) {
+            if let Some(cb) = speech_cb {
+                cb(activity);
+            }
         }
     }
 
@@ -769,7 +1183,7 @@ fn run_consumer(
         // ~100ms on Bluetooth) at every recording start.
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                Cmd::Start(policy, sent_at, ready_tx) => {
+                Cmd::Start(policy, pause_hold_ms, sent_at, ready_tx) => {
                     log::debug!(
                         "Cmd::Start processed {:?} after send; capture begins with {} chunk",
                         sent_at.elapsed(),
@@ -787,6 +1201,8 @@ fn run_consumer(
                     recording = true;
                     visualizer.reset();
                     frame_resampler.reset();
+                    speech_clock.reset(u64::from(pause_hold_ms));
+                    vad_errors = 0;
                     // Reconfigure the single VAD engine for this session's policy
                     // and clear its smoothing + recurrent state before it sees
                     // any frames.
@@ -816,6 +1232,9 @@ fn run_consumer(
                                 vad_policy,
                                 &vad,
                                 &audio_cb,
+                                &mut speech_clock,
+                                &speech_cb,
+                                &mut vad_errors,
                                 &mut processed_samples,
                             )
                         });
@@ -835,6 +1254,9 @@ fn run_consumer(
                                         vad_policy,
                                         &vad,
                                         &audio_cb,
+                                        &mut speech_clock,
+                                        &speech_cb,
+                                        &mut vad_errors,
                                         &mut processed_samples,
                                     )
                                 });
@@ -854,6 +1276,9 @@ fn run_consumer(
                             vad_policy,
                             &vad,
                             &audio_cb,
+                            &mut speech_clock,
+                            &speech_cb,
+                            &mut vad_errors,
                             &mut processed_samples,
                         )
                     });
@@ -910,6 +1335,9 @@ fn run_consumer(
                     vad_policy,
                     &vad,
                     &audio_cb,
+                    &mut speech_clock,
+                    &speech_cb,
+                    &mut vad_errors,
                     &mut processed_samples,
                 )
             });

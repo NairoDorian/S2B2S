@@ -7,7 +7,7 @@ use handy_app_lib::audio_toolkit::{
         SmoothedVad, VAD_OFFLINE_HANGOVER_FRAMES, VAD_ONSET_FRAMES, VAD_PREFILL_FRAMES,
         VAD_STREAMING_HANGOVER_FRAMES,
     },
-    AudioRecorder, SileroVad, VadPolicy,
+    AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, SileroVad, VadPolicy,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,7 +113,7 @@ impl RecorderState {
                     self.current_device_index = device_index;
                     println!("Opened recorder in Always-On mode");
                 }
-                self.recorder.start(VadPolicy::Offline)?;
+                self.recorder.start(VadPolicy::Offline, DEFAULT_SPEECH_PAUSE_HOLD_MS)?;
             }
             RecorderMode::OnDemand => {
                 // In on-demand mode, open for each recording
@@ -123,7 +123,7 @@ impl RecorderState {
                 self.recorder.open(device)?;
                 self.is_open = true;
                 self.current_device_index = device_index;
-                self.recorder.start(VadPolicy::Offline)?;
+                self.recorder.start(VadPolicy::Offline, DEFAULT_SPEECH_PAUSE_HOLD_MS)?;
                 println!("Opened and started recorder in On-Demand mode");
             }
         }

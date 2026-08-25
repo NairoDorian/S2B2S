@@ -631,6 +631,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_overlay_style_setting,
             shortcut::change_overlay_direct_mode_setting,
             shortcut::change_overlay_direct_speed_setting,
+            shortcut::change_overlay_speech_stats_setting,
+            shortcut::change_speech_pause_hold_setting,
             shortcut::change_direct_streaming_speed_setting,
             shortcut::change_debug_mode_setting,
             shortcut::change_word_correction_threshold_setting,
@@ -762,6 +764,7 @@ pub fn run(cli_args: CliArgs) {
             managers::history::HistoryUpdatePayload,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
+            overlay::SpeechActivityEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -978,6 +981,7 @@ pub fn run(cli_args: CliArgs) {
             overlay::update_overlay_enabled_cache(
                 settings.overlay_style != settings::OverlayStyle::None,
             );
+            overlay::update_speech_stats_enabled_cache(settings.overlay_speech_stats);
 
             // Pre-warm GPU/accelerator enumeration on a background thread. The first
             // get_available_accelerators call enumerates ORT execution providers and
