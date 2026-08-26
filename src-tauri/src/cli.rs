@@ -28,9 +28,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub debug: bool,
 
-    /// Transcribe this WAV (16 kHz mono) headlessly and exit. Runs the same
-    /// batch transcription path as the app — no mic, no VAD, no download
-    /// (the model must already be installed).
+    /// Transcribe this mono WAV (16/24-bit PCM or 32-bit float, any sample
+    /// rate — resampled to 16 kHz) headlessly and exit. Runs the same batch
+    /// transcription path as the app — no mic, no VAD, no download (the model
+    /// must already be installed).
     #[arg(short = 'f', long, value_name = "WAV")]
     pub transcribe_file: Option<PathBuf>,
 

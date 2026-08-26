@@ -141,7 +141,6 @@
     "modelUnloaded": "模型已卸载",
     "noModelDownloadRequired": "无模型 - 需要下载",
     "deleteModel": "删除 {{modelName}}",
-    "downloadSpeed": "{{speed}} MB/s",
     "capabilities": {
       "languageSelection": "支持多种输入语言",
       "languageCount": "{{total}} 种语言",
@@ -200,6 +199,10 @@
           "transcribe_with_post_process": {
             "name": "后处理快捷键",
             "description": "可选：一个专用快捷键，始终对您的转录应用 AI 后处理。"
+          },
+          "multi_stt_transcribe": {
+            "name": "Multi STT Shortcut",
+            "description": "Keyboard shortcut to record and transcribe with multiple STT models"
           }
         },
         "errors": {
@@ -380,10 +383,10 @@
       },
       "vadBackend": {
         "title": "语音活动检测后端",
-        "description": "选择用于过滤静音的检测器。Earshot 为实验性功能；如果语音被截断或噪音被保留，请切换回 Silero。",
+        "description": "实验性检测器实现。Silero 仍然是稳定的默认值。",
         "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
+          "silero": "Silero VAD",
+          "earshot": "Earshot VAD（实验性）"
         }
       },
       "fillerWordRemoval": {
@@ -400,12 +403,6 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
-      },
-      "vadBackend": {
-        "title": "语音活动检测后端",
-        "description": "实验性检测器实现。Silero 仍然是稳定的默认值。",
-        "silero": "Silero VAD",
-        "earshot": "Earshot VAD（实验性）"
       }
     },
     "postProcessing": {
@@ -655,7 +652,8 @@
     "open": "打开",
     "copy": "复制",
     "clear": "清除",
-    "noOptionsFound": "未找到选项"
+    "noOptionsFound": "未找到选项",
+    "downloadSpeed": "{{speed}} MB/s"
   },
   "accessibility": {
     "permissionsDescription": "Handy 需要辅助功能权限才能输入转录的文字。",
@@ -716,8 +714,7 @@
       "description": "Run multiple speech-to-text models simultaneously and merge their results"
     },
     "shortcut": {
-      "title": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to trigger multi-model transcription"
+      "title": "Multi STT Shortcut"
     },
     "models": {
       "title": "Additional Models",
@@ -728,8 +725,6 @@
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
-      "loadingModels": "Loading models...",
-      "noModelsAvailable": "No additional models available",
       "loaded": "Loaded",
       "notLoaded": "Not loaded",
       "loadModel": "Load Model",
@@ -738,8 +733,6 @@
       "unloadingModel": "Unloading...",
       "model2Language": "Language for Second Model",
       "model3Language": "Language for Third Model",
-      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
-      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
@@ -758,17 +751,10 @@
     },
     "status": {
       "title": "Model Status",
-      "modelsLoaded": "Models loaded in memory",
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary"
-    }
-  },
-  "bindings": {
-    "multi_stt_transcribe": {
-      "name": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to record and transcribe with multiple STT models"
     }
   }
 }

@@ -801,9 +801,18 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
-pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
+/// Deliver `text` to the foreground application using the configured paste
+/// method, or `method_override` when given. The override is used when the
+/// configured method is `DirectStreaming` but the text is a post-processed /
+/// Multi-STT result: the live stream already served as the preview in the
+/// overlay, and the final text goes in through the default clipboard paste.
+pub fn paste_with_method(
+    text: String,
+    app_handle: AppHandle,
+    method_override: Option<PasteMethod>,
+) -> Result<(), String> {
     let settings = get_settings(&app_handle);
-    let paste_method = settings.paste_method;
+    let paste_method = method_override.unwrap_or(settings.paste_method);
     let paste_delay_ms = settings.paste_delay_ms;
     let paste_delay_after_ms = settings.paste_delay_after_ms;
 

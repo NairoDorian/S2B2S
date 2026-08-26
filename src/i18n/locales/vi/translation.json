@@ -141,7 +141,6 @@
     "modelUnloaded": "Mô Hình Đã Gỡ",
     "noModelDownloadRequired": "Chưa Có Mô Hình - Cần Tải Xuống",
     "deleteModel": "Xóa {{modelName}}",
-    "downloadSpeed": "{{speed}} MB/s",
     "capabilities": {
       "languageSelection": "Hỗ trợ nhiều ngôn ngữ đầu vào",
       "languageCount": "{{total}} ngôn ngữ",
@@ -200,6 +199,10 @@
           "transcribe_with_post_process": {
             "name": "Phím tắt xử lý sau",
             "description": "Tùy chọn: Phím tắt chuyên dụng luôn áp dụng xử lý sau bằng AI cho bản chuyển đổi của bạn."
+          },
+          "multi_stt_transcribe": {
+            "name": "Multi STT Shortcut",
+            "description": "Keyboard shortcut to record and transcribe with multiple STT models"
           }
         },
         "errors": {
@@ -379,11 +382,11 @@
         "description": "Lọc bỏ khoảng lặng khỏi bản ghi. Các mô hình hỗ trợ truyền trực tiếp dùng đuôi VAD dài hơn; tắt VAD sẽ ghi âm thanh thô."
       },
       "vadBackend": {
-        "title": "Bộ phát hiện giọng nói",
-        "description": "Chọn bộ phát hiện dùng để lọc khoảng lặng. Earshot đang thử nghiệm; hãy chuyển về Silero nếu giọng nói bị cắt hoặc tiếng ồn vẫn còn.",
+        "title": "Backend phát hiện hoạt động giọng nói",
+        "description": "Triển khai bộ phát hiện thử nghiệm. Silero vẫn là mặc định ổn định.",
         "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
+          "silero": "Silero VAD",
+          "earshot": "Earshot VAD (Thử nghiệm)"
         }
       },
       "fillerWordRemoval": {
@@ -400,12 +403,6 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
-      },
-      "vadBackend": {
-        "title": "Backend phát hiện hoạt động giọng nói",
-        "description": "Triển khai bộ phát hiện thử nghiệm. Silero vẫn là mặc định ổn định.",
-        "silero": "Silero VAD",
-        "earshot": "Earshot VAD (Thử nghiệm)"
       }
     },
     "postProcessing": {
@@ -655,7 +652,8 @@
     "open": "Mở",
     "copy": "Sao chép",
     "clear": "Xóa",
-    "noOptionsFound": "Không tìm thấy tùy chọn"
+    "noOptionsFound": "Không tìm thấy tùy chọn",
+    "downloadSpeed": "{{speed}} MB/s"
   },
   "accessibility": {
     "permissionsDescription": "Handy cần quyền truy cập để gõ văn bản đã chuyển đổi.",
@@ -716,8 +714,7 @@
       "description": "Run multiple speech-to-text models simultaneously and merge their results"
     },
     "shortcut": {
-      "title": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to trigger multi-model transcription"
+      "title": "Multi STT Shortcut"
     },
     "models": {
       "title": "Additional Models",
@@ -728,8 +725,6 @@
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
-      "loadingModels": "Loading models...",
-      "noModelsAvailable": "No additional models available",
       "loaded": "Loaded",
       "notLoaded": "Not loaded",
       "loadModel": "Load Model",
@@ -738,8 +733,6 @@
       "unloadingModel": "Unloading...",
       "model2Language": "Language for Second Model",
       "model3Language": "Language for Third Model",
-      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
-      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
@@ -758,17 +751,10 @@
     },
     "status": {
       "title": "Model Status",
-      "modelsLoaded": "Models loaded in memory",
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary"
-    }
-  },
-  "bindings": {
-    "multi_stt_transcribe": {
-      "name": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to record and transcribe with multiple STT models"
     }
   }
 }

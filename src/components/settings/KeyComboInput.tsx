@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   getKeyName,
   formatKeyCombination,
+  isSimulatableKey,
   normalizeKey,
 } from "../../lib/utils/keyboard";
 import { ResetButton } from "../ui/ResetButton";
@@ -96,6 +97,32 @@ export const KeyComboInput: React.FC<KeyComboInputProps> = ({
           return 0;
         });
         const newShortcut = sortedKeys.join("+");
+
+        // Mirror `input.rs::parse_key_token`: the backend can only simulate
+        // these tokens, and it needs at least one non-modifier key. Rejecting
+        // here beats a silent failure at Multi-STT run time.
+        const unsupported = sortedKeys.filter(
+          (k) => !isSimulatableKey(k.toLowerCase()),
+        );
+        const hasNonModifier = sortedKeys.some(
+          (k) => !MODIFIERS.includes(k.toLowerCase()),
+        );
+        if (unsupported.length > 0 || !hasNonModifier) {
+          toast.error(
+            t("settings.general.shortcut.errors.unsupportedCombo", {
+              combo: formatKeyCombination(newShortcut, osType),
+            }),
+          );
+          if (originalValue) {
+            void updateSetting(settingKey, originalValue);
+          }
+          await commands.resumeAllBindings().catch(console.error);
+          setEditing(false);
+          setKeyPressed([]);
+          setRecordedKeys([]);
+          setOriginalValue("");
+          return;
+        }
 
         try {
           await updateSetting(settingKey, newShortcut);

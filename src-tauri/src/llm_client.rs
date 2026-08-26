@@ -534,8 +534,10 @@ pub async fn fetch_models(
 /// request already starts fresh.  However, llama.cpp's *stateful* `/chat/*` API
 /// can accumulate conversation slots in memory.  This function calls the
 /// llama.cpp-specific `/chat/erase_all` endpoint to release those slots after a
-/// merge or post-processing round-trip, preventing gradual memory growth when
-/// many transcriptions share one local server.
+/// Multi-STT merge round-trip against the "custom" provider (the only one that
+/// can point at a llama.cpp server), preventing gradual memory growth when
+/// many transcriptions share one local server. Post-processing does not call
+/// it.
 ///
 /// For backends that don't expose `/chat/erase_all` (every non-llama.cpp
 /// provider, or a minimal llama.cpp build), the call returns 404 which is

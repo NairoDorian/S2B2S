@@ -464,20 +464,17 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         return 0;
     };
 
-    // read_wav_samples reads 16-bit int samples and does no validation; the app
-    // only ever saves 16 kHz mono 16-bit PCM, so reject anything else rather than
-    // transcribe garbage / mis-time / mis-decode.
+    // read_wav_samples decodes 16/24-bit PCM and 32-bit float at any sample rate
+    // and resamples to 16 kHz, which is what lets the app's own raw recordings
+    // (e.g. 48 kHz float when `save_raw_audio` is on) round-trip through here.
+    // Only channel count is unhandled, so that is the one thing rejected.
     match hound::WavReader::open(&wav) {
         Ok(reader) => {
             let spec = reader.spec();
-            if spec.sample_rate != 16_000
-                || spec.channels != 1
-                || spec.bits_per_sample != 16
-                || spec.sample_format != hound::SampleFormat::Int
-            {
+            if spec.channels != 1 {
                 eprintln!(
-                    "error: expected 16 kHz mono 16-bit PCM WAV, got {} Hz / {} ch / {}-bit {:?}",
-                    spec.sample_rate, spec.channels, spec.bits_per_sample, spec.sample_format
+                    "error: expected a mono WAV, got {} channels ({} Hz / {}-bit {:?})",
+                    spec.channels, spec.sample_rate, spec.bits_per_sample, spec.sample_format
                 );
                 return 2;
             }
@@ -627,6 +624,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_audio_feedback_volume_setting,
             shortcut::change_sound_theme_setting,
             shortcut::change_theme_setting,
+            shortcut::change_custom_accent_color_setting,
             shortcut::change_start_hidden_setting,
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,

@@ -313,6 +313,16 @@ pub struct TranscriptionManager {
     /// out for transcription (not present in `extra_engines`). The engine is
     /// dropped instead of re-inserted when the in-flight transcription returns.
     extra_unload_requests: Arc<Mutex<HashSet<String>>>,
+    /// Whether the current stream may type its text into the foreground app
+    /// (`PasteMethod::DirectStreaming`). Only plain transcription sets this;
+    /// post-processing and Multi-STT stream to the overlay as a preview and
+    /// paste their final text through the clipboard instead.
+    stream_live_typing: Arc<AtomicBool>,
+    /// Extra model ids whose engine is currently being built. `load_extra_model`
+    /// coalesces concurrent requests for the same id (the pre-load in
+    /// `MultiSttAction::start` races the load in `stop()` on short recordings)
+    /// instead of building — and briefly holding — two copies.
+    extra_loading: Arc<(Mutex<HashSet<String>>, std::sync::Condvar)>,
     /// True only while a transcribe-cpp `Stream` is actually in flight (set by
     /// the worker once `stream()` succeeds). Used for overlay/UI decisions.
     stream_active: Arc<AtomicBool>,
@@ -348,6 +358,8 @@ impl TranscriptionManager {
             router: Arc::new(StreamRouter::new()),
             extra_engines: Arc::new(Mutex::new(HashMap::new())),
             extra_unload_requests: Arc::new(Mutex::new(HashSet::new())),
+            stream_live_typing: Arc::new(AtomicBool::new(false)),
+            extra_loading: Arc::new((Mutex::new(HashSet::new()), std::sync::Condvar::new())),
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
@@ -870,7 +882,12 @@ impl TranscriptionManager {
     /// model can't stream, the worker idles until finalize/cancel and reports
     /// `None` so the caller falls back to batch transcription. Frames sent
     /// before the stream begins queue on the channel and are not lost.
-    pub fn start_stream(&self) {
+    /// Start the live stream worker. `live_typing` allows the worker to type
+    /// the live text into the foreground app when the paste method is
+    /// `DirectStreaming`; pass `false` for post-processing / Multi-STT, where
+    /// the stream is only a preview for the overlay and the final text is
+    /// pasted afterwards.
+    pub fn start_stream(&self, live_typing: bool) {
         if self.router.is_open() || self.active_stream_worker.load(Ordering::Acquire) != 0 {
             warn!("start_stream called while a stream worker is already active");
             return;
@@ -886,6 +903,8 @@ impl TranscriptionManager {
         }
         let rx = self.router.open();
         self.stream_active.store(false, Ordering::Release);
+        self.stream_live_typing
+            .store(live_typing, Ordering::Release);
 
         let manager = self.clone();
         thread::spawn(move || manager.run_stream_worker(rx, worker_id));
@@ -1063,8 +1082,9 @@ impl TranscriptionManager {
                 model_id, backend
             );
 
-            let is_direct_streaming_paste =
-                settings.paste_method == crate::settings::PasteMethod::DirectStreaming;
+            let is_direct_streaming_paste = settings.paste_method
+                == crate::settings::PasteMethod::DirectStreaming
+                && self.stream_live_typing.load(Ordering::Acquire);
             let mut direct_writer = if is_direct_streaming_paste {
                 Some(crate::direct_stream_writer::DirectStreamWriter::new(
                     self.app_handle.clone(),
@@ -1999,6 +2019,47 @@ impl TranscriptionManager {
     /// Load an additional model engine for multi-STT mode.
     /// Returns the loaded engine's model name.
     pub fn load_extra_model(&self, model_id: &str) -> Result<String> {
+        // Coalesce concurrent loads of the same id: the second caller waits
+        // for the first to finish and shares its outcome.
+        {
+            let (lock, cvar) = &*self.extra_loading;
+            let mut loading = lock.lock().unwrap();
+            if loading.contains(model_id) {
+                info!(
+                    "Extra model '{}' is already being loaded; waiting for that load",
+                    model_id
+                );
+                while loading.contains(model_id) {
+                    loading = cvar.wait(loading).unwrap();
+                }
+                drop(loading);
+                return if self.is_extra_model_loaded(model_id) {
+                    Ok(self
+                        .model_manager
+                        .get_model_info(model_id)
+                        .map(|info| info.name)
+                        .unwrap_or_else(|| model_id.to_string()))
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Concurrent load of extra model '{}' failed",
+                        model_id
+                    ))
+                };
+            }
+            loading.insert(model_id.to_string());
+        }
+
+        let result = self.load_extra_model_uncoalesced(model_id);
+
+        {
+            let (lock, cvar) = &*self.extra_loading;
+            lock.lock().unwrap().remove(model_id);
+            cvar.notify_all();
+        }
+        result
+    }
+
+    fn load_extra_model_uncoalesced(&self, model_id: &str) -> Result<String> {
         let load_start = std::time::Instant::now();
         info!("Starting to load extra model for multi-STT: {}", model_id);
 
@@ -2817,6 +2878,12 @@ fn transcribe_with_engine(
     let mut custom_words_already_prompted = false;
     let mut cpp_model_languages: Option<Vec<String>> = None;
 
+    // Coerce the requested language to what this particular model supports
+    // (unsupported → auto/en) for every engine family, not just transcribe.cpp.
+    // Without this a Multi-STT extra model inherits the primary model's language
+    // verbatim, and e.g. Canary rejects "zh-Hant" → that slot yields nothing.
+    let effective_language = effective_language_for_model(settings, model_manager, model_id);
+
     let text = match engine {
         LoadedEngine::TranscribeCpp(session) => {
             let model = session.model();
@@ -2825,8 +2892,6 @@ fn transcribe_with_engine(
             let model_languages = caps.languages.clone();
             let model_is_whisper = model.arch() == "whisper";
 
-            let effective_language =
-                effective_language_for_model(settings, model_manager, model_id);
             let family = if settings.custom_words.is_empty() || !model_is_whisper {
                 None
             } else {
@@ -2883,7 +2948,7 @@ fn transcribe_with_engine(
             .map(|r| r.text)
             .map_err(|e| anyhow::anyhow!("Moonshine streaming transcription failed: {}", e))?,
         LoadedEngine::SenseVoice(sense_voice_engine) => {
-            let language = match normalize_cjk_language(&settings.selected_language) {
+            let language = match normalize_cjk_language(&effective_language) {
                 "zh" => Some("zh".to_string()),
                 "en" => Some("en".to_string()),
                 "ja" => Some("ja".to_string()),
@@ -2907,10 +2972,10 @@ fn transcribe_with_engine(
             .map_err(|e| anyhow::anyhow!("GigaAM transcription failed: {}", e))?,
         LoadedEngine::Canary(canary_engine) => {
             output_was_translated = settings.translate_to_english;
-            let lang = if settings.selected_language == "auto" {
+            let lang = if effective_language == "auto" {
                 None
             } else {
-                Some(settings.selected_language.clone())
+                Some(effective_language.clone())
             };
             applied_language_hint = lang.clone();
             let options = TranscribeOptions {
@@ -2924,10 +2989,10 @@ fn transcribe_with_engine(
                 .map_err(|e| anyhow::anyhow!("Canary transcription failed: {}", e))?
         }
         LoadedEngine::Cohere(cohere_engine) => {
-            let lang = if settings.selected_language == "auto" {
+            let lang = if effective_language == "auto" {
                 None
             } else {
-                Some(normalize_cjk_language(&settings.selected_language).to_string())
+                Some(normalize_cjk_language(&effective_language).to_string())
             };
             applied_language_hint = lang.clone();
             let options = TranscribeOptions {

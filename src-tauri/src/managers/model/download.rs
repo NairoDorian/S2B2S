@@ -306,8 +306,8 @@ impl ModelManager {
         let emit_progress = |downloaded: u64| {
             emit(HttpDownloadEvent::Progress(&DownloadProgress {
                 model_id: model_id.to_string(),
-                downloaded: downloaded as u32,
-                total: total_size as u32,
+                downloaded,
+                total: total_size,
                 percentage: if total_size > 0 {
                     (downloaded as f64 / total_size as f64) * 100.0
                 } else {

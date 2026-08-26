@@ -6,26 +6,39 @@
 **Environment Setup:**
 
 ```bash
-bun install                    # Install dependencies
-mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v6.2.onnx https://huggingface.co/BricksDisplay/silero-vad-6.2/resolve/main/onnx/model.onnx
+bun install                    # Install dependencies (postinstall runs scripts/check-nix-deps.ts)
 ```
+
+The Silero VAD model (`src-tauri/resources/models/silero_vad_v6.2.onnx`) is
+committed to the repository — there is nothing to download.
 
 **Development:**
 
 ```bash
-bun run tauri dev              # Full app development
+bun run tauri dev              # Full app development (via scripts/tauri-runner.ts)
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev  # macOS with cmake fix
-bun run dev                     # Frontend only (Vite)
-bun run build                   # Build frontend
-bun run tauri build             # Production build
+bun run dev                    # Frontend only (Vite)
+bun run build                  # Build frontend (tsc + vite build)
+bun run build:fast             # Release build, CUDA kernels for the local GPU only
+bun run build:full             # Release build, full multi-arch CUDA matrix
 ```
 
-**Type Check & Build:**
+**Checks (run before committing):**
 
 ```bash
-bunx tsc --noEmit               # Type checking
-bun run build                   # Build and validate
+bun run typecheck              # tsc -b
+bun run lint                   # oxlint (with eslint-plugin-i18next)
+bun run format:check           # prettier --check + cargo fmt --check
+bun run check:translations     # every locale has exactly en's keys
+cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
+```
+
+**Maintenance scripts:**
+
+```bash
+bun run update-deps [--prerelease] [--dry-run]   # bump npm + Cargo deps
+bun scripts/check-transcribe-deps.ts             # re-pin transcribe.cpp fork (also runs before every `tauri` invocation)
+bun run update:rtk                               # update the RTK CLI (maintainer tooling)
 ```
 
 # Code Style Guidelines
@@ -34,20 +47,23 @@ bun run build                   # Build and validate
 
 - Use `anyhow::Error` for error handling with descriptive messages
 - Prefer `Arc<Mutex<T>>` for shared state in managers
-- Log with appropriate levels: `debug!`, `info!`, `eprintln!` for errors
+- Log with `log::{debug, info, warn, error}!`; `eprintln!` only in the
+  headless `--transcribe-file` CLI path in `lib.rs`
 - Builder pattern for initialization chains
 - Snake_case for functions and variables, PascalCase for types
-- Separate logical sections with comment blocks: `/* ─────────── */`
+- Edition 2024 — `if let ... && let ...` chains are preferred over nested `if`s
 
 **TypeScript/React (Frontend):**
 
 - Functional components with TypeScript interfaces
-- Zod schemas for type validation and inference
 - `useCallback` hooks for stable function references
 - Destructure props with defaults: `disabled = false`
 - Prefer interface aliases over type aliases for objects
 - React.FC for explicit component typing
 - PascalCase for components, camelCase for variables/functions
+- No literal strings in JSX — every user-facing string goes through i18next
+  (`oxlint` fails the build otherwise); for literal data use an expression
+  container: `{"%APPDATA%/handy"}`
 
 **Imports:**
 

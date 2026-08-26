@@ -19,17 +19,13 @@ pub struct QuantVariant {
     pub quant: String,
     pub filename: String,
     pub model_id: String,
-    #[specta(type = u32)]
     pub size_mb: u32,
     pub is_default: bool,
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_model_quant_variants(
-    _model_manager: State<'_, Arc<ModelManager>>,
-    model_id: String,
-) -> Result<Vec<QuantVariant>, String> {
+pub fn get_model_quant_variants(model_id: String) -> Result<Vec<QuantVariant>, String> {
     let (repo_id, filename) = model_id
         .rsplit_once('/')
         .ok_or_else(|| format!("Invalid model id: {}", model_id))?;
@@ -149,6 +145,15 @@ pub async fn delete_model(
         let mut settings = get_settings(&app_handle);
         settings.selected_model = String::new();
         write_settings(&app_handle, settings);
+    }
+
+    // The same file may be resident as a Multi-STT extra engine. Drop it
+    // (or queue the drop if it is leased out) so the memory is released and
+    // a memory-mapped GGUF doesn't block the on-disk delete on Windows.
+    if transcription_manager.is_extra_model_loaded(&model_id) {
+        transcription_manager
+            .unload_extra_model(&model_id)
+            .map_err(|e| format!("Failed to unload extra model: {}", e))?;
     }
 
     model_manager
@@ -286,7 +291,6 @@ pub async fn cancel_download(
 #[tauri::command]
 #[specta::specta]
 pub async fn benchmark_model_quantizations(
-    _model_manager: State<'_, Arc<ModelManager>>,
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     history_manager: State<'_, Arc<HistoryManager>>,
     model_id: String,

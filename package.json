@@ -51,7 +51,6 @@
     "sonner": "2.0.8",
     "tailwindcss": "^4.3.3",
     "tauri-plugin-macos-permissions-api": "2.3.0",
-    "zod": "4.5.0-canary.20260824T214023",
     "zustand": "5.0.15"
   },
   "devDependencies": {

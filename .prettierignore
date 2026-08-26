@@ -19,3 +19,7 @@ src-tauri/src/catalog/catalog.json
 # Misc
 .DS_Store
 *.log
+
+# Local AI-assistant / editor state (never source)
+.cclaude/
+.commandcode/

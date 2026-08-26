@@ -142,7 +142,6 @@
     "modelUnloaded": "मोडेल अनलोड गरियो",
     "noModelDownloadRequired": "मोडेल छैन - डाउनलोड आवश्यक",
     "deleteModel": "{{modelName}} मेटाउनुहोस्",
-    "downloadSpeed": "{{speed}} MB/s",
     "cancel": "रद्द गर्नुहोस्",
     "cancelDownload": "डाउनलोड रद्द गर्नुहोस्",
     "capabilities": {
@@ -180,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "पोस्ट-प्रोसेसिङ हटकी",
             "description": "वैकल्पिक: तपाईंको ट्रान्सक्रिप्सनमा सधैँ AI पोस्ट-प्रोसेसिङ लागू गर्ने छुट्टै हटकी।"
+          },
+          "multi_stt_transcribe": {
+            "name": "Multi STT Shortcut",
+            "description": "Keyboard shortcut to record and transcribe with multiple STT models"
           }
         },
         "errors": {
@@ -379,11 +382,11 @@
         "description": "रेकर्डिङबाट मौनता हटाउँछ। स्ट्रिमिङ-सक्षम मोडेलहरूले लामो VAD टेल प्रयोग गर्छन्; VAD अफ गर्दा कच्चा अडियो रेकर्ड हुन्छ।"
       },
       "vadBackend": {
-        "title": "भ्वाइस एक्टिभिटी ब्याकएन्ड",
-        "description": "मौनता फिल्टर गर्न प्रयोग हुने डिटेक्टर छान्नुहोस्। Earshot प्रयोगात्मक हो; बोली काटिएमा वा आवाज रहिरहेमा Silero मा फर्कनुहोस्।",
+        "title": "ध्वनि गतिविधि पहिचान ब्याकइन्ड",
+        "description": "प्रयोगात्मक डिटेक्टर कार्यान्वयन। Silero स्थिर पूर्वनिर्धारित रहन्छ।",
         "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
+          "silero": "Silero VAD",
+          "earshot": "Earshot VAD (प्रयोगात्मक)"
         }
       },
       "fillerWordRemoval": {
@@ -400,12 +403,6 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
-      },
-      "vadBackend": {
-        "title": "ध्वनि गतिविधि पहिचान ब्याकइन्ड",
-        "description": "प्रयोगात्मक डिटेक्टर कार्यान्वयन। Silero स्थिर पूर्वनिर्धारित रहन्छ।",
-        "silero": "Silero VAD",
-        "earshot": "Earshot VAD (प्रयोगात्मक)"
       }
     },
     "postProcessing": {
@@ -658,7 +655,8 @@
     "open": "खोल्नुहोस्",
     "copy": "कपी गर्नुहोस्",
     "clear": "खाली गर्नुहोस्",
-    "noOptionsFound": "कुनै विकल्प भेटिएन"
+    "noOptionsFound": "कुनै विकल्प भेटिएन",
+    "downloadSpeed": "{{speed}} MB/s"
   },
   "accessibility": {
     "permissionsDescription": "ट्रान्सक्राइब गरिएको टेक्स्ट टाइप गर्न Handy लाई एक्सेसिबिलिटी अनुमति चाहिन्छ।",
@@ -716,8 +714,7 @@
       "description": "Run multiple speech-to-text models simultaneously and merge their results"
     },
     "shortcut": {
-      "title": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to trigger multi-model transcription"
+      "title": "Multi STT Shortcut"
     },
     "models": {
       "title": "Additional Models",
@@ -728,8 +725,6 @@
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
-      "loadingModels": "Loading models...",
-      "noModelsAvailable": "No additional models available",
       "loaded": "Loaded",
       "notLoaded": "Not loaded",
       "loadModel": "Load Model",
@@ -738,8 +733,6 @@
       "unloadingModel": "Unloading...",
       "model2Language": "Language for Second Model",
       "model3Language": "Language for Third Model",
-      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
-      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
@@ -758,17 +751,10 @@
     },
     "status": {
       "title": "Model Status",
-      "modelsLoaded": "Models loaded in memory",
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary"
-    }
-  },
-  "bindings": {
-    "multi_stt_transcribe": {
-      "name": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to record and transcribe with multiple STT models"
     }
   }
 }

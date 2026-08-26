@@ -56,12 +56,9 @@ Before you begin, ensure you have the following installed:
    bun install
    ```
 
-5. **Download required models**:
-
-   ```bash
-   mkdir -p src-tauri/resources/models
-   curl -o src-tauri/resources/models/silero_vad_v6.2.onnx https://huggingface.co/BricksDisplay/silero-vad-6.2/resolve/main/onnx/model.onnx
-   ```
+5. **Models**: the Silero VAD model (`src-tauri/resources/models/silero_vad_v6.2.onnx`)
+   is committed to the repository, so there is nothing to download. Speech
+   models are fetched from the in-app catalog on first run.
 
 6. **Run in development mode**:
    ```bash
@@ -94,7 +91,8 @@ Handy follows a clean architecture pattern:
 - `components/` - React UI components
   - `settings/multi-stt/MultiSttSettings.tsx` - Multi-STT configuration UI
 - `hooks/` - Reusable React hooks
-- `lib/types.ts` - Shared TypeScript types
+- `lib/types/events.ts` - Shared TypeScript event payload types
+- `stores/settingsStore.ts` - Settings store; every settings key needs a `settingUpdaters` entry
 - `stores/modelStore.ts` - Model store with load/unload for extra models
 
 For more details, see the Architecture section in [README.md](README.md) or [AGENTS.md](AGENTS.md).
@@ -284,10 +282,21 @@ In your PR description, please include:
 - Test with different audio devices
 - Try various transcription scenarios
 
+**Automated checks (CI runs the same):**
+
+```bash
+bun run typecheck            # tsc
+bun run lint                 # oxlint + i18next/no-literal-string
+bun run format:check         # prettier + cargo fmt
+bun run check:translations   # locale key parity with en
+cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
+```
+
 **Building for Production:**
 
 ```bash
-bun run tauri build
+bun run build:fast   # local GPU only — quick release build for testing
+bun run build:full   # full multi-architecture CUDA matrix for distribution
 ```
 
 Test the production build to ensure it works as expected.

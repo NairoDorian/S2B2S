@@ -192,6 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(smoothed_vad),
         offline_hangover_frames,
         frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, frame_samples),
+        frames_for_duration_ms(VAD_ONSET_MS, frame_samples),
     );
     let mut state = RecorderState::new(recorder);
 

@@ -297,7 +297,18 @@ const RecordingOverlay: React.FC = () => {
       };
     };
 
-    setupEventListeners();
+    // Keep the unlisten handles: under React StrictMode (dev) the effect runs
+    // twice, and without cleanup every event got two handlers — two session
+    // bumps per show and two typewriter intervals in direct mode.
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    setupEventListeners().then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        cleanup = fn;
+      }
+    });
 
     // Prime the stats setting before the first show, so the card opens at its
     // final width instead of visibly growing once the settings read lands.
@@ -309,8 +320,13 @@ const RecordingOverlay: React.FC = () => {
         }
       })
       .catch(() => {
-        // Default (off) until the first show reads settings again.
+        // Keep the primed default (on) until the first show reads settings again.
       });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   // Elapsed capture timer starts only once microphone samples are flowing.

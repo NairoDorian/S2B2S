@@ -94,7 +94,8 @@ pub struct ModelInfo {
     pub size_mb: u32,
     pub is_downloaded: bool,
     pub is_downloading: bool,
-    pub partial_size: u32,
+    #[specta(type = f64)]
+    pub partial_size: u64,
     pub is_directory: bool,
     pub engine_type: EngineType,
     pub accuracy_score: f32,        // 0.0 to 1.0, higher is more accurate
@@ -181,7 +182,7 @@ pub(crate) fn default_quant_file<'a>(
 pub struct DiskStatus {
     pub is_downloaded: bool,
     pub is_downloading: bool,
-    pub partial_size: u32,
+    pub partial_size: u64,
 }
 
 /// The spec of a bundled catalog model: everything in `catalog.json` normalised
@@ -339,8 +340,12 @@ pub fn effective_language(
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct DownloadProgress {
     pub model_id: String,
-    pub downloaded: u32,
-    pub total: u32,
+    // Byte counts stay u64 in Rust (catalog files exceed 4 GiB) and cross to
+    // TypeScript as `number`; f64 represents them exactly up to 2^53.
+    #[specta(type = f64)]
+    pub downloaded: u64,
+    #[specta(type = f64)]
+    pub total: u64,
     pub percentage: f64,
 }
 
@@ -413,8 +418,8 @@ struct HfDownloadProgress {
 }
 
 struct HfProgressState {
-    total: u32,
-    downloaded: u32,
+    total: u64,
+    downloaded: u64,
     last_emit: Instant,
     /// Every callback (even throttled-out ones) bumps this; the stall watchdog
     /// reads it. Starts at construction so a hang before the first byte —
@@ -441,7 +446,7 @@ impl HfDownloadProgress {
         self.state.lock().unwrap().last_activity
     }
 
-    fn emit(&self, downloaded: u32, total: u32) {
+    fn emit(&self, downloaded: u64, total: u64) {
         let percentage = if total > 0 {
             (downloaded as f64 / total as f64) * 100.0
         } else {
@@ -463,18 +468,18 @@ impl Progress for HfDownloadProgress {
     async fn init(&mut self, size: usize, _filename: &str) {
         {
             let mut st = self.state.lock().unwrap();
-            st.total = size as u32;
+            st.total = size as u64;
             st.downloaded = 0;
             st.last_emit = Instant::now();
             st.last_activity = Instant::now();
         }
-        self.emit(0, size as u32);
+        self.emit(0, size as u64);
     }
 
     async fn update(&mut self, size: usize) {
         let (downloaded, total, emit) = {
             let mut st = self.state.lock().unwrap();
-            st.downloaded = st.downloaded.saturating_add(size as u32);
+            st.downloaded = st.downloaded.saturating_add(size as u64);
             let now = Instant::now();
             st.last_activity = now;
             // Throttle to ~10 updates/sec, but always emit the final byte.
@@ -1428,7 +1433,7 @@ impl ModelManager {
                 model.is_downloaded = hf_cached_path(repo_id, revision, &model.filename).is_some()
                     || local_path.exists();
                 model.is_downloading = false;
-                model.partial_size = partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
+                model.partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
                 // Alternate-quant entries exist only because their file was
                 // discovered on disk — the catalog offers just the default
                 // quant, so they are never presented for download. When the
@@ -1465,8 +1470,7 @@ impl ModelManager {
 
                 // Get partial file size if it exists (for the .tar.gz being downloaded)
                 if partial_path.exists() {
-                    model.partial_size =
-                        partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
+                    model.partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
                 } else {
                     model.partial_size = 0;
                 }
@@ -1480,8 +1484,7 @@ impl ModelManager {
 
                 // Get partial file size if it exists
                 if partial_path.exists() {
-                    model.partial_size =
-                        partial_path.metadata().map(|m| m.len() as u32).unwrap_or(0);
+                    model.partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
                 } else {
                     model.partial_size = 0;
                 }

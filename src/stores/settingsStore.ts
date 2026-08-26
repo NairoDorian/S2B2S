@@ -194,6 +194,8 @@ const settingUpdaters: {
   log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   theme: (value) => commands.changeThemeSetting(value as string),
+  custom_accent_color: (value) =>
+    commands.changeCustomAccentColorSetting((value as string | null) ?? null),
   experimental_enabled: (value) =>
     commands.changeExperimentalEnabledSetting(value as boolean),
   lazy_stream_close: (value) =>

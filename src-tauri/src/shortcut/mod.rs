@@ -99,6 +99,84 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     }
 }
 
+/// The three bindings that start a transcription and therefore could be
+/// retriggered by the Multi-STT performance-mode simulated keystrokes.
+const TRANSCRIPTION_TRIGGER_IDS: [&str; 3] = [
+    "transcribe",
+    "multi_stt_transcribe",
+    "transcribe_with_post_process",
+];
+
+/// True when registering `binding` for `id` would let the Multi-STT
+/// performance-mode simulated keystrokes (sent through Enigo while performance
+/// mode is enabled) retrigger Handy's own shortcut in a loop. Only the
+/// transcription triggers can recurse, and only while performance mode is on —
+/// with it off nothing is ever simulated, so the binding is safe to register.
+pub fn conflicts_with_performance_mode(
+    settings: &settings::AppSettings,
+    id: &str,
+    binding: &str,
+) -> bool {
+    if !settings.multi_stt_performance_mode_enabled || !TRANSCRIPTION_TRIGGER_IDS.contains(&id) {
+        return false;
+    }
+    let normalized = normalize_binding(binding);
+    normalized == normalize_binding(&settings.multi_stt_performance_mode_full_power_shortcut)
+        || normalized == normalize_binding(&settings.multi_stt_performance_mode_normal_shortcut)
+}
+
+/// Single source of truth for "should this binding be a live global shortcut
+/// right now". Every registration path (startup for both backends, resume after
+/// the shortcut recorder, implementation switch, feature toggles) goes through
+/// here so they can never disagree about which shortcuts are active.
+pub fn should_register_binding(
+    settings: &settings::AppSettings,
+    binding: &ShortcutBinding,
+) -> bool {
+    // `cancel` is registered dynamically for the duration of a recording only.
+    if binding.id == "cancel" || binding.current_binding.is_empty() {
+        return false;
+    }
+    if binding.id == "multi_stt_transcribe" && !settings.multi_stt_enabled {
+        return false;
+    }
+    if binding.id == "transcribe_with_post_process" && !settings.post_process_enabled {
+        return false;
+    }
+    if conflicts_with_performance_mode(settings, &binding.id, &binding.current_binding) {
+        debug!(
+            "Skipping '{}' ({}): conflicts with a performance-mode simulated shortcut",
+            binding.id, binding.current_binding
+        );
+        return false;
+    }
+    true
+}
+
+/// Re-derive the registration state of the transcription triggers after a
+/// feature toggle or a performance-mode shortcut change: unregister each one
+/// (a no-op failure if it wasn't registered) and register it again only if
+/// [`should_register_binding`] still says so.
+fn resync_transcription_shortcuts(app: &AppHandle) {
+    let settings = get_settings(app);
+    for id in TRANSCRIPTION_TRIGGER_IDS {
+        let Some(binding) = settings.bindings.get(id).cloned() else {
+            continue;
+        };
+        if binding.current_binding.is_empty() {
+            continue;
+        }
+        if let Err(e) = unregister_shortcut(app, binding.clone()) {
+            debug!("resync: '{}' was not registered ({})", id, e);
+        }
+        if should_register_binding(&settings, &binding)
+            && let Err(e) = register_shortcut(app, binding)
+        {
+            error!("resync: failed to register '{}': {}", id, e);
+        }
+    }
+}
+
 // ============================================================================
 // Binding Management Commands
 // ============================================================================
@@ -181,12 +259,33 @@ pub fn change_binding(
         return Err(e);
     }
 
+    // Refuse a binding the performance mode would retrigger in a loop. Until
+    // now this was only caught at the next launch (silently skipped), so the
+    // hotkey appeared to work in the UI and then vanished after a restart.
+    if conflicts_with_performance_mode(&settings, &id, &binding) {
+        let error_msg = format!(
+            "'{}' is used by the Multi-STT performance-mode simulated shortcuts; choose another combination or change the performance-mode shortcuts first",
+            binding
+        );
+        warn!("change_binding rejected: {}", error_msg);
+        restore_registration(&app, &binding_to_modify);
+        return Ok(BindingResponse {
+            success: false,
+            binding: None,
+            error: Some(error_msg),
+        });
+    }
+
     // Create an updated binding
     let mut updated_binding = binding_to_modify.clone();
     updated_binding.current_binding = binding;
 
-    // Register the new binding
-    if let Err(e) = register_shortcut(&app, updated_binding.clone()) {
+    // Register the new binding — unless its feature is currently disabled, in
+    // which case it is stored only and registered when the feature is enabled
+    // (same rule as at startup, see `should_register_binding`).
+    if should_register_binding(&settings, &updated_binding)
+        && let Err(e) = register_shortcut(&app, updated_binding.clone())
+    {
         let error_msg = format!("Failed to register shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
         restore_registration(&app, &binding_to_modify);
@@ -253,26 +352,10 @@ pub fn suspend_all_shortcuts(app: &AppHandle) {
 /// implementations, so this is idempotent and safe on every exit path.
 pub fn resume_all_shortcuts(app: &AppHandle) {
     let settings = get_settings(app);
-    let perf_full = normalize_binding(&settings.multi_stt_performance_mode_full_power_shortcut);
-    let perf_normal = normalize_binding(&settings.multi_stt_performance_mode_normal_shortcut);
 
     for (id, binding) in &settings.bindings {
-        if id == "cancel" {
+        if !should_register_binding(&settings, binding) {
             continue;
-        }
-        if binding.current_binding.is_empty() {
-            continue;
-        }
-        // Skip shortcuts that conflict with the Multi-STT performance-mode
-        // simulated keystrokes (ctrl+space / ctrl+alt+space).
-        if id == "transcribe"
-            || id == "multi_stt_transcribe"
-            || id == "transcribe_with_post_process"
-        {
-            let normalized = normalize_binding(&binding.current_binding);
-            if normalized == perf_full || normalized == perf_normal {
-                continue;
-            }
         }
         if let Err(e) = register_shortcut(app, binding.clone()) {
             debug!("resume_all_shortcuts: could not register '{}': {}", id, e);
@@ -456,43 +539,15 @@ fn register_all_shortcuts_for_implementation(
     let default_bindings = settings::get_default_settings().bindings;
     let mut current_settings = settings::get_settings(app);
 
-    let perf_full = settings::normalize_binding(
-        &current_settings.multi_stt_performance_mode_full_power_shortcut,
-    );
-    let perf_normal =
-        settings::normalize_binding(&current_settings.multi_stt_performance_mode_normal_shortcut);
-
     for (id, default_binding) in &default_bindings {
-        // Skip cancel shortcut as it's dynamically registered
-        if id == "cancel" {
-            continue;
-        }
-
-        // Skip multi-stt shortcut when the feature is disabled
-        if id == "multi_stt_transcribe" && !current_settings.multi_stt_enabled {
-            continue;
-        }
-
         let mut binding = current_settings
             .bindings
             .get(id)
             .cloned()
             .unwrap_or_else(|| default_binding.clone());
 
-        if binding.current_binding.is_empty() {
+        if !should_register_binding(&current_settings, &binding) {
             continue;
-        }
-
-        // Skip shortcuts that conflict with the Multi-STT performance-mode
-        // simulated keystrokes (ctrl+space / ctrl+alt+space).
-        if id == "transcribe"
-            || id == "multi_stt_transcribe"
-            || id == "transcribe_with_post_process"
-        {
-            let normalized = settings::normalize_binding(&binding.current_binding);
-            if normalized == perf_full || normalized == perf_normal {
-                continue;
-            }
         }
 
         // Validate the shortcut for the target implementation
@@ -1075,16 +1130,47 @@ pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_custom_accent_color_setting(
+    app: AppHandle,
+    color: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    // Accept only `#rrggbb`; anything else (or None) means "use the default".
+    settings.custom_accent_color = color.and_then(|c| {
+        let c = c.trim().to_ascii_lowercase();
+        let is_hex =
+            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if is_hex {
+            Some(c)
+        } else {
+            warn!("Ignoring invalid accent color '{}'", c);
+            None
+        }
+    });
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_enabled = enabled;
     settings::write_settings(&app, settings.clone());
 
-    // multi_stt_transcribe is NOT registered as a global shortcut — it
-    // conflicts with the Multi-STT performance-mode simulated shortcuts
-    // (ctrl+space / ctrl+alt+space). The performance-mode actions fire it
-    // programmatically instead.
-    let _ = enabled;
+    // The Multi-STT hotkey is a normal global shortcut gated on this flag
+    // (see `should_register_binding`), so it must follow the toggle at runtime
+    // rather than only at the next launch.
+    resync_transcription_shortcuts(&app);
+
+    // Turning the feature off is the natural point to release the extra
+    // engines; with a `Never` unload timeout they would otherwise stay resident
+    // until the app exits.
+    if !enabled {
+        let tm =
+            app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
+        tm.unload_all_extra_models();
+    }
 
     // Emit event for frontend
     let _ = app.emit(
@@ -1124,19 +1210,21 @@ pub fn change_multi_stt_extra_model(
         if model_id.as_deref() != Some(old_id.as_str()) {
             let tm =
                 app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
-            if tm.is_extra_model_loaded(old_id) {
-                info!(
-                    "Multi-STT: unloading extra model in slot {} ('{}') before switching to '{}'",
-                    slot,
-                    old_id,
-                    model_id.as_deref().unwrap_or("none")
+            // Unconditional: if the engine is leased out to an in-flight
+            // transcription it is not in the map yet, and `unload_extra_model`
+            // records a pending request that drops it on return instead of
+            // letting it be re-inserted into a slot nothing references.
+            info!(
+                "Multi-STT: unloading extra model in slot {} ('{}') before switching to '{}'",
+                slot,
+                old_id,
+                model_id.as_deref().unwrap_or("none")
+            );
+            if let Err(e) = tm.unload_extra_model(old_id) {
+                warn!(
+                    "Multi-STT: failed to unload extra model '{}' in slot {}: {}",
+                    old_id, slot, e
                 );
-                if let Err(e) = tm.unload_extra_model(old_id) {
-                    warn!(
-                        "Multi-STT: failed to unload extra model '{}' in slot {}: {}",
-                        old_id, slot, e
-                    );
-                }
             }
         }
     }
@@ -1234,6 +1322,9 @@ pub fn change_multi_stt_performance_mode_enabled_setting(
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_performance_mode_enabled = enabled;
     settings::write_settings(&app, settings);
+    // Bindings equal to the simulated shortcuts must be live only while
+    // performance mode is off; re-derive them now.
+    resync_transcription_shortcuts(&app);
     Ok(())
 }
 
@@ -1258,6 +1349,7 @@ pub fn change_multi_stt_performance_mode_full_power_shortcut(
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_performance_mode_full_power_shortcut = shortcut;
     settings::write_settings(&app, settings);
+    resync_transcription_shortcuts(&app);
     Ok(())
 }
 
@@ -1270,6 +1362,7 @@ pub fn change_multi_stt_performance_mode_normal_shortcut(
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_performance_mode_normal_shortcut = shortcut;
     settings::write_settings(&app, settings);
+    resync_transcription_shortcuts(&app);
     Ok(())
 }
 
@@ -1296,10 +1389,10 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
     settings.post_process_enabled = enabled;
     settings::write_settings(&app, settings.clone());
 
-    // transcribe_with_post_process is NOT registered/unregistered here —
-    // it is not registered as a global shortcut, matching the treatment of
-    // "transcribe" and "multi_stt_transcribe". When the user sets a custom
-    // shortcut via the UI, change_binding_setting() handles registration.
+    // The post-processing hotkey is gated on this flag (see
+    // `should_register_binding`), so (un)register it now rather than at the
+    // next launch.
+    resync_transcription_shortcuts(&app);
     crate::secure_input::reconcile_fallback(&app);
     Ok(())
 }

@@ -12,6 +12,7 @@ export const commands = {
 	changeAudioFeedbackVolumeSetting: (volume: number | null) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_volume_setting", { volume })),
 	changeSoundThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_sound_theme_setting", { theme })),
 	changeThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_theme_setting", { theme })),
+	changeCustomAccentColorSetting: (color: string | null) => typedError<null, string>(__TAURI_INVOKE("change_custom_accent_color_setting", { color })),
 	changeStartHiddenSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_start_hidden_setting", { enabled })),
 	changeAutostartSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_autostart_setting", { enabled })),
 	changeTranslateToEnglishSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_translate_to_english_setting", { enabled })),
@@ -151,7 +152,7 @@ export const commands = {
 	size_mb: number,
 	is_downloaded: boolean,
 	is_downloading: boolean,
-	partial_size: number,
+	partial_size: number | null,
 	is_directory: boolean,
 	engine_type: EngineType,
 	accuracy_score: number | null,
@@ -417,7 +418,6 @@ export type AppSettings_Deserialize = {
 	multi_stt_translate_model_4?: boolean,
 	multi_stt_keep_extra_models_loaded?: boolean,
 	multi_stt_merge_prompt?: LLMPrompt | null,
-	multi_stt_selected_merge_prompt_id?: string | null,
 	/**
 	 *  Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
 	 *  to boost CPU performance before transcription starts (FULL POWER) and
@@ -574,7 +574,6 @@ export type AppSettings_Serialize = {
 	multi_stt_translate_model_4: boolean,
 	multi_stt_keep_extra_models_loaded: boolean,
 	multi_stt_merge_prompt: LLMPrompt | null,
-	multi_stt_selected_merge_prompt_id: string | null,
 	/**
 	 *  Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
 	 *  to boost CPU performance before transcription starts (FULL POWER) and
@@ -704,7 +703,7 @@ export type ModelInfo = {
 	size_mb: number,
 	is_downloaded: boolean,
 	is_downloading: boolean,
-	partial_size: number,
+	partial_size: number | null,
 	is_directory: boolean,
 	engine_type: EngineType,
 	accuracy_score: number | null,

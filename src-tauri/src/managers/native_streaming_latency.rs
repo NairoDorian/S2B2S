@@ -5,7 +5,6 @@
 //! The settings field `native_streaming_latency_presets` stores the per-model
 //! choice (keyed by model id); this module just translates kind + preset into
 //! the extension struct the session's `stream()` call consumes.
-#![allow(dead_code)]
 
 use super::model::NativeStreamingLatencyKind;
 use crate::settings::NativeStreamingLatencyPreset;

@@ -215,12 +215,17 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "multi_stt_transcribe": {
+            "name": "Multi STT Shortcut",
+            "description": "Keyboard shortcut to record and transcribe with multiple STT models"
           }
         },
         "errors": {
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
-          "reset": "Failed to reset shortcut to original value"
+          "reset": "Failed to reset shortcut to original value",
+          "unsupportedCombo": "{{combo}} can't be simulated: use at least one non-modifier key from letters, digits, space, enter, tab, esc, arrows or F1–F24"
         }
       },
       "language": {
@@ -803,8 +808,7 @@
       "description": "Run multiple speech-to-text models simultaneously and merge their results"
     },
     "shortcut": {
-      "title": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to trigger multi-model transcription"
+      "title": "Multi STT Shortcut"
     },
     "models": {
       "title": "Additional Models",
@@ -817,8 +821,6 @@
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
-      "loadingModels": "Loading models...",
-      "noModelsAvailable": "No additional models available",
       "loaded": "Loaded",
       "notLoaded": "Not loaded",
       "loadModel": "Load Model",
@@ -832,9 +834,6 @@
       "model2Language": "Language for Second Model",
       "model3Language": "Language for Third Model",
       "model4Language": "Language for Fourth Model",
-      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
-      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
-      "model4LanguageDescription": "Preferred recognition language for the fourth model (only if the model supports language selection)",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
@@ -857,7 +856,6 @@
     },
     "status": {
       "title": "Model Status",
-      "modelsLoaded": "Models loaded in memory",
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
@@ -866,7 +864,6 @@
     },
     "performanceMode": {
       "title": "Performance Mode",
-      "description": "When enabled, simulate a keyboard shortcut to boost CPU performance (FULL POWER) before transcription starts, and restore normal power (NORMAL MODE) after the merge or paste completes",
       "fullPowerLabel": "Full Power Shortcut",
       "fullPowerDescription": "Shortcut to simulate when Multi-STT recording finishes and audio is sent to models",
       "normalModeLabel": "Normal Mode Shortcut",
@@ -879,12 +876,6 @@
         "label": "Trigger Performance Mode at 1st Keybind",
         "description": "Trigger the Full Power shortcut immediately upon starting Multi-STT recording instead of waiting until recording ends"
       }
-    }
-  },
-  "bindings": {
-    "multi_stt_transcribe": {
-      "name": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to record and transcribe with multiple STT models"
     }
   }
 }

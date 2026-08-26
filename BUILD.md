@@ -44,9 +44,18 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
   winget install Kitware.CMake
   ```
 
-- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG — required to
-  build the Vulkan GPU backend (`vulkan-shaders-gen` needs the SDK's headers
-  and `glslc`):
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 13.x — this fork
+  builds transcribe.cpp with the **`cuda`** feature on Windows x86_64
+  (`src-tauri/Cargo.toml`), not upstream's Vulkan backend. `nvcc` must be on
+  `PATH` and must support your MSVC version; `.cargo/config.toml` passes the
+  flags CUDA 13.3 needs with MSVC 2026 (`-std=c++17 -Xcompiler=/Zc:preprocessor`)
+  and turns sccache off for the native build. `bun run build:fast` compiles
+  kernels for the local GPU only (`TRANSCRIBE_CUDA_ARCHITECTURES=auto`);
+  `bun run build:full` builds the full architecture matrix.
+
+- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG — **only** if
+  you switch the feature back to `vulkan` (`vulkan-shaders-gen` needs the
+  SDK's headers and `glslc`):
 
   ```powershell
   winget install KhronosGroup.VulkanSDK
@@ -67,6 +76,10 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 
 - Build essentials
 - ALSA development libraries
+- This fork builds transcribe.cpp with the **`cuda`** feature on Linux (see
+  `src-tauri/Cargo.toml`), so the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
+  (`nvcc` on `PATH`) is required as well. The Vulkan packages below are only
+  needed if you switch the feature back to `vulkan`.
 - Install with:
 
   ```bash
@@ -107,8 +120,15 @@ bun install
 ### 3. Start Dev Server
 
 ```bash
-bun tauri dev
+bun run tauri dev
 ```
+
+`bun run tauri` goes through `scripts/tauri-runner.ts`, which first checks
+whether the pinned `transcribe-cpp` commit is behind the
+`NairoDorian/transcribe.cpp` fork's `main` and, if so, runs
+`cargo update -p transcribe-cpp -p transcribe-cpp-sys` (it never fails the
+build, even offline). The Silero VAD model is committed to the repository, so
+no model download step is needed.
 
 ### 4. Build for Production
 
@@ -125,7 +145,7 @@ bun run build:full
 - **`build:fast` (`bun run build:fast` or `bun run tauri build --fast`)**: Ideal for local development release testing. Automatically sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto` to target solely the active system GPU, dramatically cutting compile time.
 - **`build:full` (`bun run build:full` or `bun run tauri build`)**: Used for releasing distribution packages. Compiles the full matrix of CUDA architectures to run across all supported NVIDIA GPU generations.
 
-This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; msi on Windows).
+This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; NSIS installer and MSI on Windows). Windows bundles are unsigned in this fork (`signCommand` was removed from `tauri.conf.json`).
 
 ## Linux Install (from source)
 
@@ -279,9 +299,11 @@ Signing C:\...\handy.exe with a custom signing command
 failed to bundle project `program not found`
 ```
 
-that's the code-signing step: `tauri.conf.json` configures a custom
+that's the code-signing step. Upstream's `tauri.conf.json` configures a custom
 `signCommand` (`trusted-signing-cli`, Azure Trusted Signing) that only exists
-in the release CI environment. Local development doesn't need it:
+in the release CI environment; **this fork removed `signCommand`**, so the
+error should not occur here unless you re-add it. Local development doesn't
+need signing either way:
 
 ```powershell
 # Development (no bundling/signing at all):

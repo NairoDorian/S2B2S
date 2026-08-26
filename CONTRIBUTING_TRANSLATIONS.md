@@ -81,15 +81,23 @@ Edit `src/i18n/languages.ts` and add your language metadata:
 ```typescript
 export const LANGUAGE_METADATA: Record<
   string,
-  { name: string; nativeName: string }
+  {
+    name: string;
+    nativeName: string;
+    priority?: number; // optional: sort weight in the language picker
+    direction?: "ltr" | "rtl"; // optional: defaults to "ltr"
+  }
 > = {
   en: { name: "English", nativeName: "English" },
   es: { name: "Spanish", nativeName: "Español" },
   fr: { name: "French", nativeName: "Français" },
-  vi: { name: "Vietnamese", nativeName: "Tiếng Việt" },
+  he: { name: "Hebrew", nativeName: "עברית", direction: "rtl" },
   de: { name: "German", nativeName: "Deutsch" }, // ← Add your language
 };
 ```
+
+Then run `bun run check:translations` — CI fails when a locale's key set
+differs from `en`'s.
 
 ### Step 5: Test Your Translation
 
@@ -155,23 +163,21 @@ Some languages have complex plural rules. For now, use a general form that works
 
 ## Currently Supported Languages
 
-| Language   | Code | Status            |
-| ---------- | ---- | ----------------- |
-| English    | `en` | Complete (source) |
-| Chinese    | `zh` | Complete          |
-| French     | `fr` | Complete          |
-| German     | `de` | Complete          |
-| Japanese   | `ja` | Complete          |
-| Spanish    | `es` | Complete          |
-| Vietnamese | `vi` | Complete          |
+`src/i18n/locales/` currently holds 24 locales: `en` (source), `ar`, `bg`,
+`cs`, `da`, `de`, `es`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ne`, `nl`, `pl`,
+`pt`, `ru`, `sv`, `tr`, `uk`, `vi`, `zh`, `zh-TW`.
+
+**Fork status (2026-08-26):** every non-English locale is missing the same 87
+fork-added strings (Multi-STT performance mode, quantization picker and
+benchmark, latency presets, speech stats, direct streaming, accent colours,
+history tools, raw audio). They fall back to English at runtime, and
+`bun run check:translations` lists the exact keys per locale. Translating
+those is the most useful contribution right now.
 
 ## Requested Languages
 
-We'd love help with:
-
-- Korean (`ko`)
-- Portuguese (`pt`)
-- And more!
+- Any language not listed above
+- Completing the 87 missing fork keys in the existing locales
 
 ---
 

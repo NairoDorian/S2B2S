@@ -26,10 +26,10 @@ Handy isn't trying to be the best speech-to-text app—it's trying to be the mos
 
 The process is entirely local:
 
-- Silence is filtered using VAD (Voice Activity Detection) with Silero
-- Transcription uses your choice of models:
-  - **Whisper models** (Small/Medium/Turbo/Large) with GPU acceleration when available
-  - **Parakeet V3** - CPU-optimized model with excellent performance and automatic language detection
+- Silence is filtered using VAD (Voice Activity Detection) with Silero v6.2 (or the experimental Earshot backend, selectable in Settings → Advanced)
+- Transcription uses your choice of models from the bundled catalog:
+  - **Whisper-family GGUF models** (Small/Medium/Turbo/Large, Voxtral, Qwen3-ASR, …) with GPU acceleration when available
+  - **ONNX models** such as **Parakeet V3**, Moonshine, SenseVoice, Canary and Cohere — CPU-optimized with automatic language detection
 - Works on Windows, macOS, and Linux
 
 ### Multi-STT Mode (Fork Feature)
@@ -43,13 +43,28 @@ This fork adds **Multi-STT** — run up to four speech-to-text models simultaneo
 - **Per-model translation**: Each extra model can optionally translate to English
 - **Parallel model loading**: Extra models are pre-loaded in parallel during the recording phase
 - **LLM merge prompt**: Optionally merge multiple transcriptions through an OpenAI-compatible LLM (including local llama.cpp servers) using `${output}`, `${output2}`, `${output3}`, and `${output4}` placeholders
-- **Raw uncompressed audio saving**: Hardware-agnostic capture saving 32-bit float, 24-bit PCM, or 16-bit PCM WAVs directly before resampling and VAD filtering with zero latency impact
-- **Windows real-time low latency**: High priority process class, 1ms multimedia timer resolution, MMCSS capture thread scheduling, and hardware buffer size minimization
-- **Keep models loaded**: Option to retain extra models in memory between uses for faster repeat transcriptions
+- **Keep models loaded**: Retain extra models in memory between uses for faster repeat transcriptions (on by default; only matters when the model unload timeout is "Immediately")
 - **Manual model unload**: Free model memory on demand via the settings UI
 - **Dedicated shortcut**: Configurable `multi_stt_transcribe` binding separate from the standard transcription shortcut
+- **Performance mode** (optional): Simulate a "full power" keyboard shortcut while Multi-STT is decoding and a "normal" shortcut afterwards, so an external power-profile tool can boost the CPU only when needed
 
-**To enable:** Open Settings → Multi-STT, toggle on, select your second, third, and fourth models, and optionally configure a merge prompt using the same post-processing LLM provider.
+**To enable:** Open Settings → Multi-STT, toggle on, select your second, third, and fourth models, set the Multi-STT hotkey in Settings → General, and optionally configure a merge prompt using the same post-processing LLM provider.
+
+> **Note:** this fork ships **without** default transcription hotkeys (both `transcribe` and `multi_stt_transcribe` are empty on a fresh install, so the performance-mode simulated keys can never retrigger Handy). Set them once in Settings → General → Shortcuts.
+
+### Other Fork Additions
+
+- **Silero VAD v6.2 driven directly through `ort`** (upstream's `vad-rs` wrapper only spoke the v4 tensor interface and silently passed every frame through), with threshold hysteresis and an optional **Earshot** backend
+- **Recordings with no speech are never decoded** (under 200 ms of measured speech) — no more hallucinated text pasted from silence
+- **Speech stats in the overlay**: speaking/paused indicator, a timer that only runs while you talk, and live words-per-minute with streaming models
+- **Direct streaming paste**: type the live transcript character by character into the target app as it is committed, with a speed control. Plain transcription only — with post-processing or Multi-STT the live stream is shown in the Live overlay as a preview and the processed result is pasted once with Ctrl+V
+- **Raw uncompressed audio saving**: keep recordings at the captured sample rate and format (32-bit float, 24-bit or 16-bit PCM) before resampling and VAD filtering, with no latency impact
+- **Windows real-time low latency**: high priority process class, EcoQoS opt-out, 1 ms multimedia timer resolution, MMCSS capture thread scheduling, and hardware buffer size minimization
+- **CUDA GPU backend** on Windows x86_64 and Linux (via the `NairoDorian/transcribe.cpp` fork) instead of Vulkan; `bun run build:fast` compiles kernels for your GPU only
+- **Status-bar model controls**: switch models, pick a quantization (with an in-place benchmark against your latest recording), and choose a native streaming latency preset
+- **History tools**: delete all recordings, vacuum the database, open the models folder
+- **Accent colour palette**, configurable microphone idle timeout, append-trailing-newline option
+- **Headless CLI**: `handy --transcribe-file recording.wav` (see below)
 
 ## Quick Start
 
@@ -86,7 +101,7 @@ Handy is built as a Tauri application combining:
   - `transcribe-cpp`: Local speech recognition with Whisper-family models (GGML/GGUF)
   - `transcribe-rs`: CPU-optimized speech recognition with Parakeet models
   - `cpal`: Cross-platform audio I/O
-  - `vad-rs`: Voice Activity Detection
+  - `ort`: ONNX Runtime — runs the Silero VAD v6.2 graph directly (and the ONNX speech models via `transcribe-rs`); `earshot` is the alternative VAD backend
   - `rdev`: Global keyboard shortcuts and system events
   - `rubato`: Audio resampling
 
@@ -116,6 +131,17 @@ handy --start-hidden            # Start without showing the main window
 handy --no-tray                 # Start without the system tray icon
 handy --debug                   # Enable debug mode with verbose logging
 handy --help                    # Show all available flags
+```
+
+**Headless transcription** (runs the batch path without a microphone and exits; the model must already be installed):
+
+```bash
+handy --transcribe-file recording.wav          # mono WAV: 16/24-bit PCM or 32-bit float, any sample rate
+handy -f recording.wav --model <model-id>      # pick a model instead of the selected one
+handy -f recording.wav --device-index 0        # GPU device for GGUF models
+handy -f recording.wav --repeat 3 --json       # timing runs, machine-readable output
+handy --list-models                            # installed model ids
+handy --list-devices                           # GPU devices
 ```
 
 Flags can be combined for autostart scenarios:

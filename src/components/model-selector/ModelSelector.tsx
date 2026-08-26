@@ -199,9 +199,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     }
     let cancelled = false;
     commands.getModelQuantVariants(id).then((result) => {
-      if (!cancelled && result.status === "ok") {
-        setQuantVariants(result.data ?? null);
-      }
+      if (cancelled) return;
+      // On error clear the list too, otherwise the previous model family's
+      // quant pill and benchmark rows keep showing for the new model.
+      setQuantVariants(result.status === "ok" ? (result.data ?? null) : null);
     });
     return () => {
       cancelled = true;
@@ -273,15 +274,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
 
   const handleQuantDownload = (variant: QuantVariant) => {
     setPendingDownloads((prev) => new Set(prev).add(variant.model_id));
+    // The command resolves only when the download has finished, failed or
+    // been cancelled, so the pending marker is cleared however it settles —
+    // otherwise a cancel that resolves `ok` left the row on "Downloading 0%".
     void commands.downloadModelQuant(variant.model_id).then((result) => {
       if (result.status === "error") {
         console.error("Failed to download quant:", result.error);
-        setPendingDownloads((prev) => {
-          const next = new Set(prev);
-          next.delete(variant.model_id);
-          return next;
-        });
       }
+      setPendingDownloads((prev) => {
+        if (!prev.has(variant.model_id)) return prev;
+        const next = new Set(prev);
+        next.delete(variant.model_id);
+        return next;
+      });
     });
   };
 

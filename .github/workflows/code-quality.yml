@@ -43,7 +43,7 @@ jobs:
       - name: Check translation consistency
         run: bun run check:translations
 
-      - name: Run ESLint
+      - name: Run oxlint
         run: bun run lint
 
       - name: Run prettier

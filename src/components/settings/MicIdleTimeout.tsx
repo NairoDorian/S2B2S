@@ -8,6 +8,13 @@ import { useSettings } from "../../hooks/useSettings";
 
 type TimeoutUnit = "seconds" | "minutes";
 
+// Keep the idle timeout within a sane band: at least one unit, at most a day.
+const MIN_TIMEOUT = 1;
+const MAX_TIMEOUT: Record<TimeoutUnit, number> = {
+  seconds: 86_400,
+  minutes: 1_440,
+};
+
 export const MicIdleTimeout: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
@@ -17,6 +24,28 @@ export const MicIdleTimeout: React.FC = () => {
   const unit = (getSetting("mic_idle_timeout_unit") ??
     "seconds") as TimeoutUnit;
   const infinite = getSetting("mic_idle_infinite") ?? false;
+
+  // Draft the number locally and commit on blur/Enter: a controlled input
+  // that writes the setting on every keystroke can't be cleared (backspacing
+  // to "" is rejected and the next digit gets appended → 30 becomes 305) and
+  // hits the settings store once per digit.
+  const [draft, setDraft] = React.useState(String(value));
+  React.useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commitDraft = () => {
+    const parsed = parseInt(draft, 10);
+    if (isNaN(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(Math.max(parsed, MIN_TIMEOUT), MAX_TIMEOUT[unit]);
+    setDraft(String(clamped));
+    if (clamped !== value) {
+      updateSetting("mic_idle_timeout_value", clamped);
+    }
+  };
 
   if (!lazyClose) return null;
 
@@ -63,14 +92,17 @@ export const MicIdleTimeout: React.FC = () => {
               >
                 <Input
                   type="number"
-                  min={1}
-                  value={value}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    if (!isNaN(v) && v >= 1) {
-                      updateSetting("mic_idle_timeout_value", v);
+                  min={MIN_TIMEOUT}
+                  max={MAX_TIMEOUT[unit]}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={commitDraft}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.currentTarget.blur();
                     }
                   }}
+                  disabled={isUpdating("mic_idle_timeout_value")}
                   variant="compact"
                 />
               </SettingContainer>

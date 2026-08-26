@@ -28,9 +28,9 @@ pub fn redact_text(text: &str) -> &str {
 pub fn init_windows_process_performance() {
     use windows::Win32::Media::timeBeginPeriod;
     use windows::Win32::System::Threading::{
-        GetCurrentProcess, HIGH_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-        PROCESS_POWER_THROTTLING_STATE, ProcessPowerThrottling, SetPriorityClass,
-        SetProcessInformation,
+        GetCurrentProcess, HIGH_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+        PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_STATE,
+        ProcessPowerThrottling, SetPriorityClass, SetProcessInformation,
     };
 
     unsafe {
@@ -44,7 +44,7 @@ pub fn init_windows_process_performance() {
         // 2. Disable Windows 11 background power throttling (EcoQoS / Efficiency Mode)
         // so threads are not relegated to E-cores or downclocked when Handy is in the system tray.
         let mut throttling_state = PROCESS_POWER_THROTTLING_STATE {
-            Version: 1, // PROCESS_POWER_THROTTLING_CURRENT_VERSION
+            Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
             ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
             StateMask: 0, // Disable throttling
         };
@@ -60,7 +60,9 @@ pub fn init_windows_process_performance() {
             log::info!("Disabled Windows EcoQoS power throttling for Handy");
         }
 
-        // 3. Request 1ms global system timer resolution
+        // 3. Request 1ms global system timer resolution. Deliberately never
+        //    paired with timeEndPeriod: the request is meant to last for the
+        //    process lifetime and Windows releases it at exit.
         let timer_res = timeBeginPeriod(1);
         if timer_res == 0 {
             log::info!("Set Windows system timer resolution to 1ms (timeBeginPeriod)");

@@ -141,7 +141,6 @@
     "modelUnloaded": "Модель выгружена",
     "noModelDownloadRequired": "Нет модели – требуется загрузка",
     "deleteModel": "Удалить {{modelName}}",
-    "downloadSpeed": "{{speed}} МБ/с",
     "capabilities": {
       "languageSelection": "Поддерживает несколько языков ввода",
       "languageCount": "{{total}} языков",
@@ -200,6 +199,10 @@
           "transcribe_with_post_process": {
             "name": "Горячая клавиша постобработки",
             "description": "Специальное сочетание клавиш для ИИ-постобработки вашей транскрипции."
+          },
+          "multi_stt_transcribe": {
+            "name": "Multi STT Shortcut",
+            "description": "Keyboard shortcut to record and transcribe with multiple STT models"
           }
         },
         "errors": {
@@ -379,11 +382,11 @@
         "description": "Отфильтровывает тишину из записей. Модели с поддержкой потоковой обработки используют более длинный «хвост» VAD; отключение VAD записывает необработанный звук."
       },
       "vadBackend": {
-        "title": "Движок определения голоса",
-        "description": "Выберите детектор для фильтрации тишины. Earshot — экспериментальный; вернитесь к Silero, если речь обрезается или шум сохраняется.",
+        "title": "Бэкенд обнаружения голосовой активности",
+        "description": "Экспериментальная реализация детектора. Silero остается стабильным по умолчанию.",
         "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
+          "silero": "Silero VAD",
+          "earshot": "Earshot VAD (экспериментальный)"
         }
       },
       "fillerWordRemoval": {
@@ -400,12 +403,6 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
-      },
-      "vadBackend": {
-        "title": "Бэкенд обнаружения голосовой активности",
-        "description": "Экспериментальная реализация детектора. Silero остается стабильным по умолчанию.",
-        "silero": "Silero VAD",
-        "earshot": "Earshot VAD (экспериментальный)"
       }
     },
     "postProcessing": {
@@ -655,7 +652,8 @@
     "open": "Открыть",
     "copy": "Копировать",
     "clear": "Очистить",
-    "noOptionsFound": "Вариантов не найдено"
+    "noOptionsFound": "Вариантов не найдено",
+    "downloadSpeed": "{{speed}} МБ/с"
   },
   "accessibility": {
     "permissionsDescription": "Handy необходимы разрешения на доступ для ввода расшифрованного текста.",
@@ -716,8 +714,7 @@
       "description": "Run multiple speech-to-text models simultaneously and merge their results"
     },
     "shortcut": {
-      "title": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to trigger multi-model transcription"
+      "title": "Multi STT Shortcut"
     },
     "models": {
       "title": "Additional Models",
@@ -728,8 +725,6 @@
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
-      "loadingModels": "Loading models...",
-      "noModelsAvailable": "No additional models available",
       "loaded": "Loaded",
       "notLoaded": "Not loaded",
       "loadModel": "Load Model",
@@ -738,8 +733,6 @@
       "unloadingModel": "Unloading...",
       "model2Language": "Language for Second Model",
       "model3Language": "Language for Third Model",
-      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
-      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English"
@@ -758,17 +751,10 @@
     },
     "status": {
       "title": "Model Status",
-      "modelsLoaded": "Models loaded in memory",
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary"
-    }
-  },
-  "bindings": {
-    "multi_stt_transcribe": {
-      "name": "Multi STT Shortcut",
-      "description": "Keyboard shortcut to record and transcribe with multiple STT models"
     }
   }
 }

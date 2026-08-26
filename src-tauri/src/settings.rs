@@ -23,13 +23,6 @@ pub enum NativeStreamingLatencyPreset {
     Accurate,
 }
 
-impl NativeStreamingLatencyPreset {
-    /// All presets in the slider order the UI iterates (fastest → most accurate).
-    #[allow(dead_code)]
-    pub fn all_presets() -> [Self; 4] {
-        [Self::Fastest, Self::Fast, Self::Balanced, Self::Accurate]
-    }
-}
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -575,8 +568,6 @@ pub struct AppSettings {
     pub multi_stt_keep_extra_models_loaded: bool,
     #[serde(default)]
     pub multi_stt_merge_prompt: Option<LLMPrompt>,
-    #[serde(default)]
-    pub multi_stt_selected_merge_prompt_id: Option<String>,
     /// Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
     /// to boost CPU performance before transcription starts (FULL POWER) and
     /// restore normal power after the merge/paste completes.
@@ -990,8 +981,11 @@ pub fn get_default_settings() -> AppSettings {
 
     #[cfg(target_os = "windows")]
     let default_multi_stt_shortcut = "ctrl+alt+space";
+    // `option` and `alt` are the same modifier on macOS, so the old
+    // "option+alt+space" default was really just "option+space" — identical to
+    // the primary transcribe shortcut.
     #[cfg(target_os = "macos")]
-    let default_multi_stt_shortcut = "option+alt+space";
+    let default_multi_stt_shortcut = "ctrl+option+space";
     #[cfg(target_os = "linux")]
     let default_multi_stt_shortcut = "ctrl+alt+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1133,7 +1127,6 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_translate_model_4: false,
         multi_stt_keep_extra_models_loaded: true,
         multi_stt_merge_prompt: None,
-        multi_stt_selected_merge_prompt_id: None,
         multi_stt_performance_mode_enabled: false,
         multi_stt_performance_mode_trigger_on_start: false,
         multi_stt_performance_mode_full_power_shortcut: default_multi_stt_full_power_shortcut(),

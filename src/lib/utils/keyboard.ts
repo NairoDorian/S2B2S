@@ -216,3 +216,46 @@ export const normalizeKey = (key: string): string => {
   }
   return key;
 };
+
+/**
+ * Keys the Rust side can turn into simulated keystrokes — mirrors
+ * `input.rs::parse_key_token`. Used to validate the Multi-STT performance-mode
+ * shortcuts before they are saved: anything else is silently dropped by the
+ * backend at run time.
+ */
+const SIMULATABLE_NAMED_KEYS = new Set([
+  "ctrl",
+  "control",
+  "shift",
+  "alt",
+  "option",
+  "cmd",
+  "command",
+  "super",
+  "win",
+  "windows",
+  "meta",
+  "space",
+  "enter",
+  "return",
+  "esc",
+  "escape",
+  "tab",
+  "backspace",
+  "delete",
+  "up",
+  "down",
+  "left",
+  "right",
+  "capslock",
+  "caps_lock",
+  "caps lock",
+]);
+
+export function isSimulatableKey(token: string): boolean {
+  const key = token.toLowerCase();
+  if (SIMULATABLE_NAMED_KEYS.has(key)) return true;
+  if (/^f([1-9]|1\d|2[0-4])$/.test(key)) return true;
+  // Single printable character (letters, digits, punctuation).
+  return [...key].length === 1;
+}

@@ -42,13 +42,19 @@ pub fn unload_model_manually(
 
 #[tauri::command]
 #[specta::specta]
-pub fn unload_extra_model(
+pub async fn unload_extra_model(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
 ) -> Result<(), String> {
-    transcription_manager
-        .unload_extra_model(&model_id)
-        .map_err(|e| format!("Failed to unload extra model: {}", e))
+    // Dropping a multi-GB engine takes hundreds of milliseconds; keep it off
+    // the main thread so the settings UI doesn't freeze.
+    let tm = Arc::clone(&*transcription_manager);
+    tauri::async_runtime::spawn_blocking(move || {
+        tm.unload_extra_model(&model_id)
+            .map_err(|e| format!("Failed to unload extra model: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Unload task panicked: {}", e))?
 }
 
 #[tauri::command]
@@ -67,10 +73,13 @@ pub async fn load_extra_model(
 ) -> Result<(), String> {
     let tm = Arc::clone(&*transcription_manager);
     let model_id_clone = model_id.clone();
+    // Propagate the load error: the frontend toasts success on `Ok`, so
+    // swallowing it here showed "loaded" for a model that wasn't downloaded.
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = tm.load_extra_model(&model_id_clone);
+        tm.load_extra_model(&model_id_clone)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Load task panicked: {}", e))?;
-    Ok(())
+    .map_err(|e| format!("Load task panicked: {}", e))?
 }

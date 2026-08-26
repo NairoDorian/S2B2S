@@ -2,7 +2,7 @@
 
 > **NOTE:** This is the `Handy_Multi_STT` fork. This branch adds **Multi-STT** mode —
 > running up to four STT models in parallel with optional LLM-based output merging.
-> See [AGENTS.md](AGENTS.md) for the full architecture.
+> See [AGENTS.md](../../../AGENTS.md) for the full architecture.
 
 Add user-facing release notes as Markdown files named by app version:
 

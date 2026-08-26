@@ -572,7 +572,14 @@ impl AudioRecordingManager {
     }
 
     fn schedule_lazy_close(&self, idle_timeout: Duration) {
+        // Bumping the generation also invalidates any close that was scheduled
+        // before the user switched the timeout to "infinite".
         let generation_id = self.close_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if idle_timeout == Duration::from_secs(u64::MAX) {
+            // "Never close": don't park a thread per recording that would
+            // sleep forever.
+            return;
+        }
         let app = self.app_handle.clone();
         std::thread::spawn(move || {
             std::thread::sleep(idle_timeout);
@@ -856,9 +863,13 @@ impl AudioRecordingManager {
 
             // Read once per session rather than per frame: the speech clock
             // keeps the tolerance it was started with for the whole recording.
-            let pause_hold_ms = get_settings(&self.app_handle).speech_pause_hold_ms;
+            let session_settings = get_settings(&self.app_handle);
+            let pause_hold_ms = session_settings.speech_pause_hold_ms;
+            // Only accumulate the native-rate raw tap when the user asked to
+            // save it; at 48 kHz float it is ~11 MB per minute otherwise wasted.
+            let capture_raw = session_settings.save_raw_audio;
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                match rec.start(vad_policy, pause_hold_ms) {
+                match rec.start(vad_policy, pause_hold_ms, capture_raw) {
                     Ok(receiver) => {
                         let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
                         *self.is_recording.lock().unwrap() = true;

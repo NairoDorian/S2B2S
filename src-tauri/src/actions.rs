@@ -3,12 +3,14 @@ use crate::TranscriptionCoordinator;
 use crate::apple_intelligence;
 use crate::audio_feedback::{SoundType, play_feedback_sound, play_feedback_sound_blocking};
 use crate::audio_toolkit::{VadPolicy, is_microphone_access_denied, is_no_input_device_error};
-use crate::managers::audio::AudioRecordingManager;
+use crate::managers::audio::{AudioRecordingManager, RecordingReadiness};
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{APPLE_INTELLIGENCE_PROVIDER_ID, AppSettings, OverlayStyle, get_settings};
+use crate::settings::{
+    APPLE_INTELLIGENCE_PROVIDER_ID, AppSettings, OverlayStyle, PasteMethod, get_settings,
+};
 use crate::shortcut;
 use crate::tray::{TrayIconState, set_tray_state};
 use crate::utils::{
@@ -116,6 +118,72 @@ where
 
 fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool {
     style == OverlayStyle::Live && is_streaming
+}
+
+/// Direct streaming types the live text into the foreground app only for
+/// plain transcription. When the final text will be post-processed or merged
+/// (Multi-STT), typing the raw stream first would leave two versions in the
+/// app, so the stream becomes a *preview only*: it is shown in the Live
+/// overlay and the final text is pasted through the default clipboard paste.
+fn live_stream_is_preview_only(settings: &AppSettings, final_text_is_processed: bool) -> bool {
+    final_text_is_processed && settings.paste_method == PasteMethod::DirectStreaming
+}
+
+/// The overlay to show: the user's choice, except that a preview-only live
+/// stream forces the Live overlay (when the model can stream) so the user
+/// still sees the transcript as it forms.
+fn effective_overlay_style(
+    settings: &AppSettings,
+    preview_only: bool,
+    model_supports_streaming: bool,
+) -> OverlayStyle {
+    if preview_only && model_supports_streaming {
+        OverlayStyle::Live
+    } else {
+        settings.overlay_style
+    }
+}
+
+/// Paste method override for the final text: a preview-only live stream
+/// pastes its processed result with Ctrl+V instead of typing it.
+fn final_paste_method(preview_only: bool) -> Option<PasteMethod> {
+    preview_only.then_some(PasteMethod::CtrlV)
+}
+
+/// Wait (off-thread) for the first real microphone samples, then emit the
+/// overlay's `recording-ready` cue, play the start chime and apply mute — all
+/// guarded by the readiness generation so a recording that was stopped or
+/// cancelled in the meantime never gets a stale cue.
+///
+/// `TranscribeAction::start` carries an inline copy of this sequence (kept
+/// inline there to stay diff-compatible with upstream); `MultiSttAction` uses
+/// this helper so the two paths cannot drift apart again.
+fn spawn_recording_ready_cue(
+    app: &AppHandle,
+    rm: &Arc<AudioRecordingManager>,
+    readiness: RecordingReadiness,
+) {
+    let generation = readiness.generation();
+    let app_clone = app.clone();
+    let rm_clone = Arc::clone(rm);
+    std::thread::spawn(move || {
+        if !readiness.wait() {
+            debug!("Microphone readiness wait ended without receiving samples");
+            return;
+        }
+        if !rm_clone.is_recording_readiness_current(generation) {
+            debug!("Microphone became ready for an inactive recording");
+            return;
+        }
+        debug!("Microphone is receiving samples; recording is ready");
+        utils::emit_recording_ready(&app_clone);
+        if rm_clone.is_recording_readiness_current(generation) {
+            play_feedback_sound_blocking(&app_clone, SoundType::Start);
+        }
+        if rm_clone.is_recording_readiness_current(generation) {
+            rm_clone.apply_mute();
+        }
+    });
 }
 
 async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
@@ -529,8 +597,11 @@ impl ShortcutAction for TranscribeAction {
         } else {
             VadPolicy::Offline
         };
+        // With post-processing the live stream is a preview only (see
+        // `live_stream_is_preview_only`): no live typing, Live overlay forced.
+        let preview_only = live_stream_is_preview_only(&settings, self.post_process);
         if model_supports_streaming {
-            tm.start_stream();
+            tm.start_stream(!preview_only);
         }
         let plan_elapsed = plan_started.elapsed();
 
@@ -538,7 +609,7 @@ impl ShortcutAction for TranscribeAction {
         // doesn't stream (or whose capability is not known yet) gets the compact
         // pill instead of an oversized transparent live window.
         let overlay_started = Instant::now();
-        match settings.overlay_style {
+        match effective_overlay_style(&settings, preview_only, model_supports_streaming) {
             OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
             OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
@@ -667,7 +738,9 @@ impl ShortcutAction for TranscribeAction {
         // the larger panel, but it still switches from listening to a working
         // spinner while the stream finalizes. Non-streaming paths use the
         // compact transcribing pill (None no-ops in show_*).
-        let style = get_settings(app).overlay_style;
+        let stop_settings = get_settings(app);
+        let preview_only = live_stream_is_preview_only(&stop_settings, self.post_process);
+        let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
         // Capture this before finalizing the stream so every later working state
         // targets the same overlay that was shown for this transcription.
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
@@ -769,10 +842,13 @@ impl ShortcutAction for TranscribeAction {
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
                     let stream_finalized = tm.finalize_stream();
+                    // Plain transcription with direct streaming: the writer
+                    // already typed the text, so no final paste follows. With
+                    // post-processing the stream was preview-only (nothing was
+                    // typed) and the polished text is pasted below.
                     let was_direct_stream_written = matches!(&stream_finalized, Ok(Some(text)) if !text.trim().is_empty())
-                        && get_settings(&ah).paste_method
-                            == crate::settings::PasteMethod::DirectStreaming
-                        && !post_process;
+                        && settings.paste_method == PasteMethod::DirectStreaming
+                        && !preview_only;
 
                     let transcription_result = match stream_finalized {
                         // A finalized stream with usable text wins. An empty result
@@ -876,6 +952,9 @@ impl ShortcutAction for TranscribeAction {
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
+                                // Preview-only live stream: the polished text goes
+                                // in through the default clipboard paste.
+                                let paste_override = final_paste_method(preview_only);
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
@@ -884,7 +963,11 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    match utils::paste(final_text, ah_clone.clone()) {
+                                    match utils::paste_with_method(
+                                        final_text,
+                                        ah_clone.clone(),
+                                        paste_override,
+                                    ) {
                                         Ok(()) => debug!(
                                             "Text pasted successfully in {:?}",
                                             paste_time.elapsed()
@@ -1068,7 +1151,12 @@ async fn multi_stt_merge_transcriptions(
             .await
         {
             Ok(Some(content)) => {
-                let content = content.trim().to_string();
+                // Same sanitising as post-processing: a reasoning model on the
+                // same provider must not paste its <think> block, and invisible
+                // characters must not leak into the pasted text.
+                let content = strip_invisible_chars(strip_think_block(&content))
+                    .trim()
+                    .to_string();
                 debug!(
                     "Multi-STT merge succeeded. Output length: {} chars",
                     content.len()
@@ -1089,9 +1177,13 @@ async fn multi_stt_merge_transcriptions(
         };
 
     // Clean up server-side conversation state on llama.cpp servers to prevent
-    // memory accumulation across many merge round-trips.  This is a no-op for
-    // backends that don't expose `/chat/erase_all`.
-    crate::llm_client::erase_llama_server_conversations(&provider.base_url).await;
+    // memory accumulation across many merge round-trips. Only the "custom"
+    // provider can point at a llama.cpp server; hosted providers (OpenAI,
+    // Anthropic, OpenRouter, ...) have no `/chat/erase_all` and would just
+    // receive a pointless unauthenticated POST after every merge.
+    if provider.id == "custom" {
+        crate::llm_client::erase_llama_server_conversations(&provider.base_url).await;
+    }
 
     merge_result
 }
@@ -1211,41 +1303,34 @@ impl ShortcutAction for MultiSttAction {
         } else {
             VadPolicy::Offline
         };
+        // Multi-STT always merges/concatenates, so the primary model's live
+        // stream is a preview only: never typed into the app, Live overlay
+        // forced when the model can stream.
+        let preview_only = live_stream_is_preview_only(&settings, true);
         if model_supports_streaming {
-            tm.start_stream();
+            tm.start_stream(false);
         }
 
-        match settings.overlay_style {
+        match effective_overlay_style(&settings, preview_only, model_supports_streaming) {
             OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
             OverlayStyle::None => {}
         }
 
+        debug!("Multi-STT microphone mode - always_on: {}", is_always_on);
+
+        // Mirrors TranscribeAction::start: the start chime, mute and the
+        // overlay's `recording-ready` cue all follow the first real microphone
+        // callback rather than a fixed delay, so slow Bluetooth/USB devices
+        // don't chime before they are actually capturing.
         let mut recording_error: Option<String> = None;
-        if is_always_on {
-            debug!("Multi-STT always-on mode: Playing audio feedback immediately");
-            let rm_clone = Arc::clone(&rm);
-            let app_clone = app.clone();
-            std::thread::spawn(move || {
-                play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                rm_clone.apply_mute();
-            });
-            if let Err(e) = rm.try_start_recording(&binding_id, vad_policy) {
-                recording_error = Some(e);
+        match rm.try_start_recording(&binding_id, vad_policy) {
+            Ok(readiness) => {
+                spawn_recording_ready_cue(app, &rm, readiness);
             }
-        } else {
-            debug!("Multi-STT on-demand mode: Starting recording first, then audio feedback");
-            match rm.try_start_recording(&binding_id, vad_policy) {
-                Ok(_) => {
-                    let app_clone = app.clone();
-                    let rm_clone = Arc::clone(&rm);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                        play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                        rm_clone.apply_mute();
-                    });
-                }
-                Err(e) => recording_error = Some(e),
+            Err(e) => {
+                debug!("Multi-STT: failed to start recording: {}", e);
+                recording_error = Some(e);
             }
         }
 
@@ -1301,7 +1386,9 @@ impl ShortcutAction for MultiSttAction {
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
 
         set_tray_state(app, TrayIconState::Transcribing);
-        let style = get_settings(app).overlay_style;
+        let stop_settings = get_settings(app);
+        let preview_only = live_stream_is_preview_only(&stop_settings, true);
+        let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
         if use_streaming_overlay {
             tm.emit_stream_working(StreamWorkKind::Transcribing);
@@ -1322,7 +1409,6 @@ impl ShortcutAction for MultiSttAction {
                 binding_id
             );
 
-            let _stop_recording_time = Instant::now();
             if let Some(recorded) = rm.stop_recording(&binding_id, cancel_generation) {
                 let samples = recorded.stt_samples;
                 debug!(
@@ -1420,7 +1506,8 @@ impl ShortcutAction for MultiSttAction {
                     .recordings_dir()
                     .join(format!("handy-multi-{recording_timestamp}.wav"));
                 let wav_for_save = wav_path.clone();
-                let _wav_handle = tauri::async_runtime::spawn_blocking(move || {
+                let wav_sample_count = samples_for_wav.len();
+                let wav_handle = tauri::async_runtime::spawn_blocking(move || {
                     if save_is_raw {
                         crate::audio_toolkit::save_raw_wav_file(
                             &wav_for_save,
@@ -1709,6 +1796,17 @@ impl ShortcutAction for MultiSttAction {
                     output4.len()
                 );
 
+                // A cancel that landed during the (multi-second) parallel
+                // decode must not re-show the overlay, call the LLM, save a
+                // history row or paste. Same gate TranscribeAction applies
+                // before its output handling.
+                if rm.was_cancelled_since(cancel_generation) {
+                    debug!("Multi-STT: Cancelled during transcription");
+                    utils::hide_recording_overlay(&ah);
+                    set_tray_state(&ah, TrayIconState::Idle);
+                    return;
+                }
+
                 // === MERGE TRANSCRIPTIONS ===
                 let settings_for_merge = get_settings(&ah);
                 let merge_requested = has_merge_prompt(&settings_for_merge);
@@ -1719,15 +1817,27 @@ impl ShortcutAction for MultiSttAction {
                         show_processing_overlay(&ah);
                     }
 
-                    match multi_stt_merge_transcriptions(
-                        &settings_for_merge,
-                        &output1,
-                        &output2,
-                        &output3,
-                        &output4,
+                    // Poll for cancellation while the LLM round-trip is in
+                    // flight so Escape aborts the merge instead of waiting on it.
+                    let Some(merge_outcome) = complete_unless_cancelled(
+                        multi_stt_merge_transcriptions(
+                            &settings_for_merge,
+                            &output1,
+                            &output2,
+                            &output3,
+                            &output4,
+                        ),
+                        || rm.was_cancelled_since(cancel_generation),
                     )
                     .await
-                    {
+                    else {
+                        debug!("Multi-STT: Cancelled during LLM merge");
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                        return;
+                    };
+
+                    match merge_outcome {
                         Some(content) => (content, true),
                         None => {
                             // Fallback: concatenate with newlines
@@ -1797,6 +1907,36 @@ impl ShortcutAction for MultiSttAction {
                     });
                 }
 
+                // The WAV was written concurrently with the decode; only record
+                // a history row that points at a file that actually exists and
+                // holds every sample (mirrors TranscribeAction).
+                let wav_saved = match wav_handle.await {
+                    Ok(Ok(())) => {
+                        match crate::audio_toolkit::verify_wav_file(&wav_path, wav_sample_count) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                error!("Multi-STT: WAV verification failed: {}", e);
+                                false
+                            }
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        error!("Multi-STT: Failed to save WAV file: {}", e);
+                        false
+                    }
+                    Err(e) => {
+                        error!("Multi-STT: WAV save task panicked: {}", e);
+                        false
+                    }
+                };
+
+                if rm.was_cancelled_since(cancel_generation) {
+                    debug!("Multi-STT: Cancelled before history save");
+                    utils::hide_recording_overlay(&ah);
+                    set_tray_state(&ah, TrayIconState::Idle);
+                    return;
+                }
+
                 // Save to history in background (parallel with paste for speed)
                 let multi_transcript = format!(
                     "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\nModel 4: {}\n{}\n=== Merged ===\n{}",
@@ -1817,17 +1957,21 @@ impl ShortcutAction for MultiSttAction {
                     .as_ref()
                     .map(|p| p.prompt.clone());
                 let merged_for_history = merged.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    if let Err(err) = hm_clone.save_entry(
-                        file_name,
-                        multi_transcript,
-                        merge_requested,
-                        Some(merged_for_history),
-                        merge_prompt_text,
-                    ) {
-                        error!("Failed to save multi-STT history entry: {}", err);
-                    }
-                });
+                if wav_saved {
+                    tauri::async_runtime::spawn_blocking(move || {
+                        if let Err(err) = hm_clone.save_entry(
+                            file_name,
+                            multi_transcript,
+                            merge_requested,
+                            Some(merged_for_history),
+                            merge_prompt_text,
+                        ) {
+                            error!("Failed to save multi-STT history entry: {}", err);
+                        }
+                    });
+                } else {
+                    warn!("Multi-STT: Skipping history entry because the WAV could not be saved");
+                }
 
                 // Paste merged result (runs concurrently with background history save)
                 if merged.is_empty() {
@@ -1855,6 +1999,11 @@ impl ShortcutAction for MultiSttAction {
                     let normal_shortcut = normal_settings
                         .multi_stt_performance_mode_normal_shortcut
                         .clone();
+                    // The merged text is always a processed result: with direct
+                    // streaming configured the live stream was preview-only and
+                    // the result goes in through the default clipboard paste.
+                    let paste_override =
+                        final_paste_method(live_stream_is_preview_only(&normal_settings, true));
                     ah.run_on_main_thread(move || {
                         if rm_for_paste.was_cancelled_since(cancel_generation) {
                             debug!("Multi-STT: Cancelled before paste");
@@ -1862,7 +2011,8 @@ impl ShortcutAction for MultiSttAction {
                             set_tray_state(&ah_clone, TrayIconState::Idle);
                             return;
                         }
-                        match utils::paste(final_text, ah_clone.clone()) {
+                        match utils::paste_with_method(final_text, ah_clone.clone(), paste_override)
+                        {
                             Ok(()) => debug!("Multi-STT: Text pasted successfully"),
                             Err(e) => {
                                 error!("Multi-STT: Failed to paste transcription: {}", e);
@@ -1905,11 +2055,10 @@ impl ShortcutAction for MultiSttAction {
 }
 
 fn has_merge_prompt(settings: &AppSettings) -> bool {
-    settings.multi_stt_merge_prompt.is_some()
-        && !settings
-            .multi_stt_merge_prompt
-            .as_ref()
-            .is_some_and(|p| p.prompt.trim().is_empty())
+    settings
+        .multi_stt_merge_prompt
+        .as_ref()
+        .is_some_and(|p| !p.prompt.trim().is_empty())
 }
 
 // Static Action Map
@@ -1943,10 +2092,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
+        complete_unless_cancelled, effective_overlay_style, final_paste_method,
+        is_blank_transcription, live_stream_is_preview_only, should_use_streaming_overlay,
         strip_think_block,
     };
-    use crate::settings::OverlayStyle;
+    use crate::settings::{AppSettings, OverlayStyle, PasteMethod};
     use std::future;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -2026,5 +2176,52 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    fn settings_with(paste_method: PasteMethod, overlay_style: OverlayStyle) -> AppSettings {
+        let mut settings = crate::settings::get_default_settings();
+        settings.paste_method = paste_method;
+        settings.overlay_style = overlay_style;
+        settings
+    }
+
+    #[test]
+    fn direct_streaming_types_live_only_for_plain_transcription() {
+        let direct = settings_with(PasteMethod::DirectStreaming, OverlayStyle::Minimal);
+        assert!(!live_stream_is_preview_only(&direct, false));
+        assert!(live_stream_is_preview_only(&direct, true));
+
+        let clipboard = settings_with(PasteMethod::CtrlV, OverlayStyle::Minimal);
+        assert!(!live_stream_is_preview_only(&clipboard, true));
+    }
+
+    #[test]
+    fn preview_only_stream_forces_live_overlay_when_model_streams() {
+        let settings = settings_with(PasteMethod::DirectStreaming, OverlayStyle::Minimal);
+        assert_eq!(
+            effective_overlay_style(&settings, true, true),
+            OverlayStyle::Live
+        );
+        // No stream to preview: keep the user's choice.
+        assert_eq!(
+            effective_overlay_style(&settings, true, false),
+            OverlayStyle::Minimal
+        );
+        // Plain transcription: keep the user's choice.
+        assert_eq!(
+            effective_overlay_style(&settings, false, true),
+            OverlayStyle::Minimal
+        );
+        let none = settings_with(PasteMethod::DirectStreaming, OverlayStyle::None);
+        assert_eq!(
+            effective_overlay_style(&none, true, true),
+            OverlayStyle::Live
+        );
+    }
+
+    #[test]
+    fn processed_results_paste_with_ctrl_v_when_stream_was_preview_only() {
+        assert_eq!(final_paste_method(true), Some(PasteMethod::CtrlV));
+        assert_eq!(final_paste_method(false), None);
     }
 }

@@ -35,18 +35,27 @@ pub struct RecordedAudio {
 
 enum Cmd {
     /// Begin capturing. Carries the pause tolerance for this session's speech
-    /// clock and the send timestamp so the consumer can log how long the command
-    /// sat in the channel, plus a one-shot acknowledgement sent only after the
-    /// first microphone sample chunk is processed.
-    Start(VadPolicy, u32, Instant, mpsc::Sender<()>),
+    /// clock, whether to keep the native-rate raw tap (only needed when the
+    /// recording will be saved unresampled), the send timestamp so the consumer
+    /// can log how long the command sat in the channel, plus a one-shot
+    /// acknowledgement sent only after the first microphone sample chunk is
+    /// processed.
+    Start {
+        vad_policy: VadPolicy,
+        pause_hold_ms: u32,
+        capture_raw: bool,
+        sent_at: Instant,
+        ready_tx: mpsc::Sender<()>,
+    },
     Stop(mpsc::Sender<RecordedAudio>),
     Shutdown,
 }
 
-/// Length of one resampled frame handed to the VAD. Not a free choice: Silero
-/// v5/v6 accepts exactly 512 samples at 16 kHz, so the capture pipeline is
-/// framed to match and one frame is one VAD decision. Shared with the speech
-/// clock so the two can never disagree about how much audio a decision covers.
+/// Frame length the unit tests assume (Silero's 32 ms). At runtime the frame
+/// length is whatever the active detector reports via `frame_samples()` —
+/// 512 samples / 32 ms for Silero, 256 / 16 ms for Earshot, 480 / 30 ms with
+/// VAD disabled — and the consumer derives everything (hangover, onset,
+/// speech-clock tick) from that value so one frame is always one VAD decision.
 #[cfg(test)]
 const FRAME_MS: u64 = constants::VAD_FRAME_MS;
 
@@ -168,10 +177,10 @@ pub type SpeechActivityCallback = Arc<dyn Fn(SpeechActivity) + Send + Sync + 'st
 ///
 /// Driven by [`VoiceActivityDetector::last_frame_voiced`] — the *raw* per-frame
 /// verdict — rather than by what `push_frame` returns. The smoothing wrapper
-/// keeps reporting speech through a hangover tail up to 1.76 s long in
-/// streaming mode, and counting that would inflate the measured speech time by
-/// more than a second per pause, which in turn deflates the words-per-minute
-/// figure computed from it.
+/// keeps reporting speech through a hangover tail of ~1.66 s in streaming mode
+/// (`VAD_STREAMING_HANGOVER_MS` rounded up to whole frames), and counting that
+/// would inflate the measured speech time by more than a second per pause,
+/// which in turn deflates the words-per-minute figure computed from it.
 ///
 /// Gaps shorter than `hold_ms` are treated as part of the same utterance and
 /// counted retroactively once speech resumes; gaps that reach `hold_ms` end the
@@ -646,36 +655,42 @@ impl AudioRecorder {
         }
     }
 
-    /// Queue a recording start and return a one-shot receiver that resolves only
-    /// after the first real microphone sample chunk has entered the capture path.
-    /// `Stream::play()` returning is not sufficient: some Bluetooth and USB
-    /// devices take much longer to begin delivering callbacks.
-    /// Begin a recording session. `pause_hold_ms` is how long silence must
-    /// last before this session's speech clock stops counting (see
-    /// [`SpeechClock`]).
+    /// Begin a recording session and return a one-shot receiver that resolves
+    /// only after the first real microphone sample chunk has entered the
+    /// capture path. `Stream::play()` returning is not sufficient: some
+    /// Bluetooth and USB devices take much longer to begin delivering
+    /// callbacks.
+    ///
+    /// `pause_hold_ms` is how long silence must last before this session's
+    /// speech clock stops counting (see [`SpeechClock`]). `capture_raw` keeps
+    /// the native-rate, pre-resample/pre-VAD samples so they can be saved as-is;
+    /// leave it off unless the recording will actually be written unresampled.
     pub fn start(
         &self,
         vad_policy: VadPolicy,
         pause_hold_ms: u32,
+        capture_raw: bool,
     ) -> Result<mpsc::Receiver<()>, Box<dyn std::error::Error>> {
         let tx = self
             .cmd_tx
             .as_ref()
             .ok_or_else(|| Error::other("Recorder is not open"))?;
         let (ready_tx, ready_rx) = mpsc::channel();
-        tx.send(Cmd::Start(
+        tx.send(Cmd::Start {
             vad_policy,
             pause_hold_ms,
-            Instant::now(),
+            capture_raw,
+            sent_at: Instant::now(),
             ready_tx,
-        ))?;
+        })?;
         Ok(ready_rx)
     }
 
     /// Milliseconds of actual speech in the most recent recording, as measured
-    /// by the VAD. Zero when VAD is disabled for the session is not possible —
-    /// every frame counts as speech in that mode — so a low value here really
-    /// does mean the microphone heard nothing worth decoding.
+    /// by the VAD. With VAD disabled for the session every frame counts as
+    /// speech, so this can never read zero for a recording that contained
+    /// audio — a low value here really does mean the microphone heard nothing
+    /// worth decoding.
     pub fn speech_ms(&self) -> u64 {
         self.speech_ms.load(Ordering::Relaxed)
     }
@@ -936,7 +951,7 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
 mod tests {
     use super::{
         AudioChunk, AudioRecorder, Cmd, FRAME_MS, SPEECH_HEARTBEAT_MS, SpeechClock,
-        handle_input_block, run_consumer,
+        handle_input_block, is_microphone_access_denied, is_no_input_device_error, run_consumer,
     };
     use std::{
         sync::{
@@ -1222,12 +1237,13 @@ mod tests {
 
         let (ready_tx, _ready_rx) = mpsc::channel();
         cmd_tx
-            .send(Cmd::Start(
-                super::VadPolicy::Offline,
-                500,
-                Instant::now(),
+            .send(Cmd::Start {
+                vad_policy: super::VadPolicy::Offline,
+                pause_hold_ms: 500,
+                capture_raw: true,
+                sent_at: Instant::now(),
                 ready_tx,
-            ))
+            })
             .expect("send start");
 
         // One second of audio at 16 kHz, in 100 ms chunks.
@@ -1268,6 +1284,46 @@ mod tests {
             "expected ~1s of speech from 1s of audio, got {peak}ms"
         );
     }
+
+    // Microphone error classification (restored after the v0.9.6 merge
+    // dropped upstream's copies of these tests).
+    #[test]
+    fn detects_access_is_denied() {
+        assert!(is_microphone_access_denied("Access is denied"));
+    }
+
+    #[test]
+    fn detects_permission_denied() {
+        assert!(is_microphone_access_denied("permission denied"));
+    }
+
+    #[test]
+    fn detects_windows_error_code() {
+        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_errors() {
+        assert!(!is_microphone_access_denied("device not found"));
+    }
+
+    #[test]
+    fn detects_no_input_device() {
+        assert!(is_no_input_device_error("No input device found"));
+    }
+
+    #[test]
+    fn detects_coreaudio_config_error() {
+        assert!(is_no_input_device_error(
+            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
+        ));
+    }
+
+    #[test]
+    fn does_not_match_other_errors_for_no_device() {
+        assert!(!is_no_input_device_error("permission denied"));
+        assert!(!is_no_input_device_error("device not found"));
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1305,6 +1361,8 @@ fn run_consumer(
     let mut processed_samples = Vec::<f32>::new();
     let mut raw_captured_samples = Vec::<f32>::new();
     let mut recording = false;
+    // Whether this session keeps the native-rate raw tap (set per Cmd::Start).
+    let mut capture_raw = false;
     let mut vad_policy = VadPolicy::Offline;
     // Reset on every Cmd::Start, which also supplies the session pause tolerance.
     let mut speech_clock = SpeechClock::new(onset_frames, 0, frame_ms, speech_ms);
@@ -1382,7 +1440,7 @@ fn run_consumer(
                 Err(e) => {
                     if *vad_errors == 0 {
                         log::error!(
-                            "VAD failed on a frame; passing audio through unfiltered                              for the rest of this recording: {e}"
+                            "VAD failed on a frame; passing audio through unfiltered for the rest of this recording: {e}"
                         );
                     }
                     *vad_errors += 1;
@@ -1423,7 +1481,13 @@ fn run_consumer(
         // ~100ms on Bluetooth) at every recording start.
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                Cmd::Start(policy, pause_hold_ms, sent_at, ready_tx) => {
+                Cmd::Start {
+                    vad_policy: policy,
+                    pause_hold_ms,
+                    capture_raw: raw_requested,
+                    sent_at,
+                    ready_tx,
+                } => {
                     log::debug!(
                         "Cmd::Start processed {:?} after send; capture begins with {} chunk",
                         sent_at.elapsed(),
@@ -1437,6 +1501,7 @@ fn run_consumer(
                     capture_ready_tx = Some(ready_tx);
                     stop_flag.store(false, Ordering::Relaxed);
                     vad_policy = policy;
+                    capture_raw = raw_requested;
                     processed_samples.clear();
                     raw_captured_samples.clear();
                     recording = true;
@@ -1466,7 +1531,9 @@ fn run_consumer(
                     // The chunk in hand arrived before the stop; it belongs to
                     // the recording, so feed it ahead of the drain below.
                     if let Some(AudioChunk::Samples(raw)) = pending.take() {
-                        raw_captured_samples.extend_from_slice(&raw);
+                        if capture_raw {
+                            raw_captured_samples.extend_from_slice(&raw);
+                        }
                         frame_resampler.push(&raw, &mut |frame: &[f32]| {
                             handle_frame(
                                 frame,
@@ -1489,7 +1556,9 @@ fn run_consumer(
                     loop {
                         match sample_rx.recv_timeout(Duration::from_secs(2)) {
                             Ok(AudioChunk::Samples(remaining)) => {
-                                raw_captured_samples.extend_from_slice(&remaining);
+                                if capture_raw {
+                                    raw_captured_samples.extend_from_slice(&remaining);
+                                }
                                 frame_resampler.push(&remaining, &mut |frame: &[f32]| {
                                     handle_frame(
                                         frame,
@@ -1591,7 +1660,9 @@ fn run_consumer(
         // are reset on Cmd::Start (visualizer.reset() / frame_resampler.reset()),
         // so they resume cleanly the moment recording begins.
         if recording {
-            raw_captured_samples.extend_from_slice(&raw);
+            if capture_raw {
+                raw_captured_samples.extend_from_slice(&raw);
+            }
 
             if let Some(buckets) = visualizer.feed(&raw) {
                 if let Some(cb) = &level_cb {
