@@ -166,3 +166,8 @@ lto = "thin"
 codegen-units = 16
 strip = true
 panic = "unwind"
+
+# Earshot is pure Rust; keep it optimised in dev builds so a debug app (and
+# tests/vad_backend_bench.rs) measure the real VAD cost, not an unoptimised one.
+[profile.dev.package.earshot]
+opt-level = 3

@@ -275,8 +275,19 @@ entered at `VAD_THRESHOLD` (0.3) but only left once the probability falls below
 signal hovering near it flap frame to frame, which shows up directly as a
 stuttering speech/silence indicator and a speech clock that stalls mid-word. The
 floor keeps the exit threshold above the ~0.0005 the model emits for true
-silence. `Hysteresis` in `silero.rs` is a pure struct, unit-tested without the
-model.
+silence. `Hysteresis` in `vad/mod.rs` is a pure struct, unit-tested without the
+model, and gates **both** backends — Earshot's 0.5 threshold gets the same
+enter/exit split, which is what keeps the speech indicator and clock stable
+after switching `vad_backend`.
+
+`src-tauri/tests/vad_backend_bench.rs` (opt-in, `HANDY_BENCH_WAV_DIR=<dir>`)
+runs Silero and Earshot side by side over real recordings and reports cost per
+frame, voiced fraction, kept seconds and frame agreement. Baseline on the
+maintainer's recordings (18 s, quiet room): 97.7 % frame agreement, identical
+kept audio (13.3 s), Earshot ≈ 2–3× cheaper per frame and 109 ms → 9 µs to
+construct; `earshot` is pinned to `opt-level = 3` in the dev profile so those
+numbers hold in debug builds. `docs/PLAN_TRANSCRIBE_CPP_ONLY.md` is the (not
+started) plan for going Earshot/transcribe.cpp-only.
 
 **Recordings with no speech never reach a decoder.** `SpeechClock` publishes its
 running total to an `Arc<AtomicU64>`, which `AudioRecorder::speech_ms()` and

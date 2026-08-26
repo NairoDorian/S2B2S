@@ -48,8 +48,6 @@ closed; add new ones with a date.
   unless a binding was actually cleared, so they re-run on every
   `get_settings`. A unit test asserts this behaviour, so confirm intent before
   changing.
-- **Multi-STT performance-mode "normal" restore** is skipped on two minor exit
-  paths (`stop_recording` returned `None`; `run_on_main_thread` failure).
 
 Closed on 2026-08-26 (same day, second pass): #9 concurrent extra-model loads
 (coalesced in `load_extra_model`), #10 direct-streaming double paste (direct

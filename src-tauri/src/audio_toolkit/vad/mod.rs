@@ -16,6 +16,47 @@ pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> u
     numerator.div_ceil(denominator) as usize
 }
 
+/// Two-threshold gate shared by every backend: speech is entered at
+/// `threshold` and only left once the score falls below a lower exit
+/// threshold, as in silero-vad's reference pipeline.
+///
+/// A single value for both edges makes a signal hovering near the threshold
+/// flap frame to frame — which surfaces directly as a stuttering speech /
+/// silence indicator and a speech clock that stalls mid-word. Both Silero and
+/// Earshot emit a 0–1 score per frame, so the same rule applies to both.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Hysteresis {
+    enter: f32,
+    exit: f32,
+    in_speech: bool,
+}
+
+impl Hysteresis {
+    /// The exit threshold follows the reference implementation: 0.15 below the
+    /// entry threshold, floored at 0.01 so it stays above the ~0.0005 Silero
+    /// emits for true silence.
+    pub(crate) fn new(threshold: f32) -> Self {
+        Self {
+            enter: threshold,
+            exit: (threshold - 0.15).max(0.01),
+            in_speech: false,
+        }
+    }
+
+    pub(crate) fn update(&mut self, prob: f32) -> bool {
+        self.in_speech = if self.in_speech {
+            prob >= self.exit
+        } else {
+            prob >= self.enter
+        };
+        self.in_speech
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.in_speech = false;
+    }
+}
+
 pub enum VadFrame<'a> {
     /// Speech – may aggregate several frames (prefill + current + hangover)
     Speech(&'a [f32]),
@@ -82,7 +123,7 @@ pub struct VadTailReport {
     pub hangover_counter: usize,
 }
 
-mod earshot;
+pub mod earshot;
 mod silero;
 mod smoothed;
 

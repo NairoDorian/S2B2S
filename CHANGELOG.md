@@ -270,6 +270,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keystroke.
 - Windows EcoQoS opt-out uses `PROCESS_POWER_THROTTLING_CURRENT_VERSION`
   instead of a literal `1`.
+- **Earshot VAD now uses the same threshold hysteresis as Silero.** The
+  adapter compared each 16 ms score against a single threshold, so the
+  flapping that hysteresis was added to fix for Silero (stuttering speech
+  indicator, stalling speech clock) could come back by switching backend.
+  `Hysteresis` moved to `vad/mod.rs` and gates both detectors. Measured on the
+  maintainer's recordings (`tests/vad_backend_bench.rs`): Earshot's kept audio
+  went from 12.9 s to 13.3 s, identical to Silero, at 97.7 % frame agreement.
+- **Multi-STT performance mode restores "normal power" on two more exit
+  paths** — when the recording produced no samples after a trigger-on-start
+  full-power request, and when the paste could not be dispatched to the main
+  thread.
+- New opt-in `tests/vad_backend_bench.rs` (`HANDY_BENCH_WAV_DIR=<dir>`) runs
+  both VAD backends over real recordings and reports cost per frame, voiced
+  fraction, kept seconds and frame agreement; `earshot` is pinned to
+  `opt-level = 3` in the dev profile so the numbers are representative.
 
 ### Removed
 

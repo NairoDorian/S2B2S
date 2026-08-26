@@ -150,6 +150,16 @@ fn final_paste_method(preview_only: bool) -> Option<PasteMethod> {
     preview_only.then_some(PasteMethod::CtrlV)
 }
 
+/// Multi-STT performance mode: simulate the "normal power" shortcut off the
+/// current thread. Used on exit paths that otherwise would leave the external
+/// power profile stuck in "full power".
+fn restore_normal_power(app: &AppHandle, normal_shortcut: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::clipboard::simulate_key_combination(&app, &normal_shortcut);
+    });
+}
+
 /// Wait (off-thread) for the first real microphone samples, then emit the
 /// overlay's `recording-ready` cue, play the start chime and apply mute — all
 /// guarded by the readiness generation so a recording that was stopped or
@@ -2004,6 +2014,10 @@ impl ShortcutAction for MultiSttAction {
                     // the result goes in through the default clipboard paste.
                     let paste_override =
                         final_paste_method(live_stream_is_preview_only(&normal_settings, true));
+                    // If the main-thread dispatch itself fails the closure never
+                    // runs, so keep what the fallback needs to restore power.
+                    let fallback_normal_shortcut =
+                        need_normal_mode.then(|| normal_shortcut.clone());
                     ah.run_on_main_thread(move || {
                         if rm_for_paste.was_cancelled_since(cancel_generation) {
                             debug!("Multi-STT: Cancelled before paste");
@@ -2035,6 +2049,9 @@ impl ShortcutAction for MultiSttAction {
                     })
                     .unwrap_or_else(|e| {
                         error!("Multi-STT: Failed to run paste on main thread: {:?}", e);
+                        if let Some(shortcut) = fallback_normal_shortcut {
+                            restore_normal_power(&ah, shortcut);
+                        }
                         utils::hide_recording_overlay(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
                     });
@@ -2044,6 +2061,17 @@ impl ShortcutAction for MultiSttAction {
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
+                // Full power was already requested at recording start with
+                // trigger-on-start; nothing else on this path restores it.
+                let perf_settings = get_settings(&ah);
+                if perf_settings.multi_stt_performance_mode_enabled
+                    && perf_settings.multi_stt_performance_mode_trigger_on_start
+                {
+                    restore_normal_power(
+                        &ah,
+                        perf_settings.multi_stt_performance_mode_normal_shortcut,
+                    );
+                }
             }
         });
 

@@ -17,38 +17,9 @@ use crate::audio_toolkit::constants::{
 /// A single value for both edges makes a signal hovering near the threshold flap
 /// frame to frame — which surfaces directly as a stuttering speech/silence
 /// indicator and a speech clock that stalls mid-word.
-#[derive(Debug, Clone, Copy)]
-struct Hysteresis {
-    enter: f32,
-    exit: f32,
-    in_speech: bool,
-}
-
-impl Hysteresis {
-    /// The exit threshold follows the reference implementation: 0.15 below the
-    /// entry threshold, floored at 0.01 so it stays above the ~0.0005 the model
-    /// emits for true silence.
-    fn new(threshold: f32) -> Self {
-        Self {
-            enter: threshold,
-            exit: (threshold - 0.15).max(0.01),
-            in_speech: false,
-        }
-    }
-
-    fn update(&mut self, prob: f32) -> bool {
-        self.in_speech = if self.in_speech {
-            prob >= self.exit
-        } else {
-            prob >= self.enter
-        };
-        self.in_speech
-    }
-
-    fn reset(&mut self) {
-        self.in_speech = false;
-    }
-}
+/// The gate itself lives in `vad/mod.rs` so the Earshot backend applies the
+/// exact same rule.
+use super::Hysteresis;
 
 /// Recurrent state carried between frames. Silero v5/v6 replaced v4's separate
 /// `h`/`c` LSTM tensors with a single packed `state` of shape (2, batch, 128).

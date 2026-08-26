@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{VadFrame, VoiceActivityDetector};
+use super::{Hysteresis, VadFrame, VoiceActivityDetector};
 
 pub const EARSHOT_FRAME_SAMPLES: usize = 256;
 
@@ -8,9 +8,12 @@ pub const EARSHOT_FRAME_SAMPLES: usize = 256;
 ///
 /// Earshot expects exactly 16 ms of mono 16 kHz audio per prediction. The
 /// recorder uses `frame_samples()` to configure its resampler accordingly.
+/// Its 0–1 score goes through the same [`Hysteresis`] gate as Silero's, so a
+/// signal hovering at the threshold cannot flap the speech indicator or stall
+/// the speech clock frame to frame.
 pub struct EarshotVad {
     engine: Box<earshot::Detector>,
-    threshold: f32,
+    gate: Hysteresis,
     clamped_frame: [f32; EARSHOT_FRAME_SAMPLES],
     last_voiced: bool,
 }
@@ -25,7 +28,7 @@ impl EarshotVad {
             // Construct directly on the heap: Detector keeps roughly 8 KiB of
             // model state and scratch buffers.
             engine: earshot::Detector::default_boxed(),
-            threshold,
+            gate: Hysteresis::new(threshold),
             clamped_frame: [0.0; EARSHOT_FRAME_SAMPLES],
             last_voiced: false,
         })
@@ -57,7 +60,7 @@ impl VoiceActivityDetector for EarshotVad {
             self.engine.predict_f32(&self.clamped_frame)
         };
 
-        let is_speech = score >= self.threshold;
+        let is_speech = self.gate.update(score);
         self.last_voiced = is_speech;
 
         if is_speech {
@@ -77,6 +80,7 @@ impl VoiceActivityDetector for EarshotVad {
 
     fn reset(&mut self) {
         self.engine.reset();
+        self.gate.reset();
         self.last_voiced = false;
     }
 }
