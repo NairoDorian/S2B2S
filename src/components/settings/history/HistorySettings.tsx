@@ -617,10 +617,32 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     }
   };
 
+  const [loadedAudioDurationSec, setLoadedAudioDurationSec] = useState<
+    number | null
+  >(null);
+
+  useEffect(() => {
+    if (entry.audio_duration_ms == null && entry.file_name) {
+      getAudioUrl(entry.file_name).then((url) => {
+        if (!url) return;
+        const audio = new Audio(url);
+        audio.onloadedmetadata = () => {
+          if (
+            audio.duration &&
+            !isNaN(audio.duration) &&
+            isFinite(audio.duration)
+          ) {
+            setLoadedAudioDurationSec(audio.duration);
+          }
+        };
+      });
+    }
+  }, [entry.audio_duration_ms, entry.file_name, getAudioUrl]);
+
   // Metric calculations
   const totalDurationSec = entry.audio_duration_ms
     ? entry.audio_duration_ms / 1000
-    : null;
+    : loadedAudioDurationSec;
   const speechDurationSec = entry.speech_duration_ms
     ? entry.speech_duration_ms / 1000
     : null;
@@ -820,21 +842,26 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           </span>
         )}
 
-        {/* Word Count & WPM Rating */}
+        {/* Word Count */}
         {wordCount > 0 && (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-mid-gray/10 text-text/80 border border-mid-gray/15">
             <FileText className="w-3.5 h-3.5 text-mid-gray" />
-            <span>
-              {t("settings.history.wordCount", { count: wordCount })}
-              {wpm > 0 && ` • ${t("settings.history.wpmRating", { wpm })}`}
-            </span>
+            <span>{t("settings.history.wordCount", { count: wordCount })}</span>
           </span>
         )}
 
-        {/* WPM Speed Badge */}
+        {/* WPM Speech Rate */}
+        {wpm > 0 && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-mid-gray/10 text-text/80 border border-mid-gray/15 font-medium">
+            <Zap className="w-3 h-3 text-amber-400" />
+            <span>{t("settings.history.wpmRating", { wpm })}</span>
+          </span>
+        )}
+
+        {/* WPM Speed Rating Badge */}
         {speedRating && wpm > 0 && (
           <span
-            className={`px-2 py-0.5 rounded text-[11px] font-medium border ${speedRating.color}`}
+            className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${speedRating.color}`}
           >
             {speedRating.label}
           </span>

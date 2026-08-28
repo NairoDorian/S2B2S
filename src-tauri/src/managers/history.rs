@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rusqlite::{Connection, OptionalExtension, params};
 use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize};
@@ -275,6 +275,66 @@ impl HistoryManager {
             debug!("Database already at latest version {}", version_after);
         }
 
+        // Backfill metadata for legacy entries if any are missing audio duration or word count
+        if let Err(e) = self.backfill_legacy_entries(&mut conn) {
+            warn!("Failed to backfill legacy history entries: {}", e);
+        }
+
+        Ok(())
+    }
+
+    fn backfill_legacy_entries(&self, conn: &mut Connection) -> Result<()> {
+        let mut stmt = conn.prepare(
+            "SELECT id, file_name, transcription_text, post_processed_text FROM history_entries WHERE audio_duration_ms IS NULL OR word_count IS NULL",
+        )?;
+
+        let entries_to_update: Vec<(i32, String, String, Option<String>)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .filter_map(|res| res.ok())
+            .collect();
+
+        if entries_to_update.is_empty() {
+            return Ok(());
+        }
+
+        debug!(
+            "Backfilling metadata for {} legacy history entries",
+            entries_to_update.len()
+        );
+
+        for (id, file_name, transcription_text, post_processed_text) in entries_to_update {
+            let wav_path = self.recordings_dir.join(&file_name);
+            let (audio_duration_ms, sample_rate_hz) = if wav_path.exists() {
+                if let Ok(reader) = hound::WavReader::open(&wav_path) {
+                    let rate = reader.spec().sample_rate;
+                    let dur = if rate > 0 {
+                        (reader.duration() as f64 * 1000.0) / (rate as f64)
+                    } else {
+                        0.0
+                    };
+                    (Some(dur), Some(rate as i32))
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+
+            let text_for_words = post_processed_text.unwrap_or(transcription_text);
+            let word_count = if !text_for_words.trim().is_empty() {
+                Some(text_for_words.split_whitespace().count() as i32)
+            } else {
+                None
+            };
+
+            let _ = conn.execute(
+                "UPDATE history_entries SET audio_duration_ms = COALESCE(audio_duration_ms, ?1), speech_duration_ms = COALESCE(speech_duration_ms, ?1), sample_rate_hz = COALESCE(sample_rate_hz, ?2), word_count = COALESCE(word_count, ?3) WHERE id = ?4",
+                rusqlite::params![audio_duration_ms, sample_rate_hz, word_count, id],
+            );
+        }
+
         Ok(())
     }
 
@@ -289,14 +349,25 @@ impl HistoryManager {
         let extra_models: Option<Vec<String>> =
             extra_models_str.and_then(|s| serde_json::from_str(&s).ok());
 
+        let transcription_text: String = row.get("transcription_text")?;
+        let post_processed_text: Option<String> = row.get("post_processed_text")?;
+        let word_count: Option<i32> = row.get("word_count").unwrap_or(None).or_else(|| {
+            let active_text = post_processed_text.as_ref().unwrap_or(&transcription_text);
+            if !active_text.trim().is_empty() {
+                Some(active_text.split_whitespace().count() as i32)
+            } else {
+                None
+            }
+        });
+
         Ok(HistoryEntry {
             id: row.get("id")?,
             file_name: row.get("file_name")?,
             timestamp: row.get("timestamp")?,
             saved: row.get("saved")?,
             title: row.get("title")?,
-            transcription_text: row.get("transcription_text")?,
-            post_processed_text: row.get("post_processed_text")?,
+            transcription_text,
+            post_processed_text,
             post_process_prompt: row.get("post_process_prompt")?,
             post_process_requested: row.get("post_process_requested")?,
             model_id: row.get("model_id").unwrap_or(None),
@@ -304,7 +375,7 @@ impl HistoryManager {
             audio_duration_ms: row.get("audio_duration_ms").unwrap_or(None),
             speech_duration_ms: row.get("speech_duration_ms").unwrap_or(None),
             sample_rate_hz: row.get("sample_rate_hz").unwrap_or(None),
-            word_count: row.get("word_count").unwrap_or(None),
+            word_count,
             transcription_latency_ms: row.get("transcription_latency_ms").unwrap_or(None),
             post_processing_latency_ms: row.get("post_processing_latency_ms").unwrap_or(None),
             language: row.get("language").unwrap_or(None),
