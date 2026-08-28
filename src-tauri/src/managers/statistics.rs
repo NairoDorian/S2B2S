@@ -842,23 +842,24 @@ impl StatisticsRepository {
         let summary = conn.query_row(
             "SELECT
                 COUNT(*) AS transcription_count,
-                COALESCE(SUM(word_count), 0) AS total_words,
-                AVG(word_count) AS average_words,
-                COALESCE(SUM(audio_duration_ms), 0) AS total_audio_duration_ms,
-                AVG(audio_duration_ms) AS average_audio_duration_ms,
-                CASE WHEN SUM(audio_duration_ms) > 0
-                    THEN 60_000.0 * SUM(word_count) / SUM(audio_duration_ms)
+                COALESCE(SUM(s.word_count), 0) AS total_words,
+                AVG(s.word_count) AS average_words,
+                COALESCE(SUM(COALESCE(h.speech_duration_ms, s.audio_duration_ms)), 0) AS total_audio_duration_ms,
+                AVG(COALESCE(h.speech_duration_ms, s.audio_duration_ms)) AS average_audio_duration_ms,
+                CASE WHEN SUM(COALESCE(h.speech_duration_ms, s.audio_duration_ms)) > 0
+                    THEN 60_000.0 * SUM(s.word_count) / SUM(COALESCE(h.speech_duration_ms, s.audio_duration_ms))
                 END AS approximate_words_per_minute,
-                COUNT(transcription_latency_ms) AS transcription_sample_count,
-                MIN(transcription_latency_ms) AS transcription_minimum_ms,
-                AVG(transcription_latency_ms) AS transcription_average_ms,
-                MAX(transcription_latency_ms) AS transcription_maximum_ms,
-                COUNT(post_processing_latency_ms) AS post_processing_sample_count,
-                MIN(post_processing_latency_ms) AS post_processing_minimum_ms,
-                AVG(post_processing_latency_ms) AS post_processing_average_ms,
-                MAX(post_processing_latency_ms) AS post_processing_maximum_ms
-             FROM transcription_statistics
-             WHERE status = 'success' AND completed_at_ms >= ?1 AND completed_at_ms < ?2",
+                COUNT(s.transcription_latency_ms) AS transcription_sample_count,
+                MIN(s.transcription_latency_ms) AS transcription_minimum_ms,
+                AVG(s.transcription_latency_ms) AS transcription_average_ms,
+                MAX(s.transcription_latency_ms) AS transcription_maximum_ms,
+                COUNT(s.post_processing_latency_ms) AS post_processing_sample_count,
+                MIN(s.post_processing_latency_ms) AS post_processing_minimum_ms,
+                AVG(s.post_processing_latency_ms) AS post_processing_average_ms,
+                MAX(s.post_processing_latency_ms) AS post_processing_maximum_ms
+             FROM transcription_statistics s
+             LEFT JOIN transcription_history h ON s.source_history_id = h.id
+             WHERE s.status = 'success' AND s.completed_at_ms >= ?1 AND s.completed_at_ms < ?2",
             params![range.start_ms, range.end_ms],
             |row| {
                 Ok(StatisticsSummary {

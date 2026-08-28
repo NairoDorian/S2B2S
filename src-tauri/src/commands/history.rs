@@ -96,7 +96,11 @@ pub async fn retry_history_entry_transcription(
 
     let settings = crate::settings::get_settings(&app);
     let statistics_run = statistics_manager.begin_history_retry(id.into());
-    statistics_run.set_audio(samples.len(), 16000);
+    let speech_ms = entry
+        .speech_duration_ms
+        .map(|d| d as i64)
+        .unwrap_or_else(|| (samples.len() as i64 * 1000) / 16000);
+    statistics_run.set_speech_audio_duration_ms(speech_ms, 16000);
     statistics_run.mark_input_stopped(std::time::Instant::now(), entry.post_process_requested);
 
     transcription_manager.initiate_model_load();
@@ -277,7 +281,11 @@ pub async fn multi_stt_history_entry(
     }
 
     let statistics_run = statistics_manager.begin_history_retry(id.into());
-    statistics_run.set_audio(samples.len(), 16000);
+    let speech_ms = entry
+        .speech_duration_ms
+        .map(|d| d as i64)
+        .unwrap_or_else(|| (samples.len() as i64 * 1000) / 16000);
+    statistics_run.set_speech_audio_duration_ms(speech_ms, 16000);
     statistics_run.mark_input_stopped(std::time::Instant::now(), true);
 
     let transcribe_start = std::time::Instant::now();

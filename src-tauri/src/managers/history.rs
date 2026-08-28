@@ -1,3 +1,4 @@
+use crate::audio_toolkit::VoiceActivityDetector;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, Utc};
 use log::{debug, error, info, warn};
@@ -285,7 +286,7 @@ impl HistoryManager {
 
     fn backfill_legacy_entries(&self, conn: &mut Connection) -> Result<()> {
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, transcription_text, post_processed_text FROM history_entries WHERE audio_duration_ms IS NULL OR word_count IS NULL",
+            "SELECT id, file_name, transcription_text, post_processed_text FROM transcription_history WHERE audio_duration_ms IS NULL OR word_count IS NULL OR speech_duration_ms IS NULL",
         )?;
 
         let entries_to_update: Vec<(i32, String, String, Option<String>)> = stmt
@@ -295,45 +296,76 @@ impl HistoryManager {
             .filter_map(|res| res.ok())
             .collect();
 
-        if entries_to_update.is_empty() {
-            return Ok(());
-        }
-
-        debug!(
-            "Backfilling metadata for {} legacy history entries",
-            entries_to_update.len()
-        );
-
-        for (id, file_name, transcription_text, post_processed_text) in entries_to_update {
-            let wav_path = self.recordings_dir.join(&file_name);
-            let (audio_duration_ms, sample_rate_hz) = if wav_path.exists() {
-                if let Ok(reader) = hound::WavReader::open(&wav_path) {
-                    let rate = reader.spec().sample_rate;
-                    let dur = if rate > 0 {
-                        (reader.duration() as f64 * 1000.0) / (rate as f64)
-                    } else {
-                        0.0
-                    };
-                    (Some(dur), Some(rate as i32))
-                } else {
-                    (None, None)
-                }
-            } else {
-                (None, None)
-            };
-
-            let text_for_words = post_processed_text.unwrap_or(transcription_text);
-            let word_count = if !text_for_words.trim().is_empty() {
-                Some(text_for_words.split_whitespace().count() as i32)
-            } else {
-                None
-            };
-
-            let _ = conn.execute(
-                "UPDATE history_entries SET audio_duration_ms = COALESCE(audio_duration_ms, ?1), speech_duration_ms = COALESCE(speech_duration_ms, ?1), sample_rate_hz = COALESCE(sample_rate_hz, ?2), word_count = COALESCE(word_count, ?3) WHERE id = ?4",
-                rusqlite::params![audio_duration_ms, sample_rate_hz, word_count, id],
+        if !entries_to_update.is_empty() {
+            debug!(
+                "Backfilling metadata for {} legacy history entries",
+                entries_to_update.len()
             );
+
+            for (id, file_name, transcription_text, post_processed_text) in entries_to_update {
+                let wav_path = self.recordings_dir.join(&file_name);
+                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) = if wav_path.exists() {
+                    if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
+                        let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
+                        let speech_dur =
+                            if let Ok(mut vad) = crate::audio_toolkit::EarshotVad::new(0.5) {
+                                let mut voiced = 0;
+                                let total = samples_16k.len()
+                                    / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
+                                for chunk in samples_16k.chunks_exact(
+                                    crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
+                                ) {
+                                    if let Ok(frame) = vad.push_frame(chunk) {
+                                        if frame.is_speech() {
+                                            voiced += 1;
+                                        }
+                                    }
+                                }
+                                if total > 0 && voiced > 0 {
+                                    (voiced as f64) * 16.0
+                                } else {
+                                    dur
+                                }
+                            } else {
+                                dur
+                            };
+                        (Some(dur), Some(speech_dur), Some(16000))
+                    } else {
+                        (None, None, None)
+                    }
+                } else {
+                    (None, None, None)
+                };
+
+                let text_for_words = post_processed_text.unwrap_or(transcription_text);
+                let word_count = if !text_for_words.trim().is_empty() {
+                    Some(text_for_words.split_whitespace().count() as i32)
+                } else {
+                    None
+                };
+
+                let _ = conn.execute(
+                    "UPDATE transcription_history SET audio_duration_ms = COALESCE(audio_duration_ms, ?1), speech_duration_ms = COALESCE(speech_duration_ms, ?2), sample_rate_hz = COALESCE(sample_rate_hz, ?3), word_count = COALESCE(word_count, ?4) WHERE id = ?5",
+                    rusqlite::params![audio_duration_ms, speech_duration_ms, sample_rate_hz, word_count, id],
+                );
+            }
         }
+
+        // Also backfill transcription_statistics to ensure audio_duration_ms stores silence-removed speech duration
+        let _ = conn.execute(
+            "UPDATE transcription_statistics
+             SET audio_duration_ms = (
+                 SELECT CAST(ROUND(h.speech_duration_ms) AS INTEGER)
+                 FROM transcription_history h
+                 WHERE h.id = transcription_statistics.source_history_id AND h.speech_duration_ms IS NOT NULL AND h.speech_duration_ms > 0
+             )
+             WHERE source_history_id IS NOT NULL
+               AND EXISTS (
+                 SELECT 1 FROM transcription_history h
+                 WHERE h.id = transcription_statistics.source_history_id AND h.speech_duration_ms IS NOT NULL AND h.speech_duration_ms > 0
+               )",
+            [],
+        );
 
         Ok(())
     }
