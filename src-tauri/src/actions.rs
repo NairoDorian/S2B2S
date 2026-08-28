@@ -962,6 +962,9 @@ impl ShortcutAction for TranscribeAction {
                             utils::redact_text(&transcription)
                         );
 
+                        let stt_latency_ms = transcription_time.elapsed().as_secs_f64() * 1000.0;
+                        let post_process_start = Instant::now();
+
                         if post_process {
                             if use_streaming_overlay {
                                 tm.emit_stream_working(StreamWorkKind::Polishing);
@@ -983,6 +986,12 @@ impl ShortcutAction for TranscribeAction {
                             return;
                         };
 
+                        let post_processing_latency_ms = if post_process {
+                            Some(post_process_start.elapsed().as_secs_f64() * 1000.0)
+                        } else {
+                            None
+                        };
+
                         if rm.was_cancelled_since(cancel_generation) {
                             debug!("Transcription operation cancelled before paste");
                             attempt.finish(StatisticsRunStatus::Cancelled);
@@ -999,13 +1008,38 @@ impl ShortcutAction for TranscribeAction {
 
                         // Save to history if WAV was saved
                         if wav_saved {
-                            if let Err(err) = hm.save_entry(
-                                file_name,
-                                transcription,
-                                post_process,
-                                processed.post_processed_text.clone(),
-                                processed.post_process_prompt.clone(),
-                            ) {
+                            let audio_duration_ms =
+                                (sample_count as f64 * 1000.0) / (raw_rate as f64);
+                            let speech_duration_ms = speech_ms as f64;
+                            let word_count = (!transcription.trim().is_empty())
+                                .then(|| transcription.split_whitespace().count() as i32);
+                            let mode = if use_streaming_overlay {
+                                "streaming"
+                            } else {
+                                "single"
+                            }
+                            .to_string();
+
+                            if let Err(err) =
+                                hm.save_entry_full(crate::managers::history::NewHistoryEntry {
+                                    file_name,
+                                    transcription_text: transcription,
+                                    post_process_requested: post_process,
+                                    post_processed_text: processed.post_processed_text.clone(),
+                                    post_process_prompt: processed.post_process_prompt.clone(),
+                                    model_id: Some(settings.selected_model.clone()),
+                                    engine: None,
+                                    audio_duration_ms: Some(audio_duration_ms),
+                                    speech_duration_ms: Some(speech_duration_ms),
+                                    sample_rate_hz: Some(raw_rate as i32),
+                                    word_count,
+                                    transcription_latency_ms: Some(stt_latency_ms),
+                                    post_processing_latency_ms,
+                                    language: Some(settings.selected_language.clone()),
+                                    mode: Some(mode),
+                                    extra_models: None,
+                                })
+                            {
                                 error!("Failed to save history entry: {}", err);
                             }
                         }
@@ -1137,7 +1171,7 @@ struct MultiSttAction;
 
 /// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}, ${output4}
 /// and sends to the LLM API (same provider as post-processing).
-async fn multi_stt_merge_transcriptions(
+pub(crate) async fn multi_stt_merge_transcriptions(
     settings: &AppSettings,
     output1: &str,
     output2: &str,
@@ -1750,6 +1784,7 @@ impl ShortcutAction for MultiSttAction {
             // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
             // Inference is CPU/GPU-bound blocking work: run it on the
             // blocking pool so tokio workers stay free for events/UI.
+            let transcribe_start = Instant::now();
 
             let tm1 = Arc::clone(&tm);
             let tm2 = Arc::clone(&tm);
@@ -1873,6 +1908,8 @@ impl ShortcutAction for MultiSttAction {
                 output4.len()
             );
 
+            let multi_transcription_latency_ms = transcribe_start.elapsed().as_secs_f64() * 1000.0;
+
             // A cancel that landed during the (multi-second) parallel
             // decode must not re-show the overlay, call the LLM, save a
             // history row or paste. Same gate TranscribeAction applies
@@ -1898,6 +1935,7 @@ impl ShortcutAction for MultiSttAction {
             }
 
             // === MERGE TRANSCRIPTIONS ===
+            let merge_start = Instant::now();
             let settings_for_merge = get_settings(&ah);
             let (merged, llm_merge_succeeded) = if merge_requested {
                 if use_streaming_overlay {
@@ -1992,6 +2030,12 @@ impl ShortcutAction for MultiSttAction {
                 (combined, false)
             };
 
+            let merge_latency_ms = if merge_requested {
+                Some(merge_start.elapsed().as_secs_f64() * 1000.0)
+            } else {
+                None
+            };
+
             // Finish attempts for statistics
             if let Some(t) = tracked1.take() {
                 t.attempt.complete_post_processing();
@@ -2075,15 +2119,44 @@ impl ShortcutAction for MultiSttAction {
                 .as_ref()
                 .map(|p| p.prompt.clone());
             let merged_for_history = merged.clone();
+            let extra_models_list: Vec<String> = [
+                settings.multi_stt_model_2.clone(),
+                settings.multi_stt_model_3.clone(),
+                settings.multi_stt_model_4.clone(),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+
+            let word_count =
+                (!merged.trim().is_empty()).then(|| merged.split_whitespace().count() as i32);
+            let audio_duration_ms = (wav_sample_count as f64 * 1000.0) / (raw_rate as f64);
+            let speech_duration_ms = speech_ms as f64;
+            let selected_model = settings.selected_model.clone();
+            let selected_language = settings.selected_language.clone();
+
             if wav_saved {
                 tauri::async_runtime::spawn_blocking(move || {
-                    if let Err(err) = hm_clone.save_entry(
-                        file_name,
-                        multi_transcript,
-                        merge_requested,
-                        Some(merged_for_history),
-                        merge_prompt_text,
-                    ) {
+                    if let Err(err) =
+                        hm_clone.save_entry_full(crate::managers::history::NewHistoryEntry {
+                            file_name,
+                            transcription_text: multi_transcript,
+                            post_process_requested: merge_requested,
+                            post_processed_text: Some(merged_for_history),
+                            post_process_prompt: merge_prompt_text,
+                            model_id: Some(selected_model),
+                            engine: None,
+                            audio_duration_ms: Some(audio_duration_ms),
+                            speech_duration_ms: Some(speech_duration_ms),
+                            sample_rate_hz: Some(raw_rate as i32),
+                            word_count,
+                            transcription_latency_ms: Some(multi_transcription_latency_ms),
+                            post_processing_latency_ms: merge_latency_ms,
+                            language: Some(selected_language),
+                            mode: Some("multi_stt".to_string()),
+                            extra_models: Some(extra_models_list),
+                        })
+                    {
                         error!("Failed to save multi-STT history entry: {}", err);
                     }
                 });

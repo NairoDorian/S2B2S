@@ -764,6 +764,8 @@ pub fn run(cli_args: CliArgs) {
             commands::history::delete_history_entry,
             commands::history::delete_all_recordings,
             commands::history::retry_history_entry_transcription,
+            commands::history::post_process_history_entry,
+            commands::history::multi_stt_history_entry,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             commands::history::get_latest_recording_info,

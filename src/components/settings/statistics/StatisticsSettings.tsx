@@ -149,13 +149,17 @@ export const StatisticsSettings: React.FC = () => {
     });
   };
   const formatReturnedRange = (summary: StatisticsSummary) => {
-    if (selectedRange === "allTime" && summary.range.start_ms === 0) {
+    if (
+      (selectedRange === "allTime" && summary.range.start_ms === 0) ||
+      summary.range.start_ms == null ||
+      summary.range.end_ms == null
+    ) {
       return t("settings.statistics.range.options.allTime");
     }
-    const start = new Date(summary.range.start_ms);
-    const end = new Date(
-      Math.max(summary.range.start_ms, summary.range.end_ms - 1),
-    );
+    const startMs = summary.range.start_ms;
+    const endMs = summary.range.end_ms;
+    const start = new Date(startMs);
+    const end = new Date(Math.max(startMs, endMs - 1));
     return (
       dateFormatter as Intl.DateTimeFormat & {
         formatRange(startDate: Date, endDate: Date): string;
@@ -282,7 +286,7 @@ export const StatisticsSettings: React.FC = () => {
                   icon={AudioLines}
                   title={t("settings.statistics.metrics.audio.title")}
                   value={formatAudioDuration(
-                    statistics.total_audio_duration_ms,
+                    statistics.total_audio_duration_ms ?? 0,
                   )}
                   detail={
                     averageAudioDuration == null

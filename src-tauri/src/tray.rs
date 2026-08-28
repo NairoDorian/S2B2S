@@ -670,6 +670,17 @@ mod tests {
             post_processed_text: post_processed.map(|text| text.to_string()),
             post_process_prompt: None,
             post_process_requested: false,
+            model_id: None,
+            engine: None,
+            audio_duration_ms: None,
+            speech_duration_ms: None,
+            sample_rate_hz: None,
+            word_count: None,
+            transcription_latency_ms: None,
+            post_processing_latency_ms: None,
+            language: None,
+            mode: None,
+            extra_models: None,
         }
     }
 

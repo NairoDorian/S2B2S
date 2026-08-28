@@ -70,6 +70,19 @@ static MIGRATIONS: &[M] = &[
         CREATE INDEX transcription_statistics_status_completed_idx
             ON transcription_statistics(status, completed_at_ms);",
     ),
+    M::up(
+        "ALTER TABLE transcription_history ADD COLUMN model_id TEXT;
+         ALTER TABLE transcription_history ADD COLUMN engine TEXT;
+         ALTER TABLE transcription_history ADD COLUMN audio_duration_ms REAL;
+         ALTER TABLE transcription_history ADD COLUMN speech_duration_ms REAL;
+         ALTER TABLE transcription_history ADD COLUMN sample_rate_hz INTEGER;
+         ALTER TABLE transcription_history ADD COLUMN word_count INTEGER;
+         ALTER TABLE transcription_history ADD COLUMN transcription_latency_ms REAL;
+         ALTER TABLE transcription_history ADD COLUMN post_processing_latency_ms REAL;
+         ALTER TABLE transcription_history ADD COLUMN language TEXT;
+         ALTER TABLE transcription_history ADD COLUMN mode TEXT;
+         ALTER TABLE transcription_history ADD COLUMN extra_models TEXT;",
+    ),
 ];
 
 fn migrations() -> Migrations<'static> {
@@ -138,6 +151,8 @@ fn migrate_from_tauri_plugin_sql(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+const HISTORY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, model_id, engine, audio_duration_ms, speech_duration_ms, sample_rate_hz, word_count, transcription_latency_ms, post_processing_latency_ms, language, mode, extra_models";
+
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
     pub entries: Vec<HistoryEntry>,
@@ -170,6 +185,37 @@ pub struct HistoryEntry {
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     pub post_process_requested: bool,
+    pub model_id: Option<String>,
+    pub engine: Option<String>,
+    pub audio_duration_ms: Option<f64>,
+    pub speech_duration_ms: Option<f64>,
+    pub sample_rate_hz: Option<i32>,
+    pub word_count: Option<i32>,
+    pub transcription_latency_ms: Option<f64>,
+    pub post_processing_latency_ms: Option<f64>,
+    pub language: Option<String>,
+    pub mode: Option<String>,
+    pub extra_models: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct NewHistoryEntry {
+    pub file_name: String,
+    pub transcription_text: String,
+    pub post_process_requested: bool,
+    pub post_processed_text: Option<String>,
+    pub post_process_prompt: Option<String>,
+    pub model_id: Option<String>,
+    pub engine: Option<String>,
+    pub audio_duration_ms: Option<f64>,
+    pub speech_duration_ms: Option<f64>,
+    pub sample_rate_hz: Option<i32>,
+    pub word_count: Option<i32>,
+    pub transcription_latency_ms: Option<f64>,
+    pub post_processing_latency_ms: Option<f64>,
+    pub language: Option<String>,
+    pub mode: Option<String>,
+    pub extra_models: Option<Vec<String>>,
 }
 
 pub struct HistoryManager {
@@ -239,6 +285,10 @@ impl HistoryManager {
     }
 
     fn map_history_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
+        let extra_models_str: Option<String> = row.get("extra_models").unwrap_or(None);
+        let extra_models: Option<Vec<String>> =
+            extra_models_str.and_then(|s| serde_json::from_str(&s).ok());
+
         Ok(HistoryEntry {
             id: row.get("id")?,
             file_name: row.get("file_name")?,
@@ -249,6 +299,17 @@ impl HistoryManager {
             post_processed_text: row.get("post_processed_text")?,
             post_process_prompt: row.get("post_process_prompt")?,
             post_process_requested: row.get("post_process_requested")?,
+            model_id: row.get("model_id").unwrap_or(None),
+            engine: row.get("engine").unwrap_or(None),
+            audio_duration_ms: row.get("audio_duration_ms").unwrap_or(None),
+            speech_duration_ms: row.get("speech_duration_ms").unwrap_or(None),
+            sample_rate_hz: row.get("sample_rate_hz").unwrap_or(None),
+            word_count: row.get("word_count").unwrap_or(None),
+            transcription_latency_ms: row.get("transcription_latency_ms").unwrap_or(None),
+            post_processing_latency_ms: row.get("post_processing_latency_ms").unwrap_or(None),
+            language: row.get("language").unwrap_or(None),
+            mode: row.get("mode").unwrap_or(None),
+            extra_models,
         })
     }
 
@@ -270,8 +331,31 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
     ) -> Result<HistoryEntry> {
+        let word_count = (!transcription_text.trim().is_empty())
+            .then(|| transcription_text.split_whitespace().count() as i32);
+        self.save_entry_full(NewHistoryEntry {
+            file_name,
+            transcription_text,
+            post_process_requested,
+            post_processed_text,
+            post_process_prompt,
+            word_count,
+            ..Default::default()
+        })
+    }
+
+    /// Save a complete history entry with all recording, audio, latency, and model metadata.
+    pub fn save_entry_full(&self, new_entry: NewHistoryEntry) -> Result<HistoryEntry> {
         let timestamp = Utc::now().timestamp() as f64;
         let title = self.format_timestamp_title(timestamp);
+        let extra_models_json = new_entry
+            .extra_models
+            .as_ref()
+            .and_then(|m| serde_json::to_string(m).ok());
+        let word_count = new_entry.word_count.or_else(|| {
+            (!new_entry.transcription_text.trim().is_empty())
+                .then(|| new_entry.transcription_text.split_whitespace().count() as i32)
+        });
 
         let conn = self.get_connection()?;
         conn.execute(
@@ -283,30 +367,63 @@ impl HistoryManager {
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
-                post_process_requested
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                post_process_requested,
+                model_id,
+                engine,
+                audio_duration_ms,
+                speech_duration_ms,
+                sample_rate_hz,
+                word_count,
+                transcription_latency_ms,
+                post_processing_latency_ms,
+                language,
+                mode,
+                extra_models
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
-                &file_name,
+                &new_entry.file_name,
                 timestamp as i64,
                 false,
                 &title,
-                &transcription_text,
-                &post_processed_text,
-                &post_process_prompt,
-                post_process_requested,
+                &new_entry.transcription_text,
+                &new_entry.post_processed_text,
+                &new_entry.post_process_prompt,
+                new_entry.post_process_requested,
+                &new_entry.model_id,
+                &new_entry.engine,
+                new_entry.audio_duration_ms,
+                new_entry.speech_duration_ms,
+                new_entry.sample_rate_hz,
+                word_count,
+                new_entry.transcription_latency_ms,
+                new_entry.post_processing_latency_ms,
+                &new_entry.language,
+                &new_entry.mode,
+                &extra_models_json,
             ],
         )?;
 
         let entry = HistoryEntry {
             id: conn.last_insert_rowid() as i32,
-            file_name,
+            file_name: new_entry.file_name,
             timestamp,
             saved: false,
             title,
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-            post_process_requested,
+            transcription_text: new_entry.transcription_text,
+            post_processed_text: new_entry.post_processed_text,
+            post_process_prompt: new_entry.post_process_prompt,
+            post_process_requested: new_entry.post_process_requested,
+            model_id: new_entry.model_id,
+            engine: new_entry.engine,
+            audio_duration_ms: new_entry.audio_duration_ms,
+            speech_duration_ms: new_entry.speech_duration_ms,
+            sample_rate_hz: new_entry.sample_rate_hz,
+            word_count,
+            transcription_latency_ms: new_entry.transcription_latency_ms,
+            post_processing_latency_ms: new_entry.post_processing_latency_ms,
+            language: new_entry.language,
+            mode: new_entry.mode,
+            extra_models: new_entry.extra_models,
         };
 
         debug!("Saved history entry with id {}", entry.id);
@@ -326,6 +443,7 @@ impl HistoryManager {
     }
 
     /// Update an existing history entry with new transcription results (used by retry).
+    #[allow(dead_code)]
     pub fn update_transcription(
         &self,
         id: i32,
@@ -333,17 +451,70 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
     ) -> Result<HistoryEntry> {
+        self.update_entry_full(
+            id,
+            transcription_text,
+            post_processed_text,
+            post_process_prompt,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    /// Update an existing history entry with complete updated details.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_entry_full(
+        &self,
+        id: i32,
+        transcription_text: String,
+        post_processed_text: Option<String>,
+        post_process_prompt: Option<String>,
+        post_process_requested: Option<bool>,
+        model_id: Option<String>,
+        engine: Option<String>,
+        transcription_latency_ms: Option<f64>,
+        post_processing_latency_ms: Option<f64>,
+        mode: Option<String>,
+        extra_models: Option<Vec<String>>,
+    ) -> Result<HistoryEntry> {
+        let extra_models_json = extra_models
+            .as_ref()
+            .and_then(|m| serde_json::to_string(m).ok());
+        let word_count = (!transcription_text.trim().is_empty())
+            .then(|| transcription_text.split_whitespace().count() as i32);
+
         let conn = self.get_connection()?;
         let updated = conn.execute(
             "UPDATE transcription_history
              SET transcription_text = ?1,
                  post_processed_text = ?2,
-                 post_process_prompt = ?3
-             WHERE id = ?4",
+                 post_process_prompt = ?3,
+                 post_process_requested = COALESCE(?4, post_process_requested),
+                 model_id = COALESCE(?5, model_id),
+                 engine = COALESCE(?6, engine),
+                 word_count = COALESCE(?7, word_count),
+                 transcription_latency_ms = COALESCE(?8, transcription_latency_ms),
+                 post_processing_latency_ms = COALESCE(?9, post_processing_latency_ms),
+                 mode = COALESCE(?10, mode),
+                 extra_models = COALESCE(?11, extra_models)
+             WHERE id = ?12",
             params![
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
+                post_process_requested,
+                model_id,
+                engine,
+                word_count,
+                transcription_latency_ms,
+                post_processing_latency_ms,
+                mode,
+                extra_models_json,
                 id
             ],
         )?;
@@ -352,13 +523,8 @@ impl HistoryManager {
             return Err(anyhow!("History entry {} not found", id));
         }
 
-        let entry = conn
-            .query_row(
-                "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
-                 FROM transcription_history WHERE id = ?1",
-                params![id],
-                Self::map_history_entry,
-            )?;
+        let query = format!("SELECT {HISTORY_COLUMNS} FROM transcription_history WHERE id = ?1");
+        let entry: HistoryEntry = conn.query_row(&query, params![id], Self::map_history_entry)?;
 
         debug!("Updated transcription for history entry {}", id);
 
@@ -449,40 +615,42 @@ impl HistoryManager {
         if entries.len() > limit as usize {
             let entries_to_delete = &entries[limit as usize..];
             let deleted_count = self.delete_entries_and_files(entries_to_delete)?;
-
             if deleted_count > 0 {
-                debug!("Cleaned up {} old history entries by count", deleted_count);
+                debug!(
+                    "Cleaned up {} old history entries exceeding limit of {}",
+                    deleted_count, limit
+                );
             }
         }
 
         Ok(())
     }
 
-    fn cleanup_by_time(
-        &self,
-        retention_period: crate::settings::RecordingRetentionPeriod,
-    ) -> Result<()> {
+    fn cleanup_by_time(&self, period: crate::settings::RecordingRetentionPeriod) -> Result<()> {
         let conn = self.get_connection()?;
+        let now = Utc::now();
 
-        // Calculate cutoff timestamp (current time minus retention period)
-        let now = Utc::now().timestamp();
-        let cutoff_timestamp = match retention_period {
-            crate::settings::RecordingRetentionPeriod::Days3 => now - (3 * 24 * 60 * 60), // 3 days in seconds
-            crate::settings::RecordingRetentionPeriod::Weeks2 => now - (2 * 7 * 24 * 60 * 60), // 2 weeks in seconds
-            crate::settings::RecordingRetentionPeriod::Months3 => now - (3 * 30 * 24 * 60 * 60), // 3 months in seconds (approximate)
-            _ => unreachable!("Should not reach here"),
+        let cutoff_date = match period {
+            crate::settings::RecordingRetentionPeriod::Days3 => now - chrono::Duration::days(3),
+            crate::settings::RecordingRetentionPeriod::Weeks2 => now - chrono::Duration::weeks(2),
+            crate::settings::RecordingRetentionPeriod::Months3 => {
+                now - chrono::Duration::days(90) // Approximate 3 months
+            }
+            _ => return Ok(()), // Never or PreserveLimit handled elsewhere
         };
 
-        // Get all unsaved entries older than the cutoff timestamp
+        let cutoff_timestamp = cutoff_date.timestamp() as f64;
+
+        // Get all entries older than cutoff that are not saved
         let mut stmt = conn.prepare(
-            "SELECT id, file_name FROM transcription_history WHERE saved = 0 AND timestamp < ?1",
+            "SELECT id, file_name FROM transcription_history WHERE timestamp < ?1 AND saved = 0",
         )?;
 
-        let rows = stmt.query_map(params![cutoff_timestamp], |row| {
+        let rows = stmt.query_map(params![cutoff_timestamp as i64], |row| {
             Ok((row.get::<_, i32>("id")?, row.get::<_, String>("file_name")?))
         })?;
 
-        let mut entries_to_delete: Vec<(i32, String)> = Vec::new();
+        let mut entries_to_delete = Vec::new();
         for row in rows {
             entries_to_delete.push(row?);
         }
@@ -510,13 +678,14 @@ impl HistoryManager {
         let mut entries: Vec<HistoryEntry> = match (cursor, limit) {
             (Some(cursor_id), Some(lim)) => {
                 let fetch_count = (lim + 1) as i32;
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+                let query = format!(
+                    "SELECT {HISTORY_COLUMNS}
                      FROM transcription_history
                      WHERE id < ?1
                      ORDER BY id DESC
-                     LIMIT ?2",
-                )?;
+                     LIMIT ?2"
+                );
+                let mut stmt = conn.prepare(&query)?;
                 let result = stmt
                     .query_map(params![cursor_id, fetch_count], Self::map_history_entry)?
                     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -524,23 +693,25 @@ impl HistoryManager {
             }
             (None, Some(lim)) => {
                 let fetch_count = (lim + 1) as i32;
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+                let query = format!(
+                    "SELECT {HISTORY_COLUMNS}
                      FROM transcription_history
                      ORDER BY id DESC
-                     LIMIT ?1",
-                )?;
+                     LIMIT ?1"
+                );
+                let mut stmt = conn.prepare(&query)?;
                 let result = stmt
                     .query_map(params![fetch_count], Self::map_history_entry)?
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 result
             }
             (_, None) => {
-                let mut stmt = conn.prepare(
-                    "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested
+                let query = format!(
+                    "SELECT {HISTORY_COLUMNS}
                      FROM transcription_history
-                     ORDER BY id DESC",
-                )?;
+                     ORDER BY id DESC"
+                );
+                let mut stmt = conn.prepare(&query)?;
                 let result = stmt
                     .query_map([], Self::map_history_entry)?
                     .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -558,21 +729,13 @@ impl HistoryManager {
 
     #[cfg(test)]
     fn get_latest_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
+        let query = format!(
+            "SELECT {HISTORY_COLUMNS}
              FROM transcription_history
              ORDER BY timestamp DESC
-             LIMIT 1",
-        )?;
+             LIMIT 1"
+        );
+        let mut stmt = conn.prepare(&query)?;
 
         let entry = stmt.query_row([], Self::map_history_entry).optional()?;
         Ok(entry)
@@ -585,22 +748,14 @@ impl HistoryManager {
     }
 
     fn get_latest_completed_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
+        let query = format!(
+            "SELECT {HISTORY_COLUMNS}
              FROM transcription_history
              WHERE transcription_text != ''
              ORDER BY timestamp DESC
-             LIMIT 1",
-        )?;
+             LIMIT 1"
+        );
+        let mut stmt = conn.prepare(&query)?;
 
         let entry = stmt.query_row([], Self::map_history_entry).optional()?;
         Ok(entry)
@@ -639,20 +794,8 @@ impl HistoryManager {
 
     pub async fn get_entry_by_id(&self, id: i32) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare(
-            "SELECT
-                id,
-                file_name,
-                timestamp,
-                saved,
-                title,
-                transcription_text,
-                post_processed_text,
-                post_process_prompt,
-                post_process_requested
-             FROM transcription_history
-             WHERE id = ?1",
-        )?;
+        let query = format!("SELECT {HISTORY_COLUMNS} FROM transcription_history WHERE id = ?1");
+        let mut stmt = conn.prepare(&query)?;
 
         let entry = stmt.query_row([id], Self::map_history_entry).optional()?;
 
@@ -767,21 +910,8 @@ mod tests {
     use rusqlite::{Connection, params};
 
     fn setup_conn() -> Connection {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
-        conn.execute_batch(
-            "CREATE TABLE transcription_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_name TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                saved BOOLEAN NOT NULL DEFAULT 0,
-                title TEXT NOT NULL,
-                transcription_text TEXT NOT NULL,
-                post_processed_text TEXT,
-                post_process_prompt TEXT,
-                post_process_requested BOOLEAN NOT NULL DEFAULT 0
-            );",
-        )
-        .expect("create transcription_history table");
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        apply_migrations(&mut conn).expect("apply migrations");
         conn
     }
 

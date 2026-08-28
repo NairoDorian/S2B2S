@@ -234,6 +234,8 @@ export const commands = {
 	deleteHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("delete_history_entry", { id })),
 	deleteAllRecordings: () => typedError<null, string>(__TAURI_INVOKE("delete_all_recordings")),
 	retryHistoryEntryTranscription: (id: number) => typedError<null, string>(__TAURI_INVOKE("retry_history_entry_transcription", { id })),
+	postProcessHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("post_process_history_entry", { id })),
+	multiSttHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("multi_stt_history_entry", { id })),
 	updateHistoryLimit: (limit: number) => typedError<null, string>(__TAURI_INVOKE("update_history_limit", { limit })),
 	updateRecordingRetentionPeriod: (period: string) => typedError<null, string>(__TAURI_INVOKE("update_recording_retention_period", { period })),
 	/**
@@ -251,14 +253,25 @@ export const commands = {
 	post_processed_text: string | null,
 	post_process_prompt: string | null,
 	post_process_requested: boolean,
+	model_id: string | null,
+	engine: string | null,
+	audio_duration_ms: number | null,
+	speech_duration_ms: number | null,
+	sample_rate_hz: number | null,
+	word_count: number | null,
+	transcription_latency_ms: number | null,
+	post_processing_latency_ms: number | null,
+	language: string | null,
+	mode: string | null,
+	extra_models: string[] | null,
 } | null, string>(__TAURI_INVOKE("get_latest_recording_info")),
+	getStatisticsSummary: (range: StatisticsRange) => typedError<StatisticsSummary, string>(__TAURI_INVOKE("get_statistics_summary", { range })),
+	resetStatistics: () => typedError<null, string>(__TAURI_INVOKE("reset_statistics")),
 	/**
 	 *  Stub implementation for non-macOS platforms
 	 *  Always returns false since laptop detection is macOS-specific
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
-	getStatisticsSummary: (range: StatisticsRange) => typedError<StatisticsSummary, string>(__TAURI_INVOKE("get_statistics_summary", { range })),
-	resetStatistics: () => typedError<null, string>(__TAURI_INVOKE("reset_statistics")),
 };
 
 /** Events */
@@ -638,6 +651,13 @@ export type CustomSounds = {
 	stop: boolean,
 };
 
+export type DurationMetricSummary = {
+	sample_count: number,
+	minimum_ms: number | null,
+	average_ms: number | null,
+	maximum_ms: number | null,
+};
+
 export type EngineType = 
 /**
  *  Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
@@ -662,6 +682,17 @@ export type HistoryEntry = {
 	post_processed_text: string | null,
 	post_process_prompt: string | null,
 	post_process_requested: boolean,
+	model_id: string | null,
+	engine: string | null,
+	audio_duration_ms: number | null,
+	speech_duration_ms: number | null,
+	sample_rate_hz: number | null,
+	word_count: number | null,
+	transcription_latency_ms: number | null,
+	post_processing_latency_ms: number | null,
+	language: string | null,
+	mode: string | null,
+	extra_models: string[] | null,
 };
 
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number } | { action: "cleared" };
@@ -881,6 +912,26 @@ export type SpeechActivityEvent = {
 	speech_ms: number,
 };
 
+export type StatisticsRange = {
+	start_ms: number | null,
+	end_ms: number | null,
+};
+
+export type StatisticsSummary = {
+	range: StatisticsRange,
+	transcription_count: number,
+	total_words: number,
+	average_words: number | null,
+	total_audio_duration_ms: number | null,
+	average_audio_duration_ms: number | null,
+	approximate_words_per_minute: number | null,
+	current_streak_days: number,
+	transcription_latency: DurationMetricSummary,
+	post_processing_latency: DurationMetricSummary,
+};
+
+export type StatisticsUpdatedEvent = null;
+
 /**  Phase of the streaming overlay card, emitted to drive its UI state. */
 export type StreamPhase = 
 /**
@@ -933,33 +984,6 @@ export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
 
 export type VadBackend = "silero" | "earshot";
-
-export type DurationMetricSummary = {
-	sample_count: number,
-	minimum_ms: number | null,
-	average_ms: number | null,
-	maximum_ms: number | null,
-};
-
-export type StatisticsRange = {
-	start_ms: number,
-	end_ms: number,
-};
-
-export type StatisticsSummary = {
-	range: StatisticsRange,
-	transcription_count: number,
-	total_words: number,
-	average_words: number | null,
-	total_audio_duration_ms: number,
-	average_audio_duration_ms: number | null,
-	approximate_words_per_minute: number | null,
-	current_streak_days: number,
-	transcription_latency: DurationMetricSummary,
-	post_processing_latency: DurationMetricSummary,
-};
-
-export type StatisticsUpdatedEvent = null;
 
 export type WindowsMicrophonePermissionStatus = {
 	supported: boolean,
