@@ -564,13 +564,15 @@
       "speedVeryFast": "Very Fast",
       "wpmRating": "{{wpm}} WPM",
       "wordCount": "{{count}} words",
-      "audioDetails": "{{speech}} speech / {{total}} total ({{silence}} cut)",
+      "audioDetails": "{{total}} total : {{speech}} speech ({{silence}} cut)",
       "latencyStt": "{{latency}} STT",
       "latencyLlm": "{{latency}} LLM",
       "extraModelsCount": "{{count}} models",
       "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
-      "promptUsed": "LLM Prompt Used"
+      "promptUsed": "LLM Prompt Used",
+      "audioDetailsNoCut": "{{total}} total : {{speech}} speech",
+      "audioTotalOnly": "{{total}} total"
     },
     "debug": {
       "title": "Ladění",

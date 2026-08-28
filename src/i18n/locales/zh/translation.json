@@ -564,13 +564,15 @@
       "speedVeryFast": "极快",
       "wpmRating": "{{wpm}} 词/分",
       "wordCount": "{{count}} 词",
-      "audioDetails": "{{speech}} 语音 / {{total}} 总计 (移除 {{silence}} 静音)",
+      "audioDetails": "{{total}} 总计 : {{speech}} 语音 (移除 {{silence}} 静音)",
       "latencyStt": "{{latency}} 语音识别",
       "latencyLlm": "{{latency}} 大模型",
       "extraModelsCount": "{{count}} 个模型",
       "promptTooltip": "提示词: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
-      "promptUsed": "LLM Prompt Used"
+      "promptUsed": "LLM Prompt Used",
+      "audioDetailsNoCut": "{{total}} 总计 : {{speech}} 语音",
+      "audioTotalOnly": "{{total}} 总计"
     },
     "debug": {
       "title": "调试",

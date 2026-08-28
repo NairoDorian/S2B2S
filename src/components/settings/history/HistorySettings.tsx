@@ -709,6 +709,11 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     return { wpm: calculatedWpm, speedRating: rating };
   }, [speechDurationSec, totalDurationSec, wordCount, t]);
 
+  const formatDurationSec = (sec: number): string => {
+    const rounded = Math.round(sec * 10) / 10;
+    return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
+  };
+
   const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
 
   return (
@@ -842,9 +847,20 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-mid-gray/10 text-text/80 border border-mid-gray/15">
             <Volume2 className="w-3.5 h-3.5 text-mid-gray" />
             <span>
-              {speechDurationSec !== null && silenceCutPercent > 0
-                ? `${speechDurationSec.toFixed(1)}s speech / ${totalDurationSec.toFixed(1)}s (${silenceCutPercent}% cut)`
-                : `${totalDurationSec.toFixed(1)}s total`}
+              {speechDurationSec !== null
+                ? silenceCutPercent > 0
+                  ? t("settings.history.audioDetails", {
+                      total: formatDurationSec(totalDurationSec),
+                      speech: formatDurationSec(speechDurationSec),
+                      silence: `${silenceCutPercent}%`,
+                    })
+                  : t("settings.history.audioDetailsNoCut", {
+                      total: formatDurationSec(totalDurationSec),
+                      speech: formatDurationSec(speechDurationSec),
+                    })
+                : t("settings.history.audioTotalOnly", {
+                    total: formatDurationSec(totalDurationSec),
+                  })}
             </span>
           </span>
         )}

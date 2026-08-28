@@ -564,13 +564,15 @@
       "speedVeryFast": "Très rapide",
       "wpmRating": "{{wpm}} MPM",
       "wordCount": "{{count}} mots",
-      "audioDetails": "{{speech}} voix / {{total}} total ({{silence}} coupé)",
+      "audioDetails": "{{total}} total : {{speech}} voix ({{silence}} coupé)",
       "latencyStt": "{{latency}} STT",
       "latencyLlm": "{{latency}} LLM",
       "extraModelsCount": "{{count}} modèles",
       "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
-      "promptUsed": "LLM Prompt Used"
+      "promptUsed": "LLM Prompt Used",
+      "audioDetailsNoCut": "{{total}} total : {{speech}} voix",
+      "audioTotalOnly": "{{total}} total"
     },
     "debug": {
       "title": "Débogage",
