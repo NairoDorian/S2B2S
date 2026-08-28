@@ -15,6 +15,7 @@
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
+    "statistics": "Statistics",
     "debug": "Debug",
     "about": "About",
     "multiStt": "Multi STT"
@@ -543,6 +544,102 @@
       "retranscribeError": "Failed to re-transcribe. Please try again.",
       "transcribing": "Transcribing...",
       "transcriptionFailed": "Transcription failed. You can re-transcribe using the retry icon."
+    },
+    "statistics": {
+      "title": "Transcription Statistics",
+      "description": "Review transcription volume, aggregate audio duration, and end-to-end latency.",
+      "controls": {
+        "title": "Filters"
+      },
+      "range": {
+        "label": "Date range",
+        "options": {
+          "today": "Today",
+          "sevenDays": "Last 7 days",
+          "thirtyDays": "Last 30 days",
+          "allTime": "All time"
+        },
+        "selected": "{{range}}"
+      },
+      "summary": {
+        "title": "Summary"
+      },
+      "units": {
+        "milliseconds": "{{value}} ms",
+        "seconds": "{{value}} s",
+        "hoursMinutes": "{{hours}}h {{minutes}}m",
+        "minutesSeconds": "{{minutes}}m {{seconds}}s",
+        "secondsLong": "{{seconds}} s",
+        "words": "words",
+        "wpm": "WPM",
+        "days": "days"
+      },
+      "metrics": {
+        "transcriptions": {
+          "title": "Total Transcriptions",
+          "description": "Total number of successful transcriptions."
+        },
+        "words": {
+          "title": "Total Words",
+          "average": "~{{value}} words / transcription"
+        },
+        "audio": {
+          "title": "Total Audio Recorded",
+          "average": "~{{value}} / transcription"
+        },
+        "wpm": {
+          "title": "Speech Rate",
+          "description": "Calculated from total words divided by total audio duration."
+        },
+        "streak": {
+          "title": "Active Streak",
+          "description": "Consecutive active dictation days."
+        },
+        "transcription": {
+          "title": "Transcription Latency",
+          "description": "Time elapsed from stopping input until raw transcription text is produced."
+        },
+        "postProcessing": {
+          "title": "Post-Processing Latency",
+          "description": "Time elapsed while LLM polishing is executed.",
+          "unavailable": "No post-processed transcriptions in this range."
+        }
+      },
+      "latency": {
+        "minimum": "Min",
+        "average": "Avg",
+        "maximum": "Max",
+        "samples": "{{formattedCount}} samples",
+        "unavailable": "Unavailable"
+      },
+      "reset": {
+        "title": "Reset Statistics",
+        "description": "Clear all accumulated transcription metrics and latency records.",
+        "historyUnaffected": "Transcription history and audio files will remain intact.",
+        "action": "Reset Statistics",
+        "accessibleAction": "Reset all transcription statistics",
+        "dialog": {
+          "title": "Reset Transcription Statistics",
+          "description": "Are you sure you want to reset all transcription statistics? This action cannot be undone.",
+          "warning": "This will permanently delete all metric records. Your history log is unaffected.",
+          "cancel": "Cancel",
+          "confirm": "Reset Statistics"
+        }
+      },
+      "states": {
+        "loading": {
+          "title": "Loading statistics...",
+          "description": "Aggregating metrics for the selected range."
+        },
+        "empty": {
+          "title": "No transcription statistics yet",
+          "description": "Record audio using the transcription hotkey to start tracking metrics."
+        },
+        "error": {
+          "description": "Failed to load statistics summary.",
+          "retry": "Retry"
+        }
+      }
     },
     "debug": {
       "title": "Debug",

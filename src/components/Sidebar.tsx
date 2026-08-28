@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
+  BarChart3,
   Cog,
   FlaskConical,
   History,
@@ -16,6 +17,7 @@ import {
   GeneralSettings,
   AdvancedSettings,
   HistorySettings,
+  StatisticsSettings,
   DebugSettings,
   AboutSettings,
   PostProcessingSettings,
@@ -51,6 +53,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  statistics: {
+    labelKey: "sidebar.statistics",
+    icon: BarChart3,
+    component: StatisticsSettings,
     enabled: () => true,
   },
   models: {

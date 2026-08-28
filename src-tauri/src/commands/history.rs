@@ -77,6 +77,7 @@ pub async fn retry_history_entry_transcription(
     app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    statistics_manager: State<'_, Arc<crate::managers::statistics::StatisticsManager>>,
     id: i32,
 ) -> Result<(), String> {
     let entry = history_manager
@@ -93,20 +94,42 @@ pub async fn retry_history_entry_transcription(
         return Err("Recording has no audio samples".to_string());
     }
 
+    let statistics_run = statistics_manager.begin_history_retry(id.into());
+    statistics_run.set_audio(samples.len(), 16000);
+    statistics_run.mark_input_stopped(std::time::Instant::now(), entry.post_process_requested);
+
     transcription_manager.initiate_model_load();
 
     let tm = Arc::clone(&transcription_manager);
-    let transcription = tauri::async_runtime::spawn_blocking(move || tm.transcribe(samples))
-        .await
-        .map_err(|e| format!("Transcription task panicked: {}", e))?
-        .map_err(|e| e.to_string())?;
+    let tracked_res = tauri::async_runtime::spawn_blocking(move || {
+        tm.transcribe_tracked(samples, statistics_run.clone())
+    })
+    .await
+    .map_err(|e| format!("Transcription task panicked: {}", e))?;
 
+    let tracked = match tracked_res {
+        Ok(t) => t,
+        Err(e) => {
+            return Err(e.to_string());
+        }
+    };
+
+    let transcription = tracked.text;
     if transcription.is_empty() {
+        tracked
+            .attempt
+            .finish(crate::managers::statistics::StatisticsRunStatus::Empty);
         return Err("Recording contains no speech".to_string());
     }
 
     let processed =
         process_transcription_output(&app, &transcription, entry.post_process_requested).await;
+
+    tracked.attempt.complete_post_processing();
+    tracked
+        .attempt
+        .finish(crate::managers::statistics::StatisticsRunStatus::Success);
+
     history_manager
         .update_transcription(
             id,

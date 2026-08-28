@@ -99,6 +99,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `transcription.rs` - Speech-to-text pipeline: primary engine, stream
     worker, `extra_engines` (Multi-STT), idle unload watcher
   - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum
+  - `statistics.rs` - Metrics tracking (independent SQLite table, streak calculation, stop-relative transcription and LLM post-processing latency distributions)
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling, WAV read/write
     (`utils.rs`: `save_wav_file`, `save_raw_wav_file`, `read_wav_samples`,
@@ -113,7 +114,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `bin/cli.rs` - Standalone recorder demo. **Not a build target** (the
     `[[bin]]` in `Cargo.toml` is commented out); keep it compiling by hand
 - `commands/` - Tauri command handlers for frontend communication
-  (`audio.rs`, `history.rs`, `models.rs`, `transcription.rs`, `mod.rs`)
+  (`audio.rs`, `history.rs`, `models.rs`, `statistics.rs`, `transcription.rs`, `mod.rs`)
 - `cli.rs` - CLI argument definitions (clap derive)
 - `shortcut/` - Global keyboard shortcut handling. `mod.rs` holds the
   settings-change commands and `should_register_binding`, the single rule for
@@ -154,12 +155,13 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `App.tsx` - Main component with onboarding flow
 - `components/` - React UI components:
   - `settings/` - Settings UI, grouped by page (`general/`, `advanced/`,
-    `models/`, `history/`, `post-processing/`, `about/`, `debug/`) plus the
+    `models/`, `history/`, `statistics/`, `post-processing/`, `about/`, `debug/`) plus the
     individual setting components. Fork-added ones: `AccentColorSelector`,
     `AppendTrailingNewline`, `KeyComboInput` (performance-mode shortcut
     recorder), `MicIdleTimeout`, `SaveRawAudio`, `SpeechStats`,
     `VadBackendSelector` (upstream), `PasteMethod` (direct streaming +
     speed), `ShowOverlay` (direct mode + speed)
+    - `statistics/StatisticsSettings.tsx` - Analytics & streak dashboard (transcriptions, words, audio duration, WPM, streak, latency distributions)
     - `multi-stt/MultiSttSettings.tsx` - Multi-STT configuration (fork feature)
   - `model-selector/` - Status-bar model controls (footer). Three mutually
     exclusive popovers: model switcher, quantization picker

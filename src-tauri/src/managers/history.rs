@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::AppHandle;
 use tauri_specta::Event;
 
@@ -33,7 +34,109 @@ static MIGRATIONS: &[M] = &[
     M::up(
         "ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;",
     ),
+    M::up(
+        "CREATE TABLE transcription_statistics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at_ms INTEGER NOT NULL CHECK (started_at_ms >= 0),
+            completed_at_ms INTEGER NOT NULL CHECK (completed_at_ms >= started_at_ms),
+            status TEXT NOT NULL CHECK (status IN ('success', 'empty', 'failed', 'cancelled')),
+            origin TEXT NOT NULL CHECK (origin IN ('normal', 'history_retry', 'headless')),
+            model_id TEXT CHECK (model_id IS NULL OR length(model_id) > 0),
+            engine TEXT CHECK (engine IS NULL OR length(engine) > 0),
+            backend TEXT CHECK (backend IS NULL OR length(backend) > 0),
+            audio_duration_ms INTEGER CHECK (audio_duration_ms IS NULL OR audio_duration_ms >= 0),
+            sample_rate_hz INTEGER CHECK (sample_rate_hz IS NULL OR sample_rate_hz > 0),
+            word_count INTEGER CHECK (word_count IS NULL OR word_count >= 0),
+            transcription_latency_ms INTEGER CHECK (transcription_latency_ms IS NULL OR transcription_latency_ms >= 0),
+            post_processing_latency_ms INTEGER CHECK (post_processing_latency_ms IS NULL OR post_processing_latency_ms >= 0),
+            post_processing_requested INTEGER NOT NULL CHECK (post_processing_requested IN (0, 1)),
+            measurement_version INTEGER NOT NULL CHECK (measurement_version > 0),
+            word_count_version INTEGER NOT NULL CHECK (word_count_version > 0),
+            source_history_id INTEGER CHECK (source_history_id IS NULL OR source_history_id > 0),
+            CHECK ((audio_duration_ms IS NULL) = (sample_rate_hz IS NULL)),
+            CHECK (transcription_latency_ms IS NULL OR status = 'success'),
+            CHECK (
+                post_processing_latency_ms IS NULL OR
+                (status = 'success' AND post_processing_requested = 1 AND
+                 transcription_latency_ms IS NOT NULL AND
+                 post_processing_latency_ms >= transcription_latency_ms)
+            ),
+            CHECK (
+                status != 'success' OR
+                (word_count IS NOT NULL AND word_count > 0 AND audio_duration_ms IS NOT NULL AND
+                 sample_rate_hz IS NOT NULL)
+            )
+        );
+        CREATE INDEX transcription_statistics_status_completed_idx
+            ON transcription_statistics(status, completed_at_ms);",
+    ),
 ];
+
+fn migrations() -> Migrations<'static> {
+    Migrations::new(MIGRATIONS.to_vec())
+}
+
+pub(super) fn apply_migrations(conn: &mut Connection) -> Result<()> {
+    migrate_from_tauri_plugin_sql(conn)?;
+
+    let migrations = migrations();
+    #[cfg(debug_assertions)]
+    migrations.validate().expect("Invalid migrations");
+    migrations.to_latest(conn)?;
+    Ok(())
+}
+
+fn migrate_from_tauri_plugin_sql(conn: &Connection) -> Result<()> {
+    // Check if the old _sqlx_migrations table exists
+    let has_sqlx_migrations: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_sqlx_migrations'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if !has_sqlx_migrations {
+        return Ok(());
+    }
+
+    // Check current user_version
+    let current_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+
+    if current_version > 0 {
+        // Already migrated to rusqlite_migration system
+        return Ok(());
+    }
+
+    // Get the highest version from the old migrations table
+    let old_version: i32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if old_version > 0 {
+        info!(
+            "Migrating from tauri-plugin-sql (version {}) to rusqlite_migration",
+            old_version
+        );
+
+        // Set user_version to match the old migration state
+        conn.pragma_update(None, "user_version", old_version)?;
+
+        // Optionally drop the old migrations table (keeping it doesn't hurt)
+        // conn.execute("DROP TABLE IF EXISTS _sqlx_migrations", [])?;
+
+        info!(
+            "Migration tracking converted: user_version set to {}",
+            old_version
+        );
+    }
+
+    Ok(())
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
@@ -104,17 +207,7 @@ impl HistoryManager {
         info!("Initializing database at {:?}", self.db_path);
 
         let mut conn = Connection::open(&self.db_path)?;
-
-        // Handle migration from tauri-plugin-sql to rusqlite_migration
-        // tauri-plugin-sql used _sqlx_migrations table, rusqlite_migration uses user_version pragma
-        self.migrate_from_tauri_plugin_sql(&conn)?;
-
-        // Create migrations object and run to latest version
-        let migrations = Migrations::new(MIGRATIONS.to_vec());
-
-        // Validate migrations in debug builds
-        #[cfg(debug_assertions)]
-        migrations.validate().expect("Invalid migrations");
+        conn.busy_timeout(Duration::from_secs(5))?;
 
         // Get current version before migration
         let version_before: i32 =
@@ -122,7 +215,7 @@ impl HistoryManager {
         debug!("Database version before migration: {}", version_before);
 
         // Apply any pending migrations
-        migrations.to_latest(&mut conn)?;
+        apply_migrations(&mut conn)?;
 
         // Get version after migration
         let version_after: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -139,65 +232,10 @@ impl HistoryManager {
         Ok(())
     }
 
-    /// Migrate from tauri-plugin-sql's migration tracking to rusqlite_migration's.
-    /// tauri-plugin-sql used a _sqlx_migrations table, while rusqlite_migration uses
-    /// SQLite's user_version pragma. This function checks if the old system was in use
-    /// and sets the user_version accordingly so migrations don't re-run.
-    fn migrate_from_tauri_plugin_sql(&self, conn: &Connection) -> Result<()> {
-        // Check if the old _sqlx_migrations table exists
-        let has_sqlx_migrations: bool = conn
-            .query_row(
-                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='_sqlx_migrations'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-
-        if !has_sqlx_migrations {
-            return Ok(());
-        }
-
-        // Check current user_version
-        let current_version: i32 =
-            conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-
-        if current_version > 0 {
-            // Already migrated to rusqlite_migration system
-            return Ok(());
-        }
-
-        // Get the highest version from the old migrations table
-        let old_version: i32 = conn
-            .query_row(
-                "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations WHERE success = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-
-        if old_version > 0 {
-            info!(
-                "Migrating from tauri-plugin-sql (version {}) to rusqlite_migration",
-                old_version
-            );
-
-            // Set user_version to match the old migration state
-            conn.pragma_update(None, "user_version", old_version)?;
-
-            // Optionally drop the old migrations table (keeping it doesn't hurt)
-            // conn.execute("DROP TABLE IF EXISTS _sqlx_migrations", [])?;
-
-            info!(
-                "Migration tracking converted: user_version set to {}",
-                old_version
-            );
-        }
-
-        Ok(())
-    }
-
     fn get_connection(&self) -> Result<Connection> {
-        Ok(Connection::open(&self.db_path)?)
+        let conn = Connection::open(&self.db_path)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        Ok(conn)
     }
 
     fn map_history_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryEntry> {
@@ -216,6 +254,10 @@ impl HistoryManager {
 
     pub fn recordings_dir(&self) -> &std::path::Path {
         &self.recordings_dir
+    }
+
+    pub fn database_path(&self) -> &std::path::Path {
+        &self.db_path
     }
 
     /// Save a new history entry to the database.

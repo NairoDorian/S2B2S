@@ -3,11 +3,11 @@ use crate::TranscriptionCoordinator;
 use crate::apple_intelligence;
 use crate::audio_feedback::{SoundType, play_feedback_sound, play_feedback_sound_blocking};
 use crate::audio_toolkit::{VadPolicy, is_microphone_access_denied, is_no_input_device_error};
-use crate::managers::audio::{AudioRecordingManager, RecordingReadiness};
+use crate::managers::audio::{AudioRecordingManager, RecordingReadiness, StopRecordingResult};
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
-use crate::managers::transcription::StreamWorkKind;
-use crate::managers::transcription::TranscriptionManager;
+use crate::managers::statistics::{StatisticsManager, StatisticsRunStatus};
+use crate::managers::transcription::{StreamFinalization, StreamWorkKind, TranscriptionManager};
 use crate::settings::{
     APPLE_INTELLIGENCE_PROVIDER_ID, AppSettings, OverlayStyle, PasteMethod, get_settings,
 };
@@ -610,14 +610,13 @@ impl ShortcutAction for TranscribeAction {
         // With post-processing the live stream is a preview only (see
         // `live_stream_is_preview_only`): no live typing, Live overlay forced.
         let preview_only = live_stream_is_preview_only(&settings, self.post_process);
+        let statistics_manager = app.state::<Arc<StatisticsManager>>();
+        let statistics = statistics_manager.begin_normal_run(&binding_id);
         if model_supports_streaming {
-            tm.start_stream(!preview_only);
+            tm.start_stream(!preview_only, statistics.clone());
         }
         let plan_elapsed = plan_started.elapsed();
 
-        // Sizing the overlay follows the same advertised capability. A model that
-        // doesn't stream (or whose capability is not known yet) gets the compact
-        // pill instead of an oversized transparent live window.
         let overlay_started = Instant::now();
         match effective_overlay_style(&settings, preview_only, model_supports_streaming) {
             OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
@@ -697,6 +696,7 @@ impl ShortcutAction for TranscribeAction {
             // Dynamically register the cancel shortcut in a separate task to avoid deadlock
             shortcut::register_cancel_shortcut(app);
         } else {
+            statistics.finish(StatisticsRunStatus::Failed);
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
             tm.cancel_stream();
@@ -742,6 +742,11 @@ impl ShortcutAction for TranscribeAction {
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
+        let sm = Arc::clone(&app.state::<Arc<StatisticsManager>>());
+        let statistics = sm
+            .get_normal_run(binding_id)
+            .unwrap_or_else(|| sm.begin_normal_run(binding_id));
+        statistics.mark_input_stopped(stop_time, self.post_process);
 
         set_tray_state(app, TrayIconState::Transcribing);
         // Stop should give immediate visual feedback. Live streaming can keep
@@ -778,262 +783,306 @@ impl ShortcutAction for TranscribeAction {
             );
 
             let stop_recording_time = Instant::now();
-            if let Some(recorded) = rm.stop_recording(&binding_id, cancel_generation) {
-                let samples = recorded.stt_samples;
-                debug!(
-                    "Recording stopped and samples retrieved in {:?}, STT sample count: {}, raw sample count: {}",
-                    stop_recording_time.elapsed(),
-                    samples.len(),
-                    recorded.raw_samples.len()
-                );
-
-                if rm.was_cancelled_since(cancel_generation) {
-                    debug!("Transcription operation cancelled after recording stop");
+            let recorded_res = rm.stop_recording(&binding_id, cancel_generation);
+            let recorded = match recorded_res {
+                StopRecordingResult::Captured {
+                    recorded,
+                    captured_sample_count,
+                    sample_rate,
+                } => {
+                    statistics.set_audio(captured_sample_count, sample_rate);
+                    recorded
+                }
+                StopRecordingResult::Cancelled => {
+                    statistics.finish(StatisticsRunStatus::Cancelled);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
                     return;
                 }
-
-                let speech_ms = rm.last_speech_ms();
-                if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
-                    debug!(
-                        "Recording has no usable speech ({} samples, {}ms voiced); \
-                         skipping transcription",
-                        samples.len(),
-                        speech_ms
-                    );
-                    // Tear down any streaming worker so its channel doesn't leak
-                    // and block the next start_stream.
+                StopRecordingResult::NotActive => {
+                    statistics.finish(StatisticsRunStatus::Failed);
+                    return;
+                }
+                StopRecordingResult::Failed(err) => {
+                    statistics.finish(StatisticsRunStatus::Failed);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
-                } else {
-                    let settings = get_settings(&ah);
-                    let raw_count = recorded.raw_samples.len();
-                    let (samples_for_wav, sample_count, save_is_raw, raw_rate, raw_format) =
-                        if settings.save_raw_audio && raw_count > 0 {
-                            (
-                                recorded.raw_samples,
-                                raw_count,
-                                true,
-                                recorded.native_sample_rate,
-                                recorded.native_sample_format,
-                            )
-                        } else {
-                            (
-                                samples.clone(),
-                                samples.len(),
-                                false,
-                                16000,
-                                cpal::SampleFormat::I16,
-                            )
-                        };
-
-                    // Save WAV concurrently with transcription
-                    let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
-                    let wav_path = hm.recordings_dir().join(&file_name);
-                    let wav_path_for_verify = wav_path.clone();
-                    let wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                        if save_is_raw {
-                            crate::audio_toolkit::save_raw_wav_file(
-                                &wav_path,
-                                &samples_for_wav,
-                                raw_rate,
-                                raw_format,
-                            )
-                        } else {
-                            crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
-                        }
-                    });
-
-                    // Transcribe concurrently with WAV save. If a live stream was
-                    // running, finalize it and use its text (all audio was already
-                    // fed to the stream); otherwise batch-transcribe the samples.
-                    let transcription_time = Instant::now();
-                    let stream_finalized = tm.finalize_stream();
-                    // Plain transcription with direct streaming: the writer
-                    // already typed the text, so no final paste follows. With
-                    // post-processing the stream was preview-only (nothing was
-                    // typed) and the polished text is pasted below.
-                    let was_direct_stream_written = matches!(&stream_finalized, Ok(Some(text)) if !text.trim().is_empty())
-                        && settings.paste_method == PasteMethod::DirectStreaming
-                        && !preview_only;
-
-                    let transcription_result = match stream_finalized {
-                        // A finalized stream with usable text wins. An empty result
-                        // (no active stream, produced nothing, or a finalize error
-                        // after the engine was returned) falls back to a full batch
-                        // transcription of the same audio. A finalize timeout is
-                        // surfaced instead — the worker may still hold the engine,
-                        // so a batch fallback would contend with it.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
-                        Err(err) => Err(err),
-                    };
-
-                    // Await WAV save and verify
-                    let wav_saved = match wav_handle.await {
-                        Ok(Ok(())) => {
-                            match crate::audio_toolkit::verify_wav_file(
-                                &wav_path_for_verify,
-                                sample_count,
-                            ) {
-                                Ok(()) => true,
-                                Err(e) => {
-                                    error!("WAV verification failed: {}", e);
-                                    false
-                                }
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            error!("Failed to save WAV file: {}", e);
-                            false
-                        }
-                        Err(e) => {
-                            error!("WAV save task panicked: {}", e);
-                            false
-                        }
-                    };
-
-                    if rm.was_cancelled_since(cancel_generation) {
-                        debug!("Transcription operation cancelled before output handling");
-                        utils::hide_recording_overlay(&ah);
-                        set_tray_state(&ah, TrayIconState::Idle);
-                        return;
-                    }
-
-                    match transcription_result {
-                        Ok(transcription) => {
-                            debug!(
-                                "Transcription completed in {:?}: '{}'",
-                                transcription_time.elapsed(),
-                                utils::redact_text(&transcription)
-                            );
-
-                            if post_process {
-                                if use_streaming_overlay {
-                                    tm.emit_stream_working(StreamWorkKind::Polishing);
-                                } else {
-                                    show_processing_overlay(&ah);
-                                }
-                            }
-                            let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
-                                || rm.was_cancelled_since(cancel_generation),
-                            )
-                            .await
-                            else {
-                                debug!("Transcription operation cancelled during output handling");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                                return;
-                            };
-
-                            if rm.was_cancelled_since(cancel_generation) {
-                                debug!("Transcription operation cancelled before paste");
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                                return;
-                            }
-
-                            // Save to history if WAV was saved
-                            if wav_saved {
-                                if let Err(err) = hm.save_entry(
-                                    file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
-                                    error!("Failed to save history entry: {}", err);
-                                }
-                            }
-
-                            if processed.final_text.is_empty() || was_direct_stream_written {
-                                debug!(
-                                    "Direct streaming or empty output - skipping final paste action (direct_streamed: {})",
-                                    was_direct_stream_written
-                                );
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                            } else {
-                                let ah_clone = ah.clone();
-                                let paste_time = Instant::now();
-                                let final_text = processed.final_text;
-                                let rm_for_paste = Arc::clone(&rm);
-                                // Preview-only live stream: the polished text goes
-                                // in through the default clipboard paste.
-                                let paste_override = final_paste_method(preview_only);
-                                ah.run_on_main_thread(move || {
-                                    if rm_for_paste.was_cancelled_since(cancel_generation) {
-                                        debug!("Transcription operation cancelled before paste");
-                                        utils::hide_recording_overlay(&ah_clone);
-                                        set_tray_state(&ah_clone, TrayIconState::Idle);
-                                        return;
-                                    }
-
-                                    match utils::paste_with_method(
-                                        final_text,
-                                        ah_clone.clone(),
-                                        paste_override,
-                                    ) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
-                                        Err(e) => {
-                                            error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
-                                        }
-                                    }
-                                    utils::hide_recording_overlay(&ah_clone);
-                                    set_tray_state(&ah_clone, TrayIconState::Idle);
-                                })
-                                .unwrap_or_else(|e| {
-                                    error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::hide_recording_overlay(&ah);
-                                    set_tray_state(&ah, TrayIconState::Idle);
-                                });
-                            }
-                        }
-                        Err(err) => {
-                            if rm.was_cancelled_since(cancel_generation) {
-                                debug!(
-                                    "Transcription operation cancelled after transcription error"
-                                );
-                                utils::hide_recording_overlay(&ah);
-                                set_tray_state(&ah, TrayIconState::Idle);
-                                return;
-                            }
-
-                            error!("Transcription failed: {}", err);
-                            // Surface the failure to the UI (toast). The full
-                            // message is also in handy.log via the line above.
-                            let _ = ah.emit("transcription-error", err.to_string());
-                            // Save entry with empty text so user can retry
-                            if wav_saved {
-                                if let Err(save_err) = hm.save_entry(
-                                    file_name,
-                                    String::new(),
-                                    post_process,
-                                    None,
-                                    None,
-                                ) {
-                                    error!("Failed to save failed history entry: {}", save_err);
-                                }
-                            }
-                            utils::hide_recording_overlay(&ah);
-                            set_tray_state(&ah, TrayIconState::Idle);
-                        }
-                    }
+                    error!("Recording failed: {err}");
+                    return;
                 }
-            } else {
-                debug!("No samples retrieved from recording stop");
-                // Tear down any streaming worker so its channel doesn't leak.
+            };
+
+            let samples = recorded.stt_samples;
+            debug!(
+                "Recording stopped and samples retrieved in {:?}, STT sample count: {}, raw sample count: {}",
+                stop_recording_time.elapsed(),
+                samples.len(),
+                recorded.raw_samples.len()
+            );
+
+            if rm.was_cancelled_since(cancel_generation) {
+                debug!("Transcription operation cancelled after recording stop");
+                statistics.finish(StatisticsRunStatus::Cancelled);
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
+                return;
+            }
+
+            let speech_ms = rm.last_speech_ms();
+            if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
+                debug!(
+                    "Recording has no usable speech ({} samples, {}ms voiced); \
+                     skipping transcription",
+                    samples.len(),
+                    speech_ms
+                );
+                statistics.finish(StatisticsRunStatus::Empty);
+                // Tear down any streaming worker so its channel doesn't leak
+                // and block the next start_stream.
+                tm.cancel_stream();
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+            } else {
+                let settings = get_settings(&ah);
+                let raw_count = recorded.raw_samples.len();
+                let (samples_for_wav, sample_count, save_is_raw, raw_rate, raw_format) =
+                    if settings.save_raw_audio && raw_count > 0 {
+                        (
+                            recorded.raw_samples,
+                            raw_count,
+                            true,
+                            recorded.native_sample_rate,
+                            recorded.native_sample_format,
+                        )
+                    } else {
+                        (
+                            samples.clone(),
+                            samples.len(),
+                            false,
+                            16000,
+                            cpal::SampleFormat::I16,
+                        )
+                    };
+
+                // Save WAV concurrently with transcription
+                let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
+                let wav_path = hm.recordings_dir().join(&file_name);
+                let wav_path_for_verify = wav_path.clone();
+                let wav_handle = tauri::async_runtime::spawn_blocking(move || {
+                    if save_is_raw {
+                        crate::audio_toolkit::save_raw_wav_file(
+                            &wav_path,
+                            &samples_for_wav,
+                            raw_rate,
+                            raw_format,
+                        )
+                    } else {
+                        crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
+                    }
+                });
+
+                // Transcribe concurrently with WAV save. If a live stream was
+                // running, finalize it and use its text (all audio was already
+                // fed to the stream); otherwise batch-transcribe the samples.
+                let transcription_time = Instant::now();
+                let stream_finalized = tm.finalize_stream();
+                // Plain transcription with direct streaming: the writer
+                // already typed the text, so no final paste follows. With
+                // post-processing the stream was preview-only (nothing was
+                // typed) and the polished text is pasted below.
+                let was_direct_stream_written = matches!(&stream_finalized, StreamFinalization::Completed(t) if !t.text.trim().is_empty())
+                    && settings.paste_method == PasteMethod::DirectStreaming
+                    && !preview_only;
+
+                let transcription_result = match stream_finalized {
+                    // A finalized stream with usable text wins. An empty result
+                    // (no active stream, produced nothing, or a finalize error
+                    // after the engine was returned) falls back to a full batch
+                    // transcription of the same audio. A finalize timeout is
+                    // surfaced instead — the worker may still hold the engine,
+                    // so a batch fallback would contend with it.
+                    StreamFinalization::Completed(tracked) if !tracked.text.trim().is_empty() => {
+                        Ok(tracked)
+                    }
+                    StreamFinalization::Completed(_) | StreamFinalization::NeverStarted => {
+                        tm.transcribe_tracked(samples, statistics.clone())
+                    }
+                    StreamFinalization::Failed(err) => {
+                        warn!("Stream failed: {err}; falling back to batch transcription");
+                        tm.transcribe_tracked(samples, statistics.clone())
+                    }
+                    StreamFinalization::Timeout(err) => Err(anyhow::anyhow!(err)),
+                };
+
+                // Await WAV save and verify
+                let wav_saved = match wav_handle.await {
+                    Ok(Ok(())) => {
+                        match crate::audio_toolkit::verify_wav_file(
+                            &wav_path_for_verify,
+                            sample_count,
+                        ) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                error!("WAV verification failed: {}", e);
+                                false
+                            }
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        error!("Failed to save WAV file: {}", e);
+                        false
+                    }
+                    Err(e) => {
+                        error!("WAV save task panicked: {}", e);
+                        false
+                    }
+                };
+
+                if rm.was_cancelled_since(cancel_generation) {
+                    debug!("Transcription operation cancelled before output handling");
+                    if let Ok(ref tracked) = transcription_result {
+                        tracked.attempt.finish(StatisticsRunStatus::Cancelled);
+                    }
+                    statistics.finish(StatisticsRunStatus::Cancelled);
+                    utils::hide_recording_overlay(&ah);
+                    set_tray_state(&ah, TrayIconState::Idle);
+                    return;
+                }
+
+                match transcription_result {
+                    Ok(tracked) => {
+                        let transcription = tracked.text;
+                        let attempt = tracked.attempt;
+                        debug!(
+                            "Transcription completed in {:?}: '{}'",
+                            transcription_time.elapsed(),
+                            utils::redact_text(&transcription)
+                        );
+
+                        if post_process {
+                            if use_streaming_overlay {
+                                tm.emit_stream_working(StreamWorkKind::Polishing);
+                            } else {
+                                show_processing_overlay(&ah);
+                            }
+                        }
+                        let Some(processed) = complete_unless_cancelled(
+                            process_transcription_output(&ah, &transcription, post_process),
+                            || rm.was_cancelled_since(cancel_generation),
+                        )
+                        .await
+                        else {
+                            debug!("Transcription operation cancelled during output handling");
+                            attempt.finish(StatisticsRunStatus::Cancelled);
+                            statistics.finish(StatisticsRunStatus::Cancelled);
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                            return;
+                        };
+
+                        if rm.was_cancelled_since(cancel_generation) {
+                            debug!("Transcription operation cancelled before paste");
+                            attempt.finish(StatisticsRunStatus::Cancelled);
+                            statistics.finish(StatisticsRunStatus::Cancelled);
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                            return;
+                        }
+
+                        // Complete post processing for statistics attempt
+                        attempt.complete_post_processing();
+                        attempt.finish(StatisticsRunStatus::Success);
+                        statistics.finish(StatisticsRunStatus::Success);
+
+                        // Save to history if WAV was saved
+                        if wav_saved {
+                            if let Err(err) = hm.save_entry(
+                                file_name,
+                                transcription,
+                                post_process,
+                                processed.post_processed_text.clone(),
+                                processed.post_process_prompt.clone(),
+                            ) {
+                                error!("Failed to save history entry: {}", err);
+                            }
+                        }
+
+                        if processed.final_text.is_empty() || was_direct_stream_written {
+                            debug!(
+                                "Direct streaming or empty output - skipping final paste action (direct_streamed: {})",
+                                was_direct_stream_written
+                            );
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                        } else {
+                            let ah_clone = ah.clone();
+                            let paste_time = Instant::now();
+                            let final_text = processed.final_text;
+                            let rm_for_paste = Arc::clone(&rm);
+                            // Preview-only live stream: the polished text goes
+                            // in through the default clipboard paste.
+                            let paste_override = final_paste_method(preview_only);
+                            ah.run_on_main_thread(move || {
+                                if rm_for_paste.was_cancelled_since(cancel_generation) {
+                                    debug!("Transcription operation cancelled before paste");
+                                    utils::hide_recording_overlay(&ah_clone);
+                                    set_tray_state(&ah_clone, TrayIconState::Idle);
+                                    return;
+                                }
+
+                                match utils::paste_with_method(
+                                    final_text,
+                                    ah_clone.clone(),
+                                    paste_override,
+                                ) {
+                                    Ok(()) => debug!(
+                                        "Text pasted successfully in {:?}",
+                                        paste_time.elapsed()
+                                    ),
+                                    Err(e) => {
+                                        error!("Failed to paste transcription: {}", e);
+                                        let _ = ah_clone.emit("paste-error", ());
+                                    }
+                                }
+                                utils::hide_recording_overlay(&ah_clone);
+                                set_tray_state(&ah_clone, TrayIconState::Idle);
+                            })
+                            .unwrap_or_else(|e| {
+                                error!("Failed to run paste on main thread: {:?}", e);
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        if rm.was_cancelled_since(cancel_generation) {
+                            debug!("Transcription operation cancelled after transcription error");
+                            statistics.finish(StatisticsRunStatus::Cancelled);
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                            return;
+                        }
+
+                        statistics.finish(StatisticsRunStatus::Failed);
+                        error!("Transcription failed: {}", err);
+                        // Surface the failure to the UI (toast). The full
+                        // message is also in handy.log via the line above.
+                        let _ = ah.emit("transcription-error", err.to_string());
+                        // Save entry with empty text so user can retry
+                        if wav_saved {
+                            if let Err(save_err) =
+                                hm.save_entry(file_name, String::new(), post_process, None, None)
+                            {
+                                error!("Failed to save failed history entry: {}", save_err);
+                            }
+                        }
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                    }
+                }
             }
         });
 
@@ -1317,8 +1366,10 @@ impl ShortcutAction for MultiSttAction {
         // stream is a preview only: never typed into the app, Live overlay
         // forced when the model can stream.
         let preview_only = live_stream_is_preview_only(&settings, true);
+        let statistics_manager = app.state::<Arc<StatisticsManager>>();
+        let statistics = statistics_manager.begin_normal_run(&binding_id);
         if model_supports_streaming {
-            tm.start_stream(false);
+            tm.start_stream(false, statistics.clone());
         }
 
         match effective_overlay_style(&settings, preview_only, model_supports_streaming) {
@@ -1347,6 +1398,7 @@ impl ShortcutAction for MultiSttAction {
         if recording_error.is_none() {
             shortcut::register_cancel_shortcut(app);
         } else {
+            statistics.finish(StatisticsRunStatus::Failed);
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
@@ -1394,9 +1446,16 @@ impl ShortcutAction for MultiSttAction {
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
+        let sm = Arc::clone(&app.state::<Arc<StatisticsManager>>());
 
         set_tray_state(app, TrayIconState::Transcribing);
         let stop_settings = get_settings(app);
+        let merge_requested = has_merge_prompt(&stop_settings);
+        let statistics = sm
+            .get_normal_run(binding_id)
+            .unwrap_or_else(|| sm.begin_normal_run(binding_id));
+        statistics.mark_input_stopped(stop_time, merge_requested);
+
         let preview_only = live_stream_is_preview_only(&stop_settings, true);
         let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
@@ -1419,16 +1478,19 @@ impl ShortcutAction for MultiSttAction {
                 binding_id
             );
 
-            if let Some(recorded) = rm.stop_recording(&binding_id, cancel_generation) {
-                let samples = recorded.stt_samples;
-                debug!(
-                    "Multi-STT: Recording stopped, STT sample count: {}, raw sample count: {}",
-                    samples.len(),
-                    recorded.raw_samples.len()
-                );
-
-                if rm.was_cancelled_since(cancel_generation) {
-                    debug!("Multi-STT: Cancelled after recording stop");
+            let stop_recording_time = Instant::now();
+            let recorded_res = rm.stop_recording(&binding_id, cancel_generation);
+            let recorded = match recorded_res {
+                StopRecordingResult::Captured {
+                    recorded,
+                    captured_sample_count,
+                    sample_rate,
+                } => {
+                    statistics.set_audio(captured_sample_count, sample_rate);
+                    recorded
+                }
+                StopRecordingResult::Cancelled => {
+                    statistics.finish(StatisticsRunStatus::Cancelled);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
@@ -1449,462 +1511,593 @@ impl ShortcutAction for MultiSttAction {
                     }
                     return;
                 }
-
-                let speech_ms = rm.last_speech_ms();
-                if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
-                    debug!(
-                        "Multi-STT: Recording has no usable speech ({} samples, {}ms voiced)",
-                        samples.len(),
-                        speech_ms
-                    );
+                StopRecordingResult::NotActive => {
+                    statistics.finish(StatisticsRunStatus::Failed);
+                    return;
+                }
+                StopRecordingResult::Failed(err) => {
+                    statistics.finish(StatisticsRunStatus::Failed);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
-                    let perf_settings = get_settings(&ah);
-                    if perf_settings.multi_stt_performance_mode_enabled
-                        && perf_settings.multi_stt_performance_mode_trigger_on_start
-                    {
-                        let normal_shortcut = perf_settings
-                            .multi_stt_performance_mode_normal_shortcut
-                            .clone();
-                        let ah_for_normal = ah.clone();
-                        tauri::async_runtime::spawn_blocking(move || {
-                            crate::clipboard::simulate_key_combination(
-                                &ah_for_normal,
-                                &normal_shortcut,
-                            );
-                        });
-                    }
+                    error!("Multi-STT: Recording failed: {err}");
                     return;
                 }
+            };
 
-                // === PERFORMANCE MODE: FULL POWER ===
-                // Signal the user's performance-mode shortcut (e.g. Ctrl+Space)
-                // before the heavy transcription workload starts, giving the OS
-                // a chance to ramp up CPU clocks ahead of the 4-way inference.
-                // If trigger_on_start is enabled, it was already triggered in start().
+            let samples = recorded.stt_samples;
+            debug!(
+                "Multi-STT: Recording stopped, STT sample count: {}, raw sample count: {}",
+                samples.len(),
+                recorded.raw_samples.len()
+            );
+
+            if rm.was_cancelled_since(cancel_generation) {
+                debug!("Multi-STT: Cancelled after recording stop");
+                statistics.finish(StatisticsRunStatus::Cancelled);
+                tm.cancel_stream();
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
                 let perf_settings = get_settings(&ah);
                 if perf_settings.multi_stt_performance_mode_enabled
-                    && !perf_settings.multi_stt_performance_mode_trigger_on_start
+                    && perf_settings.multi_stt_performance_mode_trigger_on_start
                 {
-                    let full_power_shortcut = perf_settings
-                        .multi_stt_performance_mode_full_power_shortcut
+                    let normal_shortcut = perf_settings
+                        .multi_stt_performance_mode_normal_shortcut
                         .clone();
-                    let ah_clone = ah.clone();
+                    let ah_for_normal = ah.clone();
                     tauri::async_runtime::spawn_blocking(move || {
-                        crate::clipboard::simulate_key_combination(&ah_clone, &full_power_shortcut);
+                        crate::clipboard::simulate_key_combination(
+                            &ah_for_normal,
+                            &normal_shortcut,
+                        );
                     });
                 }
+                return;
+            }
 
-                let settings = get_settings(&ah);
-                let (samples_for_wav, save_is_raw, raw_rate, raw_format) =
-                    if settings.save_raw_audio && !recorded.raw_samples.is_empty() {
-                        (
-                            recorded.raw_samples,
-                            true,
-                            recorded.native_sample_rate,
-                            recorded.native_sample_format,
-                        )
-                    } else {
-                        (samples.clone(), false, 16000, cpal::SampleFormat::I16)
-                    };
-
-                // Save WAV concurrently. The timestamp is shared with the
-                // history entry below so the recorded file name always matches.
-                let recording_timestamp = chrono::Utc::now().timestamp();
-                let wav_path = hm
-                    .recordings_dir()
-                    .join(format!("handy-multi-{recording_timestamp}.wav"));
-                let wav_for_save = wav_path.clone();
-                let wav_sample_count = samples_for_wav.len();
-                let wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                    if save_is_raw {
-                        crate::audio_toolkit::save_raw_wav_file(
-                            &wav_for_save,
-                            &samples_for_wav,
-                            raw_rate,
-                            raw_format,
-                        )
-                    } else {
-                        crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
-                    }
-                });
-
-                // === LOAD EXTRA MODELS IN PARALLEL (fastest first-run) ===
-                // Both models load concurrently on the blocking pool so the async
-                // worker stays free for events/UI. Models already loaded (e.g. by
-                // the pre-load in start()) are skipped immediately.
-                let settings = get_settings(&ah);
-                let extra_model_2 = settings.multi_stt_model_2.clone();
-                let extra_model_3 = settings.multi_stt_model_3.clone();
-                let extra_model_4 = settings.multi_stt_model_4.clone();
-
-                let need_load_2 = extra_model_2
-                    .as_ref()
-                    .is_some_and(|id| !tm.is_extra_model_loaded(id));
-                let need_load_3 = extra_model_3
-                    .as_ref()
-                    .is_some_and(|id| !tm.is_extra_model_loaded(id));
-                let need_load_4 = extra_model_4
-                    .as_ref()
-                    .is_some_and(|id| !tm.is_extra_model_loaded(id));
-
-                if !need_load_2 {
-                    if let Some(ref id) = extra_model_2 {
-                        info!("Multi-STT: extra model 2 '{}' already loaded, skipping", id);
-                    }
-                }
-                if !need_load_3 {
-                    if let Some(ref id) = extra_model_3 {
-                        info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
-                    }
-                }
-                if !need_load_4 {
-                    if let Some(ref id) = extra_model_4 {
-                        info!("Multi-STT: extra model 4 '{}' already loaded, skipping", id);
-                    }
-                }
-
-                let tm_load_2 = Arc::clone(&tm);
-                let tm_load_3 = Arc::clone(&tm);
-                let tm_load_4 = Arc::clone(&tm);
-                let load_start = Instant::now();
-
-                let load_handle_2 = if need_load_2 {
-                    let model_id = extra_model_2.clone().unwrap();
-                    Some(tauri::async_runtime::spawn_blocking(move || {
-                        info!("Multi-STT: loading extra model 2: {}", model_id);
-                        match tm_load_2.load_extra_model(&model_id) {
-                            Ok(name) => {
-                                info!("Multi-STT: extra model 2 '{}' loaded successfully", name)
-                            }
-                            Err(e) => error!(
-                                "Multi-STT: failed to load extra model 2 '{}': {}",
-                                model_id, e
-                            ),
-                        }
-                    }))
-                } else {
-                    None
-                };
-
-                let load_handle_3 = if need_load_3 {
-                    let model_id = extra_model_3.clone().unwrap();
-                    Some(tauri::async_runtime::spawn_blocking(move || {
-                        info!("Multi-STT: loading extra model 3: {}", model_id);
-                        match tm_load_3.load_extra_model(&model_id) {
-                            Ok(name) => {
-                                info!("Multi-STT: extra model 3 '{}' loaded successfully", name)
-                            }
-                            Err(e) => error!(
-                                "Multi-STT: failed to load extra model 3 '{}': {}",
-                                model_id, e
-                            ),
-                        }
-                    }))
-                } else {
-                    None
-                };
-
-                let load_handle_4 = if need_load_4 {
-                    let model_id = extra_model_4.clone().unwrap();
-                    Some(tauri::async_runtime::spawn_blocking(move || {
-                        info!("Multi-STT: loading extra model 4: {}", model_id);
-                        match tm_load_4.load_extra_model(&model_id) {
-                            Ok(name) => {
-                                info!("Multi-STT: extra model 4 '{}' loaded successfully", name)
-                            }
-                            Err(e) => error!(
-                                "Multi-STT: failed to load extra model 4 '{}': {}",
-                                model_id, e
-                            ),
-                        }
-                    }))
-                } else {
-                    None
-                };
-
-                // All loads are spawned before awaiting — they run concurrently
-                // in the blocking pool, so total time = max(load_2, load_3, load_4).
-                if let Some(h) = load_handle_2 {
-                    let _ = h.await;
-                }
-                if let Some(h) = load_handle_3 {
-                    let _ = h.await;
-                }
-                if let Some(h) = load_handle_4 {
-                    let _ = h.await;
-                }
-
-                info!(
-                    "Multi-STT: extra model loading complete in {:?}",
-                    load_start.elapsed()
+            let speech_ms = rm.last_speech_ms();
+            if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
+                debug!(
+                    "Multi-STT: Recording has no usable speech ({} samples, {}ms voiced)",
+                    samples.len(),
+                    speech_ms
                 );
-
-                // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
-                // Inference is CPU/GPU-bound blocking work: run it on the
-                // blocking pool so tokio workers stay free for events/UI.
-
-                let tm1 = Arc::clone(&tm);
-                let tm2 = Arc::clone(&tm);
-                let tm3 = Arc::clone(&tm);
-                let tm4 = Arc::clone(&tm);
-                let s1 = samples.clone();
-                let s2 = samples.clone();
-                let s3 = samples.clone();
-                let s4 = samples.clone();
-
-                let task1 =
-                    tauri::async_runtime::spawn_blocking(move || match tm1.finalize_stream() {
-                        Ok(Some(text)) if !text.trim().is_empty() => {
-                            info!(
-                                "Multi-STT: Model 1 (primary) transcription: '{}'",
-                                utils::redact_text(&text)
-                            );
-                            text
-                        }
-                        Ok(_) => match tm1.transcribe(s1) {
-                            Ok(text) => {
-                                info!(
-                                    "Multi-STT: Model 1 (primary) transcription: '{}'",
-                                    utils::redact_text(&text)
-                                );
-                                text
-                            }
-                            Err(e) => {
-                                error!("Multi-STT: Model 1 transcription failed: {}", e);
-                                String::new()
-                            }
-                        },
-                        Err(err) => {
-                            error!("Multi-STT: Model 1 finalize failed: {}", err);
-                            String::new()
-                        }
+                statistics.finish(StatisticsRunStatus::Empty);
+                tm.cancel_stream();
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+                let perf_settings = get_settings(&ah);
+                if perf_settings.multi_stt_performance_mode_enabled
+                    && perf_settings.multi_stt_performance_mode_trigger_on_start
+                {
+                    let normal_shortcut = perf_settings
+                        .multi_stt_performance_mode_normal_shortcut
+                        .clone();
+                    let ah_for_normal = ah.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::clipboard::simulate_key_combination(
+                            &ah_for_normal,
+                            &normal_shortcut,
+                        );
                     });
+                }
+                return;
+            }
 
-                let task2 = if let Some(ref model_id) = extra_model_2 {
-                    let model_id = model_id.clone();
-                    Some(tauri::async_runtime::spawn_blocking(move || {
-                        if tm2.is_extra_model_loaded(&model_id) {
-                            match tm2.transcribe_with_extra(&model_id, s2) {
-                                Ok(text) => {
-                                    info!(
-                                        "Multi-STT: Model 2 '{}' transcription: '{}'",
-                                        model_id,
-                                        utils::redact_text(&text)
-                                    );
-                                    text
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "Multi-STT: Model 2 '{}' transcription failed: {}",
-                                        model_id, e
-                                    );
-                                    String::new()
-                                }
-                            }
-                        } else {
-                            warn!("Multi-STT: Model 2 '{}' not loaded, skipping", model_id);
-                            String::new()
-                        }
-                    }))
-                } else {
-                    None
-                };
-
-                let task3 = if let Some(ref model_id) = extra_model_3 {
-                    let model_id = model_id.clone();
-                    Some(tauri::async_runtime::spawn_blocking(move || {
-                        if tm3.is_extra_model_loaded(&model_id) {
-                            match tm3.transcribe_with_extra(&model_id, s3) {
-                                Ok(text) => {
-                                    info!(
-                                        "Multi-STT: Model 3 '{}' transcription: '{}'",
-                                        model_id,
-                                        utils::redact_text(&text)
-                                    );
-                                    text
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "Multi-STT: Model 3 '{}' transcription failed: {}",
-                                        model_id, e
-                                    );
-                                    String::new()
-                                }
-                            }
-                        } else {
-                            warn!("Multi-STT: Model 3 '{}' not loaded, skipping", model_id);
-                            String::new()
-                        }
-                    }))
-                } else {
-                    None
-                };
-
-                let task4 = if let Some(ref model_id) = extra_model_4 {
-                    let model_id = model_id.clone();
-                    Some(tauri::async_runtime::spawn_blocking(move || {
-                        if tm4.is_extra_model_loaded(&model_id) {
-                            match tm4.transcribe_with_extra(&model_id, s4) {
-                                Ok(text) => {
-                                    info!(
-                                        "Multi-STT: Model 4 '{}' transcription: '{}'",
-                                        model_id,
-                                        utils::redact_text(&text)
-                                    );
-                                    text
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "Multi-STT: Model 4 '{}' transcription failed: {}",
-                                        model_id, e
-                                    );
-                                    String::new()
-                                }
-                            }
-                        } else {
-                            warn!("Multi-STT: Model 4 '{}' not loaded, skipping", model_id);
-                            String::new()
-                        }
-                    }))
-                } else {
-                    None
-                };
-
-                let output1 = task1.await.unwrap_or_else(|e| {
-                    error!("Multi-STT: Model 1 task failed: {}", e);
-                    String::new()
+            // === PERFORMANCE MODE: FULL POWER ===
+            // Signal the user's performance-mode shortcut (e.g. Ctrl+Space)
+            // before the heavy transcription workload starts, giving the OS
+            // a chance to ramp up CPU clocks ahead of the 4-way inference.
+            // If trigger_on_start is enabled, it was already triggered in start().
+            let perf_settings = get_settings(&ah);
+            if perf_settings.multi_stt_performance_mode_enabled
+                && !perf_settings.multi_stt_performance_mode_trigger_on_start
+            {
+                let full_power_shortcut = perf_settings
+                    .multi_stt_performance_mode_full_power_shortcut
+                    .clone();
+                let ah_clone = ah.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    crate::clipboard::simulate_key_combination(&ah_clone, &full_power_shortcut);
                 });
-                let output2 = match task2 {
-                    Some(t) => t.await.unwrap_or_else(|e| {
-                        error!("Multi-STT: Model 2 task failed: {}", e);
-                        String::new()
-                    }),
-                    None => String::new(),
-                };
-                let output3 = match task3 {
-                    Some(t) => t.await.unwrap_or_else(|e| {
-                        error!("Multi-STT: Model 3 task failed: {}", e);
-                        String::new()
-                    }),
-                    None => String::new(),
-                };
-                let output4 = match task4 {
-                    Some(t) => t.await.unwrap_or_else(|e| {
-                        error!("Multi-STT: Model 4 task failed: {}", e);
-                        String::new()
-                    }),
-                    None => String::new(),
+            }
+
+            let settings = get_settings(&ah);
+            let (samples_for_wav, save_is_raw, raw_rate, raw_format) =
+                if settings.save_raw_audio && !recorded.raw_samples.is_empty() {
+                    (
+                        recorded.raw_samples,
+                        true,
+                        recorded.native_sample_rate,
+                        recorded.native_sample_format,
+                    )
+                } else {
+                    (samples.clone(), false, 16000, cpal::SampleFormat::I16)
                 };
 
-                info!(
-                    "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars, Output4={} chars",
-                    output1.len(),
-                    output2.len(),
-                    output3.len(),
-                    output4.len()
-                );
+            // Save WAV concurrently. The timestamp is shared with the
+            // history entry below so the recorded file name always matches.
+            let recording_timestamp = chrono::Utc::now().timestamp();
+            let wav_path = hm
+                .recordings_dir()
+                .join(format!("handy-multi-{recording_timestamp}.wav"));
+            let wav_for_save = wav_path.clone();
+            let wav_sample_count = samples_for_wav.len();
+            let wav_handle = tauri::async_runtime::spawn_blocking(move || {
+                if save_is_raw {
+                    crate::audio_toolkit::save_raw_wav_file(
+                        &wav_for_save,
+                        &samples_for_wav,
+                        raw_rate,
+                        raw_format,
+                    )
+                } else {
+                    crate::audio_toolkit::save_wav_file(&wav_for_save, &samples_for_wav)
+                }
+            });
 
-                // A cancel that landed during the (multi-second) parallel
-                // decode must not re-show the overlay, call the LLM, save a
-                // history row or paste. Same gate TranscribeAction applies
-                // before its output handling.
-                if rm.was_cancelled_since(cancel_generation) {
-                    debug!("Multi-STT: Cancelled during transcription");
+            // === LOAD EXTRA MODELS IN PARALLEL (fastest first-run) ===
+            // Both models load concurrently on the blocking pool so the async
+            // worker stays free for events/UI. Models already loaded (e.g. by
+            // the pre-load in start()) are skipped immediately.
+            let settings = get_settings(&ah);
+            let extra_model_2 = settings.multi_stt_model_2.clone();
+            let extra_model_3 = settings.multi_stt_model_3.clone();
+            let extra_model_4 = settings.multi_stt_model_4.clone();
+
+            let need_load_2 = extra_model_2
+                .as_ref()
+                .is_some_and(|id| !tm.is_extra_model_loaded(id));
+            let need_load_3 = extra_model_3
+                .as_ref()
+                .is_some_and(|id| !tm.is_extra_model_loaded(id));
+            let need_load_4 = extra_model_4
+                .as_ref()
+                .is_some_and(|id| !tm.is_extra_model_loaded(id));
+
+            if !need_load_2 {
+                if let Some(ref id) = extra_model_2 {
+                    info!("Multi-STT: extra model 2 '{}' already loaded, skipping", id);
+                }
+            }
+            if !need_load_3 {
+                if let Some(ref id) = extra_model_3 {
+                    info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
+                }
+            }
+            if !need_load_4 {
+                if let Some(ref id) = extra_model_4 {
+                    info!("Multi-STT: extra model 4 '{}' already loaded, skipping", id);
+                }
+            }
+
+            let tm_load_2 = Arc::clone(&tm);
+            let tm_load_3 = Arc::clone(&tm);
+            let tm_load_4 = Arc::clone(&tm);
+            let load_start = Instant::now();
+
+            let load_handle_2 = if need_load_2 {
+                let model_id = extra_model_2.clone().unwrap();
+                Some(tauri::async_runtime::spawn_blocking(move || {
+                    info!("Multi-STT: loading extra model 2: {}", model_id);
+                    match tm_load_2.load_extra_model(&model_id) {
+                        Ok(name) => {
+                            info!("Multi-STT: extra model 2 '{}' loaded successfully", name)
+                        }
+                        Err(e) => error!(
+                            "Multi-STT: failed to load extra model 2 '{}': {}",
+                            model_id, e
+                        ),
+                    }
+                }))
+            } else {
+                None
+            };
+
+            let load_handle_3 = if need_load_3 {
+                let model_id = extra_model_3.clone().unwrap();
+                Some(tauri::async_runtime::spawn_blocking(move || {
+                    info!("Multi-STT: loading extra model 3: {}", model_id);
+                    match tm_load_3.load_extra_model(&model_id) {
+                        Ok(name) => {
+                            info!("Multi-STT: extra model 3 '{}' loaded successfully", name)
+                        }
+                        Err(e) => error!(
+                            "Multi-STT: failed to load extra model 3 '{}': {}",
+                            model_id, e
+                        ),
+                    }
+                }))
+            } else {
+                None
+            };
+
+            let load_handle_4 = if need_load_4 {
+                let model_id = extra_model_4.clone().unwrap();
+                Some(tauri::async_runtime::spawn_blocking(move || {
+                    info!("Multi-STT: loading extra model 4: {}", model_id);
+                    match tm_load_4.load_extra_model(&model_id) {
+                        Ok(name) => {
+                            info!("Multi-STT: extra model 4 '{}' loaded successfully", name)
+                        }
+                        Err(e) => error!(
+                            "Multi-STT: failed to load extra model 4 '{}': {}",
+                            model_id, e
+                        ),
+                    }
+                }))
+            } else {
+                None
+            };
+
+            // All loads are spawned before awaiting — they run concurrently
+            // in the blocking pool, so total time = max(load_2, load_3, load_4).
+            if let Some(h) = load_handle_2 {
+                let _ = h.await;
+            }
+            if let Some(h) = load_handle_3 {
+                let _ = h.await;
+            }
+            if let Some(h) = load_handle_4 {
+                let _ = h.await;
+            }
+
+            info!(
+                "Multi-STT: extra model loading complete in {:?}",
+                load_start.elapsed()
+            );
+
+            // === TRANSCRIBE WITH ALL MODELS IN PARALLEL ===
+            // Inference is CPU/GPU-bound blocking work: run it on the
+            // blocking pool so tokio workers stay free for events/UI.
+
+            let tm1 = Arc::clone(&tm);
+            let tm2 = Arc::clone(&tm);
+            let tm3 = Arc::clone(&tm);
+            let tm4 = Arc::clone(&tm);
+            let s1 = samples.clone();
+            let s2 = samples.clone();
+            let s3 = samples.clone();
+            let s4 = samples.clone();
+            let stats1 = statistics.clone();
+            let stats2 = statistics.clone();
+            let stats3 = statistics.clone();
+            let stats4 = statistics.clone();
+
+            let task1 = tauri::async_runtime::spawn_blocking(move || match tm1.finalize_stream() {
+                StreamFinalization::Completed(tracked) if !tracked.text.trim().is_empty() => {
+                    info!(
+                        "Multi-STT: Model 1 (primary) transcription: '{}'",
+                        utils::redact_text(&tracked.text)
+                    );
+                    Some(tracked)
+                }
+                StreamFinalization::Completed(_) | StreamFinalization::NeverStarted => {
+                    tm1.transcribe_tracked(s1, stats1).ok()
+                }
+                StreamFinalization::Failed(err) => {
+                    error!("Multi-STT: Model 1 finalize failed: {}", err);
+                    tm1.transcribe_tracked(s1, stats1).ok()
+                }
+                StreamFinalization::Timeout(err) => {
+                    error!("Multi-STT: Model 1 finalize timeout: {}", err);
+                    None
+                }
+            });
+
+            let task2 = if let Some(ref model_id) = extra_model_2 {
+                let model_id = model_id.clone();
+                Some(tauri::async_runtime::spawn_blocking(move || {
+                    if tm2.is_extra_model_loaded(&model_id) {
+                        tm2.transcribe_with_extra_tracked(&model_id, s2, stats2)
+                            .ok()
+                    } else {
+                        warn!("Multi-STT: Model 2 '{}' not loaded, skipping", model_id);
+                        None
+                    }
+                }))
+            } else {
+                None
+            };
+
+            let task3 = if let Some(ref model_id) = extra_model_3 {
+                let model_id = model_id.clone();
+                Some(tauri::async_runtime::spawn_blocking(move || {
+                    if tm3.is_extra_model_loaded(&model_id) {
+                        tm3.transcribe_with_extra_tracked(&model_id, s3, stats3)
+                            .ok()
+                    } else {
+                        warn!("Multi-STT: Model 3 '{}' not loaded, skipping", model_id);
+                        None
+                    }
+                }))
+            } else {
+                None
+            };
+
+            let task4 = if let Some(ref model_id) = extra_model_4 {
+                let model_id = model_id.clone();
+                Some(tauri::async_runtime::spawn_blocking(move || {
+                    if tm4.is_extra_model_loaded(&model_id) {
+                        tm4.transcribe_with_extra_tracked(&model_id, s4, stats4)
+                            .ok()
+                    } else {
+                        warn!("Multi-STT: Model 4 '{}' not loaded, skipping", model_id);
+                        None
+                    }
+                }))
+            } else {
+                None
+            };
+
+            let mut tracked1 = task1.await.unwrap_or(None);
+            let mut tracked2 = match task2 {
+                Some(t) => t.await.unwrap_or(None),
+                None => None,
+            };
+            let mut tracked3 = match task3 {
+                Some(t) => t.await.unwrap_or(None),
+                None => None,
+            };
+            let mut tracked4 = match task4 {
+                Some(t) => t.await.unwrap_or(None),
+                None => None,
+            };
+
+            let output1 = tracked1
+                .as_ref()
+                .map(|t| t.text.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output2 = tracked2
+                .as_ref()
+                .map(|t| t.text.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output3 = tracked3
+                .as_ref()
+                .map(|t| t.text.as_str())
+                .unwrap_or("")
+                .to_string();
+            let output4 = tracked4
+                .as_ref()
+                .map(|t| t.text.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            info!(
+                "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars, Output4={} chars",
+                output1.len(),
+                output2.len(),
+                output3.len(),
+                output4.len()
+            );
+
+            // A cancel that landed during the (multi-second) parallel
+            // decode must not re-show the overlay, call the LLM, save a
+            // history row or paste. Same gate TranscribeAction applies
+            // before its output handling.
+            if rm.was_cancelled_since(cancel_generation) {
+                debug!("Multi-STT: Cancelled during transcription");
+                if let Some(t) = tracked1.take() {
+                    t.attempt.finish(StatisticsRunStatus::Cancelled);
+                }
+                if let Some(t) = tracked2.take() {
+                    t.attempt.finish(StatisticsRunStatus::Cancelled);
+                }
+                if let Some(t) = tracked3.take() {
+                    t.attempt.finish(StatisticsRunStatus::Cancelled);
+                }
+                if let Some(t) = tracked4.take() {
+                    t.attempt.finish(StatisticsRunStatus::Cancelled);
+                }
+                statistics.finish(StatisticsRunStatus::Cancelled);
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+                return;
+            }
+
+            // === MERGE TRANSCRIPTIONS ===
+            let settings_for_merge = get_settings(&ah);
+            let (merged, llm_merge_succeeded) = if merge_requested {
+                if use_streaming_overlay {
+                    tm.emit_stream_working(StreamWorkKind::Polishing);
+                } else {
+                    show_processing_overlay(&ah);
+                }
+
+                // Poll for cancellation while the LLM round-trip is in
+                // flight so Escape aborts the merge instead of waiting on it.
+                let Some(merge_outcome) = complete_unless_cancelled(
+                    multi_stt_merge_transcriptions(
+                        &settings_for_merge,
+                        &output1,
+                        &output2,
+                        &output3,
+                        &output4,
+                    ),
+                    || rm.was_cancelled_since(cancel_generation),
+                )
+                .await
+                else {
+                    debug!("Multi-STT: Cancelled during LLM merge");
+                    if let Some(t) = tracked1.take() {
+                        t.attempt.finish(StatisticsRunStatus::Cancelled);
+                    }
+                    if let Some(t) = tracked2.take() {
+                        t.attempt.finish(StatisticsRunStatus::Cancelled);
+                    }
+                    if let Some(t) = tracked3.take() {
+                        t.attempt.finish(StatisticsRunStatus::Cancelled);
+                    }
+                    if let Some(t) = tracked4.take() {
+                        t.attempt.finish(StatisticsRunStatus::Cancelled);
+                    }
+                    statistics.finish(StatisticsRunStatus::Cancelled);
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
                     return;
-                }
-
-                // === MERGE TRANSCRIPTIONS ===
-                let settings_for_merge = get_settings(&ah);
-                let merge_requested = has_merge_prompt(&settings_for_merge);
-                let (merged, llm_merge_succeeded) = if merge_requested {
-                    if use_streaming_overlay {
-                        tm.emit_stream_working(StreamWorkKind::Polishing);
-                    } else {
-                        show_processing_overlay(&ah);
-                    }
-
-                    // Poll for cancellation while the LLM round-trip is in
-                    // flight so Escape aborts the merge instead of waiting on it.
-                    let Some(merge_outcome) = complete_unless_cancelled(
-                        multi_stt_merge_transcriptions(
-                            &settings_for_merge,
-                            &output1,
-                            &output2,
-                            &output3,
-                            &output4,
-                        ),
-                        || rm.was_cancelled_since(cancel_generation),
-                    )
-                    .await
-                    else {
-                        debug!("Multi-STT: Cancelled during LLM merge");
-                        utils::hide_recording_overlay(&ah);
-                        set_tray_state(&ah, TrayIconState::Idle);
-                        return;
-                    };
-
-                    match merge_outcome {
-                        Some(content) => (content, true),
-                        None => {
-                            // Fallback: concatenate with newlines
-                            warn!(
-                                "Multi-STT: Merge prompt failed or not configured, concatenating outputs"
-                            );
-                            let mut combined = output1.clone();
-                            if !output2.is_empty() {
-                                if !combined.is_empty() {
-                                    combined.push('\n');
-                                }
-                                combined.push_str(&output2);
-                            }
-                            if !output3.is_empty() {
-                                if !combined.is_empty() {
-                                    combined.push('\n');
-                                }
-                                combined.push_str(&output3);
-                            }
-                            if !output4.is_empty() {
-                                if !combined.is_empty() {
-                                    combined.push('\n');
-                                }
-                                combined.push_str(&output4);
-                            }
-                            (combined, false)
-                        }
-                    }
-                } else {
-                    // No merge prompt: concatenate
-                    let mut combined = output1.clone();
-                    if !output2.is_empty() {
-                        if !combined.is_empty() {
-                            combined.push('\n');
-                        }
-                        combined.push_str(&output2);
-                    }
-                    if !output3.is_empty() {
-                        if !combined.is_empty() {
-                            combined.push('\n');
-                        }
-                        combined.push_str(&output3);
-                    }
-                    if !output4.is_empty() {
-                        if !combined.is_empty() {
-                            combined.push('\n');
-                        }
-                        combined.push_str(&output4);
-                    }
-                    (combined, false)
                 };
 
-                // === PERFORMANCE MODE: NORMAL after LLM merge succeeds ===
-                // If the Brain LLM merged the outputs, signal normal power mode
-                // immediately after merge completes.
-                let normal_settings = get_settings(&ah);
-                if normal_settings.multi_stt_performance_mode_enabled && llm_merge_succeeded {
+                match merge_outcome {
+                    Some(content) => (content, true),
+                    None => {
+                        // Fallback: concatenate with newlines
+                        warn!(
+                            "Multi-STT: Merge prompt failed or not configured, concatenating outputs"
+                        );
+                        let mut combined = output1.clone();
+                        if !output2.is_empty() {
+                            if !combined.is_empty() {
+                                combined.push('\n');
+                            }
+                            combined.push_str(&output2);
+                        }
+                        if !output3.is_empty() {
+                            if !combined.is_empty() {
+                                combined.push('\n');
+                            }
+                            combined.push_str(&output3);
+                        }
+                        if !output4.is_empty() {
+                            if !combined.is_empty() {
+                                combined.push('\n');
+                            }
+                            combined.push_str(&output4);
+                        }
+                        (combined, false)
+                    }
+                }
+            } else {
+                // No merge prompt: concatenate
+                let mut combined = output1.clone();
+                if !output2.is_empty() {
+                    if !combined.is_empty() {
+                        combined.push('\n');
+                    }
+                    combined.push_str(&output2);
+                }
+                if !output3.is_empty() {
+                    if !combined.is_empty() {
+                        combined.push('\n');
+                    }
+                    combined.push_str(&output3);
+                }
+                if !output4.is_empty() {
+                    if !combined.is_empty() {
+                        combined.push('\n');
+                    }
+                    combined.push_str(&output4);
+                }
+                (combined, false)
+            };
+
+            // Finish attempts for statistics
+            if let Some(t) = tracked1.take() {
+                t.attempt.complete_post_processing();
+                t.attempt.finish(StatisticsRunStatus::Success);
+            }
+            if let Some(t) = tracked2.take() {
+                t.attempt.complete_post_processing();
+                t.attempt.finish(StatisticsRunStatus::Success);
+            }
+            if let Some(t) = tracked3.take() {
+                t.attempt.complete_post_processing();
+                t.attempt.finish(StatisticsRunStatus::Success);
+            }
+            if let Some(t) = tracked4.take() {
+                t.attempt.complete_post_processing();
+                t.attempt.finish(StatisticsRunStatus::Success);
+            }
+            statistics.finish(StatisticsRunStatus::Success);
+
+            // === PERFORMANCE MODE: NORMAL after LLM merge succeeds ===
+            // If the Brain LLM merged the outputs, signal normal power mode
+            // immediately after merge completes.
+            let normal_settings = get_settings(&ah);
+            if normal_settings.multi_stt_performance_mode_enabled && llm_merge_succeeded {
+                let normal_shortcut = normal_settings
+                    .multi_stt_performance_mode_normal_shortcut
+                    .clone();
+                let ah_for_normal = ah.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    crate::clipboard::simulate_key_combination(&ah_for_normal, &normal_shortcut);
+                });
+            }
+
+            // The WAV was written concurrently with the decode; only record
+            // a history row that points at a file that actually exists and
+            // holds every sample (mirrors TranscribeAction).
+            let wav_saved = match wav_handle.await {
+                Ok(Ok(())) => {
+                    match crate::audio_toolkit::verify_wav_file(&wav_path, wav_sample_count) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            error!("Multi-STT: WAV verification failed: {}", e);
+                            false
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    error!("Multi-STT: Failed to save WAV file: {}", e);
+                    false
+                }
+                Err(e) => {
+                    error!("Multi-STT: WAV save task panicked: {}", e);
+                    false
+                }
+            };
+
+            if rm.was_cancelled_since(cancel_generation) {
+                debug!("Multi-STT: Cancelled before history save");
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+                return;
+            }
+
+            // Save to history in background (parallel with paste for speed)
+            let multi_transcript = format!(
+                "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\nModel 4: {}\n{}\n=== Merged ===\n{}",
+                settings.selected_model,
+                output1,
+                settings.multi_stt_model_2.as_deref().unwrap_or("none"),
+                output2,
+                settings.multi_stt_model_3.as_deref().unwrap_or("none"),
+                output3,
+                settings.multi_stt_model_4.as_deref().unwrap_or("none"),
+                output4,
+                merged
+            );
+            let hm_clone = Arc::clone(&hm);
+            let file_name = format!("handy-multi-{recording_timestamp}.wav");
+            let merge_prompt_text = settings
+                .multi_stt_merge_prompt
+                .as_ref()
+                .map(|p| p.prompt.clone());
+            let merged_for_history = merged.clone();
+            if wav_saved {
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(err) = hm_clone.save_entry(
+                        file_name,
+                        multi_transcript,
+                        merge_requested,
+                        Some(merged_for_history),
+                        merge_prompt_text,
+                    ) {
+                        error!("Failed to save multi-STT history entry: {}", err);
+                    }
+                });
+            } else {
+                warn!("Multi-STT: Skipping history entry because the WAV could not be saved");
+            }
+
+            // Paste merged result (runs concurrently with background history save)
+            if merged.is_empty() {
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+                // LLM didn't respond and nothing to paste — still restore power.
+                if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
                     let normal_shortcut = normal_settings
                         .multi_stt_performance_mode_normal_shortcut
                         .clone();
@@ -1916,162 +2109,56 @@ impl ShortcutAction for MultiSttAction {
                         );
                     });
                 }
-
-                // The WAV was written concurrently with the decode; only record
-                // a history row that points at a file that actually exists and
-                // holds every sample (mirrors TranscribeAction).
-                let wav_saved = match wav_handle.await {
-                    Ok(Ok(())) => {
-                        match crate::audio_toolkit::verify_wav_file(&wav_path, wav_sample_count) {
-                            Ok(()) => true,
-                            Err(e) => {
-                                error!("Multi-STT: WAV verification failed: {}", e);
-                                false
-                            }
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        error!("Multi-STT: Failed to save WAV file: {}", e);
-                        false
-                    }
-                    Err(e) => {
-                        error!("Multi-STT: WAV save task panicked: {}", e);
-                        false
-                    }
-                };
-
-                if rm.was_cancelled_since(cancel_generation) {
-                    debug!("Multi-STT: Cancelled before history save");
-                    utils::hide_recording_overlay(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
-                    return;
-                }
-
-                // Save to history in background (parallel with paste for speed)
-                let multi_transcript = format!(
-                    "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\nModel 4: {}\n{}\n=== Merged ===\n{}",
-                    settings.selected_model,
-                    output1,
-                    settings.multi_stt_model_2.as_deref().unwrap_or("none"),
-                    output2,
-                    settings.multi_stt_model_3.as_deref().unwrap_or("none"),
-                    output3,
-                    settings.multi_stt_model_4.as_deref().unwrap_or("none"),
-                    output4,
-                    merged
-                );
-                let hm_clone = Arc::clone(&hm);
-                let file_name = format!("handy-multi-{recording_timestamp}.wav");
-                let merge_prompt_text = settings
-                    .multi_stt_merge_prompt
-                    .as_ref()
-                    .map(|p| p.prompt.clone());
-                let merged_for_history = merged.clone();
-                if wav_saved {
-                    tauri::async_runtime::spawn_blocking(move || {
-                        if let Err(err) = hm_clone.save_entry(
-                            file_name,
-                            multi_transcript,
-                            merge_requested,
-                            Some(merged_for_history),
-                            merge_prompt_text,
-                        ) {
-                            error!("Failed to save multi-STT history entry: {}", err);
-                        }
-                    });
-                } else {
-                    warn!("Multi-STT: Skipping history entry because the WAV could not be saved");
-                }
-
-                // Paste merged result (runs concurrently with background history save)
-                if merged.is_empty() {
-                    utils::hide_recording_overlay(&ah);
-                    set_tray_state(&ah, TrayIconState::Idle);
-                    // LLM didn't respond and nothing to paste — still restore power.
-                    if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
-                        let normal_shortcut = normal_settings
-                            .multi_stt_performance_mode_normal_shortcut
-                            .clone();
-                        let ah_for_normal = ah.clone();
-                        tauri::async_runtime::spawn_blocking(move || {
-                            crate::clipboard::simulate_key_combination(
-                                &ah_for_normal,
-                                &normal_shortcut,
-                            );
-                        });
-                    }
-                } else {
-                    let ah_clone = ah.clone();
-                    let final_text = merged;
-                    let rm_for_paste = Arc::clone(&rm);
-                    let need_normal_mode =
-                        normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded;
-                    let normal_shortcut = normal_settings
-                        .multi_stt_performance_mode_normal_shortcut
-                        .clone();
-                    // The merged text is always a processed result: with direct
-                    // streaming configured the live stream was preview-only and
-                    // the result goes in through the default clipboard paste.
-                    let paste_override =
-                        final_paste_method(live_stream_is_preview_only(&normal_settings, true));
-                    // If the main-thread dispatch itself fails the closure never
-                    // runs, so keep what the fallback needs to restore power.
-                    let fallback_normal_shortcut =
-                        need_normal_mode.then(|| normal_shortcut.clone());
-                    ah.run_on_main_thread(move || {
-                        if rm_for_paste.was_cancelled_since(cancel_generation) {
-                            debug!("Multi-STT: Cancelled before paste");
-                            utils::hide_recording_overlay(&ah_clone);
-                            set_tray_state(&ah_clone, TrayIconState::Idle);
-                            return;
-                        }
-                        match utils::paste_with_method(final_text, ah_clone.clone(), paste_override)
-                        {
-                            Ok(()) => debug!("Multi-STT: Text pasted successfully"),
-                            Err(e) => {
-                                error!("Multi-STT: Failed to paste transcription: {}", e);
-                                let _ = ah_clone.emit("paste-error", ());
-                            }
-                        }
-                        // LLM didn't respond — restore normal power after paste.
-                        if need_normal_mode {
-                            let ah_for_normal = ah_clone.clone();
-                            let shortcut = normal_shortcut.clone();
-                            tauri::async_runtime::spawn_blocking(move || {
-                                crate::clipboard::simulate_key_combination(
-                                    &ah_for_normal,
-                                    &shortcut,
-                                );
-                            });
-                        }
+            } else {
+                let ah_clone = ah.clone();
+                let final_text = merged;
+                let rm_for_paste = Arc::clone(&rm);
+                let need_normal_mode =
+                    normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded;
+                let normal_shortcut = normal_settings
+                    .multi_stt_performance_mode_normal_shortcut
+                    .clone();
+                // The merged text is always a processed result: with direct
+                // streaming configured the live stream was preview-only and
+                // the result goes in through the default clipboard paste.
+                let paste_override =
+                    final_paste_method(live_stream_is_preview_only(&normal_settings, true));
+                // If the main-thread dispatch itself fails the closure never
+                // runs, so keep what the fallback needs to restore power.
+                let fallback_normal_shortcut = need_normal_mode.then(|| normal_shortcut.clone());
+                ah.run_on_main_thread(move || {
+                    if rm_for_paste.was_cancelled_since(cancel_generation) {
+                        debug!("Multi-STT: Cancelled before paste");
                         utils::hide_recording_overlay(&ah_clone);
                         set_tray_state(&ah_clone, TrayIconState::Idle);
-                    })
-                    .unwrap_or_else(|e| {
-                        error!("Multi-STT: Failed to run paste on main thread: {:?}", e);
-                        if let Some(shortcut) = fallback_normal_shortcut {
-                            restore_normal_power(&ah, shortcut);
+                        return;
+                    }
+                    match utils::paste_with_method(final_text, ah_clone.clone(), paste_override) {
+                        Ok(()) => debug!("Multi-STT: Text pasted successfully"),
+                        Err(e) => {
+                            error!("Multi-STT: Failed to paste transcription: {}", e);
+                            let _ = ah_clone.emit("paste-error", ());
                         }
-                        utils::hide_recording_overlay(&ah);
-                        set_tray_state(&ah, TrayIconState::Idle);
-                    });
-                }
-            } else {
-                debug!("Multi-STT: No samples retrieved from recording stop");
-                tm.cancel_stream();
-                utils::hide_recording_overlay(&ah);
-                set_tray_state(&ah, TrayIconState::Idle);
-                // Full power was already requested at recording start with
-                // trigger-on-start; nothing else on this path restores it.
-                let perf_settings = get_settings(&ah);
-                if perf_settings.multi_stt_performance_mode_enabled
-                    && perf_settings.multi_stt_performance_mode_trigger_on_start
-                {
-                    restore_normal_power(
-                        &ah,
-                        perf_settings.multi_stt_performance_mode_normal_shortcut,
-                    );
-                }
+                    }
+                    // LLM didn't respond — restore normal power after paste.
+                    if need_normal_mode {
+                        let ah_for_normal = ah_clone.clone();
+                        let shortcut = normal_shortcut.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            crate::clipboard::simulate_key_combination(&ah_for_normal, &shortcut);
+                        });
+                    }
+                    utils::hide_recording_overlay(&ah_clone);
+                    set_tray_state(&ah_clone, TrayIconState::Idle);
+                })
+                .unwrap_or_else(|e| {
+                    error!("Multi-STT: Failed to run paste on main thread: {:?}", e);
+                    if let Some(shortcut) = fallback_normal_shortcut {
+                        restore_normal_power(&ah, shortcut);
+                    }
+                    utils::hide_recording_overlay(&ah);
+                    set_tray_state(&ah, TrayIconState::Idle);
+                });
             }
         });
 

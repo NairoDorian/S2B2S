@@ -4,6 +4,9 @@ use crate::audio_toolkit::{
 };
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
+use crate::managers::statistics::{
+    PendingStatisticsAttempt, StatisticsRunContext, StatisticsRunStatus,
+};
 use crate::settings::{
     AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting, TranscribeAcceleratorSetting,
     get_settings,
@@ -139,15 +142,18 @@ pub struct StreamPhaseEvent {
     pub kind: Option<StreamWorkKind>,
 }
 
-/// Commands sent to the streaming worker thread. Audio frames and the finalize
-/// request travel the same channel so FIFO ordering guarantees every fed frame
-/// is processed before finalize runs.
 enum StreamCmd {
     Feed(Vec<f32>),
     /// Flush the stream and reply with the final text, or `None` if no stream
     /// was ever active (caller should fall back to batch transcription).
-    Finalize(mpsc::Sender<Option<FinalizedStreamText>>),
+    Finalize(mpsc::Sender<StreamWorkerResult>),
     Cancel,
+}
+
+enum StreamWorkerResult {
+    NeverStarted,
+    Completed(FinalizedStreamText),
+    Failed(String),
 }
 
 struct FinalizedStreamText {
@@ -155,6 +161,19 @@ struct FinalizedStreamText {
     output_language: OutputLanguageEvidence,
     /// The streaming model's supported languages, for text-based detection.
     supported_languages: Vec<String>,
+}
+
+#[derive(Clone)]
+pub struct TrackedTranscription {
+    pub text: String,
+    pub attempt: PendingStatisticsAttempt,
+}
+
+pub enum StreamFinalization {
+    NeverStarted,
+    Completed(TrackedTranscription),
+    Failed(String),
+    Timeout(String),
 }
 
 /// Routes real-time audio frames to the active streaming worker. Shared between
@@ -340,6 +359,8 @@ pub struct TranscriptionManager {
     /// `is_model_loaded()` consults this so the model still reports "loaded"
     /// while the worker holds it.
     active_engine_lease: Arc<AtomicU64>,
+    /// Pending statistics attempt for an in-flight live stream.
+    stream_attempt: Arc<Mutex<Option<PendingStatisticsAttempt>>>,
 }
 
 impl TranscriptionManager {
@@ -364,6 +385,7 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
+            stream_attempt: Arc::new(Mutex::new(None)),
         };
 
         // Start the idle watcher
@@ -887,7 +909,7 @@ impl TranscriptionManager {
     /// `DirectStreaming`; pass `false` for post-processing / Multi-STT, where
     /// the stream is only a preview for the overlay and the final text is
     /// pasted afterwards.
-    pub fn start_stream(&self, live_typing: bool) {
+    pub fn start_stream(&self, live_typing: bool, statistics: StatisticsRunContext) {
         if self.router.is_open() || self.active_stream_worker.load(Ordering::Acquire) != 0 {
             warn!("start_stream called while a stream worker is already active");
             return;
@@ -907,10 +929,15 @@ impl TranscriptionManager {
             .store(live_typing, Ordering::Release);
 
         let manager = self.clone();
-        thread::spawn(move || manager.run_stream_worker(rx, worker_id));
+        thread::spawn(move || manager.run_stream_worker(rx, worker_id, statistics));
     }
 
-    fn run_stream_worker(&self, rx: mpsc::Receiver<StreamCmd>, worker_id: u64) {
+    fn run_stream_worker(
+        &self,
+        rx: mpsc::Receiver<StreamCmd>,
+        worker_id: u64,
+        statistics: StatisticsRunContext,
+    ) {
         let _worker = StreamWorkerGuard {
             worker_id,
             active_stream_worker: Arc::clone(&self.active_stream_worker),
@@ -940,7 +967,7 @@ impl TranscriptionManager {
         {
             warn!("Live preview: another worker already holds the transcription engine");
             self.router.clear();
-            drain_until_finalize(rx);
+            drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
             return;
         }
         let mut engine = match self.lock_engine().take() {
@@ -958,7 +985,7 @@ impl TranscriptionManager {
                     Ordering::Acquire,
                 );
                 self.router.clear();
-                drain_until_finalize(rx);
+                drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
                 return;
             }
         };
@@ -999,7 +1026,7 @@ impl TranscriptionManager {
         if !supports_streaming {
             self.return_engine(engine, &model_id);
             self.router.clear();
-            drain_until_finalize(rx);
+            drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
             return;
         }
 
@@ -1031,8 +1058,9 @@ impl TranscriptionManager {
         // (and thus the engine) for its lifetime, so the feed/finalize loop
         // lives in a labeled block — when it exits, the borrow is released and
         // the engine can be moved into return_engine().
-        let mut finalize_reply: Option<mpsc::Sender<Option<FinalizedStreamText>>> = None;
-        let mut finalize_result: Option<Option<FinalizedStreamText>> = None;
+        let mut finalize_reply: Option<mpsc::Sender<StreamWorkerResult>> = None;
+        let mut finalize_result: Option<StreamWorkerResult> = None;
+        let mut start_failure: Option<String> = None;
         let stream_started = 'stream: {
             let session = match &mut engine {
                 LoadedEngine::TranscribeCpp(s) => s,
@@ -1043,6 +1071,21 @@ impl TranscriptionManager {
             // `Stream` borrows `session` mutably for its lifetime, so we can't
             // call `session.model()` once it exists.
             let backend = session.model().backend();
+
+            if statistics.is_terminal() {
+                break 'stream false;
+            }
+
+            let inference_started_at_ms = chrono::Utc::now().timestamp_millis();
+            let Some(attempt) = statistics.begin_attempt(
+                Some(model_id.clone()),
+                Some("transcribe_cpp".to_string()),
+                Some(backend.to_string()),
+                inference_started_at_ms,
+            ) else {
+                break 'stream false;
+            };
+            *self.stream_attempt.lock().unwrap() = Some(attempt.clone());
 
             // Resolve family-specific streaming extension (e.g. Parakeet Buffered,
             // Nemotron cache-aware) from the user's latency preset, if any.
@@ -1071,6 +1114,10 @@ impl TranscriptionManager {
                 Ok(s) => s,
                 Err(e) => {
                     error!("Failed to begin stream: {}", e);
+                    let error = e.to_string();
+                    attempt.complete_canonical("");
+                    attempt.finish(StatisticsRunStatus::Failed);
+                    start_failure = Some(error);
                     break 'stream false;
                 }
             };
@@ -1156,7 +1203,7 @@ impl TranscriptionManager {
                                     }
                                     resolved => resolved.clone(),
                                 };
-                                Some(FinalizedStreamText {
+                                StreamWorkerResult::Completed(FinalizedStreamText {
                                     text: finalized_text,
                                     output_language,
                                     supported_languages: languages.clone(),
@@ -1171,11 +1218,11 @@ impl TranscriptionManager {
                                     "stream finalize failed: {}; falling back to batch transcription",
                                     e
                                 );
-                                None
+                                StreamWorkerResult::Failed(e.to_string())
                             }
                         };
                         let chars = match &result {
-                            Some(finalized) => finalized.text.len(),
+                            StreamWorkerResult::Completed(finalized) => finalized.text.len(),
                             _ => 0,
                         };
                         perf.log_finalized(chars);
@@ -1207,7 +1254,10 @@ impl TranscriptionManager {
             // caller falls back to batch transcription. Return the engine first
             // so the fallback can immediately use it.
             self.return_engine(engine, &model_id);
-            drain_until_finalize(rx);
+            let result = start_failure
+                .map(StreamWorkerResult::Failed)
+                .unwrap_or(StreamWorkerResult::NeverStarted);
+            drain_until_finalize(rx, result);
             return;
         }
 
@@ -1237,25 +1287,43 @@ impl TranscriptionManager {
 
     /// Flush the active stream and return its final, post-filtered text.
     ///
-    /// `Ok(None)` means no usable stream was active and the caller may fall back
-    /// to batch transcription. `Err` means finalize itself failed or timed out.
-    /// A timeout may still leave the worker holding the engine, so callers
-    /// should surface it instead of immediately starting a batch fallback.
-    pub fn finalize_stream(&self) -> Result<Option<String>> {
+    /// A never-started, empty, failed, and timed-out stream remain distinct so
+    /// callers can apply the fallback policy without losing attempt outcomes.
+    pub fn finalize_stream(&self) -> StreamFinalization {
         let Some(tx) = self.router.take() else {
-            return Ok(None);
+            return StreamFinalization::NeverStarted;
         };
         let (reply_tx, reply_rx) = mpsc::channel();
         if tx.send(StreamCmd::Finalize(reply_tx)).is_err() {
-            return Ok(None);
+            return self.failed_or_never_started_stream(
+                "Live transcription worker stopped before finalization",
+            );
         }
         let finalized = match reply_rx.recv_timeout(STREAM_FINALIZE_REPLY_TIMEOUT) {
-            Ok(Some(finalized)) => finalized,
-            Ok(None) => return Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+            Ok(StreamWorkerResult::Completed(finalized)) => finalized,
+            Ok(StreamWorkerResult::NeverStarted) => {
+                self.stream_attempt.lock().unwrap().take();
+                return StreamFinalization::NeverStarted;
+            }
+            Ok(StreamWorkerResult::Failed(error)) => {
+                if let Some(attempt) = self.stream_attempt.lock().unwrap().take() {
+                    attempt.complete_canonical("");
+                    attempt.finish(StatisticsRunStatus::Failed);
+                }
+                return StreamFinalization::Failed(error);
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return self.failed_or_never_started_stream(
+                    "Live transcription worker disconnected during finalization",
+                );
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 self.stream_active.store(false, Ordering::Release);
-                return Err(anyhow::anyhow!(
+                if let Some(attempt) = self.stream_attempt.lock().unwrap().take() {
+                    attempt.complete_canonical("");
+                    attempt.finish(StatisticsRunStatus::Failed);
+                }
+                return StreamFinalization::Timeout(format!(
                     "Timed out waiting {:?} for live transcription to finalize",
                     STREAM_FINALIZE_REPLY_TIMEOUT
                 ));
@@ -1272,9 +1340,21 @@ impl TranscriptionManager {
             &finalized.output_language,
             &finalized.supported_languages,
         );
+        let Some(attempt) = self.stream_attempt.lock().unwrap().take() else {
+            return StreamFinalization::Failed(
+                "Live transcription completed without an attempt context".to_string(),
+            );
+        };
+        attempt.complete_canonical(&filtered);
+        if filtered.trim().is_empty() {
+            attempt.finish(StatisticsRunStatus::Empty);
+        }
 
         self.maybe_unload_immediately("streaming transcription");
-        Ok(Some(filtered))
+        StreamFinalization::Completed(TrackedTranscription {
+            text: filtered,
+            attempt,
+        })
     }
 
     /// Abandon any active stream without producing text (e.g. on cancel).
@@ -1282,7 +1362,19 @@ impl TranscriptionManager {
         if let Some(tx) = self.router.take() {
             let _ = tx.send(StreamCmd::Cancel);
         }
+        self.stream_attempt.lock().unwrap().take();
         self.stream_active.store(false, Ordering::Release);
+    }
+
+    fn failed_or_never_started_stream(&self, error: &str) -> StreamFinalization {
+        match self.stream_attempt.lock().unwrap().take() {
+            Some(attempt) => {
+                attempt.complete_canonical("");
+                attempt.finish(StatisticsRunStatus::Failed);
+                StreamFinalization::Failed(error.to_string())
+            }
+            None => StreamFinalization::NeverStarted,
+        }
     }
 
     /// Emit a working-phase event to the streaming overlay (spinner + label).
@@ -1303,6 +1395,34 @@ impl TranscriptionManager {
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+        self.transcribe_internal(audio, None).map(|(text, _)| text)
+    }
+
+    pub fn transcribe_tracked(
+        &self,
+        audio: Vec<f32>,
+        run: StatisticsRunContext,
+    ) -> Result<TrackedTranscription> {
+        match self.transcribe_internal(audio, Some(&run)) {
+            Ok((text, Some(attempt))) => Ok(TrackedTranscription { text, attempt }),
+            Ok(_) => {
+                run.finish(StatisticsRunStatus::Failed);
+                Err(anyhow::anyhow!(
+                    "Tracked transcription ended before an inference attempt began"
+                ))
+            }
+            Err(error) => {
+                run.finish(StatisticsRunStatus::Failed);
+                Err(error)
+            }
+        }
+    }
+
+    fn transcribe_internal(
+        &self,
+        audio: Vec<f32>,
+        statistics: Option<&StatisticsRunContext>,
+    ) -> Result<(String, Option<PendingStatisticsAttempt>)> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -1321,7 +1441,7 @@ impl TranscriptionManager {
         if audio.is_empty() {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
-            return Ok(String::new());
+            return Ok((String::new(), None));
         }
 
         // Check if model is loaded, if not try to load it
@@ -1378,7 +1498,7 @@ impl TranscriptionManager {
         // Perform transcription with the appropriate engine.
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
         // which would make the app hang indefinitely on subsequent operations.
-        let (result, output_language, model_languages) = {
+        let (result, output_language, model_languages, statistics_attempt) = {
             let mut engine_guard = self.lock_engine();
 
             // Take the engine out so we own it during transcription.
@@ -1395,6 +1515,31 @@ impl TranscriptionManager {
 
             // Release the lock before transcribing — no mutex held during the engine call
             drop(engine_guard);
+
+            let inference_started_at_ms = chrono::Utc::now().timestamp_millis();
+            let (engine_name, backend_name) = match &engine {
+                LoadedEngine::TranscribeCpp(session) => (
+                    "transcribe_cpp".to_string(),
+                    session.model().backend().to_string(),
+                ),
+                LoadedEngine::Parakeet(_) => ("parakeet".to_string(), "onnx".to_string()),
+                LoadedEngine::Moonshine(_) | LoadedEngine::MoonshineStreaming(_) => {
+                    ("moonshine".to_string(), "onnx".to_string())
+                }
+                LoadedEngine::SenseVoice(_) => ("sense_voice".to_string(), "onnx".to_string()),
+                LoadedEngine::GigaAM(_) => ("giga_am".to_string(), "onnx".to_string()),
+                LoadedEngine::Canary(_) => ("canary".to_string(), "onnx".to_string()),
+                LoadedEngine::Cohere(_) => ("cohere".to_string(), "onnx".to_string()),
+            };
+
+            let statistics_attempt = statistics.and_then(|run| {
+                run.begin_attempt(
+                    Some(active_model.clone()),
+                    Some(engine_name),
+                    Some(backend_name),
+                    inference_started_at_ms,
+                )
+            });
 
             // Probe live transcribe-cpp capabilities once (cheap GGUF-metadata
             // reads); the loaded session is the source of truth, not the
@@ -1565,11 +1710,25 @@ impl TranscriptionManager {
                     // Success or normal error: return the engine unless a model
                     // switch/unload invalidated it while it was in use.
                     self.return_engine(engine, &active_model);
-                    inner_result?
+                    match inner_result {
+                        Ok(t) => t,
+                        Err(e) => {
+                            if let Some(attempt) = &statistics_attempt {
+                                attempt.complete_canonical("");
+                                attempt.finish(StatisticsRunStatus::Failed);
+                            }
+                            return Err(e);
+                        }
+                    }
                 }
                 Err(panic_payload) => {
                     // Engine panicked — do NOT put it back (it's in an unknown state).
                     // The engine is dropped here, effectively unloading it.
+                    if let Some(attempt) = &statistics_attempt {
+                        attempt.complete_canonical("");
+                        attempt.finish(StatisticsRunStatus::Failed);
+                    }
+
                     let panic_msg = panic_payload_message(panic_payload.as_ref());
                     error!(
                         "Transcription engine panicked: {}. Model has been unloaded.",
@@ -1613,7 +1772,7 @@ impl TranscriptionManager {
             );
             debug!("Output language evidence: {:?}", output_language);
 
-            (text, output_language, model_languages)
+            (text, output_language, model_languages, statistics_attempt)
         };
 
         // Apply fuzzy word correction if custom words are configured — UNLESS the
@@ -1657,9 +1816,16 @@ impl TranscriptionManager {
             );
         }
 
+        if let Some(attempt) = &statistics_attempt {
+            attempt.complete_canonical(&final_result);
+            if final_result.trim().is_empty() {
+                attempt.finish(StatisticsRunStatus::Empty);
+            }
+        }
+
         self.maybe_unload_immediately("transcription");
 
-        Ok(final_result)
+        Ok((final_result, statistics_attempt))
     }
 }
 
@@ -2000,12 +2166,12 @@ fn cpp_translation_task(
 /// finalizes or cancels. Used when streaming can't actually run (model not
 /// loaded / not streaming-capable) so the finalize handshake still completes
 /// and the caller falls back to batch transcription.
-fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
+fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>, result: StreamWorkerResult) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
             StreamCmd::Feed(_) => {}
             StreamCmd::Finalize(reply) => {
-                let _ = reply.send(None);
+                let _ = reply.send(result);
                 break;
             }
             StreamCmd::Cancel => break,
@@ -2202,11 +2368,42 @@ impl TranscriptionManager {
     /// Transcribe audio with one of the extra model engines.
     /// The engine is temporarily removed from the map, used, and returned.
     pub fn transcribe_with_extra(&self, model_id: &str, audio: Vec<f32>) -> Result<String> {
+        self.transcribe_with_extra_internal(model_id, audio, None)
+            .map(|(text, _)| text)
+    }
+
+    pub fn transcribe_with_extra_tracked(
+        &self,
+        model_id: &str,
+        audio: Vec<f32>,
+        run: StatisticsRunContext,
+    ) -> Result<TrackedTranscription> {
+        match self.transcribe_with_extra_internal(model_id, audio, Some(&run)) {
+            Ok((text, Some(attempt))) => Ok(TrackedTranscription { text, attempt }),
+            Ok(_) => {
+                run.finish(StatisticsRunStatus::Failed);
+                Err(anyhow::anyhow!(
+                    "Tracked extra transcription ended before an inference attempt began"
+                ))
+            }
+            Err(error) => {
+                run.finish(StatisticsRunStatus::Failed);
+                Err(error)
+            }
+        }
+    }
+
+    fn transcribe_with_extra_internal(
+        &self,
+        model_id: &str,
+        audio: Vec<f32>,
+        statistics: Option<&StatisticsRunContext>,
+    ) -> Result<(String, Option<PendingStatisticsAttempt>)> {
         self.touch_activity();
 
         if audio.is_empty() {
             debug!("Empty audio vector for extra model '{}'", model_id);
-            return Ok(String::new());
+            return Ok((String::new(), None));
         }
 
         let mut engine = {
@@ -2215,6 +2412,31 @@ impl TranscriptionManager {
                 .remove(model_id)
                 .ok_or_else(|| anyhow::anyhow!("Extra model '{}' is not loaded", model_id))?
         };
+
+        let inference_started_at_ms = chrono::Utc::now().timestamp_millis();
+        let (engine_name, backend_name) = match &engine {
+            LoadedEngine::TranscribeCpp(session) => (
+                "transcribe_cpp".to_string(),
+                session.model().backend().to_string(),
+            ),
+            LoadedEngine::Parakeet(_) => ("parakeet".to_string(), "onnx".to_string()),
+            LoadedEngine::Moonshine(_) | LoadedEngine::MoonshineStreaming(_) => {
+                ("moonshine".to_string(), "onnx".to_string())
+            }
+            LoadedEngine::SenseVoice(_) => ("sense_voice".to_string(), "onnx".to_string()),
+            LoadedEngine::GigaAM(_) => ("giga_am".to_string(), "onnx".to_string()),
+            LoadedEngine::Canary(_) => ("canary".to_string(), "onnx".to_string()),
+            LoadedEngine::Cohere(_) => ("cohere".to_string(), "onnx".to_string()),
+        };
+
+        let statistics_attempt = statistics.and_then(|run| {
+            run.begin_attempt(
+                Some(model_id.to_string()),
+                Some(engine_name),
+                Some(backend_name),
+                inference_started_at_ms,
+            )
+        });
 
         let st = std::time::Instant::now();
         let audio_len = audio.len();
@@ -2325,22 +2547,36 @@ impl TranscriptionManager {
             }
         }
 
-        if let Ok(ref text) = transcription {
-            let et = std::time::Instant::now();
-            let elapsed_secs = (et - st).as_secs_f64();
-            let audio_secs = audio_len as f64 / 16_000.0;
-            let speedup = real_time_factor(audio_secs, elapsed_secs);
-            info!(
-                "Multi-STT: extra model '{}' transcribed in {:.2}s for {:.2}s of audio ({:.2}x real-time): '{}'",
-                model_id,
-                elapsed_secs,
-                audio_secs,
-                speedup,
-                utils::redact_text(text)
-            );
+        match transcription {
+            Ok(ref text) => {
+                let et = std::time::Instant::now();
+                let elapsed_secs = (et - st).as_secs_f64();
+                let audio_secs = audio_len as f64 / 16_000.0;
+                let speedup = real_time_factor(audio_secs, elapsed_secs);
+                info!(
+                    "Multi-STT: extra model '{}' transcribed in {:.2}s for {:.2}s of audio ({:.2}x real-time): '{}'",
+                    model_id,
+                    elapsed_secs,
+                    audio_secs,
+                    speedup,
+                    utils::redact_text(text)
+                );
+                if let Some(ref attempt) = statistics_attempt {
+                    attempt.complete_canonical(text);
+                    if text.trim().is_empty() {
+                        attempt.finish(StatisticsRunStatus::Empty);
+                    }
+                }
+                Ok((text.clone(), statistics_attempt))
+            }
+            Err(e) => {
+                if let Some(ref attempt) = statistics_attempt {
+                    attempt.complete_canonical("");
+                    attempt.finish(StatisticsRunStatus::Failed);
+                }
+                Err(e)
+            }
         }
-
-        transcription
     }
 
     /// Emit a `benchmark-progress` event to the frontend, ignoring transport

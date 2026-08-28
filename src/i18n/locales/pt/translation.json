@@ -17,7 +17,8 @@
     "history": "Histórico",
     "debug": "Depuração",
     "about": "Sobre",
-    "multiStt": "Multi STT"
+    "multiStt": "Multi STT",
+    "statistics": "Statistics"
   },
   "onboarding": {
     "subtitle": "Para começar, escolha um modelo de transcrição",
@@ -152,7 +153,43 @@
     },
     "cancel": "Cancelar",
     "cancelDownload": "Cancelar download",
-    "legacy": "Legado"
+    "legacy": "Legado",
+    "quantPicker": {
+      "title": "Quantization",
+      "pillLabel": "Quantization: {{quant}}",
+      "default": "Default",
+      "download": "Download {{quant}}",
+      "downloadingPercent": "{{percentage}}%",
+      "switchTo": "Switch to {{quant}}",
+      "current": "{{quant}} is active"
+    },
+    "benchmark": {
+      "runAll": "Benchmark",
+      "runOne": "Benchmark {{quant}}",
+      "runProgress": "{{done}}/{{total}}",
+      "reference": "Timed against your recording from {{when}}",
+      "noRecording": "Record something first — the benchmark replays your latest recording",
+      "method": "One warmup run is discarded, then {{runs}} timed runs are averaged.",
+      "fastest": "Fastest",
+      "failed": "Failed",
+      "realTime": "{{factor}}× real-time",
+      "milliseconds": "{{value}} ms",
+      "seconds": "{{value}} s"
+    },
+    "latencySelector": {
+      "title": "Streaming Latency",
+      "pillLabel": "Streaming latency: {{preset}}",
+      "fastest": "Fastest",
+      "fast": "Fast",
+      "balanced": "Balanced",
+      "accurate": "Accurate",
+      "descriptions": {
+        "fastest": "Lowest latency, may affect accuracy",
+        "fast": "Low latency, good balance",
+        "balanced": "Balanced latency and accuracy",
+        "accurate": "Best accuracy, higher latency"
+      }
+    }
   },
   "settings": {
     "modelSettings": {
@@ -188,7 +225,8 @@
         "errors": {
           "restore": "Falha ao restaurar atalho original",
           "set": "Falha ao definir atalho: {{error}}",
-          "reset": "Falha ao redefinir atalho para o valor original"
+          "reset": "Falha ao redefinir atalho para o valor original",
+          "unsupportedCombo": "{{combo}} can't be simulated: use at least one non-modifier key from letters, digits, space, enter, tab, esc, arrows or F1–F24"
         }
       },
       "language": {
@@ -221,7 +259,8 @@
       "rescan": {
         "label": "Reescanear",
         "tooltip": "Reescaneia em busca de modelos adicionados à pasta de modelos ou ao cache do Hugging Face fora do Handy"
-      }
+      },
+      "openFolder": "Open Models Folder"
     },
     "sound": {
       "title": "Som",
@@ -310,6 +349,14 @@
             "bottom": "Inferior",
             "top": "Superior"
           }
+        },
+        "directMode": {
+          "label": "Direct Streaming",
+          "description": "Reveal streaming transcription character-by-character as you speak for an instant typing feel."
+        },
+        "directSpeed": {
+          "label": "Direct Streaming Speed",
+          "description": "Speed at which characters appear during direct live streaming (in characters per second)."
         }
       },
       "pasteMethod": {
@@ -321,9 +368,14 @@
           "clipboardShiftInsert": "Área de Transferência (Shift+Insert)",
           "direct": "Direto",
           "none": "Nenhum",
-          "externalScript": "Script externo"
+          "externalScript": "Script externo",
+          "directStreaming": "Direct Streaming"
         },
-        "externalScriptPlaceholder": "/caminho/para/seu/script.sh"
+        "externalScriptPlaceholder": "/caminho/para/seu/script.sh",
+        "directStreamingSpeed": {
+          "label": "Direct Streaming Speed",
+          "description": "Speed at which characters are typed directly into the active application (in characters per second)."
+        }
       },
       "typingTool": {
         "title": "Ferramenta de digitação",
@@ -403,6 +455,18 @@
         "unitDescription": "Seconds or minutes for the timeout value.",
         "seconds": "Seconds",
         "minutes": "Minutes"
+      },
+      "saveRawAudio": {
+        "label": "Save Raw Uncompressed Audio",
+        "description": "Saves recordings in their native microphone sample rate and bit depth without downsampling or silence removal."
+      },
+      "speechStats": {
+        "title": "Speech Stats in Overlay",
+        "description": "Show live speech statistics in the recording overlay: whether you are speaking or paused, a timer that counts only while you are actually talking, and your running average words per minute. Words per minute needs a streaming-capable model, since it is measured from the live transcription.",
+        "pauseHold": {
+          "label": "Pause Tolerance",
+          "description": "How long silence must last before the speech timer stops counting. Shorter gaps are treated as part of the same sentence, so the timer does not stall between words."
+        }
       }
     },
     "postProcessing": {
@@ -472,7 +536,14 @@
       "retranscribe": "Re-transcrever",
       "retranscribeError": "Falha ao re-transcrever. Por favor, tente novamente.",
       "transcribing": "Transcrevendo...",
-      "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente."
+      "transcriptionFailed": "A transcrição falhou. Você pode re-transcrever usando o ícone de tentar novamente.",
+      "deleteRecordings": "Delete Recordings",
+      "deleteRecordingsConfirmTitle": "Delete All Recordings",
+      "deleteRecordingsConfirmMessage": "Are you sure you want to delete all audio recordings and clear your transcription history? This action cannot be undone.",
+      "deleteRecordingsConfirmButton": "Delete Everything",
+      "deleteRecordingsSuccess": "All recordings and history have been deleted.",
+      "deleteRecordingsError": "Failed to delete recordings. Please try again.",
+      "deleting": "Deleting..."
     },
     "debug": {
       "title": "Depuração",
@@ -594,6 +665,10 @@
         "button": "Pré-visualizar",
         "noNotes": "Nenhuma nota de versão incorporada encontrada",
         "error": "Falha ao pré-visualizar as notas de versão"
+      },
+      "appendTrailingNewline": {
+        "label": "Append Trailing New Line",
+        "description": "Add a newline after pasted transcription"
       }
     },
     "about": {
@@ -628,6 +703,102 @@
         "label": "Mostrar novidades",
         "description": "Mostrar notas de versão após atualizações do Handy"
       }
+    },
+    "statistics": {
+      "title": "Transcription Statistics",
+      "description": "Review transcription volume, aggregate audio duration, and end-to-end latency.",
+      "controls": {
+        "title": "Filters"
+      },
+      "range": {
+        "label": "Date range",
+        "options": {
+          "today": "Today",
+          "sevenDays": "Last 7 days",
+          "thirtyDays": "Last 30 days",
+          "allTime": "All time"
+        },
+        "selected": "{{range}}"
+      },
+      "summary": {
+        "title": "Summary"
+      },
+      "units": {
+        "milliseconds": "{{value}} ms",
+        "seconds": "{{value}} s",
+        "hoursMinutes": "{{hours}}h {{minutes}}m",
+        "minutesSeconds": "{{minutes}}m {{seconds}}s",
+        "secondsLong": "{{seconds}} s",
+        "words": "words",
+        "wpm": "WPM",
+        "days": "days"
+      },
+      "metrics": {
+        "transcriptions": {
+          "title": "Total Transcriptions",
+          "description": "Total number of successful transcriptions."
+        },
+        "words": {
+          "title": "Total Words",
+          "average": "~{{value}} words / transcription"
+        },
+        "audio": {
+          "title": "Total Audio Recorded",
+          "average": "~{{value}} / transcription"
+        },
+        "wpm": {
+          "title": "Speech Rate",
+          "description": "Calculated from total words divided by total audio duration."
+        },
+        "streak": {
+          "title": "Active Streak",
+          "description": "Consecutive active dictation days."
+        },
+        "transcription": {
+          "title": "Transcription Latency",
+          "description": "Time elapsed from stopping input until raw transcription text is produced."
+        },
+        "postProcessing": {
+          "title": "Post-Processing Latency",
+          "description": "Time elapsed while LLM polishing is executed.",
+          "unavailable": "No post-processed transcriptions in this range."
+        }
+      },
+      "latency": {
+        "minimum": "Min",
+        "average": "Avg",
+        "maximum": "Max",
+        "samples": "{{formattedCount}} samples",
+        "unavailable": "Unavailable"
+      },
+      "reset": {
+        "title": "Reset Statistics",
+        "description": "Clear all accumulated transcription metrics and latency records.",
+        "historyUnaffected": "Transcription history and audio files will remain intact.",
+        "action": "Reset Statistics",
+        "accessibleAction": "Reset all transcription statistics",
+        "dialog": {
+          "title": "Reset Transcription Statistics",
+          "description": "Are you sure you want to reset all transcription statistics? This action cannot be undone.",
+          "warning": "This will permanently delete all metric records. Your history log is unaffected.",
+          "cancel": "Cancel",
+          "confirm": "Reset Statistics"
+        }
+      },
+      "states": {
+        "loading": {
+          "title": "Loading statistics...",
+          "description": "Aggregating metrics for the selected range."
+        },
+        "empty": {
+          "title": "No transcription statistics yet",
+          "description": "Record audio using the transcription hotkey to start tracking metrics."
+        },
+        "error": {
+          "description": "Failed to load statistics summary.",
+          "retry": "Retry"
+        }
+      }
     }
   },
   "footer": {
@@ -653,7 +824,10 @@
     "copy": "Copiar",
     "clear": "Limpar",
     "noOptionsFound": "Nenhuma opção encontrada",
-    "downloadSpeed": "{{speed}} MB/s"
+    "downloadSpeed": "{{speed}} MB/s",
+    "downloading": "Downloading...",
+    "downloadingCount": "{{count}} downloading...",
+    "cancel": "Cancel"
   },
   "accessibility": {
     "permissionsDescription": "O Handy precisa de permissões de acessibilidade para digitar o texto transcrito.",
@@ -692,7 +866,8 @@
   },
   "overlay": {
     "transcribing": "Transcrevendo...",
-    "processing": "Processando..."
+    "processing": "Processando...",
+    "wpm": "wpm"
   },
   "whatsNew": {
     "title": "Novidades no Handy v{{version}}"
@@ -735,7 +910,14 @@
       "model3Language": "Language for Third Model",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
-      "translateToEnglish": "Translate to English"
+      "translateToEnglish": "Translate to English",
+      "model4": "Fourth Model",
+      "model4Description": "Select a fourth STT model to run alongside the primary model",
+      "loadedSuccessfully": "Model loaded successfully",
+      "unloadedSuccessfully": "Model unloaded successfully",
+      "loadFailed": "Failed to load model",
+      "unloadFailed": "Failed to unload model",
+      "model4Language": "Language for Fourth Model"
     },
     "mergePrompt": {
       "title": "Merge Prompt",
@@ -754,7 +936,43 @@
       "noModels": "No additional models loaded",
       "primary": "Primary",
       "secondary": "Secondary",
-      "tertiary": "Tertiary"
+      "tertiary": "Tertiary",
+      "quaternary": "Quaternary"
+    },
+    "keepModelsLoaded": {
+      "label": "Keep Extra Models Loaded",
+      "description": "Keep the 2nd, 3rd, and 4th models in memory between multi-STT uses for faster subsequent transcriptions (uses more memory)"
+    },
+    "performanceMode": {
+      "title": "Performance Mode",
+      "fullPowerLabel": "Full Power Shortcut",
+      "fullPowerDescription": "Shortcut to simulate when Multi-STT recording finishes and audio is sent to models",
+      "normalModeLabel": "Normal Mode Shortcut",
+      "normalModeDescription": "Shortcut to simulate after the LLM merge succeeds, or after paste if the LLM doesn't respond",
+      "enabled": {
+        "label": "Enable Performance Mode",
+        "description": "Automatically toggle performance mode during Multi-STT transcription"
+      },
+      "triggerOnStart": {
+        "label": "Trigger Performance Mode at 1st Keybind",
+        "description": "Trigger the Full Power shortcut immediately upon starting Multi-STT recording instead of waiting until recording ends"
+      }
+    }
+  },
+  "accentColor": {
+    "title": "Accent Color",
+    "description": "Choose a custom color for the interface, logos, and recording overlay",
+    "custom": "Custom Color",
+    "reset": "Reset to Default",
+    "presets": {
+      "gold": "Gold",
+      "pink": "Rose",
+      "amber": "Amber",
+      "emerald": "Emerald",
+      "sky": "Sky Blue",
+      "indigo": "Indigo",
+      "crimson": "Crimson",
+      "purple": "Purple"
     }
   }
 }

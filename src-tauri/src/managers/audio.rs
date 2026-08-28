@@ -239,6 +239,17 @@ fn restore_mute(prev_muted: Option<bool>) {
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
+pub enum StopRecordingResult {
+    Captured {
+        recorded: crate::audio_toolkit::RecordedAudio,
+        captured_sample_count: usize,
+        sample_rate: u32,
+    },
+    Cancelled,
+    NotActive,
+    Failed(String),
+}
+
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Clone, Debug)]
@@ -1024,11 +1035,7 @@ impl AudioRecordingManager {
             .unwrap_or(0)
     }
 
-    pub fn stop_recording(
-        &self,
-        binding_id: &str,
-        cancel_generation: u64,
-    ) -> Option<crate::audio_toolkit::RecordedAudio> {
+    pub fn stop_recording(&self, binding_id: &str, cancel_generation: u64) -> StopRecordingResult {
         self.invalidate_recording_readiness();
         let mut state = self.state.lock().unwrap();
 
@@ -1061,27 +1068,10 @@ impl AudioRecordingManager {
                     }
                 }
 
-                let mut recorded = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                    match rec.stop() {
-                        Ok(res) => res,
-                        Err(e) => {
-                            error!("stop() failed: {e}");
-                            crate::audio_toolkit::RecordedAudio {
-                                stt_samples: Vec::new(),
-                                raw_samples: Vec::new(),
-                                native_sample_rate: 16000,
-                                native_sample_format: cpal::SampleFormat::I16,
-                            }
-                        }
-                    }
+                let recorded_res = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                    rec.stop().map_err(|e| e.to_string())
                 } else {
-                    error!("Recorder not available");
-                    crate::audio_toolkit::RecordedAudio {
-                        stt_samples: Vec::new(),
-                        raw_samples: Vec::new(),
-                        native_sample_rate: 16000,
-                        native_sample_format: cpal::SampleFormat::I16,
-                    }
+                    Err("Recorder not available".to_string())
                 };
 
                 *self.is_recording.lock().unwrap() = false;
@@ -1099,8 +1089,15 @@ impl AudioRecordingManager {
 
                 if self.was_cancelled_since(cancel_generation) {
                     debug!("Recording stop cancelled; discarding captured samples");
-                    return None;
+                    return StopRecordingResult::Cancelled;
                 }
+
+                let mut recorded = match recorded_res {
+                    Ok(r) => r,
+                    Err(err) => return StopRecordingResult::Failed(err),
+                };
+
+                let captured_sample_count = recorded.stt_samples.len();
 
                 // Pad if very short
                 let s_len = recorded.stt_samples.len();
@@ -1110,9 +1107,13 @@ impl AudioRecordingManager {
                         .stt_samples
                         .resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
                 }
-                Some(recorded)
+                StopRecordingResult::Captured {
+                    recorded,
+                    captured_sample_count,
+                    sample_rate: WHISPER_SAMPLE_RATE as u32,
+                }
             }
-            _ => None,
+            _ => StopRecordingResult::NotActive,
         }
     }
     pub fn is_recording(&self) -> bool {

@@ -257,12 +257,15 @@ export const commands = {
 	 *  Always returns false since laptop detection is macOS-specific
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
+	getStatisticsSummary: (range: StatisticsRange) => typedError<StatisticsSummary, string>(__TAURI_INVOKE("get_statistics_summary", { range })),
+	resetStatistics: () => typedError<null, string>(__TAURI_INVOKE("reset_statistics")),
 };
 
 /** Events */
 export const events = {
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
 	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
+	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
 };
@@ -930,6 +933,33 @@ export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
 
 export type VadBackend = "silero" | "earshot";
+
+export type DurationMetricSummary = {
+	sample_count: number,
+	minimum_ms: number | null,
+	average_ms: number | null,
+	maximum_ms: number | null,
+};
+
+export type StatisticsRange = {
+	start_ms: number,
+	end_ms: number,
+};
+
+export type StatisticsSummary = {
+	range: StatisticsRange,
+	transcription_count: number,
+	total_words: number,
+	average_words: number | null,
+	total_audio_duration_ms: number,
+	average_audio_duration_ms: number | null,
+	approximate_words_per_minute: number | null,
+	current_streak_days: number,
+	transcription_latency: DurationMetricSummary,
+	post_processing_latency: DurationMetricSummary,
+};
+
+export type StatisticsUpdatedEvent = null;
 
 export type WindowsMicrophonePermissionStatus = {
 	supported: boolean,

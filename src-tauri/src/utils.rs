@@ -147,6 +147,10 @@ pub fn cancel_current_operation(app: &AppHandle) {
     let tm = app.state::<Arc<TranscriptionManager>>();
     tm.cancel_stream();
 
+    if let Some(sm) = app.try_state::<Arc<crate::managers::statistics::StatisticsManager>>() {
+        sm.cancel_active_normal_runs();
+    }
+
     // Update tray icon and hide overlay
     set_tray_state(app, crate::tray::TrayIconState::Idle);
     hide_recording_overlay(app);
