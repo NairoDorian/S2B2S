@@ -18,9 +18,10 @@ pub fn get_statistics_summary(
 #[specta::specta]
 pub fn reset_statistics(
     statistics_manager: State<'_, Arc<StatisticsManager>>,
-) -> Result<usize, String> {
+) -> Result<(), String> {
     statistics_manager
         .reset()
+        .map(|_| ())
         .map_err(|error| error.to_string())
 }
 
@@ -32,16 +33,16 @@ mod tests {
     fn rejects_invalid_ranges_before_querying() {
         assert!(
             StatisticsRange {
-                start_ms: 10,
-                end_ms: 10,
+                start_ms: 10.0,
+                end_ms: 10.0,
             }
             .validate()
             .is_err()
         );
         assert!(
             StatisticsRange {
-                start_ms: -1,
-                end_ms: 10,
+                start_ms: -1.0,
+                end_ms: 10.0,
             }
             .validate()
             .is_err()

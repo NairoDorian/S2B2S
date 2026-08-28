@@ -133,15 +133,15 @@ pub struct StoredStatisticsRun {
     pub source_history_id: Option<i64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct StatisticsRange {
-    pub start_ms: i64,
-    pub end_ms: i64,
+    pub start_ms: f64,
+    pub end_ms: f64,
 }
 
 impl StatisticsRange {
     pub fn validate(self) -> Result<()> {
-        if self.start_ms < 0 {
+        if self.start_ms < 0.0 {
             return Err(anyhow!("statistics range start must be non-negative"));
         }
         if self.end_ms <= self.start_ms {
@@ -487,6 +487,7 @@ impl StatisticsRunContext {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_post_processing_requested(&self, requested: bool) {
         self.state.lock().unwrap().post_processing_requested = requested;
     }
@@ -552,22 +553,22 @@ impl PendingStatisticsAttempt {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct DurationMetricSummary {
-    pub sample_count: i64,
-    pub minimum_ms: Option<i64>,
+    pub sample_count: i32,
+    pub minimum_ms: Option<f64>,
     pub average_ms: Option<f64>,
-    pub maximum_ms: Option<i64>,
+    pub maximum_ms: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct StatisticsSummary {
     pub range: StatisticsRange,
-    pub transcription_count: i64,
-    pub total_words: i64,
+    pub transcription_count: i32,
+    pub total_words: i32,
     pub average_words: Option<f64>,
-    pub total_audio_duration_ms: i64,
+    pub total_audio_duration_ms: f64,
     pub average_audio_duration_ms: Option<f64>,
     pub approximate_words_per_minute: Option<f64>,
-    pub current_streak_days: i64,
+    pub current_streak_days: i32,
     pub transcription_latency: DurationMetricSummary,
     pub post_processing_latency: DurationMetricSummary,
 }
@@ -592,6 +593,7 @@ impl StatisticsRepository {
         Self::insert_with_conn(&conn, run)
     }
 
+    #[allow(dead_code)]
     pub fn get_by_id(&self, id: i64) -> Result<Option<StoredStatisticsRun>> {
         let conn = self.get_connection()?;
         Self::get_by_id_with_conn(&conn, id)
@@ -786,7 +788,7 @@ impl StatisticsRepository {
         Ok(stored)
     }
 
-    fn calculate_streak_with_conn(conn: &Connection) -> Result<i64> {
+    fn calculate_streak_with_conn(conn: &Connection) -> Result<i32> {
         let mut stmt = conn.prepare(
             "SELECT DISTINCT date(completed_at_ms / 1000, 'unixepoch', 'localtime') as day
              FROM transcription_statistics
@@ -811,7 +813,7 @@ impl StatisticsRepository {
             return Ok(0);
         }
 
-        let mut current_streak = 1;
+        let mut current_streak: i32 = 1;
         for i in 1..days.len() {
             if let (Ok(prev), Ok(curr)) = (
                 chrono::NaiveDate::parse_from_str(&days[i - 1], "%Y-%m-%d"),
@@ -996,8 +998,8 @@ mod tests {
         let summary = StatisticsRepository::summarize_with_conn(
             &conn,
             StatisticsRange {
-                start_ms: 0,
-                end_ms: 3_000,
+                start_ms: 0.0,
+                end_ms: 3_000.0,
             },
         )
         .expect("summarize");
@@ -1005,16 +1007,16 @@ mod tests {
         assert_eq!(summary.transcription_count, 2);
         assert_eq!(summary.total_words, 30);
         assert_eq!(summary.average_words, Some(15.0));
-        assert_eq!(summary.total_audio_duration_ms, 6_000);
+        assert_eq!(summary.total_audio_duration_ms, 6_000.0);
         assert_eq!(summary.average_audio_duration_ms, Some(3_000.0));
         assert_eq!(summary.approximate_words_per_minute, Some(300.0));
         assert_eq!(summary.transcription_latency.sample_count, 2);
-        assert_eq!(summary.transcription_latency.minimum_ms, Some(500));
+        assert_eq!(summary.transcription_latency.minimum_ms, Some(500.0));
         assert_eq!(summary.transcription_latency.average_ms, Some(750.0));
-        assert_eq!(summary.transcription_latency.maximum_ms, Some(1_000));
+        assert_eq!(summary.transcription_latency.maximum_ms, Some(1_000.0));
         assert_eq!(summary.post_processing_latency.sample_count, 1);
-        assert_eq!(summary.post_processing_latency.minimum_ms, Some(1_500));
+        assert_eq!(summary.post_processing_latency.minimum_ms, Some(1_500.0));
         assert_eq!(summary.post_processing_latency.average_ms, Some(1_500.0));
-        assert_eq!(summary.post_processing_latency.maximum_ms, Some(1_500));
+        assert_eq!(summary.post_processing_latency.maximum_ms, Some(1_500.0));
     }
 }

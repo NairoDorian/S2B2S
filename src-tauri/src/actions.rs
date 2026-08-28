@@ -1478,7 +1478,6 @@ impl ShortcutAction for MultiSttAction {
                 binding_id
             );
 
-            let stop_recording_time = Instant::now();
             let recorded_res = rm.stop_recording(&binding_id, cancel_generation);
             let recorded = match recorded_res {
                 StopRecordingResult::Captured {

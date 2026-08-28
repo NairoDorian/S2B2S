@@ -2367,6 +2367,7 @@ impl TranscriptionManager {
 
     /// Transcribe audio with one of the extra model engines.
     /// The engine is temporarily removed from the map, used, and returned.
+    #[allow(dead_code)]
     pub fn transcribe_with_extra(&self, model_id: &str, audio: Vec<f32>) -> Result<String> {
         self.transcribe_with_extra_internal(model_id, audio, None)
             .map(|(text, _)| text)
