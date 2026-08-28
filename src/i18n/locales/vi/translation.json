@@ -775,7 +775,7 @@
         },
         "wpm": {
           "title": "Speech Rate",
-          "description": "Calculated from total words divided by total audio duration."
+          "description": "Calculated from total words divided by silence-filtered speech duration."
         },
         "streak": {
           "title": "Active Streak",

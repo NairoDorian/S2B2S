@@ -479,6 +479,12 @@ impl StatisticsRunContext {
         run.sample_rate_hz = (sample_rate_hz > 0).then_some(sample_rate_hz as i64);
     }
 
+    pub fn set_speech_audio_duration_ms(&self, speech_duration_ms: i64, sample_rate_hz: u32) {
+        let mut run = self.state.lock().unwrap();
+        run.audio_duration_ms = Some(speech_duration_ms);
+        run.sample_rate_hz = (sample_rate_hz > 0).then_some(sample_rate_hz as i64);
+    }
+
     pub fn mark_input_stopped(&self, stopped: Instant, post_processing_requested: bool) {
         let mut run = self.state.lock().unwrap();
         if run.input_stopped.is_none() {

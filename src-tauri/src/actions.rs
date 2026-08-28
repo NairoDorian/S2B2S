@@ -832,6 +832,7 @@ impl ShortcutAction for TranscribeAction {
             }
 
             let speech_ms = rm.last_speech_ms();
+            statistics.set_speech_audio_duration_ms(speech_ms as i64, 16000);
             if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
                 debug!(
                     "Recording has no usable speech ({} samples, {}ms voiced); \
@@ -1590,6 +1591,7 @@ impl ShortcutAction for MultiSttAction {
             }
 
             let speech_ms = rm.last_speech_ms();
+            statistics.set_speech_audio_duration_ms(speech_ms as i64, 16000);
             if samples.is_empty() || speech_ms < MIN_SPEECH_MS_TO_TRANSCRIBE {
                 debug!(
                     "Multi-STT: Recording has no usable speech ({} samples, {}ms voiced)",

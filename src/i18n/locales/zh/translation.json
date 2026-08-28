@@ -775,7 +775,7 @@
         },
         "wpm": {
           "title": "Speech Rate",
-          "description": "Calculated from total words divided by total audio duration."
+          "description": "按总词数除以静音过滤后的纯语音时长计算。"
         },
         "streak": {
           "title": "Active Streak",

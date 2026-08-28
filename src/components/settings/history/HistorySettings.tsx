@@ -672,11 +672,18 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   }, [entry.word_count, entry.post_processed_text, entry.transcription_text]);
 
   const { wpm, speedRating } = useMemo(() => {
-    const effectiveSec = speechDurationSec || totalDurationSec || 0;
-    if (effectiveSec <= 0 || wordCount <= 0) {
+    // Always calculate WPM from the silence-removed speech duration
+    const silenceRemovedSec =
+      speechDurationSec && speechDurationSec > 0
+        ? speechDurationSec
+        : totalDurationSec && totalDurationSec > 0
+          ? totalDurationSec
+          : 0;
+
+    if (silenceRemovedSec <= 0 || wordCount <= 0) {
       return { wpm: 0, speedRating: null };
     }
-    const calculatedWpm = Math.round((wordCount / effectiveSec) * 60);
+    const calculatedWpm = Math.round((wordCount / silenceRemovedSec) * 60);
 
     let rating = {
       label: t("settings.history.speedConversational"),
