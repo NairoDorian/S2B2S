@@ -17,6 +17,7 @@
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
+    "check:model-languages": "bun scripts/check-model-language-coverage.ts",
     "sync:translations": "bun scripts/sync-translations.ts",
     "sync:repos": "powershell -ExecutionPolicy Bypass ./scripts/sync-all-repos.ps1",
     "compile:audiocpp": "powershell -ExecutionPolicy Bypass ./scripts/compile-audiocpp.ps1 -Backend cuda -Target audiocpp_server",
