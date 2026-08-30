@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "בדוק עדכונים",
-        "description": "בדוק אוטומטית אם קיימות גרסאות חדשות של S2B2S"
+        "description": "בדוק אוטומטית אם קיימות גרסאות חדשות של S2B2S",
+        "lockedDescription": "מושבת על ידי תצורת המערכת (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "תצוגה מקדימה של מה חדש",

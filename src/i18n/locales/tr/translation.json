@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Güncellemeleri Kontrol Et",
-        "description": "S2B2S için yeni sürümleri otomatik olarak kontrol eder"
+        "description": "S2B2S için yeni sürümleri otomatik olarak kontrol eder",
+        "lockedDescription": "Sistem yapılandırması tarafından devre dışı bırakıldı (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Yenilikleri Önizle",

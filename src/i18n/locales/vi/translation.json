@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Kiểm tra cập nhật",
-        "description": "Tự động kiểm tra phiên bản mới của S2B2S"
+        "description": "Tự động kiểm tra phiên bản mới của S2B2S",
+        "lockedDescription": "Đã bị vô hiệu hóa bởi cấu hình hệ thống (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Xem trước điểm mới",

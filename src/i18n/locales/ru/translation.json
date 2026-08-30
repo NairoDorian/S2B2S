@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Проверять наличие обновлений",
-        "description": "Автоматически проверять наличие новых версий S2B2S"
+        "description": "Автоматически проверять наличие новых версий S2B2S",
+        "lockedDescription": "Отключено системной конфигурацией (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Предпросмотр новинок",

@@ -12,6 +12,7 @@ interface UseSettingsReturn {
   audioFeedbackEnabled: boolean;
   postProcessModelOptions: Record<string, string[]>;
   brainModelOptions: Record<string, string[]>;
+  updateChecksLocked: boolean | null;
 
   // Actions
   updateSetting: <K extends keyof Settings>(
@@ -70,6 +71,7 @@ export const useSettings = (): UseSettingsReturn => {
     audioFeedbackEnabled: store.settings?.audio_feedback || false,
     postProcessModelOptions: store.postProcessModelOptions,
     brainModelOptions: store.brainModelOptions,
+    updateChecksLocked: store.updateChecksLocked,
     updateSetting: store.updateSetting,
     resetSetting: store.resetSetting,
     refreshSettings: store.refreshSettings,

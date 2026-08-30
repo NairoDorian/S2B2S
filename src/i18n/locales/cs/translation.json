@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Kontrolovat aktualizace",
-        "description": "Automaticky kontrolovat nové verze S2B2S"
+        "description": "Automaticky kontrolovat nové verze S2B2S",
+        "lockedDescription": "Zakázáno systémovou konfigurací (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Náhled novinek",

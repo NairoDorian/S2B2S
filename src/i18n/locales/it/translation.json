@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Controlla aggiornamenti",
-        "description": "Controlla automaticamente la disponibilità di nuove versioni di S2B2S"
+        "description": "Controlla automaticamente la disponibilità di nuove versioni di S2B2S",
+        "lockedDescription": "Disabilitato dalla configurazione di sistema (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Anteprima delle novità",

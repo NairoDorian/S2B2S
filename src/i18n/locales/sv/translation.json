@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Sök efter uppdateringar",
-        "description": "Sök automatiskt efter nya versioner av S2B2S"
+        "description": "Sök automatiskt efter nya versioner av S2B2S",
+        "lockedDescription": "Inaktiverad av systemkonfiguration (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Förhandsvisa nyheter",

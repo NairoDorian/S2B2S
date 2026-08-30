@@ -122,6 +122,7 @@ export const commands = {
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
 	isPortable: () => __TAURI_INVOKE<boolean>("is_portable"),
+	isUpdateChecksLocked: () => __TAURI_INVOKE<boolean>("is_update_checks_locked"),
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
 	exportSettings: (path: string) => typedError<null, string>(__TAURI_INVOKE("export_settings", { path })),
 	importSettings: (path: string) => typedError<null, string>(__TAURI_INVOKE("import_settings", { path })),

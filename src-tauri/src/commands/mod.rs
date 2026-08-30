@@ -15,7 +15,9 @@ pub mod tts;
 pub mod wake_word;
 
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
-use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
+use crate::settings::{
+    get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
+};
 use crate::utils::cancel_current_operation;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
@@ -57,6 +59,12 @@ pub fn set_dev_console_log_level(level: LogLevel) {
 #[specta::specta]
 pub fn is_portable() -> bool {
     crate::portable::is_portable()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn is_update_checks_locked() -> bool {
+    update_checks_forced_disabled()
 }
 
 #[tauri::command]

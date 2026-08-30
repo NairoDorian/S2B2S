@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "التحقق من وجود تحديثات",
-        "description": "التحقق تلقائياً من وجود إصدارات جديدة من S2B2S"
+        "description": "التحقق تلقائياً من وجود إصدارات جديدة من S2B2S",
+        "lockedDescription": "معطّل بواسطة إعدادات النظام (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "معاينة الجديد",

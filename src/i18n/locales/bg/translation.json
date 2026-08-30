@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Проверка за актуализации",
-        "description": "Автоматична проверка за нови версии на S2B2S"
+        "description": "Автоматична проверка за нови версии на S2B2S",
+        "lockedDescription": "Деактивирано от системната конфигурация (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Преглед на новостите",

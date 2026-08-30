@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Sprawdzaj aktualizacje",
-        "description": "Automatycznie sprawdzaj nowe wersje S2B2S"
+        "description": "Automatycznie sprawdzaj nowe wersje S2B2S",
+        "lockedDescription": "Wyłączone przez konfigurację systemową (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Podgląd nowości",

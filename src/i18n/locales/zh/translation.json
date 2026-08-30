@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "检查更新",
-        "description": "自动检查 S2B2S 的新版本"
+        "description": "自动检查 S2B2S 的新版本",
+        "lockedDescription": "已被系统配置禁用 (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "预览新功能",

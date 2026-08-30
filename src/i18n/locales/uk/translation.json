@@ -667,7 +667,8 @@
       },
       "updateChecks": {
         "label": "Перевірка оновлень",
-        "description": "Автоматично перевіряти наявність нових версій S2B2S"
+        "description": "Автоматично перевіряти наявність нових версій S2B2S",
+        "lockedDescription": "Вимкнено системною конфігурацією (HANDY_DISABLE_UPDATER)"
       },
       "whatsNewPreview": {
         "title": "Попередній перегляд новин",
