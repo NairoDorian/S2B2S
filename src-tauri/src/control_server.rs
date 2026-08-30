@@ -129,7 +129,7 @@ fn handle_connection(mut stream: TcpStream, app: AppHandle) {
                     .try_state::<Arc<TranscriptionCoordinator>>()
                     .map(|s| s.inner().clone())
                 {
-                    coordinator.send_input(&request.command, "API", true, false);
+                    coordinator.send_external_input(&request.command, "API");
                     http_response(200, "OK", r#"{"ok":true}"#)
                 } else {
                     http_response(

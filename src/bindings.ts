@@ -7,7 +7,8 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	changeBinding: (id: string, binding: string) => typedError<BindingResponse, string>(__TAURI_INVOKE("change_binding", { id, binding })),
 	resetBinding: (id: string) => typedError<BindingResponse, string>(__TAURI_INVOKE("reset_binding", { id })),
-	changePttSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_ptt_setting", { enabled })),
+	changeShortcutActivationSetting: (activation: ShortcutActivation) => typedError<null, string>(__TAURI_INVOKE("change_shortcut_activation_setting", { activation })),
+	changeHoldThresholdMsSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_hold_threshold_ms_setting", { ms })),
 	changeAudioFeedbackSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_setting", { enabled })),
 	changeResultReadyAudioFeedbackSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_result_ready_audio_feedback_setting", { enabled })),
 	changeAudioFeedbackVolumeSetting: (volume: number | null) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_volume_setting", { volume })),
@@ -520,7 +521,16 @@ export type AppSettings_Deserialize = {
 	 *  default bindings for any missing keys before the settings are used.
 	 */
 	bindings?: { [key in string]: ShortcutBinding },
-	push_to_talk?: boolean,
+	/**
+	 *  Replaces the pre-0.10 `push_to_talk` bool; stores missing this key are
+	 *  migrated from it in `apply_settings_migrations`.
+	 */
+	shortcut_activation?: ShortcutActivation,
+	/**
+	 *  Hold-or-toggle only: a press held at least this long is push-to-talk,
+	 *  anything shorter is a tap that locks recording on.
+	 */
+	hold_threshold_ms?: number,
 	audio_feedback?: boolean,
 	result_ready_audio_feedback?: boolean,
 	audio_feedback_volume?: number | null,
@@ -714,7 +724,16 @@ export type AppSettings_Serialize = {
 	 *  default bindings for any missing keys before the settings are used.
 	 */
 	bindings: { [key in string]: ShortcutBinding },
-	push_to_talk: boolean,
+	/**
+	 *  Replaces the pre-0.10 `push_to_talk` bool; stores missing this key are
+	 *  migrated from it in `apply_settings_migrations`.
+	 */
+	shortcut_activation: ShortcutActivation,
+	/**
+	 *  Hold-or-toggle only: a press held at least this long is push-to-talk,
+	 *  anything shorter is a tap that locks recording on.
+	 */
+	hold_threshold_ms: number,
 	audio_feedback: boolean,
 	result_ready_audio_feedback: boolean,
 	audio_feedback_volume: number | null,
@@ -1694,6 +1713,19 @@ export type SelectedRegion = {
 	width: number,
 	height: number,
 };
+
+/**  How the transcribe shortcut's key events drive a recording. */
+export type ShortcutActivation = 
+/**  Press to start, press again to stop. */
+"toggle" | 
+/**  Hold to record, release to stop. */
+"push_to_talk" | 
+/**
+ *  Hold to record and release to stop, or tap to keep recording until the
+ *  next press. Which one it was is decided by how long the key was held
+ *  (`hold_threshold_ms`).
+ */
+"hold_or_toggle";
 
 export type ShortcutBinding = {
 	id: string,

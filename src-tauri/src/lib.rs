@@ -681,7 +681,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,
-            shortcut::change_ptt_setting,
+            shortcut::change_shortcut_activation_setting,
+            shortcut::change_hold_threshold_ms_setting,
             shortcut::change_audio_feedback_setting,
             shortcut::change_result_ready_audio_feedback_setting,
             shortcut::change_audio_feedback_volume_setting,
