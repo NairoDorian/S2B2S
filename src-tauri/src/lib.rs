@@ -171,6 +171,42 @@ fn show_main_window(app: &AppHandle) {
     );
 }
 
+/// Choose the macOS activation policy the process *launches* with.
+///
+/// Must run between `build()` and `run()`: that is the only point where
+/// `App::set_activation_policy` sets tao's initial policy, which
+/// `applicationDidFinishLaunching` then applies directly. Calling the
+/// `AppHandle` variant from `setup` (which Tauri runs on `RunEvent::Ready`,
+/// i.e. after launch) is instead a runtime Regular → Accessory demotion of an
+/// already-activated foreground app — the transition Apple documents as
+/// unreliable, and what left a Dock icon behind for start-hidden and
+/// login-item launches on macOS 26+ (#1787). Launching as Accessory avoids the
+/// transition entirely; showing the window later promotes to Regular, which is
+/// the supported direction.
+///
+/// Mirrors the show-window decision in `setup`: the app launches without a
+/// Dock icon only when it will start hidden (setting or `--start-hidden`) AND a
+/// tray icon is available (setting and not `--no-tray`). With no tray the Dock
+/// icon stays as the only way back into the app (#903). Headless one-shot
+/// runs are left alone.
+#[cfg(target_os = "macos")]
+fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
+    if headless_mode {
+        return;
+    }
+
+    let cli_args = app.state::<CliArgs>().inner().clone();
+    let settings = settings::get_settings(app.handle());
+
+    let should_hide = settings.start_hidden || cli_args.start_hidden;
+    let tray_available = settings.show_tray_icon && !cli_args.no_tray;
+
+    if should_hide && tray_available {
+        log::info!("Starting hidden with tray available: launching as Accessory (no Dock icon)");
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+}
+
 #[allow(unused_variables)]
 fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     #[cfg(target_os = "windows")]
@@ -271,15 +307,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     #[cfg(unix)]
     signal_handle::setup_signal_handler(app_handle.clone());
 
-    // Apply macOS Accessory policy if starting hidden and tray is available.
-    // If the tray icon is disabled, keep the dock icon so the user can reopen.
-    #[cfg(target_os = "macos")]
-    {
-        let settings = settings::get_settings(app_handle);
-        if settings.start_hidden && settings.show_tray_icon {
-            let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
-        }
-    }
+    // The macOS activation policy for a start-hidden launch is applied before
+    // the event loop runs (see `apply_startup_activation_policy`), not here:
+    // by the time `setup` runs the app has already launched as a Regular
+    // (Dock) app, and demoting it at runtime is unreliable (#1787).
+
     // Get the current theme to set the appropriate initial icon
     let initial_theme = tray::get_current_theme(app_handle);
 
@@ -1077,7 +1109,8 @@ pub fn run(cli_args: CliArgs) {
         }));
     }
 
-    builder
+    #[allow(unused_mut)]
+    let mut app = builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1457,24 +1490,18 @@ pub fn run(cli_args: CliArgs) {
             // AND a tray icon is available (so the user can reopen later).
             // CLI --start-hidden flag overrides the setting.
             // If permission onboarding is required, keep it visible regardless.
+            let should_hide = settings.start_hidden || cli_args.start_hidden;
+            let should_force_show = should_force_show_permissions_window(&app_handle);
+            // If start_hidden but tray is disabled, we must show the window
+            // anyway. Without a tray icon, the dock is the only way back in.
+            // Keep in sync with `apply_startup_activation_policy` (macOS).
+            let tray_available = settings.show_tray_icon && !cli_args.no_tray;
             if main_window_created {
-                let should_hide = settings.start_hidden || cli_args.start_hidden;
-                let should_force_show = should_force_show_permissions_window(&app_handle);
-                let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-
-                if should_hide && tray_available && !should_force_show {
-                    if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.hide();
-                    }
+                if should_force_show || !should_hide || !tray_available {
+                    show_main_window(&app_handle);
                 }
-            }
-
-            // If tray is not available and main window failed, log a clear error
-            if !main_window_created {
-                let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-                if !tray_available {
-                    log::error!("No main window and no tray icon — app is completely inaccessible");
-                }
+            } else if !tray_available {
+                log::error!("No main window and no tray icon — app is completely inaccessible");
             }
 
             Ok(())
@@ -1522,42 +1549,47 @@ pub fn run(cli_args: CliArgs) {
         })
         .invoke_handler(invoke_handler)
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, event| match &event {
-            #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen { .. } => {
-                // Fired when the already-running bundle is launched again from
-                // Spotlight/Finder or the Dock icon is clicked. If the settings
-                // window is hidden, the user is likely looking for a tray icon
-                // that vanished (#1948): recreate it. When the window is
-                // already visible this is just a focus request and the tray is
-                // left alone.
-                let window_visible = app
-                    .get_webview_window("main")
-                    .and_then(|w| w.is_visible().ok())
-                    .unwrap_or(false);
-                if !window_visible {
-                    tray::recreate_tray_icon(app);
-                }
-                show_main_window(app);
+        .expect("error while building tauri application");
+
+    // Must sit between build() and run(): see the doc comment.
+    #[cfg(target_os = "macos")]
+    apply_startup_activation_policy(&mut app, headless_mode);
+
+    app.run(|app, event| match &event {
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => {
+            // Fired when the already-running bundle is launched again from
+            // Spotlight/Finder or the Dock icon is clicked. If the settings
+            // window is hidden, the user is likely looking for a tray icon
+            // that vanished (#1948): recreate it. When the window is
+            // already visible this is just a focus request and the tray is
+            // left alone.
+            let window_visible = app
+                .get_webview_window("main")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+            if !window_visible {
+                tray::recreate_tray_icon(app);
             }
-            tauri::RunEvent::Exit => {
-                log::info!("[Shutdown] Cleaning up all TTS engines...");
-                crate::tts::backends::piper_server::unload_piper_model();
-                crate::tts::local_tts_server::unload_all();
-                crate::audiocpp_server::unload();
-                if let Some(llama_manager) =
-                    app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
-                {
-                    llama_manager.stop();
-                }
-                if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
-                    let _ = tm.unload_model();
-                }
-                log::info!("[Shutdown] Cleanup complete.");
+            show_main_window(app);
+        }
+        tauri::RunEvent::Exit => {
+            log::info!("[Shutdown] Cleaning up all TTS engines...");
+            crate::tts::backends::piper_server::unload_piper_model();
+            crate::tts::local_tts_server::unload_all();
+            crate::audiocpp_server::unload();
+            if let Some(llama_manager) =
+                app.try_state::<Arc<crate::brain::llama_manager::LlamaManager>>()
+            {
+                llama_manager.stop();
             }
-            _ => {}
-        });
+            if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
+                let _ = tm.unload_model();
+            }
+            log::info!("[Shutdown] Cleanup complete.");
+        }
+        _ => {}
+    });
 }
 
 #[cfg(test)]
