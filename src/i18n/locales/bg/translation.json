@@ -780,6 +780,13 @@
         "verdictNoEvents": "Не са уловени събития — натиснахте ли някакви клавиши по време на теста?",
         "failed": "Диагностиката е неуспешна: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Преглед на първоначалната настройка",
+        "description": "Прегледайте екраните за първоначална настройка, без да променяте разрешенията, моделите или състоянието на завършване",
+        "permissionsButton": "Разрешения",
+        "modelsButton": "Избор на модел",
+        "exitButton": "Изход от прегледа"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

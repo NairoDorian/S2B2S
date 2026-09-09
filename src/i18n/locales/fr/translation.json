@@ -780,6 +780,13 @@
         "verdictNoEvents": "Aucun événement capturé : avez-vous appuyé sur des touches pendant le test ?",
         "failed": "Échec du diagnostic : {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Aperçu de la configuration initiale",
+        "description": "Prévisualisez les écrans de configuration sans modifier les autorisations, les modèles ou l’état d’achèvement",
+        "permissionsButton": "Autorisations",
+        "modelsButton": "Sélection du modèle",
+        "exitButton": "Quitter l’aperçu"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

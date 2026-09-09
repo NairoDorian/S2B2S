@@ -780,6 +780,13 @@
         "verdictNoEvents": "Подій не зафіксовано — ви натискали клавіші під час тесту?",
         "failed": "Не вдалося виконати діагностику: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Попередній перегляд початкового налаштування",
+        "description": "Перегляньте екрани початкового налаштування, не змінюючи дозволи, моделі чи стан завершення",
+        "permissionsButton": "Дозволи",
+        "modelsButton": "Вибір моделі",
+        "exitButton": "Вийти з перегляду"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

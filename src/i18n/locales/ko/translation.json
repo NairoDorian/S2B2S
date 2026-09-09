@@ -780,6 +780,13 @@
         "verdictNoEvents": "이벤트가 감지되지 않았습니다. 테스트 중에 키를 누르셨나요?",
         "failed": "진단 실패: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "온보딩 미리보기",
+        "description": "권한, 모델 또는 완료 상태를 변경하지 않고 온보딩 화면을 미리 봅니다",
+        "permissionsButton": "권한",
+        "modelsButton": "모델 선택",
+        "exitButton": "미리보기 종료"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

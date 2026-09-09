@@ -780,6 +780,13 @@
         "verdictNoEvents": "Nie przechwycono żadnych zdarzeń — czy w trakcie testu naciśnięto jakieś klawisze?",
         "failed": "Diagnostyka nie powiodła się: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Podgląd konfiguracji początkowej",
+        "description": "Wyświetl ekrany konfiguracji początkowej bez zmiany uprawnień, modeli ani stanu ukończenia",
+        "permissionsButton": "Uprawnienia",
+        "modelsButton": "Wybór modelu",
+        "exitButton": "Zakończ podgląd"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

@@ -780,6 +780,13 @@
         "verdictNoEvents": "Không ghi nhận sự kiện nào — bạn có bấm phím nào trong lúc kiểm tra không?",
         "failed": "Chẩn đoán thất bại: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Xem trước thiết lập ban đầu",
+        "description": "Xem trước các màn hình thiết lập mà không thay đổi quyền, mô hình hoặc trạng thái hoàn tất",
+        "permissionsButton": "Quyền",
+        "modelsButton": "Chọn mô hình",
+        "exitButton": "Thoát xem trước"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

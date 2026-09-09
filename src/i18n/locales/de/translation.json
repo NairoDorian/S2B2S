@@ -780,6 +780,13 @@
         "verdictNoEvents": "Keine Ereignisse erfasst — hast du während des Tests Tasten gedrückt?",
         "failed": "Diagnose fehlgeschlagen: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Ersteinrichtung ansehen",
+        "description": "Vorschau der Einrichtungsbildschirme, ohne Berechtigungen, Modelle oder den Abschlussstatus zu ändern",
+        "permissionsButton": "Berechtigungen",
+        "modelsButton": "Modellauswahl",
+        "exitButton": "Vorschau beenden"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

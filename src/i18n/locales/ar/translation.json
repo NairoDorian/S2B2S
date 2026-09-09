@@ -780,6 +780,13 @@
         "verdictNoEvents": "لم يُسجَّل أي حدث — هل ضغطت أي مفاتيح أثناء الاختبار؟",
         "failed": "فشل التشخيص: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "معاينة الإعداد الأولي",
+        "description": "عاين شاشات الإعداد الأولي دون تغيير الأذونات أو النماذج أو حالة الإكمال",
+        "permissionsButton": "الأذونات",
+        "modelsButton": "اختيار النموذج",
+        "exitButton": "إنهاء المعاينة"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

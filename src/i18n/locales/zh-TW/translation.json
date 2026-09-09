@@ -780,6 +780,13 @@
         "verdictNoEvents": "未擷取到任何事件——測試期間您有按鍵嗎？",
         "failed": "診斷失敗：{{error}}"
       },
+      "onboardingPreview": {
+        "title": "預覽新手引導",
+        "description": "預覽新手引導畫面，而不變更權限、模型或完成狀態",
+        "permissionsButton": "權限",
+        "modelsButton": "模型選擇",
+        "exitButton": "結束預覽"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

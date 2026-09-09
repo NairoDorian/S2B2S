@@ -780,6 +780,13 @@
         "verdictNoEvents": "Inga händelser fångades — tryckte du på några tangenter under testet?",
         "failed": "Diagnostiken misslyckades: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Förhandsvisa introduktionen",
+        "description": "Förhandsvisa introduktionsskärmarna utan att ändra behörigheter, modeller eller slutförandestatus",
+        "permissionsButton": "Behörigheter",
+        "modelsButton": "Modellval",
+        "exitButton": "Avsluta förhandsvisning"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

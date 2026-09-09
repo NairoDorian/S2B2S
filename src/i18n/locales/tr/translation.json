@@ -780,6 +780,13 @@
         "verdictNoEvents": "Hiç olay yakalanmadı — test sırasında herhangi bir tuşa bastınız mı?",
         "failed": "Tanılama başarısız: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "İlk kurulum önizlemesi",
+        "description": "İzinleri, modelleri veya tamamlanma durumunu değiştirmeden ilk kurulum ekranlarını önizleyin",
+        "permissionsButton": "İzinler",
+        "modelsButton": "Model seçimi",
+        "exitButton": "Önizlemeden çık"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",

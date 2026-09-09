@@ -780,6 +780,13 @@
         "verdictNoEvents": "Nebyly zachyceny žádné události — stiskli jste během testu nějaké klávesy?",
         "failed": "Diagnostika selhala: {{error}}"
       },
+      "onboardingPreview": {
+        "title": "Náhled úvodního nastavení",
+        "description": "Prohlédněte si obrazovky úvodního nastavení beze změny oprávnění, modelů nebo stavu dokončení",
+        "permissionsButton": "Oprávnění",
+        "modelsButton": "Výběr modelu",
+        "exitButton": "Ukončit náhled"
+      },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
         "description": "In-memory log of error and warning toasts shown during this app session. Useful for debugging transient issues without opening log files.",
