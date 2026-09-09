@@ -5,6 +5,11 @@ export interface Language {
 
 export const CHINESE_LANGUAGE_CODE = "zh";
 
+const LANGUAGE_ALIASES = new Map([
+  ["nb", "no"],
+  ["fil", "tl"],
+]);
+
 export const LANGUAGES: Language[] = [
   { value: "auto", label: "Auto Detect" },
   { value: "en", label: "English" },
@@ -63,6 +68,7 @@ export const LANGUAGES: Language[] = [
   { value: "br", label: "Breton" },
   { value: "eu", label: "Basque" },
   { value: "is", label: "Icelandic" },
+  { value: "ga", label: "Irish" },
   { value: "hy", label: "Armenian" },
   { value: "ne", label: "Nepali" },
   { value: "mn", label: "Mongolian" },
@@ -99,7 +105,7 @@ export const LANGUAGES: Language[] = [
   { value: "lb", label: "Luxembourgish" },
   { value: "my", label: "Myanmar" },
   { value: "bo", label: "Tibetan" },
-  { value: "tl", label: "Tagalog" },
+  { value: "tl", label: "Filipino (Tagalog)" },
   { value: "mg", label: "Malagasy" },
   { value: "as", label: "Assamese" },
   { value: "tt", label: "Tatar" },
@@ -133,17 +139,21 @@ export const SELECTABLE_LANGUAGES: Language[] = LANGUAGES.filter(
   (language) => language.value !== CHINESE_LANGUAGE_CODE,
 );
 
-// Collapse a language tag to the base code Handy matches on, dropping any
-// BCP-47 region or script subtag: "en-US" → "en", "zh-CN" → "zh", "zh-Hant" →
-// "zh". Bare and three-letter codes ("haw") pass through unchanged. This lets
-// the picker match a model's *real* codes — which may be full locales like
-// "en-US" (e.g. Nemotron Streaming) — against Handy's canonical bare-code
-// LANGUAGES list without the backend having to mangle the codes the engine needs.
+// Collapse a language tag to the canonical recognition intent Handy exposes in
+// the UI. BCP-47 region/script subtags are dropped ("en-US" → "en",
+// "zh-Hant" → "zh"), and model-specific base-code equivalents are mapped to a
+// stable intent. Norwegian Bokmål (`nb`) maps to Norwegian (`no`), while
+// Nynorsk (`nn`) remains distinct; Filipino (`fil`) maps to Tagalog (`tl`). The
+// backend performs the same equivalence match but returns the model's real code
+// so the engine always receives exactly what it advertises.
 export const recognitionLanguage = (languageCode: string): string => {
   const separatorIndex = languageCode.indexOf("-");
-  return separatorIndex === -1
-    ? languageCode
-    : languageCode.slice(0, separatorIndex);
+  const baseCode =
+    separatorIndex === -1
+      ? languageCode
+      : languageCode.slice(0, separatorIndex);
+
+  return LANGUAGE_ALIASES.get(baseCode) ?? baseCode;
 };
 
 export const supportsLanguageCode = (
@@ -169,23 +179,30 @@ export const getUniqueCapabilityLanguages = (
 };
 
 export const getLanguageLabel = (languageCode: string): string | undefined =>
-  LANGUAGE_LABELS.get(languageCode);
+  LANGUAGE_LABELS.get(languageCode) ??
+  LANGUAGE_LABELS.get(recognitionLanguage(languageCode));
+
+// Convert a concrete or aliased code to the picker entry that represents it.
+// Chinese script intents are already selectable and must remain intact; model
+// codes such as `en-US` and `nb` resolve to their canonical `en` / `no` entry.
+export const pickerLanguage = (languageCode: string): string =>
+  SELECTABLE_LANGUAGES.some((language) => language.value === languageCode)
+    ? languageCode
+    : recognitionLanguage(languageCode);
 
 // Mirrors the matching logic of `effective_language` in
 // src-tauri/src/managers/model.rs. The Rust function is authoritative for the
-// *concrete* code the engine receives (e.g. "en-US"); this resolves the
-// canonical *base* code ("en") so the highlighted picker item matches an entry
-// in the LANGUAGES list. Matching is base-aware (`supportsLanguageCode` strips
-// region/script subtags), so a model advertising full locales still resolves.
+// *concrete* code the engine receives (e.g. `nb`); this resolves the canonical
+// picker intent (e.g. `no`) so model switches preserve the user's language.
 export const effectiveLanguage = (
   intent: string,
   supported: string[],
   supportsDetection: boolean,
 ): string => {
-  if (supported.length === 0) return intent;
+  if (supported.length === 0) return pickerLanguage(intent);
   if (intent !== "auto" && supportsLanguageCode(supported, intent))
-    return intent;
+    return pickerLanguage(intent);
   if (supportsDetection) return "auto";
   if (supportsLanguageCode(supported, "en")) return "en";
-  return recognitionLanguage(supported[0]);
+  return pickerLanguage(supported[0]);
 };
