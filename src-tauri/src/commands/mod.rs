@@ -4,7 +4,9 @@ pub mod models;
 pub mod statistics;
 pub mod transcription;
 
-use crate::settings::{AppSettings, LogLevel, get_settings, write_settings};
+use crate::settings::{
+    get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
+};
 use crate::utils::cancel_current_operation;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -19,6 +21,12 @@ pub fn cancel_operation(app: AppHandle) {
 #[specta::specta]
 pub fn is_portable() -> bool {
     crate::portable::is_portable()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn is_update_checks_locked() -> bool {
+    update_checks_forced_disabled()
 }
 
 #[tauri::command]

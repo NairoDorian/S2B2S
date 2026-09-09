@@ -117,6 +117,7 @@ export const commands = {
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
 	isPortable: () => __TAURI_INVOKE<boolean>("is_portable"),
+	isUpdateChecksLocked: () => __TAURI_INVOKE<boolean>("is_update_checks_locked"),
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
 	getAppSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_app_settings")),
 	getDefaultSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_default_settings")),
