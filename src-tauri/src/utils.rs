@@ -243,10 +243,10 @@ mod tests {
     #[test]
     fn env_flag_enabled_true_for_truthy_values() {
         for value in ["1", "true", "TRUE", "yes", "on", " 1 "] {
-            std::env::set_var("HANDY_TEST_FLAG_TRUTHY", value);
+            unsafe { std::env::set_var("HANDY_TEST_FLAG_TRUTHY", value) };
             assert!(env_flag_enabled("HANDY_TEST_FLAG_TRUTHY"), "{value:?}");
         }
-        std::env::remove_var("HANDY_TEST_FLAG_TRUTHY");
+        unsafe { std::env::remove_var("HANDY_TEST_FLAG_TRUTHY") };
     }
 
     #[test]
@@ -254,9 +254,9 @@ mod tests {
         assert!(!env_flag_enabled("HANDY_TEST_FLAG_UNSET"));
 
         for value in ["0", "false", "FALSE", "no", "off", ""] {
-            std::env::set_var("HANDY_TEST_FLAG_FALSY", value);
+            unsafe { std::env::set_var("HANDY_TEST_FLAG_FALSY", value) };
             assert!(!env_flag_enabled("HANDY_TEST_FLAG_FALSY"), "{value:?}");
         }
-        std::env::remove_var("HANDY_TEST_FLAG_FALSY");
+        unsafe { std::env::remove_var("HANDY_TEST_FLAG_FALSY") };
     }
 }

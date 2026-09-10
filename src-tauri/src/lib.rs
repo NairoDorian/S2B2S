@@ -635,9 +635,9 @@ pub fn run(cli_args: CliArgs) {
     if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
         // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
         // inherited value as well when explicitly opting back in.
-        std::env::remove_var("GGML_METAL_NO_RESIDENCY");
+        unsafe { std::env::remove_var("GGML_METAL_NO_RESIDENCY") };
     } else {
-        std::env::set_var("GGML_METAL_NO_RESIDENCY", "1");
+        unsafe { std::env::set_var("GGML_METAL_NO_RESIDENCY", "1") };
     }
 
     // Pin glibc's dynamic mmap threshold before the first large allocation,
