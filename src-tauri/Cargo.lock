@@ -5670,7 +5670,7 @@ dependencies = [
  "num-rational",
  "rand 0.10.2",
  "rand_distr",
- "rtrb",
+ "rtrb 0.3.4",
  "symphonia",
  "thiserror 2.0.20",
 ]
@@ -5690,6 +5690,12 @@ name = "rtrb"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ade083ccbb4bf536df69d1f6432cc23deb7acccff86b183f3923a6fd56a1153"
+
+[[package]]
+name = "rtrb"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9278fb35b3e730abe136e9b395b5b81b96d06b9f5478a50f0c8430a2237b22de"
 
 [[package]]
 name = "rubato"
@@ -5916,6 +5922,7 @@ dependencies = [
  "regex",
  "reqwest 0.13.4",
  "rodio",
+ "rtrb 0.4.0",
  "rubato",
  "rusqlite",
  "rusqlite_migration",
