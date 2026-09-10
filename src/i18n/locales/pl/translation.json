@@ -434,6 +434,10 @@
         "remove": "Usuń {{word}}",
         "duplicate": "\"{{word}}\" już istnieje"
       },
+      "noiseSuppression": {
+        "title": "Noise suppression (RNNoise)",
+        "description": "Clean the microphone signal with RNNoise before voice detection and transcription. Helps with fans, keyboards and room hum; leave it off if your voice sounds processed or clipped. Applies immediately — use the live VAD test below to compare."
+      },
       "voiceActivityDetection": {
         "title": "Wykrywanie aktywności głosowej",
         "description": "Odfiltrowuje ciszę z nagrań. Modele obsługujące streaming używają dłuższego marginesu VAD; wyłączenie VAD nagrywa surowy dźwięk."
@@ -483,7 +487,10 @@
         "level": "Input level",
         "noSignal": "No signal",
         "hint": "Talk normally, then pause. The bar should cross the marker while you talk and stay below it when you stop; the grey tick is the recent peak. Audio kept shows what a model would actually hear after smoothing.",
-        "errorStart": "Could not start the VAD test: {{error}}"
+        "errorStart": "Could not start the VAD test: {{error}}",
+        "noiseSuppression": "Noise suppression",
+        "noiseSuppressionOn": "On",
+        "noiseSuppressionOff": "Off"
       }
     },
     "postProcessing": {
@@ -755,6 +762,11 @@
           "title": "ggml",
           "description": "Wydajne wykonywanie modelu rozpoznawania mowy Whisper od OpenAI",
           "details": "Handy używa ggml do szybkiego, lokalnego przetwarzania mowy na tekst. Dzięki niesamowitej pracy Georgi Gerganova i współtwórców."
+        },
+        "rnnoise": {
+          "title": "RNNoise / nnnoiseless",
+          "description": "Recurrent-network noise suppression, pure Rust",
+          "details": "Optional microphone noise suppression uses nnnoiseless, a Rust port of Xiph's RNNoise (BSD-3-Clause). Thanks to Jean-Marc Valin and Joe Neeman."
         }
       },
       "whatsNewUpdates": {

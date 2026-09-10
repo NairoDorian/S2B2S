@@ -28,10 +28,11 @@ const PEAK_DECAY = 0.02;
 export const VadLiveTest: React.FC<VadLiveTestProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
-    const { getSetting } = useSettings();
+    const { getSetting, updateSetting, isUpdating } = useSettings();
 
     const vadEnabled = getSetting("vad_enabled") ?? true;
     const threshold = getSetting("vad_threshold_earshot") ?? DEFAULT_THRESHOLD;
+    const denoise = getSetting("denoise_enabled") ?? false;
 
     const [running, setRunning] = useState(false);
     const [starting, setStarting] = useState(false);
@@ -207,6 +208,29 @@ export const VadLiveTest: React.FC<VadLiveTestProps> = React.memo(
                     ? t("settings.advanced.vadLiveTest.kept")
                     : t("settings.advanced.vadLiveTest.dropped")}
                 </span>
+              </div>
+              {/* Noise suppression applies on the next chunk, so flipping it
+                  here changes the score and level bars immediately. */}
+              <div className="flex items-center justify-between gap-3 text-xs text-text/70">
+                <span>
+                  {t("settings.advanced.vadLiveTest.noiseSuppression")}
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={denoise}
+                  disabled={isUpdating("denoise_enabled")}
+                  onClick={() => updateSetting("denoise_enabled", !denoise)}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50 ${
+                    denoise
+                      ? "bg-logo-primary/20 text-text border-logo-primary/40"
+                      : "bg-mid-gray/10 text-text/60 border-mid-gray/20"
+                  }`}
+                >
+                  {denoise
+                    ? t("settings.advanced.vadLiveTest.noiseSuppressionOn")
+                    : t("settings.advanced.vadLiveTest.noiseSuppressionOff")}
+                </button>
               </div>
               <p className="text-xs text-text/50">
                 {t("settings.advanced.vadLiveTest.hint")}

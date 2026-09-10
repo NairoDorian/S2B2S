@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Noise suppression (RNNoise)** toggle in Settings → Advanced, ahead of the
+  VAD toggle (2026-09-11). Uses the pure-Rust `nnnoiseless` port of Xiph's
+  RNNoise on the microphone path before voice detection and the model, so
+  fans, keyboards and room hum reach neither. Off by default. Switching it
+  applies on the next captured chunk, and the live VAD test has its own
+  On/Off pill so the score and level bars can be compared with and without
+  it. Saved raw audio and the overlay level meter show the untouched
+  microphone. Ported from the AIVORelay fork's noise cancellation, moved
+  ahead of the meters so the effect is visible.
+
 - **Live VAD test** in Settings → Advanced, next to the VAD Threshold slider
   (2026-09-11). "Test with microphone" opens the mic and runs only the
   detector — no model is loaded, nothing is transcribed or saved — and shows

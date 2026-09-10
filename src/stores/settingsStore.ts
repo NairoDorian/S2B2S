@@ -221,6 +221,8 @@ const settingUpdaters: {
   speech_pause_hold_ms: (value) =>
     commands.changeSpeechPauseHoldSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
+  denoise_enabled: (value) =>
+    commands.changeDenoiseEnabledSetting(value as boolean),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>

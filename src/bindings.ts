@@ -80,6 +80,11 @@ export const commands = {
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeSaveRawAudioSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_save_raw_audio_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
+	/**
+	 *  Toggle RNNoise suppression. Persisted for future recorders and pushed to
+	 *  the live one, which switches paths on its next chunk.
+	 */
+	changeDenoiseEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_denoise_enabled_setting", { enabled })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
@@ -439,6 +444,13 @@ export type AppSettings_Deserialize = {
 	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
 	vad_enabled?: boolean,
+	/**
+	 *  RNNoise noise suppression on the microphone path, before the VAD and
+	 *  the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
+	 *  adds a little latency and can make some voices sound processed; the
+	 *  live VAD test in Settings → Advanced shows its effect.
+	 */
+	denoise_enabled?: boolean,
 	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot?: number | null,
 	/**
@@ -607,6 +619,13 @@ export type AppSettings_Serialize = {
 	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,
 	vad_enabled: boolean,
+	/**
+	 *  RNNoise noise suppression on the microphone path, before the VAD and
+	 *  the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
+	 *  adds a little latency and can make some voices sound processed; the
+	 *  live VAD test in Settings → Advanced shows its effect.
+	 */
+	denoise_enabled: boolean,
 	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot: number | null,
 	/**

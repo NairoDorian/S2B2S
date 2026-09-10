@@ -434,6 +434,10 @@
         "remove": "删除 {{word}}",
         "duplicate": "\"{{word}}\" 已存在"
       },
+      "noiseSuppression": {
+        "title": "Noise suppression (RNNoise)",
+        "description": "Clean the microphone signal with RNNoise before voice detection and transcription. Helps with fans, keyboards and room hum; leave it off if your voice sounds processed or clipped. Applies immediately — use the live VAD test below to compare."
+      },
       "voiceActivityDetection": {
         "title": "语音活动检测",
         "description": "过滤录音中的静音。支持流式的模型会使用更长的 VAD 尾段；停用 VAD 则会录制原始音频。"
@@ -483,7 +487,10 @@
         "level": "Input level",
         "noSignal": "No signal",
         "hint": "Talk normally, then pause. The bar should cross the marker while you talk and stay below it when you stop; the grey tick is the recent peak. Audio kept shows what a model would actually hear after smoothing.",
-        "errorStart": "Could not start the VAD test: {{error}}"
+        "errorStart": "Could not start the VAD test: {{error}}",
+        "noiseSuppression": "Noise suppression",
+        "noiseSuppressionOn": "On",
+        "noiseSuppressionOff": "Off"
       }
     },
     "postProcessing": {
@@ -755,6 +762,11 @@
           "title": "ggml",
           "description": "OpenAI Whisper 自动语音识别模型的高性能推理",
           "details": "Handy 使用 ggml 进行快速的本地语音转文字处理。感谢 Georgi Gerganov 和贡献者们的出色工作。"
+        },
+        "rnnoise": {
+          "title": "RNNoise / nnnoiseless",
+          "description": "Recurrent-network noise suppression, pure Rust",
+          "details": "Optional microphone noise suppression uses nnnoiseless, a Rust port of Xiph's RNNoise (BSD-3-Clause). Thanks to Jean-Marc Valin and Joe Neeman."
         }
       },
       "whatsNewUpdates": {

@@ -664,6 +664,12 @@ pub struct AppSettings {
     pub extra_recording_buffer_ms: u32,
     #[serde(default = "default_vad_enabled")]
     pub vad_enabled: bool,
+    /// RNNoise noise suppression on the microphone path, before the VAD and
+    /// the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
+    /// adds a little latency and can make some voices sound processed; the
+    /// live VAD test in Settings → Advanced shows its effect.
+    #[serde(default)]
+    pub denoise_enabled: bool,
     /// Speech-probability threshold of the Earshot detector (0.05–0.95).
     #[serde(default = "default_vad_threshold_earshot")]
     pub vad_threshold_earshot: f32,
@@ -1268,6 +1274,7 @@ pub fn get_default_settings() -> AppSettings {
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
+        denoise_enabled: false,
         vad_threshold_earshot: default_vad_threshold_earshot(),
         overlay_style: default_overlay_style(),
         overlay_direct_mode: false,

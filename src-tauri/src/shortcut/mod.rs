@@ -1696,6 +1696,24 @@ pub fn change_vad_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     Ok(())
 }
 
+/// Toggle RNNoise suppression. Persisted for future recorders and pushed to
+/// the live one, which switches paths on its next chunk.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_denoise_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.denoise_enabled = enabled;
+    settings::write_settings(&app, settings);
+
+    let manager = app
+        .state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .inner()
+        .clone();
+    tokio::task::spawn_blocking(move || manager.set_denoise_enabled(enabled))
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))
+}
+
 /// Set the speech-probability threshold of the VAD. The persisted value is
 /// what a freshly built recorder reads; the live detector takes the new
 /// threshold in place on its next frame, so this works while recording and

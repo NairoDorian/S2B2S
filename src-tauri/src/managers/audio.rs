@@ -338,7 +338,8 @@ fn create_audio_recorder(
     selected_channel: Option<u16>,
     stream_router: Arc<StreamRouter>,
 ) -> Result<AudioRecorder, anyhow::Error> {
-    let threshold = vad_threshold(&get_settings(app_handle));
+    let settings = get_settings(app_handle);
+    let threshold = vad_threshold(&settings);
     let detector: Box<dyn VoiceActivityDetector> = Box::new(
         EarshotVad::new(threshold)
             .map_err(|e| anyhow::anyhow!("Failed to create EarshotVad: {e}"))?,
@@ -374,6 +375,7 @@ fn create_audio_recorder(
             onset_frames,
         )
         .with_selected_channel(selected_channel)
+        .with_denoise_enabled(settings.denoise_enabled)
         .with_level_callback({
             let app_handle = app_handle.clone();
             move |levels| {
@@ -959,6 +961,19 @@ impl AudioRecordingManager {
         if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
             rec.set_vad_threshold(threshold);
             info!("VAD threshold set to {threshold:.2}");
+        }
+    }
+
+    /// Turn RNNoise suppression on or off on the live recorder. Applies from
+    /// the next chunk, mid-recording included, so the live VAD test shows the
+    /// effect immediately. A recorder built later reads the persisted setting.
+    pub fn set_denoise_enabled(&self, enabled: bool) {
+        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            rec.set_denoise_enabled(enabled);
+            info!(
+                "Noise suppression {}",
+                if enabled { "enabled" } else { "disabled" }
+            );
         }
     }
 

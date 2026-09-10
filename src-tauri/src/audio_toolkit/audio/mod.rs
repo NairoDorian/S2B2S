@@ -1,10 +1,12 @@
 // Re-export all audio components
+mod denoise;
 mod device;
 mod recorder;
 mod resampler;
 mod utils;
 mod visualizer;
 
+pub use denoise::{DenoiseChain, RNNOISE_FRAME_SAMPLES, RNNOISE_SAMPLE_RATE};
 pub use device::{CpalDeviceInfo, list_input_devices, list_output_devices};
 pub use recorder::{
     AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, RecordedAudio, SpeechActivity, VadPolicy,

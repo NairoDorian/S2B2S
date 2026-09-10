@@ -209,7 +209,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 
 **Command-Event Architecture:** Frontend → Backend via Tauri commands; Backend → Frontend via events.
 
-**Pipeline Processing:** Audio → VAD → Whisper/Parakeet → Text output → Clipboard/Paste
+**Pipeline Processing:** Audio → (RNNoise, optional) → VAD → transcribe.cpp model → Text output → Clipboard/Paste
 
 **State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
@@ -223,6 +223,8 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `cpal` - Cross-platform audio I/O
 - `earshot` - Voice activity detection (pure Rust, no model file; see Voice
   Activity Detection)
+- `nnnoiseless` - RNNoise noise suppression (pure Rust, weights compiled in;
+  optional, off by default)
 - `enigo` - Keystroke simulation for the performance-mode shortcuts
 - `rdev` - Global keyboard shortcuts
 - `rubato` - Audio resampling
@@ -398,6 +400,20 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   hysteresis gate in place (`VoiceActivityDetector::set_threshold`) — no
   rebuild, no microphone reopen, works mid-recording. The Advanced page shows
   it as the `VadSensitivity` slider
+- **Noise suppression** (`denoise_enabled`, default off): RNNoise via the
+  pure-Rust `nnnoiseless` crate (`audio_toolkit/audio/denoise.rs`,
+  `DenoiseChain`: native rate → 48 kHz 10 ms frames → RNNoise → 16 kHz VAD
+  frames). It sits in `CaptureProcessor::process_raw_chunk` after the raw
+  tap and the overlay level meter and before `handle_frame`, so the VAD, the
+  speech clock, streaming and the model all get the denoised signal while
+  saved raw audio and `mic-level` stay untouched. The flag is an
+  `Arc<AtomicBool>` read per chunk (`AudioRecorder::set_denoise_enabled`,
+  `AudioRecordingManager::set_denoise_enabled`,
+  `change_denoise_enabled_setting`): a toggle mid-recording swaps between
+  the direct and the denoised chain and resets the one it leaves, which is
+  what lets the live VAD test react to the switch. The chain is built lazily
+  on first use. A 48 kHz microphone (the WASAPI default) makes the first
+  stage pure framing, so only one real resample happens either way
 - **Live VAD test** (`VadLiveTest.tsx`, next to the slider): `start_vad_test`
   records under the `vad_test` binding with `VadPolicy::Streaming` and no
   model; the recorder's `with_vad_frame_callback` reports every frame's raw

@@ -16,7 +16,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::audio_toolkit::{
     VoiceActivityDetector,
-    audio::{AudioVisualiser, FrameResampler},
+    audio::{AudioVisualiser, DenoiseChain, FrameResampler},
     constants,
     vad::{self, VadFrame},
 };
@@ -368,6 +368,9 @@ pub struct AudioRecorder {
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
     vad_frame_cb: Option<VadFrameCallback>,
+    /// RNNoise suppression on/off, read by the consumer thread per chunk so a
+    /// toggle applies mid-recording without reopening anything.
+    denoise_enabled: Arc<AtomicBool>,
     /// Milliseconds of speech in the most recent recording, published by the
     /// consumer thread's [`SpeechClock`]. Final once `stop()` has returned.
     speech_ms: Arc<AtomicU64>,
@@ -390,6 +393,7 @@ impl AudioRecorder {
             audio_cb: None,
             speech_cb: None,
             vad_frame_cb: None,
+            denoise_enabled: Arc::new(AtomicBool::new(false)),
             speech_ms: Arc::new(AtomicU64::new(0)),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
@@ -455,6 +459,19 @@ impl AudioRecorder {
         self
     }
 
+    /// Initial RNNoise suppression state (see [`Self::set_denoise_enabled`]).
+    pub fn with_denoise_enabled(self, enabled: bool) -> Self {
+        self.denoise_enabled.store(enabled, Ordering::Relaxed);
+        self
+    }
+
+    /// Turn RNNoise suppression on or off. Applies from the next drained
+    /// chunk, also mid-recording; the capture path swaps between the direct
+    /// and the denoised resampling chain and resets the one it leaves.
+    pub fn set_denoise_enabled(&self, enabled: bool) {
+        self.denoise_enabled.store(enabled, Ordering::Relaxed);
+    }
+
     /// Change the detector's speech threshold in place. Takes effect on the
     /// next frame, including mid-recording, and does not touch the stream.
     pub fn set_vad_threshold(&self, threshold: f32) {
@@ -504,6 +521,7 @@ impl AudioRecorder {
         let audio_cb = self.audio_cb.clone();
         let speech_cb = self.speech_cb.clone();
         let vad_frame_cb = self.vad_frame_cb.clone();
+        let denoise_enabled = Arc::clone(&self.denoise_enabled);
         let speech_ms = Arc::clone(&self.speech_ms);
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
@@ -643,6 +661,7 @@ impl AudioRecorder {
                         audio_cb,
                         speech_cb,
                         vad_frame_cb,
+                        denoise_enabled,
                         speech_ms,
                         stream_running_at,
                     );
@@ -1046,7 +1065,17 @@ pub(crate) struct CaptureProcessor {
     speech_clock: SpeechClock,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
+    /// Direct path: native rate → 16 kHz VAD frames.
     frame_resampler: FrameResampler,
+    /// Denoised path: native rate → 48 kHz → RNNoise → 16 kHz VAD frames.
+    /// Built on first use so a user who never enables suppression pays
+    /// nothing for it.
+    denoise: Option<DenoiseChain>,
+    denoise_enabled: Arc<AtomicBool>,
+    /// Which path carried the previous chunk; a change resets both so no
+    /// buffered tail from the other path leaks out later.
+    denoise_active: bool,
+    out_frame_duration: Duration,
     max_drain_samples: usize,
     first_chunk_logged: bool,
     vad_policy: VadPolicy,
@@ -1077,6 +1106,7 @@ impl CaptureProcessor {
             audio_cb,
             None,
             None,
+            Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicU64::new(0)),
             stream_running_at,
         )
@@ -1091,6 +1121,7 @@ impl CaptureProcessor {
         audio_cb: Option<AudioFrameCallback>,
         speech_cb: Option<SpeechActivityCallback>,
         vad_frame_cb: Option<VadFrameCallback>,
+        denoise_enabled: Arc<AtomicBool>,
         speech_clock_total: Arc<AtomicU64>,
         stream_running_at: Instant,
     ) -> Self {
@@ -1138,6 +1169,10 @@ impl CaptureProcessor {
             stream_running_at,
             visualizer,
             frame_resampler,
+            denoise: None,
+            denoise_active: denoise_enabled.load(Ordering::Relaxed),
+            denoise_enabled,
+            out_frame_duration: frame_duration,
             max_drain_samples,
             first_chunk_logged: false,
             vad_policy: VadPolicy::Offline,
@@ -1176,6 +1211,10 @@ impl CaptureProcessor {
         self.vad_errors = 0;
         self.visualizer.reset();
         self.frame_resampler.reset();
+        if let Some(chain) = &mut self.denoise {
+            chain.reset();
+        }
+        self.denoise_active = self.denoise_enabled.load(Ordering::Relaxed);
         self.speech_clock.reset(u64::from(pause_hold_ms));
         if policy != VadPolicy::Disabled {
             if let Some(cfg) = &self.vad {
@@ -1225,6 +1264,30 @@ impl CaptureProcessor {
             }
         }
 
+        // Noise suppression runs here, after the raw tap and the overlay
+        // level meter (both deliberately see the untouched microphone) and
+        // before the VAD, so the detector, the speech clock and the live VAD
+        // test all work on the denoised signal.
+        let denoise_on = self.denoise_enabled.load(Ordering::Relaxed);
+        if denoise_on != self.denoise_active {
+            self.frame_resampler.reset();
+            if let Some(chain) = &mut self.denoise {
+                chain.reset();
+            }
+            self.denoise_active = denoise_on;
+            log::debug!(
+                "Noise suppression {} mid-recording",
+                if denoise_on { "enabled" } else { "disabled" }
+            );
+        }
+        if denoise_on && self.denoise.is_none() {
+            self.denoise = Some(DenoiseChain::new(
+                self.in_sample_rate as usize,
+                constants::WHISPER_SAMPLE_RATE as usize,
+                self.out_frame_duration,
+            ));
+        }
+
         let vad_policy = self.vad_policy;
         let vad = &self.vad;
         let audio_cb = &self.audio_cb;
@@ -1234,7 +1297,7 @@ impl CaptureProcessor {
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
 
-        self.frame_resampler.push(raw, |frame: &[f32]| {
+        let mut on_frame = |frame: &[f32]| {
             handle_frame(
                 frame,
                 vad_policy,
@@ -1246,7 +1309,11 @@ impl CaptureProcessor {
                 vad_errors,
                 processed_samples,
             )
-        });
+        };
+        match (denoise_on, self.denoise.as_mut()) {
+            (true, Some(chain)) => chain.push(raw, &mut on_frame),
+            _ => self.frame_resampler.push(raw, &mut on_frame),
+        }
 
         if let Some(started) = self.awaiting_first_captured_chunk.take() {
             log::debug!(
@@ -1287,7 +1354,7 @@ impl CaptureProcessor {
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
 
-        self.frame_resampler.finish(|frame: &[f32]| {
+        let mut on_frame = |frame: &[f32]| {
             handle_frame(
                 frame,
                 vad_policy,
@@ -1299,7 +1366,11 @@ impl CaptureProcessor {
                 vad_errors,
                 processed_samples,
             )
-        });
+        };
+        match (self.denoise_active, self.denoise.as_mut()) {
+            (true, Some(chain)) => chain.finish(&mut on_frame),
+            _ => self.frame_resampler.finish(&mut on_frame),
+        }
 
         if vad_policy != VadPolicy::Disabled {
             if let Some(cfg) = &self.vad {

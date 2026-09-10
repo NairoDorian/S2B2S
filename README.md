@@ -53,6 +53,7 @@ This fork adds **Multi-STT** — run up to four speech-to-text models simultaneo
 
 ### Other Fork Additions
 
+- **Noise suppression (RNNoise)**: optional pure-Rust RNNoise on the microphone before voice detection and transcription, with a live VAD test next to the threshold slider to hear-and-see the difference
 - **transcribe.cpp only, pure-Rust VAD**: no ONNX Runtime, no `transcribe-rs`, no VAD model file. Voice activity detection is **Earshot** with threshold hysteresis (upstream's Silero wrapper spoke the v4 tensor interface against a v6 model and silently passed every frame through)
 - **Recordings with no speech are never decoded** (under 200 ms of measured speech) — no more hallucinated text pasted from silence
 - **Speech stats in the overlay**: speaking/paused indicator, a timer that only runs while you talk, and live words-per-minute with streaming models
@@ -100,6 +101,7 @@ Handy is built as a Tauri application combining:
   - `transcribe-cpp`: Local speech recognition for every model (GGML/GGUF: Whisper family, Parakeet, Moonshine, Canary, …)
   - `cpal`: Cross-platform audio I/O
   - `earshot`: pure-Rust voice activity detection
+  - `nnnoiseless`: pure-Rust RNNoise noise suppression (optional)
   - `rdev`: Global keyboard shortcuts and system events
   - `rubato`: Audio resampling
 
@@ -563,5 +565,6 @@ Handy is open-source software, but the Handy name, logo, icon, and brand assets 
 - **Whisper** by OpenAI for the speech recognition model
 - **ggml and transcribe.cpp** for amazing cross-platform speech-to-text inference/acceleration
 - **Earshot** for a fast, pure-Rust VAD
+- **RNNoise** (Xiph) and **nnnoiseless** for noise suppression
 - **Tauri** team for the excellent Rust-based app framework
 - **Community contributors** helping make Handy better
