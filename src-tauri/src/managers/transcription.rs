@@ -361,7 +361,14 @@ pub struct TranscriptionManager {
     active_engine_lease: Arc<AtomicU64>,
     /// Pending statistics attempt for an in-flight live stream.
     stream_attempt: Arc<Mutex<Option<PendingStatisticsAttempt>>>,
+    /// Optional in-process observer of the live text (committed, tentative),
+    /// called on the stream worker thread alongside the overlay event. Live
+    /// Mode installs one to mirror the stream into its transcript file.
+    stream_text_sink: Arc<Mutex<Option<StreamTextSink>>>,
 }
+
+/// Callback receiving every live-text update: `(committed, tentative)`.
+pub type StreamTextSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
@@ -386,6 +393,7 @@ impl TranscriptionManager {
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
             stream_attempt: Arc::new(Mutex::new(None)),
+            stream_text_sink: Arc::new(Mutex::new(None)),
         };
 
         // Start the idle watcher
@@ -1402,6 +1410,17 @@ impl TranscriptionManager {
             tentative: tentative.to_string(),
         }
         .emit(&self.app_handle);
+        let sink = self.stream_text_sink.lock().unwrap().clone();
+        if let Some(sink) = sink {
+            sink(committed, tentative);
+        }
+    }
+
+    /// Install (or, with `None`, remove) the in-process live-text observer.
+    /// Only one sink exists at a time; Live Mode owns it for the duration of a
+    /// session and clears it on stop.
+    pub fn set_stream_text_sink(&self, sink: Option<StreamTextSink>) {
+        *self.stream_text_sink.lock().unwrap() = sink;
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {

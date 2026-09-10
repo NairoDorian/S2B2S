@@ -9,6 +9,8 @@ export { PostProcessingSettings } from "./post-processing/PostProcessingSettings
 export { ModelsSettings } from "./models/ModelsSettings";
 export { MultiSttSettings } from "./multi-stt/MultiSttSettings";
 export { StatisticsSettings } from "./statistics/StatisticsSettings";
+export { FileTranscriptionSettings } from "./file-transcription/FileTranscriptionSettings";
+export { LiveModeSettings } from "./live-mode/LiveModeSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

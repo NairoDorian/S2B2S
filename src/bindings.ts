@@ -274,11 +274,45 @@ export const commands = {
 	 *  Always returns false since laptop detection is macOS-specific
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
+	/**
+	 *  Set the speech-probability threshold of one VAD backend. The detector is
+	 *  built from the persisted value, so the setting is written first and the
+	 *  active detector rebuilt afterwards; a rejected rebuild (mid-recording,
+	 *  failed microphone reopen) restores the previous value so the slider and
+	 *  the running detector never disagree.
+	 */
+	changeVadThresholdSetting: (backend: VadBackend, threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_vad_threshold_setting", { backend, threshold })),
+	changeFileTranscriptionSettings: (settings: FileTranscriptionSettings) => typedError<null, string>(__TAURI_INVOKE("change_file_transcription_settings", { settings })),
+	listAudioFilesInFolder: (folder: string, includeSubfolders: boolean) => typedError<string[], string>(__TAURI_INVOKE("list_audio_files_in_folder", { folder, includeSubfolders })),
+	startFileTranscription: (paths: string[]) => typedError<number, string>(__TAURI_INVOKE("start_file_transcription", { paths })),
+	cancelFileTranscription: () => __TAURI_INVOKE<void>("cancel_file_transcription"),
+	getFileTranscriptionStatus: () => __TAURI_INVOKE<FileTranscriptionStatus>("get_file_transcription_status"),
+	/**
+	 *  Show `path` in the OS file manager: folders are opened, files are revealed
+	 *  (selected) inside their folder.
+	 */
+	revealPathInFileManager: (path: string) => typedError<null, string>(__TAURI_INVOKE("reveal_path_in_file_manager", { path })),
+	/**
+	 *  Read a UTF-8 text file (transcript viewer). Invalid UTF-8 is replaced
+	 *  rather than rejected so a partially written live transcript still shows.
+	 */
+	readTextFile: (path: string) => typedError<string, string>(__TAURI_INVOKE("read_text_file", { path })),
+	changeLiveModeSettings: (settings: LiveModeSettings) => typedError<null, string>(__TAURI_INVOKE("change_live_mode_settings", { settings })),
+	liveModeStart: () => typedError<null, string>(__TAURI_INVOKE("live_mode_start")),
+	liveModeStop: () => typedError<null, string>(__TAURI_INVOKE("live_mode_stop")),
+	liveModeStatus: () => __TAURI_INVOKE<LiveModeStatus>("live_mode_status"),
+	/**  Past sessions under the configured output folder, newest first. */
+	liveModeListSessions: () => typedError<LiveSessionInfo[], string>(__TAURI_INVOKE("live_mode_list_sessions")),
+	/**  The folder used when no output folder is configured, for display. */
+	liveModeDefaultOutputDir: () => typedError<string, string>(__TAURI_INVOKE("live_mode_default_output_dir")),
 };
 
 /** Events */
 export const events = {
+	fileTranscriptionEvent: makeEvent<FileTranscriptionEvent>("file-transcription-event"),
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
+	liveModeStateEvent: makeEvent<LiveModeStateEvent>("live-mode-state-event"),
+	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent>("live-mode-transcript-event"),
 	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
 	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
@@ -405,6 +439,10 @@ export type AppSettings_Deserialize = {
 	vad_enabled?: boolean,
 	/**  Experimental detector implementation. Silero remains the stable default. */
 	vad_backend?: VadBackend,
+	/**  Speech-probability threshold of the Silero detector (0.05–0.95). */
+	vad_threshold_silero?: number | null,
+	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
+	vad_threshold_earshot?: number | null,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -458,6 +496,10 @@ export type AppSettings_Deserialize = {
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
 	native_streaming_latency_presets?: { [key in string]: NativeStreamingLatencyPreset },
+	/**  "Transcribe Files" page (fork feature). */
+	file_transcription?: FileTranscriptionSettings,
+	/**  "Live Mode" page (fork feature). */
+	live_mode?: LiveModeSettings,
 };
 
 /**
@@ -570,6 +612,10 @@ export type AppSettings_Serialize = {
 	vad_enabled: boolean,
 	/**  Experimental detector implementation. Silero remains the stable default. */
 	vad_backend: VadBackend,
+	/**  Speech-probability threshold of the Silero detector (0.05–0.95). */
+	vad_threshold_silero: number | null,
+	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
+	vad_threshold_earshot: number | null,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -623,6 +669,10 @@ export type AppSettings_Serialize = {
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,
 	native_streaming_latency_presets: { [key in string]: NativeStreamingLatencyPreset },
+	/**  "Transcribe Files" page (fork feature). */
+	file_transcription: FileTranscriptionSettings,
+	/**  "Live Mode" page (fork feature). */
+	live_mode: LiveModeSettings,
 };
 
 export type AudioDevice = {
@@ -686,6 +736,76 @@ export type EngineType =
  */
 "TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere";
 
+export type FileJobStatus = "queued" | "decoding" | "transcribing" | "merging" | "post_processing" | "saving" | "done" | "failed" | "cancelled";
+
+/**
+ *  Progress of one file inside a job. The last event of a job carries
+ *  `batch_finished = true` (with `index == total`) so the UI can leave its
+ *  "running" state even if an individual event was missed.
+ */
+export type FileTranscriptionEvent = {
+	job_id: number,
+	/**  0-based position in the job (== `total` on the batch-finished event). */
+	index: number,
+	total: number,
+	path: string,
+	status: FileJobStatus,
+	segment: number | null,
+	segments: number | null,
+	text: string | null,
+	output_path: string | null,
+	error: string | null,
+	audio_seconds: number | null,
+	elapsed_ms: number | null,
+	batch_finished: boolean,
+};
+
+/**  How the "Transcribe Files" page turns one audio file into text. */
+export type FileTranscriptionMode = 
+/**  Primary model only, no LLM. */
+"simple" | 
+/**  Primary model, then the selected post-processing prompt. */
+"post_process" | 
+/**
+ *  Primary + configured extra models, merged with the Multi-STT prompt
+ *  (concatenated when no merge prompt / provider is configured).
+ */
+"multi_stt" | 
+/**  Multi-STT merge, then the post-processing prompt on the merged text. */
+"multi_stt_post_process";
+
+/**
+ *  Settings of the "Transcribe Files" page. Grouped into one struct so the
+ *  page persists through a single command instead of one per field.
+ */
+export type FileTranscriptionSettings = {
+	mode?: FileTranscriptionMode,
+	/**
+	 *  Folder the transcripts are written to. `None` writes each transcript
+	 *  next to its source audio file.
+	 */
+	output_dir?: string | null,
+	output_format?: TranscriptOutputFormat,
+	/**  Replace an existing transcript instead of appending `-2`, `-3`, …. */
+	overwrite_existing?: boolean,
+	/**  When a folder is added, also queue audio files from its sub-folders. */
+	include_subfolders?: boolean,
+	/**
+	 *  Long recordings are decoded in segments of at most this many minutes,
+	 *  cut at the quietest point near the boundary, so one file never holds
+	 *  the engine (or memory) for an hour at a time. 1–60.
+	 */
+	max_segment_minutes?: number,
+};
+
+export type FileTranscriptionStatus = {
+	running: boolean,
+	job_id: number,
+	total: number,
+	completed: number,
+	current_path: string | null,
+};
+
 export type GpuDeviceOption = {
 	id: string,
 	name: string,
@@ -743,6 +863,90 @@ export type LLMPrompt = {
 	name: string,
 	prompt: string,
 };
+
+export type LiveChunkInfo = {
+	index: number,
+	path: string | null,
+	duration_ms: number | null,
+	bytes: number | null,
+	text_chars: number,
+};
+
+export type LiveModePhase = "idle" | "starting" | "listening" | "rotating" | "stopping" | "error";
+
+/**  Settings of the "Live Mode" page (continuous recording + live transcript). */
+export type LiveModeSettings = {
+	/**
+	 *  Session folders are created under this directory. `None` uses
+	 *  `<app data>/live_mode`.
+	 */
+	output_dir?: string | null,
+	/**  Target length of one audio chunk / transcript segment in minutes. 1–60. */
+	chunk_minutes?: number,
+	transcript_format?: TranscriptOutputFormat,
+	granularity?: LiveTranscriptGranularity,
+	/**  Write the raw microphone signal to `chunk_NNNN.wav` files. */
+	save_audio?: boolean,
+	/**
+	 *  Rotate chunks on the first pause once 80 % of `chunk_minutes` has
+	 *  elapsed, so a cut never lands mid-word.
+	 */
+	prefer_silence_boundary?: boolean,
+};
+
+/**
+ *  Emitted whenever the session status changes and roughly once a second
+ *  while listening.
+ */
+export type LiveModeStateEvent = {
+	status: LiveModeStatus,
+};
+
+export type LiveModeStatus = {
+	phase: LiveModePhase,
+	session_dir: string | null,
+	transcript_path: string | null,
+	model_id: string | null,
+	/**  Number of the chunk currently being recorded (1-based). */
+	chunk_index: number,
+	chunks: LiveChunkInfo[],
+	started_at_ms: number | null,
+	elapsed_ms: number | null,
+	current_chunk_ms: number | null,
+	/**  Speech measured by the VAD in the current chunk. */
+	current_chunk_speech_ms: number | null,
+	/**  Bytes of committed transcript text. */
+	transcript_bytes: number | null,
+	error: string | null,
+};
+
+/**
+ *  Incremental transcript update. `reset` replaces the UI's committed text
+ *  with `stable_appended`; otherwise `stable_appended` is appended to it.
+ *  `live` always replaces the volatile tail.
+ */
+export type LiveModeTranscriptEvent = {
+	reset: boolean,
+	stable_appended: string,
+	live: string,
+};
+
+/**  A past (or current) session folder, for the page's session list. */
+export type LiveSessionInfo = {
+	dir: string,
+	name: string,
+	transcript_path: string | null,
+	transcript_bytes: number | null,
+	chunk_count: number,
+	modified_ms: number | null,
+};
+
+/**  How Live Mode grows the transcript file while you speak. */
+export type LiveTranscriptGranularity = 
+/**  Mirror the live stream exactly, including the model's tentative tail. */
+"character" | 
+/**  Only write text up to the last completed word. */
+"word";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
@@ -1013,6 +1217,9 @@ export type StreamWorkKind = "transcribing" | "polishing";
 export type Theme = "system" | "light" | "dark";
 
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
+
+/**  Text file flavour written by the file-transcription and Live Mode pages. */
+export type TranscriptOutputFormat = "txt" | "md";
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
 

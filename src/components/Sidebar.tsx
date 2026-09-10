@@ -9,6 +9,8 @@ import {
   Sparkles,
   Cpu,
   Mic,
+  FileAudio,
+  Radio,
 } from "lucide-react";
 import HandyTextLogo from "./icons/HandyTextLogo";
 import HandyHand from "./icons/HandyHand";
@@ -23,6 +25,8 @@ import {
   PostProcessingSettings,
   ModelsSettings,
   MultiSttSettings,
+  FileTranscriptionSettings,
+  LiveModeSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -71,6 +75,18 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.multiStt",
     icon: Mic,
     component: MultiSttSettings,
+    enabled: () => true,
+  },
+  fileTranscription: {
+    labelKey: "sidebar.fileTranscription",
+    icon: FileAudio,
+    component: FileTranscriptionSettings,
+    enabled: () => true,
+  },
+  liveMode: {
+    labelKey: "sidebar.liveMode",
+    icon: Radio,
+    component: LiveModeSettings,
     enabled: () => true,
   },
   advanced: {

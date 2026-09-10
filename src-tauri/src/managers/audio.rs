@@ -295,8 +295,15 @@ struct MicrophoneResolution {
 
 /* ──────────────────────────────────────────────────────────────── */
 
-const SILERO_VAD_THRESHOLD: f32 = 0.3;
-const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
+/// Speech-probability threshold the detector for `backend` should be built
+/// with: the user's persisted value, clamped to the sane range. Defaults live
+/// in `settings.rs` (`DEFAULT_VAD_THRESHOLD_*`).
+fn vad_threshold_for(settings: &AppSettings, backend: VadBackend) -> f32 {
+    crate::settings::clamp_vad_threshold(match backend {
+        VadBackend::Silero => settings.vad_threshold_silero,
+        VadBackend::Earshot => settings.vad_threshold_earshot,
+    })
+}
 
 fn create_audio_recorder(
     backend: VadBackend,
@@ -304,6 +311,7 @@ fn create_audio_recorder(
     selected_channel: Option<u16>,
     stream_router: Arc<StreamRouter>,
 ) -> Result<AudioRecorder, anyhow::Error> {
+    let threshold = vad_threshold_for(&get_settings(app_handle), backend);
     let detector: Box<dyn VoiceActivityDetector> = match backend {
         VadBackend::Silero => {
             let vad_path = app_handle
@@ -314,12 +322,12 @@ fn create_audio_recorder(
                 )
                 .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))?;
             Box::new(
-                SileroVad::new(vad_path, SILERO_VAD_THRESHOLD)
+                SileroVad::new(vad_path, threshold)
                     .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {e}"))?,
             )
         }
         VadBackend::Earshot => Box::new(
-            EarshotVad::new(EARSHOT_VAD_THRESHOLD)
+            EarshotVad::new(threshold)
                 .map_err(|e| anyhow::anyhow!("Failed to create EarshotVad: {e}"))?,
         ),
     };
@@ -341,8 +349,8 @@ fn create_audio_recorder(
     );
 
     info!(
-        "Initialized {:?} VAD backend ({} samples/frame)",
-        backend, frame_samples
+        "Initialized {:?} VAD backend ({} samples/frame, threshold {:.2})",
+        backend, frame_samples, threshold
     );
 
     // Recorder with VAD, a spectrum-level callback that forwards level updates to
@@ -855,6 +863,19 @@ impl AudioRecordingManager {
         binding_id: &str,
         vad_policy: VadPolicy,
     ) -> Result<RecordingReadiness, String> {
+        self.try_start_recording_with_raw(binding_id, vad_policy, None)
+    }
+
+    /// Like [`Self::try_start_recording`], but lets the caller force the
+    /// native-rate raw tap on or off instead of following `save_raw_audio`.
+    /// Live Mode always captures raw audio for its chunk files, whatever the
+    /// history setting says.
+    pub fn try_start_recording_with_raw(
+        &self,
+        binding_id: &str,
+        vad_policy: VadPolicy,
+        capture_raw_override: Option<bool>,
+    ) -> Result<RecordingReadiness, String> {
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {
@@ -878,7 +899,7 @@ impl AudioRecordingManager {
             let pause_hold_ms = session_settings.speech_pause_hold_ms;
             // Only accumulate the native-rate raw tap when the user asked to
             // save it; at 48 kHz float it is ~11 MB per minute otherwise wasted.
-            let capture_raw = session_settings.save_raw_audio;
+            let capture_raw = capture_raw_override.unwrap_or(session_settings.save_raw_audio);
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                 match rec.start(vad_policy, pause_hold_ms, capture_raw) {
                     Ok(receiver) => {
@@ -903,6 +924,14 @@ impl AudioRecordingManager {
         } else {
             Err("Already recording".to_string())
         }
+    }
+
+    /// Rebuild the active detector from the persisted settings (used after a
+    /// threshold change). Same idle guard and reopen/rollback as
+    /// [`Self::update_vad_backend`]; the caller writes the new threshold first.
+    pub fn rebuild_vad_from_settings(&self) -> Result<(), anyhow::Error> {
+        let backend = get_settings(&self.app_handle).vad_backend;
+        self.update_vad_backend(backend)
     }
 
     /// Replace the VAD implementation while idle. If the microphone stream is

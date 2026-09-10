@@ -21,9 +21,9 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
-    self, get_settings, normalize_binding, AutoSubmitKey, ClipboardHandling, KeyboardImplementation,
+    self, APPLE_INTELLIGENCE_PROVIDER_ID, AutoSubmitKey, ClipboardHandling, KeyboardImplementation,
     LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding,
-    SoundTheme, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
+    SoundTheme, Theme, TypingTool, VadBackend, get_settings, normalize_binding,
 };
 use crate::tray;
 
@@ -1718,6 +1718,60 @@ pub async fn change_vad_backend_setting(app: AppHandle, backend: VadBackend) -> 
     let mut current_settings = settings::get_settings(&app);
     current_settings.vad_backend = backend;
     settings::write_settings(&app, current_settings);
+    Ok(())
+}
+
+/// Set the speech-probability threshold of one VAD backend. The detector is
+/// built from the persisted value, so the setting is written first and the
+/// active detector rebuilt afterwards; a rejected rebuild (mid-recording,
+/// failed microphone reopen) restores the previous value so the slider and
+/// the running detector never disagree.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_vad_threshold_setting(
+    app: AppHandle,
+    backend: VadBackend,
+    threshold: f32,
+) -> Result<(), String> {
+    let threshold = settings::clamp_vad_threshold(threshold);
+    let mut current_settings = settings::get_settings(&app);
+    let previous = match backend {
+        VadBackend::Silero => {
+            std::mem::replace(&mut current_settings.vad_threshold_silero, threshold)
+        }
+        VadBackend::Earshot => {
+            std::mem::replace(&mut current_settings.vad_threshold_earshot, threshold)
+        }
+    };
+    if previous == threshold {
+        return Ok(());
+    }
+    let active_backend = current_settings.vad_backend;
+    settings::write_settings(&app, current_settings);
+
+    // Only the active backend has a live detector to rebuild.
+    if active_backend != backend {
+        return Ok(());
+    }
+
+    let manager = app
+        .state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .inner()
+        .clone();
+    let rebuilt = tokio::task::spawn_blocking(move || manager.rebuild_vad_from_settings())
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))
+        .and_then(|r| r.map_err(|e| format!("Failed to apply VAD threshold: {e}")));
+
+    if let Err(error) = rebuilt {
+        let mut rollback = settings::get_settings(&app);
+        match backend {
+            VadBackend::Silero => rollback.vad_threshold_silero = previous,
+            VadBackend::Earshot => rollback.vad_threshold_earshot = previous,
+        }
+        settings::write_settings(&app, rollback);
+        return Err(error);
+    }
     Ok(())
 }
 

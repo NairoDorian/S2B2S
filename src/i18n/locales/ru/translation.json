@@ -18,7 +18,9 @@
     "debug": "Отладка",
     "about": "О программе",
     "multiStt": "Multi STT",
-    "statistics": "Statistics"
+    "statistics": "Statistics",
+    "fileTranscription": "Transcribe Files",
+    "liveMode": "Live Mode"
   },
   "onboarding": {
     "subtitle": "Для начала выберите модель транскрипции",
@@ -477,6 +479,10 @@
           "label": "Pause Tolerance",
           "description": "How long silence must last before the speech timer stops counting. Shorter gaps are treated as part of the same sentence, so the timer does not stall between words."
         }
+      },
+      "vadSensitivity": {
+        "label": "VAD Threshold ({{backend}})",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
       }
     },
     "postProcessing": {
@@ -849,6 +855,198 @@
           "description": "Failed to load statistics summary.",
           "retry": "Retry"
         }
+      }
+    },
+    "fileTranscription": {
+      "description": "Turn recordings into text files. Add files or whole folders, pick how they should be transcribed, and Handy writes a .txt or .md next to each recording or into a folder of your choice.",
+      "groups": {
+        "files": "1. Audio files",
+        "options": "2. Mode & output",
+        "run": "3. Transcribe"
+      },
+      "dropZone": {
+        "title": "Drop audio files or folders here, or click to browse",
+        "subtitle": "Files are queued in order; long recordings are split at quiet points automatically."
+      },
+      "addFiles": "Add files",
+      "addFolder": "Add folder",
+      "clear": "Clear",
+      "clearFinished": "Clear finished",
+      "remove": "Remove from queue",
+      "queued": "{{count}} queued",
+      "segmentProgress": "segment {{current}} / {{total}}",
+      "status": {
+        "queued": "Queued",
+        "decoding": "Decoding",
+        "transcribing": "Transcribing",
+        "merging": "Merging",
+        "post_processing": "Post-processing",
+        "saving": "Saving",
+        "done": "Done",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "mode": {
+        "title": "Transcription mode",
+        "description": "Which pipeline each file goes through. Post-processing uses the prompt and provider from the Post Process page; Multi-STT uses the extra models and merge prompt from the Multi STT page.",
+        "options": {
+          "simple": {
+            "label": "Simple STT",
+            "description": "Selected model only, no LLM."
+          },
+          "post_process": {
+            "label": "STT + Post-process",
+            "description": "Selected model, then the post-processing prompt."
+          },
+          "multi_stt": {
+            "label": "Multi-STT",
+            "description": "All Multi-STT models, merged with the merge prompt (concatenated if no prompt is set)."
+          },
+          "multi_stt_post_process": {
+            "label": "Multi-STT + Post-process",
+            "description": "Multi-STT merge, then the post-processing prompt."
+          }
+        }
+      },
+      "warnings": {
+        "postProcessDisabled": "Post-processing is turned off. Enable it on the Advanced page (Experimental) and configure a provider, model and prompt, or the text is saved unprocessed.",
+        "multiSttNoModels": "Multi-STT is off or has no extra models selected. Only the primary model will run; set up extra models on the Multi STT page."
+      },
+      "outputFolder": {
+        "title": "Output folder",
+        "description": "Where transcripts are written. By default each transcript is saved next to its audio file with the same name.",
+        "nextToSource": "Next to each audio file",
+        "choose": "Choose folder…",
+        "useNextToSource": "Save next to source"
+      },
+      "format": {
+        "title": "Output format",
+        "description": "Plain text, or Markdown with a small header (file name, mode, model, date).",
+        "txt": "Plain text (.txt)",
+        "md": "Markdown (.md)"
+      },
+      "overwrite": {
+        "label": "Overwrite existing transcripts",
+        "description": "Replace an existing transcript with the same name. When off, a -2, -3, … suffix is added instead."
+      },
+      "subfolders": {
+        "label": "Include sub-folders",
+        "description": "When a folder is added, also queue the audio files inside its sub-folders."
+      },
+      "segmentMinutes": {
+        "label": "Maximum segment length",
+        "description": "Long recordings are transcribed in segments of at most this length, cut at the quietest point near the boundary, so a single file never holds the model for an hour at a time.",
+        "value": "{{minutes}} min"
+      },
+      "start": "Transcribe {{count}} file(s)",
+      "cancel": "Cancel",
+      "running": "Transcribing… {{done}} / {{total}} finished",
+      "summary": "{{done}} done, {{failed}} failed, {{total}} total",
+      "result": {
+        "show": "Show text",
+        "hide": "Hide text",
+        "copy": "Copy",
+        "copied": "Copied!",
+        "reveal": "Show in folder",
+        "savedTo": "Saved to {{path}}",
+        "took": "{{seconds}} s"
+      },
+      "dialog": {
+        "filterName": "Audio files"
+      },
+      "errors": {
+        "noFiles": "Add audio files or a folder to get started.",
+        "nothingAdded": "Nothing to add: no supported audio files found ({{formats}}).",
+        "emptyFolder": "That folder contains no supported audio files."
+      }
+    },
+    "liveMode": {
+      "title": "Live Mode",
+      "description": "Keep listening and record everything: the raw microphone signal is saved in chunked WAV files while the live transcription is written into a text file as you speak. Needs a streaming-capable model.",
+      "status": {
+        "idle": "Idle",
+        "starting": "Starting",
+        "listening": "Listening",
+        "rotating": "Saving chunk",
+        "stopping": "Stopping",
+        "error": "Error"
+      },
+      "model": {
+        "label": "Model: {{model}}",
+        "notStreaming": "{{model}} does not support live streaming. Pick a streaming-capable model (for example a Whisper or Parakeet GGUF) in the footer to use Live Mode.",
+        "none": "No model selected. Pick a streaming-capable model in the footer to use Live Mode."
+      },
+      "start": "Start listening",
+      "stop": "Stop",
+      "stats": {
+        "elapsed": "Elapsed",
+        "chunk": "Chunk {{index}}",
+        "speech": "Speech in chunk"
+      },
+      "transcript": {
+        "title": "Transcript",
+        "empty": "The transcript appears here as you speak and is written to the file at the same time.",
+        "noFile": "No session yet",
+        "viewing": "Viewing {{name}}",
+        "closeViewer": "Back to the live transcript",
+        "copy": "Copy",
+        "copied": "Copied!",
+        "reveal": "Show in folder"
+      },
+      "chunks": {
+        "title": "{{count}} audio chunk(s) saved",
+        "item": "{{duration}} · {{size}} · {{chars}} characters"
+      },
+      "settings": {
+        "title": "Live Mode settings"
+      },
+      "outputFolder": {
+        "title": "Output folder",
+        "description": "Each session gets its own sub-folder (live_<date>_<time>) with the transcript and the audio chunks.",
+        "default": "Handy data folder / live_mode",
+        "choose": "Choose folder…",
+        "reset": "Use default"
+      },
+      "chunkMinutes": {
+        "label": "Chunk length",
+        "description": "Target length of one audio file and one transcript segment. The next chunk starts immediately, so nothing is lost between chunks.",
+        "value": "{{minutes}} min"
+      },
+      "format": {
+        "title": "Transcript format",
+        "description": "Plain text, or Markdown with a session header and one paragraph per chunk.",
+        "txt": "Plain text (.txt)",
+        "md": "Markdown (.md)"
+      },
+      "granularity": {
+        "title": "Write to file",
+        "description": "How the live text grows in the file. Character by character mirrors the stream exactly, including the model's tentative tail; word by word only writes completed words.",
+        "options": {
+          "character": {
+            "label": "Character by character",
+            "description": "Mirror the live stream, tentative text included."
+          },
+          "word": {
+            "label": "Word by word",
+            "description": "Only write words once they are complete."
+          }
+        }
+      },
+      "saveAudio": {
+        "label": "Save audio chunks",
+        "description": "Write the raw microphone signal (native sample rate and bit depth) to chunk_0001.wav, chunk_0002.wav, … in the session folder."
+      },
+      "silenceBoundary": {
+        "label": "Cut chunks on a pause",
+        "description": "Once a chunk reaches 80 % of its length, end it on the first pause instead of exactly at the limit, so a cut never lands in the middle of a word."
+      },
+      "sessions": {
+        "title": "Previous sessions",
+        "description": "Session folders found in the output folder, newest first.",
+        "empty": "No sessions yet.",
+        "refresh": "Refresh",
+        "item": "{{date}} · {{chunks}} chunk(s) · {{size}}",
+        "view": "View"
       }
     }
   },

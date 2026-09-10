@@ -348,6 +348,159 @@ pub enum MicIdleTimeoutUnit {
     Seconds,
     Minutes,
 }
+
+/// Default speech-probability thresholds of the two VAD backends. Silero's
+/// reference pipeline enters speech at 0.3; Earshot's score distribution is
+/// wider, so 0.5 is its neutral point. Both are user-adjustable through
+/// `vad_threshold_silero` / `vad_threshold_earshot` (see `VadSensitivity` in
+/// the Advanced page): lower values keep more borderline audio, higher values
+/// drop more background noise.
+pub const DEFAULT_VAD_THRESHOLD_SILERO: f32 = 0.3;
+pub const DEFAULT_VAD_THRESHOLD_EARSHOT: f32 = 0.5;
+/// Hard bounds for a stored threshold. Below 0.05 the exit hysteresis floor
+/// (0.01) makes everything speech; above 0.95 nothing ever is.
+pub const MIN_VAD_THRESHOLD: f32 = 0.05;
+pub const MAX_VAD_THRESHOLD: f32 = 0.95;
+
+pub fn clamp_vad_threshold(threshold: f32) -> f32 {
+    if threshold.is_finite() {
+        threshold.clamp(MIN_VAD_THRESHOLD, MAX_VAD_THRESHOLD)
+    } else {
+        DEFAULT_VAD_THRESHOLD_SILERO
+    }
+}
+
+/// How the "Transcribe Files" page turns one audio file into text.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FileTranscriptionMode {
+    /// Primary model only, no LLM.
+    #[default]
+    Simple,
+    /// Primary model, then the selected post-processing prompt.
+    PostProcess,
+    /// Primary + configured extra models, merged with the Multi-STT prompt
+    /// (concatenated when no merge prompt / provider is configured).
+    MultiStt,
+    /// Multi-STT merge, then the post-processing prompt on the merged text.
+    MultiSttPostProcess,
+}
+
+/// Text file flavour written by the file-transcription and Live Mode pages.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptOutputFormat {
+    #[default]
+    Txt,
+    Md,
+}
+
+impl TranscriptOutputFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            TranscriptOutputFormat::Txt => "txt",
+            TranscriptOutputFormat::Md => "md",
+        }
+    }
+}
+
+/// Settings of the "Transcribe Files" page. Grouped into one struct so the
+/// page persists through a single command instead of one per field.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct FileTranscriptionSettings {
+    pub mode: FileTranscriptionMode,
+    /// Folder the transcripts are written to. `None` writes each transcript
+    /// next to its source audio file.
+    pub output_dir: Option<String>,
+    pub output_format: TranscriptOutputFormat,
+    /// Replace an existing transcript instead of appending `-2`, `-3`, ….
+    pub overwrite_existing: bool,
+    /// When a folder is added, also queue audio files from its sub-folders.
+    pub include_subfolders: bool,
+    /// Long recordings are decoded in segments of at most this many minutes,
+    /// cut at the quietest point near the boundary, so one file never holds
+    /// the engine (or memory) for an hour at a time. 1–60.
+    pub max_segment_minutes: u32,
+}
+
+impl Default for FileTranscriptionSettings {
+    fn default() -> Self {
+        Self {
+            mode: FileTranscriptionMode::Simple,
+            output_dir: None,
+            output_format: TranscriptOutputFormat::Txt,
+            overwrite_existing: false,
+            include_subfolders: true,
+            max_segment_minutes: 10,
+        }
+    }
+}
+
+impl FileTranscriptionSettings {
+    pub fn normalized(mut self) -> Self {
+        self.max_segment_minutes = self.max_segment_minutes.clamp(1, 60);
+        self.output_dir = self
+            .output_dir
+            .filter(|dir| !dir.trim().is_empty())
+            .map(|dir| dir.trim().to_string());
+        self
+    }
+}
+
+/// How Live Mode grows the transcript file while you speak.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveTranscriptGranularity {
+    /// Mirror the live stream exactly, including the model's tentative tail.
+    #[default]
+    Character,
+    /// Only write text up to the last completed word.
+    Word,
+}
+
+/// Settings of the "Live Mode" page (continuous recording + live transcript).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct LiveModeSettings {
+    /// Session folders are created under this directory. `None` uses
+    /// `<app data>/live_mode`.
+    pub output_dir: Option<String>,
+    /// Target length of one audio chunk / transcript segment in minutes. 1–60.
+    pub chunk_minutes: u32,
+    pub transcript_format: TranscriptOutputFormat,
+    pub granularity: LiveTranscriptGranularity,
+    /// Write the raw microphone signal to `chunk_NNNN.wav` files.
+    pub save_audio: bool,
+    /// Rotate chunks on the first pause once 80 % of `chunk_minutes` has
+    /// elapsed, so a cut never lands mid-word.
+    pub prefer_silence_boundary: bool,
+}
+
+impl Default for LiveModeSettings {
+    fn default() -> Self {
+        Self {
+            output_dir: None,
+            chunk_minutes: 5,
+            transcript_format: TranscriptOutputFormat::Txt,
+            granularity: LiveTranscriptGranularity::Character,
+            save_audio: true,
+            prefer_silence_boundary: true,
+        }
+    }
+}
+
+impl LiveModeSettings {
+    pub fn normalized(mut self) -> Self {
+        self.chunk_minutes = self.chunk_minutes.clamp(1, 60);
+        self.output_dir = self
+            .output_dir
+            .filter(|dir| !dir.trim().is_empty())
+            .map(|dir| dir.trim().to_string());
+        self
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub struct SecretMap(pub(crate) HashMap<String, String>);
@@ -539,6 +692,12 @@ pub struct AppSettings {
     /// Experimental detector implementation. Silero remains the stable default.
     #[serde(default)]
     pub vad_backend: VadBackend,
+    /// Speech-probability threshold of the Silero detector (0.05–0.95).
+    #[serde(default = "default_vad_threshold_silero")]
+    pub vad_threshold_silero: f32,
+    /// Speech-probability threshold of the Earshot detector (0.05–0.95).
+    #[serde(default = "default_vad_threshold_earshot")]
+    pub vad_threshold_earshot: f32,
     /// Which recording overlay to show: None / Minimal / Live. Streaming mode is
     /// not gated on this — that follows model capability. Migrated from the old
     /// `overlay_position` (position `none` → style `None`).
@@ -610,6 +769,20 @@ pub struct AppSettings {
     pub mic_idle_infinite: bool,
     #[serde(default)]
     pub native_streaming_latency_presets: HashMap<String, NativeStreamingLatencyPreset>,
+    /// "Transcribe Files" page (fork feature).
+    #[serde(default)]
+    pub file_transcription: FileTranscriptionSettings,
+    /// "Live Mode" page (fork feature).
+    #[serde(default)]
+    pub live_mode: LiveModeSettings,
+}
+
+fn default_vad_threshold_silero() -> f32 {
+    DEFAULT_VAD_THRESHOLD_SILERO
+}
+
+fn default_vad_threshold_earshot() -> f32 {
+    DEFAULT_VAD_THRESHOLD_EARSHOT
 }
 
 fn default_model() -> String {
@@ -1132,6 +1305,8 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
+        vad_threshold_silero: default_vad_threshold_silero(),
+        vad_threshold_earshot: default_vad_threshold_earshot(),
         overlay_style: default_overlay_style(),
         overlay_direct_mode: false,
         overlay_direct_speed: default_overlay_direct_speed(),
@@ -1158,6 +1333,8 @@ pub fn get_default_settings() -> AppSettings {
         mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
         mic_idle_infinite: false,
         native_streaming_latency_presets: HashMap::new(),
+        file_transcription: FileTranscriptionSettings::default(),
+        live_mode: LiveModeSettings::default(),
     }
 }
 

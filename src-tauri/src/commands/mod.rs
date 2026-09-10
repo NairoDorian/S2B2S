@@ -1,11 +1,13 @@
 pub mod audio;
+pub mod file_transcription;
 pub mod history;
+pub mod live_mode;
 pub mod models;
 pub mod statistics;
 pub mod transcription;
 
 use crate::settings::{
-    get_settings, update_checks_forced_disabled, write_settings, AppSettings, LogLevel,
+    AppSettings, LogLevel, get_settings, update_checks_forced_disabled, write_settings,
 };
 use crate::utils::cancel_current_operation;
 use tauri::{AppHandle, Manager};

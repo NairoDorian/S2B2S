@@ -582,6 +582,8 @@ async function updateEverything() {
     "specta",
     "specta-typescript",
     "tauri-specta",
+    "ort",
+    "gtk",
   ]);
 
   const cargoCratesToQuery: { name: string; ver: string; section: string }[] =

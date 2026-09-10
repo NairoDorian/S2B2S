@@ -1,23 +1,24 @@
 use std::{
     io::Error,
     sync::{
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc,
     },
     time::{Duration, Instant},
 };
 
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
     Device, Sample, SizedSample,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::audio_toolkit::{
+    VoiceActivityDetector,
     audio::{AudioVisualiser, FrameResampler},
     constants,
     vad::{self, VadFrame},
-    VoiceActivityDetector,
 };
 
 /// The audio result returned when a recording session completes.
@@ -64,7 +65,11 @@ pub(crate) enum Cmd {
 
 #[cfg(test)]
 impl Cmd {
-    pub(crate) fn start(vad_policy: VadPolicy, sent_at: Instant, ready_tx: mpsc::Sender<()>) -> Self {
+    pub(crate) fn start(
+        vad_policy: VadPolicy,
+        sent_at: Instant,
+        ready_tx: mpsc::Sender<()>,
+    ) -> Self {
         Cmd::Start {
             vad_policy,
             pause_hold_ms: DEFAULT_SPEECH_PAUSE_HOLD_MS,
@@ -104,8 +109,8 @@ impl MmcssHandle {
     fn register(task_name: &str) -> Self {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
-        use windows::core::PCWSTR;
         use windows::Win32::System::Threading::AvSetMmThreadCharacteristicsW;
+        use windows::core::PCWSTR;
 
         let wide: Vec<u16> = OsStr::new(task_name).encode_wide().chain(Some(0)).collect();
         let mut task_index = 0u32;
@@ -467,121 +472,122 @@ impl AudioRecorder {
             let _mmcss = MmcssHandle::register("Audio");
 
             let transport = Arc::new(CaptureTransportState::default());
-            let init_result = (|| -> Result<(cpal::Stream, u32, cpal::SampleFormat, Consumer<f32>), String> {
-                let config_started = Instant::now();
-                let device_name = thread_device
-                    .description()
-                    .map(|d| d.name().to_string())
-                    .unwrap_or_default();
-                let cached_config = config_cache
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
-                    .map(|(_, cfg)| cfg.clone());
-                let config_was_cached = cached_config.is_some();
-                let config = match cached_config {
-                    Some(cfg) => cfg,
-                    None => AudioRecorder::get_preferred_config(&thread_device)
-                        .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
-                };
-                let config_elapsed = config_started.elapsed();
+            let init_result =
+                (|| -> Result<(cpal::Stream, u32, cpal::SampleFormat, Consumer<f32>), String> {
+                    let config_started = Instant::now();
+                    let device_name = thread_device
+                        .description()
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_default();
+                    let cached_config = config_cache
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
+                        .map(|(_, cfg)| cfg.clone());
+                    let config_was_cached = cached_config.is_some();
+                    let config = match cached_config {
+                        Some(cfg) => cfg,
+                        None => AudioRecorder::get_preferred_config(&thread_device)
+                            .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
+                    };
+                    let config_elapsed = config_started.elapsed();
 
-                let sample_rate = config.sample_rate();
-                let sample_format = config.sample_format();
-                let channels = config.channels() as usize;
+                    let sample_rate = config.sample_rate();
+                    let sample_format = config.sample_format();
+                    let channels = config.channels() as usize;
 
-                log::info!(
-                    "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
-                    device_name,
-                    sample_rate,
-                    channels,
-                    config.sample_format()
-                );
+                    log::info!(
+                        "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
+                        device_name,
+                        sample_rate,
+                        channels,
+                        config.sample_format()
+                    );
 
-                if let Some(channel) = selected_channel {
-                    if channel < channels {
-                        log::info!("Using selected input channel: {}", channel + 1);
+                    if let Some(channel) = selected_channel {
+                        if channel < channels {
+                            log::info!("Using selected input channel: {}", channel + 1);
+                        } else {
+                            log::warn!(
+                                "Selected input channel {} is out of range for a {}-channel device; averaging all channels instead",
+                                channel + 1,
+                                channels
+                            );
+                        }
                     } else {
-                        log::warn!(
-                            "Selected input channel {} is out of range for a {}-channel device; averaging all channels instead",
-                            channel + 1,
-                            channels
-                        );
+                        log::info!("Averaging all {} input channels", channels);
                     }
-                } else {
-                    log::info!("Averaging all {} input channels", channels);
-                }
 
-                let build_started = Instant::now();
-                let (stream, sample_consumer) = match config.sample_format() {
-                    cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::I8 => AudioRecorder::build_stream::<i8>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::I16 => AudioRecorder::build_stream::<i16>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::I32 => AudioRecorder::build_stream::<i32>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    cpal::SampleFormat::F32 => AudioRecorder::build_stream::<f32>(
-                        &thread_device,
-                        &config,
-                        channels,
-                        selected_channel,
-                        Arc::clone(&transport),
-                        Arc::clone(&stream_error),
-                    ),
-                    sample_format => {
-                        return Err(format!("Unsupported sample format: {sample_format:?}"));
+                    let build_started = Instant::now();
+                    let (stream, sample_consumer) = match config.sample_format() {
+                        cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::I8 => AudioRecorder::build_stream::<i8>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::I16 => AudioRecorder::build_stream::<i16>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::I32 => AudioRecorder::build_stream::<i32>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        cpal::SampleFormat::F32 => AudioRecorder::build_stream::<f32>(
+                            &thread_device,
+                            &config,
+                            channels,
+                            selected_channel,
+                            Arc::clone(&transport),
+                            Arc::clone(&stream_error),
+                        ),
+                        sample_format => {
+                            return Err(format!("Unsupported sample format: {sample_format:?}"));
+                        }
                     }
-                }
-                .map_err(|e| format!("Failed to build input stream: {e}"))?;
-                let build_elapsed = build_started.elapsed();
+                    .map_err(|e| format!("Failed to build input stream: {e}"))?;
+                    let build_elapsed = build_started.elapsed();
 
-                let play_started = Instant::now();
-                stream
-                    .play()
-                    .map_err(|e| format!("Failed to start microphone stream: {e}"))?;
-                log::debug!(
-                    "mic worker init: fetch_config={:?} (cached={}) build_stream={:?} play={:?}",
-                    config_elapsed,
-                    config_was_cached,
-                    build_elapsed,
-                    play_started.elapsed()
-                );
+                    let play_started = Instant::now();
+                    stream
+                        .play()
+                        .map_err(|e| format!("Failed to start microphone stream: {e}"))?;
+                    log::debug!(
+                        "mic worker init: fetch_config={:?} (cached={}) build_stream={:?} play={:?}",
+                        config_elapsed,
+                        config_was_cached,
+                        build_elapsed,
+                        play_started.elapsed()
+                    );
 
-                // The device accepted this config; remember it so the next
-                // open skips the HAL property queries entirely.
-                if !config_was_cached && !device_name.is_empty() {
-                    *config_cache.lock().unwrap() = Some((device_name, config));
-                }
+                    // The device accepted this config; remember it so the next
+                    // open skips the HAL property queries entirely.
+                    if !config_was_cached && !device_name.is_empty() {
+                        *config_cache.lock().unwrap() = Some((device_name, config));
+                    }
 
-                Ok((stream, sample_rate, sample_format, sample_consumer))
-            })();
+                    Ok((stream, sample_rate, sample_format, sample_consumer))
+                })();
 
             match init_result {
                 Ok((stream, sample_rate, sample_format, sample_consumer)) => {
@@ -1308,7 +1314,12 @@ fn run_consumer(
                             }
                         );
                         transport.overrun_samples.store(0, Ordering::Release);
-                        processor.begin_recording_full(policy, pause_hold_ms, capture_raw, ready_tx);
+                        processor.begin_recording_full(
+                            policy,
+                            pause_hold_ms,
+                            capture_raw,
+                            ready_tx,
+                        );
                         recording = true;
                     }
                     Cmd::Stop(reply_tx) => {

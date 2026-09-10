@@ -1,13 +1,14 @@
 use super::{
-    is_microphone_access_denied, is_no_input_device_error, run_consumer, AudioRecorder,
-    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig, VadPolicy,
+    AudioRecorder, CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig,
+    VadPolicy, is_microphone_access_denied, is_no_input_device_error, run_consumer,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
 use std::{
     sync::{
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc,
     },
     thread,
     time::{Duration, Instant},
@@ -290,9 +291,11 @@ fn repeated_start_stop_cycles_resume_capture_without_leaking_samples() {
         .expect("first stop reply");
     let first_expected = [0.25f32, -0.5, 1.0, 99.0];
     assert_eq!(&first_samples[..first_expected.len()], &first_expected);
-    assert!(first_samples[first_expected.len()..]
-        .iter()
-        .all(|&sample| sample == 0.0));
+    assert!(
+        first_samples[first_expected.len()..]
+            .iter()
+            .all(|&sample| sample == 0.0)
+    );
     assert!(!transport.pause_requested.load(Ordering::Acquire));
 
     let first_streamed_len = {
@@ -323,15 +326,21 @@ fn repeated_start_stop_cycles_resume_capture_without_leaking_samples() {
         .expect("second stop reply");
     let second_expected = [0.75f32, -0.25, 0.5, 199.0];
     assert_eq!(&second_samples[..second_expected.len()], &second_expected);
-    assert!(second_samples[second_expected.len()..]
-        .iter()
-        .all(|&sample| sample == 0.0));
-    assert!(!first_samples
-        .iter()
-        .any(|sample| second_expected.contains(sample)));
-    assert!(!second_samples
-        .iter()
-        .any(|sample| first_expected.contains(sample)));
+    assert!(
+        second_samples[second_expected.len()..]
+            .iter()
+            .all(|&sample| sample == 0.0)
+    );
+    assert!(
+        !first_samples
+            .iter()
+            .any(|sample| second_expected.contains(sample))
+    );
+    assert!(
+        !second_samples
+            .iter()
+            .any(|sample| first_expected.contains(sample))
+    );
     assert!(!transport.pause_requested.load(Ordering::Acquire));
 
     {
@@ -422,7 +431,12 @@ const FRAME_MS: u64 = crate::audio_toolkit::constants::VAD_FRAME_MS;
 const SPEECH_HEARTBEAT_MS: u64 = 150;
 
 fn clock(hold_ms: u64) -> super::SpeechClock {
-    super::SpeechClock::new(2, hold_ms, FRAME_MS, Arc::new(std::sync::atomic::AtomicU64::new(0)))
+    super::SpeechClock::new(
+        2,
+        hold_ms,
+        FRAME_MS,
+        Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    )
 }
 
 fn feed(clock: &mut super::SpeechClock, voiced: bool, frames: usize) {
@@ -542,7 +556,11 @@ fn speech_clock_publishes_its_total_for_readers_off_thread() {
     assert_eq!(published.load(std::sync::atomic::Ordering::Relaxed), frozen);
 
     clock.reset(500);
-    assert_eq!(published.load(std::sync::atomic::Ordering::Relaxed), 0, "reset must clear it");
+    assert_eq!(
+        published.load(std::sync::atomic::Ordering::Relaxed),
+        0,
+        "reset must clear it"
+    );
 }
 
 #[test]

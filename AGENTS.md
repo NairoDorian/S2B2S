@@ -114,7 +114,8 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `bin/cli.rs` - Standalone recorder demo. **Not a build target** (the
     `[[bin]]` in `Cargo.toml` is commented out); keep it compiling by hand
 - `commands/` - Tauri command handlers for frontend communication
-  (`audio.rs`, `history.rs`, `models.rs`, `statistics.rs`, `transcription.rs`, `mod.rs`)
+  (`audio.rs`, `history.rs`, `models.rs`, `statistics.rs`, `transcription.rs`,
+  `file_transcription.rs`, `live_mode.rs`, `mod.rs`)
 - `cli.rs` - CLI argument definitions (clap derive)
 - `shortcut/` - Global keyboard shortcut handling. `mod.rs` holds the
   settings-change commands and `should_register_binding`, the single rule for
@@ -133,6 +134,13 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   - `MultiSttAction` runs primary + three extra models in parallel, merges outputs via LLM
   - `spawn_recording_ready_cue` is the shared "wait for real mic samples, then
     chime / mute / emit `recording-ready`" step
+- `file_transcription.rs` - "Transcribe Files" page backend (fork):
+  `decode_audio_file` (symphonia → mono 16 kHz), `segment_boundaries`
+  (quiet-point cuts), `FileTranscriptionManager` job runner and its
+  `FileTranscriptionEvent` progress events; see Transcribe Files below
+- `live_mode.rs` - "Live Mode" page backend (fork): `LiveModeManager` chunk
+  loop, `TranscriptWriter` (committed prefix + rewritten live tail),
+  `LiveModeStateEvent` / `LiveModeTranscriptEvent`; see Live Mode below
 - `direct_stream_writer.rs` - Types the live transcript into the target app
   for `PasteMethod::DirectStreaming` — plain transcription only; see Direct
   Streaming below
@@ -163,6 +171,11 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
     speed), `ShowOverlay` (direct mode + speed)
     - `statistics/StatisticsSettings.tsx` - Analytics & streak dashboard (transcriptions, words, audio duration, WPM, streak, latency distributions)
     - `multi-stt/MultiSttSettings.tsx` - Multi-STT configuration (fork feature)
+    - `file-transcription/FileTranscriptionSettings.tsx` - Transcribe Files page
+      (fork feature): file/folder queue, mode & output options, run controls
+    - `live-mode/LiveModeSettings.tsx` - Live Mode page (fork feature): session
+      controls, live transcript preview, chunk list, past sessions
+    - `VadSensitivity.tsx` - Threshold slider for the active VAD backend (fork)
   - `model-selector/` - Status-bar model controls (footer). Three mutually
     exclusive popovers: model switcher, quantization picker
     (`QuantizationPanel.tsx`, which also hosts the quantization benchmark via
@@ -179,6 +192,10 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   needs an entry in `settingUpdaters`** — a key without one logs
   `No handler for setting` and is never persisted
 - `stores/modelStore.ts` - Model store with load/unload operations
+- `stores/fileTranscriptionStore.ts`, `stores/liveModeStore.ts` - Queue /
+  session state of the two fork pages. They live outside the page components
+  because both jobs keep running in the backend while the user browses other
+  pages; each installs its typed event listeners once (`events.*.listen`)
 - `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta; written
   by `bun run tauri dev` in debug builds). When a command or settings field is
   added or removed, the file must be regenerated or hand-edited to match
@@ -393,6 +410,104 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
 - `custom_accent_color` - `#rrggbb` or `null` for the gold default; persisted through `change_custom_accent_color_setting`
 - `native_streaming_latency_presets` - Per-model-family latency preset (`fastest` → `accurate`)
+- `vad_threshold_silero` (default 0.3) / `vad_threshold_earshot` (default 0.5) -
+  Speech-probability threshold each detector is built with (0.05–0.95; lower =
+  more sensitive). `create_audio_recorder` reads the value for the active
+  backend, so `change_vad_threshold_setting` writes the setting first and then
+  calls `AudioRecordingManager::rebuild_vad_from_settings` (same idle guard and
+  reopen/rollback as a backend switch; a rejected rebuild restores the old
+  value). The Advanced page shows one slider (`VadSensitivity`) for whichever
+  backend is selected
+- `file_transcription` - One nested `FileTranscriptionSettings` struct (mode,
+  output_dir, output_format, overwrite_existing, include_subfolders,
+  max_segment_minutes) persisted through a single command; see Transcribe Files
+- `live_mode` - One nested `LiveModeSettings` struct (output_dir, chunk_minutes,
+  transcript_format, granularity, save_audio, prefer_silence_boundary); see
+  Live Mode
+
+### Transcribe Files (fork addition)
+
+The **Transcribe Files** page turns audio files into `.txt` / `.md` transcripts.
+Backend: `file_transcription.rs` + `commands/file_transcription.rs`; frontend:
+`settings/file-transcription/` + `stores/fileTranscriptionStore.ts`.
+
+- **Input**: any number of files, or whole folders (optionally recursive),
+  added through the dialog plugin or OS drag & drop onto the window
+  (`getCurrentWebviewWindow().onDragDropEvent`). Supported extensions are the
+  `SUPPORTED_EXTENSIONS` list (WAV, MP3, M4A/MP4/AAC, FLAC, OGG-Vorbis),
+  mirrored in `SUPPORTED_AUDIO_EXTENSIONS` on the frontend. Decoding is done
+  with `symphonia` (the same crate + features `rodio` already pulls in, so no
+  new transitive dependency), downmixed to mono and resampled to 16 kHz with
+  `FrameResampler`; `.wav` falls back to `hound` if the probe fails.
+- **Segmentation**: `segment_boundaries` cuts audio longer than
+  `max_segment_minutes` at the quietest 100 ms window in the 20 s before each
+  hard boundary, so a one-hour file becomes ~6 decode calls instead of one and
+  a cut never has to land mid-word. Segment texts are joined with single spaces.
+- **Modes** (`FileTranscriptionMode`): `simple` (primary model only),
+  `post_process` (then `actions::process_transcription_output(.., true)`),
+  `multi_stt` (primary + the Multi-STT extra models per segment, merged with
+  `actions::multi_stt_merge_transcriptions`; newline-concatenated when no merge
+  prompt / provider is configured) and `multi_stt_post_process` (merge, then
+  the post-processing prompt). The page warns when the chosen mode needs a
+  feature that is switched off, but still runs with what is available.
+- **Output**: `<stem>.txt|md` next to the source or in `output_dir`; without
+  `overwrite_existing`, `write_without_overwrite` appends `-2`, `-3`, … using
+  `create_new` so the existence check and the create are one step. Markdown
+  gets a one-line header (file, mode, model, date).
+- **Job lifecycle**: `FileTranscriptionManager::start` refuses to run while a
+  recording or Live Mode is active, then spawns the job on the async runtime
+  with every blocking step (decode, load, transcribe) on the blocking pool.
+  Progress is streamed as `FileTranscriptionEvent` (one per status change per
+  file, matched on `path`; the last event carries `batch_finished`). Cancel is
+  a flag checked between files and between segments — an in-flight decode call
+  finishes first. The primary engine is reloaded before each segment when the
+  unload timeout is `Immediately`, exactly like the headless path does.
+- File transcriptions do not create history rows or statistics runs.
+
+### Live Mode (fork addition)
+
+The **Live Mode** page keeps the microphone open indefinitely, saves the raw
+signal in chunked WAV files and mirrors the live transcription into a text file
+while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
+`settings/live-mode/` + `stores/liveModeStore.ts`.
+
+- **Requires a streaming-capable model** (`ModelInfo::supports_streaming`);
+  `live_mode_start` refuses otherwise and the page shows why. It also refuses
+  while a hotkey recording or a file-transcription job is running, and vice
+  versa.
+- **One session = one folder** `<output_dir>/live_<YYYY-MM-DD_HH-MM-SS>/`
+  (default `<app data>/live_mode`) holding `transcript.txt|md` and
+  `chunk_0001.wav`, `chunk_0002.wav`, …
+- **Chunk loop** (`LiveModeManager::run_session`, its own thread): each chunk
+  is a normal Handy recording — `try_start_recording_with_raw(.., Some(save_audio))`
+  forces the native-rate raw tap on regardless of `save_raw_audio`, and
+  `start_stream(false, ..)` runs the model's native live stream. A chunk ends
+  at `chunk_minutes`, or (with `prefer_silence_boundary`) on the first ≥1.2 s
+  pause after 80 % of it, as measured by `last_speech_ms()` standing still.
+  Rotation = `finalize_stream` → `stop_recording` → WAV written on a blocking
+  thread (raw samples at native rate/format via `save_raw_wav_file`, or the 16
+  kHz STT samples if the raw tap is empty) → text committed → next chunk
+  starts immediately. If the stream never began (`NeverStarted`), the chunk's
+  STT samples are batch-transcribed instead. VAD policy follows `vad_enabled`
+  (`Streaming` or `Disabled`).
+- **Transcript file** (`TranscriptWriter`): an append-only committed prefix
+  plus a live tail rewritten in place (`seek` + `write` + `set_len`) on every
+  stream update, throttled to one write per 60 ms. `live_tail_text` decides
+  what the tail is: `character` = `committed + tentative` (identical to
+  transcribe-cpp's `StreamText::display()`), `word` = the committed text cut at
+  its last whitespace while anything is still tentative. Each finalized chunk
+  is committed followed by `\n` (`.txt`) or `\n\n` (`.md`).
+- **Live text plumbing**: `TranscriptionManager::set_stream_text_sink` installs
+  an in-process observer that `emit_stream_text` calls alongside the overlay
+  `StreamTextEvent`; Live Mode owns it for the session and clears it on stop.
+  The UI receives `LiveModeTranscriptEvent { reset, stable_appended, live }` and
+  `LiveModeStateEvent` (status snapshot on every transition + a 1 s heartbeat).
+- **Interactions**: while a session runs, the transcription hotkeys get
+  "Already recording" from the audio manager. The cancel hotkey / tray cancel
+  stops the recorder under Live Mode; the loop notices (`!rm.is_recording()`),
+  loses that chunk's audio, logs a warning and starts the next chunk. Each chunk
+  is a `begin_normal_run("live_mode")` statistics run, so Live Mode sessions do
+  show up in Statistics.
 
 ### Direct Streaming (fork addition)
 

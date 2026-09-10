@@ -6,6 +6,8 @@ import type {
   AudioDevice,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
+  FileTranscriptionSettings,
+  LiveModeSettings,
   LLMPrompt,
   MicIdleTimeoutUnit,
   NativeStreamingLatencyPreset,
@@ -297,6 +299,34 @@ const settingUpdaters: {
       useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
       value as boolean,
     ),
+  // The detector is rebuilt from the new threshold; a rejected rebuild
+  // (mid-recording) rolls the slider back through the throw.
+  vad_threshold_silero: async (value) => {
+    const result = await commands.changeVadThresholdSetting(
+      "silero",
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  vad_threshold_earshot: async (value) => {
+    const result = await commands.changeVadThresholdSetting(
+      "earshot",
+      value as number,
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      throw new Error(result.error);
+    }
+  },
+  file_transcription: (value) =>
+    commands.changeFileTranscriptionSettings(
+      value as FileTranscriptionSettings,
+    ),
+  live_mode: (value) =>
+    commands.changeLiveModeSettings(value as LiveModeSettings),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

@@ -9,8 +9,10 @@ pub mod cli;
 mod clipboard;
 mod commands;
 pub mod direct_stream_writer;
+mod file_transcription;
 mod helpers;
 mod input;
+mod live_mode;
 mod llm_client;
 mod managers;
 mod memory;
@@ -223,6 +225,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(statistics_manager.clone());
     app_handle.manage(tray::TrayState::new());
+    app_handle.manage(Arc::new(file_transcription::FileTranscriptionManager::new()));
+    app_handle.manage(Arc::new(live_mode::LiveModeManager::new(
+        app_handle.clone(),
+    )));
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -807,6 +813,20 @@ pub fn run(cli_args: CliArgs) {
             commands::statistics::get_statistics_summary,
             commands::statistics::reset_statistics,
             helpers::clamshell::is_laptop,
+            shortcut::change_vad_threshold_setting,
+            commands::file_transcription::change_file_transcription_settings,
+            commands::file_transcription::list_audio_files_in_folder,
+            commands::file_transcription::start_file_transcription,
+            commands::file_transcription::cancel_file_transcription,
+            commands::file_transcription::get_file_transcription_status,
+            commands::file_transcription::reveal_path_in_file_manager,
+            commands::file_transcription::read_text_file,
+            commands::live_mode::change_live_mode_settings,
+            commands::live_mode::live_mode_start,
+            commands::live_mode::live_mode_stop,
+            commands::live_mode::live_mode_status,
+            commands::live_mode::live_mode_list_sessions,
+            commands::live_mode::live_mode_default_output_dir,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -814,6 +834,9 @@ pub fn run(cli_args: CliArgs) {
             managers::transcription::StreamPhaseEvent,
             managers::statistics::StatisticsUpdatedEvent,
             overlay::SpeechActivityEvent,
+            file_transcription::FileTranscriptionEvent,
+            live_mode::LiveModeStateEvent,
+            live_mode::LiveModeTranscriptEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
