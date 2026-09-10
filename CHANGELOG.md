@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Help, shortcut cheat sheet and toast history**, ported from the AIVORelay
+  fork (2026-09-11): a **Help** page (goal cards, search over the translated
+  text, table of contents, one section per feature with an "Open page"
+  button, and a copyable prompt for asking an AI assistant); a one-line
+  **QuickHelp** banner on every page linking into the matching Help section;
+  a right-edge **shortcuts tab** listing the assigned hotkeys by category,
+  pinnable and resizable, where each row jumps to and highlights the control
+  that changes it — and which, unlike AIVORelay's, stays visible on a fresh
+  install to say that no transcribe shortcut is set yet; and **Recent errors
+  and warnings** at the top of the Debug page, listing every error/warning
+  toast of the session so one that auto-dismissed can still be read.
+
 - **Noise suppression (RNNoise)** toggle in Settings → Advanced, ahead of the
   VAD toggle (2026-09-11). Uses the pure-Rust `nnnoiseless` port of Xiph's
   RNNoise on the microphone path before voice detection and the model, so

@@ -20,7 +20,8 @@
     "multiStt": "Multi STT",
     "statistics": "Statistics",
     "fileTranscription": "Transcribe Files",
-    "liveMode": "Live Mode"
+    "liveMode": "Live Mode",
+    "help": "Help"
   },
   "onboarding": {
     "subtitle": "For at komme i gang skal du vælge en transskriptionsmodel",
@@ -734,6 +735,23 @@
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",
         "description": "Add a newline after pasted transcription"
+      },
+      "sessionToasts": {
+        "title": "Recent errors and warnings ({{count}})",
+        "description": "Every error or warning toast shown since the app started, newest first, so one that disappeared can still be read and copied.",
+        "filters": {
+          "errors": "Show errors ({{count}})",
+          "errorsDescription": "Include error toasts in the list.",
+          "warnings": "Show warnings ({{count}})",
+          "warningsDescription": "Include warning toasts in the list."
+        },
+        "levels": {
+          "error": "Error",
+          "warning": "Warning"
+        },
+        "empty": "No errors or warnings this session.",
+        "filteredEmpty": "Hidden by the filters above.",
+        "action": "Action offered: {{label}}"
       }
     },
     "about": {
@@ -1235,6 +1253,124 @@
       "indigo": "Indigo",
       "crimson": "Crimson",
       "purple": "Purple"
+    }
+  },
+  "hotkeySidebar": {
+    "title": "Your shortcuts",
+    "openSidebar": "Show your shortcuts",
+    "closeSidebar": "Hide shortcuts",
+    "pinSidebar": "Keep open",
+    "unpinSidebar": "Auto-hide",
+    "configureHint": "Click a shortcut to change it.",
+    "jumpTo": "Go to the {{name}} setting",
+    "categories": {
+      "recording": "Recording",
+      "modes": "Modes"
+    },
+    "empty": {
+      "title": "No shortcut set yet",
+      "message": "Handy has no transcription hotkey until you pick one, so nothing happens when you press keys. Choose one in General.",
+      "action": "Set the Transcribe shortcut"
+    }
+  },
+  "quickHelp": {
+    "learnMore": "Learn more",
+    "general": "Pick the shortcut you hold or tap to dictate, the microphone Handy listens to, and the sounds it plays.",
+    "history": "Every transcription is kept here with its audio. Re-run it with another mode, copy it, or save the ones worth keeping.",
+    "statistics": "How much you dictate, how fast you speak, and how long transcription and post-processing take.",
+    "models": "Download and switch the local speech model. Everything runs on this computer through transcribe.cpp; smaller models are faster, larger ones more accurate.",
+    "multiStt": "Record once and transcribe with up to four models in parallel, then let a language model merge the outputs into one text.",
+    "fileTranscription": "Turn audio files or whole folders into .txt or .md transcripts, with the same modes as live dictation.",
+    "liveMode": "Keep the microphone open for as long as you like: the audio is saved in chunks and the transcript written to a file while you speak.",
+    "advanced": "Noise suppression, voice detection with a live test, paste behaviour, and the settings that trade latency for accuracy.",
+    "postprocessing": "Send the transcript through a language model to clean it up, using a prompt you write, before it is pasted.",
+    "debug": "Diagnostics: recent errors, log level, live logs, keyboard checks, and the timing knobs behind pasting."
+  },
+  "help": {
+    "title": "Help",
+    "intro": "Handy turns speech into text on this computer and pastes it where you were typing. Pick a goal below, search, or read through the sections.",
+    "contents": "Contents",
+    "openPage": "Open {{page}}",
+    "aboutLink": "Version, licences and acknowledgments are on the About page.",
+    "search": {
+      "placeholder": "Search help…",
+      "noResults": "Nothing matches. Try another word, or open the Debug page for diagnostics."
+    },
+    "smartHelp": {
+      "title": "What do you want to do?",
+      "actions": {
+        "setup": {
+          "label": "Set up my microphone and shortcut",
+          "description": "Start dictating: pick a hotkey and a microphone."
+        },
+        "model": {
+          "label": "Choose a model",
+          "description": "Faster or more accurate, English-only or multilingual."
+        },
+        "tune": {
+          "label": "Stop noise or clipped words",
+          "description": "Noise suppression, voice detection and the live test."
+        },
+        "files": {
+          "label": "Transcribe recordings",
+          "description": "Files, folders, or a long live session into a file."
+        },
+        "broken": {
+          "label": "Something is not working",
+          "description": "Where to look first, and what to send with a bug report."
+        }
+      }
+    },
+    "sections": {
+      "transcription": {
+        "title": "Press the shortcut. Speak. Text appears.",
+        "summary": "Set a Transcribe shortcut in General (a fresh install has none) and choose whether it toggles recording or works while held. Pick the microphone Handy listens to. When you stop, the text is pasted into the app you were using; the History page keeps a copy with the audio.\n\nThe right-edge tab shows the shortcuts that are currently assigned and jumps to the control that changes them."
+      },
+      "models": {
+        "title": "Choose a local model.",
+        "summary": "Every model runs on this computer through transcribe.cpp; nothing is sent anywhere. Smaller models answer faster, larger ones make fewer mistakes, and some are English-only while others handle many languages. Models marked as streaming can show text while you are still speaking (Live overlay, Live Mode). Download from the Models page; the first download is chosen during onboarding. Quantization variants trade a little accuracy for less memory, and the benchmark next to the quantization list measures them on your machine."
+      },
+      "advanced": {
+        "title": "Advanced: paste behaviour and timing.",
+        "summary": "How the text reaches the target app (clipboard paste, typing, or direct streaming while you speak), whether a space or newline is appended, filler-word removal and custom words, plus the microphone idle timeout and model unload timeout that trade memory for start-up speed."
+      },
+      "vad": {
+        "title": "Noise suppression, voice detection and the live test.",
+        "summary": "Noise suppression (RNNoise) cleans the microphone signal before anything else hears it. Voice activity detection then drops the silent frames so the model only sees speech; the VAD Threshold slider sets how sure the detector must be. Press \"Test with microphone\" next to the slider: talk, then pause, and move the slider until normal speech shows as Speech and background noise stays Silence. The On/Off pill in the test toggles noise suppression so you can compare. Recordings with no detected speech are never sent to a model."
+      },
+      "postProcessing": {
+        "title": "Let a language model clean up the transcript.",
+        "summary": "With post-processing on, the transcript is sent to the language model provider you configure (a local server or an online API) with a prompt you write, and the polished result is pasted instead. A dedicated hotkey always applies it; the History page shows both the raw and the polished text.",
+        "warning": "Online providers charge per request and need an API key. Never share the key, and set a spending limit at the provider."
+      },
+      "multiStt": {
+        "title": "Multi-STT: several models, one transcript.",
+        "summary": "Record once with the Multi STT shortcut and up to four models transcribe the same audio in parallel. A merge prompt with ${output}, ${output2}… placeholders lets a language model combine them; without a prompt the outputs are simply listed. Performance mode can send a keyboard shortcut to an external power-profile tool while the models run."
+      },
+      "fileTranscription": {
+        "title": "Transcribe files and folders.",
+        "summary": "Drop audio files (WAV, MP3, M4A, FLAC, OGG) or folders on the Transcribe Files page and choose a mode: plain, post-processed, Multi-STT, or both. Long files are cut at quiet points, and a .txt or .md is written next to each file or into a folder you choose."
+      },
+      "liveMode": {
+        "title": "Live Mode: dictate for hours into a file.",
+        "summary": "Live Mode keeps the microphone open, saves the audio as numbered chunk files and mirrors the live transcript into a text file while you speak. It needs a streaming-capable model. The transcription hotkeys are paused while a session runs; the cancel hotkey ends the current chunk."
+      },
+      "history": {
+        "title": "History and Statistics.",
+        "summary": "History lists every transcription with its audio, word count and speaking rate, and can re-run it with another mode. Statistics adds totals, streaks and latency distributions. Raw, unprocessed microphone audio can also be saved from Advanced → History."
+      },
+      "troubleshooting": {
+        "title": "Something is not working.",
+        "summary": "Nothing happens on the hotkey: check that one is set in General and not used by another app. No text: open the Debug page (Ctrl+Shift+D) and look at recent errors and the live log. Words missing: lower the VAD Threshold or run the live test. Slow: pick a smaller model or a lighter quantization. When reporting a problem, include the log file from the Debug page and the model name."
+      }
+    },
+    "aiAssist": {
+      "title": "Ask an AI assistant",
+      "description": "Copy this prompt into your favourite AI chat; it points the assistant at the source code so it can answer questions about how Handy behaves.",
+      "prompt": "I am using Handy (Multi-STT fork), a local speech-to-text app. Its source is at {{url}}. Please read the README and AGENTS.md there before answering. My question: ",
+      "copy": "Copy prompt",
+      "copied": "Copied",
+      "copyFailed": "Could not copy"
     }
   }
 }

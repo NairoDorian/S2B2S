@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import {
   Check,
   Copy,

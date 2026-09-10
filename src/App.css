@@ -108,3 +108,44 @@
   stroke: var(--color-logo-stroke);
   stroke-width: 1;
 }
+
+/* Deep-link targets (shortcut controls, Help headings): a breathing ring
+   after navigateToSettingsAnchor / scrollAndFocusAnchor lands on them. */
+.settings-anchor {
+  scroll-margin: 24px;
+}
+
+.settings-anchor-highlight {
+  animation: settings-anchor-breathe 1.8s ease-out both;
+}
+
+@keyframes settings-anchor-breathe {
+  0% {
+    outline: 2px solid
+      color-mix(in srgb, var(--color-logo-primary) 85%, transparent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 0
+      color-mix(in srgb, var(--color-logo-primary) 30%, transparent);
+  }
+  45% {
+    outline: 2px solid
+      color-mix(in srgb, var(--color-logo-primary) 55%, transparent);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 5px
+      color-mix(in srgb, var(--color-logo-primary) 16%, transparent);
+  }
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 6px;
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-anchor-highlight {
+    animation: none;
+    outline: 2px solid
+      color-mix(in srgb, var(--color-logo-primary) 75%, transparent);
+    outline-offset: 3px;
+  }
+}

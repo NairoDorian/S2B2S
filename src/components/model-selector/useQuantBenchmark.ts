@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { commands, events } from "@/bindings";
 import type { HistoryEntry } from "@/bindings";
 import type { BenchmarkProgressEvent } from "@/lib/types/events";

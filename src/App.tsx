@@ -5,7 +5,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { toast, Toaster } from "sonner";
+import { Toaster } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
@@ -25,6 +26,9 @@ import {
 } from "./components/settings";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import { HotkeySidebar } from "./components/hotkey-sidebar";
+import { QuickHelp } from "./components/settings/QuickHelp";
+import { useNavigationStore } from "./stores/navigationStore";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -59,8 +63,8 @@ function App() {
   // Track if this is a returning user who just needs to grant permissions
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
-  const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+  const currentSection = useNavigationStore((state) => state.section);
+  const setCurrentSection = useNavigationStore((state) => state.setSection);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -374,10 +378,12 @@ function App() {
               <div className="flex flex-col items-center p-4 gap-4">
                 <AccessibilityPermissions />
                 <SecureInputWarning />
+                <QuickHelp activeSection={currentSection} />
                 {renderSettingsContent(currentSection, setOnboardingPreview)}
               </div>
             </div>
           </div>
+          <HotkeySidebar />
         </div>
         {/* Fixed footer at bottom */}
         <Footer />

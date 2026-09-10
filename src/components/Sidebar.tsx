@@ -6,6 +6,7 @@ import {
   FlaskConical,
   History,
   Info,
+  CircleHelp,
   Sparkles,
   Cpu,
   Mic,
@@ -27,6 +28,7 @@ import {
   MultiSttSettings,
   FileTranscriptionSettings,
   LiveModeSettings,
+  HelpSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -106,6 +108,12 @@ export const SECTIONS_CONFIG = {
     icon: FlaskConical,
     component: DebugSettings,
     enabled: (settings) => settings?.debug_mode ?? false,
+  },
+  help: {
+    labelKey: "sidebar.help",
+    icon: CircleHelp,
+    component: HelpSettings,
+    enabled: () => true,
   },
   about: {
     labelKey: "sidebar.about",

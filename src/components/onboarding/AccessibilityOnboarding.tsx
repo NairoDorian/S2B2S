@@ -7,7 +7,7 @@ import {
   checkMicrophonePermission,
   requestMicrophonePermission,
 } from "tauri-plugin-macos-permissions-api";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { commands } from "@/bindings";
 import { useSettingsStore } from "@/stores/settingsStore";
 import HandyTextLogo from "../icons/HandyTextLogo";

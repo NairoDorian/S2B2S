@@ -3,7 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import { produce } from "immer";
 import { listen } from "@tauri-apps/api/event";
 import { commands, type ModelInfo } from "@/bindings";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 
 interface DownloadProgress {
   model_id: string;

@@ -158,7 +158,25 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 
 ### Frontend Structure (src/)
 
-- `App.tsx` - Main component with onboarding flow
+- `App.tsx` - Main component with onboarding flow; renders the per-page
+  `QuickHelp` banner and the right-edge `HotkeySidebar`
+- `stores/navigationStore.ts` - Active settings page + the Help anchor
+  hand-off (`openHelp(anchor)`); `lib/anchorNavigation.ts` switches page,
+  waits for the target element, scrolls, focuses and pulses
+  `.settings-anchor-highlight` (App.css)
+- `components/hotkey-sidebar/` - Right-edge cheat sheet of the assigned
+  shortcuts (`lib/hotkeyGuide.ts` is the table of bindings → category /
+  page / feature gate; `ShortcutInput` wraps each control in a
+  `shortcut-<id>` anchor). Pinned state and width live in `localStorage`.
+  Shows a "set your shortcut" call-out instead of hiding when nothing is
+  bound, since fresh installs ship without a transcribe hotkey
+- `components/settings/help/` - Help page (`helpContent.ts` is the list of
+  sections/anchors, copy under `help.*`); `settings/QuickHelp.tsx` maps
+  each page to a one-line summary and a Help anchor
+- `lib/sessionToast.ts` + `stores/sessionToastStore.ts` - `sessionToast`
+  wraps sonner and records error/warning toasts for the Debug page's
+  `SessionToastHistory`; import it (as `toast`) instead of sonner in app
+  code, so no error disappears unread
 - `components/` - React UI components:
   - `settings/` - Settings UI, grouped by page (`general/`, `advanced/`,
     `models/`, `history/`, `statistics/`, `post-processing/`, `about/`, `debug/`) plus the

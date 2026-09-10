@@ -11,6 +11,7 @@ export { MultiSttSettings } from "./multi-stt/MultiSttSettings";
 export { StatisticsSettings } from "./statistics/StatisticsSettings";
 export { FileTranscriptionSettings } from "./file-transcription/FileTranscriptionSettings";
 export { LiveModeSettings } from "./live-mode/LiveModeSettings";
+export { HelpSettings } from "./help/HelpSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

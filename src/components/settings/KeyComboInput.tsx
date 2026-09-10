@@ -10,7 +10,7 @@ import { ResetButton } from "../ui/ResetButton";
 import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 
 const MODIFIERS = [
   "ctrl",

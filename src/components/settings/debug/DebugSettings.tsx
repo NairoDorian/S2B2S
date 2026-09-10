@@ -14,6 +14,7 @@ import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { WhatsNewPreview } from "./WhatsNewPreview";
 import { KeyboardDiagnostic } from "./KeyboardDiagnostic";
+import { SessionToastHistory } from "./SessionToastHistory";
 import {
   OnboardingPreview,
   type OnboardingPreviewStep,
@@ -30,6 +31,7 @@ export const DebugSettings: React.FC<DebugSettingsProps> = ({
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      <SessionToastHistory />
       <SettingsGroup title={t("settings.debug.title")}>
         <LogLevelSelector grouped={true} />
         <WhatsNewPreview descriptionMode="tooltip" grouped={true} />

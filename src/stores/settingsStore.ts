@@ -13,7 +13,7 @@ import type {
   ShortcutActivation,
 } from "@/bindings";
 import { commands } from "@/bindings";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 
 interface SettingsStore {
   settings: Settings | null;

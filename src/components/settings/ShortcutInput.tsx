@@ -2,6 +2,7 @@ import React from "react";
 import { useSettings } from "../../hooks/useSettings";
 import { GlobalShortcutInput } from "./GlobalShortcutInput";
 import { HandyKeysShortcutInput } from "./HandyKeysShortcutInput";
+import { getShortcutAnchorId } from "@/lib/hotkeyGuide";
 
 interface ShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -16,15 +17,29 @@ interface ShortcutInputProps {
  *
  * - "tauri" (default): Uses GlobalShortcutInput with JS keyboard events
  * - "handy_keys": Uses HandyKeysShortcutInput with backend key events
+ *
+ * The wrapper carries a stable `shortcut-<id>` element id so the hotkey
+ * sidebar and Help links can scroll to and highlight this control.
  */
 export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
   const { getSetting } = useSettings();
   const keyboardImplementation = getSetting("keyboard_implementation");
 
   // Default to Tauri implementation if not set
-  if (keyboardImplementation === "handy_keys") {
-    return <HandyKeysShortcutInput {...props} />;
-  }
+  const input =
+    keyboardImplementation === "handy_keys" ? (
+      <HandyKeysShortcutInput {...props} />
+    ) : (
+      <GlobalShortcutInput {...props} />
+    );
 
-  return <GlobalShortcutInput {...props} />;
+  return (
+    <div
+      id={getShortcutAnchorId(props.shortcutId)}
+      tabIndex={-1}
+      className="settings-anchor rounded-lg focus:outline-none"
+    >
+      {input}
+    </div>
+  );
 };

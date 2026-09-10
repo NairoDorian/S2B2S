@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "sonner";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { type ModelInfo } from "@/bindings";
 
 import {
