@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { type ModelInfo } from "@/bindings";
+import { type ModelInfo, type MultiSttBrainMode } from "@/bindings";
 
 import {
   SettingContainer,
@@ -319,6 +319,59 @@ export const MultiSttSettings: React.FC = () => {
                 )}
               </SettingContainer>
             </div>
+          </SettingsGroup>
+
+          {/* Merge Provider */}
+          <SettingsGroup title={t("multiStt.mergeProvider.title")}>
+            <SettingContainer
+              title={t("multiStt.mergeProvider.useLlama.label")}
+              description={t("multiStt.mergeProvider.useLlama.description")}
+              descriptionMode="tooltip"
+              grouped={true}
+            >
+              <ToggleSwitch
+                checked={
+                  (getSetting("multi_stt_use_llama_merge") as boolean) ?? false
+                }
+                onChange={(enabled) =>
+                  updateSetting("multi_stt_use_llama_merge", enabled)
+                }
+                label={t("multiStt.mergeProvider.useLlama.label")}
+                description={t("multiStt.mergeProvider.useLlama.description")}
+              />
+            </SettingContainer>
+            <SettingContainer
+              title={t("multiStt.brainMode.label")}
+              description={t("multiStt.brainMode.description")}
+              descriptionMode="tooltip"
+              grouped={true}
+            >
+              <Dropdown
+                selectedValue={
+                  (getSetting("multi_stt_brain_mode") as string) ?? "text_only"
+                }
+                options={[
+                  {
+                    value: "text_only",
+                    label: t("multiStt.brainMode.options.textOnly"),
+                  },
+                  {
+                    value: "separate_asr",
+                    label: t("multiStt.brainMode.options.separateAsr"),
+                  },
+                  {
+                    value: "audio_in_merge",
+                    label: t("multiStt.brainMode.options.audioInMerge"),
+                  },
+                ]}
+                onSelect={(val) =>
+                  updateSetting(
+                    "multi_stt_brain_mode",
+                    val as MultiSttBrainMode,
+                  )
+                }
+              />
+            </SettingContainer>
           </SettingsGroup>
 
           {/* Merge Prompt */}
