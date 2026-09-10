@@ -56,9 +56,11 @@ mod webview_hardening;
 mod webview_runtime;
 
 pub use cli::CliArgs;
+pub use utils::env_flag_enabled;
 #[cfg(debug_assertions)]
 use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, collect_events, Builder};
+pub use utils::env_flag_enabled;
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
@@ -1127,6 +1129,12 @@ pub fn run(cli_args: CliArgs) {
         .manage(cli_args.clone())
         .setup(move |app| {
             crate::portable::set_app_handle(app.handle().clone());
+            #[cfg(target_os = "windows")]
+            log::info!(
+                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, S2B2S_KEEP_VULKAN_IMPLICIT_LAYERS={}",
+                std::env::var_os("VK_LOADER_LAYERS_DISABLE"),
+                utils::env_flag_enabled("S2B2S_KEEP_VULKAN_IMPLICIT_LAYERS") || utils::env_flag_enabled("HANDY_KEEP_VULKAN_IMPLICIT_LAYERS"),
+            );
             specta_builder.mount_events(app);
 
             // Headless one-shot path (`--transcribe-file` / `--list-devices` /

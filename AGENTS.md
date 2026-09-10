@@ -495,8 +495,8 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux). 
 | Platform    | Notes                                                                                                                                         |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **macOS**   | Metal acceleration, accessibility permissions required for keyboard shortcuts, Globe key support                                              |
-| **Windows** | Vulkan acceleration, code signing, NSIS installer, Common-Controls v6 manifest                                                                |
-| **Linux**   | OpenBLAS + Vulkan, Wayland limited (needs wtype/dotool), overlay GTK layer shell (disable with `S2B2S_NO_GTK_LAYER_SHELL=1`), Nix flake build |
+| **Windows** | Vulkan/CUDA acceleration, code signing, NSIS installer, Common-Controls v6 manifest. Implicit Vulkan layers disabled by default via `VK_LOADER_LAYERS_DISABLE=~implicit~`; opt out with `S2B2S_KEEP_VULKAN_IMPLICIT_LAYERS=1` |
+| **Linux**   | OpenBLAS + Vulkan/CUDA, Wayland limited (needs wtype/dotool), overlay GTK layer shell (disable with `S2B2S_NO_GTK_LAYER_SHELL=1`), Nix flake build |
 | **Nix/NixOS** | The Nix package sets `HANDY_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting |
 
 ---

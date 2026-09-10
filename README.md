@@ -491,6 +491,21 @@ If the problem persists, open an issue with your S2B2S version, operating system
 
 ---
 
+### Vulkan Overlays and Capture Tools on Windows (`S2B2S_KEEP_VULKAN_IMPLICIT_LAYERS`)
+
+On Windows, S2B2S asks the Vulkan loader to skip implicit layers to avoid crashes caused by overlay and capture hooks. GPU acceleration remains enabled; this does not change system-wide settings.
+
+To opt out for GPU selection or debugging tools, fully quit S2B2S (including the tray icon), then run:
+
+```powershell
+$env:S2B2S_KEEP_VULKAN_IMPLICIT_LAYERS = "1"
+& ".\s2b2s.exe"
+```
+
+S2B2S also preserves any existing `VK_LOADER_LAYERS_DISABLE` value.
+
+---
+
 ## How to Contribute
 
 1. **Check existing issues** at [github.com/NairoDorian/S2B2S/issues](https://github.com/NairoDorian/S2B2S/issues)
