@@ -331,6 +331,46 @@ pub fn is_recording(app: AppHandle) -> bool {
     audio_manager.is_recording()
 }
 
+/// Longest a live VAD test may run unattended. The page stops the test when
+/// it unmounts; this covers a webview that went away without doing so.
+const VAD_TEST_MAX_DURATION: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Start the live VAD test from Settings → Advanced: microphone + detector
+/// only, streaming `VadTestEvent`s. No model is involved.
+#[tauri::command]
+#[specta::specta]
+pub async fn start_vad_test(app: AppHandle) -> Result<(), String> {
+    let manager = app.state::<Arc<AudioRecordingManager>>().inner().clone();
+    let starter = Arc::clone(&manager);
+    tauri::async_runtime::spawn_blocking(move || starter.start_vad_test())
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))??;
+
+    // Safety net: never leave the microphone open indefinitely. A plain
+    // thread, so no tokio timer feature is needed.
+    std::thread::spawn(move || {
+        std::thread::sleep(VAD_TEST_MAX_DURATION);
+        if manager.is_vad_test_running() {
+            warn!(
+                "Live VAD test still running after {:?}; stopping it",
+                VAD_TEST_MAX_DURATION
+            );
+            manager.stop_vad_test();
+        }
+    });
+    Ok(())
+}
+
+/// Stop the live VAD test and discard its audio.
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_vad_test(app: AppHandle) -> Result<(), String> {
+    let manager = app.state::<Arc<AudioRecordingManager>>().inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.stop_vad_test())
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_microphone_channels(device_name: String) -> Result<u16, String> {

@@ -159,6 +159,12 @@ impl VoiceActivityDetector for SmoothedVad {
     fn last_frame_voiced(&self) -> bool {
         self.inner_vad.last_frame_voiced()
     }
+    fn last_frame_score(&self) -> Option<f32> {
+        self.inner_vad.last_frame_score()
+    }
+    fn set_threshold(&mut self, threshold: f32) {
+        self.inner_vad.set_threshold(threshold);
+    }
     fn reset(&mut self) {
         self.inner_vad.reset();
         self.frame_buffer.clear();

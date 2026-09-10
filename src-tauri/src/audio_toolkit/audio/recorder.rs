@@ -200,6 +200,26 @@ pub struct SpeechActivity {
 /// the recorder's consumer thread — keep it cheap.
 pub type SpeechActivityCallback = Arc<dyn Fn(SpeechActivity) + Send + Sync + 'static>;
 
+/// One VAD decision, as seen by the live VAD test in Settings → Advanced.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VadFrameReport {
+    /// Raw 0–1 speech score of the frame, before hysteresis. `None` when the
+    /// detector has no score (VAD disabled, or a detector without one).
+    pub score: Option<f32>,
+    /// The detector's own verdict after hysteresis — what the speech clock
+    /// counts.
+    pub voiced: bool,
+    /// Whether audio reached the recording on this frame, i.e. the verdict
+    /// after prefill / onset / hangover smoothing — what a decoder would hear.
+    pub kept: bool,
+    /// Peak absolute sample of the 16 kHz frame (0–1), a cheap input level.
+    pub level: f32,
+}
+
+/// Receives a [`VadFrameReport`] for every 16 kHz frame while a recording is
+/// active. Only used by the live VAD test; the callback gates itself.
+pub type VadFrameCallback = Arc<dyn Fn(VadFrameReport) + Send + Sync + 'static>;
+
 /// Tracks how long the user has actually been speaking, in frame-sized steps.
 ///
 /// Driven by [`VoiceActivityDetector::last_frame_voiced`] — the *raw* per-frame
@@ -347,6 +367,7 @@ pub struct AudioRecorder {
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
+    vad_frame_cb: Option<VadFrameCallback>,
     /// Milliseconds of speech in the most recent recording, published by the
     /// consumer thread's [`SpeechClock`]. Final once `stop()` has returned.
     speech_ms: Arc<AtomicU64>,
@@ -368,6 +389,7 @@ impl AudioRecorder {
             level_cb: None,
             audio_cb: None,
             speech_cb: None,
+            vad_frame_cb: None,
             speech_ms: Arc::new(AtomicU64::new(0)),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
@@ -422,6 +444,25 @@ impl AudioRecorder {
         self
     }
 
+    /// Register a callback that sees every VAD decision (raw score, verdict,
+    /// kept-or-dropped, level). Drives the live VAD test; it must be cheap and
+    /// gate itself, since it runs on the audio consumer thread per 16 ms frame.
+    pub fn with_vad_frame_callback<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(VadFrameReport) + Send + Sync + 'static,
+    {
+        self.vad_frame_cb = Some(Arc::new(cb));
+        self
+    }
+
+    /// Change the detector's speech threshold in place. Takes effect on the
+    /// next frame, including mid-recording, and does not touch the stream.
+    pub fn set_vad_threshold(&self, threshold: f32) {
+        if let Some(cfg) = &self.vad {
+            cfg.detector.lock().unwrap().set_threshold(threshold);
+        }
+    }
+
     pub fn with_selected_channel(mut self, channel: Option<u16>) -> Self {
         self.set_selected_channel(channel);
         self
@@ -462,6 +503,7 @@ impl AudioRecorder {
         let level_cb = self.level_cb.clone();
         let audio_cb = self.audio_cb.clone();
         let speech_cb = self.speech_cb.clone();
+        let vad_frame_cb = self.vad_frame_cb.clone();
         let speech_ms = Arc::clone(&self.speech_ms);
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
@@ -600,6 +642,7 @@ impl AudioRecorder {
                         level_cb,
                         audio_cb,
                         speech_cb,
+                        vad_frame_cb,
                         speech_ms,
                         stream_running_at,
                     );
@@ -899,15 +942,19 @@ fn handle_frame(
     audio_cb: &Option<AudioFrameCallback>,
     speech_clock: &mut SpeechClock,
     speech_cb: &Option<SpeechActivityCallback>,
+    vad_frame_cb: &Option<VadFrameCallback>,
     vad_errors: &mut u64,
     out_buf: &mut Vec<f32>,
 ) {
+    let mut kept = false;
     let mut emit = |buf: &[f32]| {
+        kept = true;
         out_buf.extend_from_slice(buf);
         if let Some(cb) = audio_cb {
             cb(buf);
         }
     };
+    let mut score = None;
 
     let voiced = if vad_policy == VadPolicy::Disabled {
         emit(samples);
@@ -930,6 +977,7 @@ fn handle_frame(
             VadFrame::Speech(buf) => emit(buf),
             VadFrame::Noise => {}
         }
+        score = det.last_frame_score();
         det.last_frame_voiced()
     } else {
         emit(samples);
@@ -940,6 +988,16 @@ fn handle_frame(
         if let Some(cb) = speech_cb {
             cb(activity);
         }
+    }
+
+    if let Some(cb) = vad_frame_cb {
+        let level = samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()));
+        cb(VadFrameReport {
+            score,
+            voiced,
+            kept,
+            level: level.min(1.0),
+        });
     }
 }
 
@@ -984,6 +1042,7 @@ pub(crate) struct CaptureProcessor {
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
+    vad_frame_cb: Option<VadFrameCallback>,
     speech_clock: SpeechClock,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
@@ -1017,6 +1076,7 @@ impl CaptureProcessor {
             level_cb,
             audio_cb,
             None,
+            None,
             Arc::new(AtomicU64::new(0)),
             stream_running_at,
         )
@@ -1030,6 +1090,7 @@ impl CaptureProcessor {
         level_cb: Option<LevelCallback>,
         audio_cb: Option<AudioFrameCallback>,
         speech_cb: Option<SpeechActivityCallback>,
+        vad_frame_cb: Option<VadFrameCallback>,
         speech_clock_total: Arc<AtomicU64>,
         stream_running_at: Instant,
     ) -> Self {
@@ -1072,6 +1133,7 @@ impl CaptureProcessor {
             level_cb,
             audio_cb,
             speech_cb,
+            vad_frame_cb,
             speech_clock,
             stream_running_at,
             visualizer,
@@ -1167,6 +1229,7 @@ impl CaptureProcessor {
         let vad = &self.vad;
         let audio_cb = &self.audio_cb;
         let speech_cb = &self.speech_cb;
+        let vad_frame_cb = &self.vad_frame_cb;
         let speech_clock = &mut self.speech_clock;
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
@@ -1179,6 +1242,7 @@ impl CaptureProcessor {
                 audio_cb,
                 speech_clock,
                 speech_cb,
+                vad_frame_cb,
                 vad_errors,
                 processed_samples,
             )
@@ -1218,6 +1282,7 @@ impl CaptureProcessor {
         let vad = &self.vad;
         let audio_cb = &self.audio_cb;
         let speech_cb = &self.speech_cb;
+        let vad_frame_cb = &self.vad_frame_cb;
         let speech_clock = &mut self.speech_clock;
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
@@ -1230,6 +1295,7 @@ impl CaptureProcessor {
                 audio_cb,
                 speech_clock,
                 speech_cb,
+                vad_frame_cb,
                 vad_errors,
                 processed_samples,
             )

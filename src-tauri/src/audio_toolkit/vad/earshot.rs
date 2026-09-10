@@ -16,6 +16,7 @@ pub struct EarshotVad {
     gate: Hysteresis,
     clamped_frame: [f32; EARSHOT_FRAME_SAMPLES],
     last_voiced: bool,
+    last_score: Option<f32>,
 }
 
 impl EarshotVad {
@@ -31,6 +32,7 @@ impl EarshotVad {
             gate: Hysteresis::new(threshold),
             clamped_frame: [0.0; EARSHOT_FRAME_SAMPLES],
             last_voiced: false,
+            last_score: None,
         })
     }
 }
@@ -62,6 +64,7 @@ impl VoiceActivityDetector for EarshotVad {
 
         let is_speech = self.gate.update(score);
         self.last_voiced = is_speech;
+        self.last_score = Some(score);
 
         if is_speech {
             Ok(VadFrame::Speech(frame))
@@ -78,10 +81,24 @@ impl VoiceActivityDetector for EarshotVad {
         self.last_voiced
     }
 
+    fn last_frame_score(&self) -> Option<f32> {
+        self.last_score
+    }
+
+    /// Swap the hysteresis gate for one built on the new threshold. The
+    /// detector state is untouched, so this is safe mid-recording; the gate
+    /// re-enters speech on the next frame that clears the new threshold.
+    fn set_threshold(&mut self, threshold: f32) {
+        if (0.0..=1.0).contains(&threshold) {
+            self.gate = Hysteresis::new(threshold);
+        }
+    }
+
     fn reset(&mut self) {
         self.engine.reset();
         self.gate.reset();
         self.last_voiced = false;
+        self.last_score = None;
     }
 }
 
@@ -119,6 +136,31 @@ mod tests {
             VadFrame::Speech(output) => assert_eq!(output, frame),
             VadFrame::Noise => panic!("zero threshold should retain the frame"),
         }
+    }
+
+    #[test]
+    fn reports_the_raw_score_and_takes_a_new_threshold_in_place() {
+        let mut vad = EarshotVad::new(0.5).unwrap();
+        assert_eq!(vad.last_frame_score(), None);
+        vad.push_frame(&[0.0; EARSHOT_FRAME_SAMPLES]).unwrap();
+        let score = vad.last_frame_score().expect("score after a frame");
+        assert!((0.0..=1.0).contains(&score));
+
+        // A threshold of 0 makes every frame speech, without a rebuild.
+        vad.set_threshold(0.0);
+        assert!(
+            vad.push_frame(&[0.0; EARSHOT_FRAME_SAMPLES])
+                .unwrap()
+                .is_speech()
+        );
+        assert!(vad.last_frame_voiced());
+        // Out-of-range values are ignored rather than accepted.
+        vad.set_threshold(1.5);
+        assert!(
+            vad.push_frame(&[0.0; EARSHOT_FRAME_SAMPLES])
+                .unwrap()
+                .is_speech()
+        );
     }
 
     #[test]

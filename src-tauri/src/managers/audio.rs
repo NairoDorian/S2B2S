@@ -10,10 +10,13 @@ use crate::managers::transcription::StreamRouter;
 use crate::settings::{AppSettings, MicIdleTimeoutUnit, get_settings, write_settings};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
+use tauri_specta::Event;
 
 fn get_idle_timeout(app: &tauri::AppHandle) -> Duration {
     let settings = get_settings(app);
@@ -295,6 +298,34 @@ struct MicrophoneResolution {
 
 /* ──────────────────────────────────────────────────────────────── */
 
+/// Binding id the live VAD test records under.
+pub const VAD_TEST_BINDING: &str = "vad_test";
+
+/// Whether the live VAD test (Settings → Advanced) is running. Read on the
+/// audio consumer thread for every frame, so it is an atomic rather than a
+/// lock; when it is off the per-frame report costs one load and returns.
+static VAD_TEST_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Every N-th frame is reported while the test runs: 16 ms frames at 1:2 give
+/// ~31 updates per second, plenty for a meter and light on the webview.
+const VAD_TEST_REPORT_EVERY: u64 = 2;
+
+/// One update of the live VAD test: what the detector thought of the latest
+/// microphone frame. Emitted only while the test runs, never during normal
+/// dictation.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct VadTestEvent {
+    /// Raw 0–1 speech score before hysteresis (`None` with VAD disabled).
+    pub score: Option<f32>,
+    /// Verdict after hysteresis — the threshold the slider sets.
+    pub voiced: bool,
+    /// Whether the frame reached the recording after smoothing (prefill /
+    /// hangover), i.e. what a model would have heard.
+    pub kept: bool,
+    /// Peak input level of the frame, 0–1.
+    pub level: f32,
+}
+
 /// Speech-probability threshold the Earshot detector should be built with:
 /// the user's persisted value, clamped to the sane range. Default lives in
 /// `settings.rs` (`DEFAULT_VAD_THRESHOLD_EARSHOT`).
@@ -353,6 +384,25 @@ fn create_audio_recorder(
             let app_handle = app_handle.clone();
             move |activity| {
                 utils::emit_speech_activity(&app_handle, activity);
+            }
+        })
+        .with_vad_frame_callback({
+            let app_handle = app_handle.clone();
+            let counter = AtomicU64::new(0);
+            move |report| {
+                if !VAD_TEST_ACTIVE.load(Ordering::Relaxed) {
+                    return;
+                }
+                if counter.fetch_add(1, Ordering::Relaxed) % VAD_TEST_REPORT_EVERY != 0 {
+                    return;
+                }
+                let _ = VadTestEvent {
+                    score: report.score,
+                    voiced: report.voiced,
+                    kept: report.kept,
+                    level: report.level,
+                }
+                .emit(&app_handle);
             }
         })
         .with_audio_callback({
@@ -900,54 +950,49 @@ impl AudioRecordingManager {
         }
     }
 
-    /// Rebuild the active Earshot detector from the persisted settings (used
-    /// after a threshold change). If the microphone stream is currently warm
-    /// (always-on or lazy-close mode), reopen it with the new detector before
-    /// reporting success. A failed reopen restores the previous recorder.
-    pub fn rebuild_vad_from_settings(&self) -> Result<(), anyhow::Error> {
-        let state = self.state.lock().unwrap();
-        if !matches!(*state, RecordingState::Idle) {
-            return Err(anyhow::anyhow!("Cannot rebuild VAD while recording"));
+    /// Apply a new speech threshold to the live detector. Takes effect on the
+    /// next frame — also mid-recording, which is what lets the slider be tuned
+    /// while the live VAD test runs. A recorder built later reads the
+    /// persisted setting itself, so nothing needs doing when none exists yet.
+    pub fn set_vad_threshold(&self, threshold: f32) {
+        let threshold = crate::settings::clamp_vad_threshold(threshold);
+        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            rec.set_vad_threshold(threshold);
+            info!("VAD threshold set to {threshold:.2}");
         }
+    }
 
-        let settings = get_settings(&self.app_handle);
-        let replacement = create_audio_recorder(
-            &self.app_handle,
-            settings.selected_channel,
-            Arc::clone(&self.stream_router),
-        )?;
-        let was_open = *self.is_open.lock().unwrap();
-
-        // Invalidate any delayed close before swapping the recorder it targets.
-        self.close_generation.fetch_add(1, Ordering::SeqCst);
-        if was_open {
-            self.stop_microphone_stream();
-        }
-
-        let previous_recorder = self.recorder.lock().unwrap().replace(replacement);
-        if was_open {
-            if let Err(change_error) = self.start_microphone_stream() {
-                // Ensure a partially opened replacement cannot retain capture
-                // resources before restoring the known-good detector.
-                if let Some(recorder) = self.recorder.lock().unwrap().as_mut() {
-                    let _ = recorder.close();
-                }
-                *self.recorder.lock().unwrap() = previous_recorder;
-
-                if let Err(rollback_error) = self.start_microphone_stream() {
-                    error!(
-                        "Failed to restore microphone stream after VAD rebuild failed: {rollback_error}"
-                    );
-                }
-                return Err(anyhow::anyhow!(
-                    "Failed to reopen microphone with rebuilt VAD: {change_error}"
-                ));
-            }
-        }
-
-        info!("VAD rebuilt from settings");
-        drop(state);
+    /// Start the live VAD test: open the microphone as a normal recording
+    /// under the `vad_test` binding and stream a [`VadTestEvent`] per reported
+    /// frame. No model is loaded and nothing is transcribed or saved — the
+    /// captured audio is discarded on stop. While it runs, the transcription
+    /// hotkeys get "Already recording", exactly like Live Mode.
+    pub fn start_vad_test(&self) -> Result<(), String> {
+        let readiness = self.try_start_recording(VAD_TEST_BINDING, VadPolicy::Streaming)?;
+        // The first-sample notification is only needed by the chime path.
+        drop(readiness);
+        VAD_TEST_ACTIVE.store(true, Ordering::Relaxed);
+        info!("Live VAD test started");
         Ok(())
+    }
+
+    /// Stop the live VAD test and discard its audio. A no-op when the test is
+    /// not running (including when the cancel hotkey already ended it).
+    pub fn stop_vad_test(&self) {
+        VAD_TEST_ACTIVE.store(false, Ordering::Relaxed);
+        let is_test = matches!(
+            &*self.state.lock().unwrap(),
+            RecordingState::Recording { binding_id } if binding_id == VAD_TEST_BINDING
+        );
+        if is_test {
+            self.cancel_recording();
+            info!("Live VAD test stopped");
+        }
+    }
+
+    /// Whether the live VAD test currently owns the recorder.
+    pub fn is_vad_test_running(&self) -> bool {
+        VAD_TEST_ACTIVE.load(Ordering::Relaxed) && self.is_recording()
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {

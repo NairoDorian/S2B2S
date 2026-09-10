@@ -394,10 +394,20 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   detector is built with (0.05–0.95; lower = more sensitive).
   `create_audio_recorder` reads it, so `change_vad_threshold_setting` writes
   the setting first and then calls
-  `AudioRecordingManager::rebuild_vad_from_settings` (idle guard; the warm
-  microphone stream is reopened with the new detector, and a rejected rebuild
-  restores the old value). The Advanced page shows it as the `VadSensitivity`
-  slider
+  `AudioRecordingManager::set_vad_threshold`, which swaps the detector's
+  hysteresis gate in place (`VoiceActivityDetector::set_threshold`) — no
+  rebuild, no microphone reopen, works mid-recording. The Advanced page shows
+  it as the `VadSensitivity` slider
+- **Live VAD test** (`VadLiveTest.tsx`, next to the slider): `start_vad_test`
+  records under the `vad_test` binding with `VadPolicy::Streaming` and no
+  model; the recorder's `with_vad_frame_callback` reports every frame's raw
+  score (`last_frame_score`), hysteresis verdict, smoothed kept/dropped state
+  and peak level, and the manager emits every second one as `VadTestEvent`
+  while `VAD_TEST_ACTIVE` is set (never during dictation). `stop_vad_test`
+  cancels the recording and discards the audio; a 5-minute safety thread in
+  `commands/audio.rs` stops a test the page forgot. Hotkeys get "Already
+  recording" while it runs, and the cancel hotkey ends it (the page notices
+  the missing frames and shows "No signal")
 - **Retired settings** (`vad_backend`, `ort_accelerator`,
   `vad_threshold_silero`) are ignored when found in an old store. Settings
   schema **6** remaps a `selected_model` / `multi_stt_model_2..4` that names

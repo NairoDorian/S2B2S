@@ -96,6 +96,19 @@ pub trait VoiceActivityDetector: Send + Sync {
     fn last_frame_voiced(&self) -> bool {
         false
     }
+
+    /// Raw 0–1 speech score of the most recently pushed frame, before the
+    /// hysteresis gate and any smoothing. `None` for detectors that do not
+    /// expose one. Read by the live VAD test in Settings → Advanced so the
+    /// user can see how far a frame sits from the threshold.
+    fn last_frame_score(&self) -> Option<f32> {
+        None
+    }
+
+    /// Replace the speech threshold in place, without rebuilding the detector
+    /// or reopening the microphone. Detectors without a threshold ignore it.
+    fn set_threshold(&mut self, _threshold: f32) {}
+
     /// End-of-recording diagnostic snapshot, taken after the final frame.
     /// Purely observational — implementations must not change what they emit.
     /// Detectors without smoothing state return None.

@@ -116,6 +116,13 @@ export const commands = {
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
 	isPortable: () => __TAURI_INVOKE<boolean>("is_portable"),
+	/**
+	 *  Start the live VAD test from Settings → Advanced: microphone + detector
+	 *  only, streaming `VadTestEvent`s. No model is involved.
+	 */
+	startVadTest: () => typedError<null, string>(__TAURI_INVOKE("start_vad_test")),
+	/**  Stop the live VAD test and discard its audio. */
+	stopVadTest: () => typedError<null, string>(__TAURI_INVOKE("stop_vad_test")),
 	isUpdateChecksLocked: () => __TAURI_INVOKE<boolean>("is_update_checks_locked"),
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
 	getAppSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_app_settings")),
@@ -271,11 +278,10 @@ export const commands = {
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
 	/**
-	 *  Set the speech-probability threshold of the VAD. The detector is built
-	 *  from the persisted value, so the setting is written first and the active
-	 *  detector rebuilt afterwards; a rejected rebuild (mid-recording, failed
-	 *  microphone reopen) restores the previous value so the slider and the
-	 *  running detector never disagree.
+	 *  Set the speech-probability threshold of the VAD. The persisted value is
+	 *  what a freshly built recorder reads; the live detector takes the new
+	 *  threshold in place on its next frame, so this works while recording and
+	 *  while the live VAD test runs, with nothing to reopen or roll back.
 	 */
 	changeVadThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_vad_threshold_setting", { threshold })),
 	changeFileTranscriptionSettings: (settings: FileTranscriptionSettings) => typedError<null, string>(__TAURI_INVOKE("change_file_transcription_settings", { settings })),
@@ -313,6 +319,7 @@ export const events = {
 	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
+	vadTestEvent: makeEvent<VadTestEvent>("vad-test-event"),
 };
 
 /* Types */
@@ -1195,6 +1202,25 @@ export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
 export type TranscriptOutputFormat = "txt" | "md";
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
+
+/**
+ *  One update of the live VAD test: what the detector thought of the latest
+ *  microphone frame. Emitted only while the test runs, never during normal
+ *  dictation.
+ */
+export type VadTestEvent = {
+	/**  Raw 0–1 speech score before hysteresis (`None` with VAD disabled). */
+	score: number | null,
+	/**  Verdict after hysteresis — the threshold the slider sets. */
+	voiced: boolean,
+	/**
+	 *  Whether the frame reached the recording after smoothing (prefill /
+	 *  hangover), i.e. what a model would have heard.
+	 */
+	kept: boolean,
+	/**  Peak input level of the frame, 0–1. */
+	level: number | null,
+};
 
 export type WindowsMicrophonePermissionStatus = {
 	supported: boolean,

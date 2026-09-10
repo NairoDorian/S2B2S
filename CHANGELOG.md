@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live VAD test** in Settings → Advanced, next to the VAD Threshold slider
+  (2026-09-11). "Test with microphone" opens the mic and runs only the
+  detector — no model is loaded, nothing is transcribed or saved — and shows
+  the raw speech score against the threshold marker, a Speech / Silence
+  verdict, the input level and whether the frame would have reached a model
+  after smoothing. The threshold slider now applies in place on the next
+  frame (`VoiceActivityDetector::set_threshold`), so it can be tuned while the
+  test runs; the old rebuild-and-reopen path for threshold changes is gone.
+
 - **Multi-STT mode.** A dedicated `multi_stt_transcribe` shortcut records once
   and transcribes with the primary model plus up to three extra models in
   parallel, each on its own engine (`TranscriptionManager::extra_engines`),

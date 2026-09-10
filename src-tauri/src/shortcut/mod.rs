@@ -1696,11 +1696,10 @@ pub fn change_vad_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     Ok(())
 }
 
-/// Set the speech-probability threshold of the VAD. The detector is built
-/// from the persisted value, so the setting is written first and the active
-/// detector rebuilt afterwards; a rejected rebuild (mid-recording, failed
-/// microphone reopen) restores the previous value so the slider and the
-/// running detector never disagree.
+/// Set the speech-probability threshold of the VAD. The persisted value is
+/// what a freshly built recorder reads; the live detector takes the new
+/// threshold in place on its next frame, so this works while recording and
+/// while the live VAD test runs, with nothing to reopen or roll back.
 #[tauri::command]
 #[specta::specta]
 pub async fn change_vad_threshold_setting(app: AppHandle, threshold: f32) -> Result<(), String> {
@@ -1716,18 +1715,11 @@ pub async fn change_vad_threshold_setting(app: AppHandle, threshold: f32) -> Res
         .state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
         .inner()
         .clone();
-    let rebuilt = tokio::task::spawn_blocking(move || manager.rebuild_vad_from_settings())
+    // The recorder mutex can be held across a slow device open/close, so stay
+    // off the webview thread.
+    tokio::task::spawn_blocking(move || manager.set_vad_threshold(threshold))
         .await
         .map_err(|e| format!("audio task join failed: {e}"))
-        .and_then(|r| r.map_err(|e| format!("Failed to apply VAD threshold: {e}")));
-
-    if let Err(error) = rebuilt {
-        let mut rollback = settings::get_settings(&app);
-        rollback.vad_threshold_earshot = previous;
-        settings::write_settings(&app, rollback);
-        return Err(error);
-    }
-    Ok(())
 }
 
 #[tauri::command]

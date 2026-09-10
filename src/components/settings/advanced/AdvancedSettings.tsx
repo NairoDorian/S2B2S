@@ -27,6 +27,7 @@ import { LazyStreamClose } from "../LazyStreamClose";
 import { MicIdleTimeout } from "../MicIdleTimeout";
 import { FillerWordRemoval } from "../FillerWordRemoval";
 import { VadSensitivity } from "../VadSensitivity";
+import { VadLiveTest } from "../VadLiveTest";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -54,6 +55,7 @@ export const AdvancedSettings: React.FC = () => {
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <VoiceActivityDetection descriptionMode="tooltip" grouped={true} />
         <VadSensitivity descriptionMode="tooltip" grouped={true} />
+        <VadLiveTest descriptionMode="tooltip" grouped={true} />
         <SpeechStats descriptionMode="tooltip" grouped={true} />
         <FillerWordRemoval descriptionMode="tooltip" grouped={true} />
         <CustomWords descriptionMode="tooltip" grouped />
