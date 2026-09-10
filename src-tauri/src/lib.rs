@@ -653,6 +653,7 @@ pub fn run(cli_args: CliArgs) {
     let console_filter = build_console_filter();
 
     let specta_builder = Builder::<tauri::Wry>::new()
+        .dangerously_cast_bigints_to_number()
         .commands(collect_commands![
             shortcut::change_binding,
             shortcut::reset_binding,

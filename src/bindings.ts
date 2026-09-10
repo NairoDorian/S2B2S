@@ -901,10 +901,18 @@ export type SecureInputStatus = {
 	recorder_blocked: boolean,
 };
 
+/**  How the transcribe shortcut's key events drive a recording. */
+export type ShortcutActivation = 
+/**  Press to start, press again to stop. */
+"toggle" | 
+/**  Hold to record, release to stop. */
+"push_to_talk" | 
 /**
- *  How the transcribe shortcut's key events drive a recording.
+ *  Hold to record and release to stop, or tap to keep recording until the
+ *  next press. Which one it was is decided by how long the key was held
+ *  (`hold_threshold_ms`).
  */
-export type ShortcutActivation = "toggle" | "push_to_talk" | "hold_or_toggle";
+"hold_or_toggle";
 
 export type ShortcutBinding = {
 	id: string,
