@@ -710,6 +710,13 @@
         "noNotes": "Keine gebündelten Versionshinweise gefunden",
         "error": "Versionshinweise konnten nicht angezeigt werden"
       },
+      "onboardingPreview": {
+        "title": "Ersteinrichtung ansehen",
+        "description": "Vorschau der Einrichtungsbildschirme, ohne Berechtigungen, Modelle oder den Abschlussstatus zu ändern",
+        "permissionsButton": "Berechtigungen",
+        "modelsButton": "Modellauswahl",
+        "exitButton": "Vorschau beenden"
+      },
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",
         "description": "Add a newline after pasted transcription"

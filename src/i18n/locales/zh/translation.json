@@ -710,6 +710,13 @@
         "noNotes": "未找到内置发行说明",
         "error": "无法预览发行说明"
       },
+      "onboardingPreview": {
+        "title": "预览新手引导",
+        "description": "预览新手引导界面，而不更改权限、模型或完成状态",
+        "permissionsButton": "权限",
+        "modelsButton": "模型选择",
+        "exitButton": "退出预览"
+      },
       "appendTrailingNewline": {
         "label": "Append Trailing New Line",
         "description": "Add a newline after pasted transcription"
