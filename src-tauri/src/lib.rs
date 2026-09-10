@@ -56,7 +56,6 @@ mod webview_hardening;
 mod webview_runtime;
 
 pub use cli::CliArgs;
-pub use utils::env_flag_enabled;
 #[cfg(debug_assertions)]
 use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, collect_events, Builder};
@@ -751,6 +750,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             shortcut::change_multi_stt_translate_model_3,
             shortcut::change_multi_stt_use_llama_merge_setting,
             shortcut::change_multi_stt_brain_mode_setting,
+            shortcut::change_mic_idle_timeout_settings,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,

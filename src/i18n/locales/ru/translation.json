@@ -364,6 +364,17 @@
         "label": "Оставлять микрофон включённым между транскрипциями",
         "description": "Оставляет поток микрофона открытым в течение 30 секунд после остановки записи, уменьшая задержку при последовательных транскрипциях. Может ухудшить качество звука Bluetooth."
       },
+      "micIdleTimeout": {
+        "title": "Mic Idle Timeout",
+        "infiniteLabel": "Keep Mic Open Indefinitely",
+        "infiniteDescription": "When enabled, the microphone stream stays open forever until manually closed. Disable to set a custom timeout duration.",
+        "timeoutLabel": "Timeout Value",
+        "timeoutDescription": "How long to keep the mic open after a recording stops before closing it.",
+        "unitLabel": "Unit",
+        "unitDescription": "Seconds or minutes for the timeout value.",
+        "seconds": "Seconds",
+        "minutes": "Minutes"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Ускорение Whisper",
@@ -687,6 +698,13 @@
         "noNotes": "Встроенные примечания к выпуску не найдены",
         "error": "Не удалось показать предварительный просмотр примечаний к выпуску"
       },
+      "onboardingPreview": {
+        "title": "Предпросмотр первоначальной настройки",
+        "description": "Просмотрите экраны первоначальной настройки, не изменяя разрешения, модели или статус завершения",
+        "permissionsButton": "Разрешения",
+        "modelsButton": "Выбор модели",
+        "exitButton": "Выйти из предпросмотра"
+      },
       "soundTheme": {
         "label": "Звуковая тема",
         "description": "Выберите звуковую тему для начала и остановки записи обратной связи."
@@ -779,13 +797,6 @@
         "verdictOk": "События клавиш доходят до Handy нормально.",
         "verdictNoEvents": "События не зафиксированы — вы нажимали клавиши во время теста?",
         "failed": "Диагностика не удалась: {{error}}"
-      },
-      "onboardingPreview": {
-        "title": "Предпросмотр первоначальной настройки",
-        "description": "Просмотрите экраны первоначальной настройки, не изменяя разрешения, модели или статус завершения",
-        "permissionsButton": "Разрешения",
-        "modelsButton": "Выбор модели",
-        "exitButton": "Выйти из предпросмотра"
       },
       "sessionToasts": {
         "title": "История тостов сессии {{count}}",
@@ -1344,10 +1355,21 @@
       "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
       "model2Language": "Language:",
       "model3Language": "Language:",
+      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
+      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "translateToEnglish": "Translate to English",
       "notSelected": "Not selected",
       "disableModel": "Disable",
       "primaryModel": "Primary model: {{model}}",
+      "noPrimaryModel": "No primary model selected",
+      "loadingModels": "Loading models...",
+      "noModelsAvailable": "No additional models available",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "loadModel": "Load Model",
+      "unloadModel": "Unload Model",
+      "loadingModel": "Loading...",
+      "unloadingModel": "Unloading...",
       "languageNotApplicable": "This model does not support language selection."
     },
     "mergeProvider": {
@@ -1387,6 +1409,7 @@
     },
     "status": {
       "title": "Status",
+      "modelsLoaded": "Models loaded in memory",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary",

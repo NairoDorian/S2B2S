@@ -804,10 +804,8 @@ impl TranscriptionManager {
                 let settings = get_settings(&self.app_handle);
                 let (backend, device) = {
                     let accelerator = settings.transcribe_accelerator;
-                    let device = resolve_gpu_device(
-                        accelerator,
-                        settings.transcribe_gpu_device.as_deref(),
-                    );
+                    let device =
+                        resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref());
                     let backend = if device.is_some() {
                         Backend::Auto
                     } else {

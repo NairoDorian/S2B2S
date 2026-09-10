@@ -1241,9 +1241,35 @@ impl ShortcutAction for TranscribeAction {
                             Arc::clone(&ah.state::<Arc<crate::managers::model::ModelManager>>());
                         let mut extra_ids: Vec<String> = Vec::new();
                         if let Some(ref m2) = settings.multi_stt_model_2 {
+                            if !tm.is_extra_model_loaded(m2) {
+                                info!("Multi-STT: loading extra model 2: {}", m2);
+                                match tm.load_extra_model(m2) {
+                                    Ok(name) => info!(
+                                        "Multi-STT: extra model 2 '{}' loaded successfully",
+                                        name
+                                    ),
+                                    Err(e) => error!(
+                                        "Multi-STT: failed to load extra model 2 '{}': {}",
+                                        m2, e
+                                    ),
+                                }
+                            }
                             extra_ids.push(m2.clone());
                         }
                         if let Some(ref m3) = settings.multi_stt_model_3 {
+                            if !tm.is_extra_model_loaded(m3) {
+                                info!("Multi-STT: loading extra model 3: {}", m3);
+                                match tm.load_extra_model(m3) {
+                                    Ok(name) => info!(
+                                        "Multi-STT: extra model 3 '{}' loaded successfully",
+                                        name
+                                    ),
+                                    Err(e) => error!(
+                                        "Multi-STT: failed to load extra model 3 '{}': {}",
+                                        m3, e
+                                    ),
+                                }
+                            }
                             extra_ids.push(m3.clone());
                         }
                         let extra_handles =

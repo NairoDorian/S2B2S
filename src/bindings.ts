@@ -47,6 +47,7 @@ export const commands = {
 	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
 	changeMultiSttUseLlamaMergeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_use_llama_merge_setting", { enabled })),
 	changeMultiSttBrainModeSetting: (mode: MultiSttBrainMode) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_brain_mode_setting", { mode })),
+	changeMicIdleTimeoutSettings: (value: number, unit: MicIdleTimeoutUnit, infinite: boolean) => typedError<null, string>(__TAURI_INVOKE("change_mic_idle_timeout_settings", { value, unit, infinite })),
 	changePostProcessBaseUrlSetting: (providerId: string, baseUrl: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl })),
 	changePostProcessApiKeySetting: (providerId: string, apiKey: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_api_key_setting", { providerId, apiKey })),
 	changePostProcessModelSetting: (providerId: string, model: string) => typedError<null, string>(__TAURI_INVOKE("change_post_process_model_setting", { providerId, model })),
@@ -697,6 +698,9 @@ export type AppSettings_Deserialize = {
 	vad_enabled?: boolean,
 	/**  Experimental detector implementation. Silero remains the stable default. */
 	vad_backend?: VadBackend,
+	mic_idle_timeout_value?: number,
+	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
+	mic_idle_infinite?: boolean,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -900,6 +904,9 @@ export type AppSettings_Serialize = {
 	vad_enabled: boolean,
 	/**  Experimental detector implementation. Silero remains the stable default. */
 	vad_backend: VadBackend,
+	mic_idle_timeout_value: number,
+	mic_idle_timeout_unit: MicIdleTimeoutUnit,
+	mic_idle_infinite: boolean,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
 	 *  not gated on this — that follows model capability. Migrated from the old
@@ -1353,6 +1360,8 @@ export type LlmServerInfo = {
 };
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
+
+export type MicIdleTimeoutUnit = "seconds" | "minutes";
 
 /**  Which engine collection a model/download belongs to. */
 export type ModelCollection = 

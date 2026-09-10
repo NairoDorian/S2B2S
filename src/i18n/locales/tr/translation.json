@@ -364,6 +364,17 @@
         "label": "Transkripsiyonlar arasında mikrofonu açık tut",
         "description": "Kayıt durdurulduktan sonra mikrofon akışını 30 saniye açık tutar, ardışık transkripsiyonlarda gecikmeyi azaltır. Etkinken Bluetooth ses kalitesini düşürebilir."
       },
+      "micIdleTimeout": {
+        "title": "Mic Idle Timeout",
+        "infiniteLabel": "Keep Mic Open Indefinitely",
+        "infiniteDescription": "When enabled, the microphone stream stays open forever until manually closed. Disable to set a custom timeout duration.",
+        "timeoutLabel": "Timeout Value",
+        "timeoutDescription": "How long to keep the mic open after a recording stops before closing it.",
+        "unitLabel": "Unit",
+        "unitDescription": "Seconds or minutes for the timeout value.",
+        "seconds": "Seconds",
+        "minutes": "Minutes"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper Hızlandırma",
@@ -687,6 +698,13 @@
         "noNotes": "Paketlenmiş sürüm notu bulunamadı",
         "error": "Sürüm notları önizlenemedi"
       },
+      "onboardingPreview": {
+        "title": "İlk kurulum önizlemesi",
+        "description": "İzinleri, modelleri veya tamamlanma durumunu değiştirmeden ilk kurulum ekranlarını önizleyin",
+        "permissionsButton": "İzinler",
+        "modelsButton": "Model seçimi",
+        "exitButton": "Önizlemeden çık"
+      },
       "soundTheme": {
         "label": "Ses Teması",
         "description": "Kayıt başlangıç ve bitişi için sesli geri bildirim temasını seçin"
@@ -779,13 +797,6 @@
         "verdictOk": "Tuş olayları Handy'ye normal şekilde ulaşıyor.",
         "verdictNoEvents": "Hiç olay yakalanmadı — test sırasında herhangi bir tuşa bastınız mı?",
         "failed": "Tanılama başarısız: {{error}}"
-      },
-      "onboardingPreview": {
-        "title": "İlk kurulum önizlemesi",
-        "description": "İzinleri, modelleri veya tamamlanma durumunu değiştirmeden ilk kurulum ekranlarını önizleyin",
-        "permissionsButton": "İzinler",
-        "modelsButton": "Model seçimi",
-        "exitButton": "Önizlemeden çık"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -1344,10 +1355,21 @@
       "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
       "model2Language": "Language:",
       "model3Language": "Language:",
+      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
+      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "translateToEnglish": "Translate to English",
       "notSelected": "Not selected",
       "disableModel": "Disable",
       "primaryModel": "Primary model: {{model}}",
+      "noPrimaryModel": "No primary model selected",
+      "loadingModels": "Loading models...",
+      "noModelsAvailable": "No additional models available",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "loadModel": "Load Model",
+      "unloadModel": "Unload Model",
+      "loadingModel": "Loading...",
+      "unloadingModel": "Unloading...",
       "languageNotApplicable": "This model does not support language selection."
     },
     "mergeProvider": {
@@ -1387,6 +1409,7 @@
     },
     "status": {
       "title": "Status",
+      "modelsLoaded": "Models loaded in memory",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary",

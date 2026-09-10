@@ -1269,6 +1269,18 @@ fn default_native_streaming_show_interim_longer() -> bool {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
+pub enum MicIdleTimeoutUnit {
+    #[default]
+    Seconds,
+    Minutes,
+}
+
+fn default_mic_idle_timeout_value() -> u32 {
+    30
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum VadBackend {
     #[default]
     Silero,
@@ -1585,6 +1597,13 @@ pub struct AppSettings {
     /// Experimental detector implementation. Silero remains the stable default.
     #[serde(default)]
     pub vad_backend: VadBackend,
+    // Microphone idle timeout
+    #[serde(default = "default_mic_idle_timeout_value")]
+    pub mic_idle_timeout_value: u32,
+    #[serde(default)]
+    pub mic_idle_timeout_unit: MicIdleTimeoutUnit,
+    #[serde(default)]
+    pub mic_idle_infinite: bool,
     /// Which recording overlay to show: None / Minimal / Live. Streaming mode is
     /// not gated on this — that follows model capability. Migrated from the old
     /// `overlay_position` (position `none` → style `None`).
@@ -2455,6 +2474,9 @@ pub fn get_default_settings() -> AppSettings {
             default_text_replacement_decapitalize_standard_post_recording_monitor_ms(),
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
+        mic_idle_timeout_value: default_mic_idle_timeout_value(),
+        mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
+        mic_idle_infinite: false,
         overlay_style: default_overlay_style(),
     }
 }

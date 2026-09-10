@@ -8,7 +8,7 @@ use crate::audio_toolkit::{
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
-use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
+use crate::settings::{get_settings, write_settings, AppSettings, MicIdleTimeoutUnit, VadBackend};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
 use std::path::PathBuf;
@@ -17,9 +17,20 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
-const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const SILERO_VAD_THRESHOLD: f32 = 0.3;
 const EARSHOT_VAD_THRESHOLD: f32 = 0.5;
+
+fn get_idle_timeout(app: &tauri::AppHandle) -> Duration {
+    let settings = get_settings(app);
+    if settings.mic_idle_infinite {
+        return Duration::from_secs(u64::MAX);
+    }
+    let base = settings.mic_idle_timeout_value as u64;
+    match settings.mic_idle_timeout_unit {
+        MicIdleTimeoutUnit::Seconds => Duration::from_secs(base.max(1)),
+        MicIdleTimeoutUnit::Minutes => Duration::from_secs(base.max(1) * 60),
+    }
+}
 
 /// Translate the Brain's `endpoint_preset` into a silence frame count
 /// (frames are 30 ms at 16 kHz):
@@ -1013,11 +1024,11 @@ impl AudioRecordingManager {
         );
     }
 
-    fn schedule_lazy_close(&self) {
+    fn schedule_lazy_close(&self, idle_timeout: Duration) {
         let gen = self.close_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let app = self.app_handle.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(STREAM_IDLE_TIMEOUT);
+            std::thread::sleep(idle_timeout);
             let rm = app.state::<Arc<AudioRecordingManager>>();
             // Hold state lock across the check AND close to serialize against
             // try_start_recording, preventing a race where the stream is closed
@@ -1028,10 +1039,7 @@ impl AudioRecordingManager {
             {
                 // stop_microphone_stream does not acquire the state lock,
                 // so holding it here is safe (no deadlock).
-                info!(
-                    "Closing idle microphone stream after {:?}",
-                    STREAM_IDLE_TIMEOUT
-                );
+                info!("Closing idle microphone stream after {:?}", idle_timeout);
                 rm.stop_microphone_stream();
             }
         });
@@ -1553,7 +1561,8 @@ impl AudioRecordingManager {
                 // In on-demand mode, close the mic (lazily if the setting is enabled)
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
                     if get_settings(&self.app_handle).lazy_stream_close {
-                        self.schedule_lazy_close();
+                        let timeout = get_idle_timeout(&self.app_handle);
+                        self.schedule_lazy_close(timeout);
                     } else {
                         self.stop_microphone_stream();
                     }
@@ -1608,7 +1617,8 @@ impl AudioRecordingManager {
                 // In on-demand mode, close the mic (lazily if the setting is enabled)
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
                     if get_settings(&self.app_handle).lazy_stream_close {
-                        self.schedule_lazy_close();
+                        let timeout = get_idle_timeout(&self.app_handle);
+                        self.schedule_lazy_close(timeout);
                     } else {
                         self.stop_microphone_stream();
                     }

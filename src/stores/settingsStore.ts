@@ -15,6 +15,7 @@ import type {
   BrainConfig,
   ShortcutActivation,
   VadBackend,
+  MicIdleTimeoutUnit,
 } from "@/bindings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
@@ -244,6 +245,24 @@ const settingUpdaters: {
     ),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
+  mic_idle_timeout_value: (value) =>
+    commands.changeMicIdleTimeoutSettings(
+      value as number,
+      useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
+      useSettingsStore.getState().settings?.mic_idle_infinite ?? false,
+    ),
+  mic_idle_timeout_unit: (value) =>
+    commands.changeMicIdleTimeoutSettings(
+      useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30,
+      value as MicIdleTimeoutUnit,
+      useSettingsStore.getState().settings?.mic_idle_infinite ?? false,
+    ),
+  mic_idle_infinite: (value) =>
+    commands.changeMicIdleTimeoutSettings(
+      useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30,
+      useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
+      value as boolean,
+    ),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   vad_backend: async (value) => {

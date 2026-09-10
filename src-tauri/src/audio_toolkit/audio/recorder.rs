@@ -1,7 +1,7 @@
 use std::{
     io::Error,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -1332,13 +1332,7 @@ impl CaptureProcessor {
             } else {
                 frame.to_vec()
             };
-            handle_frame(
-                &processed,
-                vad_policy,
-                vad,
-                audio_cb,
-                processed_samples,
-            )
+            handle_frame(&processed, vad_policy, vad, audio_cb, processed_samples)
         });
 
         // Diagnostic for VAD audio still withheld when capture stopped; it is

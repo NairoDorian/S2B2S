@@ -364,6 +364,17 @@
         "label": "Mikrofon zwischen Transkriptionen offen halten",
         "description": "Hält den Mikrofon-Stream nach dem Aufnahmestopp 30 Sekunden lang offen, um die Latenz bei aufeinanderfolgenden Transkriptionen zu verringern. Kann die Bluetooth-Audioqualität beeinträchtigen."
       },
+      "micIdleTimeout": {
+        "title": "Mic Idle Timeout",
+        "infiniteLabel": "Keep Mic Open Indefinitely",
+        "infiniteDescription": "When enabled, the microphone stream stays open forever until manually closed. Disable to set a custom timeout duration.",
+        "timeoutLabel": "Timeout Value",
+        "timeoutDescription": "How long to keep the mic open after a recording stops before closing it.",
+        "unitLabel": "Unit",
+        "unitDescription": "Seconds or minutes for the timeout value.",
+        "seconds": "Seconds",
+        "minutes": "Minutes"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper-Beschleunigung",
@@ -687,6 +698,13 @@
         "noNotes": "Keine gebündelten Versionshinweise gefunden",
         "error": "Versionshinweise konnten nicht angezeigt werden"
       },
+      "onboardingPreview": {
+        "title": "Ersteinrichtung ansehen",
+        "description": "Vorschau der Einrichtungsbildschirme, ohne Berechtigungen, Modelle oder den Abschlussstatus zu ändern",
+        "permissionsButton": "Berechtigungen",
+        "modelsButton": "Modellauswahl",
+        "exitButton": "Vorschau beenden"
+      },
       "soundTheme": {
         "label": "Sound-Thema",
         "description": "Sound-Thema für Aufnahme-Start und -Stop-Feedback auswählen"
@@ -779,13 +797,6 @@
         "verdictOk": "Tastenereignisse erreichen Handy normal.",
         "verdictNoEvents": "Keine Ereignisse erfasst — hast du während des Tests Tasten gedrückt?",
         "failed": "Diagnose fehlgeschlagen: {{error}}"
-      },
-      "onboardingPreview": {
-        "title": "Ersteinrichtung ansehen",
-        "description": "Vorschau der Einrichtungsbildschirme, ohne Berechtigungen, Modelle oder den Abschlussstatus zu ändern",
-        "permissionsButton": "Berechtigungen",
-        "modelsButton": "Modellauswahl",
-        "exitButton": "Vorschau beenden"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -1344,10 +1355,21 @@
       "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
       "model2Language": "Language:",
       "model3Language": "Language:",
+      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
+      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "translateToEnglish": "Translate to English",
       "notSelected": "Not selected",
       "disableModel": "Disable",
       "primaryModel": "Primary model: {{model}}",
+      "noPrimaryModel": "No primary model selected",
+      "loadingModels": "Loading models...",
+      "noModelsAvailable": "No additional models available",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "loadModel": "Load Model",
+      "unloadModel": "Unload Model",
+      "loadingModel": "Loading...",
+      "unloadingModel": "Unloading...",
       "languageNotApplicable": "This model does not support language selection."
     },
     "mergeProvider": {
@@ -1387,6 +1409,7 @@
     },
     "status": {
       "title": "Status",
+      "modelsLoaded": "Models loaded in memory",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary",

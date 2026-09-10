@@ -5,7 +5,7 @@
   "category": "tts",
   "status": "supported",
   "tasks": ["tts", "clone"],
-  "modes": ["offline"],
+  "modes": ["offline", "streaming"],
   "languages": ["en", "de", "it", "pt", "es"],
   "capabilities": {
     "clone": ["speaker_reference"]

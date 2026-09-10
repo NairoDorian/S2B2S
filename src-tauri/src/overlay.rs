@@ -244,7 +244,9 @@ fn configure_layer_shell_surface(
 /// Returns true if layer shell was successfully initialized, false otherwise
 #[cfg(target_os = "linux")]
 fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool {
-    if utils::env_flag_enabled("S2B2S_NO_GTK_LAYER_SHELL") || utils::env_flag_enabled("HANDY_NO_GTK_LAYER_SHELL") {
+    if utils::env_flag_enabled("S2B2S_NO_GTK_LAYER_SHELL")
+        || utils::env_flag_enabled("HANDY_NO_GTK_LAYER_SHELL")
+    {
         debug!("Skipping GTK layer shell init (S2B2S_NO_GTK_LAYER_SHELL / HANDY_NO_GTK_LAYER_SHELL is enabled)");
         return false;
     }

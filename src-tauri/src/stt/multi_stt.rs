@@ -448,7 +448,7 @@ pub fn spawn_parallel(
         let model_id_in_thread = model_id.clone();
         let handle = std::thread::spawn(move || {
             if let Some(tm) =
-                app_handle.try_state::<crate::managers::transcription::TranscriptionManager>()
+                app_handle.try_state::<Arc<crate::managers::transcription::TranscriptionManager>>()
             {
                 if !tm.is_extra_model_loaded(&model_id_in_thread) {
                     let _ = tm.load_extra_model(&model_id_in_thread);

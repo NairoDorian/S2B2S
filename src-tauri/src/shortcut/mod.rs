@@ -1215,6 +1215,22 @@ pub fn change_multi_stt_brain_mode_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_mic_idle_timeout_settings(
+    app: AppHandle,
+    value: u32,
+    unit: settings::MicIdleTimeoutUnit,
+    infinite: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.mic_idle_timeout_value = value;
+    settings.mic_idle_timeout_unit = unit;
+    settings.mic_idle_infinite = infinite;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_post_process_base_url_setting(
     app: AppHandle,
     provider_id: String,

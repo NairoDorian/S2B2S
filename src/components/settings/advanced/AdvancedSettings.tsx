@@ -22,6 +22,7 @@ import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationS
 import { VoiceActivityDetection } from "../VoiceActivityDetection";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
+import { MicIdleTimeout } from "../MicIdleTimeout";
 import { AudioEnhancements } from "./AudioEnhancements";
 import { LongAudioRouting } from "./LongAudioRouting";
 import { FillerWordRemoval } from "../FillerWordRemoval";
@@ -93,6 +94,7 @@ export const AdvancedSettings: React.FC = () => {
           />
           <AccelerationSelector descriptionMode="tooltip" grouped={true} />
           <LazyStreamClose descriptionMode="tooltip" grouped={true} />
+          <MicIdleTimeout />
           <VadBackendSelector descriptionMode="tooltip" grouped={true} />
         </SettingsGroup>
       )}

@@ -364,6 +364,17 @@
         "label": "在转录之间保持麦克风开启",
         "description": "录音停止后保持麦克风流开启30秒，减少连续转录时的延迟。激活时可能会降低蓝牙音频质量。"
       },
+      "micIdleTimeout": {
+        "title": "Mic Idle Timeout",
+        "infiniteLabel": "Keep Mic Open Indefinitely",
+        "infiniteDescription": "When enabled, the microphone stream stays open forever until manually closed. Disable to set a custom timeout duration.",
+        "timeoutLabel": "Timeout Value",
+        "timeoutDescription": "How long to keep the mic open after a recording stops before closing it.",
+        "unitLabel": "Unit",
+        "unitDescription": "Seconds or minutes for the timeout value.",
+        "seconds": "Seconds",
+        "minutes": "Minutes"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper 加速",
@@ -687,6 +698,13 @@
         "noNotes": "未找到内置发行说明",
         "error": "无法预览发行说明"
       },
+      "onboardingPreview": {
+        "title": "预览新手引导",
+        "description": "预览新手引导界面，而不更改权限、模型或完成状态",
+        "permissionsButton": "权限",
+        "modelsButton": "模型选择",
+        "exitButton": "退出预览"
+      },
       "soundTheme": {
         "label": "声音主题",
         "description": "选择录制开始和停止反馈的声音主题"
@@ -779,13 +797,6 @@
         "verdictOk": "按键事件正常到达 Handy。",
         "verdictNoEvents": "未捕获到任何事件——测试期间您按过键吗？",
         "failed": "诊断失败：{{error}}"
-      },
-      "onboardingPreview": {
-        "title": "预览新手引导",
-        "description": "预览新手引导界面，而不更改权限、模型或完成状态",
-        "permissionsButton": "权限",
-        "modelsButton": "模型选择",
-        "exitButton": "退出预览"
       },
       "sessionToasts": {
         "title": "Session Toast History {{count}}",
@@ -1344,10 +1355,21 @@
       "model3Description": "An optional third STT model to transcribe alongside the primary and secondary.",
       "model2Language": "Language:",
       "model3Language": "Language:",
+      "model2LanguageDescription": "Preferred recognition language for the second model (only if the model supports language selection)",
+      "model3LanguageDescription": "Preferred recognition language for the third model (only if the model supports language selection)",
       "translateToEnglish": "Translate to English",
       "notSelected": "Not selected",
       "disableModel": "Disable",
       "primaryModel": "Primary model: {{model}}",
+      "noPrimaryModel": "No primary model selected",
+      "loadingModels": "Loading models...",
+      "noModelsAvailable": "No additional models available",
+      "loaded": "Loaded",
+      "notLoaded": "Not loaded",
+      "loadModel": "Load Model",
+      "unloadModel": "Unload Model",
+      "loadingModel": "Loading...",
+      "unloadingModel": "Unloading...",
       "languageNotApplicable": "This model does not support language selection."
     },
     "mergeProvider": {
@@ -1387,6 +1409,7 @@
     },
     "status": {
       "title": "Status",
+      "modelsLoaded": "Models loaded in memory",
       "primary": "Primary",
       "secondary": "Secondary",
       "tertiary": "Tertiary",
