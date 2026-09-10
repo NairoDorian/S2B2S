@@ -27,8 +27,6 @@ const USER_AGENT: &str = "Handy-llama-manager/1.0";
 const CACHE_TTL: Duration = Duration::from_secs(600);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
 
-pub const BACKENDS: &[&str] = &["auto", "cuda-13.3", "cuda-12.4", "vulkan", "cpu"];
-
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct LlamaReleaseAsset {
     pub name: String,

@@ -162,10 +162,6 @@ impl LlamaServerManager {
         self.logs.lock().unwrap().iter().cloned().collect()
     }
 
-    pub fn endpoint_base_url(&self) -> String {
-        format!("http://127.0.0.1:{}/v1", self.snapshot().port)
-    }
-
     fn set_state(&self, update: impl FnOnce(&mut LlamaServerStateEvent)) {
         let snapshot = {
             let mut state = self.state.lock().unwrap();
@@ -196,6 +192,26 @@ impl LlamaServerManager {
         self.kill_child();
 
         let settings = get_settings(&self.app).llama.normalized();
+
+        // A server someone else launched (the old PowerShell script, another
+        // app) already answers on the port: use it rather than fail to bind.
+        if health_ok(settings.port) {
+            let stopped = LlamaServerStateEvent::stopped(&settings);
+            self.set_state(|s| {
+                *s = stopped;
+                s.status = LlamaStatus::Ready;
+                s.message = Some(format!(
+                    "Using a llama-server already listening on port {} (not started by Handy)",
+                    settings.port
+                ));
+            });
+            info!(
+                "llama-server already listening on port {}; adopting it",
+                settings.port
+            );
+            return Ok(());
+        }
+
         let exe = resolve_server_exe(&settings)
             .ok_or_else(|| "No llama-server executable configured. Install a release or pick the folder that contains llama-server.".to_string())?;
         let args = build_args(&settings)?;
@@ -291,11 +307,6 @@ impl LlamaServerManager {
     fn supervise(&self, generation: u64, port: u16) {
         let is_current = || self.generation.load(Ordering::Acquire) == generation;
         let started = Instant::now();
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(600))
-            .build()
-            .expect("reqwest client");
-        let url = format!("http://127.0.0.1:{port}/health");
 
         // Phase 1: wait for /health.
         loop {
@@ -326,10 +337,7 @@ impl LlamaServerManager {
                 });
                 return;
             }
-            let ready = tauri::async_runtime::block_on(client.get(&url).send())
-                .map(|r| r.status().is_success())
-                .unwrap_or(false);
-            if ready {
+            if health_ok(port) {
                 let now_ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_millis() as f64)
@@ -431,6 +439,8 @@ impl LlamaServerManager {
     pub fn ensure_ready(&self, timeout: Duration) -> Result<(), String> {
         match self.snapshot().status {
             LlamaStatus::Ready if self.child_alive() => return Ok(()),
+            // Adopted external server: trust the port, not a child handle.
+            LlamaStatus::Ready if health_ok(self.snapshot().port) => return Ok(()),
             LlamaStatus::Starting => {}
             _ => self.start()?,
         }
@@ -487,7 +497,9 @@ pub async fn ensure_ready_for_provider(provider: &PostProcessProvider) {
     if !settings.start_on_demand || !targets_local_server(&provider.base_url, settings.port) {
         return;
     }
-    if manager.snapshot().status == LlamaStatus::Ready && manager.child_alive() {
+    if manager.snapshot().status == LlamaStatus::Ready
+        && (manager.child_alive() || health_ok(settings.port))
+    {
         return;
     }
     let m = Arc::clone(&manager);
@@ -497,6 +509,47 @@ pub async fn ensure_ready_for_provider(provider: &PostProcessProvider) {
     if let Err(e) = result {
         warn!("Local llama-server not ready for request: {e}");
     }
+}
+
+/// Blocking `GET /health` over a raw socket. The supervisor is a plain thread
+/// with no async runtime, and a 60-byte HTTP exchange does not need one.
+fn health_ok(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
+    if stream
+        .write_all(
+            b"GET /health HTTP/1.1
+Host: 127.0.0.1
+Connection: close
+
+",
+        )
+        .is_err()
+    {
+        return false;
+    }
+    let mut head = [0u8; 64];
+    let mut read = 0;
+    while read < head.len() {
+        match stream.read(&mut head[read..]) {
+            Ok(0) => break,
+            Ok(n) => {
+                read += n;
+                if read >= 12 {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    // "HTTP/1.1 200 ..." — llama-server answers 503 while the model loads.
+    String::from_utf8_lossy(&head[..read]).starts_with("HTTP/1.1 200")
 }
 
 fn targets_local_server(base_url: &str, port: u16) -> bool {
