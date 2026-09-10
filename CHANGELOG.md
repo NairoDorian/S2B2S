@@ -167,6 +167,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Sharp-cornered, cyberpunk-minimal restyle (2026-09-11).** Every
+  `rounded-*` utility (including `rounded-full`) and every shadow token now
+  resolves to a square corner and a 1px hairline at the Tailwind theme
+  level, so the whole settings app and the overlay lost their radii without
+  touching components. New default palette: near-black ground, cold
+  off-white ink, neon-cyan accent (light mode keeps the same idea on
+  paper); three neon presets join the accent picker; key chips and values
+  render in a monospace stack; the sidebar marks the active page with a
+  neon edge instead of a filled block. `docs/PERFORMANCE.md` records the
+  latency budget and rules every change is held to.
+
 - **transcribe.cpp is the only inference runtime and Earshot the only VAD
   (2026-09-10).** `transcribe-rs`, ONNX Runtime (`ort`, `ndarray`) and
   Silero VAD are gone, together with the `onnxruntime.dll` / `libonnxruntime`

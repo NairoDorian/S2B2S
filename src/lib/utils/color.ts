@@ -23,9 +23,12 @@ export interface AccentPalette {
   logoHighlight: string;
 }
 
-export const DEFAULT_ACCENT_COLOR = "#E5A93B";
+export const DEFAULT_ACCENT_COLOR = "#1FE0FF";
 
 export const ACCENT_PRESETS = [
+  { id: "cyan", name: "Neon Cyan", hex: "#1FE0FF" },
+  { id: "magenta", name: "Neon Magenta", hex: "#FF2E88" },
+  { id: "lime", name: "Terminal Green", hex: "#5CFF5C" },
   { id: "gold", name: "Gold", hex: "#E5A93B" },
   { id: "pink", name: "Rose", hex: "#DA5893" },
   { id: "amber", name: "Amber", hex: "#F59E0B" },

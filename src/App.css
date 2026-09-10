@@ -13,6 +13,38 @@
   --color-mid-gray: var(--color-mid-gray);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
+
+  /* Sharp corners everywhere: every rounded-* utility resolves to 0, so no
+     component has to be touched to lose its radius. (rounded-full is a
+     literal in Tailwind v4 and is overridden in the utilities layer below.) */
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+
+  /* Flat surfaces: no drop shadows, a 1px hairline does the separation. */
+  --shadow-2xs: 0 0 0 1px var(--color-hairline);
+  --shadow-xs: 0 0 0 1px var(--color-hairline);
+  --shadow-sm: 0 0 0 1px var(--color-hairline);
+  --shadow-md: 0 0 0 1px var(--color-hairline);
+  --shadow-lg: 0 0 0 1px var(--color-hairline);
+  --shadow-xl: 0 0 0 1px var(--color-hairline);
+  --shadow-2xl: 0 0 0 1px var(--color-hairline);
+
+  /* Terminal-flavoured type for values, key chips and code. */
+  --font-mono:
+    "Cascadia Mono", "JetBrains Mono", "Fira Code", Consolas, "SF Mono", Menlo,
+    monospace;
+}
+
+@layer utilities {
+  .rounded-full {
+    border-radius: 0;
+  }
 }
 
 :root {
@@ -40,9 +72,38 @@
      block (matching other surfaces); the dark theme overrides it below. */
   --color-log-surface: color-mix(in srgb, var(--color-background), black 6%);
 
+  /* Hairline used by the flattened shadow tokens above. */
+  --color-hairline: color-mix(in srgb, var(--color-text) 14%, transparent);
+
   /* Apply colors */
   color: var(--color-text);
   background-color: var(--color-background);
+}
+
+/* Old-school terminal accents: key chips and numeric readouts in mono,
+   group labels already run uppercase/tracked. */
+kbd,
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+/* Focus rings are square too, and in the accent colour. */
+:focus-visible {
+  outline: 1px solid var(--color-logo-primary);
+  outline-offset: 1px;
+}
+
+/* Native range inputs: square thumb, hairline track. */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 18px;
+  border-radius: 0;
+  background: var(--color-logo-primary);
+  border: 1px solid var(--color-background);
+  cursor: pointer;
 }
 
 .container {

@@ -8,6 +8,16 @@ This file provides guidance to AI coding assistants working with code in this re
 > Architecture Overview and Settings System sections below for fork-specific
 > additions.
 
+## Performance first
+
+This is a real-time tool. Read [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+before adding a feature, setting, poll, event, dependency or thread: it holds
+the latency budget per path and the rules (audio thread is allocation-free,
+hot toggles are atomics, commands never block the webview, events are
+throttled and gated, resources stay warm, child processes run detached on a
+supervisor thread, meters sample on one thread). State the cost of any new
+thread, poll or dependency in the commit message.
+
 ## Development Commands
 
 **Prerequisites:**
@@ -408,7 +418,7 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `save_raw_audio`, `overlay_speech_stats`, `speech_pause_hold_ms` - see Voice Activity Detection below
 - `mic_idle_timeout_value` / `mic_idle_timeout_unit` / `mic_idle_infinite` - Lazy microphone close timeout (was a fixed 30 s upstream)
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
-- `custom_accent_color` - `#rrggbb` or `null` for the gold default; persisted through `change_custom_accent_color_setting`
+- `custom_accent_color` - `#rrggbb` or `null` for the neon-cyan default; persisted through `change_custom_accent_color_setting`
 - `native_streaming_latency_presets` - Per-model-family latency preset (`fastest` → `accurate`)
 - `vad_threshold_earshot` (default 0.5) - Speech-probability threshold the
   detector is built with (0.05–0.95; lower = more sensitive).

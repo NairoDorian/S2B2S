@@ -167,7 +167,7 @@
   /* Never wider than the window: an unaccounted content zoom degrades to a
      narrower card instead of clipping. 2px = our border (no border-box reset). */
   max-width: calc(100vw - 2px);
-  border-radius: 24px;
+  border-radius: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -203,11 +203,11 @@
 }
 .scard.open {
   width: var(--ov-open-w);
-  border-radius: 16px;
+  border-radius: 0;
 }
 .scard.working {
   width: var(--ov-work-w);
-  border-radius: 18px;
+  border-radius: 0;
 }
 
 /* Compact form: two fixed widths so the recording→working change is an animatable
@@ -291,7 +291,7 @@
   translate: 0 3px;
   margin-left: 1px;
   background: var(--s-accent);
-  border-radius: 2px;
+  border-radius: 0;
   animation: scaret-blink 1.05s steps(1) infinite;
 }
 @keyframes scaret-blink {
@@ -360,7 +360,7 @@
 .sdot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 0;
   flex: none;
   box-sizing: border-box;
   transition:
@@ -429,7 +429,7 @@
 .sstat-sep {
   width: 3px;
   height: 3px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--s-faint);
   flex: none;
 }
@@ -459,7 +459,7 @@
   width: 4px;
   min-height: 3px;
   max-height: 18px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--s-accent);
   transition:
     height 80ms linear,
@@ -508,7 +508,7 @@
 .sx {
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: 0;
   flex: none;
   padding: 0;
   border: 0;
@@ -543,7 +543,7 @@
 .sspinner {
   width: 13px;
   height: 13px;
-  border-radius: 50%;
+  border-radius: 0;
   border: 2px solid var(--s-hair);
   border-top-color: var(--s-accent);
   animation: sspin 0.7s linear infinite;

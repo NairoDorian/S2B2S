@@ -4,15 +4,18 @@
   /* Palette source of truth. Each themed color is defined once as a
      light/dark pair; the active tokens below and the `data-theme` overrides
      in App.css reference these, so a hex value lives in exactly one place. */
-  --light-color-text: #0f0f0f;
-  --light-color-background: #fbfbfb;
-  --light-color-logo-primary: #e5a93b;
-  --light-color-logo-stroke: #3a2c1a;
+  /* Cyberpunk, old-school, minimal: near-black ground, cold off-white ink,
+     one neon accent. Light mode is the same idea on paper. The accent can
+     still be replaced per user (custom_accent_color → computeAccentPalette). */
+  --light-color-text: #101418;
+  --light-color-background: #f2f4f5;
+  --light-color-logo-primary: #0c8fa3;
+  --light-color-logo-stroke: #0a3f48;
 
-  --dark-color-text: #fbfbfb;
-  --dark-color-background: #2c2b29;
-  --dark-color-logo-primary: #f3b749;
-  --dark-color-logo-stroke: #fae3ab;
+  --dark-color-text: #e6f1f3;
+  --dark-color-background: #0b0e11;
+  --dark-color-logo-primary: #1fe0ff;
+  --dark-color-logo-stroke: #9ff2ff;
 
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
@@ -23,9 +26,9 @@
   --dark-color-error: #f87171;
 
   /* Tokens that do not change between light and dark */
-  --color-background-ui: #c47d12;
+  --color-background-ui: #0e94a8;
   --color-text-stroke: #f6f6f6;
-  --color-mid-gray: #808080;
+  --color-mid-gray: #7c8a90;
 
   /* Active palette — defaults to light, follows the OS via the media query
      below, or is forced by `data-theme` (see the overrides below). */
