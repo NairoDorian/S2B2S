@@ -102,7 +102,7 @@ pub fn open_models_folder(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
 
     let models_dir = app_data_dir.join("models");
-    let hf_cache = hf_hub::Cache::from_env().path().to_path_buf();
+    let hf_cache = crate::managers::model::hf_cache_dir();
 
     let has_hf_models = hf_cache.exists()
         && std::fs::read_dir(&hf_cache)

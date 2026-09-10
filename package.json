@@ -43,8 +43,8 @@
     "i18next": "26.4.2",
     "immer": "11.1.18",
     "lucide-react": "1.44.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-i18next": "17.0.13",
     "react-markdown": "^10.1.0",
     "react-select": "^5.10.2",
@@ -66,6 +66,6 @@
     "oxlint": "1.82.0",
     "prettier": "4.0.0-alpha.13",
     "typescript": "7.1.0-dev.20260910.1",
-    "vite": "8.3.0-beta.1"
+    "vite": "8.3.0"
   }
 }

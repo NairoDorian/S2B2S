@@ -42,18 +42,18 @@ rdev = { git = "https://github.com/rustdesk-org/rdev" }
 cpal = "^0.18.2"
 rtrb = "0.4.0"
 anyhow = "1.0.104"
-rubato = "4.0.0"
+rubato = "^5.0.0"
 hound = "3.5.1"
 # Decodes MP3 / M4A / FLAC / OGG / multi-channel WAV for the "Transcribe Files"
 # page. Same crate + features rodio already pulls in, so no new transitive deps.
-symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
+symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
 log = "^0.4.34"
 env_filter = "2.0.0"
 tokio = "1.53.1"
 # Silero VAD is driven directly against the ONNX session; see
 # audio_toolkit/vad/silero.rs for why vad-rs is not used (it only speaks the
 # Silero v4 tensor interface, and the model shipped here is v6).
-ort = { version = "2.0.0-rc.12", default-features = false }
+ort = { version = "^2.0.0-rc.13", default-features = false }
 ndarray = "^0.17.2"
 earshot = "1.2.2"
 enigo = "0.6.1"
@@ -85,9 +85,9 @@ specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-dialog = "^2.7.3"
-hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
-  "tokio",
-] }
+hf-hub = { git = "https://github.com/huggingface/hf-hub", branch = "main" }
+tokio-util = "^0.7.19"
+dirs = "^7.0.0"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4.4"
@@ -136,8 +136,8 @@ objc2-service-management = "0.3.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
-gtk = "0.18.2"
-libc = "0.2"
+gtk = "^0.18.2"
+libc = "^0.2.189"
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
   "cuda",
@@ -145,19 +145,27 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 
 # TEMPORARY: tao pinned past 0.35.3 for the Wayland client-side-decorations fix
 # (tao #1218, fixes tauri #11856 — dead titlebar buttons after visible(false) →
-# show()). Drop this once a tao release containing it lands in tauri.
-# The rev is a cjpais/tao branch, not upstream: dev past 0.35.3 also carries
-# tao #1231 (removed window subclassing), which left the thread event target's
-# shutdown (Handy #1710). `handy` = 07f3742b + a cherry-pick of tao #1274
+# show()) and the thread event target shutdown fix (tao #1274 / Handy #1710).
+# Pinned to upstream tauri-apps/tao rev da7441aa (where #1274 merged, compatible
+# with Tauri 2.x's tao 0.35.x constraint).
 # tao-macros must be patched to the SAME rev even though nothing here depends on
 # it directly: wry pulls tao-macros 0.1.3 from crates.io, so without this the
 # lockfile carries two tao-macros 0.1.3 entries (registry + git). cargo tolerates
 # that, but Nix's importCargoLock vendors both to the same `tao-macros-0.1.3`
+# dir and fails with a symlink collision. Unifying the source removes the dup.
 [patch.crates-io]
-tao = { git = "https://github.com/cjpais/tao", rev = "c3bee28c1d446d95f08c95c3b6f8d4bde052b876" }
-tao-macros = { git = "https://github.com/cjpais/tao", rev = "c3bee28c1d446d95f08c95c3b6f8d4bde052b876" }
+tao = { git = "https://github.com/tauri-apps/tao" }
+tao-macros = { git = "https://github.com/tauri-apps/tao" }
+tauri = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
 transcribe-cpp = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
 transcribe-cpp-sys = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
+transcribe-rs = { git = "https://github.com/NairoDorian/transcribe-rs", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3.27.0"

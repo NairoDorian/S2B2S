@@ -6,7 +6,6 @@
 use super::{DownloadProgress, ModelManager};
 use anyhow::Result;
 use futures_util::StreamExt;
-use hf_hub::api::tokio::CancellationToken;
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -15,6 +14,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
+use tokio_util::sync::CancellationToken;
 
 /// Bound on connection setup for direct HTTP downloads (mirror + URL models).
 const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);

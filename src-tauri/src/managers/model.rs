@@ -4,8 +4,8 @@ use super::model_capabilities::{
 use crate::settings::{get_settings, write_settings};
 use anyhow::Result;
 use flate2::read::GzDecoder;
-use hf_hub::api::tokio::{ApiBuilder, CancellationToken, Progress};
-use hf_hub::{Cache, Repo, RepoType};
+use hf_hub::HFClient;
+use hf_hub::progress::{DownloadEvent, Progress, ProgressEvent, ProgressHandler};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio_util::sync::CancellationToken;
 
 mod download;
 
@@ -373,17 +374,57 @@ pub struct DownloadProgress {
 /// tools, which download via `main` — only have `refs/main`, so lookup falls
 /// back to it. Grandfathered `main` copies may predate the pin; per policy a
 /// working local model is never invalidated by routine catalog regeneration.
+pub fn hf_cache_dir() -> PathBuf {
+    if let Ok(cache) = std::env::var("HF_HUB_CACHE") {
+        PathBuf::from(cache)
+    } else if let Ok(home) = std::env::var("HF_HOME") {
+        PathBuf::from(home).join("hub")
+    } else if let Some(mut path) = dirs::home_dir() {
+        path.push(".cache");
+        path.push("huggingface");
+        path.push("hub");
+        path
+    } else {
+        PathBuf::from(".cache/huggingface/hub")
+    }
+}
+
 fn hf_cached_path(repo_id: &str, revision: &str, filename: &str) -> Option<PathBuf> {
-    let get = |rev: &str| {
-        Cache::from_env()
-            .repo(Repo::with_revision(
-                repo_id.to_string(),
-                RepoType::Model,
-                rev.to_string(),
-            ))
-            .get(filename)
+    let cache_dir = hf_cache_dir();
+    let repo_folder = format!("models--{}", repo_id.replace('/', "--"));
+    let repo_path = cache_dir.join(&repo_folder);
+
+    let resolve_commit = |rev: &str| -> Option<String> {
+        if rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit()) {
+            Some(rev.to_string())
+        } else {
+            let ref_file = repo_path.join("refs").join(rev);
+            fs::read_to_string(ref_file)
+                .ok()
+                .map(|s| s.trim().to_string())
+        }
     };
-    get(revision).or_else(|| (revision != "main").then(|| get("main")).flatten())
+
+    let check_snapshot = |commit: &str| -> Option<PathBuf> {
+        let path = repo_path.join("snapshots").join(commit).join(filename);
+        path.exists().then_some(path)
+    };
+
+    if let Some(commit) = resolve_commit(revision) {
+        if let Some(p) = check_snapshot(&commit) {
+            return Some(p);
+        }
+    }
+
+    if revision != "main" {
+        if let Some(commit) = resolve_commit("main") {
+            if let Some(p) = check_snapshot(&commit) {
+                return Some(p);
+            }
+        }
+    }
+
+    None
 }
 
 /// Friendly name advertised by GGUF metadata, if present. Empty strings are not
@@ -479,43 +520,75 @@ impl HfDownloadProgress {
     }
 }
 
-impl Progress for HfDownloadProgress {
-    async fn init(&mut self, size: usize, _filename: &str) {
-        {
-            let mut st = self.state.lock().unwrap();
-            st.total = size as u64;
-            st.downloaded = 0;
-            st.last_emit = Instant::now();
-            st.last_activity = Instant::now();
-        }
-        self.emit(0, size as u64);
-    }
-
-    async fn update(&mut self, size: usize) {
-        let (downloaded, total, emit) = {
-            let mut st = self.state.lock().unwrap();
-            st.downloaded = st.downloaded.saturating_add(size as u64);
-            let now = Instant::now();
-            st.last_activity = now;
-            // Throttle to ~10 updates/sec, but always emit the final byte.
-            let emit = now.duration_since(st.last_emit) >= Duration::from_millis(100)
-                || (st.total > 0 && st.downloaded >= st.total);
-            if emit {
-                st.last_emit = now;
+impl ProgressHandler for HfDownloadProgress {
+    fn on_progress(&self, event: &ProgressEvent) {
+        if let ProgressEvent::Download(event) = event {
+            match event {
+                DownloadEvent::Start { total_bytes, .. } => {
+                    {
+                        let mut st = self.state.lock().unwrap();
+                        st.total = *total_bytes;
+                        st.downloaded = 0;
+                        st.last_emit = Instant::now();
+                        st.last_activity = Instant::now();
+                    }
+                    self.emit(0, *total_bytes);
+                }
+                DownloadEvent::Progress { files } => {
+                    let now = Instant::now();
+                    let (downloaded, total, emit) = {
+                        let mut st = self.state.lock().unwrap();
+                        st.last_activity = now;
+                        for f in files {
+                            st.downloaded = f.bytes_completed;
+                            if f.total_bytes > 0 {
+                                st.total = f.total_bytes;
+                            }
+                        }
+                        let emit = now.duration_since(st.last_emit) >= Duration::from_millis(100)
+                            || (st.total > 0 && st.downloaded >= st.total);
+                        if emit {
+                            st.last_emit = now;
+                        }
+                        (st.downloaded, st.total, emit)
+                    };
+                    if emit {
+                        self.emit(downloaded, total);
+                    }
+                }
+                DownloadEvent::AggregateProgress {
+                    bytes_completed,
+                    total_bytes,
+                    ..
+                } => {
+                    let now = Instant::now();
+                    let (downloaded, total, emit) = {
+                        let mut st = self.state.lock().unwrap();
+                        st.downloaded = *bytes_completed;
+                        if *total_bytes > 0 {
+                            st.total = *total_bytes;
+                        }
+                        st.last_activity = now;
+                        let emit = now.duration_since(st.last_emit) >= Duration::from_millis(100)
+                            || (st.total > 0 && st.downloaded >= st.total);
+                        if emit {
+                            st.last_emit = now;
+                        }
+                        (st.downloaded, st.total, emit)
+                    };
+                    if emit {
+                        self.emit(downloaded, total);
+                    }
+                }
+                DownloadEvent::Complete => {
+                    let total = {
+                        let st = self.state.lock().unwrap();
+                        st.total.max(st.downloaded)
+                    };
+                    self.emit(total, total);
+                }
             }
-            (st.downloaded, st.total, emit)
-        };
-        if emit {
-            self.emit(downloaded, total);
         }
-    }
-
-    async fn finish(&mut self) {
-        let total = {
-            let st = self.state.lock().unwrap();
-            st.total.max(st.downloaded)
-        };
-        self.emit(total, total);
     }
 }
 
@@ -1796,7 +1869,7 @@ impl ModelManager {
     /// transcribe-cpp recognises are surfaced; arbitrary (e.g. LLM) GGUFs that
     /// share the cache are ignored.
     fn discover_hf_cache_models(available_models: &mut HashMap<String, ModelInfo>) {
-        Self::discover_hf_cache_models_in(Cache::from_env().path(), available_models);
+        Self::discover_hf_cache_models_in(&hf_cache_dir(), available_models);
     }
 
     /// Scan a Hugging Face cache root (`<cache>/models--*`) for GGUF snapshots.
@@ -2025,19 +2098,12 @@ impl ModelManager {
 
             // Fresh client per attempt so a wedged connection from the previous
             // try can't poison the retry.
-            let api = ApiBuilder::from_env()
-                // Ignore cached and environment-provided credentials. A stale token
-                // can make otherwise-public downloads fail authentication.
-                .with_token(None)
-                .with_progress(false)
-                .with_max_files(stream_count)
+            let client = HFClient::builder()
+                .cache_dir(hf_cache_dir())
                 .build()
                 .map_err(|e| anyhow::anyhow!("Failed to init Hugging Face API: {}", e))?;
-            let repo = api.repo(Repo::with_revision(
-                repo_id.clone(),
-                RepoType::Model,
-                revision.clone(),
-            ));
+            let (owner, name) = hf_hub::split_id(&repo_id);
+            let repo = client.model(owner, name);
             let progress = HfDownloadProgress::new(self.app_handle.clone(), model_id.clone());
 
             // hf-hub has no internal timeouts, so a wedged connection would
@@ -2062,32 +2128,24 @@ impl ModelManager {
                     }
                 }
             });
-            // hf-hub only observes its token inside the chunk loop — the
-            // metadata/resolve request and cache lock run before it, so a hang
-            // there would ignore the cancel entirely. Race the whole future
-            // against the token: on cancel, grant a short grace so an attempt
-            // that IS in the chunk loop can unwind gracefully (committing the
-            // `.sync.part` resume offset), then drop the future outright,
-            // which aborts whatever request it was wedged in.
-            let mut download = std::pin::pin!(repo.download_with_progress_cancellable(
-                &filename,
-                progress,
-                attempt_token.clone()
-            ));
+            let mut download = std::pin::pin!(
+                repo.download_file()
+                    .filename(&filename)
+                    .revision(revision.clone())
+                    .progress(Progress::new(progress))
+                    .send()
+            );
             let result = tokio::select! {
-                r = &mut download => r,
+                r = &mut download => r.map_err(|e| anyhow::anyhow!("{:?}", e)),
                 _ = attempt_token.cancelled() => {
-                    match tokio::time::timeout(Duration::from_secs(5), &mut download).await {
-                        Ok(r) => r,
-                        Err(_) => Err(hf_hub::api::tokio::ApiError::Cancelled),
-                    }
+                    Err(anyhow::anyhow!("cancelled"))
                 }
             };
             watchdog.abort();
 
             match result {
                 Ok(_) => break None,
-                Err(hf_hub::api::tokio::ApiError::Cancelled) if cancel_token.is_cancelled() => {
+                Err(_) if cancel_token.is_cancelled() => {
                     // User cancelled. hf-hub leaves the partially downloaded
                     // `.sync.part` in the shared cache, so a later attempt resumes
                     // instead of restarting. The guard resets is_downloading and
@@ -2096,7 +2154,7 @@ impl ModelManager {
                     info!("HF download cancelled for: {}", model_id);
                     return Ok(());
                 }
-                Err(hf_hub::api::tokio::ApiError::Cancelled) => {
+                Err(_) if attempt_token.is_cancelled() => {
                     let err = anyhow::anyhow!(
                         "transfer stalled: no progress for {}s",
                         DOWNLOAD_STALL_TIMEOUT.as_secs()

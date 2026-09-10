@@ -311,7 +311,11 @@ async function fetchLatestCrateVersion(
     );
     if (response.ok) {
       const data = (await response.json()) as {
-        crate?: { max_version?: string; newest_version?: string };
+        crate?: {
+          max_version?: string;
+          max_stable_version?: string;
+          newest_version?: string;
+        };
       };
       const crate = data.crate;
       if (!crate) return null;
@@ -322,7 +326,7 @@ async function fetchLatestCrateVersion(
       ) {
         return crate.newest_version;
       }
-      return crate.max_version || null;
+      return crate.max_stable_version || crate.max_version || null;
     }
   } catch {}
   return null;
@@ -526,7 +530,7 @@ async function updateEverything() {
           currClean,
           PRERELEASE_MODE,
         );
-        const needs = latest ? currClean !== latest : false;
+        const needs = latest !== null && compareVersions(latest, currClean) > 0;
         allStatuses.push({
           name,
           ecosystem: "NPM (Bun)",
@@ -550,7 +554,7 @@ async function updateEverything() {
           currClean,
           PRERELEASE_MODE,
         );
-        const needs = latest ? currClean !== latest : false;
+        const needs = latest !== null && compareVersions(latest, currClean) > 0;
         allStatuses.push({
           name,
           ecosystem: "NPM (Bun)",
@@ -572,19 +576,22 @@ async function updateEverything() {
   const lines = cargoContent.split(/\r?\n/);
   let currentSection = "";
 
-  const PINNED_CRATES = new Set([
-    "transcribe-cpp",
-    "transcribe-cpp-sys",
-    "rubato",
-    "audioadapter",
-    "audioadapter-buffers",
-    "libc",
-    "specta",
-    "specta-typescript",
-    "tauri-specta",
-    "ort",
-    "gtk",
-  ]);
+  // Collect all crate names patched in [patch.crates-io] so git forks / patches are never queried on crates.io
+  const patchedCrates = new Set<string>();
+  let inPatchSection = false;
+  lines.forEach((line: string) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      inPatchSection = trimmed === "[patch.crates-io]";
+      return;
+    }
+    if (inPatchSection) {
+      const match = trimmed.match(/^([a-zA-Z0-9_-]+)\s*=/);
+      if (match && match[1]) {
+        patchedCrates.add(match[1]);
+      }
+    }
+  });
 
   const cargoCratesToQuery: { name: string; ver: string; section: string }[] =
     [];
@@ -606,7 +613,7 @@ async function updateEverything() {
       const matchSimple = trimmed.match(/^([a-zA-Z0-9_-]+)\s*=\s*"([^"]+)"/);
       const match = matchInline || matchSimple;
       if (match && match[1] !== undefined && match[2] !== undefined) {
-        if (!PINNED_CRATES.has(match[1])) {
+        if (!patchedCrates.has(match[1])) {
           cargoCratesToQuery.push({
             name: match[1],
             ver: match[2],
@@ -626,7 +633,7 @@ async function updateEverything() {
           currClean,
           PRERELEASE_MODE,
         );
-        const needs = latest ? currClean !== latest : false;
+        const needs = latest !== null && compareVersions(latest, currClean) > 0;
         allStatuses.push({
           name,
           ecosystem: "Cargo (Rust)",
@@ -758,11 +765,55 @@ async function updateEverything() {
     process.exit(1);
   }
   const cargoCwd = path.resolve("src-tauri");
-  const { success: cargoSuccess, durationMs: cargoMs } = runCmd(
+  let { success: cargoSuccess, durationMs: cargoMs } = runCmd(
     "cargo",
     ["update"],
     cargoCwd,
   );
+
+  if (!cargoSuccess && outdatedCargo.length > 0) {
+    console.log(
+      "⚠️ Cargo update encountered dependency conflicts. Resolving compatible upgrades crate-by-crate...",
+    );
+    // Restore original Cargo.toml
+    fs.writeFileSync(cargoTomlPath, cargoContent, "utf8");
+    let acceptedContent = cargoContent;
+    for (const crate of outdatedCargo) {
+      const escaped = crate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regInline = new RegExp(
+        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
+        "g",
+      );
+      const regSimple = new RegExp(
+        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*")([^"]+)(")`,
+        "g",
+      );
+      const candidateContent = acceptedContent
+        .replace(regInline, `$1$2^${crate.latestVersion}$4`)
+        .replace(regSimple, `$1$2^${crate.latestVersion}$4`);
+      fs.writeFileSync(cargoTomlPath, candidateContent, "utf8");
+      const testUpdate = runCmd(
+        "cargo",
+        ["update", "-p", crate.name],
+        cargoCwd,
+      );
+      if (testUpdate.success) {
+        console.log(
+          `  ✅ Successfully updated ${crate.name} to ^${crate.latestVersion}`,
+        );
+        acceptedContent = candidateContent;
+      } else {
+        console.log(
+          `  ⚠️ Keeping current ${crate.name} version (${crate.currentVersion}): ^${crate.latestVersion} conflicts with workspace/peer requirements`,
+        );
+        fs.writeFileSync(cargoTomlPath, acceptedContent, "utf8");
+      }
+    }
+    const finalUpdate = runCmd("cargo", ["update"], cargoCwd);
+    cargoSuccess = finalUpdate.success;
+    cargoMs = finalUpdate.durationMs;
+  }
+
   if (cargoSuccess) {
     console.log(`✅ Step 4/7 Sub-dependency update complete (${cargoMs}ms)\n`);
   } else {

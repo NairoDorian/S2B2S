@@ -97,13 +97,12 @@ pub fn decode_audio_file(path: &Path) -> Result<Vec<f32>> {
 }
 
 fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32)> {
-    use symphonia::core::audio::SampleBuffer;
-    use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+    use symphonia::core::codecs::audio::AudioDecoderOptions;
     use symphonia::core::errors::Error as SymphoniaError;
     use symphonia::core::formats::FormatOptions;
+    use symphonia::core::formats::probe::Hint;
     use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
-    use symphonia::core::probe::Hint;
 
     let file =
         std::fs::File::open(path).with_context(|| format!("Failed to open {}", path.display()))?;
@@ -114,27 +113,27 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32)> {
         hint.with_extension(ext);
     }
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             stream,
-            &FormatOptions {
-                enable_gapless: true,
-                ..Default::default()
-            },
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(|e| anyhow!("Unrecognised audio container: {e}"))?;
-    let mut format = probed.format;
 
     let track = format
         .tracks()
         .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .find(|t| t.codec_params.as_ref().and_then(|p| p.audio()).is_some())
         .ok_or_else(|| anyhow!("No decodable audio track found"))?;
     let track_id = track.id;
-    let sample_rate = track
+    let audio_params = track
         .codec_params
+        .as_ref()
+        .and_then(|p| p.audio())
+        .ok_or_else(|| anyhow!("No decodable audio track found"))?;
+    let sample_rate = audio_params
         .sample_rate
         .ok_or_else(|| anyhow!("Audio track does not declare a sample rate"))?;
     if !(1_000..=384_000).contains(&sample_rate) {
@@ -142,19 +141,17 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32)> {
     }
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
         .map_err(|e| anyhow!("No decoder for this codec: {e}"))?;
 
     let mut mono: Vec<f32> = Vec::new();
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
+    let mut interleaved_buf: Vec<f32> = Vec::new();
     let mut decode_errors = 0usize;
 
     loop {
         let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                break;
-            }
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
             Err(SymphoniaError::ResetRequired) => {
                 // Chained streams (e.g. concatenated OGG) — keep the audio we
                 // have rather than failing the whole file.
@@ -166,7 +163,7 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32)> {
             }
             Err(e) => return Err(anyhow!("Failed to read audio packet: {e}")),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         let decoded = match decoder.decode(&packet) {
@@ -181,24 +178,16 @@ fn decode_with_symphonia(path: &Path) -> Result<(Vec<f32>, u32)> {
             Err(e) => return Err(anyhow!("Failed to decode audio: {e}")),
         };
 
-        let spec = *decoded.spec();
-        let channels = spec.channels.count().max(1);
-        let frames = decoded.capacity();
-        let needs_new_buffer = match &sample_buf {
-            Some(buf) => buf.capacity() < frames * channels,
-            None => true,
-        };
-        if needs_new_buffer {
-            sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
-        }
-        let buf = sample_buf.as_mut().expect("sample buffer allocated above");
-        buf.copy_interleaved_ref(decoded);
-        let samples = buf.samples();
+        let spec = decoded.spec();
+        let channels = spec.channels().count().max(1);
+        let num_samples = decoded.samples_interleaved();
+        interleaved_buf.resize(num_samples, 0.0f32);
+        decoded.copy_to_slice_interleaved(&mut interleaved_buf);
         if channels == 1 {
-            mono.extend_from_slice(samples);
+            mono.extend_from_slice(&interleaved_buf);
         } else {
             mono.extend(
-                samples
+                interleaved_buf
                     .chunks_exact(channels)
                     .map(|frame| frame.iter().sum::<f32>() / channels as f32),
             );
