@@ -7,6 +7,7 @@ import {
   History,
   Info,
   CircleHelp,
+  BrainCircuit,
   Sparkles,
   Cpu,
   Mic,
@@ -29,6 +30,7 @@ import {
   FileTranscriptionSettings,
   LiveModeSettings,
   HelpSettings,
+  LlamaSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -89,6 +91,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.liveMode",
     icon: Radio,
     component: LiveModeSettings,
+    enabled: () => true,
+  },
+  llama: {
+    labelKey: "sidebar.llama",
+    icon: BrainCircuit,
+    component: LlamaSettings,
     enabled: () => true,
   },
   advanced: {

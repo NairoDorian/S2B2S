@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Local LLM page: llama.cpp managed in-app (2026-09-11).** The
+  `llama-server` that post-processing and the Multi-STT merge use no longer
+  has to be launched by hand. Install a build from the llama.cpp releases
+  (CUDA / Vulkan / CPU, auto-detected, cudart fetched for CUDA) or point at an
+  existing folder (the maintainer's `Llama.cpp/llama` layout is adopted on
+  first run), pick the model, MTP draft and mmproj files, tune the command
+  line — defaults reproduce `launch_server_E2B_Q4.ps1` exactly — and start,
+  stop or restart it with the output in view. The server runs detached, is
+  tied to Handy through a Windows job object, starts on demand when a
+  request targets it, and stops with Handy. The status bar gained a brain
+  indicator (Stopped / Starting / Ready / Error + alias) and CPU, RAM, GPU
+  and VRAM meters from a single 1 Hz sampler that sleeps while the window
+  is hidden.
+
 - **Help, shortcut cheat sheet and toast history**, ported from the AIVORelay
   fork (2026-09-11): a **Help** page (goal cards, search over the translated
   text, table of contents, one section per feature with an "Open page"

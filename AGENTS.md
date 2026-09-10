@@ -152,6 +152,23 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `direct_stream_writer.rs` - Types the live transcript into the target app
   for `PasteMethod::DirectStreaming` — plain transcription only; see Direct
   Streaming below
+- `llama_server.rs` - In-app llama.cpp supervisor (fork): builds the
+  `llama-server` command line from `settings.llama` (defaults = the
+  maintainer's `launch_server_E2B_Q4.ps1`: Gemma 4 E2B Q4 + MTP draft, 8k
+  ctx, temp 0.05 / top-p 0.35, reasoning off), spawns it detached with piped
+  output into a 400-line ring buffer, polls `/health`, and emits
+  `LlamaServerStateEvent`. `ensure_ready_for_provider` (called from
+  `llm_client::send_chat_completion_with_schema`) starts it on demand when
+  a request targets the local port. `adopt_detected_install_if_unconfigured`
+  picks up an existing `<home>/Downloads/PROJECTS/Llama.cpp` layout on
+  first run. Stopped on `RunEvent::Exit` and, on Windows, by a job object
+  (`job_object.rs`) if Handy dies
+- `llama_releases.rs` - GitHub release discovery (10-minute cache), backend
+  detection via nvidia-smi, streamed download with `LlamaDownloadEvent`
+  progress, pure-Rust zip extraction into `<app data>/llama_cpp/<backend>-<tag>`
+- `system_monitor.rs` - One sampler thread, 1 Hz, CPU + RAM (sysinfo) and
+  GPU / VRAM / temperature (NVML when present) as `SystemStatsEvent`; idle
+  while the main window is hidden
 - `llm_client.rs` - OpenAI-compatible API client for post-processing and Multi-STT merge
   - Includes `erase_llama_server_conversations()` for llama.cpp conversation cleanup (only called for the `custom` provider)
 - `clipboard.rs`, `paste_tx/` - Paste strategies (clipboard, direct typing,
@@ -180,6 +197,11 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   `shortcut-<id>` anchor). Pinned state and width live in `localStorage`.
   Shows a "set your shortcut" call-out instead of hiding when nothing is
   bound, since fresh installs ship without a transcribe hotkey
+- `components/settings/llama/LlamaSettings.tsx` + `stores/llamaStore.ts` -
+  Local LLM page (server control + logs, release install, model pickers,
+  command-line editor with live preview); `footer/BrainIndicator.tsx` and
+  `footer/SystemMeters.tsx` are the status-bar brain state and CPU/RAM/GPU/
+  VRAM meters
 - `components/settings/help/` - Help page (`helpContent.ts` is the list of
   sections/anchors, copy under `help.*`); `settings/QuickHelp.tsx` maps
   each page to a one-line summary and a Help anchor
@@ -462,6 +484,10 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   `catalog::default_id_for_repo`). Model files on disk are never deleted;
   the old ONNX directories under the models folder are simply no longer
   listed
+- `llama` - One nested `LlamaSettings` struct (server folder, model / draft /
+  mmproj paths, port, context, sampling, alias, extra or custom args,
+  autostart / start-on-demand / stop-on-exit, backend, channel), persisted
+  through `change_llama_settings`; see `llama_server::build_args`
 - `file_transcription` - One nested `FileTranscriptionSettings` struct (mode,
   output_dir, output_format, overwrite_existing, include_subfolders,
   max_segment_minutes) persisted through a single command; see Transcribe Files

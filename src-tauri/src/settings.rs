@@ -425,6 +425,137 @@ impl FileTranscriptionSettings {
     }
 }
 
+/// The in-app llama.cpp server ("brain") behind post-processing and the
+/// Multi-STT merge. Defaults reproduce `launch_server_E2B_Q4.ps1`: Gemma 4
+/// E2B Q4 with its MTP draft, 8k context, sampling tuned for the merge/clean
+/// prompts (temp 0.05, top-p 0.35), reasoning off, alias
+/// `gemma-4-E2B-Q4-MTP`. See `llama_server::build_args`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct LlamaSettings {
+    /// Folder that contains `llama-server(.exe)`: an install made by Handy
+    /// (`<app data>/llama_cpp/<backend>-<tag>`) or any existing one.
+    pub server_dir: Option<String>,
+    pub model_path: Option<String>,
+    /// MTP / speculative draft model (`--model-draft`, `--spec-type draft-mtp`).
+    pub draft_model_path: Option<String>,
+    pub mmproj_path: Option<String>,
+    /// Load the mmproj (vision/audio). Off saves ~1 GB of VRAM for text use.
+    pub mmproj_enabled: bool,
+    pub port: u16,
+    pub context_size: u32,
+    /// `-ngl`; -1 = all layers on the GPU.
+    pub gpu_layers: i32,
+    /// `--threads`; -1 = let llama.cpp choose.
+    pub threads: i32,
+    pub flash_attn: bool,
+    /// `--reasoning on|off` (Gemma 4 thinking mode; off is much faster).
+    pub reasoning: bool,
+    pub temperature: f32,
+    pub top_p: f32,
+    pub top_k: u32,
+    pub min_p: f32,
+    pub spec_draft_n_max: u32,
+    /// `--alias`; also the model name the post-processing provider sends.
+    pub alias: String,
+    /// Appended verbatim to the generated arguments.
+    pub extra_args: String,
+    /// When set, replaces the generated arguments entirely (everything after
+    /// the executable).
+    pub custom_args: Option<String>,
+    /// `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
+    /// prompts in the S2B2S benchmarks).
+    pub attn_rot_disable: bool,
+    /// Start the server when Handy starts.
+    pub autostart: bool,
+    /// Start the server when a request targets it and it is not running.
+    pub start_on_demand: bool,
+    pub stop_on_exit: bool,
+    /// Preferred release asset: `auto`, `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`.
+    pub backend: String,
+    /// `latest`, `stable` or `nightly` for the release list.
+    pub channel: String,
+}
+
+impl Default for LlamaSettings {
+    fn default() -> Self {
+        Self {
+            server_dir: None,
+            model_path: None,
+            draft_model_path: None,
+            mmproj_path: None,
+            mmproj_enabled: false,
+            port: 62966,
+            context_size: 8192,
+            gpu_layers: -1,
+            threads: -1,
+            flash_attn: true,
+            reasoning: false,
+            temperature: 0.05,
+            top_p: 0.35,
+            top_k: 64,
+            min_p: 0.0,
+            spec_draft_n_max: 4,
+            alias: "gemma-4-E2B-Q4-MTP".to_string(),
+            extra_args: String::new(),
+            custom_args: None,
+            attn_rot_disable: true,
+            autostart: false,
+            start_on_demand: true,
+            stop_on_exit: true,
+            backend: "auto".to_string(),
+            channel: "latest".to_string(),
+        }
+    }
+}
+
+impl LlamaSettings {
+    pub fn normalized(mut self) -> Self {
+        let clean = |v: Option<String>| v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        self.server_dir = clean(self.server_dir);
+        self.model_path = clean(self.model_path);
+        self.draft_model_path = clean(self.draft_model_path);
+        self.mmproj_path = clean(self.mmproj_path);
+        self.custom_args = clean(self.custom_args);
+        if self.port < 1024 {
+            self.port = 62966;
+        }
+        self.context_size = self.context_size.clamp(512, 262_144);
+        self.gpu_layers = self.gpu_layers.max(-1);
+        self.threads = self.threads.max(-1);
+        self.temperature = if self.temperature.is_finite() {
+            self.temperature.clamp(0.0, 2.0)
+        } else {
+            0.05
+        };
+        self.top_p = if self.top_p.is_finite() {
+            self.top_p.clamp(0.0, 1.0)
+        } else {
+            0.35
+        };
+        self.min_p = if self.min_p.is_finite() {
+            self.min_p.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.top_k = self.top_k.min(1000);
+        self.spec_draft_n_max = self.spec_draft_n_max.clamp(1, 16);
+        let alias = self.alias.trim();
+        self.alias = if alias.is_empty() {
+            "gemma-4-E2B-Q4-MTP".into()
+        } else {
+            alias.into()
+        };
+        if !["auto", "cuda-13.3", "cuda-12.4", "vulkan", "cpu"].contains(&self.backend.as_str()) {
+            self.backend = "auto".into();
+        }
+        if !["latest", "stable", "nightly"].contains(&self.channel.as_str()) {
+            self.channel = "latest".into();
+        }
+        self
+    }
+}
+
 /// How Live Mode grows the transcript file while you speak.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -750,6 +881,9 @@ pub struct AppSettings {
     /// "Live Mode" page (fork feature).
     #[serde(default)]
     pub live_mode: LiveModeSettings,
+    /// In-app llama.cpp server (fork feature).
+    #[serde(default)]
+    pub llama: LlamaSettings,
 }
 
 fn default_vad_threshold_earshot() -> f32 {
@@ -1303,6 +1437,7 @@ pub fn get_default_settings() -> AppSettings {
         mic_idle_infinite: false,
         native_streaming_latency_presets: HashMap::new(),
         file_transcription: FileTranscriptionSettings::default(),
+        llama: LlamaSettings::default(),
         live_mode: LiveModeSettings::default(),
     }
 }

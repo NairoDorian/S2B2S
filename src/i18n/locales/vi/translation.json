@@ -21,7 +21,8 @@
     "statistics": "Statistics",
     "fileTranscription": "Transcribe Files",
     "liveMode": "Live Mode",
-    "help": "Help"
+    "help": "Help",
+    "llama": "Local LLM"
   },
   "onboarding": {
     "subtitle": "Để bắt đầu, hãy chọn một mô hình chuyển đổi giọng nói",
@@ -1079,6 +1080,116 @@
         "item": "{{date}} · {{chunks}} chunk(s) · {{size}}",
         "view": "View"
       }
+    },
+    "llama": {
+      "status": {
+        "stopped": "Stopped",
+        "starting": "Starting…",
+        "ready": "Ready",
+        "error": "Error"
+      },
+      "server": {
+        "title": "Server",
+        "description": "The llama.cpp server Handy supervises. It runs detached (no console window), is stopped with Handy, and its output is kept below.",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "useForPostProcessing": "Use for post-processing & merge",
+        "useForPostProcessingDescription": "Point the Custom LLM provider at http://127.0.0.1:<port>/v1 with the alias as model, and select it. Turn post-processing on in Post Process afterwards if it is off.",
+        "apply": "Use this server",
+        "appliedToast": "Post-processing now targets the local server on port {{port}}.",
+        "startOnDemand": "Start when needed",
+        "startOnDemandDescription": "When a post-processing or merge request targets this server and it is not running, start it and wait for it to be ready (up to three minutes).",
+        "autostart": "Start with Handy",
+        "autostartDescription": "Launch the server in the background when Handy starts, so the first request never waits for a model load.",
+        "stopOnExit": "Stop when Handy quits",
+        "stopOnExitDescription": "Off keeps the server (and the GPU memory it holds) alive after Handy exits.",
+        "logs": "Server output",
+        "logsDescription": "The last 400 lines of llama-server's output.",
+        "showLogs": "Show output",
+        "hideLogs": "Hide output",
+        "noLogs": "No output yet."
+      },
+      "backend": {
+        "title": "llama.cpp build",
+        "description": "Which llama-server binary runs. Install a release here (the same GitHub assets the download script fetched) or use a folder you already have.",
+        "serverDir": "Server folder",
+        "serverDirDescription": "Folder containing llama-server.exe.",
+        "serverDirPlaceholder": "…\\llama or <app data>\\llama_cpp\\cuda-13.3-b10630",
+        "detect": "Detect existing",
+        "detectNone": "No existing llama.cpp folder found in the usual places.",
+        "detectFound": "Using {{dir}}",
+        "preferred": "Backend and channel",
+        "preferredDescription": "Asset to install: auto picks CUDA when nvidia-smi reports it (detected: {{detected}}), otherwise CPU. Channel: latest build, stable releases only, or nightly builds only.",
+        "channel": {
+          "latest": "Latest build",
+          "stable": "Stable",
+          "nightly": "Nightly"
+        },
+        "releases": "Releases",
+        "releasesDescription": "From github.com/ggml-org/llama.cpp, cached for ten minutes. CUDA installs also fetch the matching cudart package.",
+        "loading": "Loading releases…",
+        "downloading": "Downloading",
+        "extracting": "Unpacking…",
+        "install": "Install",
+        "noReleases": "No releases loaded.",
+        "installed": "Installed builds",
+        "installedDescription": "Builds installed by Handy under its data folder.",
+        "use": "Use",
+        "active": "Active",
+        "missingServer": "llama-server missing",
+        "noneInstalled": "Nothing installed yet."
+      },
+      "model": {
+        "title": "Model files",
+        "description": "GGUF files for the server. Files next to the chosen model are listed for the pickers; any path can be typed or browsed.",
+        "none": "None",
+        "model": "Model",
+        "modelDescription": "The main GGUF (for example gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf).",
+        "draft": "MTP draft model",
+        "draftDescription": "Speculative decoding draft (mtp-*.gguf). Adds --model-draft with --spec-type draft-mtp; the fastest configuration measured for the merge and clean prompts.",
+        "mmproj": "mmproj (vision / audio)",
+        "mmprojDescription": "Multimodal projector. Only loaded when the toggle below is on.",
+        "mmprojEnabled": "Load mmproj",
+        "mmprojEnabledDescription": "Off saves about 1 GB of VRAM and a little speed; text post-processing does not need it.",
+        "pathPlaceholder": "C:\\path\\to\\file.gguf"
+      },
+      "command": {
+        "title": "Command line",
+        "description": "Defaults reproduce the launch script: 8k context, all layers on the GPU, flash attention, sampling tuned for the merge/clean prompts (temp 0.05, top-p 0.35), reasoning off, MTP draft with 4 tokens.",
+        "preview": "Command that will run",
+        "previewDescription": "Restart the server after changing anything here.",
+        "port": "Port",
+        "portDescription": "The provider base URL is http://127.0.0.1:<port>/v1.",
+        "context_size": "Context size (-c)",
+        "context_sizeDescription": "Tokens of context. 8192 covers long transcripts with room for the prompt.",
+        "gpu_layers": "GPU layers (-ngl)",
+        "gpu_layersDescription": "-1 puts every layer on the GPU.",
+        "threads": "Threads",
+        "threadsDescription": "-1 lets llama.cpp choose.",
+        "top_k": "top-k",
+        "top_kDescription": "Sampling: keep the k most likely tokens.",
+        "spec_draft_n_max": "Draft tokens (spec-draft-n-max)",
+        "spec_draft_n_maxDescription": "Tokens the MTP draft proposes per step. 4 in the script.",
+        "temperature": "Temperature",
+        "temperatureDescription": "0.05 in the script: near-deterministic cleanup.",
+        "top_p": "top-p",
+        "top_pDescription": "0.35 in the script.",
+        "min_p": "min-p",
+        "min_pDescription": "0 in the script.",
+        "alias": "Alias",
+        "aliasDescription": "Model name the server answers to; the provider sends it as the model.",
+        "flashAttn": "Flash attention",
+        "flashAttnDescription": "--flash-attn on. Faster on CUDA.",
+        "reasoning": "Reasoning (thinking mode)",
+        "reasoningDescription": "--reasoning on. Off is much faster and what the cleanup prompts expect.",
+        "attnRot": "LLAMA_ATTN_ROT_DISABLE=1",
+        "attnRotDescription": "Environment flag that measured +3–4 % on short prompts.",
+        "extraArgs": "Extra arguments",
+        "extraArgsDescription": "Appended to the generated command.",
+        "customArgs": "Custom arguments (advanced)",
+        "customArgsDescription": "When not empty, replaces everything after llama-server. Use the preview above as a starting point."
+      }
     }
   },
   "footer": {
@@ -1094,7 +1205,18 @@
     "portableUpdateMessage": "Bản cài đặt di động không thể cập nhật tự động. Hãy tải trình cài đặt phù hợp với hệ thống của bạn bên dưới, chạy nó và cài vào cùng thư mục — thư mục Data/ (cài đặt, mô hình, bản ghi) của bạn được giữ nguyên.",
     "portableUpdateButton": "Tải trình cài đặt",
     "portableUpdateBrowseMessage": "Bản cài đặt di động không thể cập nhật tự động. Hãy tải phiên bản mới nhất phù hợp với hệ thống của bạn từ GitHub Releases và cài vào cùng thư mục — thư mục Data/ (cài đặt, mô hình, bản ghi) của bạn được giữ nguyên.",
-    "portableUpdateBrowseButton": "Mở GitHub Releases"
+    "portableUpdateBrowseButton": "Mở GitHub Releases",
+    "brain": "Local LLM",
+    "meters": {
+      "cpu": "CPU",
+      "ram": "RAM",
+      "gpu": "GPU",
+      "vram": "VRAM",
+      "cpuTitle": "CPU load {{percent}}%",
+      "ramTitle": "RAM {{used}} of {{total}}",
+      "gpuTitle": "{{name}}: {{percent}}% busy, {{temp}}",
+      "vramTitle": "VRAM {{used}} of {{total}}"
+    }
   },
   "common": {
     "loading": "Đang tải...",
@@ -1284,7 +1406,8 @@
     "liveMode": "Keep the microphone open for as long as you like: the audio is saved in chunks and the transcript written to a file while you speak.",
     "advanced": "Noise suppression, voice detection with a live test, paste behaviour, and the settings that trade latency for accuracy.",
     "postprocessing": "Send the transcript through a language model to clean it up, using a prompt you write, before it is pasted.",
-    "debug": "Diagnostics: recent errors, log level, live logs, keyboard checks, and the timing knobs behind pasting."
+    "debug": "Diagnostics: recent errors, log level, live logs, keyboard checks, and the timing knobs behind pasting.",
+    "llama": "Run the llama.cpp server that post-processing and the Multi-STT merge talk to: install a build, pick the model files, tune the command, start it."
   },
   "help": {
     "title": "Help",
@@ -1362,6 +1485,10 @@
       "troubleshooting": {
         "title": "Something is not working.",
         "summary": "Nothing happens on the hotkey: check that one is set in General and not used by another app. No text: open the Debug page (Ctrl+Shift+D) and look at recent errors and the live log. Words missing: lower the VAD Threshold or run the live test. Slow: pick a smaller model or a lighter quantization. When reporting a problem, include the log file from the Debug page and the model name."
+      },
+      "llama": {
+        "title": "Local LLM: the brain behind post-processing and merging.",
+        "summary": "The Local LLM page runs llama.cpp for you. Install a build (CUDA, Vulkan or CPU) from the releases list or point Handy at a folder that already has llama-server, pick the model, its MTP draft and the optional mmproj, and press Start. The command line shown is exactly what runs. \"Use for post-processing & merge\" points the LLM provider at this server; with \"Start when needed\" on, the first post-process request starts it and waits. The status-bar brain shows Stopped / Starting / Ready / Error, next to the CPU, RAM, GPU and VRAM meters."
       }
     },
     "aiAssist": {

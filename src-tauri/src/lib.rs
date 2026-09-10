@@ -12,7 +12,10 @@ pub mod direct_stream_writer;
 mod file_transcription;
 mod helpers;
 mod input;
+mod job_object;
 mod live_mode;
+mod llama_releases;
+mod llama_server;
 mod llm_client;
 mod managers;
 mod memory;
@@ -23,6 +26,7 @@ mod secure_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod system_monitor;
 mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
@@ -226,6 +230,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(statistics_manager.clone());
     app_handle.manage(tray::TrayState::new());
     app_handle.manage(Arc::new(file_transcription::FileTranscriptionManager::new()));
+    // In-app llama.cpp server: adopt an existing install on first run, then
+    // optionally start it in the background so the first post-process request
+    // finds a warm server. The status-bar meters start their sampler thread.
+    llama_server::adopt_detected_install_if_unconfigured(app_handle);
+    let llama_manager = llama_server::init(app_handle);
+    app_handle.manage(Arc::clone(&llama_manager));
+    if settings::get_settings(app_handle).llama.autostart {
+        std::thread::spawn(move || {
+            if let Err(e) = llama_manager.start() {
+                log::warn!("llama-server autostart failed: {e}");
+            }
+        });
+    }
+    system_monitor::start(app_handle.clone());
     app_handle.manage(Arc::new(live_mode::LiveModeManager::new(
         app_handle.clone(),
     )));
@@ -749,6 +767,22 @@ pub fn run(cli_args: CliArgs) {
             commands::is_portable,
             commands::audio::start_vad_test,
             commands::audio::stop_vad_test,
+            commands::llama::get_llama_server_state,
+            commands::llama::get_llama_server_logs,
+            commands::llama::start_llama_server,
+            commands::llama::stop_llama_server,
+            commands::llama::restart_llama_server,
+            commands::llama::change_llama_settings,
+            commands::llama::get_llama_command_preview,
+            commands::llama::list_gguf_files,
+            commands::llama::detect_llama_install,
+            commands::llama::apply_llama_to_post_processing,
+            commands::llama::fetch_llama_releases,
+            commands::llama::detect_llama_backend,
+            commands::llama::list_installed_llama_servers,
+            commands::llama::install_llama_release,
+            commands::llama::remove_installed_llama_server,
+            commands::system::get_system_stats,
             commands::is_update_checks_locked,
             commands::get_app_dir_path,
             commands::get_app_settings,
@@ -836,6 +870,9 @@ pub fn run(cli_args: CliArgs) {
             managers::statistics::StatisticsUpdatedEvent,
             overlay::SpeechActivityEvent,
             managers::audio::VadTestEvent,
+            llama_server::LlamaServerStateEvent,
+            llama_releases::LlamaDownloadEvent,
+            system_monitor::SystemStatsEvent,
             file_transcription::FileTranscriptionEvent,
             live_mode::LiveModeStateEvent,
             live_mode::LiveModeTranscriptEvent,
@@ -1148,6 +1185,13 @@ pub fn run(cli_args: CliArgs) {
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
                 tm.unload_all_extra_models();
+            }
+            // The job object would end llama-server anyway; stop it cleanly
+            // first so the port is released before the process goes.
+            if settings::get_settings(app).llama.stop_on_exit {
+                if let Some(llama) = llama_server::global() {
+                    llama.stop();
+                }
             }
         }
         _ => {}

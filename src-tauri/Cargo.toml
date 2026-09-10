@@ -55,6 +55,13 @@ earshot = "1.2.2"
 # RNNoise noise suppression (pure-Rust port, weights compiled in). Default
 # features pull a CLI + dasp; only the DenoiseState API is needed.
 nnnoiseless = { version = "0.5.2", default-features = false }
+# In-app llama.cpp server manager: release archives are unpacked with the
+# pure-Rust zip crate (no PowerShell / tar shell-outs).
+zip = { version = "4.6", default-features = false, features = ["deflate"] }
+# Status-bar meters: one sampler thread, CPU + RAM from sysinfo, GPU from NVML
+# when the NVIDIA driver library is present (loaded at runtime, optional).
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+nvml-wrapper = "0.13"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
 reqwest = { version = "^0.13.5", features = ["json", "stream", "gzip", "brotli", "deflate"] }
@@ -104,6 +111,7 @@ windows = { version = "0.62.2", features = [
   "Win32_System_Ole",
   "Win32_System_Memory",
   "Win32_System_Threading",
+  "Win32_System_JobObjects",
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

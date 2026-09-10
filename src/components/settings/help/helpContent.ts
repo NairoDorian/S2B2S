@@ -67,6 +67,7 @@ export const HELP_SECTIONS: readonly HelpSectionDefinition[] = [
     "sidebar.postProcessing",
     true,
   ),
+  entry("llama", "help-llama", "llama", "llama", "sidebar.llama"),
   entry(
     "multiStt",
     "help-multi-stt",

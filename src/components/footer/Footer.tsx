@@ -3,6 +3,8 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import ModelSelector from "../model-selector";
 import UpdateChecker from "../update-checker";
+import BrainIndicator from "./BrainIndicator";
+import SystemMeters from "./SystemMeters";
 
 const Footer: React.FC = () => {
   const [version, setVersion] = useState("");
@@ -25,9 +27,13 @@ const Footer: React.FC = () => {
     <div className="w-full border-t border-mid-gray/20 pt-3">
       <div className="flex items-center justify-between gap-3 text-xs px-4 pb-3 text-text/60">
         <ModelSelector />
+        <span className="text-mid-gray/30">|</span>
+        <BrainIndicator />
+        <span className="text-mid-gray/30">|</span>
+        <SystemMeters />
 
         {/* Update Status */}
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 ms-auto">
           <UpdateChecker />
           <span>•</span>
           <span>{`v${version}`}</span>

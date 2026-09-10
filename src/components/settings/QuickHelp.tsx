@@ -22,6 +22,7 @@ const QUICK_HELP: Partial<
   },
   liveMode: { copyKey: "quickHelp.liveMode", anchor: "help-live-mode" },
   advanced: { copyKey: "quickHelp.advanced", anchor: "help-advanced" },
+  llama: { copyKey: "quickHelp.llama", anchor: "help-llama" },
   postprocessing: {
     copyKey: "quickHelp.postprocessing",
     anchor: "help-post-processing",

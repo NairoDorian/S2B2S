@@ -2,8 +2,10 @@ pub mod audio;
 pub mod file_transcription;
 pub mod history;
 pub mod live_mode;
+pub mod llama;
 pub mod models;
 pub mod statistics;
+pub mod system;
 pub mod transcription;
 
 use crate::settings::{

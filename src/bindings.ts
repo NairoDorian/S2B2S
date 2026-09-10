@@ -128,6 +128,49 @@ export const commands = {
 	startVadTest: () => typedError<null, string>(__TAURI_INVOKE("start_vad_test")),
 	/**  Stop the live VAD test and discard its audio. */
 	stopVadTest: () => typedError<null, string>(__TAURI_INVOKE("stop_vad_test")),
+	getLlamaServerState: () => __TAURI_INVOKE<LlamaServerStateEvent>("get_llama_server_state"),
+	getLlamaServerLogs: () => __TAURI_INVOKE<string[]>("get_llama_server_logs"),
+	startLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("start_llama_server")),
+	stopLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("stop_llama_server")),
+	restartLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("restart_llama_server")),
+	/**
+	 *  Persist the llama settings. A running server keeps its current command
+	 *  line until it is restarted; the UI offers that explicitly.
+	 */
+	changeLlamaSettings: (settings: LlamaSettings) => typedError<null, string>(__TAURI_INVOKE("change_llama_settings", { settings })),
+	/**  The command line the current settings would launch, for the page preview. */
+	getLlamaCommandPreview: () => typedError<string, string>(__TAURI_INVOKE("get_llama_command_preview")),
+	listGgufFiles: (dir: string) => __TAURI_INVOKE<GgufFile[]>("list_gguf_files", { dir }),
+	detectLlamaInstall: () => __TAURI_INVOKE<{
+	server_dir: string,
+	model_path: string | null,
+	draft_model_path: string | null,
+	mmproj_path: string | null,
+} | null>("detect_llama_install"),
+	applyLlamaToPostProcessing: () => typedError<null, string>(__TAURI_INVOKE("apply_llama_to_post_processing")),
+	fetchLlamaReleases: (channel: string, force: boolean) => typedError<LlamaRelease[], string>(__TAURI_INVOKE("fetch_llama_releases", { channel, force })),
+	detectLlamaBackend: () => __TAURI_INVOKE<string>("detect_llama_backend"),
+	listInstalledLlamaServers: () => __TAURI_INVOKE<InstalledLlamaServer[]>("list_installed_llama_servers"),
+	/**
+	 *  Download + unpack a release; progress arrives as `LlamaDownloadEvent`.
+	 *  Runs to completion in the background so the page can navigate away.
+	 */
+	installLlamaRelease: (tag: string, backend: string) => typedError<null, string>(__TAURI_INVOKE("install_llama_release", { tag, backend })),
+	removeInstalledLlamaServer: (dir: string) => typedError<null, string>(__TAURI_INVOKE("remove_installed_llama_server", { dir })),
+	/**
+	 *  The most recent sample, so a footer that mounts between ticks does not
+	 *  show empty meters for up to a second.
+	 */
+	getSystemStats: () => __TAURI_INVOKE<{
+	cpu_percent: number | null,
+	mem_used_mb: number,
+	mem_total_mb: number,
+	gpu_name: string | null,
+	gpu_percent: number | null,
+	vram_used_mb: number | null,
+	vram_total_mb: number | null,
+	gpu_temp_c: number | null,
+} | null>("get_system_stats"),
 	isUpdateChecksLocked: () => __TAURI_INVOKE<boolean>("is_update_checks_locked"),
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
 	getAppSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_app_settings")),
@@ -320,10 +363,13 @@ export const events = {
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
 	liveModeStateEvent: makeEvent<LiveModeStateEvent>("live-mode-state-event"),
 	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent>("live-mode-transcript-event"),
+	llamaDownloadEvent: makeEvent<LlamaDownloadEvent>("llama-download-event"),
+	llamaServerStateEvent: makeEvent<LlamaServerStateEvent>("llama-server-state-event"),
 	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
 	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
 	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
+	systemStatsEvent: makeEvent<SystemStatsEvent>("system-stats-event"),
 	vadTestEvent: makeEvent<VadTestEvent>("vad-test-event"),
 };
 
@@ -510,6 +556,8 @@ export type AppSettings_Deserialize = {
 	file_transcription?: FileTranscriptionSettings,
 	/**  "Live Mode" page (fork feature). */
 	live_mode?: LiveModeSettings,
+	/**  In-app llama.cpp server (fork feature). */
+	llama?: LlamaSettings,
 };
 
 /**
@@ -685,6 +733,8 @@ export type AppSettings_Serialize = {
 	file_transcription: FileTranscriptionSettings,
 	/**  "Live Mode" page (fork feature). */
 	live_mode: LiveModeSettings,
+	/**  In-app llama.cpp server (fork feature). */
+	llama: LlamaSettings,
 };
 
 export type AudioDevice = {
@@ -809,6 +859,15 @@ export type FileTranscriptionStatus = {
 	current_path: string | null,
 };
 
+/**  A GGUF file found in a folder, for the model / draft / mmproj pickers. */
+export type GgufFile = {
+	path: string,
+	name: string,
+	size_mb: number,
+	/**  `model`, `draft` (MTP / speculative) or `mmproj`, guessed from the name. */
+	kind: string,
+};
+
 export type GpuDeviceOption = {
 	id: string,
 	name: string,
@@ -845,6 +904,15 @@ export type ImplementationChangeResult = {
 	success: boolean,
 	/**  List of binding IDs that were reset to defaults due to incompatibility */
 	reset_bindings: string[],
+};
+
+export type InstalledLlamaServer = {
+	dir: string,
+	name: string,
+	backend: string,
+	tag: string,
+	has_server: boolean,
+	size_mb: number,
 };
 
 export type KeyboardDiagnosticReport = {
@@ -950,6 +1018,126 @@ export type LiveTranscriptGranularity =
 "character" | 
 /**  Only write text up to the last completed word. */
 "word";
+
+/**  An existing llama.cpp install found outside Handy's data dir. */
+export type LlamaDetectedInstall = {
+	server_dir: string,
+	model_path: string | null,
+	draft_model_path: string | null,
+	mmproj_path: string | null,
+};
+
+/**  Progress of one install, from download start to done/error. */
+export type LlamaDownloadEvent = {
+	tag: string,
+	backend: string,
+	/**  `downloading`, `extracting`, `done`, `error` */
+	phase: string,
+	downloaded_bytes: number | null,
+	total_bytes: number | null,
+	message: string | null,
+	/**  Install folder, once `done`. */
+	dir: string | null,
+};
+
+export type LlamaRelease = {
+	tag: string,
+	name: string,
+	published_at: string,
+	prerelease: boolean,
+	/**  `b<number>` of this release or of the nightly it points to. */
+	build_number: number,
+	/**  Windows x64 binary assets (no cudart packages). */
+	assets: LlamaReleaseAsset[],
+	/**  For SemVer releases without binaries: the nightly tag that has them. */
+	backing_tag: string | null,
+};
+
+export type LlamaReleaseAsset = {
+	name: string,
+	size_bytes: number | null,
+	url: string,
+	/**  `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
+	backend: string,
+};
+
+/**  Snapshot of the supervised server. Also the payload of the state event. */
+export type LlamaServerStateEvent = {
+	status: LlamaStatus,
+	/**  Human-readable reason for `Error`, or the last log line while starting. */
+	message: string | null,
+	pid: number | null,
+	port: number,
+	alias: string,
+	/**  File name of the loaded model. */
+	model: string | null,
+	draft: boolean,
+	mmproj: boolean,
+	/**  Unix milliseconds when the server became ready. */
+	ready_since_ms: number | null,
+	/**  Backend guessed from the server folder name (cuda / vulkan / cpu). */
+	backend: string | null,
+};
+
+/**
+ *  The in-app llama.cpp server ("brain") behind post-processing and the
+ *  Multi-STT merge. Defaults reproduce `launch_server_E2B_Q4.ps1`: Gemma 4
+ *  E2B Q4 with its MTP draft, 8k context, sampling tuned for the merge/clean
+ *  prompts (temp 0.05, top-p 0.35), reasoning off, alias
+ *  `gemma-4-E2B-Q4-MTP`. See `llama_server::build_args`.
+ */
+export type LlamaSettings = {
+	/**
+	 *  Folder that contains `llama-server(.exe)`: an install made by Handy
+	 *  (`<app data>/llama_cpp/<backend>-<tag>`) or any existing one.
+	 */
+	server_dir?: string | null,
+	model_path?: string | null,
+	/**  MTP / speculative draft model (`--model-draft`, `--spec-type draft-mtp`). */
+	draft_model_path?: string | null,
+	mmproj_path?: string | null,
+	/**  Load the mmproj (vision/audio). Off saves ~1 GB of VRAM for text use. */
+	mmproj_enabled?: boolean,
+	port?: number,
+	context_size?: number,
+	/**  `-ngl`; -1 = all layers on the GPU. */
+	gpu_layers?: number,
+	/**  `--threads`; -1 = let llama.cpp choose. */
+	threads?: number,
+	flash_attn?: boolean,
+	/**  `--reasoning on|off` (Gemma 4 thinking mode; off is much faster). */
+	reasoning?: boolean,
+	temperature?: number | null,
+	top_p?: number | null,
+	top_k?: number,
+	min_p?: number | null,
+	spec_draft_n_max?: number,
+	/**  `--alias`; also the model name the post-processing provider sends. */
+	alias?: string,
+	/**  Appended verbatim to the generated arguments. */
+	extra_args?: string,
+	/**
+	 *  When set, replaces the generated arguments entirely (everything after
+	 *  the executable).
+	 */
+	custom_args?: string | null,
+	/**
+	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
+	 *  prompts in the S2B2S benchmarks).
+	 */
+	attn_rot_disable?: boolean,
+	/**  Start the server when Handy starts. */
+	autostart?: boolean,
+	/**  Start the server when a request targets it and it is not running. */
+	start_on_demand?: boolean,
+	stop_on_exit?: boolean,
+	/**  Preferred release asset: `auto`, `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`. */
+	backend?: string,
+	/**  `latest`, `stable` or `nightly` for the release list. */
+	channel?: string,
+};
+
+export type LlamaStatus = "stopped" | "starting" | "ready" | "error";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
@@ -1208,6 +1396,17 @@ export type StreamTextEvent = {
 
 /**  Semantic kind of "working" phase, used to localize the spinner label. */
 export type StreamWorkKind = "transcribing" | "polishing";
+
+export type SystemStatsEvent = {
+	cpu_percent: number | null,
+	mem_used_mb: number,
+	mem_total_mb: number,
+	gpu_name: string | null,
+	gpu_percent: number | null,
+	vram_used_mb: number | null,
+	vram_total_mb: number | null,
+	gpu_temp_c: number | null,
+};
 
 /**
  *  UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`

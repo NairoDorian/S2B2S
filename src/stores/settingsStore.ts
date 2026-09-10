@@ -7,6 +7,7 @@ import type {
   TranscribeAcceleratorSetting,
   FileTranscriptionSettings,
   LiveModeSettings,
+  LlamaSettings,
   LLMPrompt,
   MicIdleTimeoutUnit,
   NativeStreamingLatencyPreset,
@@ -223,6 +224,7 @@ const settingUpdaters: {
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   denoise_enabled: (value) =>
     commands.changeDenoiseEnabledSetting(value as boolean),
+  llama: (value) => commands.changeLlamaSettings(value as LlamaSettings),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>

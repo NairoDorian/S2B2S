@@ -12,6 +12,7 @@ export { StatisticsSettings } from "./statistics/StatisticsSettings";
 export { FileTranscriptionSettings } from "./file-transcription/FileTranscriptionSettings";
 export { LiveModeSettings } from "./live-mode/LiveModeSettings";
 export { HelpSettings } from "./help/HelpSettings";
+export { LlamaSettings } from "./llama/LlamaSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

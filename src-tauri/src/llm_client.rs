@@ -335,6 +335,10 @@ pub async fn send_chat_completion_with_schema(
     json_schema: Option<Value>,
     disable_reasoning: bool,
 ) -> Result<Option<String>, String> {
+    // A request aimed at the supervised llama.cpp server starts it first
+    // (when on-demand start is on); otherwise this returns immediately.
+    crate::llama_server::ensure_ready_for_provider(provider).await;
+
     let base_url = provider.base_url.trim_end_matches('/');
     let url = format!("{}/chat/completions", base_url);
 
