@@ -479,6 +479,16 @@ Press `Ctrl+Shift+D` (Windows/Linux) or `Cmd+Shift+D` (macOS) to toggle debug ov
 | Crash on startup                 | Check `s2b2s-crash.log` in app log directory; report with backtrace                                                                         |
 | No audio output                  | Verify output device selection in Settings → Audio; test with Play Greeting button in TTS settings. Note: SAPI requires a Windows platform. |
 
+### Previous Clipboard Content Is Pasted Instead of the Transcription
+
+If the transcription is correct in **History** but S2B2S inserts text you copied earlier, see [issue #502](https://github.com/cjpais/Handy/issues/502). With the standard clipboard paste method, S2B2S restores your previous clipboard after a fixed delay. Under load, the receiving application may read the clipboard only after that restoration.
+
+1. Open S2B2S's settings window and press `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux) to reveal **Debug**.
+2. On **macOS and Windows**, try **Reliable Paste (Beta)** in Debug with a clipboard paste method selected. It uses clipboard read notifications to delay restoration instead of relying on the standard fixed delay. Test it in the application where the problem occurs; it is still experimental.
+3. If Reliable Paste is disabled or unavailable, increase **Paste Delay (After)** in Debug and test again. This controls the wait before restoring your previous clipboard. **Paste Delay (Before)** controls the wait before sending the paste keystroke and addresses a different part of the operation. These delay settings apply to the standard paste path, not Reliable Paste.
+
+If the problem persists, open an issue with your S2B2S version, operating system, receiving application, paste method, Reliable Paste setting, and before/after delays. Redact private dictated text before sharing logs.
+
 ---
 
 ## How to Contribute
