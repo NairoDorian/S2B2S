@@ -281,6 +281,48 @@ impl HistoryManager {
             warn!("Failed to backfill legacy history entries: {}", e);
         }
 
+        if let Err(e) = Self::repair_multi_stt_word_counts(&conn) {
+            warn!("Failed to repair Multi-STT history word counts: {}", e);
+        }
+
+        Ok(())
+    }
+
+    /// Multi-STT entries re-transcribed from the History page before the
+    /// `counted_word_count` fix stored the word count of the per-model dump
+    /// (every model's output plus the merged text), several times the real
+    /// figure, which the page then turned into an impossible WPM. Recount them
+    /// from the merged text once; rows that already match are left alone.
+    fn repair_multi_stt_word_counts(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare(
+            "SELECT id, transcription_text, post_processed_text, word_count FROM transcription_history WHERE mode = 'multi_stt' AND post_processed_text IS NOT NULL",
+        )?;
+        let rows: Vec<(i32, String, Option<String>, Option<i32>)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .filter_map(|res| res.ok())
+            .collect();
+        drop(stmt);
+
+        let mut repaired = 0usize;
+        for (id, transcription_text, post_processed_text, stored) in rows {
+            let expected = counted_word_count(
+                &transcription_text,
+                post_processed_text.as_deref(),
+                Some("multi_stt"),
+            );
+            if expected.is_some() && expected != stored {
+                conn.execute(
+                    "UPDATE transcription_history SET word_count = ?1 WHERE id = ?2",
+                    params![expected, id],
+                )?;
+                repaired += 1;
+            }
+        }
+        if repaired > 0 {
+            info!("Repaired the word count of {repaired} Multi-STT history entries");
+        }
         Ok(())
     }
 
@@ -588,8 +630,11 @@ impl HistoryManager {
         let extra_models_json = extra_models
             .as_ref()
             .and_then(|m| serde_json::to_string(m).ok());
-        let word_count = (!transcription_text.trim().is_empty())
-            .then(|| transcription_text.split_whitespace().count() as i32);
+        let word_count = counted_word_count(
+            &transcription_text,
+            post_processed_text.as_deref(),
+            mode.as_deref(),
+        );
 
         let conn = self.get_connection()?;
         let updated = conn.execute(
@@ -1007,8 +1052,47 @@ impl HistoryManager {
     }
 }
 
+/// Words in the text the user actually reads. For a Multi-STT entry
+/// `transcription_text` is the per-model dump (every model's output plus the
+/// merged text, i.e. several times the spoken words); the merged result in
+/// `post_processed_text` is the transcript. Counting the dump inflated the
+/// history word count and WPM by roughly the number of models.
+fn counted_word_count(
+    transcription_text: &str,
+    post_processed_text: Option<&str>,
+    mode: Option<&str>,
+) -> Option<i32> {
+    let text = match (mode, post_processed_text) {
+        (Some("multi_stt"), Some(merged)) => merged,
+        _ => transcription_text,
+    };
+    (!text.trim().is_empty()).then(|| text.split_whitespace().count() as i32)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn multi_stt_word_count_uses_the_merged_text() {
+        let dump = "=== Multi-STT Results ===\nModel 1: a\nhello world\nModel 2: b\nhello world\n=== Merged ===\nhello world";
+        assert_eq!(
+            super::counted_word_count(dump, Some("hello world"), Some("multi_stt")),
+            Some(2)
+        );
+        // Other modes keep counting the raw transcription.
+        assert_eq!(
+            super::counted_word_count("one two three", Some("one, two, three!"), Some("single")),
+            Some(3)
+        );
+        assert_eq!(
+            super::counted_word_count("one two", Some("x"), None),
+            Some(2)
+        );
+        assert_eq!(
+            super::counted_word_count("   ", None, Some("multi_stt")),
+            None
+        );
+    }
+
     use super::*;
     use rusqlite::{Connection, params};
 
