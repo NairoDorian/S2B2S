@@ -47,6 +47,12 @@
   }
 }
 
+/* The one deliberate exception to the sharp corners: toggle switches read
+   as switches only when the track and knob are pills. */
+@utility rounded-pill {
+  border-radius: 9999px;
+}
+
 :root {
   /* Typography */
   font-size: 15px;

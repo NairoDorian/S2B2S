@@ -115,7 +115,9 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.debug",
     icon: FlaskConical,
     component: DebugSettings,
-    enabled: (settings) => settings?.debug_mode ?? false,
+    // Always listed: the diagnostics (toast history, logs, live VAD/keyboard
+    // checks) are useful outside debug mode too.
+    enabled: () => true,
   },
   help: {
     labelKey: "sidebar.help",

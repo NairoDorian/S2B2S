@@ -189,7 +189,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off-white ink, neon-cyan accent (light mode keeps the same idea on
   paper); three neon presets join the accent picker; key chips and values
   render in a monospace stack; the sidebar marks the active page with a
-  neon edge instead of a filled block. `docs/PERFORMANCE.md` records the
+  neon edge instead of a filled block. Toggle switches keep their pill shape
+  (the one deliberate exception, via a `rounded-pill` utility), and the Debug
+  page is always listed in the sidebar. `docs/PERFORMANCE.md` records the
   latency budget and rules every change is held to.
 
 - **transcribe.cpp is the only inference runtime and Earshot the only VAD
