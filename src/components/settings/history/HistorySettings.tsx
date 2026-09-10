@@ -597,7 +597,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
       toast.success("Transcript polished with LLM");
     } catch (error) {
       console.error("Failed to post-process:", error);
-      toast.error(t("settings.history.postProcessError"));
+      toast.error(t("settings.history.postProcessError"), {
+        description: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setRetrying(null);
     }
@@ -611,7 +613,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
       toast.success("Multi-STT transcription complete");
     } catch (error) {
       console.error("Failed to Multi-STT re-transcribe:", error);
-      toast.error(t("settings.history.multiSttError"));
+      toast.error(t("settings.history.multiSttError"), {
+        description: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setRetrying(null);
     }

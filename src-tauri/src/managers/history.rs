@@ -630,13 +630,27 @@ impl HistoryManager {
         let extra_models_json = extra_models
             .as_ref()
             .and_then(|m| serde_json::to_string(m).ok());
+        let conn = self.get_connection()?;
+        // Callers that don't change the mode pass None; the word count must
+        // still follow the entry's real mode, or a post-process pass over a
+        // Multi-STT entry would count the per-model dump again.
+        let effective_mode: Option<String> = match &mode {
+            Some(m) => Some(m.clone()),
+            None => conn
+                .query_row(
+                    "SELECT mode FROM transcription_history WHERE id = ?1",
+                    params![id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten(),
+        };
         let word_count = counted_word_count(
             &transcription_text,
             post_processed_text.as_deref(),
-            mode.as_deref(),
+            effective_mode.as_deref(),
         );
 
-        let conn = self.get_connection()?;
         let updated = conn.execute(
             "UPDATE transcription_history
              SET transcription_text = ?1,

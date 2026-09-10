@@ -176,19 +176,34 @@ pub async fn post_process_history_entry(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("History entry {} not found", id))?;
 
-    if entry.transcription_text.trim().is_empty() {
+    // A Multi-STT entry keeps the per-model dump in transcription_text; the
+    // text the user reads (and wants polished) is the merged result. Feeding
+    // the dump to the LLM produced a "cleanup" of four transcripts at once.
+    let source = post_process_source(&entry).trim().to_string();
+    if source.is_empty() {
         return Err("Transcription text is empty".to_string());
     }
 
     let post_process_start = std::time::Instant::now();
-    let processed = process_transcription_output(&app, &entry.transcription_text, true).await;
+    let processed = process_transcription_output(&app, &source, true).await;
     let post_processing_latency_ms = Some(post_process_start.elapsed().as_secs_f64() * 1000.0);
+
+    // No result means the provider was unreachable, disabled, or returned
+    // nothing. Leave the entry exactly as it was — writing None here used to
+    // erase the merged Multi-STT text and expose the raw dump.
+    let Some(polished) = processed.post_processed_text else {
+        return Err(
+            "Post-processing returned nothing: the LLM provider is unreachable or disabled. \
+             The entry was left unchanged."
+                .to_string(),
+        );
+    };
 
     history_manager
         .update_entry_full(
             id,
             entry.transcription_text,
-            processed.post_processed_text,
+            Some(polished),
             processed.post_process_prompt,
             Some(true),
             None,
@@ -200,6 +215,46 @@ pub async fn post_process_history_entry(
         )
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// The text a History post-process pass should polish: the raw transcript
+/// for a normal entry, the merged result for a Multi-STT entry (its
+/// `transcription_text` is the per-model dump). Falls back to the dump's
+/// "=== Merged ===" section when no merged text is stored.
+fn post_process_source(entry: &crate::managers::history::HistoryEntry) -> String {
+    if entry.mode.as_deref() != Some("multi_stt") {
+        return entry.transcription_text.clone();
+    }
+    if let Some(merged) = entry
+        .post_processed_text
+        .as_deref()
+        .filter(|t| !t.trim().is_empty())
+    {
+        return merged.to_string();
+    }
+    merged_section_of_dump(&entry.transcription_text).to_string()
+}
+
+/// Text after the "=== Merged ===" marker of a Multi-STT dump, or the whole
+/// input when the marker is absent.
+fn merged_section_of_dump(dump: &str) -> &str {
+    const MARKER: &str = "=== Merged ===";
+    match dump.rfind(MARKER) {
+        Some(idx) => dump[idx + MARKER.len()..].trim_start_matches(['\r', '\n']),
+        None => dump,
+    }
+}
+
+#[cfg(test)]
+mod post_process_source_tests {
+    use super::merged_section_of_dump;
+
+    #[test]
+    fn merged_section_is_extracted_from_a_dump() {
+        let dump = "=== Multi-STT Results ===\nModel 1: a\nhello\nModel 2: b\nhello there\n=== Merged ===\nhello there";
+        assert_eq!(merged_section_of_dump(dump), "hello there");
+        assert_eq!(merged_section_of_dump("plain text"), "plain text");
+    }
 }
 
 #[tauri::command]
