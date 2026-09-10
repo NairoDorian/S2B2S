@@ -73,7 +73,7 @@ fn extension_for_kind(
 /// Resolve the stream extension for a given model + model id + preset lookup.
 ///
 /// * `kind` comes from `ModelInfo::native_streaming_latency_kind` (catalog
-///   hint — `None` for non-streaming or ONNX models).
+///   hint — `None` for non-streaming models).
 /// * `preset` is read from `settings.native_streaming_latency_presets`.
 ///
 /// Returns `None` when the model has no latency extension, when the user is on

@@ -131,9 +131,6 @@
     "noModelsAvailable": "لا توجد نماذج متاحة",
     "verifying": "جارٍ التحقق من {{modelName}}...",
     "verifyingGeneric": "جارٍ التحقق...",
-    "extracting": "...جاري استخراج {{modelName}}",
-    "extractingMultiple": "...جاري استخراج {{count}} من النماذج",
-    "extractingGeneric": "...جاري الاستخراج",
     "downloading": "جاري التنزيل {{percentage}}%",
     "downloadingMultiple": "جاري تنزيل {{count}} من النماذج...",
     "modelReady": "النموذج جاهز",
@@ -300,10 +297,6 @@
           "title": "تسريع Whisper",
           "description": "تسريع الأجهزة لنماذج Whisper. الوضع التلقائي يستخدم GPU إن توفر (Metal على macOS، Vulkan على Windows/Linux)."
         },
-        "ort": {
-          "title": "تسريع ONNX",
-          "description": "تسريع الأجهزة لنماذج ONNX (Parakeet، Canary، Moonshine، إلخ). DirectML على Windows تجريبي. قد تفشل النماذج في النسخ."
-        },
         "gpuDevice": {
           "auto": "تلقائي"
         }
@@ -421,14 +414,6 @@
         "title": "كشف النشاط الصوتي",
         "description": "تصفية الصمت من التسجيلات. النماذج التي تدعم البث تستخدم فترة VAD أطول؛ وتعطيل VAD يسجّل الصوت الخام."
       },
-      "vadBackend": {
-        "title": "محرك اكتشاف النشاط الصوتي",
-        "description": "تطبيق كاشف تجريبي. يظل Silero هو الخيار الافتراضي المستقر.",
-        "options": {
-          "silero": "Silero VAD",
-          "earshot": "Earshot VAD (تجريبي)"
-        }
-      },
       "fillerWordRemoval": {
         "title": "إزالة كلمات الحشو",
         "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها."
@@ -457,8 +442,8 @@
         }
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

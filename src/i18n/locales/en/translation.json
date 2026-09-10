@@ -133,9 +133,6 @@
     "noModelsAvailable": "No models available",
     "verifying": "Verifying {{modelName}}...",
     "verifyingGeneric": "Verifying...",
-    "extracting": "Extracting {{modelName}}...",
-    "extractingMultiple": "Extracting {{count}} models...",
-    "extractingGeneric": "Extracting...",
     "downloading": "Downloading {{percentage}}%",
     "downloadingMultiple": "Downloading {{count}} models...",
     "modelReady": "Model Ready",
@@ -328,10 +325,6 @@
           "title": "transcribe.cpp Acceleration",
           "description": "Hardware acceleration for transcribe.cpp (Whisper-family) models. Auto uses GPU if available (Metal on macOS, Vulkan on Windows/Linux)."
         },
-        "ort": {
-          "title": "ONNX Acceleration",
-          "description": "Hardware acceleration for ONNX models (Parakeet, Canary, Moonshine, etc.). DirectML on Windows is experimental. Models may fail to transcribe."
-        },
         "gpuDevice": {
           "auto": "Auto"
         }
@@ -449,14 +442,6 @@
         "title": "Voice Activity Detection",
         "description": "Filter silence from recordings. Streaming-capable models use a longer VAD tail; disabling VAD records raw audio."
       },
-      "vadBackend": {
-        "title": "Voice Activity Backend",
-        "description": "Choose the detector used to filter silence. Earshot is experimental; switch back to Silero if speech is clipped or noise is retained.",
-        "options": {
-          "silero": "Silero",
-          "earshot": "Earshot"
-        }
-      },
       "speechStats": {
         "title": "Speech Stats in Overlay",
         "description": "Show live speech statistics in the recording overlay: whether you are speaking or paused, a timer that counts only while you are actually talking, and your running average words per minute. Words per minute needs a streaming-capable model, since it is measured from the live transcription.",
@@ -481,8 +466,8 @@
         "minutes": "Minutes"
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

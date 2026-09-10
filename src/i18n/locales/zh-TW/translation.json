@@ -132,9 +132,6 @@
     "noModelsAvailable": "沒有可用的模型",
     "verifying": "正在驗證 {{modelName}}...",
     "verifyingGeneric": "正在驗證...",
-    "extracting": "正在解壓 {{modelName}}...",
-    "extractingMultiple": "正在解壓 {{count}} 個模型...",
-    "extractingGeneric": "解壓中...",
     "downloading": "下載中 {{percentage}}%",
     "downloadingMultiple": "正在下載 {{count}} 個模型...",
     "modelReady": "模型已就緒",
@@ -324,10 +321,6 @@
           "title": "Whisper 加速",
           "description": "Whisper 模型的硬體加速。自動模式在可用時使用 GPU（macOS 上使用 Metal，Windows/Linux 上使用 Vulkan）。"
         },
-        "ort": {
-          "title": "ONNX 加速",
-          "description": "ONNX 模型的硬體加速（Parakeet、Canary、Moonshine 等）。Windows 上的 DirectML 為實驗性功能。模型可能無法正常轉錄。"
-        },
         "gpuDevice": {
           "auto": "自動"
         }
@@ -445,14 +438,6 @@
         "title": "語音活動偵測",
         "description": "過濾錄音中的靜音。支援串流的模型會使用較長的 VAD 尾段；停用 VAD 則會錄製原始音訊"
       },
-      "vadBackend": {
-        "title": "語音活動偵測後端",
-        "description": "實驗性偵測器實作。Silero 仍為穩定的預設值。",
-        "options": {
-          "silero": "Silero VAD",
-          "earshot": "Earshot VAD（實驗性）"
-        }
-      },
       "fillerWordRemoval": {
         "title": "移除語助詞",
         "description": "從轉錄中移除常見的語助詞。關閉此選項即可保留這些詞。"
@@ -481,8 +466,8 @@
         }
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

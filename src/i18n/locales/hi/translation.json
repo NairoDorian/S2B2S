@@ -133,9 +133,6 @@
     "noModelsAvailable": "कोई मॉडल उपलब्ध नहीं है",
     "verifying": "{{modelName}} की पुष्टि हो रही है...",
     "verifyingGeneric": "पुष्टि हो रही है...",
-    "extracting": "{{modelName}} एक्सट्रैक्ट हो रहा है...",
-    "extractingMultiple": "{{count}} मॉडल एक्सट्रैक्ट हो रहे हैं...",
-    "extractingGeneric": "एक्सट्रैक्ट हो रहा है...",
     "downloading": "{{percentage}}% डाउनलोड हो रहा है",
     "downloadingMultiple": "{{count}} मॉडल डाउनलोड हो रहे हैं...",
     "modelReady": "मॉडल तैयार है",
@@ -324,10 +321,6 @@
           "title": "transcribe.cpp एक्सेलेरेशन",
           "description": "transcribe.cpp (Whisper-परिवार) मॉडल के लिए हार्डवेयर एक्सेलेरेशन. 'ऑटो' उपलब्ध होने पर GPU का इस्तेमाल करता है (macOS पर Metal, Windows/Linux पर Vulkan)."
         },
-        "ort": {
-          "title": "ONNX एक्सेलेरेशन",
-          "description": "ONNX मॉडल (Parakeet, Canary, Moonshine वगैरह) के लिए हार्डवेयर एक्सेलेरेशन. Windows पर DirectML प्रायोगिक है. हो सकता है कि कुछ मॉडल ट्रांसक्राइब न कर पाएं."
-        },
         "gpuDevice": {
           "auto": "ऑटो"
         }
@@ -445,14 +438,6 @@
         "title": "वॉइस एक्टिविटी डिटेक्शन",
         "description": "रिकॉर्डिंग से बिना आवाज़ वाले हिस्से हटाएं. स्ट्रीमिंग वाले मॉडल लंबी VAD टेल इस्तेमाल करते हैं; VAD बंद करने पर कच्चा ऑडियो रिकॉर्ड होता है."
       },
-      "vadBackend": {
-        "title": "ध्वनि गतिविधि पहचान बैकएंड",
-        "description": "प्रायोगिक डिटेक्टर कार्यान्वयन। Silero स्थिर डिफ़ॉल्ट बना हुआ है।",
-        "options": {
-          "silero": "Silero VAD",
-          "earshot": "Earshot VAD (प्रायोगिक)"
-        }
-      },
       "fillerWordRemoval": {
         "title": "फिलर शब्द हटाएं",
         "description": "ट्रांसक्रिप्शन से आम हिचकिचाहट वाले शब्द हटाता है। उन्हें बनाए रखने के लिए इसे बंद करें।"
@@ -481,8 +466,8 @@
         }
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

@@ -132,9 +132,6 @@
     "noModelsAvailable": "利用可能なモデルがありません",
     "verifying": "{{modelName}}を検証中…",
     "verifyingGeneric": "検証中…",
-    "extracting": "{{modelName}}を展開中…",
-    "extractingMultiple": "{{count}}個のモデルを展開中…",
-    "extractingGeneric": "展開中…",
     "downloading": "ダウンロード中 {{percentage}}%",
     "downloadingMultiple": "{{count}}個のモデルをダウンロード中…",
     "modelReady": "モデル準備完了",
@@ -324,10 +321,6 @@
           "title": "transcribe.cpp アクセラレーション",
           "description": "transcribe.cpp (Whisper 系) モデルのハードウェアアクセラレーション。「自動」では利用可能な場合 GPU を使用します (macOS では Metal、Windows/Linux では Vulkan)。"
         },
-        "ort": {
-          "title": "ONNX アクセラレーション",
-          "description": "ONNX モデルのハードウェアアクセラレーション (Parakeet、Canary、Moonshine など)。Windows の DirectML は実験的です。モデルの文字起こしに失敗する場合があります。"
-        },
         "gpuDevice": {
           "auto": "自動"
         }
@@ -445,14 +438,6 @@
         "title": "音声区間検出 (VAD)",
         "description": "録音から無音部分を除去します。ストリーミング対応モデルはより長い音声検出区間を使用します。VAD を無効にすると音声をそのまま録音します。"
       },
-      "vadBackend": {
-        "title": "音声活動検出バックエンド",
-        "description": "実験的な検出器の実装。Sileroが安定したデフォルトのままです。",
-        "options": {
-          "silero": "Silero VAD",
-          "earshot": "Earshot VAD（実験的）"
-        }
-      },
       "fillerWordRemoval": {
         "title": "フィラー語を削除",
         "description": "文字起こしから一般的なフィラー語を削除します。残すにはオフにしてください。"
@@ -481,8 +466,8 @@
         }
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

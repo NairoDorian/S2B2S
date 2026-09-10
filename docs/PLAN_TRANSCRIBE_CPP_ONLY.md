@@ -1,9 +1,20 @@
 # Plan: transcribe.cpp-only Handy — drop ONNX Runtime and Silero, keep Earshot
 
-_Drafted 2026-08-26 for the `Handy_Multi_STT` fork. Status: **proposal, not started.**
+_Drafted 2026-08-26 for the `Handy_Multi_STT` fork. Status: **implemented
+2026-09-10** in a single change set (see `CHANGELOG.md` → Changed / Removed
+and the AGENTS.md "Voice Activity Detection" section). Deviations from the
+plan below: Phase 0 (noisy-room bench, golden 16 ms SpeechClock test, settings
+fixture) was skipped — the existing SpeechClock unit tests were re-based on
+`VAD_FRAME_MS` and the 0.9.0 settings fixture test still loads; Phases 1–5
+landed together; the migration remaps every retired ONNX id to the GGUF
+conversion of the same model (the catalog turned out to have all eleven, so
+the §4 "nearest family" table was not needed) and does it silently with a log
+line, without the toast or the "Remove unused ONNX models" action; the
+two-backend bench was deleted rather than kept as a single-backend bench.
+Everything else below is kept as the design record._
 Every file named below was verified to exist / contain the reference at the time
 of writing. Numbers come from `src-tauri/tests/vad_backend_bench.rs` run on the
-maintainer's own recordings (18 s, quiet room, one mic)._
+maintainer's own recordings (18 s, quiet room, one mic).\_
 
 ## 1. Goal
 

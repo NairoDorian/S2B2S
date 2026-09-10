@@ -48,13 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the 0.3 threshold and left at `max(threshold − 0.15, 0.01)`, as in the
   reference pipeline, which removes the frame-to-frame flapping a single
   threshold produced. `src-tauri/tests/vad_speech_clock_probe.rs` is an opt-in
-  regression check over a real recording (`HANDY_PROBE_WAV`).
+  regression check over a real recording (`HANDY_PROBE_WAV`). _Superseded on
+  2026-09-10: Silero and `ort` were removed; Earshot keeps the hysteresis and
+  the probe — see Changed / Removed._
 
 - **Earshot VAD backend toggle** (`vad_backend`: `silero` | `earshot`). The
   capture pipeline re-frames itself to the active detector's frame length
   (32 ms Silero, 16 ms Earshot); hangover, prefill and onset are derived from
   millisecond constants via `frames_for_duration_ms` so switching backends
-  never shortens them.
+  never shortens them. _The toggle was retired on 2026-09-10 when Earshot
+  became the only detector._
 
 - **Skip transcription when a recording contains no speech.** `SpeechClock`
   publishes its running total to a lock-free counter; both shortcut actions
@@ -132,6 +135,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   findings, what was fixed, what remains) and `docs/KNOWN_ISSUES.md`.
 
 ### Changed
+
+- **transcribe.cpp is the only inference runtime and Earshot the only VAD
+  (2026-09-10).** `transcribe-rs`, ONNX Runtime (`ort`, `ndarray`) and
+  Silero VAD are gone, together with the `onnxruntime.dll` / `libonnxruntime`
+  staging in `build.rs`, `build.yml`, `flake.nix` and the 2.2 MB model file.
+  The capture pipeline now runs on Earshot's 16 ms frames
+  (`VAD_FRAME_SAMPLES` = 256; hangover / prefill / onset are unchanged in
+  milliseconds: 104 / 29 / 4 frames). The Advanced page keeps one threshold
+  slider (`vad_threshold_earshot`) and the transcribe.cpp accelerator
+  dropdown; the VAD-backend selector and the ONNX accelerator dropdown are
+  gone. The 11 hard-coded ONNX models (Parakeet v2/v3, Moonshine base and
+  the three streaming variants, SenseVoice, GigaAM, Canary 180m / 1B v2,
+  Cohere) are no longer listed; every one has a GGUF conversion in the
+  catalog, and settings schema **6** remaps `selected_model` and
+  `multi_stt_model_2..4` to that successor (`legacy_onnx_model_replacement`,
+  unit-tested against the catalog). Old ONNX directories on disk are left in
+  place. `ModelInfo` lost `engine_type` / `is_directory`, tarball download
+  extraction and the `model-extraction-*` events are gone, and
+  `LoadedEngine` is a single-variant enum around the transcribe-cpp
+  `Session`. `tests/vad_speech_clock_probe.rs` now drives Earshot;
+  `tests/vad_backend_bench.rs` (a two-backend comparison) was deleted.
+  `docs/PLAN_TRANSCRIBE_CPP_ONLY.md` records the plan and what was skipped.
 
 - **GPU backend on Windows x86_64 and Linux is CUDA** (transcribe.cpp
   `cuda` feature via the `NairoDorian/transcribe.cpp` fork) instead of
@@ -285,9 +310,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both VAD backends over real recordings and reports cost per frame, voiced
   fraction, kept seconds and frame agreement; `earshot` is pinned to
   `opt-level = 3` in the dev profile so the numbers are representative.
+  _Deleted on 2026-09-10 with the second backend; the numbers it produced are
+  kept in AGENTS.md and `docs/PLAN_TRANSCRIBE_CPP_ONLY.md`._
 
 ### Removed
 
+- **ONNX stack (2026-09-10):** `transcribe-rs` (and its `[patch.crates-io]`
+  entry), `ort`, `ndarray`, `tar`, `flate2`; `audio_toolkit/vad/silero.rs`,
+  `resources/models/silero_vad_v6.2.onnx`, `resources/models/gigaam_vocab.txt`
+  and the GigaAM directory migration; the `vad_backend`, `ort_accelerator`
+  and `vad_threshold_silero` settings with `change_vad_backend_setting` /
+  `change_ort_accelerator_setting` (`change_vad_threshold_setting` lost its
+  backend argument); `AvailableAccelerators.ort`; `VadBackendSelector.tsx`;
+  the `settings.advanced.vadBackend.*`, `settings.advanced.acceleration.ort.*`
+  and `modelSelector.extracting*` locale keys; `tests/vad_backend_bench.rs`.
 - `multi_stt_selected_merge_prompt_id` setting (never read or written; the
   merge prompt is a single `multi_stt_merge_prompt`), and the unused
   `NativeStreamingLatencyPreset::all_presets`.

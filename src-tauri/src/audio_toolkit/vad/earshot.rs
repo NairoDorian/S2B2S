@@ -8,9 +8,9 @@ pub const EARSHOT_FRAME_SAMPLES: usize = 256;
 ///
 /// Earshot expects exactly 16 ms of mono 16 kHz audio per prediction. The
 /// recorder uses `frame_samples()` to configure its resampler accordingly.
-/// Its 0–1 score goes through the same [`Hysteresis`] gate as Silero's, so a
-/// signal hovering at the threshold cannot flap the speech indicator or stall
-/// the speech clock frame to frame.
+/// Its 0–1 score goes through the [`Hysteresis`] gate, so a signal hovering
+/// at the threshold cannot flap the speech indicator or stall the speech clock
+/// frame to frame.
 pub struct EarshotVad {
     engine: Box<earshot::Detector>,
     gate: Hysteresis,

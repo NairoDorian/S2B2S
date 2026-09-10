@@ -132,9 +132,6 @@
     "noModelsAvailable": "אין מודלים זמינים",
     "verifying": "מאמת את {{modelName}}...",
     "verifyingGeneric": "מאמת...",
-    "extracting": "מחלץ את {{modelName}}...",
-    "extractingMultiple": "מחלץ {{count}} מודלים...",
-    "extractingGeneric": "מחלץ...",
     "downloading": "מוריד {{percentage}}%",
     "downloadingMultiple": "מוריד {{count}} מודלים...",
     "modelReady": "המודל מוכן",
@@ -324,10 +321,6 @@
           "title": "האצת Whisper",
           "description": "האצת חומרה למודלי Whisper. מצב אוטומטי משתמש ב-GPU אם זמין (Metal ב-macOS, Vulkan ב-Windows/Linux)."
         },
-        "ort": {
-          "title": "האצת ONNX",
-          "description": "האצת חומרה למודלי ONNX (Parakeet, Canary, Moonshine ועוד). DirectML ב-Windows הוא ניסיוני. ייתכן שמודלים ייכשלו בתמלול."
-        },
         "gpuDevice": {
           "auto": "אוטומטי"
         }
@@ -445,14 +438,6 @@
         "title": "זיהוי פעילות קולית",
         "description": "סינון שקט מההקלטות. מודלים התומכים בסטרימינג משתמשים בזנב VAD ארוך יותר; ביטול VAD מקליט אודיו גולמי."
       },
-      "vadBackend": {
-        "title": "מנוע זיהוי פעילות קולית",
-        "description": "מימוש גלאי ניסיוני. Silero נשאר ברירת המחדל היציבה.",
-        "options": {
-          "silero": "Silero VAD",
-          "earshot": "Earshot VAD (ניסיוני)"
-        }
-      },
       "fillerWordRemoval": {
         "title": "הסרת מילות מילוי",
         "description": "מסיר מילות היסוס נפוצות מתמלולים. השבת כדי להשאיר אותן."
@@ -481,8 +466,8 @@
         }
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

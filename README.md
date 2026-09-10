@@ -26,10 +26,9 @@ Handy isn't trying to be the best speech-to-text app—it's trying to be the mos
 
 The process is entirely local:
 
-- Silence is filtered using VAD (Voice Activity Detection) with Silero v6.2 (or the experimental Earshot backend, selectable in Settings → Advanced)
+- Silence is filtered using VAD (Voice Activity Detection) with Earshot, a pure-Rust detector with threshold hysteresis (sensitivity adjustable in Settings → Advanced)
 - Transcription uses your choice of models from the bundled catalog:
-  - **Whisper-family GGUF models** (Small/Medium/Turbo/Large, Voxtral, Qwen3-ASR, …) with GPU acceleration when available
-  - **ONNX models** such as **Parakeet V3**, Moonshine, SenseVoice, Canary and Cohere — CPU-optimized with automatic language detection
+  - **GGUF models only**, all through transcribe.cpp with GPU acceleration when available: Whisper family (Small/Medium/Turbo/Large), **Parakeet**, Moonshine, SenseVoice, Canary, Cohere, Voxtral, Qwen3-ASR, …
 - Works on Windows, macOS, and Linux
 
 ### Multi-STT Mode (Fork Feature)
@@ -54,7 +53,7 @@ This fork adds **Multi-STT** — run up to four speech-to-text models simultaneo
 
 ### Other Fork Additions
 
-- **Silero VAD v6.2 driven directly through `ort`** (upstream's `vad-rs` wrapper only spoke the v4 tensor interface and silently passed every frame through), with threshold hysteresis and an optional **Earshot** backend
+- **transcribe.cpp only, pure-Rust VAD**: no ONNX Runtime, no `transcribe-rs`, no VAD model file. Voice activity detection is **Earshot** with threshold hysteresis (upstream's Silero wrapper spoke the v4 tensor interface against a v6 model and silently passed every frame through)
 - **Recordings with no speech are never decoded** (under 200 ms of measured speech) — no more hallucinated text pasted from silence
 - **Speech stats in the overlay**: speaking/paused indicator, a timer that only runs while you talk, and live words-per-minute with streaming models
 - **Direct streaming paste**: type the live transcript character by character into the target app as it is committed, with a speed control. Plain transcription only — with post-processing or Multi-STT the live stream is shown in the Live overlay as a preview and the processed result is pasted once with Ctrl+V
@@ -98,10 +97,9 @@ Handy is built as a Tauri application combining:
 - **Frontend**: React + TypeScript with Tailwind CSS for the settings UI
 - **Backend**: Rust for system integration, audio processing, and ML inference
 - **Core Libraries**:
-  - `transcribe-cpp`: Local speech recognition with Whisper-family models (GGML/GGUF)
-  - `transcribe-rs`: CPU-optimized speech recognition with Parakeet models
+  - `transcribe-cpp`: Local speech recognition for every model (GGML/GGUF: Whisper family, Parakeet, Moonshine, Canary, …)
   - `cpal`: Cross-platform audio I/O
-  - `ort`: ONNX Runtime — runs the Silero VAD v6.2 graph directly (and the ONNX speech models via `transcribe-rs`); `earshot` is the alternative VAD backend
+  - `earshot`: pure-Rust voice activity detection
   - `rdev`: Global keyboard shortcuts and system events
   - `rubato`: Audio resampling
 
@@ -294,12 +292,10 @@ The following are recommendations for running Handy on your own machine. If you 
 - **Linux**: Intel, AMD, or NVIDIA GPU
   - Ubuntu 22.04, 24.04
 
-**For Parakeet V3 Model:**
+**For Parakeet / Moonshine / Canary (GGUF) models:**
 
-- **CPU-only operation** - runs on a wide variety of hardware
-- **Minimum**: Intel Skylake (6th gen) or equivalent AMD processors
-- **Performance**: ~5x real-time speed on mid-range hardware (tested on i5)
-- **Automatic language detection** - no manual language selection required
+- Same requirements as Whisper: they run through transcribe.cpp on the GPU when one is available, otherwise on the CPU
+- Parakeet V3 auto-detects the language across 25 European languages
 
 ## Roadmap & Active Development
 
@@ -423,10 +419,9 @@ Download the models you want from below
 
 - Q8_0 (731 MB): `https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q8_0.gguf`
 
-**Parakeet Models (compressed archives):**
+**Parakeet TDT 0.6B v3 (single `.gguf` file, multilingual):**
 
-- V2 (473 MB): `https://blob.handy.computer/parakeet-v2-int8.tar.gz`
-- V3 (478 MB): `https://blob.handy.computer/parakeet-v3-int8.tar.gz`
+- Q8_0: `https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf`
 
 #### Step 4: Install Models
 
@@ -445,26 +440,6 @@ Simply place the `.bin` file directly into the `models` directory:
 **For GGUF Models (.gguf files):**
 
 Place the `.gguf` file directly into the `models` directory, exactly like the Whisper `.bin` files above. Handy also picks up models already present in the shared Hugging Face cache (`~/.cache/huggingface/hub`), so a copy downloaded by another tool works without being moved.
-
-**For Parakeet Models (.tar.gz archives):**
-
-1. Extract the `.tar.gz` file
-2. Place the **extracted directory** into the `models` folder
-3. The directory must be named exactly as follows:
-   - **Parakeet V2**: `parakeet-tdt-0.6b-v2-int8`
-   - **Parakeet V3**: `parakeet-tdt-0.6b-v3-int8`
-
-Final structure should look like:
-
-```
-{app_data_dir}/models/
-├── parakeet-tdt-0.6b-v2-int8/     (directory with model files inside)
-│   ├── (model files)
-│   └── (config files)
-└── parakeet-tdt-0.6b-v3-int8/     (directory with model files inside)
-    ├── (model files)
-    └── (config files)
-```
 
 **Important Notes:**
 
@@ -587,6 +562,6 @@ Handy is open-source software, but the Handy name, logo, icon, and brand assets 
 
 - **Whisper** by OpenAI for the speech recognition model
 - **ggml and transcribe.cpp** for amazing cross-platform speech-to-text inference/acceleration
-- **Silero** for great lightweight VAD
+- **Earshot** for a fast, pure-Rust VAD
 - **Tauri** team for the excellent Rust-based app framework
 - **Community contributors** helping make Handy better

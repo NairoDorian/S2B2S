@@ -62,11 +62,9 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 | `update-rtk.ts`            | `bun run update:rtk`                          | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                |
 | `gen_catalog.py`           | manual                                        | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                         |
 
-**Model Setup:** the Silero VAD model
-(`src-tauri/resources/models/silero_vad_v6.2.onnx`, ~2.2 MB) is **committed
-to the repository** — nothing needs downloading. Only re-fetch it from
-`https://huggingface.co/BricksDisplay/silero-vad-6.2/resolve/main/onnx/model.onnx`
-if you deliberately upgrade the VAD, and re-run the probe test afterwards.
+**Model Setup:** nothing to download for development. Voice activity
+detection is pure Rust (Earshot, no model file), and speech models are fetched
+from the in-app catalog on first run.
 
 **Native build flags:** `.cargo/config.toml` sets `TRANSCRIBE_CMAKE_ARGS` for
 every native build — it disables sccache for ggml (corrupts objects on
@@ -107,9 +105,9 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
     - `recorder.rs` also hosts `SpeechClock`, which measures how long the user
       has actually been speaking (see Speech Stats below)
   - `vad/` - Voice Activity Detection — see Voice Activity Detection below;
-    `silero.rs` drives the ONNX session directly rather than through `vad-rs`,
-    `earshot.rs` is the alternative backend, `smoothed.rs` adds prefill /
-    hangover / onset smoothing, `mod.rs` holds the millisecond timing constants
+    `earshot.rs` wraps the pure-Rust Earshot detector, `smoothed.rs` adds
+    prefill / hangover / onset smoothing, `mod.rs` holds the `Hysteresis` gate
+    and the millisecond timing constants
   - `lang_id.rs`, `text.rs` - Language-detection heuristics and text post-filters
   - `bin/cli.rs` - Standalone recorder demo. **Not a build target** (the
     `[[bin]]` in `Cargo.toml` is commented out); keep it compiling by hand
@@ -167,7 +165,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
     individual setting components. Fork-added ones: `AccentColorSelector`,
     `AppendTrailingNewline`, `KeyComboInput` (performance-mode shortcut
     recorder), `MicIdleTimeout`, `SaveRawAudio`, `SpeechStats`,
-    `VadBackendSelector` (upstream), `PasteMethod` (direct streaming +
+    `VadSensitivity` (threshold slider), `PasteMethod` (direct streaming +
     speed), `ShowOverlay` (direct mode + speed)
     - `statistics/StatisticsSettings.tsx` - Analytics & streak dashboard (transcriptions, words, audio duration, WPM, streak, latency distributions)
     - `multi-stt/MultiSttSettings.tsx` - Multi-STT configuration (fork feature)
@@ -175,7 +173,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
       (fork feature): file/folder queue, mode & output options, run controls
     - `live-mode/LiveModeSettings.tsx` - Live Mode page (fork feature): session
       controls, live transcript preview, chunk list, past sessions
-    - `VadSensitivity.tsx` - Threshold slider for the active VAD backend (fork)
+    - `VadSensitivity.tsx` - Threshold slider for the Earshot VAD (fork)
   - `model-selector/` - Status-bar model controls (footer). Three mutually
     exclusive popovers: model switcher, quantization picker
     (`QuantizationPanel.tsx`, which also hosts the quantization benchmark via
@@ -219,12 +217,12 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 
 **Core Libraries:**
 
-- `transcribe-cpp` - Local Whisper-family inference (GGML/GGUF) with GPU acceleration
-- `transcribe-rs` - ONNX speech recognition (Parakeet, Moonshine, SenseVoice, etc.)
+- `transcribe-cpp` - The only inference runtime: every model (Whisper family,
+  Parakeet, Moonshine, Canary, Voxtral, Qwen3-ASR, … as GGUF/ggml) with GPU
+  acceleration. There is no ONNX Runtime and no `transcribe-rs` in this fork
 - `cpal` - Cross-platform audio I/O
-- `ort` - ONNX Runtime bindings; runs the Silero VAD graph directly (see
-  Voice Activity Detection)
-- `earshot` - Alternative pure-Rust VAD backend (`vad_backend = earshot`)
+- `earshot` - Voice activity detection (pure Rust, no model file; see Voice
+  Activity Detection)
 - `enigo` - Keystroke simulation for the performance-mode shortcuts
 - `rdev` - Global keyboard shortcuts
 - `rubato` - Audio resampling
@@ -233,7 +231,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 ### Application Flow
 
 1. **Initialization:** App starts minimized to tray, loads settings, initializes managers
-2. **Model Setup:** First-run downloads the chosen model from the bundled catalog (`catalog/catalog.json`: Whisper-family GGUF and ONNX models such as Parakeet)
+2. **Model Setup:** First-run downloads the chosen model from the bundled catalog (`catalog/catalog.json`: GGUF models only — Whisper family, Parakeet, Moonshine, Canary, …)
 3. **Recording:** Global shortcut triggers audio recording with VAD filtering
 4. **Processing:** Audio sent to Whisper model for transcription
 5. **Output:** Text pasted to active application via system clipboard
@@ -257,56 +255,54 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 ### Voice Activity Detection
 
-Handy ships **Silero VAD v6.2** (`silero_vad_v6.2.onnx`, ~2.2 MB), run on the
-audio consumer thread once per 32 ms frame. It is what makes `vad_enabled`
-mean anything: frames it scores below threshold never reach the decoder, so a
-recording carries speech instead of speech-plus-silence. That matters more than
-it sounds — Whisper-family models are prone to hallucinating text on silent
-audio, and every second of dropped silence is a second the model doesn't spend
-decoding.
+Handy's only voice activity detector is **Earshot** (`earshot` crate, pure
+Rust, ~8 KiB of state, constructed in microseconds — there is no model file,
+no ONNX Runtime and nothing to download). It runs on the audio consumer thread
+once per 16 ms frame and is what makes `vad_enabled` mean anything: frames it
+scores below threshold never reach the decoder, so a recording carries speech
+instead of speech-plus-silence. That matters more than it sounds —
+Whisper-family models are prone to hallucinating text on silent audio, and
+every second of dropped silence is a second the model doesn't spend decoding.
 
-`audio_toolkit/vad/silero.rs` runs the Silero ONNX graph directly via `ort`.
-It deliberately does **not** use `vad-rs`: that crate only speaks Silero **v4**'s
-tensor interface (`input`/`sr`/`h`/`c` in, `hn`/`cn` out), while the model
-shipped here is **v6** (`input`/`state`/`sr` in, `output`/`stateN` out). Against
-a v6 model every `vad-rs` call fails with `Invalid input name: h`.
-
-Three parts of the v5/v6 contract must all hold, and each fails quietly on its
-own:
-
-1. **Window size is fixed** at `constants::VAD_FRAME_SAMPLES` (512 samples =
-   32 ms at 16 kHz). Other sizes still run, but return ~0.0005 for speech and
-   silence alike. The capture pipeline frames itself to the active detector's
-   `frame_samples()` (512 / 32 ms for Silero, 256 / 16 ms for Earshot, 480 /
-   30 ms with VAD off) so one resampled frame is exactly one VAD decision;
-   hangover, prefill and onset are millisecond constants in `vad/mod.rs`
-   converted with `frames_for_duration_ms` (rounding up), so switching
-   backends never shortens them.
-2. **A 64-sample context** (`constants::VAD_CONTEXT_SAMPLES`) from the previous
-   window must be prepended to each chunk, so the tensor fed is 576 long. Omit
-   it and the model cannot distinguish speech from silence at all.
-3. **`state` must be carried forward** from each run's `stateN` output, and
-   cleared on `reset()` so a new recording starts fresh.
-
-**Thresholding uses hysteresis**, as the reference pipeline does: speech is
-entered at `VAD_THRESHOLD` (0.3) but only left once the probability falls below
-`max(threshold - 0.15, 0.01)` — 0.15 here. A single value for both edges makes a
-signal hovering near it flap frame to frame, which shows up directly as a
-stuttering speech/silence indicator and a speech clock that stalls mid-word. The
-floor keeps the exit threshold above the ~0.0005 the model emits for true
-silence. `Hysteresis` in `vad/mod.rs` is a pure struct, unit-tested without the
-model, and gates **both** backends — Earshot's 0.5 threshold gets the same
-enter/exit split, which is what keeps the speech indicator and clock stable
-after switching `vad_backend`.
-
-`src-tauri/tests/vad_backend_bench.rs` (opt-in, `HANDY_BENCH_WAV_DIR=<dir>`)
-runs Silero and Earshot side by side over real recordings and reports cost per
-frame, voiced fraction, kept seconds and frame agreement. Baseline on the
-maintainer's recordings (18 s, quiet room): 97.7 % frame agreement, identical
-kept audio (13.3 s), Earshot ≈ 2–3× cheaper per frame and 109 ms → 9 µs to
-construct; `earshot` is pinned to `opt-level = 3` in the dev profile so those
-numbers hold in debug builds. `docs/PLAN_TRANSCRIBE_CPP_ONLY.md` is the (not
-started) plan for going Earshot/transcribe.cpp-only.
+- **Frame size** is `constants::VAD_FRAME_SAMPLES` (256 samples = 16 ms at
+  16 kHz, `VAD_FRAME_MS`). The capture pipeline frames itself to the
+  detector's `frame_samples()` so one resampled frame is exactly one VAD
+  decision (480 / 30 ms with VAD off). Hangover, prefill and onset are
+  millisecond constants in `vad/mod.rs` converted with
+  `frames_for_duration_ms` (rounding up), so a change of frame size never
+  shortens them: `VAD_STREAMING_HANGOVER_MS` = 1650 → 104 frames,
+  `VAD_PREFILL_MS` / `VAD_OFFLINE_HANGOVER_MS` = 450 → 29, `VAD_ONSET_MS`
+  = 60 → 4.
+- **Input contract**: exactly 256 mono 16 kHz samples in `[-1, 1]`.
+  `EarshotVad` clamps resampler overshoot for the prediction only (the audio
+  passed downstream is untouched) and rejects non-finite samples and wrong
+  frame sizes with an error rather than a silent wrong answer.
+- **Thresholding uses hysteresis** (`Hysteresis` in `vad/mod.rs`, a pure
+  struct with its own unit tests): speech is entered at the threshold
+  (`vad_threshold_earshot`, default 0.5) but only left once the score falls
+  below `max(threshold - 0.15, 0.01)`. A single value for both edges makes a
+  signal hovering near it flap frame to frame, which shows up directly as a
+  stuttering speech/silence indicator and a speech clock that stalls mid-word.
+- `SmoothedVad` wraps the detector with prefill / hangover / onset smoothing
+  (`VadPolicy::Streaming` keeps the long hangover so a live decoder keeps
+  receiving audio across a pause; `Offline` uses the short one).
+- `handle_frame` treats a per-frame VAD error as "keep this audio" (losing
+  speech is worse than keeping silence) but logs the first failure of each
+  recording — a VAD that fails on every frame otherwise looks exactly like a
+  VAD that is switched off. That failure mode is real: before 2026-08-26 the
+  fork ran a Silero v6 model through a v4 wrapper, every frame errored, and
+  VAD silently degraded into a pass-through for an unknown period. It only
+  surfaced when Speech Stats became the first consumer of the raw per-frame
+  verdict, which a pass-through cannot fake.
+- **History**: until 2026-09-10 Handy shipped Silero VAD v6.2 through `ort`
+  with Earshot as an optional backend. Measured side by side on the
+  maintainer's recordings (18 s, quiet room) the two agreed on 97.7 % of
+  frames and kept identical audio (13.3 s), with Earshot ≈ 2–3× cheaper per
+  frame and 109 ms → 9 µs to construct, so Silero, `ort`, `ndarray` and the
+  2.2 MB model file were removed (`docs/PLAN_TRANSCRIBE_CPP_ONLY.md`). Noisy
+  rooms were never benchmarked; if Earshot clips speech there, lower
+  `vad_threshold_earshot` first. `earshot` is pinned to `opt-level = 3` in
+  the dev profile so debug builds pay the real (small) cost.
 
 **Recordings with no speech never reach a decoder.** `SpeechClock` publishes its
 running total to an `Arc<AtomicU64>`, which `AudioRecorder::speech_ms()` and
@@ -315,25 +311,10 @@ alongside `samples.is_empty()` and skip transcription below
 `MIN_SPEECH_MS_TO_TRANSCRIBE` (200 ms, `actions.rs`). This is not just a saved
 GPU decode: Whisper-family models hallucinate confidently on silence, and that
 invented text would be pasted into whatever the user was typing in. The
-threshold sits deliberately below Silero's own 250 ms `min_speech_duration_ms`
-so a clipped "yes" still transcribes, and with VAD disabled every frame counts
-as speech, so it can never suppress a recording made with filtering off.
-
-`SileroVad::new` validates the model's input names up front, so a mismatched
-model fails loudly at load instead of once per frame. `handle_frame` still
-treats a per-frame VAD error as "keep this audio" (losing speech is worse than
-keeping silence), but now logs the first failure of each recording — a VAD that
-fails on every frame otherwise looks exactly like a VAD that is switched off.
-
-**Why this is written out at length:** the v4-wrapper-against-a-v6-model
-combination above was live for an unknown period and produced _no_ symptom a
-user could see. `compute()` failed on every single frame, `handle_frame` mapped
-the error to "keep this audio", and VAD degraded into a pass-through — the
-setting appeared to work, recordings just silently contained everything. It only
-surfaced when Speech Stats became the first consumer of the raw per-frame
-verdict, which a pass-through cannot fake. Measured afterwards on a real 33.8 s
-recording: 24.6 s of raw voiced audio, 32.9 s kept once the streaming hangover
-tail is included.
+threshold sits deliberately below silero-vad's reference 250 ms
+`min_speech_duration_ms` so a clipped "yes" still transcribes, and with VAD
+disabled every frame counts as speech, so it can never suppress a recording
+made with filtering off.
 
 `src-tauri/tests/vad_speech_clock_probe.rs` is an opt-in regression check: point
 `HANDY_PROBE_WAV` at a 16 kHz mono speech recording and it asserts the real
@@ -345,10 +326,10 @@ speech/silence indicator, a timer that runs only while you are actually talking,
 and the running average words per minute.
 
 - Driven by `SpeechClock` in `audio_toolkit/audio/recorder.rs`, fed by
-  `VoiceActivityDetector::last_frame_voiced` — the **raw** per-frame Silero
+  `VoiceActivityDetector::last_frame_voiced` — the **raw** per-frame Earshot
   verdict, deliberately _not_ what `push_frame` returns. `SmoothedVad` keeps
   reporting speech through a hangover tail of ≈1.66 s in streaming mode
-  (`VAD_STREAMING_HANGOVER_MS` = 1650 rounded up to 52 Silero frames), and
+  (`VAD_STREAMING_HANGOVER_MS` = 1650 rounded up to 104 Earshot frames), and
   counting that would add more than a second of phantom speech per pause.
 - Gaps shorter than `speech_pause_hold_ms` are billed as part of the same
   utterance once speech resumes; longer gaps are dropped. The clock therefore
@@ -402,7 +383,6 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 
 **Other fork settings:**
 
-- `vad_backend` - `silero` (default) | `earshot`
 - `paste_method` gained `direct_streaming`; `direct_streaming_speed` (10–60) controls the typing rate (see Direct Streaming below for when it applies)
 - `overlay_direct_mode` / `overlay_direct_speed` - Live overlay character-by-character mode
 - `save_raw_audio`, `overlay_speech_stats`, `speech_pause_hold_ms` - see Voice Activity Detection below
@@ -410,14 +390,24 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
 - `custom_accent_color` - `#rrggbb` or `null` for the gold default; persisted through `change_custom_accent_color_setting`
 - `native_streaming_latency_presets` - Per-model-family latency preset (`fastest` → `accurate`)
-- `vad_threshold_silero` (default 0.3) / `vad_threshold_earshot` (default 0.5) -
-  Speech-probability threshold each detector is built with (0.05–0.95; lower =
-  more sensitive). `create_audio_recorder` reads the value for the active
-  backend, so `change_vad_threshold_setting` writes the setting first and then
-  calls `AudioRecordingManager::rebuild_vad_from_settings` (same idle guard and
-  reopen/rollback as a backend switch; a rejected rebuild restores the old
-  value). The Advanced page shows one slider (`VadSensitivity`) for whichever
-  backend is selected
+- `vad_threshold_earshot` (default 0.5) - Speech-probability threshold the
+  detector is built with (0.05–0.95; lower = more sensitive).
+  `create_audio_recorder` reads it, so `change_vad_threshold_setting` writes
+  the setting first and then calls
+  `AudioRecordingManager::rebuild_vad_from_settings` (idle guard; the warm
+  microphone stream is reopened with the new detector, and a rejected rebuild
+  restores the old value). The Advanced page shows it as the `VadSensitivity`
+  slider
+- **Retired settings** (`vad_backend`, `ort_accelerator`,
+  `vad_threshold_silero`) are ignored when found in an old store. Settings
+  schema **6** remaps a `selected_model` / `multi_stt_model_2..4` that names
+  one of the 11 retired hard-coded ONNX models (`parakeet-tdt-0.6b-v2/v3`,
+  `moonshine-*`, `sense-voice-int8`, `gigaam-v3-e2e-ctc`, `canary-*`,
+  `cohere-int8`) to its GGUF successor in the catalog
+  (`settings::legacy_onnx_model_replacement` →
+  `catalog::default_id_for_repo`). Model files on disk are never deleted;
+  the old ONNX directories under the models folder are simply no longer
+  listed
 - `file_transcription` - One nested `FileTranscriptionSettings` struct (mode,
   output_dir, output_format, overwrite_existing, include_subfolders,
   max_segment_minutes) persisted through a single command; see Transcribe Files

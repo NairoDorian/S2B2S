@@ -551,9 +551,9 @@ pub(crate) async fn process_transcription_output(
 /// than nothing: Whisper-family models hallucinate confidently on silence, and
 /// that invented text goes straight into whatever the user was typing in.
 /// Silence measures 0 ms exactly, so this only has to clear stray onset frames
-/// while staying under the shortest real word — Silero's own
-/// `min_speech_duration_ms` default is 250 ms, and this sits deliberately below
-/// it so a clipped "yes" still transcribes.
+/// while staying under the shortest real word — silero-vad's reference
+/// `min_speech_duration_ms` is 250 ms, and this sits deliberately below it so
+/// a clipped "yes" still transcribes.
 ///
 /// With VAD disabled every frame counts as speech, so this can never suppress a
 /// recording the user made with filtering turned off.

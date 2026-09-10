@@ -7,8 +7,8 @@ pub const VAD_OFFLINE_HANGOVER_MS: u64 = 450;
 pub const VAD_STREAMING_HANGOVER_MS: u64 = 1650;
 pub const VAD_ONSET_MS: u64 = 60;
 
-/// Convert a VAD timing duration to whole detector frames, rounding up so an
-/// alternate backend never shortens Handy's onset, pre-roll, or hangover tail.
+/// Convert a VAD timing duration to whole detector frames, rounding up so a
+/// change of frame size never shortens Handy's onset, pre-roll, or hangover tail.
 pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> usize {
     assert!(frame_samples > 0, "VAD frame size must be non-zero");
     let numerator = duration_ms * constants::WHISPER_SAMPLE_RATE as u64;
@@ -16,14 +16,13 @@ pub const fn frames_for_duration_ms(duration_ms: u64, frame_samples: usize) -> u
     numerator.div_ceil(denominator) as usize
 }
 
-/// Two-threshold gate shared by every backend: speech is entered at
-/// `threshold` and only left once the score falls below a lower exit
-/// threshold, as in silero-vad's reference pipeline.
+/// Two-threshold gate: speech is entered at `threshold` and only left once
+/// the score falls below a lower exit threshold (the rule silero-vad's
+/// reference pipeline uses, applied here to Earshot's 0–1 score).
 ///
 /// A single value for both edges makes a signal hovering near the threshold
 /// flap frame to frame — which surfaces directly as a stuttering speech /
-/// silence indicator and a speech clock that stalls mid-word. Both Silero and
-/// Earshot emit a 0–1 score per frame, so the same rule applies to both.
+/// silence indicator and a speech clock that stalls mid-word.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Hysteresis {
     enter: f32,
@@ -32,9 +31,9 @@ pub(crate) struct Hysteresis {
 }
 
 impl Hysteresis {
-    /// The exit threshold follows the reference implementation: 0.15 below the
-    /// entry threshold, floored at 0.01 so it stays above the ~0.0005 Silero
-    /// emits for true silence.
+    /// The exit threshold follows silero-vad's reference implementation: 0.15
+    /// below the entry threshold, floored at 0.01 so it stays above the
+    /// near-zero score a detector emits for true silence.
     pub(crate) fn new(threshold: f32) -> Self {
         Self {
             enter: threshold,
@@ -124,11 +123,9 @@ pub struct VadTailReport {
 }
 
 pub mod earshot;
-mod silero;
 mod smoothed;
 
 pub use earshot::EarshotVad;
-pub use silero::SileroVad;
 pub use smoothed::SmoothedVad;
 
 #[cfg(test)]
@@ -136,15 +133,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn duration_profiles_preserve_silero_timings() {
-        assert_eq!(frames_for_duration_ms(VAD_PREFILL_MS, 480), 15);
-        assert_eq!(frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, 480), 15);
-        assert_eq!(frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, 480), 55);
-        assert_eq!(frames_for_duration_ms(VAD_ONSET_MS, 480), 2);
-    }
-
-    #[test]
-    fn duration_profiles_round_up_for_earshot_frames() {
+    fn duration_profiles_for_earshot_frames() {
         assert_eq!(frames_for_duration_ms(VAD_PREFILL_MS, 256), 29);
         assert_eq!(frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, 256), 29);
         assert_eq!(frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, 256), 104);

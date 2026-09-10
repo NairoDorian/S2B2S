@@ -1,5 +1,5 @@
 use crate::utils;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
@@ -323,39 +323,16 @@ pub enum TranscribeAcceleratorSetting {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum OrtAcceleratorSetting {
-    #[default]
-    Auto,
-    Cpu,
-    Cuda,
-    #[serde(rename = "directml")]
-    DirectMl,
-    Rocm,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum VadBackend {
-    #[default]
-    Silero,
-    Earshot,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
-#[serde(rename_all = "snake_case")]
 pub enum MicIdleTimeoutUnit {
     #[default]
     Seconds,
     Minutes,
 }
 
-/// Default speech-probability thresholds of the two VAD backends. Silero's
-/// reference pipeline enters speech at 0.3; Earshot's score distribution is
-/// wider, so 0.5 is its neutral point. Both are user-adjustable through
-/// `vad_threshold_silero` / `vad_threshold_earshot` (see `VadSensitivity` in
-/// the Advanced page): lower values keep more borderline audio, higher values
-/// drop more background noise.
-pub const DEFAULT_VAD_THRESHOLD_SILERO: f32 = 0.3;
+/// Default speech-probability threshold of the Earshot VAD: 0.5 is the
+/// neutral point of its 0–1 score. User-adjustable through
+/// `vad_threshold_earshot` (see `VadSensitivity` in the Advanced page): lower
+/// values keep more borderline audio, higher values drop more background noise.
 pub const DEFAULT_VAD_THRESHOLD_EARSHOT: f32 = 0.5;
 /// Hard bounds for a stored threshold. Below 0.05 the exit hysteresis floor
 /// (0.01) makes everything speech; above 0.95 nothing ever is.
@@ -366,7 +343,7 @@ pub fn clamp_vad_threshold(threshold: f32) -> f32 {
     if threshold.is_finite() {
         threshold.clamp(MIN_VAD_THRESHOLD, MAX_VAD_THRESHOLD)
     } else {
-        DEFAULT_VAD_THRESHOLD_SILERO
+        DEFAULT_VAD_THRESHOLD_EARSHOT
     }
 }
 
@@ -674,8 +651,6 @@ pub struct AppSettings {
     pub custom_filler_words: Option<Vec<String>>,
     #[serde(default)]
     pub transcribe_accelerator: TranscribeAcceleratorSetting,
-    #[serde(default)]
-    pub ort_accelerator: OrtAcceleratorSetting,
     /// Stable transcribe.cpp device selector. This is derived from the backend's
     /// `device_id` when available (or its name for backends such as Metal),
     /// never from the process-local device registry index.
@@ -689,12 +664,6 @@ pub struct AppSettings {
     pub extra_recording_buffer_ms: u32,
     #[serde(default = "default_vad_enabled")]
     pub vad_enabled: bool,
-    /// Experimental detector implementation. Silero remains the stable default.
-    #[serde(default)]
-    pub vad_backend: VadBackend,
-    /// Speech-probability threshold of the Silero detector (0.05–0.95).
-    #[serde(default = "default_vad_threshold_silero")]
-    pub vad_threshold_silero: f32,
     /// Speech-probability threshold of the Earshot detector (0.05–0.95).
     #[serde(default = "default_vad_threshold_earshot")]
     pub vad_threshold_earshot: f32,
@@ -777,10 +746,6 @@ pub struct AppSettings {
     pub live_mode: LiveModeSettings,
 }
 
-fn default_vad_threshold_silero() -> f32 {
-    DEFAULT_VAD_THRESHOLD_SILERO
-}
-
 fn default_vad_threshold_earshot() -> f32 {
     DEFAULT_VAD_THRESHOLD_EARSHOT
 }
@@ -789,7 +754,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 5;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 6;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -1300,12 +1265,9 @@ pub fn get_default_settings() -> AppSettings {
         filler_word_removal_enabled: default_filler_word_removal_enabled(),
         custom_filler_words: None,
         transcribe_accelerator: TranscribeAcceleratorSetting::default(),
-        ort_accelerator: OrtAcceleratorSetting::default(),
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
-        vad_backend: VadBackend::default(),
-        vad_threshold_silero: default_vad_threshold_silero(),
         vad_threshold_earshot: default_vad_threshold_earshot(),
         overlay_style: default_overlay_style(),
         overlay_direct_mode: false,
@@ -1615,10 +1577,64 @@ fn apply_settings_migrations(
                 updated = true;
             }
         }
+        settings.settings_schema_version = 5;
+    }
+
+    // Schema 6: the ONNX runtime (transcribe-rs / ort) is gone, and with it
+    // the 11 hard-coded ONNX models. Every one of them has a GGUF successor in
+    // the bundled catalog, so a selection pointing at a retired id is remapped
+    // to that successor instead of silently falling back to "no model". The
+    // replacement may not be downloaded yet; the normal "model not downloaded"
+    // flow handles that. Model files on disk are never touched.
+    if stored_schema_version < 6 {
+        if let Some(replacement) = legacy_onnx_model_replacement(&settings.selected_model) {
+            info!(
+                "Schema 6 migration: selected model '{}' is no longer supported; switching to '{}'",
+                settings.selected_model, replacement
+            );
+            settings.selected_model = replacement;
+            updated = true;
+        }
+        for slot in [
+            &mut settings.multi_stt_model_2,
+            &mut settings.multi_stt_model_3,
+            &mut settings.multi_stt_model_4,
+        ] {
+            if let Some(replacement) = slot.as_deref().and_then(legacy_onnx_model_replacement) {
+                info!(
+                    "Schema 6 migration: Multi-STT model '{}' is no longer supported; switching to '{}'",
+                    slot.as_deref().unwrap_or_default(),
+                    replacement
+                );
+                *slot = Some(replacement);
+                updated = true;
+            }
+        }
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
     }
 
     updated
+}
+
+/// Catalog successor for a retired hard-coded ONNX model id, or `None` for
+/// any other id. The mapping is by architecture: each legacy ONNX bundle has a
+/// GGUF conversion of the same weights in the catalog.
+pub fn legacy_onnx_model_replacement(model_id: &str) -> Option<String> {
+    let repo = match model_id {
+        "parakeet-tdt-0.6b-v2" => "handy-computer/parakeet-tdt-0.6b-v2-gguf",
+        "parakeet-tdt-0.6b-v3" => "handy-computer/parakeet-tdt-0.6b-v3-gguf",
+        "moonshine-base" => "handy-computer/moonshine-base-gguf",
+        "moonshine-tiny-streaming-en" => "handy-computer/moonshine-streaming-tiny-gguf",
+        "moonshine-small-streaming-en" => "handy-computer/moonshine-streaming-small-gguf",
+        "moonshine-medium-streaming-en" => "handy-computer/moonshine-streaming-medium-gguf",
+        "sense-voice-int8" => "handy-computer/SenseVoiceSmall-gguf",
+        "gigaam-v3-e2e-ctc" => "handy-computer/gigaam-v3-e2e-ctc-gguf",
+        "canary-180m-flash" => "handy-computer/canary-180m-flash-gguf",
+        "canary-1b-v2" => "handy-computer/canary-1b-v2-gguf",
+        "cohere-int8" => "handy-computer/cohere-transcribe-03-2026-gguf",
+        _ => return None,
+    };
+    crate::catalog::default_id_for_repo(repo)
 }
 
 /// Normalize a hotkey string for comparison: lowercase, sort modifier
@@ -1832,7 +1848,6 @@ mod tests {
         assert_eq!(settings.log_level, LogLevel::Debug);
         assert_eq!(settings.sound_theme, SoundTheme::Pop);
         assert!(settings.filler_word_removal_enabled);
-        assert_eq!(settings.vad_backend, VadBackend::Silero);
 
         // The 0.1 integer device index is cleared once for transcribe.cpp 0.2,
         // while preserving this user's explicit GPU accelerator preference.
@@ -1854,6 +1869,80 @@ mod tests {
         // "multi_stt_transcribe" to avoid conflicts with the Multi-STT
         // performance-mode simulated shortcuts.
         assert_eq!(settings.bindings["transcribe"].current_binding, "");
+    }
+
+    #[test]
+    fn schema_6_remaps_retired_onnx_models_to_catalog_gguf() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.insert("settings_schema_version".into(), serde_json::json!(5));
+        map.insert(
+            "selected_model".into(),
+            serde_json::json!("sense-voice-int8"),
+        );
+        map.insert(
+            "multi_stt_model_2".into(),
+            serde_json::json!("moonshine-base"),
+        );
+        map.insert(
+            "multi_stt_model_3".into(),
+            serde_json::json!("canary-1b-v2"),
+        );
+        map.insert(
+            "multi_stt_model_4".into(),
+            serde_json::json!(
+                "handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf"
+            ),
+        );
+
+        let mut settings: AppSettings = serde_json::from_value(stored.clone()).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+        assert_eq!(
+            settings.selected_model,
+            "handy-computer/SenseVoiceSmall-gguf/SenseVoiceSmall-Q8_0.gguf"
+        );
+        assert_eq!(
+            settings.multi_stt_model_2.as_deref(),
+            Some("handy-computer/moonshine-base-gguf/moonshine-base-Q8_0.gguf")
+        );
+        assert_eq!(
+            settings.multi_stt_model_3.as_deref(),
+            Some("handy-computer/canary-1b-v2-gguf/canary-1b-v2-Q5_K_M.gguf")
+        );
+        // Catalog ids are left alone.
+        assert_eq!(
+            settings.multi_stt_model_4.as_deref(),
+            Some("handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf")
+        );
+        // Every retired id resolves to a catalog entry that actually exists.
+        for legacy in [
+            "parakeet-tdt-0.6b-v2",
+            "parakeet-tdt-0.6b-v3",
+            "moonshine-base",
+            "moonshine-tiny-streaming-en",
+            "moonshine-small-streaming-en",
+            "moonshine-medium-streaming-en",
+            "sense-voice-int8",
+            "gigaam-v3-e2e-ctc",
+            "canary-180m-flash",
+            "canary-1b-v2",
+            "cohere-int8",
+        ] {
+            let replacement = legacy_onnx_model_replacement(legacy)
+                .unwrap_or_else(|| panic!("{legacy} has no catalog replacement"));
+            assert!(
+                crate::catalog::CATALOG.iter().any(|d| d.id == replacement),
+                "{legacy} -> {replacement} is not a catalog id"
+            );
+        }
+        assert_eq!(
+            legacy_onnx_model_replacement("whisper-large-v3-turbo"),
+            None
+        );
     }
 
     #[test]

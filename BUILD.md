@@ -21,18 +21,8 @@ This guide covers how to set up the development environment and build Handy from
 
 ##### Intel Mac (x86_64)
 
-Prebuilt ONNX Runtime binaries are not available for Intel Macs. Install ONNX Runtime via Homebrew and link dynamically:
-
-```bash
-brew install onnxruntime
-ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun run tauri dev
-```
-
-The same environment variables apply for production builds:
-
-```bash
-ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun run tauri build
-```
+No extra steps. This fork has no ONNX Runtime dependency, so Intel Macs build
+exactly like Apple Silicon (transcribe.cpp with Metal).
 
 #### Windows
 
@@ -127,8 +117,8 @@ bun run tauri dev
 whether the pinned `transcribe-cpp` commit is behind the
 `NairoDorian/transcribe.cpp` fork's `main` and, if so, runs
 `cargo update -p transcribe-cpp -p transcribe-cpp-sys` (it never fails the
-build, even offline). The Silero VAD model is committed to the repository, so
-no model download step is needed.
+build, even offline). There is no VAD model file to fetch — the detector is
+pure Rust — and speech models come from the in-app catalog on first run.
 
 ### 4. Build for Production
 

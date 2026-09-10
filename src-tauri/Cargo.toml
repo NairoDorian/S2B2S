@@ -50,11 +50,7 @@ symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "
 log = "^0.4.34"
 env_filter = "2.0.0"
 tokio = "1.53.1"
-# Silero VAD is driven directly against the ONNX session; see
-# audio_toolkit/vad/silero.rs for why vad-rs is not used (it only speaks the
-# Silero v4 tensor interface, and the model shipped here is v6).
-ort = { version = "^2.0.0-rc.13", default-features = false }
-ndarray = "^0.17.2"
+# Voice activity detection: pure Rust, no model file, no native runtime.
 earshot = "1.2.2"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
@@ -70,13 +66,10 @@ whatlang = "^0.18.0"
 isolang = "^2.4.0"
 chrono = "0.4.45"
 rusqlite = { version = "^0.40.2", features = ["bundled"] }
-tar = "0.4.46"
-flate2 = "^1.1.10"
 sha2 = "0.11.0"
-# Whisper-family models run through transcribe-cpp (GGUF/ggml, native backends);
-# transcribe-rs is now ONNX-only (Parakeet, Moonshine, SenseVoice, GigaAM,
-# Canary, Cohere). Per-platform backend features are added in the target tables.
-transcribe-rs = { version = "0.3.11", features = ["onnx"] }
+# Every model (Whisper family, Parakeet, Moonshine, Canary, … as GGUF) runs
+# through transcribe-cpp (ggml, native backends). Per-platform backend features
+# are added in the target tables below.
 transcribe-cpp = { version = "*", default-features = false }
 handy-keys = "^0.3.4"
 ferrous-opencc = "0.4.0"
@@ -165,7 +158,6 @@ tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "dev
 tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
 transcribe-cpp = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
 transcribe-cpp-sys = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
-transcribe-rs = { git = "https://github.com/NairoDorian/transcribe-rs", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -180,6 +172,7 @@ strip = true
 panic = "unwind"
 
 # Earshot is pure Rust; keep it optimised in dev builds so a debug app (and
-# tests/vad_backend_bench.rs) measure the real VAD cost, not an unoptimised one.
+# tests/vad_speech_clock_probe.rs) measure the real VAD cost, not an
+# unoptimised one.
 [profile.dev.package.earshot]
 opt-level = 3

@@ -1,16 +1,10 @@
 pub const WHISPER_SAMPLE_RATE: u32 = 16000;
 
-/// Silero v5/v6 accepts exactly one window size per sample rate — 512 samples
-/// at 16 kHz — and silently returns near-zero probabilities for anything else
-/// rather than failing. The capture pipeline is framed to match, so one
-/// resampled frame is exactly one VAD decision.
-pub const VAD_FRAME_SAMPLES: usize = 512;
+/// Earshot uses 256 samples at 16 kHz (16 ms per frame). The capture pipeline
+/// frames itself to this size so one resampled frame is exactly one VAD
+/// decision.
+pub const VAD_FRAME_SAMPLES: usize = 256;
 
-/// Length of that window in milliseconds (512 / 16000). Used to frame the
+/// Length of that window in milliseconds (256 / 16000). Used to frame the
 /// resampler and to bill time on the speech clock.
-pub const VAD_FRAME_MS: u64 = 32;
-
-/// Samples of the preceding window that Silero v5/v6 expects prepended to each
-/// chunk, matching the reference implementation's `_context`. Without it the
-/// model cannot tell speech from silence at all.
-pub const VAD_CONTEXT_SAMPLES: usize = 64;
+pub const VAD_FRAME_MS: u64 = 16;

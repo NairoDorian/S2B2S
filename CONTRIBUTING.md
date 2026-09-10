@@ -56,9 +56,9 @@ Before you begin, ensure you have the following installed:
    bun install
    ```
 
-5. **Models**: the Silero VAD model (`src-tauri/resources/models/silero_vad_v6.2.onnx`)
-   is committed to the repository, so there is nothing to download. Speech
-   models are fetched from the in-app catalog on first run.
+5. **Models**: nothing to download. Voice activity detection is pure Rust
+   (Earshot, no model file) and speech models are fetched from the in-app
+   catalog on first run.
 
 6. **Run in development mode**:
    ```bash

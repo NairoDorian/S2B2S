@@ -18,9 +18,7 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 
-use crate::managers::model::{
-    EngineType, ModelDescriptor, ModelSource, QuantFile, default_quant_file,
-};
+use crate::managers::model::{ModelDescriptor, ModelSource, QuantFile, default_quant_file};
 use crate::managers::model_capabilities::{CapabilityProbe, Compatibility};
 
 #[derive(Deserialize)]
@@ -90,7 +88,6 @@ impl From<&CatalogModel> for ModelDescriptor {
             },
             name: m.name.clone(),
             description: m.description.clone(),
-            engine_type: EngineType::TranscribeCpp,
             caps: CapabilityProbe {
                 verdict: Compatibility::Compatible, // curated org models we ship support for
                 display_name: None,
@@ -204,6 +201,16 @@ static RANK_BY_ID: Lazy<HashMap<String, u32>> = Lazy::new(|| {
         .filter_map(|d| d.recommended_rank.map(|r| (d.id.clone(), r)))
         .collect()
 });
+
+/// Registry id (`"{repo_id}/{default filename}"`) of the catalog model
+/// hosted at `repo_id`, or `None` when the repo is not in the catalog. Used by
+/// the settings migration that remaps retired model ids.
+pub fn default_id_for_repo(repo_id: &str) -> Option<String> {
+    CATALOG
+        .iter()
+        .find(|d| matches!(&d.source, ModelSource::HuggingFace { repo_id: r, .. } if r == repo_id))
+        .map(|d| d.id.clone())
+}
 
 /// Recommended rank for a model id (lower = higher priority). Returns
 /// `u32::MAX` for unranked/unknown ids so they sort last in an ascending sort.

@@ -42,7 +42,7 @@ impl VoiceActivityDetector for FixedFrameVad {
 }
 
 #[test]
-fn resampler_frame_size_follows_the_vad_backend() {
+fn resampler_frame_size_follows_the_vad_frame() {
     let frame_samples = 256;
     let vad = VadConfig {
         detector: Arc::new(Mutex::new(Box::new(FixedFrameVad(frame_samples)))),
@@ -439,6 +439,11 @@ fn clock(hold_ms: u64) -> super::SpeechClock {
     )
 }
 
+/// Frames that add up to at least `ms` of audio at the VAD frame size.
+fn frames_covering(ms: u64) -> usize {
+    (ms / FRAME_MS + 1) as usize
+}
+
 fn feed(clock: &mut super::SpeechClock, voiced: bool, frames: usize) {
     for _ in 0..frames {
         clock.tick(voiced);
@@ -491,7 +496,7 @@ fn speech_clock_discards_pauses_that_reach_the_hold() {
     let mut clock = clock(500);
     let ten = 10 * FRAME_MS;
     feed(&mut clock, true, 10);
-    feed(&mut clock, false, 20);
+    feed(&mut clock, false, frames_covering(500));
     assert!(!clock.snapshot().speaking);
     assert_eq!(clock.snapshot().speech_ms, ten, "the pause is not speech");
 
@@ -572,7 +577,7 @@ fn speech_clock_reset_adopts_the_new_hold() {
     assert!(!clock.snapshot().speaking);
 
     feed(&mut clock, true, 2);
-    feed(&mut clock, false, 5);
+    feed(&mut clock, false, frames_covering(150));
     assert!(!clock.snapshot().speaking);
     assert_eq!(clock.snapshot().speech_ms, 2 * FRAME_MS);
 }

@@ -200,9 +200,17 @@ mod tests {
         save_raw_wav_file(path, &original, sample_rate, cpal::SampleFormat::F32).unwrap();
         verify_wav_file(path, original.len()).unwrap();
 
-        // Reading back decodes and automatically downsamples to 16 kHz in 512-sample frames
+        // Reading back decodes and automatically downsamples to 16 kHz in
+        // whole VAD frames (256 samples).
         let decoded = read_wav_samples(path).unwrap();
-        assert_eq!(decoded.len(), 16384); // 32 frames of 512 samples (16 kHz)
+        assert_eq!(
+            decoded.len() % crate::audio_toolkit::constants::VAD_FRAME_SAMPLES,
+            0
+        );
+        assert_eq!(
+            decoded.len(),
+            63 * crate::audio_toolkit::constants::VAD_FRAME_SAMPLES
+        ); // ≈ 1 s at 16 kHz
         // Verify audio content is non-empty and non-zero
         assert!(decoded.iter().any(|&s| s.abs() > 0.1));
     }

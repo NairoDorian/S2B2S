@@ -80,7 +80,6 @@ export const commands = {
 	changeLazyStreamCloseSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_lazy_stream_close_setting", { enabled })),
 	changeSaveRawAudioSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_save_raw_audio_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
-	changeVadBackendSetting: (backend: VadBackend) => typedError<null, string>(__TAURI_INVOKE("change_vad_backend_setting", { backend })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
@@ -97,13 +96,12 @@ export const commands = {
 	getKeyboardImplementation: () => __TAURI_INVOKE<string>("get_keyboard_implementation"),
 	changeShowTrayIconSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_tray_icon_setting", { enabled })),
 	changeTranscribeAcceleratorSetting: (accelerator: TranscribeAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_accelerator_setting", { accelerator })),
-	changeOrtAcceleratorSetting: (accelerator: OrtAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_ort_accelerator_setting", { accelerator })),
 	changeTranscribeGpuDevice: (device: string | null) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_gpu_device", { device })),
 	/**
 	 *  Return which accelerators and GPU devices are available for this build.
 	 * 
 	 *  First-call cost is dominated by enumerating GPU devices through the
-	 *  transcribe.cpp Metal/Vulkan backend, which loads dynamic libraries and
+	 *  transcribe.cpp Metal/CUDA backend, which loads dynamic libraries and
 	 *  probes hardware. Run it on the blocking pool so the webview thread
 	 *  stays responsive — see also the startup pre-warm in `lib.rs`.
 	 */
@@ -155,8 +153,6 @@ export const commands = {
 	is_downloaded: boolean,
 	is_downloading: boolean,
 	partial_size: number | null,
-	is_directory: boolean,
-	engine_type: EngineType,
 	accuracy_score: number | null,
 	speed_score: number | null,
 	supports_translation: boolean,
@@ -168,7 +164,7 @@ export const commands = {
 	supports_language_detection: boolean,
 	/**
 	 *  Which native streaming latency extension the model supports (if any).
-	 *  Populated for catalog streaming models; `None` for legacy/Onnx/custom.
+	 *  Populated for catalog streaming models; `None` for legacy/custom.
 	 */
 	native_streaming_latency_kind?: NativeStreamingLatencyKind | null,
 } | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
@@ -275,13 +271,13 @@ export const commands = {
 	 */
 	isLaptop: () => typedError<boolean, string>(__TAURI_INVOKE("is_laptop")),
 	/**
-	 *  Set the speech-probability threshold of one VAD backend. The detector is
-	 *  built from the persisted value, so the setting is written first and the
-	 *  active detector rebuilt afterwards; a rejected rebuild (mid-recording,
-	 *  failed microphone reopen) restores the previous value so the slider and
-	 *  the running detector never disagree.
+	 *  Set the speech-probability threshold of the VAD. The detector is built
+	 *  from the persisted value, so the setting is written first and the active
+	 *  detector rebuilt afterwards; a rejected rebuild (mid-recording, failed
+	 *  microphone reopen) restores the previous value so the slider and the
+	 *  running detector never disagree.
 	 */
-	changeVadThresholdSetting: (backend: VadBackend, threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_vad_threshold_setting", { backend, threshold })),
+	changeVadThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_vad_threshold_setting", { threshold })),
 	changeFileTranscriptionSettings: (settings: FileTranscriptionSettings) => typedError<null, string>(__TAURI_INVOKE("change_file_transcription_settings", { settings })),
 	listAudioFilesInFolder: (folder: string, includeSubfolders: boolean) => typedError<string[], string>(__TAURI_INVOKE("list_audio_files_in_folder", { folder, includeSubfolders })),
 	startFileTranscription: (paths: string[]) => typedError<number, string>(__TAURI_INVOKE("start_file_transcription", { paths })),
@@ -428,7 +424,6 @@ export type AppSettings_Deserialize = {
 	filler_word_removal_enabled?: boolean,
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
-	ort_accelerator?: OrtAcceleratorSetting,
 	/**
 	 *  Stable transcribe.cpp device selector. This is derived from the backend's
 	 *  `device_id` when available (or its name for backends such as Metal),
@@ -437,10 +432,6 @@ export type AppSettings_Deserialize = {
 	transcribe_gpu_device?: string | null,
 	extra_recording_buffer_ms?: number,
 	vad_enabled?: boolean,
-	/**  Experimental detector implementation. Silero remains the stable default. */
-	vad_backend?: VadBackend,
-	/**  Speech-probability threshold of the Silero detector (0.05–0.95). */
-	vad_threshold_silero?: number | null,
 	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot?: number | null,
 	/**
@@ -601,7 +592,6 @@ export type AppSettings_Serialize = {
 	filler_word_removal_enabled: boolean,
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
-	ort_accelerator: OrtAcceleratorSetting,
 	/**
 	 *  Stable transcribe.cpp device selector. This is derived from the backend's
 	 *  `device_id` when available (or its name for backends such as Metal),
@@ -610,10 +600,6 @@ export type AppSettings_Serialize = {
 	transcribe_gpu_device: string | null,
 	extra_recording_buffer_ms: number,
 	vad_enabled: boolean,
-	/**  Experimental detector implementation. Silero remains the stable default. */
-	vad_backend: VadBackend,
-	/**  Speech-probability threshold of the Silero detector (0.05–0.95). */
-	vad_threshold_silero: number | null,
 	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot: number | null,
 	/**
@@ -685,7 +671,6 @@ export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter";
 
 export type AvailableAccelerators = {
 	transcribe: string[],
-	ort: string[],
 	gpu_devices: GpuDeviceOption[],
 };
 
@@ -727,14 +712,6 @@ export type DurationMetricSummary = {
 	average_ms: number | null,
 	maximum_ms: number | null,
 };
-
-export type EngineType = 
-/**
- *  Any GGML/GGUF model loaded through transcribe-cpp (Whisper, Parakeet,
- *  Voxtral, Qwen3-ASR, Nemotron, …). The architecture is auto-detected from
- *  the file, so this one variant covers the whole transcribe-cpp family.
- */
-"TranscribeCpp" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice" | "GigaAM" | "Canary" | "Cohere";
 
 export type FileJobStatus = "queued" | "decoding" | "transcribing" | "merging" | "post_processing" | "saving" | "done" | "failed" | "cancelled";
 
@@ -962,8 +939,6 @@ export type ModelInfo = {
 	is_downloaded: boolean,
 	is_downloading: boolean,
 	partial_size: number | null,
-	is_directory: boolean,
-	engine_type: EngineType,
 	accuracy_score: number | null,
 	speed_score: number | null,
 	supports_translation: boolean,
@@ -975,7 +950,7 @@ export type ModelInfo = {
 	supports_language_detection: boolean,
 	/**
 	 *  Which native streaming latency extension the model supports (if any).
-	 *  Populated for catalog streaming models; `None` for legacy/Onnx/custom.
+	 *  Populated for catalog streaming models; `None` for legacy/custom.
 	 */
 	native_streaming_latency_kind?: NativeStreamingLatencyKind | null,
 };
@@ -1016,7 +991,7 @@ export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "mi
 /**
  *  Which transcribe-cpp stream extension a catalog streaming model exposes for
  *  low-latency tuning. `None` means the model has no configurable latency
- *  extension (non-streaming models, or ONNX engines).
+ *  extension (non-streaming models).
  */
 export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cache_aware" | "nemotron_speech_cache_aware";
 
@@ -1027,8 +1002,6 @@ export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cac
  *  (runtime default — no stream extension attached), so it is the unit value.
  */
 export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "accurate";
-
-export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm";
 
 export type OverlayPosition = OverlayPosition_Serialize | OverlayPosition_Deserialize;
 
@@ -1222,8 +1195,6 @@ export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu";
 export type TranscriptOutputFormat = "txt" | "md";
 
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool";
-
-export type VadBackend = "silero" | "earshot";
 
 export type WindowsMicrophonePermissionStatus = {
 	supported: boolean,

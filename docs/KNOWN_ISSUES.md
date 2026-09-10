@@ -74,6 +74,17 @@ cleanup.
 - **(#50) `.nix/bun.nix`** is only regenerated where bun2nix exists (not on
   Windows); it is stale after the `zod` removal until `bun install` runs on a
   Nix machine. `scripts/ci/stage-transcribe-libs.sh` is referenced by nothing.
+- **Old ONNX model directories are never cleaned up (2026-09-10).** The
+  transcribe.cpp-only change stopped listing the 11 legacy ONNX models but
+  deliberately leaves their extracted directories (`parakeet-tdt-0.6b-v2-int8/`
+  etc., up to ~1 GB each) under the models folder. A "remove unused model
+  files" action in Settings → Models was planned
+  (`docs/PLAN_TRANSCRIBE_CPP_ONLY.md` §4 Phase 2) and not built; users delete
+  them by hand.
+- **Earshot was never benchmarked in noisy rooms** before becoming the only
+  VAD (the plan's Phase 0). Quiet-room agreement with Silero was 97.7 %. If
+  speech gets clipped in noise, `vad_threshold_earshot` is the knob; adding a
+  second detector back is a larger change.
 - `audio_toolkit/bin/cli.rs` is not a build target (`[[bin]]` commented out,
   as upstream) and therefore not compiled by CI. It compiles again as of
   2026-08-26; either register the bin or accept that it can rot.
@@ -81,7 +92,7 @@ cleanup.
   dev, Vite 8, Prettier 4 alpha, Playwright alpha, Bun 1.4). This is the
   fork's explicit policy (`bun run update-deps --prerelease`); expect
   occasional breakage from upstream tooling.
-- clippy reports 67 warnings, all upstream style lints (`collapsible_if`
+- clippy reports 69 warnings, all upstream style lints (`collapsible_if`
   from Rust 1.97's let-chains suggestion, `redundant reference in format!`,
-  three `items_after_test_module`). Fork-added code is clean; clearing the
+  `items_after_test_module`). Fork-added code is clean; clearing the
   upstream ones would create merge conflicts for little gain.

@@ -216,7 +216,7 @@ pub type SpeechActivityCallback = Arc<dyn Fn(SpeechActivity) + Send + Sync + 'st
 /// which is far less jarring than a timer that visibly rewinds.
 #[derive(Debug)]
 pub struct SpeechClock {
-    /// Milliseconds per audio frame (e.g. 32ms for Silero, 16ms for Earshot).
+    /// Milliseconds per audio frame (16 ms for Earshot; `VAD_FRAME_MS`).
     frame_ms: u64,
     /// Consecutive voiced frames needed to enter speech, matching the VAD's own
     /// onset debounce so a single noisy frame cannot start the clock.

@@ -1,11 +1,11 @@
-//! End-to-end check of the real VAD chain (Silero + SmoothedVad) over a real
+//! End-to-end check of the real VAD chain (Earshot + SmoothedVad) over a real
 //! recording, asserting that the raw per-frame verdict the speech clock depends
 //! on actually tracks speech.
 //!
 //!   HANDY_PROBE_WAV=<path> cargo test --test vad_speech_clock_probe -- --nocapture
 
 use handy_app_lib::audio_toolkit::{
-    SileroVad, VoiceActivityDetector,
+    EarshotVad, VoiceActivityDetector,
     audio::read_wav_samples,
     constants::VAD_FRAME_SAMPLES,
     vad::{
@@ -20,17 +20,14 @@ fn real_vad_chain_reports_speech_over_real_audio() {
         eprintln!("skipped: set HANDY_PROBE_WAV to a 16kHz mono speech recording");
         return;
     };
-    let model = std::env::var("HANDY_PROBE_VAD_MODEL")
-        .unwrap_or_else(|_| "target/debug/resources/models/silero_vad_v6.2.onnx".to_string());
-
     let samples = read_wav_samples(&wav).expect("read wav");
-    let silero = SileroVad::new(&model, 0.3).expect("load silero");
+    let earshot = EarshotVad::new(0.5).expect("construct earshot");
     let prefill_frames = frames_for_duration_ms(VAD_PREFILL_MS, VAD_FRAME_SAMPLES);
     let streaming_hangover_frames =
         frames_for_duration_ms(VAD_STREAMING_HANGOVER_MS, VAD_FRAME_SAMPLES);
     let onset_frames = frames_for_duration_ms(VAD_ONSET_MS, VAD_FRAME_SAMPLES);
     let mut vad: Box<dyn VoiceActivityDetector> = Box::new(SmoothedVad::new(
-        Box::new(silero),
+        Box::new(earshot),
         prefill_frames,
         streaming_hangover_frames,
         onset_frames,

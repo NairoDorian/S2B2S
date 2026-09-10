@@ -49,7 +49,6 @@ export const ModelsSettings: React.FC = () => {
     downloadProgress,
     downloadStats,
     verifyingModels,
-    extractingModels,
     loading,
     isRescanning,
     downloadModel,
@@ -97,9 +96,6 @@ export const ModelsSettings: React.FC = () => {
   }, [languageFilter, t]);
 
   const getModelStatus = (modelId: string): ModelCardStatus => {
-    if (modelId in extractingModels) {
-      return "extracting";
-    }
     if (modelId in verifyingModels) {
       return "verifying";
     }
@@ -205,8 +201,7 @@ export const ModelsSettings: React.FC = () => {
       if (
         model.is_custom ||
         model.is_downloaded ||
-        model.id in downloadingModels ||
-        model.id in extractingModels
+        model.id in downloadingModels
       ) {
         downloaded.push(model);
       } else {
@@ -226,7 +221,7 @@ export const ModelsSettings: React.FC = () => {
       downloadedModels: downloaded,
       availableModels: available,
     };
-  }, [filteredModels, downloadingModels, extractingModels, currentModel]);
+  }, [filteredModels, downloadingModels, currentModel]);
 
   if (loading) {
     return (

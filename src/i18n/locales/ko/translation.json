@@ -132,9 +132,6 @@
     "noModelsAvailable": "사용 가능한 모델이 없습니다",
     "verifying": "{{modelName}} 검증 중...",
     "verifyingGeneric": "검증 중...",
-    "extracting": "{{modelName}} 압축 해제 중...",
-    "extractingMultiple": "{{count}}개 모델 압축 해제 중...",
-    "extractingGeneric": "압축 해제 중...",
     "downloading": "다운로드 중 {{percentage}}%",
     "downloadingMultiple": "{{count}}개 모델 다운로드 중...",
     "modelReady": "모델 준비 완료",
@@ -324,10 +321,6 @@
           "title": "Whisper 가속",
           "description": "Whisper 모델의 하드웨어 가속. 자동 모드는 GPU를 사용합니다 (macOS에서는 Metal, Windows/Linux에서는 Vulkan)."
         },
-        "ort": {
-          "title": "ONNX 가속",
-          "description": "ONNX 모델의 하드웨어 가속 (Parakeet, Canary, Moonshine 등). Windows의 DirectML은 실험적입니다. 모델이 전사에 실패할 수 있습니다."
-        },
         "gpuDevice": {
           "auto": "자동"
         }
@@ -445,14 +438,6 @@
         "title": "음성 활동 감지",
         "description": "녹음에서 무음 구간을 걸러냅니다. 스트리밍 지원 모델은 더 긴 VAD 테일을 사용하며, VAD를 끄면 원본 오디오가 그대로 녹음됩니다."
       },
-      "vadBackend": {
-        "title": "음성 활동 감지 백엔드",
-        "description": "실험적 감지기 구현입니다. Silero가 안정적인 기본값으로 유지됩니다.",
-        "options": {
-          "silero": "Silero VAD",
-          "earshot": "Earshot VAD (실험적)"
-        }
-      },
       "fillerWordRemoval": {
         "title": "군더더기 표현 제거",
         "description": "전사에서 흔한 머뭇거림 표현을 제거합니다. 그대로 두려면 이 옵션을 끄세요."
@@ -481,8 +466,8 @@
         }
       },
       "vadSensitivity": {
-        "label": "VAD Threshold ({{backend}})",
-        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Each detector keeps its own value; Silero defaults to 0.30, Earshot to 0.50."
+        "label": "VAD Threshold",
+        "description": "Speech probability a frame needs to count as speech. Lower values are more sensitive and keep quiet or distant speech (and more noise); higher values cut more background noise but may clip soft words. Default 0.50."
       }
     },
     "postProcessing": {

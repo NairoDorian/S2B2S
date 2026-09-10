@@ -9,8 +9,8 @@
 bun install                    # Install dependencies (postinstall runs scripts/check-nix-deps.ts)
 ```
 
-The Silero VAD model (`src-tauri/resources/models/silero_vad_v6.2.onnx`) is
-committed to the repository — there is nothing to download.
+There is no VAD model to download — voice activity detection is pure Rust
+(Earshot). Speech models come from the in-app catalog on first run.
 
 **Development:**
 

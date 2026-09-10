@@ -5,14 +5,12 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   TranscribeAcceleratorSetting,
-  OrtAcceleratorSetting,
   FileTranscriptionSettings,
   LiveModeSettings,
   LLMPrompt,
   MicIdleTimeoutUnit,
   NativeStreamingLatencyPreset,
   ShortcutActivation,
-  VadBackend,
 } from "@/bindings";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
@@ -223,15 +221,6 @@ const settingUpdaters: {
   speech_pause_hold_ms: (value) =>
     commands.changeSpeechPauseHoldSetting(value as number),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
-  vad_backend: async (value) => {
-    const result = await commands.changeVadBackendSetting(value as VadBackend);
-    if (result.status === "error") {
-      // Rejected switches (e.g. mid-recording) roll the dropdown back via the
-      // throw below; the toast tells the user why.
-      toast.error(result.error);
-      throw new Error(result.error);
-    }
-  },
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>
@@ -241,8 +230,6 @@ const settingUpdaters: {
     commands.changeTranscribeAcceleratorSetting(
       value as TranscribeAcceleratorSetting,
     ),
-  ort_accelerator: (value) =>
-    commands.changeOrtAcceleratorSetting(value as OrtAcceleratorSetting),
   transcribe_gpu_device: (value) =>
     commands.changeTranscribeGpuDevice(value as string | null),
   extra_recording_buffer_ms: (value) =>
@@ -301,21 +288,8 @@ const settingUpdaters: {
     ),
   // The detector is rebuilt from the new threshold; a rejected rebuild
   // (mid-recording) rolls the slider back through the throw.
-  vad_threshold_silero: async (value) => {
-    const result = await commands.changeVadThresholdSetting(
-      "silero",
-      value as number,
-    );
-    if (result.status === "error") {
-      toast.error(result.error);
-      throw new Error(result.error);
-    }
-  },
   vad_threshold_earshot: async (value) => {
-    const result = await commands.changeVadThresholdSetting(
-      "earshot",
-      value as number,
-    );
+    const result = await commands.changeVadThresholdSetting(value as number);
     if (result.status === "error") {
       toast.error(result.error);
       throw new Error(result.error);
