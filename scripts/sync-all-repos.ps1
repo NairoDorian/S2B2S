@@ -50,12 +50,12 @@ if (Test-Path $CompileScript) {
 # 3. Sync transcribe.cpp
 $TranscribeCppDir = Join-Path $repoRoot "..\transcribe.cpp"
 if (Test-Path $TranscribeCppDir) {
-    Write-Host "`n[3/4] Syncing transcribe.cpp (handy-computer/transcribe.cpp, branch: main)..." -ForegroundColor Yellow
+    Write-Host "`n[3/4] Syncing transcribe.cpp (NairoDorian/transcribe.cpp, branch: main)..." -ForegroundColor Yellow
     git -C $TranscribeCppDir checkout main 2>&1 | Out-Host
     git -C $TranscribeCppDir pull --recurse-submodules 2>&1 | Out-Host
 } else {
     Write-Host "`n[3/4] transcribe.cpp directory not found at $TranscribeCppDir. Cloning main branch..." -ForegroundColor Yellow
-    git clone --recurse-submodules -b main https://github.com/handy-computer/transcribe.cpp $TranscribeCppDir
+    git clone --recurse-submodules -b main https://github.com/NairoDorian/transcribe.cpp $TranscribeCppDir
 }
 
 # 4. Smart Sync Cargo git dependencies (transcribe-cpp, hf-hub)
@@ -72,10 +72,10 @@ if (Get-Command cargo -ErrorAction SilentlyContinue) {
         $lockContent = Get-Content $CargoLockPath -Raw
 
         # Check transcribe.cpp
-        $transcribeRemote = (git ls-remote https://github.com/handy-computer/transcribe.cpp refs/heads/main 2>$null)
+        $transcribeRemote = (git ls-remote https://github.com/NairoDorian/transcribe.cpp refs/heads/main 2>$null)
         if ($transcribeRemote -match "([0-9a-fA-F]{40})") {
             $remoteTranscribeSha = $matches[1]
-            if ($lockContent -match 'github\.com/handy-computer/transcribe\.cpp\?branch=main#([0-9a-fA-F]{40})') {
+            if ($lockContent -match 'github\.com/NairoDorian/transcribe\.cpp\?branch=main#([0-9a-fA-F]{40})') {
                 $lockedTranscribeSha = $matches[1]
                 if ($remoteTranscribeSha -eq $lockedTranscribeSha) {
                     Write-Host "      [transcribe.cpp] Up-to-date ($($remoteTranscribeSha.Substring(0,8))). Skipping rebuild/update." -ForegroundColor Green

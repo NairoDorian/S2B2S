@@ -151,17 +151,17 @@ winreg = "*"
 
 # Whisper backend per Windows arch.
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
-transcribe-cpp = { version = "0.2.0", default-features = false, features = [
+transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
-  "vulkan",
+  "cuda",
 ] }
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
-transcribe-cpp = { version = "0.2.0", default-features = false }
+transcribe-cpp = { version = "*", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
-transcribe-cpp = { version = "0.2.0", default-features = false, features = ["metal"] }
+transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }
 # Used by the receipt-sequenced ("reliable") paste path for lazy NSPasteboard
 # promises. Versions track what Tauri already pulls in.
 objc2 = "*"
@@ -173,17 +173,17 @@ objc2-service-management = "*"
 gtk-layer-shell = { version = "*", features = ["v0_6"] }
 gtk = "*"
 libc = "*"
-transcribe-cpp = { version = "0.2.0", default-features = false, features = [
+transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
-  "vulkan",
+  "cuda",
 ] }
 
 # TEMPORARY: tao pinned past 0.35.3 for the Wayland client-side-decorations fix
 # (tao #1218, fixes tauri #11856 — dead titlebar buttons after visible(false) →
 # show()). Drop this once a tao release containing it lands in tauri.
 [patch.crates-io]
-transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
-transcribe-cpp-sys = { git = "https://github.com/handy-computer/transcribe.cpp", branch = "main" }
+transcribe-cpp = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
+transcribe-cpp-sys = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
 tao = { git = "https://github.com/cjpais/tao", rev = "c3bee28c1d446d95f08c95c3b6f8d4bde052b876" }
 tao-macros = { git = "https://github.com/cjpais/tao", rev = "c3bee28c1d446d95f08c95c3b6f8d4bde052b876" }
 

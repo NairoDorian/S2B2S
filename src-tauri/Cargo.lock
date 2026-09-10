@@ -7461,7 +7461,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7879,8 +7879,8 @@ dependencies = [
 
 [[package]]
 name = "transcribe-cpp"
-version = "0.2.1"
-source = "git+https://github.com/handy-computer/transcribe.cpp?branch=main#ea077b87590bcfb090d7c38c03ab36cd1c7005d3"
+version = "0.2.3"
+source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#0c2a6b9aafb4538b259d82e051aa1242b80f6bdf"
 dependencies = [
  "log",
  "thiserror 2.0.20",
@@ -7889,8 +7889,8 @@ dependencies = [
 
 [[package]]
 name = "transcribe-cpp-sys"
-version = "0.2.1"
-source = "git+https://github.com/handy-computer/transcribe.cpp?branch=main#ea077b87590bcfb090d7c38c03ab36cd1c7005d3"
+version = "0.2.3"
+source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#0c2a6b9aafb4538b259d82e051aa1242b80f6bdf"
 dependencies = [
  "cmake",
  "serde_json",
