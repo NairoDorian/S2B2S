@@ -115,6 +115,15 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
     `verify_wav_file`), `visualizer.rs` (the 16-bucket level meter; only
     runs for a registered callback, and the app registers none since the
     overlay draws the Live FFT scope)
+    - `device.rs` resolves the system default to the concrete endpoint
+      (`default_input_endpoint` / `default_output_endpoint`) for the recorder,
+      the channel query and the feedback sounds. cpal 0.18's virtual default
+      handle activates through `ActivateAudioInterfaceAsync` and installs a
+      device-change listener whose callbacks initialise COM on Windows' own
+      notification thread; after the first callback every activation in the
+      process failed with RPC_E_CHANGED_MODE ("Cannot change thread mode
+      after it is set") until restart. A changed system default is therefore
+      followed at the next open (idle close, stream rebuild), not live
     - `recorder.rs` also hosts `SpeechClock`, which measures how long the user
       has actually been speaking (see Speech Stats below)
     - `recorder.rs` also defines `AnalysisSink`, the trait the Live FFT tap

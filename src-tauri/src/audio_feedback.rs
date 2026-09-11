@@ -1,8 +1,9 @@
+use crate::audio_toolkit::audio::default_output_endpoint;
 use crate::settings::SoundTheme;
 use crate::settings::{self, AppSettings};
 use cpal::traits::{DeviceTrait, HostTrait};
 use log::{debug, error, warn};
-use rodio::{Decoder, DeviceSinkBuilder};
+use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -102,7 +103,7 @@ fn play_audio_file(
     let handle = if let Some(device_name) = selected_device {
         if device_name == "Default" {
             debug!("Using default device");
-            DeviceSinkBuilder::open_default_sink()?
+            open_default_output_sink()?
         } else {
             let host = crate::audio_toolkit::get_cpal_host();
             let devices = host.output_devices()?;
@@ -120,13 +121,13 @@ fn play_audio_file(
                 Some(device) => DeviceSinkBuilder::from_device(device)?.open_stream()?,
                 None => {
                     warn!("Device '{}' not found, using default device", device_name);
-                    DeviceSinkBuilder::open_default_sink()?
+                    open_default_output_sink()?
                 }
             }
         }
     } else {
         debug!("Using default device");
-        DeviceSinkBuilder::open_default_sink()?
+        open_default_output_sink()?
     };
 
     let mixer = handle.mixer();
@@ -140,4 +141,14 @@ fn play_audio_file(
     player.sleep_until_end();
 
     Ok(())
+}
+
+/// Opens the concrete default output endpoint (see `default_output_endpoint`
+/// in audio_toolkit/audio/device.rs); rodio's own default only when
+/// enumeration finds none.
+fn open_default_output_sink() -> Result<MixerDeviceSink, Box<dyn std::error::Error>> {
+    match default_output_endpoint() {
+        Some(endpoint) => Ok(DeviceSinkBuilder::from_device(endpoint.device)?.open_stream()?),
+        None => Ok(DeviceSinkBuilder::open_default_sink()?),
+    }
 }

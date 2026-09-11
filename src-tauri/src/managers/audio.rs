@@ -1,4 +1,4 @@
-use crate::audio_toolkit::audio::DenoiseParams;
+use crate::audio_toolkit::audio::{DenoiseParams, default_input_endpoint};
 use crate::audio_toolkit::{
     AudioRecorder, VadPolicy, VoiceActivityDetector, list_input_devices,
     vad::{
@@ -289,7 +289,8 @@ enum DesiredMicrophone {
 }
 
 /// Result of resolving the persisted preference to a live cpal device.
-/// `device: None` means cpal should open the system default. The unavailable
+/// `device: None` only when no input endpoint resolved at all (the recorder
+/// then falls back to cpal's default). The unavailable
 /// name is populated only when enumeration succeeded and confirmed that the
 /// user's regular selected microphone is missing.
 struct MicrophoneResolution {
@@ -589,9 +590,18 @@ impl AudioRecordingManager {
         let desired = self.desired_microphone(settings);
         let (device_name, selected_microphone) = match desired {
             DesiredMicrophone::Default => {
-                debug!("device resolve: no mic configured -> system default");
+                // The concrete endpoint, never cpal's virtual default handle
+                // (see `default_input_endpoint`). Not cached on purpose: a
+                // changed system default is picked up by the next open.
+                let resolve_started = Instant::now();
+                let endpoint = default_input_endpoint();
+                debug!(
+                    "device resolve: no mic configured -> system default {:?} ({:?})",
+                    endpoint.as_ref().map(|e| e.name.as_str()),
+                    resolve_started.elapsed()
+                );
                 return MicrophoneResolution {
-                    device: None,
+                    device: endpoint.map(|e| e.device),
                     unavailable_selected_microphone: None,
                 };
             }

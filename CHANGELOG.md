@@ -413,6 +413,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Microphone could not be reopened after a device hiccup on Windows**
+  ("Cannot change thread mode after it is set", RPC_E_CHANGED_MODE): cpal
+  0.18's virtual default-device handle activates through
+  `ActivateAudioInterfaceAsync` and installs a device-change listener whose
+  callbacks initialise COM on Windows' notification thread, after which every
+  activation in the process failed until restart. The recorder, the channel
+  query and the feedback sounds now open the concrete default endpoint
+  instead (`default_input_endpoint` / `default_output_endpoint`); a changed
+  system default is followed at the next open.
 - **Every build recompiled the app crate (2026-09-11).** `build.rs` deleted
   and recreated `src-tauri/transcribe-libs` on every run, but that folder
   is one of tauri-build's resource inputs (`rerun-if-changed`), so cargo

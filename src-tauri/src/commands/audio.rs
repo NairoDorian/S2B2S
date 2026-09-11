@@ -1,5 +1,7 @@
 use crate::audio_feedback;
-use crate::audio_toolkit::audio::{AudioRecorder, list_input_devices, list_output_devices};
+use crate::audio_toolkit::audio::{
+    AudioRecorder, default_input_endpoint, list_input_devices, list_output_devices,
+};
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
 use crate::settings::{get_settings, write_settings};
 use log::warn;
@@ -377,10 +379,8 @@ pub async fn get_microphone_channels(device_name: String) -> Result<u16, String>
     // cpal device enumeration and config queries can stall, so keep them off
     // the webview/main run loop.
     tokio::task::spawn_blocking(move || {
-        use cpal::traits::HostTrait;
-
         let device = if device_name.eq_ignore_ascii_case("default") {
-            crate::audio_toolkit::get_cpal_host().default_input_device()
+            default_input_endpoint().map(|endpoint| endpoint.device)
         } else {
             list_input_devices()
                 .map_err(|e| format!("Failed to list audio devices: {e}"))?

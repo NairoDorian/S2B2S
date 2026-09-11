@@ -10,7 +10,7 @@ use std::{
 
 use cpal::{
     Device, Sample, SizedSample,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, StreamTrait},
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -559,11 +559,12 @@ impl AudioRecorder {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
         let (init_tx, init_rx) = mpsc::sync_channel::<Result<(), String>>(1);
 
-        let host = crate::audio_toolkit::get_cpal_host();
         let device = match device {
             Some(dev) => dev,
-            None => host
-                .default_input_device()
+            // The concrete endpoint, never cpal's virtual default handle (see
+            // `default_input_endpoint`).
+            None => super::device::default_input_endpoint()
+                .map(|endpoint| endpoint.device)
                 .ok_or_else(|| Error::new(std::io::ErrorKind::NotFound, "No input device found"))?,
         };
 
