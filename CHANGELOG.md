@@ -181,6 +181,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **llama.cpp installs no longer bundle the 500 MB CUDA runtime by default
+  (2026-09-11).** The cudart package (cublasLt64 438 MB + cublas64 + cudart64)
+  is now an opt-in toggle, exactly like the download script's
+  `-IncludeCudart`; the page says whether a CUDA toolkit is installed
+  (`CUDA_PATH`) and offers "Remove runtime" on installs that already carry
+  it, so the earlier 672 MB install shrinks to about 180 MB.
 - **Faster startup (2026-09-11).** The always-on microphone is opened on a
   background thread instead of stalling startup for ~0.9 s, and on
   Windows/Linux the hotkeys and paste input are registered at the end of

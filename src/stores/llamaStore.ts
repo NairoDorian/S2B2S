@@ -37,7 +37,13 @@ interface LlamaStore {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   restart: () => Promise<void>;
-  install: (tag: string, backend: string) => Promise<void>;
+  install: (
+    tag: string,
+    backend: string,
+    includeCudart: boolean,
+  ) => Promise<void>;
+  removeCudaRuntime: (dir: string) => Promise<void>;
+  cudaRuntimeDir: string | null;
   removeInstalled: (dir: string) => Promise<void>;
 }
 
@@ -50,6 +56,7 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
   installed: [],
   download: null,
   detectedBackend: null,
+  cudaRuntimeDir: null,
   commandPreview: "",
   commandError: null,
   initialized: false,
@@ -73,6 +80,10 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
     commands
       .detectLlamaBackend()
       .then((backend) => set({ detectedBackend: backend }))
+      .catch(() => {});
+    commands
+      .systemCudaRuntimeDir()
+      .then((dir) => set({ cudaRuntimeDir: dir }))
       .catch(() => {});
   },
 
@@ -131,7 +142,7 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
     const result = await commands.restartLlamaServer();
     if (result.status === "error") toast.error(String(result.error));
   },
-  install: async (tag, backend) => {
+  install: async (tag, backend, includeCudart) => {
     set({
       download: {
         tag,
@@ -143,11 +154,24 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
         dir: null,
       },
     });
-    const result = await commands.installLlamaRelease(tag, backend);
+    const result = await commands.installLlamaRelease(
+      tag,
+      backend,
+      includeCudart,
+    );
     if (result.status === "error") {
       toast.error(String(result.error));
       set({ download: null });
     }
+  },
+  removeCudaRuntime: async (dir) => {
+    const result = await commands.removeBundledCudaRuntime(dir);
+    if (result.status === "error") {
+      toast.error(String(result.error));
+      return;
+    }
+    toast.success(`Freed ${result.data} MB`);
+    await get().refreshInstalled();
   },
   removeInstalled: async (dir) => {
     const result = await commands.removeInstalledLlamaServer(dir);

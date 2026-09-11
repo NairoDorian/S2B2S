@@ -475,6 +475,10 @@ pub struct LlamaSettings {
     pub backend: String,
     /// `latest`, `stable` or `nightly` for the release list.
     pub channel: String,
+    /// Also download the ~500 MB CUDA runtime package (cudart / cuBLAS) with
+    /// a CUDA build. Off, like the download script without `-IncludeCudart`:
+    /// a machine with the CUDA toolkit installed already has those DLLs.
+    pub include_cudart: bool,
 }
 
 impl Default for LlamaSettings {
@@ -505,6 +509,7 @@ impl Default for LlamaSettings {
             stop_on_exit: true,
             backend: "auto".to_string(),
             channel: "latest".to_string(),
+            include_cudart: false,
         }
     }
 }

@@ -56,6 +56,7 @@ type Cfg = {
   stop_on_exit: boolean;
   backend: string;
   channel: string;
+  include_cudart: boolean;
 };
 
 const NULLABLE_KEYS = new Set([
@@ -105,6 +106,7 @@ const DEFAULTS: Cfg = {
   stop_on_exit: true,
   backend: "auto",
   channel: "latest",
+  include_cudart: false,
 };
 
 const formatMb = (bytes: number) => `${(bytes / 1_048_576).toFixed(0)} MB`;
@@ -421,6 +423,20 @@ export const LlamaSettings: React.FC = () => {
             />
           </div>
         </SettingContainer>
+        <ToggleSwitch
+          checked={cfg.include_cudart}
+          onChange={(v) => save({ include_cudart: v })}
+          isUpdating={busy}
+          label={t("settings.llama.backend.includeCudart")}
+          description={
+            store.cudaRuntimeDir
+              ? t("settings.llama.backend.includeCudartFound", {
+                  dir: store.cudaRuntimeDir,
+                })
+              : t("settings.llama.backend.includeCudartMissing")
+          }
+          grouped={true}
+        />
         <SettingContainer
           title={t("settings.llama.backend.releases")}
           description={t("settings.llama.backend.releasesDescription")}
@@ -496,7 +512,13 @@ export const LlamaSettings: React.FC = () => {
                     size="sm"
                     variant="secondary"
                     disabled={downloading}
-                    onClick={() => void store.install(release.tag, cfg.backend)}
+                    onClick={() =>
+                      void store.install(
+                        release.tag,
+                        cfg.backend,
+                        cfg.include_cudart,
+                      )
+                    }
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Download className="w-3.5 h-3.5" />
@@ -534,10 +556,23 @@ export const LlamaSettings: React.FC = () => {
                   </span>
                   <span className="text-text/50 flex-1">
                     {`${inst.size_mb} MB`}
+                    {inst.cuda_runtime_mb > 0
+                      ? ` · ${t("settings.llama.backend.bundledRuntime", { mb: inst.cuda_runtime_mb })}`
+                      : ""}
                     {inst.has_server
                       ? ""
                       : ` · ${t("settings.llama.backend.missingServer")}`}
                   </span>
+                  {inst.cuda_runtime_mb > 0 && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      title={t("settings.llama.backend.removeRuntimeTitle")}
+                      onClick={() => void store.removeCudaRuntime(inst.dir)}
+                    >
+                      {t("settings.llama.backend.removeRuntime")}
+                    </Button>
+                  )}
                   {!active && (
                     <Button
                       size="sm"

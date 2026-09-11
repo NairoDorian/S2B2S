@@ -58,6 +58,8 @@ pub struct InstalledLlamaServer {
     pub tag: String,
     pub has_server: bool,
     pub size_mb: u32,
+    /// Size of a bundled CUDA runtime (cudart/cuBLAS DLLs), 0 when none.
+    pub cuda_runtime_mb: u32,
 }
 
 /// Progress of one install, from download start to done/error.
@@ -367,6 +369,7 @@ pub fn list_installed(app: &AppHandle) -> Vec<InstalledLlamaServer> {
             InstalledLlamaServer {
                 has_server: dir.join(server_name).is_file(),
                 size_mb: dir_size_mb(&dir),
+                cuda_runtime_mb: bundled_cuda_runtime_mb(&dir.to_string_lossy()),
                 dir: dir.to_string_lossy().to_string(),
                 name,
                 backend,
@@ -391,11 +394,15 @@ fn dir_size_mb(dir: &Path) -> u32 {
 }
 
 /// Download and unpack `tag` for `backend` (or the detected one for `auto`).
-/// CUDA builds also get the matching `cudart` package, as the script does.
+/// The CUDA runtime package (`cudart-*.zip`, ~500 MB of cuBLAS DLLs) is only
+/// fetched when `include_cudart` is set — the same opt-in as the download
+/// script's `-IncludeCudart`; a machine with the CUDA toolkit installed does
+/// not need it.
 pub async fn install(
     app: &AppHandle,
     tag: &str,
     backend: &str,
+    include_cudart: bool,
 ) -> Result<InstalledLlamaServer, String> {
     let backend = if backend == "auto" {
         detect_backend()
@@ -416,7 +423,7 @@ pub async fn install(
             .emit(app);
         };
 
-    let result = install_inner(app, tag, &backend, &emit).await;
+    let result = install_inner(app, tag, &backend, include_cudart, &emit).await;
     match &result {
         Ok(installed) => emit("done", 1.0, 1.0, None, Some(installed.dir.clone())),
         Err(e) => emit("error", 0.0, 0.0, Some(e.clone()), None),
@@ -428,6 +435,7 @@ async fn install_inner(
     app: &AppHandle,
     tag: &str,
     backend: &str,
+    include_cudart: bool,
     emit: &(dyn Fn(&str, f64, f64, Option<String>, Option<String>) + Sync),
 ) -> Result<InstalledLlamaServer, String> {
     // Resolve the release that actually carries binaries.
@@ -468,7 +476,7 @@ async fn install_inner(
             )
         })?
         .clone();
-    let cudart = asset.backend.starts_with("cuda").then(|| {
+    let cudart = (include_cudart && asset.backend.starts_with("cuda")).then(|| {
         let ver = asset.backend.trim_start_matches("cuda-");
         format!("cudart-llama-bin-win-cuda-{ver}-x64.zip")
     });
@@ -544,6 +552,7 @@ async fn install_inner(
     Ok(InstalledLlamaServer {
         has_server: true,
         size_mb: dir_size_mb(&final_dir),
+        cuda_runtime_mb: bundled_cuda_runtime_mb(&final_dir.to_string_lossy()),
         dir: final_dir.to_string_lossy().to_string(),
         name: install_name,
         backend: asset.backend,
@@ -648,6 +657,60 @@ fn unzip_flat(zip_path: &Path, dest: &Path) -> Result<(), String> {
         std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// DLL name prefixes that make up the `cudart` runtime package.
+const CUDA_RUNTIME_DLL_PREFIXES: &[&str] = &["cudart64_", "cublas64_", "cublaslt64_"];
+
+/// Where a system CUDA toolkit keeps its runtime DLLs, if one is installed
+/// (`CUDA_PATH` is set by the NVIDIA installer). A build without a bundled
+/// runtime loads them from there through PATH.
+pub fn system_cuda_runtime_dir() -> Option<String> {
+    let cuda_path = std::env::var_os("CUDA_PATH")?;
+    let bin = PathBuf::from(cuda_path).join("bin");
+    let has_runtime = std::fs::read_dir(&bin).ok()?.flatten().any(|e| {
+        let n = e.file_name().to_string_lossy().to_lowercase();
+        n.starts_with("cudart64_") && n.ends_with(".dll")
+    });
+    has_runtime.then(|| bin.to_string_lossy().to_string())
+}
+
+/// Megabytes taken by a bundled CUDA runtime inside `dir`, 0 when absent.
+pub fn bundled_cuda_runtime_mb(dir: &str) -> u32 {
+    let bytes: u64 = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().to_lowercase();
+            n.ends_with(".dll") && CUDA_RUNTIME_DLL_PREFIXES.iter().any(|p| n.starts_with(p))
+        })
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum();
+    (bytes / 1_048_576) as u32
+}
+
+/// Remove the bundled CUDA runtime DLLs from an install made by Handy — the
+/// ~500 MB a CUDA build carries when the toolkit already provides them.
+pub fn remove_bundled_cuda_runtime(app: &AppHandle, dir: &str) -> Result<u32, String> {
+    let root = servers_root(app)?;
+    let path = PathBuf::from(dir);
+    if !path.starts_with(&root) {
+        return Err("Only installs made by Handy can be trimmed here".into());
+    }
+    let freed = bundled_cuda_runtime_mb(dir);
+    for entry in std::fs::read_dir(&path)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
+        let n = entry.file_name().to_string_lossy().to_lowercase();
+        if n.ends_with(".dll") && CUDA_RUNTIME_DLL_PREFIXES.iter().any(|p| n.starts_with(p)) {
+            std::fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+        }
+    }
+    info!("Removed bundled CUDA runtime from {dir} ({freed} MB)");
+    Ok(freed)
 }
 
 /// Delete an installed server folder. Refuses the folder the settings point at.

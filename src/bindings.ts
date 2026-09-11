@@ -156,8 +156,12 @@ export const commands = {
 	 *  Download + unpack a release; progress arrives as `LlamaDownloadEvent`.
 	 *  Runs to completion in the background so the page can navigate away.
 	 */
-	installLlamaRelease: (tag: string, backend: string) => typedError<null, string>(__TAURI_INVOKE("install_llama_release", { tag, backend })),
+	installLlamaRelease: (tag: string, backend: string, includeCudart: boolean) => typedError<null, string>(__TAURI_INVOKE("install_llama_release", { tag, backend, includeCudart })),
 	removeInstalledLlamaServer: (dir: string) => typedError<null, string>(__TAURI_INVOKE("remove_installed_llama_server", { dir })),
+	/**  `CUDA_PATH\bin` when a system CUDA toolkit provides the runtime DLLs. */
+	systemCudaRuntimeDir: () => __TAURI_INVOKE<string | null>("system_cuda_runtime_dir"),
+	/**  Delete the bundled cudart/cuBLAS DLLs from an install; returns MB freed. */
+	removeBundledCudaRuntime: (dir: string) => typedError<number, string>(__TAURI_INVOKE("remove_bundled_cuda_runtime", { dir })),
 	/**
 	 *  The most recent sample, so a footer that mounts between ticks does not
 	 *  show empty meters for up to a second.
@@ -924,6 +928,8 @@ export type InstalledLlamaServer = {
 	tag: string,
 	has_server: boolean,
 	size_mb: number,
+	/**  Size of a bundled CUDA runtime (cudart/cuBLAS DLLs), 0 when none. */
+	cuda_runtime_mb: number,
 };
 
 export type KeyboardDiagnosticReport = {
@@ -1146,6 +1152,12 @@ export type LlamaSettings = {
 	backend?: string,
 	/**  `latest`, `stable` or `nightly` for the release list. */
 	channel?: string,
+	/**
+	 *  Also download the ~500 MB CUDA runtime package (cudart / cuBLAS) with
+	 *  a CUDA build. Off, like the download script without `-IncludeCudart`:
+	 *  a machine with the CUDA toolkit installed already has those DLLs.
+	 */
+	include_cudart?: boolean,
 };
 
 export type LlamaStatus = "stopped" | "starting" | "ready" | "error";

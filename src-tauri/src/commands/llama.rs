@@ -133,9 +133,10 @@ pub async fn install_llama_release(
     app: AppHandle,
     tag: String,
     backend: String,
+    include_cudart: bool,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = llama_releases::install(&app, &tag, &backend).await {
+        if let Err(e) = llama_releases::install(&app, &tag, &backend, include_cudart).await {
             log::error!("llama.cpp install failed: {e}");
         }
     });
@@ -146,4 +147,18 @@ pub async fn install_llama_release(
 #[specta::specta]
 pub fn remove_installed_llama_server(app: AppHandle, dir: String) -> Result<(), String> {
     llama_releases::remove_installed(&app, &dir)
+}
+
+/// `CUDA_PATH\bin` when a system CUDA toolkit provides the runtime DLLs.
+#[tauri::command]
+#[specta::specta]
+pub fn system_cuda_runtime_dir() -> Option<String> {
+    llama_releases::system_cuda_runtime_dir()
+}
+
+/// Delete the bundled cudart/cuBLAS DLLs from an install; returns MB freed.
+#[tauri::command]
+#[specta::specta]
+pub fn remove_bundled_cuda_runtime(app: AppHandle, dir: String) -> Result<u32, String> {
+    llama_releases::remove_bundled_cuda_runtime(&app, &dir)
 }
