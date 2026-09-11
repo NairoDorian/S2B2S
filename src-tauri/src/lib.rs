@@ -1041,8 +1041,12 @@ pub fn run(cli_args: CliArgs) {
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title("Handy")
-                    .inner_size(680.0, 570.0)
-                    .min_inner_size(680.0, 570.0)
+                    // Sized so the 13-entry sidebar is fully visible without
+                    // scrolling (13 × 44 px + logo) and the status bar (model,
+                    // brain, CPU/RAM/GPU/VRAM meters, updater) stays on one
+                    // line. The sidebar scrolls and collapses below that anyway.
+                    .inner_size(1080.0, 780.0)
+                    .min_inner_size(960.0, 720.0)
                     .resizable(true)
                     .maximizable(true)
                     .visible(false);

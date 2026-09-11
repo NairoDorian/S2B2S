@@ -22,7 +22,10 @@
     "fileTranscription": "Transcribe Files",
     "liveMode": "Live Mode",
     "help": "Help",
-    "llama": "Local LLM"
+    "llama": "Local LLM",
+    "collapse": "Collapse",
+    "expand": "Expand sidebar",
+    "resize": "Resize sidebar"
   },
   "onboarding": {
     "subtitle": "За да започнете, изберете модел за транскрипция",

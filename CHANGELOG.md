@@ -181,6 +181,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Window and sidebar sizing (2026-09-11).** The main window opens at
+  1080×780 with a 960×720 minimum, enough for the whole sidebar and a
+  one-line status bar (model, brain, CPU/RAM/GPU/VRAM meters, updater). The
+  sidebar is wider by default (208 px, so "Transcribe Files" is no longer
+  cut), resizable by dragging its right edge (160–360 px), collapsible to an
+  icon rail, and scrolls when the window is shorter than its list; width and
+  collapsed state persist per machine. The status bar never wraps.
+
 - **Sharp-cornered, cyberpunk-minimal restyle (2026-09-11).** Every
   `rounded-*` utility (including `rounded-full`) and every shadow token now
   resolves to a square corner and a 1px hairline at the Tailwind theme
