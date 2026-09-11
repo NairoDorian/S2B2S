@@ -45,6 +45,18 @@ import path from "node:path";
  * on any resolution error, so an incompatible "latest" can never be force-applied.
  */
 
+/*
+ * Conflict handling (step 4): when `cargo update` fails with "failed to
+ * select a version", the error is parsed, the direct crate in the conflict
+ * chain is held at its current spec with the reason printed once, and the
+ * update is retried — instead of re-running the whole update per crate and
+ * dumping cargo's error twice. The final report marks such crates "Held",
+ * labels spec-only rewrites (lockfile already had the version) as such, and
+ * lists transitive crates that are newer on crates.io but pinned by another
+ * crate's requirement (`cargo update --dry-run --verbose`), so "up to date"
+ * is only printed when it is true.
+ */
+
 // --- CLI flag parsing (before anything else so --help/--dry-run are side-effect free) ---
 const cliArgs = new Set(process.argv.slice(2));
 const PRERELEASE_MODE = cliArgs.has("--prerelease");
@@ -303,8 +315,9 @@ async function fetchLatestNpmVersion(
 /**
  * Resolves the target crates.io version.
  * Stable mode: `max_version` (highest non-prerelease).
- * Prerelease mode: `newest_version` — but only when it is STRICTLY NEWER than
- * the installed version; otherwise falls back to `max_version`.
+ * Prerelease mode: `newest_version` — when it is at least the installed
+ * version (a pinned newest pre-release then reads "already @latest" instead
+ * of showing the older stable as its target); otherwise `max_version`.
  */
 async function fetchLatestCrateVersion(
   crateName: string,
@@ -331,7 +344,7 @@ async function fetchLatestCrateVersion(
       if (
         prerelease &&
         crate.newest_version &&
-        compareVersions(crate.newest_version, current) > 0
+        compareVersions(crate.newest_version, current) >= 0
       ) {
         return crate.newest_version;
       }
@@ -361,8 +374,56 @@ function parseCargoLock(filePath: string): Record<string, string> {
   return map;
 }
 
+/** Every locked version per crate name, ascending (Cargo.lock is sorted). */
+function parseCargoLockAll(filePath: string): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  if (!fs.existsSync(filePath)) return map;
+  for (const block of fs.readFileSync(filePath, "utf8").split("[[package]]")) {
+    const name = block.match(/^\s*name\s*=\s*"([^"]+)"/m)?.[1];
+    const ver = block.match(/^\s*version\s*=\s*"([^"]+)"/m)?.[1];
+    if (name && ver) (map[name] ??= []).push(ver);
+  }
+  return map;
+}
+
+/**
+ * The locked version a direct spec resolves to: the highest one on the same
+ * release line (major, or minor while major is 0). `cargo update sysinfo`
+ * is "ambiguous" when two versions are locked; `sysinfo@0.39.6` is not.
+ */
+function pickLockedVersion(
+  versions: string[],
+  spec: string,
+): string | undefined {
+  const { core } = parseVersion(cleanVersion(spec));
+  const sameLine = versions.filter((v) => {
+    const c = parseVersion(v).core;
+    if (c[0] !== core[0]) return false;
+    return core[0] !== 0 || c[1] === core[1];
+  });
+  const pool = sameLine.length > 0 ? sameLine : versions;
+  return pool.toSorted(compareVersions).at(-1);
+}
+
+/**
+ * Installed NPM packages: read from `bun.lock` (every resolved package,
+ * whatever the linker), falling back to a node_modules scan that follows
+ * the symlinks Bun's isolated linker leaves at the top level.
+ */
 function parseBunInstalledVersions(): Record<string, string> {
   const map: Record<string, string> = {};
+  const lockPath = path.resolve("bun.lock");
+  if (fs.existsSync(lockPath)) {
+    const lock = fs.readFileSync(lockPath, "utf8");
+    // `"name": ["name@version", …]` — the key is the install path (nested
+    // duplicates appear as "parent/name"), the first element the resolution.
+    for (const m of lock.matchAll(
+      /^\s*"([^"]+)":\s*\["(?:@[^"/]+\/)?[^"@]+@([^"]+)"/gm,
+    )) {
+      if (m[1] !== undefined && m[2] !== undefined) map[m[1]] = m[2];
+    }
+    if (Object.keys(map).length > 0) return map;
+  }
   const nmPath = path.resolve("node_modules");
   if (!fs.existsSync(nmPath)) return map;
 
@@ -370,7 +431,7 @@ function parseBunInstalledVersions(): Record<string, string> {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       entries.forEach((e) => {
-        if (e.isDirectory()) {
+        if (e.isDirectory() || e.isSymbolicLink()) {
           if (e.name.startsWith("@")) {
             scan(path.join(dir, e.name));
           } else {
@@ -403,14 +464,238 @@ function runCmd(
   return { success: res.status === 0, durationMs };
 }
 
-/** Renders a single direct-dependency row for the dry-run / summary reports. */
-function renderStatusRow(s: DependencyStatus): string {
-  const namePadded = s.name.padEnd(34, " ");
-  const ecoPadded = s.ecosystem.padEnd(12, " ");
-  const currPadded = s.currentVersion.padEnd(9, " ");
-  const latPadded = s.latestVersion.padEnd(9, " ");
-  const preMark = s.prerelease ? "⚠️" : " ";
-  return ` ${namePadded} | ${ecoPadded} | ${currPadded} | ${latPadded} | ${preMark}`;
+/** Output of a captured child process. */
+interface CapturedRun {
+  success: boolean;
+  durationMs: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** Like runCmd, but captures output so callers can filter or diagnose it. */
+function runCaptured(cmd: string, args: string[], cwd?: string): CapturedRun {
+  const start = Date.now();
+  const res = spawnSync(cmd, args, { encoding: "utf8", shell: true, cwd });
+  return {
+    success: res.status === 0,
+    durationMs: Date.now() - start,
+    stdout: res.stdout ?? "",
+    stderr: res.stderr ?? "",
+  };
+}
+
+/**
+ * Prints the useful part of a `cargo update` run — what was locked, added,
+ * updated or removed. The "Updating git repository …" / "Updating crates.io
+ * index" chatter (eight lines per invocation here) collapses into one line.
+ */
+function printCargoUpdateOutput(run: CapturedRun, indent = "   "): void {
+  let refreshed = 0;
+  for (const raw of `${run.stdout}\n${run.stderr}`.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^Updating (git repository|crates\.io index)/.test(line)) {
+      refreshed++;
+      continue;
+    }
+    if (
+      /^(note: pass `--verbose`|note: to see how you depend|warning: not updating lockfile)/.test(
+        line,
+      )
+    ) {
+      continue;
+    }
+    console.log(`${indent}${line}`);
+  }
+  if (refreshed > 0) {
+    console.log(`${indent}(refreshed ${refreshed} package source(s))`);
+  }
+}
+
+/** First `error:` line of a cargo run, without the prefix. */
+function firstCargoError(stderr: string): string {
+  const line = stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.startsWith("error"));
+  return (line ?? "cargo failed").replace(/^error(\[[^\]]*\])?:\s*/, "");
+}
+
+interface CargoResolveConflict {
+  /** Direct dependencies of this package that the conflict chain runs through. */
+  directCrates: string[];
+  /** One sentence a human can act on. */
+  reason: string;
+}
+
+/**
+ * Reads cargo's "failed to select a version" error and names the direct
+ * dependency to hold back plus why. Handles the `links` case (two crates
+ * would link the same native library, e.g. gtk 0.19 vs rfd's gtk-sys 0.18
+ * both linking gtk-3) and plain version-requirement conflicts.
+ */
+function parseCargoResolveError(
+  stderr: string,
+  ownPackage: string,
+): CargoResolveConflict | null {
+  const text = stderr.replace(/\r/g, "");
+  const failed = text.match(
+    /failed to select a version for (?:the requirement )?`([^`]+)`/,
+  );
+  if (!failed || failed[1] === undefined) return null;
+  const subject = failed[1].replace(/\s*=\s*".*$/, "");
+  const own = ownPackage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const direct = new Set<string>();
+  const directRe = new RegExp(
+    "which satisfies dependency `([A-Za-z0-9_-]+)[^`]*` of package `" +
+      own +
+      "\\b",
+    "g",
+  );
+  for (const m of text.matchAll(directRe)) {
+    if (m[1] !== undefined) direct.add(m[1]);
+  }
+  // "required by package `rfd v0.16.0`" followed by the chain up to us.
+  const chain: string[] = [];
+  const lines = text.split("\n");
+  const reqIdx = lines.findIndex((l) => /required by package `/.test(l));
+  if (reqIdx >= 0) {
+    const first = lines[reqIdx]?.match(/required by package `([^`]+)`/);
+    if (first?.[1]) chain.push(first[1]);
+    for (const l of lines.slice(reqIdx + 1)) {
+      const m = l.match(
+        /which satisfies dependency `[^`]+` of package `([^`(]+)/,
+      );
+      if (!m || m[1] === undefined) break;
+      const pkg = m[1].trim();
+      if (pkg.startsWith(ownPackage)) break;
+      chain.push(pkg);
+    }
+  }
+  const requirement = text.match(
+    /versions that meet the requirements `([^`]+)`/,
+  );
+  const links = text.match(/links to the native library `([^`]+)`/);
+  const conflicting = text.match(
+    /conflicts with a previous package[^\n]*\n\s*package `([^`]+)`/,
+  );
+  const needs = `${chain[0] ?? "another crate"}${chain.length > 1 ? ` (via ${chain.slice(1).join(" ← ")})` : ""} needs ${subject}${requirement?.[1] ? ` ${requirement[1]}` : ""}`;
+  const reason = links
+    ? `${needs}, ${conflicting?.[1] ?? "the new version"} would be linked as well, and cargo allows one crate to link the native library ${links[1]}. Retry when ${chain[0] ?? "that crate"} moves to the new line.`
+    : `${needs}, which the new spec cannot satisfy.`;
+  return { directCrates: [...direct], reason };
+}
+
+/** Rewrites the version of each listed crate in a Cargo.toml body to `^target`. */
+function rewriteCargoSpecs(
+  content: string,
+  crates: readonly DependencyStatus[],
+): string {
+  let out = content;
+  for (const crate of crates) {
+    // Inline and simple spec forms are mutually exclusive per line. Anchor
+    // to line boundaries so `dialog` never matches inside `log`.
+    const escaped = crate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regInline = new RegExp(
+      `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
+      "g",
+    );
+    const regSimple = new RegExp(
+      `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*")([^"]+)(")`,
+      "g",
+    );
+    out = out
+      .replace(regInline, `$1$2^${crate.latestVersion}$4`)
+      .replace(regSimple, `$1$2^${crate.latestVersion}$4`);
+  }
+  return out;
+}
+
+/** Aligned text table; column widths follow the content. */
+function printTable(headers: string[], rows: string[][]): void {
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)),
+  );
+  const line = (cells: string[]) =>
+    " " + cells.map((c, i) => c.padEnd(widths[i] ?? 0, " ")).join(" | ");
+  console.log(line(headers));
+  console.log(
+    widths
+      .map((w) => "-".repeat(w + 2))
+      .join("+")
+      .slice(1),
+  );
+  for (const r of rows) console.log(line(r));
+}
+
+/** Ecosystem label for reports: build-dependencies get their own so the
+ *  second `serde` / `tokio` row is not a mystery duplicate. */
+function ecosystemLabel(s: DependencyStatus): string {
+  return s.type === "cargo-build" ? "Cargo (build)" : s.ecosystem;
+}
+
+interface BehindLatest {
+  name: string;
+  current: string;
+  available: string;
+  requiredBy: string;
+}
+
+/**
+ * Crates cargo will not move because another crate's requirement pins them:
+ * the "Unchanged X vA (available: vB)" lines of a verbose dry run, each with
+ * its first dependents from `cargo tree --invert`.
+ */
+function listCratesBehindLatest(cargoCwd: string): BehindLatest[] {
+  const run = runCaptured(
+    "cargo",
+    ["update", "--dry-run", "--verbose"],
+    cargoCwd,
+  );
+  const out: BehindLatest[] = [];
+  for (const m of `${run.stdout}\n${run.stderr}`.matchAll(
+    /Unchanged (\S+) v(\S+) \(available: v(\S+)\)/g,
+  )) {
+    const [, name, current, available] = m;
+    if (!name || !current || !available) continue;
+    const tree = runCaptured(
+      "cargo",
+      [
+        "tree",
+        "-i",
+        `${name}@${current}`,
+        "--depth",
+        "1",
+        "--prefix",
+        "none",
+        // Build/dev edges and every target: a crate pinned only by a
+        // Linux build-dependency would otherwise print "nothing".
+        "--edges",
+        "normal,build,dev",
+        "--target",
+        "all",
+      ],
+      cargoCwd,
+    );
+    const dependents = [
+      ...new Set(
+        tree.stdout
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l && !l.startsWith(`${name} v`))
+          .map((l) => l.replace(/ \(.*\)$/, "")),
+      ),
+    ];
+    out.push({
+      name,
+      current,
+      available,
+      requiredBy:
+        dependents.slice(0, 3).join(", ") +
+        (dependents.length > 3 ? `, +${dependents.length - 3}` : ""),
+    });
+  }
+  return out;
 }
 
 /**
@@ -444,17 +729,18 @@ function printDryRunReport(allStatuses: DependencyStatus[]): void {
     console.log(
       ` 📦 ${outdated.length} direct dependency(-ies) WOULD be upgraded:`,
     );
-    console.log(
-      " Dependency / Crate Name           | Ecosystem    | Current   | Target    | Pre",
+    printTable(
+      ["Dependency / Crate Name", "Ecosystem", "Current", "Target", "Pre"],
+      outdated
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((s) => [
+          s.name,
+          ecosystemLabel(s),
+          s.currentVersion,
+          s.latestVersion,
+          s.prerelease ? "⚠️" : "",
+        ]),
     );
-    console.log(
-      "------------------------------------+--------------+-----------+-----------+-----",
-    );
-    outdated
-      .toSorted((a, b) => a.name.localeCompare(b.name))
-      .forEach((s) => {
-        console.log(renderStatusRow(s));
-      });
     if (preCount > 0) {
       console.log(
         `\n ⚠️  ${preCount} target(s) are PRE-RELEASES (--prerelease mode). Pre-release builds are`,
@@ -732,24 +1018,11 @@ async function updateEverything() {
     console.log(
       `🦀 Step 3/7: Syncing ${outdatedCargo.length} Outdated Cargo Crates in Cargo.toml...`,
     );
-    let newCargoContent = cargoContent;
-    outdatedCargo.forEach((crate) => {
-      // Inline and simple Cargo.toml spec forms are mutually exclusive per line.
-      // Anchor to line boundaries to prevent substring matching (e.g. `dialog` matching `log`).
-      const escaped = crate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regInline = new RegExp(
-        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
-        "g",
-      );
-      const regSimple = new RegExp(
-        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*")([^"]+)(")`,
-        "g",
-      );
-      newCargoContent = newCargoContent
-        .replace(regInline, `$1$2^${crate.latestVersion}$4`)
-        .replace(regSimple, `$1$2^${crate.latestVersion}$4`);
-    });
-    fs.writeFileSync(cargoTomlPath, newCargoContent, "utf8");
+    fs.writeFileSync(
+      cargoTomlPath,
+      rewriteCargoSpecs(cargoContent, outdatedCargo),
+      "utf8",
+    );
     console.log("✅ Cargo.toml specifications updated to @target!");
   }
   console.log("");
@@ -774,59 +1047,100 @@ async function updateEverything() {
     process.exit(1);
   }
   const cargoCwd = path.resolve("src-tauri");
-  let { success: cargoSuccess, durationMs: cargoMs } = runCmd(
-    "cargo",
-    ["update"],
-    cargoCwd,
-  );
+  const OWN_PACKAGE = "handy";
+  /** Direct crates whose bump was reverted this run, with the reason. */
+  const heldCargo = new Map<string, string>();
+  let acceptedCargo: DependencyStatus[] = outdatedCargo.slice();
+  let cargoRun = runCaptured("cargo", ["update"], cargoCwd);
 
-  if (!cargoSuccess && outdatedCargo.length > 0) {
-    console.log(
-      "⚠️ Cargo update encountered dependency conflicts. Resolving compatible upgrades crate-by-crate...",
+  // A resolution conflict names the crate at fault: hold that one back and
+  // retry, at most once per bumped crate.
+  for (
+    let attempt = 0;
+    !cargoRun.success &&
+    acceptedCargo.length > 0 &&
+    attempt <= outdatedCargo.length;
+    attempt++
+  ) {
+    const conflict = parseCargoResolveError(cargoRun.stderr, OWN_PACKAGE);
+    const culprits = (conflict?.directCrates ?? []).filter((n) =>
+      acceptedCargo.some((c) => c.name === n),
     );
-    // Restore original Cargo.toml
-    fs.writeFileSync(cargoTomlPath, cargoContent, "utf8");
-    let acceptedContent = cargoContent;
-    for (const crate of outdatedCargo) {
-      const escaped = crate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regInline = new RegExp(
-        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
-        "g",
+    if (!conflict || culprits.length === 0) break;
+    for (const name of culprits) {
+      const crate = acceptedCargo.find((c) => c.name === name);
+      if (!crate) continue;
+      heldCargo.set(name, conflict.reason);
+      console.log(
+        `  ⏸ ${name} stays at ${crate.currentVersion} (wanted ^${crate.latestVersion}): ${conflict.reason}`,
       );
-      const regSimple = new RegExp(
-        `(^|[\\r\\n])(\\s*${escaped}\\s*=\\s*")([^"]+)(")`,
-        "g",
-      );
-      const candidateContent = acceptedContent
-        .replace(regInline, `$1$2^${crate.latestVersion}$4`)
-        .replace(regSimple, `$1$2^${crate.latestVersion}$4`);
-      fs.writeFileSync(cargoTomlPath, candidateContent, "utf8");
-      const testUpdate = runCmd(
-        "cargo",
-        ["update", "-p", crate.name],
-        cargoCwd,
-      );
-      if (testUpdate.success) {
-        console.log(
-          `  ✅ Successfully updated ${crate.name} to ^${crate.latestVersion}`,
-        );
-        acceptedContent = candidateContent;
-      } else {
-        console.log(
-          `  ⚠️ Keeping current ${crate.name} version (${crate.currentVersion}): ^${crate.latestVersion} conflicts with workspace/peer requirements`,
-        );
-        fs.writeFileSync(cargoTomlPath, acceptedContent, "utf8");
-      }
     }
-    const finalUpdate = runCmd("cargo", ["update"], cargoCwd);
-    cargoSuccess = finalUpdate.success;
-    cargoMs = finalUpdate.durationMs;
+    acceptedCargo = acceptedCargo.filter((c) => !culprits.includes(c.name));
+    fs.writeFileSync(
+      cargoTomlPath,
+      rewriteCargoSpecs(cargoContent, acceptedCargo),
+      "utf8",
+    );
+    cargoRun = runCaptured("cargo", ["update"], cargoCwd);
   }
 
-  if (cargoSuccess) {
-    console.log(`✅ Step 4/7 Sub-dependency update complete (${cargoMs}ms)\n`);
+  // A conflict the parser could not attribute: try the bumps one at a time,
+  // each against its precise locked version (a bare name is ambiguous when
+  // two versions of the crate are locked).
+  if (
+    !cargoRun.success &&
+    acceptedCargo.length > 0 &&
+    /failed to select a version/.test(cargoRun.stderr)
+  ) {
+    console.log(
+      "  ⚠️ cargo could not resolve the new specs together; trying them one at a time…",
+    );
+    const lockVersions = parseCargoLockAll(cargoLockPath);
+    let kept: DependencyStatus[] = [];
+    for (const crate of acceptedCargo) {
+      const candidate = [...kept, crate];
+      fs.writeFileSync(
+        cargoTomlPath,
+        rewriteCargoSpecs(cargoContent, candidate),
+        "utf8",
+      );
+      const locked = pickLockedVersion(
+        lockVersions[crate.name] ?? [],
+        crate.currentVersion,
+      );
+      const one = runCaptured(
+        "cargo",
+        ["update", locked ? `${crate.name}@${locked}` : crate.name],
+        cargoCwd,
+      );
+      if (one.success) {
+        kept = candidate;
+        console.log(`  ✅ ${crate.name} → ^${crate.latestVersion}`);
+      } else {
+        const why = firstCargoError(one.stderr);
+        heldCargo.set(crate.name, why);
+        console.log(
+          `  ⏸ ${crate.name} stays at ${crate.currentVersion} (wanted ^${crate.latestVersion}): ${why}`,
+        );
+      }
+    }
+    acceptedCargo = kept;
+    fs.writeFileSync(
+      cargoTomlPath,
+      rewriteCargoSpecs(cargoContent, acceptedCargo),
+      "utf8",
+    );
+    cargoRun = runCaptured("cargo", ["update"], cargoCwd);
+  }
+
+  printCargoUpdateOutput(cargoRun);
+  if (cargoRun.success) {
+    console.log(
+      `✅ Step 4/7 Sub-dependency update complete (${cargoRun.durationMs}ms)\n`,
+    );
   } else {
-    console.error("❌ Error: Cargo sub-crate update failed!");
+    console.error("❌ Error: cargo update failed:");
+    console.error(cargoRun.stderr.trim());
     process.exit(1);
   }
 
@@ -968,84 +1282,105 @@ async function updateEverything() {
   const totalDirectCount = allStatuses.length;
   const totalSubCrates = Object.keys(afterCargoLock).length;
   const totalSubNpm = Object.keys(afterBunLock).length;
-  const totalGraphCount = totalDirectCount + totalSubCrates + totalSubNpm;
+
+  // What actually happened to each direct dependency, judged from the
+  // lockfile after the run — not from what was merely requested.
+  const statusLabel = (s: DependencyStatus): string => {
+    if (heldCargo.has(s.name)) return "⏸ Held (see notes)";
+    if (!s.needsUpdate) return "⚡ Already @latest";
+    if (s.ecosystem === "Cargo (Rust)") {
+      const before = beforeCargoLock[s.name];
+      const after = afterCargoLock[s.name];
+      if (
+        before &&
+        after &&
+        before === after &&
+        compareVersions(after, s.latestVersion) >= 0
+      ) {
+        return `✏️ Spec → ^${s.latestVersion} (lock already had ${after})`;
+      }
+    }
+    return s.prerelease ? "⚠️ Pre-release" : "✨ Upgraded";
+  };
 
   // --- Print Direct Dependency Summary Report ---
   console.log(
     "=================================================================",
   );
   console.log(
-    "📊 DIRECT DEPENDENCY STATUS REPORT (" +
-      totalDirectCount +
-      " DIRECT PACKAGES)",
+    `📊 DIRECT DEPENDENCY STATUS REPORT (${totalDirectCount} DIRECT PACKAGES)`,
   );
   console.log(
     "=================================================================",
   );
-  console.log(
-    " Dependency / Crate Name           | Ecosystem    | Current   | Latest    | Status",
+  printTable(
+    ["Dependency / Crate Name", "Ecosystem", "Current", "Latest", "Status"],
+    allStatuses
+      .toSorted((a, b) => a.name.localeCompare(b.name))
+      .map((s) => [
+        s.name,
+        ecosystemLabel(s),
+        s.currentVersion,
+        s.latestVersion,
+        statusLabel(s),
+      ]),
   );
-  console.log(
-    "------------------------------------+--------------+-----------+-----------+-------------------",
-  );
-  allStatuses
-    .toSorted((a, b) => a.name.localeCompare(b.name))
-    .forEach((s) => {
-      const namePadded = s.name.padEnd(34, " ");
-      const ecoPadded = s.ecosystem.padEnd(12, " ");
-      const currPadded = s.currentVersion.padEnd(9, " ");
-      const latPadded = s.latestVersion.padEnd(9, " ");
-      const statusText = s.needsUpdate
-        ? s.prerelease
-          ? "⚠️ Pre-release"
-          : "✨ Upgraded"
-        : "⚡ Already @latest";
-      console.log(
-        ` ${namePadded} | ${ecoPadded} | ${currPadded} | ${latPadded} | ${statusText}`,
-      );
-    });
+  if (heldCargo.size > 0) {
+    console.log("\n ⏸ Held back this run (Cargo.toml spec left as it was):");
+    for (const [name, reason] of heldCargo) {
+      console.log(`    ${name}: ${reason}`);
+    }
+  }
   console.log(
     "=================================================================\n",
   );
 
-  // --- Print Transitive Sub-Dependency Upgrade Report ---
+  // --- Transitive audit: what moved, and what cargo cannot move ---
   console.log(
     "=================================================================",
   );
   console.log(
-    `🔗 TRANSITIVE SUB-DEPENDENCY INVENTORY AUDIT (${totalSubCrates} Rust Sub-Crates + ${totalSubNpm} NPM Sub-Packages)`,
+    `🔗 TRANSITIVE SUB-DEPENDENCY AUDIT (${totalSubCrates} Rust crates + ${totalSubNpm} NPM packages in the lockfiles)`,
   );
   console.log(
     "=================================================================",
   );
   if (subDepChanges.length === 0) {
-    console.log(
-      ` ⚡ All ${totalSubCrates + totalSubNpm} sub-crates & sub-sub-dependencies are verified at their latest versions.`,
-    );
+    console.log(" ⚡ No transitive package changed in this run.");
   } else {
-    console.log(
-      " Sub-Dependency Name               | Ecosystem    | Before    | Upgraded",
+    console.log(` ✨ ${subDepChanges.length} transitive package(s) moved:`);
+    printTable(
+      ["Sub-Dependency Name", "Ecosystem", "Before", "After"],
+      subDepChanges
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((sd) => [sd.name, sd.ecosystem, sd.before, sd.after]),
     );
+  }
+  console.log(" 🔎 Asking cargo which crates it could not move…");
+  const behind = listCratesBehindLatest(cargoCwd).filter(
+    (b) => !heldCargo.has(b.name),
+  );
+  if (behind.length > 0) {
     console.log(
-      "------------------------------------+--------------+-----------+-----------",
+      ` ⏳ ${behind.length} crate(s) are newer on crates.io but pinned by a requirement in the graph:`,
     );
-    subDepChanges
-      .toSorted((a, b) => a.name.localeCompare(b.name))
-      .forEach((sd) => {
-        const namePadded = sd.name.padEnd(34, " ");
-        const ecoPadded = sd.ecosystem.padEnd(12, " ");
-        const beforePadded = sd.before.padEnd(9, " ");
-        console.log(
-          ` ${namePadded} | ${ecoPadded} | ${beforePadded} | ${sd.after}`,
-        );
-      });
+    printTable(
+      ["Crate", "Locked", "Available", "Required by"],
+      behind.map((b) => [b.name, b.current, b.available, b.requiredBy]),
+    );
   }
   console.log(
     "=================================================================",
   );
-  console.log(
-    `🎉 Entire dependency tree (${totalGraphCount} total packages & sub-crates) is 100% up-to-date!\n`,
-  );
+  if (heldCargo.size === 0 && behind.length === 0) {
+    console.log(
+      `🎉 Entire dependency tree (${totalDirectCount + totalSubCrates + totalSubNpm} packages) is up to date.\n`,
+    );
+  } else {
+    console.log(
+      `🏁 Done. ${heldCargo.size} direct crate(s) held back, ${behind.length} transitive crate(s) behind latest — see the notes above; everything else is up to date.\n`,
+    );
+  }
 }
 
 updateEverything().catch((err) => {

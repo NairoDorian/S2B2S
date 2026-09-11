@@ -181,6 +181,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`update-deps` log is readable when cargo cannot resolve (2026-09-11).**
+  A `cargo update` conflict used to dump cargo's full error twice and then
+  blame "workspace/peer requirements"; the script now parses the error,
+  holds back only the crate at fault (gtk 0.19 vs rfd's gtk-sys 0.18, both
+  linking gtk-3) and prints the reason once. The report marks such crates
+  "Held", labels spec-only rewrites as such instead of "Upgraded", sizes
+  its columns to the content, tags build-dependency rows, and replaces
+  the unconditional "100 % up to date" with cargo's own list of crates
+  pinned behind latest. Retries use `crate@version` so a crate locked at
+  two versions is no longer "ambiguous", and NPM packages are counted from
+  `bun.lock` (the isolated linker's symlinks made the old scan read zero).
 - **libc back on the 0.2 line (2026-09-11).** `update-deps --prerelease`
   had taken `libc 1.0.0-alpha.4`, a v1.0-branch snapshot the libc README
   does not recommend; every other crate uses 0.2.189 (same-day twin), so

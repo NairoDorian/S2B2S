@@ -60,7 +60,7 @@ nnnoiseless = { version = "0.5.2", default-features = false }
 zip = { version = "^9.0.0-pre3", default-features = false, features = ["deflate"] }
 # Status-bar meters: one sampler thread, CPU + RAM from sysinfo, GPU from NVML
 # when the NVIDIA driver library is present (loaded at runtime, optional).
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+sysinfo = { version = "^0.39.6", default-features = false, features = ["system"] }
 nvml-wrapper = "0.13"
 enigo = "0.6.1"
 rodio = { git = "https://github.com/RustAudio/rodio" }
