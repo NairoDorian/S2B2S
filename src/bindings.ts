@@ -14,6 +14,7 @@ export const commands = {
 	changeSoundThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_sound_theme_setting", { theme })),
 	changeThemeSetting: (theme: string) => typedError<null, string>(__TAURI_INVOKE("change_theme_setting", { theme })),
 	changeCustomAccentColorSetting: (color: string | null) => typedError<null, string>(__TAURI_INVOKE("change_custom_accent_color_setting", { color })),
+	changeUiScaleSetting: (scale: number | null) => typedError<null, string>(__TAURI_INVOKE("change_ui_scale_setting", { scale })),
 	changeStartHiddenSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_start_hidden_setting", { enabled })),
 	changeAutostartSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_autostart_setting", { enabled })),
 	changeTranslateToEnglishSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_translate_to_english_setting", { enabled })),
@@ -465,6 +466,11 @@ export type AppSettings_Deserialize = {
 	app_language?: string,
 	theme?: Theme,
 	custom_accent_color?: string | null,
+	/**
+	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
+	 *  OS scaling makes the UI too small or too large. Applied as CSS zoom.
+	 */
+	ui_scale?: number | null,
 	experimental_enabled?: boolean,
 	lazy_stream_close?: boolean,
 	keyboard_implementation?: KeyboardImplementation,
@@ -642,6 +648,11 @@ export type AppSettings_Serialize = {
 	app_language: string,
 	theme: Theme,
 	custom_accent_color: string | null,
+	/**
+	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
+	 *  OS scaling makes the UI too small or too large. Applied as CSS zoom.
+	 */
+	ui_scale: number | null,
 	experimental_enabled: boolean,
 	lazy_stream_close: boolean,
 	keyboard_implementation: KeyboardImplementation,

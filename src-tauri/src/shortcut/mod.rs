@@ -1148,6 +1148,15 @@ pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_ui_scale_setting(app: AppHandle, scale: f32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ui_scale = settings::clamp_ui_scale(scale);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_custom_accent_color_setting(
     app: AppHandle,
     color: Option<String>,

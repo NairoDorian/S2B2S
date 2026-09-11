@@ -24,7 +24,7 @@ const Meter: React.FC<{ label: string; percent: number; title: string }> = ({
       <span className="font-mono text-[10px] uppercase tracking-wider text-text/50">
         {label}
       </span>
-      <div className="w-10 h-1.5 bg-mid-gray/20 overflow-hidden">
+      <div className="w-8 h-1.5 bg-mid-gray/20 overflow-hidden">
         <div
           className={`h-full ${tone} transition-[width] duration-500`}
           style={{ width: `${clamped}%` }}
@@ -74,7 +74,7 @@ export const SystemMeters: React.FC = () => {
   const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
 
   return (
-    <div className="flex items-center gap-3 shrink-0">
+    <div className="flex items-center gap-2 shrink-0">
       <Meter
         label={t("footer.meters.cpu")}
         percent={cpuPercent}

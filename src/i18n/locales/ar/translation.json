@@ -732,6 +732,10 @@
         "empty": "No errors or warnings this session.",
         "filteredEmpty": "Hidden by the filters above.",
         "action": "Action offered: {{label}}"
+      },
+      "interfaceScale": {
+        "label": "Interface scale",
+        "description": "Zoom the whole window (70–160 %). Use it when the OS display scaling makes Handy too small or too large; the minimum window size stays the same."
       }
     },
     "about": {

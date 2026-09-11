@@ -34,6 +34,7 @@ import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
+import { applyUiScale } from "@/lib/utils/theme";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
@@ -67,6 +68,11 @@ function App() {
   const setCurrentSection = useNavigationStore((state) => state.setSection);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
+  // Interface scale follows the setting live (Debug → Interface scale).
+  const uiScale = settings?.ui_scale ?? null;
+  useEffect(() => {
+    if (uiScale !== null) applyUiScale(uiScale);
+  }, [uiScale]);
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,
   );

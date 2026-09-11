@@ -181,6 +181,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Status bar popovers work again; one-line bar; interface scale
+  (2026-09-11).** An `overflow-x-auto` added for the one-line status bar
+  also clipped the upward model / quantization / latency popovers, so
+  clicking them appeared to do nothing — removed. The bar's pills now
+  truncate instead of wrapping (model 112 px, quantization 80 px, latency
+  96 px, brain alias 96 px, compact meters), and the window minimum is
+  1180×720 (default 1280×800) so it always fits on one line next to the
+  default sidebar. Debug → **Interface scale** zooms the whole window
+  (70–160 %) for screens whose OS scaling makes the UI too small or large.
 - **Shortcut cheat sheet moved to a top-right overlay (2026-09-11).** The
   right-edge tab with pin and resize is gone; a keyboard button in the
   window's top-right corner, reachable from every page, toggles a panel of

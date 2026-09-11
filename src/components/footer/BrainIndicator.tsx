@@ -40,7 +40,7 @@ export const BrainIndicator: React.FC = () => {
     >
       <BrainCircuit className="w-3.5 h-3.5 text-logo-primary" />
       <span className={`w-2 h-2 ${dot}`} />
-      <span className="max-w-32 truncate font-mono">
+      <span className="max-w-24 truncate font-mono">
         {status === "ready" ? detail : label}
       </span>
     </button>

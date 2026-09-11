@@ -375,7 +375,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     : t("modelSelector.benchmark.noRecording");
 
   return (
-    <div ref={barRef} className="flex min-w-0 flex-wrap items-center gap-2">
+    <div ref={barRef} className="flex min-w-0 flex-nowrap items-center gap-2">
       {/* Model Status and Switcher */}
       <div className="relative shrink-0">
         <ModelStatusButton
@@ -415,7 +415,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
                   className={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(currentVariant?.quant ?? "")}`}
                 />
               )}
-              <span className="max-w-24 truncate">
+              <span className="max-w-20 truncate">
                 {currentVariant?.quant ?? t("modelSelector.quantPicker.title")}
               </span>
             </>
@@ -481,7 +481,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           trigger={
             <>
               <Gauge className="h-3 w-3 shrink-0 text-text/50" />
-              <span className="truncate">
+              <span className="max-w-24 truncate">
                 {t(latencyPresetLabelKey(currentPreset))}
               </span>
             </>

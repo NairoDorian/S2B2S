@@ -755,6 +755,10 @@ pub struct AppSettings {
     pub theme: Theme,
     #[serde(default)]
     pub custom_accent_color: Option<String>,
+    /// Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
+    /// OS scaling makes the UI too small or too large. Applied as CSS zoom.
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: f32,
     #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
@@ -884,6 +888,21 @@ pub struct AppSettings {
     /// In-app llama.cpp server (fork feature).
     #[serde(default)]
     pub llama: LlamaSettings,
+}
+
+pub const MIN_UI_SCALE: f32 = 0.7;
+pub const MAX_UI_SCALE: f32 = 1.6;
+
+fn default_ui_scale() -> f32 {
+    1.0
+}
+
+pub fn clamp_ui_scale(scale: f32) -> f32 {
+    if scale.is_finite() {
+        scale.clamp(MIN_UI_SCALE, MAX_UI_SCALE)
+    } else {
+        1.0
+    }
 }
 
 fn default_vad_threshold_earshot() -> f32 {
@@ -1393,6 +1412,7 @@ pub fn get_default_settings() -> AppSettings {
         app_language: default_app_language(),
         theme: default_theme(),
         custom_accent_color: None,
+        ui_scale: default_ui_scale(),
         experimental_enabled: false,
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),

@@ -688,6 +688,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_sound_theme_setting,
             shortcut::change_theme_setting,
             shortcut::change_custom_accent_color_setting,
+            shortcut::change_ui_scale_setting,
             shortcut::change_start_hidden_setting,
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,
@@ -1042,11 +1043,13 @@ pub fn run(cli_args: CliArgs) {
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title("Handy")
                     // Sized so the 13-entry sidebar is fully visible without
-                    // scrolling (13 × 44 px + logo) and the status bar (model,
-                    // brain, CPU/RAM/GPU/VRAM meters, updater) stays on one
-                    // line. The sidebar scrolls and collapses below that anyway.
-                    .inner_size(1080.0, 780.0)
-                    .min_inner_size(960.0, 720.0)
+                    // scrolling (13 × 44 px + logo) and the status bar — model
+                    // pill, quantization, streaming latency, brain, CPU / RAM /
+                    // GPU / VRAM meters, updater — fits on one line next to the
+                    // default 208 px sidebar (≈ 1010 px of bar + sidebar). The
+                    // sidebar scrolls and collapses below that anyway.
+                    .inner_size(1280.0, 800.0)
+                    .min_inner_size(1180.0, 720.0)
                     .resizable(true)
                     .maximizable(true)
                     .visible(false);

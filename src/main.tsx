@@ -10,6 +10,9 @@ import {
   applyAccentColor,
   getStoredAccentColor,
   syncAccentColorFromSettings,
+  applyUiScale,
+  getStoredUiScale,
+  syncUiScaleFromSettings,
 } from "./lib/utils/theme";
 
 installCompatShims();
@@ -23,6 +26,8 @@ applyTheme(getStoredTheme());
 syncThemeFromSettings();
 applyAccentColor(getStoredAccentColor());
 syncAccentColorFromSettings();
+applyUiScale(getStoredUiScale());
+syncUiScaleFromSettings();
 
 // Initialize i18n
 import "./i18n";

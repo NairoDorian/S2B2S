@@ -117,3 +117,50 @@ export const syncAccentColorFromSettings = async (): Promise<void> => {
     console.warn("Failed to sync accent color from settings:", e);
   }
 };
+
+export const UI_SCALE_STORAGE_KEY = "handy.ui_scale";
+const MIN_UI_SCALE = 0.7;
+const MAX_UI_SCALE = 1.6;
+
+const clampUiScale = (value: unknown): number => {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MAX_UI_SCALE, Math.max(MIN_UI_SCALE, n));
+};
+
+/**
+ * Zoom the whole document. CSS zoom (supported by WebKit / WebView2 / Gecko
+ * 126+) scales layout as well as text, so fixed-position chrome and popovers
+ * keep their geometry. Mirrored to localStorage for a flash-free boot.
+ */
+export const applyUiScale = (scale: number): void => {
+  const clamped = clampUiScale(scale);
+  const style = document.documentElement.style as CSSStyleDeclaration & {
+    zoom?: string;
+  };
+  style.zoom = clamped === 1 ? "" : String(clamped);
+  try {
+    localStorage.setItem(UI_SCALE_STORAGE_KEY, String(clamped));
+  } catch {
+    // Persisted in AppSettings anyway; only the boot flash is affected.
+  }
+};
+
+export const getStoredUiScale = (): number => {
+  try {
+    return clampUiScale(localStorage.getItem(UI_SCALE_STORAGE_KEY) ?? 1);
+  } catch {
+    return 1;
+  }
+};
+
+export const syncUiScaleFromSettings = async (): Promise<void> => {
+  try {
+    const result = await commands.getAppSettings();
+    if (result.status === "ok") {
+      applyUiScale(result.data.ui_scale ?? 1);
+    }
+  } catch (error) {
+    console.error("Failed to sync UI scale from settings:", error);
+  }
+};

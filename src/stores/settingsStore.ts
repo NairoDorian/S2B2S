@@ -202,6 +202,7 @@ const settingUpdaters: {
   log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   theme: (value) => commands.changeThemeSetting(value as string),
+  ui_scale: (value) => commands.changeUiScaleSetting(value as number),
   custom_accent_color: (value) =>
     commands.changeCustomAccentColorSetting((value as string | null) ?? null),
   experimental_enabled: (value) =>
