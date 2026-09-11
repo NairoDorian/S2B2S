@@ -72,6 +72,7 @@ ${StrLoc}
 Var PassiveMode
 Var UpdateMode
 Var NoShortcutMode
+Var DesktopShortcutMode
 Var WixMode
 Var OldMainBinaryName
 
@@ -467,6 +468,8 @@ Var AppStartMenuFolder
 !define MUI_FINISHPAGE_SHOWREADME
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION CreateOrUpdateDesktopShortcut
+; Unchecked by default: a desktop shortcut is opt-in
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
 ; Show run app after installation.
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
@@ -540,6 +543,12 @@ Function .onInit
   ${GetOptions} $CMDLINE "/NS" $NoShortcutMode
   ${IfNot} ${Errors}
     StrCpy $NoShortcutMode 1
+  ${EndIf}
+
+  ; Silent and passive installs create a desktop shortcut only when asked
+  ${GetOptions} $CMDLINE "/DESKTOP" $DesktopShortcutMode
+  ${IfNot} ${Errors}
+    StrCpy $DesktopShortcutMode 1
   ${EndIf}
 
   ${GetOptions} $CMDLINE "/UPDATE" $UpdateMode
@@ -824,8 +833,9 @@ Section Install
       Call CreateOrUpdateStartMenuShortcut
     !insertmacro MUI_STARTMENU_WRITE_END
 
-    ; Create desktop shortcut for silent and passive installers
-    ; because finish page will be skipped
+    ; Silent and passive installers skip the finish page, where the desktop
+    ; shortcut is an unchecked option: they create one only with /DESKTOP
+    ; (CreateOrUpdateDesktopShortcut checks) and still retarget an old one
     ${If} $PassiveMode = 1
     ${OrIf} ${Silent}
       Call CreateOrUpdateDesktopShortcut
@@ -1076,6 +1086,15 @@ Function CreateOrUpdateDesktopShortcut
   ${If} $WixMode = 0
     ${If} $UpdateMode = 1
     ${OrIf} $NoShortcutMode = 1
+      Return
+    ${EndIf}
+  ${EndIf}
+
+  ; Silent and passive installers skip the finish page, where the shortcut
+  ; is an unchecked option, so they create one only when asked with /DESKTOP
+  ${If} $PassiveMode = 1
+  ${OrIf} ${Silent}
+    ${IfNot} $DesktopShortcutMode = 1
       Return
     ${EndIf}
   ${EndIf}

@@ -264,6 +264,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Windows installer: the desktop shortcut is opt-in.** The finish page's
+  "Create desktop shortcut" box starts unchecked, and silent or passive
+  installs (`/S`, `/P`) create one only with the new `/DESKTOP` switch. An
+  existing shortcut is still retargeted on update and removed on uninstall.
 - **Locale files load on demand (2026-09-11).** `src/i18n/index.ts` used an
   eager `import.meta.glob`, so all 24 `translation.json` files (2.1 MB of
   JSON) sat in the chunk both the settings window and the overlay parse at
