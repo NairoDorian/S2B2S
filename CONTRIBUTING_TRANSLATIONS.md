@@ -163,16 +163,19 @@ Some languages have complex plural rules. For now, use a general form that works
 
 ## Currently Supported Languages
 
-`src/i18n/locales/` currently holds 24 locales: `en` (source), `ar`, `bg`,
-`cs`, `da`, `de`, `es`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ne`, `nl`, `pl`,
-`pt`, `ru`, `sv`, `tr`, `uk`, `vi`, `zh`, `zh-TW`.
+`src/i18n/locales/` currently holds 25 locales: `en` (source), `ar`, `bg`,
+`ca`, `cs`, `da`, `de`, `es`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ne`, `nl`,
+`pl`, `pt`, `ru`, `sv`, `tr`, `uk`, `vi`, `zh`, `zh-TW`.
 
-**Fork status (2026-08-26):** every non-English locale is missing the same 87
-fork-added strings (Multi-STT performance mode, quantization picker and
-benchmark, latency presets, speech stats, direct streaming, accent colours,
-history tools, raw audio). They fall back to English at runtime, and
-`bun run check:translations` lists the exact keys per locale. Translating
-those is the most useful contribution right now.
+**Fork status (2026-09-11):** every locale has exactly the key set of `en`
+(`bun run check:translations` enforces it), but the strings this fork added
+(Multi-STT, quantization picker and benchmark, latency presets, speech stats,
+direct streaming, accent colours, history tools, raw audio, noise
+suppression, the Local LLM, Transcribe Files, Live Mode, Live FFT, Overlay
+and Help pages) are English in every non-English locale, including `ca`
+(Catalan), whose upstream strings are translated. Translating those is the
+most useful contribution right now; the English copies mark exactly which
+keys are still waiting.
 
 ## Requested Languages
 
