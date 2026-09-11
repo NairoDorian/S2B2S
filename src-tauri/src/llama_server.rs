@@ -517,7 +517,9 @@ fn health_ok(port: u16) -> bool {
     use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) else {
+    // Windows reports a refused loopback connect as a timeout after ~1 s, so
+    // a short budget here would misread "not yet" as "down" during startup.
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(1000)) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
@@ -549,7 +551,8 @@ Connection: close
         }
     }
     // "HTTP/1.1 200 ..." — llama-server answers 503 while the model loads.
-    String::from_utf8_lossy(&head[..read]).starts_with("HTTP/1.1 200")
+    let head = String::from_utf8_lossy(&head[..read]);
+    head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
 }
 
 fn targets_local_server(base_url: &str, port: u16) -> bool {
