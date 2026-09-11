@@ -97,6 +97,8 @@ interface DependencyStatus {
   name: string;
   ecosystem: "NPM (Bun)" | "Cargo (Rust)";
   type: "runtime" | "dev" | "cargo-dep" | "cargo-build";
+  /** Cargo.toml section the crate was read from (Cargo rows only). */
+  section?: string;
   currentVersion: string;
   latestVersion: string;
   needsUpdate: boolean;
@@ -628,10 +630,25 @@ function printTable(headers: string[], rows: string[][]): void {
   for (const r of rows) console.log(line(r));
 }
 
-/** Ecosystem label for reports: build-dependencies get their own so the
- *  second `serde` / `tokio` row is not a mystery duplicate. */
+/**
+ * Ecosystem label for reports. A crate declared in more than one Cargo.toml
+ * section (serde in build-dependencies, tokio in dev-dependencies, a
+ * target-specific block) gets the section in its label, so the second row
+ * is not a mystery duplicate: "Cargo (build)", "Cargo (dev)",
+ * "Cargo (linux)", "Cargo (all(windows, x86_64))".
+ */
 function ecosystemLabel(s: DependencyStatus): string {
-  return s.type === "cargo-build" ? "Cargo (build)" : s.ecosystem;
+  if (s.ecosystem !== "Cargo (Rust)" || !s.section) return s.ecosystem;
+  const section = s.section;
+  if (section === "dependencies") return "Cargo (Rust)";
+  if (section.startsWith("build-")) return "Cargo (build)";
+  if (section.startsWith("dev-")) return "Cargo (dev)";
+  const cfg = section.match(/cfg\((.*)\)'\.dependencies$/)?.[1];
+  if (!cfg) return "Cargo (Rust)";
+  const short = cfg
+    .replace(/target_(?:os|arch|env|family)\s*=\s*"([^"]+)"/g, "$1")
+    .replace(/\s+/g, " ");
+  return `Cargo (${short})`;
 }
 
 interface BehindLatest {
@@ -932,6 +949,7 @@ async function updateEverything() {
         allStatuses.push({
           name,
           ecosystem: "Cargo (Rust)",
+          section,
           type: section.includes("build") ? "cargo-build" : "cargo-dep",
           currentVersion: ver,
           latestVersion: latest || currClean,
@@ -1016,14 +1034,18 @@ async function updateEverything() {
     );
   } else {
     console.log(
-      `🦀 Step 3/7: Syncing ${outdatedCargo.length} Outdated Cargo Crates in Cargo.toml...`,
+      `🦀 Step 3/7: Rewriting ${outdatedCargo.length} Cargo.toml spec(s): ${outdatedCargo
+        .map((c) => `${c.name} ${c.currentVersion} → ^${c.latestVersion}`)
+        .join(", ")}`,
     );
     fs.writeFileSync(
       cargoTomlPath,
       rewriteCargoSpecs(cargoContent, outdatedCargo),
       "utf8",
     );
-    console.log("✅ Cargo.toml specifications updated to @target!");
+    console.log(
+      "✅ Cargo.toml specs rewritten (step 4 verifies they resolve; a conflict reverts the crate at fault)",
+    );
   }
   console.log("");
 
