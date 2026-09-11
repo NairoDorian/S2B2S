@@ -619,7 +619,11 @@ fn unzip_flat(zip_path: &Path, dest: &Path) -> Result<(), String> {
     let mut prefixes: HashMap<String, usize> = HashMap::new();
     for i in 0..archive.len() {
         let entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().replace('\\', "/");
+        // zip 9: `name()` is fallible (undecodable entry names).
+        let name = entry
+            .name()
+            .map_err(|e| format!("Bad entry name in archive: {e}"))?
+            .replace('\\', "/");
         let first = name.split('/').next().unwrap_or("").to_string();
         if name.contains('/') {
             *prefixes.entry(first).or_default() += 1;
@@ -634,7 +638,10 @@ fn unzip_flat(zip_path: &Path, dest: &Path) -> Result<(), String> {
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let raw = entry.name().replace('\\', "/");
+        let raw = entry
+            .name()
+            .map_err(|e| format!("Bad entry name in archive: {e}"))?
+            .replace('\\', "/");
         let rel = match &strip {
             Some(p) => raw
                 .strip_prefix(&format!("{p}/"))
@@ -885,6 +892,48 @@ mod tests {
     #[ignore]
     fn print_detected_cuda_toolkit() {
         println!("{:#?}", detect_cuda_toolkit());
+    }
+
+    /// Exercises the zip crate API end to end (its 9.x line made entry
+    /// names fallible): a release archive with one top-level folder must
+    /// land flattened, so `llama-server.exe` sits directly in the target.
+    #[test]
+    fn unzip_flat_strips_a_single_top_level_folder() {
+        use std::io::Write;
+        let tmp = std::env::temp_dir().join(format!(
+            "handy-unzip-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let archive = tmp.join("release.zip");
+        {
+            let file = std::fs::File::create(&archive).unwrap();
+            let mut w = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            w.add_directory("llama-b1/", opts).unwrap();
+            w.start_file("llama-b1/llama-server.exe", opts).unwrap();
+            w.write_all(b"MZ").unwrap();
+            w.start_file("llama-b1/lib/ggml.dll", opts).unwrap();
+            w.write_all(b"dll").unwrap();
+            w.finish().unwrap();
+        }
+        let dest = tmp.join("out");
+        unzip_flat(&archive, &dest).unwrap();
+        assert_eq!(std::fs::read(dest.join("llama-server.exe")).unwrap(), b"MZ");
+        assert_eq!(
+            std::fs::read(dest.join("lib").join("ggml.dll")).unwrap(),
+            b"dll"
+        );
+        assert!(
+            !dest.join("llama-b1").exists(),
+            "top-level folder must be stripped"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

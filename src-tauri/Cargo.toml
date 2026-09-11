@@ -57,7 +57,7 @@ earshot = "1.2.2"
 nnnoiseless = { version = "0.5.2", default-features = false }
 # In-app llama.cpp server manager: release archives are unpacked with the
 # pure-Rust zip crate (no PowerShell / tar shell-outs).
-zip = { version = "4.6", default-features = false, features = ["deflate"] }
+zip = { version = "^9.0.0-pre3", default-features = false, features = ["deflate"] }
 # Status-bar meters: one sampler thread, CPU + RAM from sysinfo, GPU from NVML
 # when the NVIDIA driver library is present (loaded at runtime, optional).
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
@@ -141,7 +141,7 @@ objc2-service-management = "0.3.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
 gtk = "^0.18.2"
-libc = "^0.2.189"
+libc = "^1.0.0-alpha.4"
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
   "cuda",
