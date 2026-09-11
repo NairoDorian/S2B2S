@@ -1147,11 +1147,14 @@
         "missingServer": "llama-server missing",
         "noneInstalled": "Nothing installed yet.",
         "includeCudart": "Include CUDA runtime package (cudart)",
-        "includeCudartFound": "Off: the CUDA toolkit at {{dir}} already provides cudart / cuBLAS, so a CUDA build only needs its own ~180 MB. Turn on only if the server fails to start with a missing cudart64 or cublas64 DLL.",
-        "includeCudartMissing": "No CUDA toolkit found (CUDA_PATH is not set). A CUDA build needs the ~500 MB cudart / cuBLAS package to run; turn this on before installing, or install the NVIDIA CUDA toolkit.",
+        "includeCudartFound": "Off: CUDA toolkit {{version}} found at {{dir}} — it provides cudart / cuBLAS, so a CUDA build only needs its own ~180 MB.",
+        "includeCudartMissing": "No CUDA toolkit found (checked CUDA_PATH, every CUDA_PATH_V*, PATH and the default install folder). A CUDA build needs the ~500 MB cudart / cuBLAS package to run; turn this on before installing, or install the NVIDIA CUDA toolkit.",
         "bundledRuntime": "{{mb}} MB of bundled CUDA runtime",
         "removeRuntime": "Remove runtime",
-        "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed."
+        "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
+        "includeCudartOnPath": "That folder is on PATH.",
+        "includeCudartOffPath": "That folder is not on PATH; Handy adds it for llama-server when it starts it.",
+        "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too."
       },
       "model": {
         "title": "Model files",

@@ -186,7 +186,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is now an opt-in toggle, exactly like the download script's
   `-IncludeCudart`; the page says whether a CUDA toolkit is installed
   (`CUDA_PATH`) and offers "Remove runtime" on installs that already carry
-  it, so the earlier 672 MB install shrinks to about 180 MB.
+  it, so the earlier 672 MB install shrinks to about 180 MB. Toolkit
+  detection checks `bin\x64` (where CUDA 13 keeps cudart), every
+  `CUDA_PATH_V*`, PATH and the default install folder, and the page says
+  whether the folder is on PATH; the server launcher adds it to the child's
+  PATH when it is not.
 - **Faster startup (2026-09-11).** The always-on microphone is opened on a
   background thread instead of stalling startup for ~0.9 s, and on
   Windows/Linux the hotkeys and paste input are registered at the end of

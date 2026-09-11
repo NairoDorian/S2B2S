@@ -225,6 +225,24 @@ impl LlamaServerManager {
         if settings.attn_rot_disable {
             cmd.env("LLAMA_ATTN_ROT_DISABLE", "1");
         }
+        // A CUDA build without the bundled cudart package loads cudart /
+        // cuBLAS from the system toolkit. Its folder is normally on PATH; when
+        // it is not (installer variables missing, PATH edited), prepend it for
+        // the child only, so the server still starts. The exe's own folder
+        // wins the DLL search regardless, so a bundled runtime is unaffected.
+        if let Some(toolkit) = crate::llama_releases::detect_cuda_toolkit().filter(|t| !t.on_path) {
+            let mut paths = vec![PathBuf::from(&toolkit.runtime_dir)];
+            if let Some(p) = std::env::var_os("PATH") {
+                paths.extend(std::env::split_paths(&p));
+            }
+            if let Ok(joined) = std::env::join_paths(paths) {
+                info!(
+                    "CUDA runtime folder {} is not on PATH; adding it for llama-server",
+                    toolkit.runtime_dir
+                );
+                cmd.env("PATH", joined);
+            }
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

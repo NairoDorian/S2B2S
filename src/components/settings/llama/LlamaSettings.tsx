@@ -226,6 +226,23 @@ export const LlamaSettings: React.FC = () => {
   const downloadedBytes = download?.downloaded_bytes ?? 0;
   const totalBytes = download?.total_bytes ?? 0;
   const busy = isUpdating("llama");
+  const toolkit = store.cudaToolkit;
+  const cudaToolkitDescription = !toolkit
+    ? t("settings.llama.backend.includeCudartMissing")
+    : [
+        t("settings.llama.backend.includeCudartFound", {
+          dir: toolkit.runtime_dir,
+          version: toolkit.version ?? "?",
+        }),
+        toolkit.has_cublas
+          ? ""
+          : t("settings.llama.backend.includeCudartNoCublas"),
+        toolkit.on_path
+          ? t("settings.llama.backend.includeCudartOnPath")
+          : t("settings.llama.backend.includeCudartOffPath"),
+      ]
+        .filter(Boolean)
+        .join(" ");
 
   const optionsFor = (kind: string, allowNone: boolean) => [
     ...(allowNone
@@ -428,13 +445,7 @@ export const LlamaSettings: React.FC = () => {
           onChange={(v) => save({ include_cudart: v })}
           isUpdating={busy}
           label={t("settings.llama.backend.includeCudart")}
-          description={
-            store.cudaRuntimeDir
-              ? t("settings.llama.backend.includeCudartFound", {
-                  dir: store.cudaRuntimeDir,
-                })
-              : t("settings.llama.backend.includeCudartMissing")
-          }
+          description={cudaToolkitDescription}
           grouped={true}
         />
         <SettingContainer

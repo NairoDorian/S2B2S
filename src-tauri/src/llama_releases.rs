@@ -662,17 +662,142 @@ fn unzip_flat(zip_path: &Path, dest: &Path) -> Result<(), String> {
 /// DLL name prefixes that make up the `cudart` runtime package.
 const CUDA_RUNTIME_DLL_PREFIXES: &[&str] = &["cudart64_", "cublas64_", "cublaslt64_"];
 
-/// Where a system CUDA toolkit keeps its runtime DLLs, if one is installed
-/// (`CUDA_PATH` is set by the NVIDIA installer). A build without a bundled
-/// runtime loads them from there through PATH.
-pub fn system_cuda_runtime_dir() -> Option<String> {
-    let cuda_path = std::env::var_os("CUDA_PATH")?;
-    let bin = PathBuf::from(cuda_path).join("bin");
-    let has_runtime = std::fs::read_dir(&bin).ok()?.flatten().any(|e| {
-        let n = e.file_name().to_string_lossy().to_lowercase();
-        n.starts_with("cudart64_") && n.ends_with(".dll")
-    });
-    has_runtime.then(|| bin.to_string_lossy().to_string())
+/// A system CUDA toolkit whose runtime DLLs a CUDA build can load instead of
+/// the bundled `cudart` package.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct CudaToolkitInfo {
+    /// Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
+    /// CUDA 12 and older in `bin`).
+    pub runtime_dir: String,
+    /// Toolkit version as the installer names it (`13.3`), when known.
+    pub version: Option<String>,
+    /// Whether `runtime_dir` is on the PATH Handy was started with. When it is
+    /// not, `LlamaServerManager::start` prepends it to the child's PATH.
+    pub on_path: bool,
+    /// Whether cuBLAS (`cublas64_*` + `cublasLt64_*`) sits next to cudart —
+    /// llama.cpp's CUDA backend needs both.
+    pub has_cublas: bool,
+}
+
+fn is_cudart_file(name: &str) -> bool {
+    let n = name.to_lowercase();
+    (n.starts_with("cudart64_") && n.ends_with(".dll")) || n.starts_with("libcudart.so")
+}
+
+fn dir_has_cudart(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|e| is_cudart_file(&e.file_name().to_string_lossy()))
+}
+
+fn dir_has_cublas(dir: &Path) -> bool {
+    let names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_lowercase())
+        .collect();
+    let has = |p: &str| names.iter().any(|n| n.starts_with(p));
+    (has("cublas64_") && has("cublaslt64_")) || (has("libcublas.so") && has("libcublaslt.so"))
+}
+
+/// `v13.3` / `CUDA\v12.8` → `13.3`; the `CUDA_PATH_V13_3` env name → `13.3`.
+fn cuda_version_from_dir(dir: &Path) -> Option<String> {
+    dir.ancestors().find_map(|p| {
+        let name = p.file_name()?.to_string_lossy();
+        let rest = name.strip_prefix('v')?;
+        let ok = !rest.is_empty()
+            && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+            && rest.chars().next().is_some_and(|c| c.is_ascii_digit());
+        ok.then(|| rest.to_string())
+    })
+}
+
+fn path_entries() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default()
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .to_lowercase()
+            .replace('/', "\\")
+    };
+    norm(a) == norm(b)
+}
+
+/// Locate the CUDA runtime of an installed toolkit. Looked up, in order: the
+/// `CUDA_PATH` root (and every `CUDA_PATH_V*`, newest first), each PATH
+/// entry, then the default install folder — so a toolkit is found even when
+/// the installer's environment variables are missing or stale. Inside a
+/// root both `bin\x64` (CUDA 13) and `bin` (CUDA ≤ 12) are checked.
+pub fn detect_cuda_toolkit() -> Option<CudaToolkitInfo> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(p) = std::env::var_os("CUDA_PATH") {
+        roots.push(PathBuf::from(p));
+    }
+    let mut versioned: Vec<(String, PathBuf)> = std::env::vars_os()
+        .filter_map(|(k, v)| {
+            let k = k.to_string_lossy().to_string();
+            k.starts_with("CUDA_PATH_V").then(|| (k, PathBuf::from(v)))
+        })
+        .collect();
+    versioned.sort_by(|a, b| b.0.cmp(&a.0));
+    roots.extend(versioned.into_iter().map(|(_, p)| p));
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"))
+            .join("NVIDIA GPU Computing Toolkit")
+            .join("CUDA");
+        let mut versions: Vec<PathBuf> = std::fs::read_dir(&base)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        versions.sort();
+        versions.reverse();
+        roots.extend(versions);
+    }
+    #[cfg(not(windows))]
+    roots.push(PathBuf::from("/usr/local/cuda"));
+
+    let path = path_entries();
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for root in &roots {
+        candidates.push(root.join("bin").join("x64"));
+        for sub in ["bin", "lib64", "lib"] {
+            candidates.push(root.join(sub));
+        }
+    }
+    candidates.extend(path.iter().cloned());
+
+    let dir = candidates.into_iter().find(|c| dir_has_cudart(c))?;
+    Some(CudaToolkitInfo {
+        on_path: path.iter().any(|p| same_dir(p, &dir)),
+        has_cublas: dir_has_cublas(&dir),
+        version: cuda_version_from_dir(&dir).or_else(|| {
+            std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().to_lowercase())
+                .find_map(|n| {
+                    n.strip_prefix("cudart64_")?
+                        .strip_suffix(".dll")
+                        .map(str::to_string)
+                })
+        }),
+        runtime_dir: dir.to_string_lossy().to_string(),
+    })
 }
 
 /// Megabytes taken by a bundled CUDA runtime inside `dir`, 0 when absent.
@@ -730,6 +855,46 @@ pub fn remove_installed(app: &AppHandle, dir: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cuda_version_is_read_from_the_toolkit_folder_name() {
+        let p = Path::new(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin\x64");
+        assert_eq!(cuda_version_from_dir(p).as_deref(), Some("13.3"));
+        let p = Path::new(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin");
+        assert_eq!(cuda_version_from_dir(p).as_deref(), Some("12.8"));
+        assert_eq!(cuda_version_from_dir(Path::new(r"C:\tools\cuda\bin")), None);
+        // "vulkan" must not parse as a version
+        assert_eq!(cuda_version_from_dir(Path::new(r"C:\vulkan\bin")), None);
+    }
+
+    #[test]
+    fn same_dir_ignores_case_separators_and_trailing_slashes() {
+        assert!(same_dir(
+            Path::new(r"C:\CUDA\v13.3\bin\x64\"),
+            Path::new("c:/cuda/v13.3/BIN/x64")
+        ));
+        assert!(!same_dir(
+            Path::new(r"C:\CUDA\bin"),
+            Path::new(r"C:\CUDA\bin\x64")
+        ));
+    }
+
+    /// Diagnostic: `cargo test -- --ignored --nocapture print_detected_cuda_toolkit`
+    /// prints what this machine's detection resolves to.
+    #[test]
+    #[ignore]
+    fn print_detected_cuda_toolkit() {
+        println!("{:#?}", detect_cuda_toolkit());
+    }
+
+    #[test]
+    fn cudart_file_names() {
+        assert!(is_cudart_file("cudart64_13.dll"));
+        assert!(is_cudart_file("CUDART64_12.DLL"));
+        assert!(is_cudart_file("libcudart.so.12"));
+        assert!(!is_cudart_file("cudart_static.lib"));
+        assert!(!is_cudart_file("ggml-cuda.dll"));
+    }
 
     #[test]
     fn parses_windows_asset_backends() {

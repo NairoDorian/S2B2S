@@ -149,11 +149,11 @@ pub fn remove_installed_llama_server(app: AppHandle, dir: String) -> Result<(), 
     llama_releases::remove_installed(&app, &dir)
 }
 
-/// `CUDA_PATH\bin` when a system CUDA toolkit provides the runtime DLLs.
+/// The installed CUDA toolkit whose runtime DLLs a CUDA build can use.
 #[tauri::command]
 #[specta::specta]
-pub fn system_cuda_runtime_dir() -> Option<String> {
-    llama_releases::system_cuda_runtime_dir()
+pub fn detect_cuda_toolkit() -> Option<llama_releases::CudaToolkitInfo> {
+    llama_releases::detect_cuda_toolkit()
 }
 
 /// Delete the bundled cudart/cuBLAS DLLs from an install; returns MB freed.

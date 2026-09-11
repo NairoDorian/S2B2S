@@ -169,8 +169,12 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   A CUDA build is ~180 MB; the ~500 MB `cudart` runtime package (cublasLt /
   cublas / cudart DLLs) is only fetched when `llama.include_cudart` is on —
   the same opt-in as the download script's `-IncludeCudart` — because a
-  machine with the CUDA toolkit (`CUDA_PATH`) already has those DLLs.
-  `remove_bundled_cuda_runtime` trims them from an existing install
+  machine with the CUDA toolkit already has those DLLs. `detect_cuda_toolkit`
+  looks in `CUDA_PATH` / `CUDA_PATH_V*` (`bin\x64` on CUDA 13, `bin` before),
+  every PATH entry and the default install folder, and reports whether the
+  folder is on PATH; `LlamaServerManager::start` prepends it to the child's
+  PATH when it is not. `remove_bundled_cuda_runtime` trims the DLLs from an
+  existing install
 - `system_monitor.rs` - One sampler thread, 1 Hz, CPU + RAM (sysinfo) and
   GPU / VRAM / temperature (NVML when present) as `SystemStatsEvent`; idle
   while the main window is hidden

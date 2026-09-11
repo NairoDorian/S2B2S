@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   commands,
   events,
+  type CudaToolkitInfo,
   type InstalledLlamaServer,
   type LlamaDownloadEvent,
   type LlamaRelease,
@@ -43,7 +44,7 @@ interface LlamaStore {
     includeCudart: boolean,
   ) => Promise<void>;
   removeCudaRuntime: (dir: string) => Promise<void>;
-  cudaRuntimeDir: string | null;
+  cudaToolkit: CudaToolkitInfo | null;
   removeInstalled: (dir: string) => Promise<void>;
 }
 
@@ -56,7 +57,7 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
   installed: [],
   download: null,
   detectedBackend: null,
-  cudaRuntimeDir: null,
+  cudaToolkit: null,
   commandPreview: "",
   commandError: null,
   initialized: false,
@@ -82,8 +83,8 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
       .then((backend) => set({ detectedBackend: backend }))
       .catch(() => {});
     commands
-      .systemCudaRuntimeDir()
-      .then((dir) => set({ cudaRuntimeDir: dir }))
+      .detectCudaToolkit()
+      .then((toolkit) => set({ cudaToolkit: toolkit }))
       .catch(() => {});
   },
 

@@ -158,8 +158,26 @@ export const commands = {
 	 */
 	installLlamaRelease: (tag: string, backend: string, includeCudart: boolean) => typedError<null, string>(__TAURI_INVOKE("install_llama_release", { tag, backend, includeCudart })),
 	removeInstalledLlamaServer: (dir: string) => typedError<null, string>(__TAURI_INVOKE("remove_installed_llama_server", { dir })),
-	/**  `CUDA_PATH\bin` when a system CUDA toolkit provides the runtime DLLs. */
-	systemCudaRuntimeDir: () => __TAURI_INVOKE<string | null>("system_cuda_runtime_dir"),
+	/**  The installed CUDA toolkit whose runtime DLLs a CUDA build can use. */
+	detectCudaToolkit: () => __TAURI_INVOKE<{
+	/**
+	 *  Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
+	 *  CUDA 12 and older in `bin`).
+	 */
+	runtime_dir: string,
+	/**  Toolkit version as the installer names it (`13.3`), when known. */
+	version: string | null,
+	/**
+	 *  Whether `runtime_dir` is on the PATH Handy was started with. When it is
+	 *  not, `LlamaServerManager::start` prepends it to the child's PATH.
+	 */
+	on_path: boolean,
+	/**
+	 *  Whether cuBLAS (`cublas64_*` + `cublasLt64_*`) sits next to cudart —
+	 *  llama.cpp's CUDA backend needs both.
+	 */
+	has_cublas: boolean,
+} | null>("detect_cuda_toolkit"),
 	/**  Delete the bundled cudart/cuBLAS DLLs from an install; returns MB freed. */
 	removeBundledCudaRuntime: (dir: string) => typedError<number, string>(__TAURI_INVOKE("remove_bundled_cuda_runtime", { dir })),
 	/**
@@ -791,6 +809,30 @@ export type BindingResponse = {
 };
 
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard";
+
+/**
+ *  A system CUDA toolkit whose runtime DLLs a CUDA build can load instead of
+ *  the bundled `cudart` package.
+ */
+export type CudaToolkitInfo = {
+	/**
+	 *  Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
+	 *  CUDA 12 and older in `bin`).
+	 */
+	runtime_dir: string,
+	/**  Toolkit version as the installer names it (`13.3`), when known. */
+	version: string | null,
+	/**
+	 *  Whether `runtime_dir` is on the PATH Handy was started with. When it is
+	 *  not, `LlamaServerManager::start` prepends it to the child's PATH.
+	 */
+	on_path: boolean,
+	/**
+	 *  Whether cuBLAS (`cublas64_*` + `cublasLt64_*`) sits next to cudart —
+	 *  llama.cpp's CUDA backend needs both.
+	 */
+	has_cublas: boolean,
+};
 
 export type CustomSounds = {
 	start: boolean,

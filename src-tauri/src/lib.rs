@@ -837,7 +837,7 @@ pub fn run(cli_args: CliArgs) {
             commands::llama::list_installed_llama_servers,
             commands::llama::install_llama_release,
             commands::llama::remove_installed_llama_server,
-            commands::llama::system_cuda_runtime_dir,
+            commands::llama::detect_cuda_toolkit,
             commands::llama::remove_bundled_cuda_runtime,
             commands::system::get_system_stats,
             commands::is_update_checks_locked,
