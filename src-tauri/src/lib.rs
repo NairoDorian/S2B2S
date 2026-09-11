@@ -190,10 +190,13 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 }
 
 fn initialize_core_logic(app_handle: &AppHandle) {
-    // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
-    // The frontend is responsible for calling the `initialize_enigo` command
-    // after onboarding completes. This avoids triggering permission dialogs
-    // on macOS before the user is ready.
+    let startup_started = std::time::Instant::now();
+    // Note: on macOS, Enigo (keyboard/mouse simulation) and the shortcuts are
+    // NOT initialized here: the frontend calls `initialize_enigo` /
+    // `initialize_shortcuts` after onboarding, so no permission dialog appears
+    // before the user is ready. Other platforms initialize both at the end of
+    // this function (see below), so the hotkeys work seconds before the
+    // webview has even loaded.
 
     // Initialize the managers. The audio recorder receives the streaming router
     // explicitly, so always-on microphone startup can wire live-preview frames
@@ -208,6 +211,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         AudioRecordingManager::new(app_handle, transcription_manager.stream_router())
             .expect("Failed to initialize recording manager"),
     );
+    // Always-on microphone: open off the startup path (≈0.9 s on Windows).
+    {
+        let rm = Arc::clone(&recording_manager);
+        std::thread::Builder::new()
+            .name("mic-open".into())
+            .spawn(move || rm.open_if_always_on())
+            .expect("spawn mic-open thread");
+    }
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let statistics_manager = Arc::new(managers::statistics::StatisticsManager::new(
@@ -248,10 +259,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         app_handle.clone(),
     )));
 
-    // Note: Shortcuts are NOT initialized here.
-    // The frontend is responsible for calling the `initialize_shortcuts` command
-    // after permissions are confirmed (on macOS) or after onboarding completes.
-    // This matches the pattern used for Enigo initialization.
+    // Windows / Linux need no accessibility permission: register the hotkeys
+    // and the paste input now, instead of ~8 s later when the webview mounts
+    // and calls the (idempotent) commands itself. macOS keeps the
+    // frontend-driven order so the permission prompt comes at the right time.
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Err(e) = commands::initialize_enigo(app_handle.clone()) {
+            log::warn!("Early Enigo initialization failed: {e}");
+        }
+        if let Err(e) = commands::initialize_shortcuts(app_handle.clone()) {
+            log::warn!("Early shortcut initialization failed: {e}");
+        }
+    }
+
+    log::info!(
+        "Core startup done in {:?} (microphone, llama-server and meters continue in the background)",
+        startup_started.elapsed()
+    );
 
     // Set up signal handlers for toggling transcription. On Linux, SIGUSR1 is
     // deliberately not handled — it belongs to WebKitGTK's garbage collector

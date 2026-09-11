@@ -63,6 +63,17 @@ event, a dependency or a thread.**
     logs and the opt-in probes (`HANDY_PROBE_WAV`). A change that adds a
     dependency, a thread or a poll states its cost in the commit message.
 
+## Startup order (measured from the dev log, 2026-09-11)
+
+`initialize_core_logic` used to run: model registry → always-on microphone
+open (**891 ms, synchronous**) → history DB → transcribe.cpp backend init →
+meters, and the hotkeys only registered when the webview mounted and
+called `initialize_shortcuts` (**~8 s after launch** in dev). Now the
+microphone opens on a `mic-open` thread, the hotkeys and Enigo are
+registered at the end of core startup on Windows/Linux (macOS keeps the
+permission-driven order), and the log prints `Core startup done in …`.
+Anything added to startup goes after that line or on its own thread.
+
 ## Known costs to keep in mind
 
 - FFT resampling adds ~20 ms of buffering per stage; the denoise chain is

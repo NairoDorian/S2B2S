@@ -501,12 +501,23 @@ impl AudioRecordingManager {
             cached_device: Arc::new(Mutex::new(None)),
         };
 
-        // Always-on?  Open immediately.
-        if matches!(mode, MicrophoneMode::AlwaysOn) {
-            manager.start_microphone_stream()?;
-        }
+        // An always-on microphone is opened by `open_if_always_on`, which the
+        // app runs on a background thread: the open costs ~0.9 s on Windows
+        // (device resolve + VAD + WASAPI stream) and used to stall everything
+        // that followed it at startup — history, transcribe.cpp, shortcuts.
 
         Ok(manager)
+    }
+
+    /// Open the stream now when the mode is always-on. Safe to call from any
+    /// thread; a failure is logged and the on-demand path opens it later.
+    pub fn open_if_always_on(&self) {
+        if !matches!(*self.mode.lock().unwrap(), MicrophoneMode::AlwaysOn) {
+            return;
+        }
+        if let Err(e) = self.start_microphone_stream() {
+            warn!("Always-on microphone could not be opened at startup: {e}");
+        }
     }
 
     /* ---------- helper methods --------------------------------------------- */

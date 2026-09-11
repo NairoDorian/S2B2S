@@ -181,6 +181,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Faster startup (2026-09-11).** The always-on microphone is opened on a
+  background thread instead of stalling startup for ~0.9 s, and on
+  Windows/Linux the hotkeys and paste input are registered at the end of
+  core startup rather than ~8 s later when the settings window finished
+  loading (macOS keeps the permission-driven order). The recorder logs its
+  device on one line, and the log prints how long core startup took.
 - **Status bar popovers work again; one-line bar; interface scale
   (2026-09-11).** An `overflow-x-auto` added for the one-line status bar
   also clipped the upward model / quantization / latency popovers, so
