@@ -28,6 +28,18 @@ fn main() {
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
 
+    // The released Tauri CLI (2.11) exports STATIC_VCRUNTIME=true for
+    // `tauri build`. tauri-build from the `dev` branch (Cargo.toml [patch])
+    // deprecated that variable in favour of `build.windows.staticVCRuntime`
+    // (default true) and prints a warning on every build while it is set.
+    // Drop it so the config decides, which links the same static VC runtime.
+    // Remove once the CLI stops setting it.
+    if std::env::var_os("STATIC_VCRUNTIME").is_some_and(|v| v == "true") {
+        // SAFETY: a build script is single-threaded here; nothing reads the
+        // environment concurrently.
+        unsafe { std::env::remove_var("STATIC_VCRUNTIME") };
+    }
+
     tauri_build::build()
 }
 
@@ -73,8 +85,7 @@ fn stage_vc_runtime_dlls() {
                     || lower.starts_with("vcruntime140")
                     || lower.starts_with("vcomp140"));
             if wanted {
-                std::fs::copy(&src, dest.join(&name))
-                    .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
+                copy_if_changed(&src, &dest.join(&name));
                 copied.push(lower);
             }
         }
@@ -138,10 +149,6 @@ fn stage_transcribe_runtime_libs() {
     }
 
     let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("transcribe-libs");
-    // Recreate clean so a renamed or dropped ggml module can never linger in the
-    // package from a previous build.
-    let _ = std::fs::remove_dir_all(&dest);
-    std::fs::create_dir_all(&dest).expect("create transcribe-libs staging dir");
 
     // Collect every candidate library name first (across both dirs) so the
     // pruning below can see each lib's whole symlink family at once.
@@ -194,20 +201,94 @@ fn stage_transcribe_runtime_libs() {
         }
     }
 
-    let mut copied = 0usize;
-    for &(name, src, _) in best.values() {
-        std::fs::copy(src, dest.join(name))
-            .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
-        copied += 1;
-    }
-    if copied == 0 {
+    if best.is_empty() {
         panic!(
             "no transcribe-cpp runtime libraries found under {dirs:?}; a shared / \
              dynamic-backends build must ship them or the app registers zero \
              compute devices"
         );
     }
-    println!("cargo:warning=Staged {copied} transcribe-cpp runtime library file(s)");
+
+    // The staged directory is one of tauri-build's resource inputs (it emits
+    // `rerun-if-changed` for it), so rewriting it on every run marked this
+    // script, and with it the whole crate (four minutes in release), dirty
+    // on every build without a single source change. Touch it only when the
+    // staged set actually differs.
+    let desired: std::collections::BTreeMap<&str, &PathBuf> =
+        best.values().map(|&(name, src, _)| (name, src)).collect();
+    if staged_up_to_date(&dest, &desired) {
+        return;
+    }
+    // Recreate clean so a renamed or dropped ggml module can never linger in
+    // the package from a previous build.
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).expect("create transcribe-libs staging dir");
+    for (name, src) in &desired {
+        std::fs::copy(src, dest.join(name))
+            .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
+    }
+    println!(
+        "cargo:warning=Staged {} transcribe-cpp runtime library file(s)",
+        desired.len()
+    );
+}
+
+/// True when `dest` already holds exactly the desired transcribe-cpp files
+/// (the VC++ runtime DLLs staged beside them by `stage_vc_runtime_dlls` are
+/// allowed), each as large as and no older than its source.
+fn staged_up_to_date(
+    dest: &std::path::Path,
+    desired: &std::collections::BTreeMap<&str, &std::path::PathBuf>,
+) -> bool {
+    let Ok(entries) = std::fs::read_dir(dest) else {
+        return false;
+    };
+    let mut present = 0usize;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if is_vc_runtime_dll(&name) {
+            continue;
+        }
+        let Some(src) = desired.get(name.as_str()) else {
+            return false;
+        };
+        if !file_is_current(src, &entry.path()) {
+            return false;
+        }
+        present += 1;
+    }
+    present == desired.len()
+}
+
+fn is_vc_runtime_dll(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".dll")
+        && (lower.starts_with("msvcp140")
+            || lower.starts_with("vcruntime140")
+            || lower.starts_with("vcomp140"))
+}
+
+/// `dst` is a file as large as `src` and modified no earlier than it.
+fn file_is_current(src: &std::path::Path, dst: &std::path::Path) -> bool {
+    let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(src), std::fs::metadata(dst)) else {
+        return false;
+    };
+    if !dst_meta.is_file() || dst_meta.len() != src_meta.len() {
+        return false;
+    }
+    matches!(
+        (src_meta.modified(), dst_meta.modified()),
+        (Ok(s), Ok(d)) if d >= s
+    )
+}
+
+/// Copy `src` over `dst` unless `dst` is already current (see
+/// `file_is_current`), so a staging step never rewrites what it staged before.
+fn copy_if_changed(src: &std::path::Path, dst: &std::path::Path) {
+    if file_is_current(src, dst) {
+        return;
+    }
+    std::fs::copy(src, dst).unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
 }
 
 /// Split a versioned ELF shared-library name into (stem, version depth):

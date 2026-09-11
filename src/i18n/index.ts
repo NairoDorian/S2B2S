@@ -1,4 +1,4 @@
-import i18n from "i18next";
+import i18n, { type BackendModule } from "i18next";
 import { initReactI18next } from "react-i18next";
 import { locale } from "@tauri-apps/plugin-os";
 import { LANGUAGE_METADATA } from "./languages";
@@ -9,23 +9,52 @@ import {
   updateDocumentLanguage,
 } from "@/lib/utils/rtl";
 
-// Auto-discover translation files using Vite's glob import
+// Auto-discover translation files using Vite's glob import. Deliberately not
+// `eager`: each locale is its own chunk, imported the first time that language
+// is used. Eager bundling put all 24 files (2.1 MB of JSON) into the chunk
+// both windows parse at startup, for the one language that is ever read.
 const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
   "./locales/*/translation.json",
-  { eager: true },
 );
 
-// Build resources from discovered locale files
-const resources: Record<string, { translation: Record<string, unknown> }> = {};
-for (const [path, module] of Object.entries(localeModules)) {
+// Language code -> loader of its translation file
+const localeLoaders: Record<
+  string,
+  () => Promise<{ default: Record<string, unknown> }>
+> = {};
+for (const [path, load] of Object.entries(localeModules)) {
   const langCode = path.match(/\.\/locales\/(.+)\/translation\.json/)?.[1];
   if (langCode) {
-    resources[langCode] = { translation: module.default };
+    localeLoaders[langCode] = load;
   }
 }
 
+// i18next backend that resolves a language to its lazily imported chunk.
+const lazyLocaleBackend: BackendModule = {
+  type: "backend",
+  init() {},
+  read(language, _namespace, callback) {
+    const load = localeLoaders[language];
+    if (!load) {
+      callback(
+        new Error(`No translation file for locale "${language}"`),
+        false,
+      );
+      return;
+    }
+    load().then(
+      (module) => callback(null, module.default),
+      (error: unknown) =>
+        callback(
+          error instanceof Error ? error : new Error(String(error)),
+          false,
+        ),
+    );
+  },
+};
+
 // Build supported languages list from discovered locales + metadata
-export const SUPPORTED_LANGUAGES = Object.keys(resources)
+export const SUPPORTED_LANGUAGES = Object.keys(localeLoaders)
   .map((code) => {
     const meta = LANGUAGE_METADATA[code];
     if (!meta) {
@@ -85,44 +114,49 @@ export const getSupportedLanguage = (
   return supported ? supported.code : null;
 };
 
-// Initialize i18n with English as default
-// Language will be synced from settings after init
-i18n.use(initReactI18next).init({
-  resources,
-  lng: "en",
-  fallbackLng: "en",
-  interpolation: {
-    escapeValue: false, // React already escapes values
-  },
-  react: {
-    useSuspense: false, // Disable suspense for SSR compatibility
-  },
-});
+// Initialize i18n with English as default; the language is synced from
+// settings below. Only the initial language's bundle is loaded here.
+// `changeLanguage` loads its target before it switches, so the UI never
+// renders raw keys in between.
+const initialized = i18n
+  .use(lazyLocaleBackend)
+  .use(initReactI18next)
+  .init({
+    lng: "en",
+    fallbackLng: "en",
+    interpolation: {
+      escapeValue: false, // React already escapes values
+    },
+    react: {
+      useSuspense: false, // Disable suspense for SSR compatibility
+    },
+  });
 
 // Sync language from app settings
 export const syncLanguageFromSettings = async () => {
   try {
     const result = await commands.getAppSettings();
-    if (result.status === "ok" && result.data.app_language) {
-      const supported = getSupportedLanguage(result.data.app_language);
-      if (supported && supported !== i18n.language) {
-        await i18n.changeLanguage(supported);
-      }
-    } else {
-      // Fall back to system locale detection if no saved preference
-      const systemLocale = await locale();
-      const supported = getSupportedLanguage(systemLocale);
-      if (supported && supported !== i18n.language) {
-        await i18n.changeLanguage(supported);
-      }
+    const preferred =
+      result.status === "ok" && result.data.app_language
+        ? result.data.app_language
+        : // Fall back to system locale detection if no saved preference
+          await locale();
+    const supported = getSupportedLanguage(preferred);
+    // init() switches to the default language once that bundle has loaded.
+    // Wait for it so its switch can never land after ours and so `i18nReady`
+    // always implies the fallback bundle is loaded.
+    await initialized;
+    if (supported && supported !== i18n.language) {
+      await i18n.changeLanguage(supported);
     }
   } catch (e) {
     console.warn("Failed to sync language from settings:", e);
   }
 };
 
-// Run language sync on init
-syncLanguageFromSettings();
+// Run language sync on init. Both windows wait for this before their first
+// render, so the first paint is already in the user's language.
+export const i18nReady: Promise<void> = syncLanguageFromSettings();
 
 // Listen for language changes to update HTML dir and lang attributes
 i18n.on("languageChanged", (lng) => {

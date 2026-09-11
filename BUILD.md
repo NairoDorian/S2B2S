@@ -135,7 +135,25 @@ bun run build:full
 - **`build:fast` (`bun run build:fast` or `bun run tauri build --fast`)**: Ideal for local development release testing. Automatically sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto` to target solely the active system GPU, dramatically cutting compile time.
 - **`build:full` (`bun run build:full` or `bun run tauri build`)**: Used for releasing distribution packages. Compiles the full matrix of CUDA architectures to run across all supported NVIDIA GPU generations.
 
-This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; NSIS installer and MSI on Windows). Windows bundles are unsigned in this fork (`signCommand` was removed from `tauri.conf.json`).
+This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; NSIS installer and MSI on Windows). Windows bundles are unsigned in this fork (`signCommand` was removed from `tauri.conf.json`), and no updater artifacts (`.sig`, updater manifest) are produced: `createUpdaterArtifacts` is off because the updater public key in `tauri.conf.json` is upstream's and the fork has no matching private key.
+
+### Build folder size
+
+Cargo never deletes the outputs of units that stopped existing, so every
+dependency bump, transcribe.cpp pin bump or feature change leaves the
+previous hashed artifacts, build-script outputs (a full native build each)
+and incremental caches behind; `src-tauri/target` grows by gigabytes a week.
+`bun run tauri`, `build:fast` and `build:full` therefore prune it before
+every run (`scripts/prune-target.ts`): units whose version or git revision
+is no longer in `Cargo.lock`, superseded incremental caches, all but the two
+newest builds of the app crate, and installers of another version. Nothing
+the next build needs is removed. To see what would go, or to run it by hand:
+
+```powershell
+bun run prune:target --dry-run   # list only
+bun run prune:target --verbose   # remove and print every path
+$env:HANDY_NO_PRUNE = "1"         # skip the automatic run for this shell
+```
 
 ## Linux Install (from source)
 
@@ -302,3 +320,21 @@ bun run tauri dev
 # Or compile a release binary without the installer/signing step:
 bun run tauri build --no-bundle
 ```
+
+### Windows `tauri build` fails after bundling with `no private key`
+
+If both installers are already listed under `Finished 2 bundles at:` and the
+command still exits with
+
+```
+A public key has been found, but no private key. Make sure to set `TAURI_SIGNING_PRIVATE_KEY` environment variable.
+```
+
+that is the Tauri **updater** signing step. It runs when
+`bundle.createUpdaterArtifacts` is on and `plugins.updater.pubkey` is set but
+`TAURI_SIGNING_PRIVATE_KEY` is not. This fork keeps upstream's public key (the
+app checks upstream's `latest.json`) and has no private key for it, so
+`createUpdaterArtifacts` is `false` in `tauri.conf.json` and the step is
+skipped. Turn it back on only together with a key pair of your own
+(`bun x tauri signer generate`), its public key in `tauri.conf.json` and an
+updater endpoint you publish to.

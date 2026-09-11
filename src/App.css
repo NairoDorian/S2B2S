@@ -1,4 +1,7 @@
-@import "tailwindcss";
+/* Scan only src/ for class names. Tailwind's automatic source detection
+   walks the whole repository to build its watch globs, gitignored
+   src-tauri/target (70k files) included, which cost 2 to 8 s per build. */
+@import "tailwindcss" source(".");
 @import "./styles/theme.css";
 
 /* Register the shared color tokens (src/styles/theme.css) as Tailwind
