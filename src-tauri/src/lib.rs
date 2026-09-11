@@ -1048,8 +1048,8 @@ pub fn run(cli_args: CliArgs) {
                     // GPU / VRAM meters, updater — fits on one line next to the
                     // default 208 px sidebar (≈ 1010 px of bar + sidebar). The
                     // sidebar scrolls and collapses below that anyway.
-                    .inner_size(1280.0, 800.0)
-                    .min_inner_size(1180.0, 720.0)
+                    .inner_size(1200.0, 800.0)
+                    .min_inner_size(1060.0, 720.0)
                     .resizable(true)
                     .maximizable(true)
                     .visible(false);
