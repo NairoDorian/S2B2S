@@ -21,6 +21,8 @@
     "statistics": "Statistics",
     "fileTranscription": "Transcribe Files",
     "liveMode": "Live Mode",
+    "liveFft": "Live FFT",
+    "overlay": "Overlay",
     "help": "Help",
     "llama": "Local LLM",
     "collapse": "Collapse",
@@ -443,6 +445,21 @@
         "title": "Noise suppression (RNNoise)",
         "description": "Clean the microphone signal with RNNoise before voice detection and transcription. Helps with fans, keyboards and room hum; leave it off if your voice sounds processed or clipped. Applies immediately — use the live VAD test below to compare."
       },
+      "noiseSuppressionParams": {
+        "strength": {
+          "label": "Suppression strength",
+          "description": "Wet/dry mix of RNNoise's output and the untouched microphone. 100% is the suppressor alone; lower values let some of the original back in when voices start to sound processed."
+        },
+        "vadThreshold": {
+          "label": "Suppression gate",
+          "description": "RNNoise's own speech probability below which a frame is muted entirely. Off passes everything the suppressor leaves; higher values cut more background between words.",
+          "off": "Off"
+        },
+        "vadGrace": {
+          "label": "Gate hold",
+          "description": "How long audio keeps passing after the last frame above the gate threshold, so word endings and short pauses are not clipped."
+        }
+      },
       "voiceActivityDetection": {
         "title": "Sprachaktivitätserkennung (VAD)",
         "description": "Filtert Stille aus Aufnahmen. Streamingfähige Modelle verwenden ein längeres VAD-Ende; das Deaktivieren von VAD nimmt Rohaudio auf."
@@ -495,7 +512,8 @@
         "errorStart": "Could not start the VAD test: {{error}}",
         "noiseSuppression": "Noise suppression",
         "noiseSuppressionOn": "On",
-        "noiseSuppressionOff": "Off"
+        "noiseSuppressionOff": "Off",
+        "denoiseProb": "Suppressor"
       }
     },
     "postProcessing": {
@@ -1088,6 +1106,355 @@
         "view": "View"
       }
     },
+    "overlay": {
+      "groups": {
+        "appearance": "Appearance",
+        "stats": "Speech stats"
+      },
+      "hiddenNote": "The overlay is off. Choose Minimal or Live above to configure what it shows.",
+      "scope": {
+        "title": "Analyser",
+        "description": "The picture of the microphone the overlay draws while you record: a spectrum and a trace of the raw audio, both computed with the Live FFT page's analysis settings.",
+        "showSpectrum": {
+          "label": "Show spectrum",
+          "description": "Draw the spectrum view in the overlay."
+        },
+        "style": {
+          "label": "Spectrum style",
+          "description": "Filled area, a line, or bars.",
+          "options": {
+            "area": "Area",
+            "line": "Line",
+            "bars": "Bars"
+          }
+        },
+        "mirror": {
+          "label": "Mirror spectrum",
+          "description": "Draw the spectrum rising from the centre line with its negative mirrored below it, so it reads like the centred waveform beside it."
+        },
+        "peakHold": {
+          "label": "Peak hold",
+          "description": "Keep a slowly falling marker at each column's recent peak, as the Live FFT page's peak hold does."
+        },
+        "showWave": {
+          "label": "Show waveform",
+          "description": "Draw the raw audio trace in the overlay."
+        },
+        "waveSamples": {
+          "label": "Waveform length",
+          "description": "How many samples of raw audio the trace covers, at the analysed signal's rate (4096 is 85 ms at 48 kHz). Longer windows show more of the phrase and move slower."
+        },
+        "waveTaper": {
+          "label": "Edge fade",
+          "description": "Samples faded to zero at each end of the window, so the trace never starts or ends mid-swing."
+        },
+        "gainFloor": {
+          "label": "Auto-gain floor",
+          "description": "The trace is scaled to the loudest recent swing, but never below this level, so room tone is not blown up to full height."
+        },
+        "viewWidth": {
+          "label": "View width",
+          "description": "Width of each view; the pill and the overlay window grow with it."
+        },
+        "viewHeight": {
+          "label": "View height",
+          "description": "Height of the views; above 22 px the control row grows to fit."
+        },
+        "analysisNote": "Scale, window, EQ, weighting, dB range, ballistics and update rate are the Live FFT page's settings.",
+        "openLiveFft": "Open Live FFT"
+      }
+    },
+    "liveFft": {
+      "title": "Live FFT",
+      "description": "Real-time spectrum of the microphone with a full analyser parameter set: psychoacoustic frequency scales, shelving EQ, window and equal-loudness weighting, dB references and attack/release ballistics — plus a peak-hold analyser and a waterfall.",
+      "start": "Start analyser",
+      "stop": "Stop",
+      "freeze": "Freeze",
+      "unfreeze": "Resume",
+      "resetValue": "Reset to default",
+      "noSignal": "No signal",
+      "hotkeysNote": "While the analyser runs the dictation hotkeys report \"Already recording\" and the cancel hotkey stops it. Nothing is transcribed or saved.",
+      "status": {
+        "idle": "Idle",
+        "starting": "Starting",
+        "running": "Running",
+        "stopping": "Stopping",
+        "error": "Error"
+      },
+      "stopReason": {
+        "cancelled": "The analyser stopped because the recording was ended elsewhere (cancel hotkey or tray).",
+        "window_hidden": "The analyser stopped after two minutes with the window hidden, so the microphone is not held for nothing."
+      },
+      "canvas": {
+        "idle": "Start the analyser to see the spectrum",
+        "silence": "digital silence"
+      },
+      "telemetry": {
+        "sampleRate": "Rate (Hz)",
+        "fftSize": "FFT",
+        "window": "Window",
+        "resolution": "Resolution",
+        "dsp": "DSP",
+        "dropped": "Dropped",
+        "threading": "Analysis: {{mode}}",
+        "async": "worker thread",
+        "inline": "inline on the audio thread",
+        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}"
+      },
+      "view": {
+        "title": "Analyser",
+        "bars": "Bars",
+        "line": "Line",
+        "area": "Area",
+        "peakHold": "Peak hold",
+        "grid": "Grid",
+        "waterfall": "Waterfall",
+        "peak": "Peak:",
+        "cursor": "Cursor:",
+        "colormap": {
+          "inferno": "Inferno",
+          "accent": "Accent colour",
+          "ice": "Ice"
+        }
+      },
+      "presets": {
+        "title": "Presets",
+        "description": "Start from a known configuration; every parameter below stays editable. The source and threading choices are kept.",
+        "analyzer": "Analyser (defaults)",
+        "raw": "Raw (linear, no ballistics)",
+        "voice": "Voice (Mel, A-weighted, 8 kHz)",
+        "music": "Music (Log, cubic, Blackman-Harris)",
+        "meter": "Fast meter (linear, 60 Hz)",
+        "chroma": "Chroma / pitch",
+        "applied": "Preset applied"
+      },
+      "spectrum": {
+        "title": "Spectrum",
+        "source": {
+          "label": "Source",
+          "description": "Which signal is analysed: the microphone at its native rate (full bandwidth, before noise suppression) or the 16 kHz frames a model hears (after resampling and noise suppression, before the VAD).",
+          "microphone": "Microphone (native rate)",
+          "microphoneHint": "Full bandwidth, before noise suppression",
+          "processed": "Processed (16 kHz)",
+          "processedHint": "What the model hears; 8 kHz bandwidth",
+          "denoised": "After noise suppression (48 kHz)",
+          "denoisedHint": "RNNoise's output at full bandwidth; the untouched microphone while suppression is off"
+        },
+        "scale": {
+          "label": "Scale",
+          "description": "Frequency axis of the spectrum: logarithmic, Mel, ERB, Bark, chroma (pitch classes), linear, or a Mel + Log blend.",
+          "options": {
+            "log": "Logarithmic",
+            "mel": "Mel scale",
+            "erb": "ERB scale",
+            "bark": "Bark scale",
+            "chroma": "Chroma / pitch",
+            "linear": "Linear scale",
+            "melog": "Mel + Log blend"
+          }
+        },
+        "warpInterp": {
+          "label": "Warp interpolation",
+          "description": "How the linear FFT bins are resampled onto the perceptual grid. Cubic (Catmull-Rom, 4 taps) is smoother, so a 16K FFT with cubic looks like 32K with linear at half the cost.",
+          "linear": "Linear (2 taps)",
+          "cubic": "Cubic Catmull-Rom (4 taps)"
+        },
+        "displayMax": {
+          "label": "Display max Hz",
+          "description": "Highest frequency on the axis."
+        },
+        "nyquistNote": "Clamped to the Nyquist frequency of the source ({{hz}}).",
+        "outputBins": {
+          "label": "Output bins",
+          "description": "Size of the warped spectrum sent to the page per frame. More bins mean finer detail and a larger event; 1024 already exceeds the width of the display."
+        },
+        "warpBlend": {
+          "label": "Warp blend",
+          "description": "0 = linear grid, 1 = fully perceptual."
+        },
+        "logFloor": {
+          "label": "Log floor Hz",
+          "description": "Lowest frequency of the Log and Mel + Log grids."
+        },
+        "windowMode": {
+          "label": "Window length mode",
+          "description": "Set the analysis window in samples or in milliseconds (independent of the sample rate).",
+          "samples": "Samples",
+          "milliseconds": "Milliseconds"
+        },
+        "windowSamples": {
+          "label": "Window samples",
+          "description": "Analysis window in samples (3175 = 72 ms at 44.1 kHz). Longer windows resolve closer frequencies but react more slowly."
+        },
+        "windowMs": {
+          "label": "Window length ms",
+          "description": "Analysis window in milliseconds."
+        },
+        "fftSize": {
+          "label": "Zero-pad length",
+          "description": "Transform length. The window is centred in a zero-padded frame of this size (grown to the next power of two above the window when that is larger); a longer transform interpolates the spectrum more finely."
+        }
+      },
+      "eq": {
+        "title": "EQ",
+        "description": "RBJ shelving EQ applied to new samples as they arrive, stateful and in time order — before the window and the transform.",
+        "enable": {
+          "label": "EQ enable",
+          "description": "Off skips the EQ code entirely."
+        },
+        "highShelf": {
+          "label": "High shelf",
+          "description": "Bypass for the high shelf."
+        },
+        "lowShelf": {
+          "label": "Low shelf",
+          "description": "Bypass for the low shelf."
+        },
+        "highGain": {
+          "label": "High boost dB",
+          "description": "Gain of the high shelf."
+        },
+        "highCutoff": {
+          "label": "High cutoff Hz",
+          "description": "Corner frequency of the high shelf."
+        },
+        "lowGain": {
+          "label": "Low boost dB",
+          "description": "Gain of the low shelf."
+        },
+        "lowCutoff": {
+          "label": "Low cutoff Hz",
+          "description": "Corner frequency of the low shelf."
+        },
+        "q": {
+          "label": "EQ Q factor",
+          "description": "Slope of both shelves."
+        },
+        "amount": {
+          "label": "EQ blend amount",
+          "description": "Wet/dry blend: 0 = dry, 1 = the filtered signal, above 1 exaggerates the change."
+        }
+      },
+      "window": {
+        "title": "Window & weighting",
+        "type": {
+          "label": "Window type",
+          "description": "Taper applied to the analysis window before the transform.",
+          "options": {
+            "kaiser": "Kaiser (beta control)",
+            "hann": "Hann window",
+            "hamming": "Hamming window",
+            "blackman": "Blackman window",
+            "blackman_harris": "Blackman-Harris (92 dB)",
+            "rectangular": "Rectangular (flat)"
+          }
+        },
+        "kaiserBeta": {
+          "label": "Kaiser beta",
+          "description": "Higher beta lowers the side lobes and widens the main lobe."
+        },
+        "weighting": {
+          "label": "Loudness weighting",
+          "description": "Equal-loudness curve applied per bin.",
+          "options": {
+            "off": "Off (flat)",
+            "a": "A-weighting (IEC 61672)",
+            "c": "C-weighting (high SPL)",
+            "itu468": "ITU-R 468 (noise standard)"
+          }
+        },
+        "magnitudeNorm": {
+          "label": "Magnitude normalization",
+          "description": "Coherent gain keeps the window's mean at 1; full scale makes a sine of amplitude 1 read 1.0.",
+          "options": {
+            "coherent_gain": "Coherent gain (mean(window) = 1)",
+            "full_scale": "Full scale (sine amplitude 1 → 1.0)"
+          }
+        }
+      },
+      "loudness": {
+        "title": "Loudness & ballistics",
+        "mode": {
+          "label": "Loudness mode",
+          "description": "Linear magnitude, decibels, or decibels mapped onto 0…1 over the dB range.",
+          "options": {
+            "off": "Off (linear magnitude)",
+            "db": "dB (decibels)",
+            "db_normalized": "dB normalized (0.0 to 1.0)"
+          }
+        },
+        "dbReference": {
+          "label": "dB reference",
+          "description": "What 0 dB means: the loudest bin of the frame, digital full scale, or a slow peak follower.",
+          "options": {
+            "frame_peak": "Frame peak (0 dB = loudest bin)",
+            "dbfs": "0 dBFS (absolute)",
+            "agc": "Slow AGC (peak follower)"
+          }
+        },
+        "dbRange": {
+          "label": "dB range floor",
+          "description": "How many dB below the reference the display floor sits."
+        },
+        "ballistics": {
+          "label": "Ballistics enable",
+          "description": "Asymmetric attack / release smoothing of the spectrum over time. Off skips the code entirely."
+        },
+        "ballisticsMode": {
+          "label": "Ballistics mode",
+          "description": "Per-frame coefficients or time constants in milliseconds, independent of the update rate.",
+          "coefficient": "Per-frame coefficient",
+          "milliseconds": "Milliseconds (rate independent)"
+        },
+        "attack": {
+          "label": "Attack speed",
+          "description": "Per-frame attack coefficient, 0 = follow instantly."
+        },
+        "release": {
+          "label": "Release speed",
+          "description": "Per-frame release coefficient, 0 = follow instantly."
+        },
+        "attackMs": {
+          "label": "Attack ms",
+          "description": "Time to reach 63 % of a rise."
+        },
+        "releaseMs": {
+          "label": "Release ms",
+          "description": "Time to fall 63 % of a drop."
+        },
+        "reset": {
+          "label": "Reset",
+          "description": "Clears the ballistics, AGC and EQ state.",
+          "button": "Reset state"
+        }
+      },
+      "performance": {
+        "title": "Performance",
+        "async": {
+          "label": "Async analysis (worker thread)",
+          "description": "On: the transform runs on its own thread and the audio thread only copies samples into a ring. Off: the transform runs inline on the audio consumer thread. Changing this restarts a running analysis."
+        },
+        "updateRate": {
+          "label": "Update rate",
+          "description": "Spectrum frames per second sent to the page."
+        },
+        "note": "Handy analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+      },
+      "voice": {
+        "title": "Voice detection & noise suppression",
+        "description": "Tune the speech detector and RNNoise while watching the spectrum. With the source set to the 16 kHz frames a model hears, the spectrum shows what noise suppression removes.",
+        "show": {
+          "label": "Show voice detection",
+          "description": "Run the speech detector on the analysed signal and show its verdict frame by frame. Changing this restarts a running analysis."
+        },
+        "idle": "Start the analyser to see the detector.",
+        "sourceHint": "The spectrum shows the untouched microphone. Analyse the signal after noise suppression to see what RNNoise removes.",
+        "sourceSwitch": "Analyse the suppressed signal"
+      },
+      "errors": {
+        "start": "Could not start the analyser: {{error}}"
+      }
+    },
     "llama": {
       "status": {
         "stopped": "Stopped",
@@ -1419,6 +1786,8 @@
     "multiStt": "Record once and transcribe with up to four models in parallel, then let a language model merge the outputs into one text.",
     "fileTranscription": "Turn audio files or whole folders into .txt or .md transcripts, with the same modes as live dictation.",
     "liveMode": "Keep the microphone open for as long as you like: the audio is saved in chunks and the transcript written to a file while you speak.",
+    "liveFft": "A real-time spectrum analyser for the microphone: perceptual frequency scales, EQ, window, weighting, dB references, ballistics and a waterfall.",
+    "overlay": "Everything about the recording overlay: whether and where it shows, how live text arrives, the speech statistics it carries, and the spectrum and waveform it draws.",
     "advanced": "Noise suppression, voice detection with a live test, paste behaviour, and the settings that trade latency for accuracy.",
     "postprocessing": "Send the transcript through a language model to clean it up, using a prompt you write, before it is pasted.",
     "debug": "Diagnostics: recent errors, log level, live logs, keyboard checks, and the timing knobs behind pasting.",
@@ -1492,6 +1861,14 @@
       "liveMode": {
         "title": "Live Mode: dictate for hours into a file.",
         "summary": "Live Mode keeps the microphone open, saves the audio as numbered chunk files and mirrors the live transcript into a text file while you speak. It needs a streaming-capable model. The transcription hotkeys are paused while a session runs; the cancel hotkey ends the current chunk."
+      },
+      "liveFft": {
+        "title": "Live FFT.",
+        "summary": "Live FFT opens the microphone and shows its spectrum in real time — bars, line or area with peak hold, plus a scrolling waterfall. The analysis parameters are grouped as Spectrum (scale, warp, window length, zero-pad length), EQ, Window & weighting, Loudness & ballistics and Performance. Presets give quick starting points, including a raw linear-magnitude preset. Nothing is transcribed or saved; the dictation hotkeys are paused while it runs and the cancel hotkey stops it."
+      },
+      "overlay": {
+        "title": "The recording overlay.",
+        "summary": "The Overlay page gathers the overlay's settings: style (none, minimal, live) and position, direct typing of the live text and its speed, the speech statistics, and the analyser it draws while you record. The analyser shows a spectrum and a trace of the raw microphone audio; choose which views to show, the spectrum style, how many samples the trace covers, how its ends fade, its auto-gain floor and the size of the views. The analysis itself (scale, window, EQ, weighting, dB range, ballistics, update rate) is configured on the Live FFT page and used as is."
       },
       "history": {
         "title": "History and Statistics.",

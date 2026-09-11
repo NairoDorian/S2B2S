@@ -1,6 +1,5 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ShowOverlay } from "../ShowOverlay";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { CustomWords } from "../CustomWords";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -22,7 +21,7 @@ import { useSettings } from "../../../hooks/useSettings";
 import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
 import { VoiceActivityDetection } from "../VoiceActivityDetection";
 import { NoiseSuppression } from "../NoiseSuppression";
-import { SpeechStats } from "../SpeechStats";
+import { NoiseSuppressionParams } from "../NoiseSuppressionParams";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
 import { MicIdleTimeout } from "../MicIdleTimeout";
@@ -41,7 +40,6 @@ export const AdvancedSettings: React.FC = () => {
         <StartHidden descriptionMode="tooltip" grouped={true} />
         <AutostartToggle descriptionMode="tooltip" grouped={true} />
         <ShowTrayIcon descriptionMode="tooltip" grouped={true} />
-        <ShowOverlay descriptionMode="tooltip" grouped={true} />
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
         <ExperimentalToggle descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
@@ -55,10 +53,10 @@ export const AdvancedSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <NoiseSuppression descriptionMode="tooltip" grouped={true} />
+        <NoiseSuppressionParams descriptionMode="tooltip" grouped={true} />
         <VoiceActivityDetection descriptionMode="tooltip" grouped={true} />
         <VadSensitivity descriptionMode="tooltip" grouped={true} />
         <VadLiveTest descriptionMode="tooltip" grouped={true} />
-        <SpeechStats descriptionMode="tooltip" grouped={true} />
         <FillerWordRemoval descriptionMode="tooltip" grouped={true} />
         <CustomWords descriptionMode="tooltip" grouped />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />

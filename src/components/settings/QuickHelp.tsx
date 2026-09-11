@@ -21,6 +21,8 @@ const QUICK_HELP: Partial<
     anchor: "help-file-transcription",
   },
   liveMode: { copyKey: "quickHelp.liveMode", anchor: "help-live-mode" },
+  liveFft: { copyKey: "quickHelp.liveFft", anchor: "help-live-fft" },
+  overlay: { copyKey: "quickHelp.overlay", anchor: "help-overlay" },
   advanced: { copyKey: "quickHelp.advanced", anchor: "help-advanced" },
   llama: { copyKey: "quickHelp.llama", anchor: "help-llama" },
   postprocessing: {

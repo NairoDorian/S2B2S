@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod file_transcription;
 pub mod history;
+pub mod live_fft;
 pub mod live_mode;
 pub mod llama;
 pub mod models;

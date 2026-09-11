@@ -6,6 +6,8 @@ import { useSettings } from "../../hooks/useSettings";
 interface VadSensitivityProps {
   descriptionMode?: "tooltip" | "inline";
   grouped?: boolean;
+  /** Show the slider even with VAD off for dictation (the Live FFT page runs the detector regardless). */
+  alwaysShow?: boolean;
 }
 
 /** Mirrors `DEFAULT_VAD_THRESHOLD_EARSHOT` in `src-tauri/src/settings.rs`. */
@@ -19,14 +21,14 @@ const MAX_THRESHOLD = 0.95;
  * removal.
  */
 export const VadSensitivity: React.FC<VadSensitivityProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "tooltip", grouped = false, alwaysShow = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 
     const vadEnabled = getSetting("vad_enabled") ?? true;
     const value = getSetting("vad_threshold_earshot") ?? DEFAULT_THRESHOLD;
 
-    if (!vadEnabled) return null;
+    if (!vadEnabled && !alwaysShow) return null;
 
     return (
       <Slider

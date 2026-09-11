@@ -13,6 +13,8 @@ import {
   Mic,
   FileAudio,
   Radio,
+  AudioLines,
+  PictureInPicture2,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -31,6 +33,8 @@ import {
   MultiSttSettings,
   FileTranscriptionSettings,
   LiveModeSettings,
+  LiveFftSettings,
+  OverlaySettings,
   HelpSettings,
   LlamaSettings,
 } from "./settings";
@@ -93,6 +97,18 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.liveMode",
     icon: Radio,
     component: LiveModeSettings,
+    enabled: () => true,
+  },
+  liveFft: {
+    labelKey: "sidebar.liveFft",
+    icon: AudioLines,
+    component: LiveFftSettings,
+    enabled: () => true,
+  },
+  overlay: {
+    labelKey: "sidebar.overlay",
+    icon: PictureInPicture2,
+    component: OverlaySettings,
     enabled: () => true,
   },
   llama: {

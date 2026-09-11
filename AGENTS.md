@@ -62,15 +62,16 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 
 **Maintenance scripts (`scripts/`):**
 
-| Script                     | Invoked by                                    | Purpose                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tauri-runner.ts`          | `bun run tauri`, `build:fast`, `build:full`   | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; `--fast`/`--local-gpu` sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto`                                                                                                                                                                                                                                     |
-| `check-transcribe-deps.ts` | `tauri-runner.ts` (imported), or run directly | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` git pin in `Cargo.lock` when `NairoDorian/transcribe.cpp` `main` moves; never fails, never blocks a build                                                                                                                                                                                                        |
-| `check-translations.ts`    | `bun run check:translations`, CI              | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                          |
-| `check-nix-deps.ts`        | `postinstall`                                 | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                    |
-| `update-deps.ts`           | `bun run update-deps [--prerelease]`          | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD) |
-| `update-rtk.ts`            | `bun run update:rtk`                          | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                       |
-| `gen_catalog.py`           | manual                                        | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                |
+| Script                     | Invoked by                                                                   | Purpose                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tauri-runner.ts`          | `bun run tauri`, `build:fast`, `build:full`                                  | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; `--fast`/`--local-gpu` sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto`                                                                                                                                                                                                                                     |
+| `check-transcribe-deps.ts` | `tauri-runner.ts` (imported), or run directly                                | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` git pin in `Cargo.lock` when `NairoDorian/transcribe.cpp` `main` moves; never fails, never blocks a build                                                                                                                                                                                                        |
+| `prune-target.ts`          | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]` | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `HANDY_NO_PRUNE=1` skips it                       |
+| `check-translations.ts`    | `bun run check:translations`, CI                                             | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                          |
+| `check-nix-deps.ts`        | `postinstall`                                                                | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                    |
+| `update-deps.ts`           | `bun run update-deps [--prerelease]`                                         | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD) |
+| `update-rtk.ts`            | `bun run update:rtk`                                                         | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                       |
+| `gen_catalog.py`           | manual                                                                       | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                |
 
 **Model Setup:** nothing to download for development. Voice activity
 detection is pure Rust (Earshot, no model file), and speech models are fetched
@@ -111,9 +112,17 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling, WAV read/write
     (`utils.rs`: `save_wav_file`, `save_raw_wav_file`, `read_wav_samples`,
-    `verify_wav_file`), level-meter `visualizer.rs`
+    `verify_wav_file`), `visualizer.rs` (the 16-bucket level meter; only
+    runs for a registered callback, and the app registers none since the
+    overlay draws the Live FFT scope)
     - `recorder.rs` also hosts `SpeechClock`, which measures how long the user
       has actually been speaking (see Speech Stats below)
+    - `recorder.rs` also defines `AnalysisSink`, the trait the Live FFT tap
+      implements: `CaptureProcessor` offers it the native-rate chunk (after
+      the raw tap and the level meter) and the 16 kHz frames (before the
+      VAD), each behind a `wants_*` atomic check. `Cmd::Start.discard_audio`
+      keeps a session from accumulating audio it will never return (VAD test,
+      Live FFT)
   - `vad/` - Voice Activity Detection — see Voice Activity Detection below;
     `earshot.rs` wraps the pure-Rust Earshot detector, `smoothed.rs` adds
     prefill / hangover / onset smoothing, `mod.rs` holds the `Hysteresis` gate
@@ -135,7 +144,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `settings.rs` - Application settings management, defaults, schema
   migrations (includes Multi-STT settings)
 - `overlay.rs` - Recording overlay window (platform-specific), plus
-  `SpeechActivityEvent` and the cached emit gates for `mic-level` /
+  `SpeechActivityEvent` and the cached emit gates for the readiness /
   speech-activity events
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`
@@ -149,6 +158,13 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `live_mode.rs` - "Live Mode" page backend (fork): `LiveModeManager` chunk
   loop, `TranscriptWriter` (committed prefix + rewritten live tail),
   `LiveModeStateEvent` / `LiveModeTranscriptEvent`; see Live Mode below
+- `live_fft/` - "Live FFT" page backend (fork): `mod.rs` holds the
+  `AnalysisTap` (the wait-free ring the recorder pushes into), the
+  `LiveFftManager` worker and the `LiveFftStateEvent` / `LiveFftFrameEvent`;
+  `scope.rs` is the recording overlay's miniature analyser (same tap and
+  pipeline, binary frames polled through `overlay_scope_frame`);
+  `dsp.rs` is the pure DSP (FIFO, RBJ EQ, windows, warp, weighting, dB,
+  ballistics on a `realfft` transform); see Live FFT below
 - `direct_stream_writer.rs` - Types the live transcript into the target app
   for `PasteMethod::DirectStreaming` — plain transcription only; see Direct
   Streaming below
@@ -234,6 +250,14 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
       (fork feature): file/folder queue, mode & output options, run controls
     - `live-mode/LiveModeSettings.tsx` - Live Mode page (fork feature): session
       controls, live transcript preview, chunk list, past sessions
+    - `overlay/OverlaySettings.tsx` - Overlay page (fork feature): appearance
+      (`ShowOverlay`), speech stats (`SpeechStats`) and the analyser picture
+      (`OverlayScopeGroup.tsx`, the nested `overlay_scope` setting; helpers in
+      `lib/overlayScope.ts` shared with the overlay window)
+    - `live-fft/LiveFftSettings.tsx` - Live FFT page (fork feature): analyser
+      canvas + waterfall (`SpectrumCanvas.tsx`, `SpectrogramCanvas.tsx`),
+      presets and every analyser parameter group (`ParamSlider.tsx`,
+      `liveFftMath.ts`, `liveFftPresets.ts`)
     - `VadSensitivity.tsx` - Threshold slider for the Earshot VAD (fork)
   - `model-selector/` - Status-bar model controls (footer). Three mutually
     exclusive popovers: model switcher, quantization picker
@@ -255,11 +279,15 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   session state of the two fork pages. They live outside the page components
   because both jobs keep running in the backend while the user browses other
   pages; each installs its typed event listeners once (`events.*.listen`)
+- `stores/liveFftStore.ts` - Live FFT session state. Spectrum frames stay
+  outside React state (a module-level holder the canvases read from their
+  animation loops), so a 60 Hz stream never re-renders the page
 - `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta; written
   by `bun run tauri dev` in debug builds). When a command or settings field is
   added or removed, the file must be regenerated or hand-edited to match
 - `overlay/` - Recording overlay window entry point (`RecordingOverlay.tsx`,
-  `main.tsx`, `index.html`); there is no `components/overlay/`
+  `main.tsx`, `index.html`, `OverlayScope.tsx` for the miniature analyser);
+  there is no `components/overlay/`
 - `lib/types/events.ts` - Shared TypeScript event payload types;
   `lib/utils/{color,theme,keyboard,format,rtl,modelTranslation}.ts`,
   `lib/constants/languages.ts`, `lib/compat.ts`
@@ -399,7 +427,7 @@ and the running average words per minute.
   only moves forward — it catches up rather than rewinding.
 - Reaches the overlay as `SpeechActivityEvent`, emitted on speaking/silent flips
   and on a ~150 ms heartbeat while speech continues (never during silence), so it
-  adds roughly a fifth of the `mic-level` event volume. Gated on both
+  adds a few events per second at most. Gated on both
   `OVERLAY_ENABLED` and `SPEECH_STATS_ENABLED` to keep the issue #1279 emit path
   quiet when the overlay is off.
 - Words per minute is computed in `RecordingOverlay.tsx` from the live
@@ -467,20 +495,31 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   frames). It sits in `CaptureProcessor::process_raw_chunk` after the raw
   tap and the overlay level meter and before `handle_frame`, so the VAD, the
   speech clock, streaming and the model all get the denoised signal while
-  saved raw audio and `mic-level` stay untouched. The flag is an
+  saved raw audio and the native analysis tap stay untouched. The flag is an
   `Arc<AtomicBool>` read per chunk (`AudioRecorder::set_denoise_enabled`,
   `AudioRecordingManager::set_denoise_enabled`,
   `change_denoise_enabled_setting`): a toggle mid-recording swaps between
   the direct and the denoised chain and resets the one it leaves, which is
   what lets the live VAD test react to the switch. The chain is built lazily
   on first use. A 48 kHz microphone (the WASAPI default) makes the first
-  stage pure framing, so only one real resample happens either way
+  stage pure framing, so only one real resample happens either way. Three
+  tunables shape RNNoise's output per 10 ms frame, read from atomics
+  (`DenoiseControls`, pushed by `change_denoise_{strength,vad_threshold,
+vad_grace}_setting`): `denoise_strength` (wet/dry mix), `denoise_vad_threshold`
+  (RNNoise's own speech probability below which the frame is muted; 0 = off)
+  and `denoise_vad_grace_ms` (hold after the last frame above it); the gate
+  slews its gain over ~3 frames. The probability rides along in
+  `VadFrameReport::denoise_prob` / `VadTestEvent::denoise_prob` for the meters.
+  The Live FFT source `FftSource::Denoised` taps the 48 kHz frames as they
+  leave RNNoise (`AnalysisSink::wants_denoised`), or the untouched chunk while
+  suppression is off, so toggling it is a direct A/B in the spectrum
 - **Live VAD test** (`VadLiveTest.tsx`, next to the slider): `start_vad_test`
   records under the `vad_test` binding with `VadPolicy::Streaming` and no
   model; the recorder's `with_vad_frame_callback` reports every frame's raw
   score (`last_frame_score`), hysteresis verdict, smoothed kept/dropped state
   and peak level, and the manager emits every second one as `VadTestEvent`
-  while `VAD_TEST_ACTIVE` is set (never during dictation). `stop_vad_test`
+  while a `VAD_REPORT_FLAGS` bit is set (the Advanced test or the Live FFT
+  page's voice-detection view; never during dictation). `stop_vad_test`
   cancels the recording and discards the audio; a 5-minute safety thread in
   `commands/audio.rs` stops a test the page forgot. Hotkeys get "Already
   recording" while it runs, and the cancel hotkey ends it (the page notices
@@ -505,6 +544,16 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `live_mode` - One nested `LiveModeSettings` struct (output_dir, chunk_minutes,
   transcript_format, granularity, save_audio, prefer_silence_boundary); see
   Live Mode
+- `overlay_scope` - One nested `OverlayScopeSettings` struct: which of the
+  overlay's two views are drawn, the spectrum style, the waveform window and
+  its edge fade in samples, the auto-gain floor and the view size; persisted
+  through `change_overlay_scope_settings`, which also refreshes the cached
+  window geometry (`overlay::update_overlay_scope_cache`) and hands the
+  waveform window to the running scope
+- `live_fft` - One nested `LiveFftSettings` struct: the analyser
+  parameters (source, scale, warp, window length, zero-pad, EQ, window &
+  weighting, loudness & ballistics, async analysis, update rate) persisted
+  through `change_live_fft_settings`; see Live FFT
 
 ### Transcribe Files (fork addition)
 
@@ -590,6 +639,95 @@ while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
   is a `begin_normal_run("live_mode")` statistics run, so Live Mode sessions do
   show up in Statistics.
 
+### Live FFT (fork addition)
+
+The **Live FFT** page is a real-time spectrum analyser for the microphone.
+Backend: `live_fft/mod.rs` (plumbing) + `live_fft/dsp.rs` (DSP, unit-tested) +
+`commands/live_fft.rs`; frontend: `settings/live-fft/` + `stores/liveFftStore.ts`.
+
+- **DSP** (`dsp.rs`, `SpectrumPipeline`): stage order — FIFO of the
+  last `window_samples` → RBJ high/low shelf EQ applied at **ingest** to new
+  samples only (stateful, time order) → window (Kaiser / Hann / Hamming /
+  Blackman / Blackman-Harris / Rectangular, coherent-gain or full-scale
+  normalisation) centred 8-float-aligned in a zero-padded frame → `realfft`
+  R2C → magnitude of only the bins the warp reads → psychoacoustic warp (Log /
+  Mel / ERB / Bark / Chroma / Linear / Melog, `warp_blend`, linear or
+  Catmull-Rom, memcpy when the grid is exactly 1:1) → A / C / ITU-R 468
+  weighting → dB against frame peak / 0 dBFS / slow AGC → attack/release
+  ballistics (per-frame coefficients or milliseconds). No SIMD intrinsics
+  and libm `log10` instead of a lookup table: at ≤ 8192 bins the scalar loops
+  cost less than the JSON emit. `realfft` was already a transitive dependency
+  (rubato), so no new crate is compiled.
+- **Threading** ("Async analysis" on the page): the audio consumer thread
+  pushes each chunk into a wait-free `rtrb` ring through `AnalysisTap` (an
+  `AnalysisSink`; one atomic load per chunk while the page is closed, a
+  `try_lock` on an uncontended mutex plus a memcpy while it is open — the
+  consumer thread never waits). The `live-fft` worker drains the ring, runs
+  the pipeline at `update_rate_hz` (5–60) and emits `LiveFftFrameEvent`
+  (`output_bins` × f32) with `emit_to("main")`. With `async_analysis` off the
+  pipeline runs inline on the consumer thread and the worker only supervises.
+  The tap is a process-wide `LazyLock` so the always-on microphone, opened on
+  its own thread during startup, is wired to it before the manager exists.
+- **Gates**: frames are neither computed nor sent while the main window is
+  hidden; a session hidden for 2 minutes is stopped (`LiveFftStopReason::
+WindowHidden`); the page stops the session on unmount; the worker notices
+  when the recording ends elsewhere (cancel hotkey → `Cancelled`).
+- **Session**: a normal recording under the `live_fft` binding with
+  `VadPolicy::Disabled` and `RecordingStartOptions { discard_audio: true }`,
+  so the hotkeys get "Already recording" (like the VAD test) and nothing is
+  accumulated, transcribed or saved. `cancel_recording_if_binding` ends only
+  a recording that is ours. `FftSource::Processed` taps the 16 kHz frames a
+  model hears instead of the native-rate microphone. With `show_vad` the
+  session records under `VadPolicy::Streaming` instead and sets the
+  `VAD_REPORT_LIVE_FFT` bit of `VAD_REPORT_FLAGS`, so the recorder streams
+  the same `VadTestEvent`s as the Advanced page's live test; the page's
+  "Voice detection & noise suppression" group (`VoiceDetectionGroup.tsx`)
+  shows the shared `VadMeter` beside the spectrum together with the VAD
+  toggle, the threshold slider and the RNNoise toggle. Toggling `show_vad`
+  restarts a running session, like a threading change.
+- **Presets**: the page's "Raw" preset (`live_fft_raw_defaults`) restores
+  linear magnitude, frame-peak reference and no ballistics; Handy's own
+  defaults differ only in the display choices (dB / 0 dBFS / 90 dB,
+  ballistics 15 ms / 250 ms). There is no FFT planner policy (rustfft plans
+  instantly), no poll interval (settings are pushed) and no channel menu
+  (Handy's capture ring is already mono); the analysis frame rate is
+  `update_rate_hz`.
+- **Recording overlay scope** (`scope.rs`, `overlay/OverlayScope.tsx`): the
+  overlay's old 16-bucket level bars are replaced by a miniature area
+  spectrum and a line of the last 4096 samples, computed with the page's
+  `settings.live_fft` (scale, warp, window, EQ, weighting, loudness, dB
+  range, ballistics, update rate; `async_analysis` is ignored, the scope
+  always has its own `overlay-scope` thread). `show_overlay_state` starts it
+  for the recording / streaming states and stops it for the working states
+  and on hide; it also stops itself when the recording ends, and never
+  starts while the page session owns the tap. The 4096-sample window is
+  read from a `WaveRing` with 512-sample raised-cosine ramps at both ends
+  (`taper_table`) so the trace starts and ends at zero. Frames are encoded
+  by `encode_scope_frame` (8-word header + f32 bins + f32 wave, little
+  endian) and returned as `tauri::ipc::Response` by `overlay_scope_frame`,
+  a command registered beside the typed ones in `lib.rs` because
+  tauri-specta cannot type raw bytes; the overlay polls it at
+  `update_rate_hz` and maps `Float32Array` views onto the buffer. The
+  spectrum is the page's spectrum: the scope engine runs the same
+  `SpectrumPipeline` on the same `Shared` settings snapshot (EQ shelves,
+  window, weighting, scale / warp, dB reference and range, ballistics,
+  source, update rate), and `scope_bins_equal_the_page_pipeline_for_the_same_settings`
+  asserts the bins are bit-identical. Only the picture follows
+  `overlay_scope` (Overlay page): which views, area / line / bars, the
+  mirrored (centred) spectrum, peak hold, the waveform window and fade (the
+  scope rebuilds its `WaveRing` when the setting changes), the auto-gain
+  floor and the view size. The overlay
+  publishes the geometry as CSS variables before it shows and `overlay.rs`
+  sizes the native window from the same numbers through a cached atomic, so
+  the two never disagree.
+- **Frontend**: `SpectrumCanvas` (bars / line / area, peak hold, grid, hover
+  readout with note name, peak marker) and `SpectrogramCanvas` (waterfall,
+  inferno / accent / ice colormaps) run their own `requestAnimationFrame`
+  loops reading the module-level frame holder in `liveFftStore.ts`; the
+  status event (≤ 1 Hz) carries the axis frequencies and telemetry.
+  Display preferences live in localStorage
+  (`handy.live_fft.view`); everything else is `settings.live_fft`.
+
 ### Direct Streaming (fork addition)
 
 `paste_method = direct_streaming` types the live transcript into the foreground
@@ -618,6 +756,14 @@ The app enforces single instance behavior — launching when already running bri
 ## Internationalization (i18n)
 
 All user-facing strings must use i18next translations. oxlint enforces this through `eslint-plugin-i18next` (no hardcoded strings in JSX).
+
+Locale files load on demand: `src/i18n/index.ts` registers a small i18next
+backend over a non-eager `import.meta.glob`, so each `translation.json` is its
+own chunk imported the first time that language is used (eager bundling put
+all 24, 2.1 MB of JSON, into the startup chunk of both windows). `i18nReady`
+resolves once the fallback bundle is loaded and the language is synced from
+settings; `main.tsx` and `overlay/main.tsx` wait for it before the first
+render so no raw keys are painted.
 
 > **Linter note:** this fork uses **oxlint** (`.oxlintrc.json`), not ESLint.
 > typescript-eslint hard-throws on TypeScript >= 7, which this fork pins, so
@@ -671,7 +817,10 @@ For translation contribution guidelines, see [CONTRIBUTING_TRANSLATIONS.md](CONT
 
 - Strict TypeScript, avoid `any` types
 - Functional components with hooks
-- Tailwind CSS for styling
+- Tailwind CSS for styling. `App.css` imports it with `source(".")` so only
+  `src/` is scanned: Tailwind's automatic source detection walks the whole
+  repository (gitignored `src-tauri/target` included) to build its watch
+  globs, which cost seconds per build
 - Path aliases: `@/` → `./src/`
 
 ## CLI Parameters
@@ -707,7 +856,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no code signing in this fork (`signCommand` removed from `tauri.conf.json`), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization)
+- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no code signing in this fork (`signCommand` removed from `tauri.conf.json`) and no updater artifacts (`createUpdaterArtifacts` off: the updater pubkey is upstream's, so there is no private key to sign with), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization)
 - **Linux**: CUDA acceleration (upstream: OpenBLAS + Vulkan), limited Wayland support, overlay uses GTK layer shell (disable with `HANDY_NO_GTK_LAYER_SHELL=1`)
 - **Nix/NixOS**: the Nix package sets `HANDY_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
 

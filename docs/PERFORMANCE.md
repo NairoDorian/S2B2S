@@ -8,15 +8,16 @@ event, a dependency or a thread.**
 
 ## The budget
 
-| Path                            | Target                                       | Where it is measured                                  |
-| ------------------------------- | -------------------------------------------- | ----------------------------------------------------- |
-| Hotkey → first captured sample  | < 30 ms warm mic, < 150 ms cold open         | `first captured samples … after Cmd::Start` debug log |
-| Audio callback                  | allocation-free, lock-free, log-free         | `write_input_to_ring` — never touch it casually       |
-| Consumer thread per 16 ms frame | ≪ 16 ms (VAD ≈ 30 µs, RNNoise ≈ 100 µs)      | `tests/vad_speech_clock_probe.rs`, debug timings      |
-| Stop → text pasted (batch)      | model bound; everything else < 20 ms         | Statistics page latency distributions                 |
-| Stream → overlay text           | one frame; events ≤ ~30 Hz                   | `StreamTextEvent`, `VadTestEvent` throttles           |
-| LLM post-processing / merge     | provider bound; local llama.cpp, warm        | `post_processing_latency_ms` in history               |
-| Settings UI interaction         | no synchronous Tauri call on the main thread | commands are `async` + `spawn_blocking`               |
+| Path                            | Target                                           | Where it is measured                                             |
+| ------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
+| Hotkey → first captured sample  | < 30 ms warm mic, < 150 ms cold open             | `first captured samples … after Cmd::Start` debug log            |
+| Audio callback                  | allocation-free, lock-free, log-free             | `write_input_to_ring` — never touch it casually                  |
+| Consumer thread per 16 ms frame | ≪ 16 ms (VAD ≈ 30 µs, RNNoise ≈ 100 µs)          | `tests/vad_speech_clock_probe.rs`, debug timings                 |
+| Stop → text pasted (batch)      | model bound; everything else < 20 ms             | Statistics page latency distributions                            |
+| Stream → overlay text           | one frame; events ≤ ~30 Hz                       | `StreamTextEvent`, `VadTestEvent` throttles                      |
+| LLM post-processing / merge     | provider bound; local llama.cpp, warm            | `post_processing_latency_ms` in history                          |
+| Settings UI interaction         | no synchronous Tauri call on the main thread     | commands are `async` + `spawn_blocking`                          |
+| Live FFT frame                  | ≤ 0.5 ms DSP at N = 32768 on the worker; 5–60 Hz | `dsp_us` in `LiveFftFrameEvent`, `dropped_samples` in the status |
 
 ## Rules
 
@@ -33,8 +34,8 @@ event, a dependency or a thread.**
    a mutex the audio manager can hold across a device open/close, or that
    does I/O, runs through `tauri::async_runtime::spawn_blocking`. `is_recording`
    reads an atomic mirror of the state, not the state mutex.
-4. **Throttle events to the UI.** The overlay gets `mic-level` at the
-   visualizer's rate and speech activity only on flips plus a 150 ms
+4. **Throttle events to the UI.** The overlay polls its scope frame at the
+   analyser's update rate and gets speech activity only on flips plus a 150 ms
    heartbeat; the live VAD test reports every second frame (~31 Hz). A new
    event stream needs a stated rate and a gate that keeps it silent when its
    window is not showing (see the issue #1279 notes in `overlay.rs`).
@@ -76,6 +77,23 @@ Anything added to startup goes after that line or on its own thread.
 
 ## Known costs to keep in mind
 
+- The Live FFT tap costs the audio consumer thread one atomic load per
+  chunk while the page is closed and a `try_lock` + memcpy into a 768 KB ring
+  while it runs (never a wait). The `live-fft` worker exists only during a
+  session; each frame is a JSON event of `output_bins` floats (≈ 10 KB at
+  1024 bins, ≈ 300 KB/s at 30 Hz), sent to the main window only and skipped
+  while it is hidden. Inline mode (`async_analysis` off) moves the transform
+  onto the consumer thread on purpose and is bounded by the same 16 ms frame
+  budget.
+- The recording overlay's scope (`live_fft::scope`) is the same tap and
+  pipeline on an `overlay-scope` thread that exists only while the overlay
+  shows a recording; it always runs off the audio thread whatever
+  `async_analysis` says. The overlay polls `overlay_scope_frame` at
+  `update_rate_hz`: one memcpy per poll of the bins plus the waveform window
+  as raw f32 (no JSON, no event): ~20 KB with 1024 bins and the default 4096
+  samples, ≈ 600 KB/s at 30 Hz; `overlay_scope.wave_samples` can raise the
+  window to 16384 samples (64 KB per poll). The 16-bucket level
+  meter it replaced no longer runs (no callback is registered).
 - FFT resampling adds ~20 ms of buffering per stage; the denoise chain is
   two stages when the microphone is not 48 kHz. Prefer a 48 kHz device.
 - The first RNNoise frames after a reset are transient; the chain is reset

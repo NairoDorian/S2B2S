@@ -1,11 +1,11 @@
 use crate::audio_toolkit::SpeechActivity;
 use crate::input;
 use crate::settings;
-use crate::settings::{OverlayPosition, OverlayStyle};
+use crate::settings::{OverlayPosition, OverlayScopeSettings, OverlayStyle};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_specta::Event;
 
@@ -48,39 +48,71 @@ tauri_panel! {
 // scale (see windows_text_scale_factor), which WebView2 applies as a zoom.
 //
 // Compact overlay (Minimal / transcribing / processing): the 40h pill animates
-// width from 172 (--ov-rest-w) to 216 (--ov-work-w) and expands from center, so
-// the window must fit the widest state plus a little slack.
-const OVERLAY_WIDTH: f64 = 256.0;
+// width between the resting width (the scope views, see `overlay_scope`) and
+// 216 (--ov-work-w) and expands from center, so the window must fit the
+// widest state plus a little slack. These are the sizes for the default
+// scope geometry; `overlay_dimensions` derives the live ones from the cached
+// setting with the same arithmetic as `src/lib/overlayScope.ts`.
+const OVERLAY_WIDTH: f64 = 280.0;
 const OVERLAY_HEIGHT: f64 = 50.0;
+/// The resting pill without its scope block (172 px around the old level
+/// bars minus those 46 px), and the same for the pill carrying speech stats.
+const OVERLAY_REST_BASE_W: f64 = 126.0;
+const OVERLAY_STATS_BASE_W: f64 = 198.0;
+/// Window width beyond the pill, and height beyond the control row.
+const OVERLAY_WINDOW_SLACK_W: f64 = 44.0;
+const OVERLAY_WINDOW_SLACK_H: f64 = 10.0;
+/// The control row is 40 px unless the scope views need more (view + 18).
+const OVERLAY_ROW_H: f64 = 40.0;
+const OVERLAY_ROW_PADDING_H: f64 = 18.0;
 
 // Speech stats (timer + words-per-minute) ride in the pill's right-hand cluster,
-// which grows the resting pill to 244 (--ov-stats-w) — past --ov-work-w, so the
+// which grows the resting pill to 308 (--ov-stats-w) — past --ov-work-w, so the
 // window has to fit that instead. Only the compact overlay needs a bigger
 // window: the Live panel already has room for the stats inside its 392px card.
-const OVERLAY_STATS_WIDTH: f64 = 288.0;
+// Documented default; the live width is derived in `compact_dimensions`.
+#[cfg_attr(not(test), allow(dead_code))]
+const OVERLAY_STATS_WIDTH: f64 = 352.0;
 
 // Actual is 394x118, just a little extra
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
-/// Overlay window size (logical) for a given UI state.
-fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
-        return (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT);
-    }
-    // Read the cached flag rather than the store: this runs on the main thread
-    // inside the show path, where a settings read is pure added latency.
-    let width = if SPEECH_STATS_ENABLED.load(Ordering::Relaxed) {
-        OVERLAY_STATS_WIDTH
+/// Compact pill window size for a scope block `block` px wide and views
+/// `view_h` px tall, with or without the speech-stats cluster.
+fn compact_dimensions(block: u32, view_h: u32, stats: bool) -> (f64, f64) {
+    let base = if stats {
+        OVERLAY_STATS_BASE_W
     } else {
-        OVERLAY_WIDTH
+        OVERLAY_REST_BASE_W
     };
-    (width, OVERLAY_HEIGHT)
+    let row_h = (f64::from(view_h) + OVERLAY_ROW_PADDING_H).max(OVERLAY_ROW_H);
+    (
+        base + f64::from(block) + OVERLAY_WINDOW_SLACK_W,
+        row_h + OVERLAY_WINDOW_SLACK_H,
+    )
 }
 
-static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
+/// Overlay window size (logical) for a given UI state.
+fn overlay_dimensions(state: &str) -> (f64, f64) {
+    // Read the cached values rather than the store: this runs on the main
+    // thread inside the show path, where a settings read is pure added latency.
+    let view_h = OVERLAY_SCOPE_VIEW_H.load(Ordering::Relaxed);
+    if state == "streaming" {
+        let row_h = (f64::from(view_h) + OVERLAY_ROW_PADDING_H).max(OVERLAY_ROW_H);
+        return (
+            OVERLAY_STREAM_WIDTH,
+            OVERLAY_STREAM_HEIGHT + (row_h - OVERLAY_ROW_H),
+        );
+    }
+    compact_dimensions(
+        OVERLAY_SCOPE_BLOCK_PX.load(Ordering::Relaxed),
+        view_h,
+        SPEECH_STATS_ENABLED.load(Ordering::Relaxed),
+    )
+}
+
 static OVERLAY_SHOW_GENERATION: AtomicU64 = AtomicU64::new(0);
-const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
 
 #[cfg(target_os = "macos")]
 const OVERLAY_TOP_OFFSET: f64 = 46.0;
@@ -517,6 +549,16 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
         return;
     }
 
+    // The overlay's miniature analyser (live_fft::scope) follows the overlay:
+    // it starts with a recording state and stops with the working states.
+    if let Some(fft) = app_handle.try_state::<Arc<crate::live_fft::LiveFftManager>>() {
+        if state == "recording" || state == "streaming" {
+            fft.start_overlay_scope();
+        } else {
+            fft.stop_overlay_scope();
+        }
+    }
+
     // The rest queries monitors and the cursor and mutates window geometry. On
     // Linux the monitor/cursor lookups hit GDK/Xlib on the process's shared X11
     // connection, which is only safe from the GTK main thread — running them on
@@ -702,6 +744,9 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    if let Some(fft) = app_handle.try_state::<Arc<crate::live_fft::LiveFftManager>>() {
+        fft.stop_overlay_scope();
+    }
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -735,6 +780,20 @@ static OVERLAY_ENABLED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static LAYER_SHELL_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// Cached geometry of the overlay's scope block (`overlay_scope`), so the
+/// show path sizes the window without a store read. Kept in sync by
+/// `update_overlay_scope_cache` at startup and on every change; the defaults
+/// match `OverlayScopeSettings::default()`.
+static OVERLAY_SCOPE_BLOCK_PX: AtomicU32 = AtomicU32::new(110);
+static OVERLAY_SCOPE_VIEW_H: AtomicU32 = AtomicU32::new(22);
+
+/// Update the cached scope geometry. Called from `lib.rs` at startup and from
+/// `change_overlay_scope_settings`.
+pub fn update_overlay_scope_cache(scope: &OverlayScopeSettings) {
+    OVERLAY_SCOPE_BLOCK_PX.store(scope.block_width_px(), Ordering::Relaxed);
+    OVERLAY_SCOPE_VIEW_H.store(scope.view_height, Ordering::Relaxed);
+}
+
 /// Cached "speech stats are enabled" flag, kept in sync with
 /// `overlay_speech_stats`. Read on the audio path (every frame produces a
 /// candidate update) and in the overlay show path, so neither has to touch the
@@ -756,7 +815,7 @@ pub fn update_speech_stats_enabled_cache(enabled: bool) {
 
 /// Live speech statistics for the recording overlay.
 ///
-/// Unlike `mic-level`, this is not a fixed-rate stream: the recorder sends it
+/// Not a fixed-rate stream: the recorder sends it
 /// when the speaking/silent state flips, and roughly every 150 ms while speech
 /// continues. A silent stretch produces no events at all.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
@@ -772,9 +831,9 @@ pub struct SpeechActivityEvent {
 
 /// Forward a speech-clock update to the overlay.
 pub fn emit_speech_activity(app_handle: &AppHandle, activity: SpeechActivity) {
-    // Same rationale as emit_levels: the overlay window exists even when it is
-    // never shown, and every event delivered to it costs WebKit allocations that
-    // accumulate (issue #1279). No overlay, or stats turned off, means no event.
+    // The overlay window exists even when it is never shown, and every event
+    // delivered to it costs WebKit allocations that accumulate (issue #1279).
+    // No overlay, or stats turned off, means no event.
     if !OVERLAY_ENABLED.load(Ordering::Relaxed) || !SPEECH_STATS_ENABLED.load(Ordering::Relaxed) {
         return;
     }
@@ -786,48 +845,31 @@ pub fn emit_speech_activity(app_handle: &AppHandle, activity: SpeechActivity) {
     .emit_to(app_handle, "recording_overlay");
 }
 
-pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
-    // Skip emission when the overlay is disabled. The recording_overlay
-    // window is created at boot regardless of overlay_style, so without this
-    // guard a hidden overlay's WebKit subprocess still
-    // processes every event. Each event drives some kind of WebKit
-    // C++ allocation that accumulates without bound (mechanism not
-    // directly characterized; see issue #1279 for the investigation).
-    // For users with `overlay_style: none` (the Linux default) this skip
-    // eliminates the upstream driver of that accumulation.
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
-        return;
-    }
-
-    // Throttle to ~30 FPS. Even with the overlay enabled, the raw audio
-    // callback fires far faster than the UI needs; capping emission rate
-    // cuts the per-frame `eval_script`/IPC volume that drives the wry
-    // memory growth in issue #1279 (upstream tauri-apps/wry#1489).
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let last = LAST_MIC_LEVEL_EMIT.load(Ordering::Relaxed);
-    if now.saturating_sub(last) < EMIT_THROTTLE_MS {
-        return;
-    }
-    LAST_MIC_LEVEL_EMIT.store(now, Ordering::Relaxed);
-
-    // Target only the overlay window. In Tauri 2 both `AppHandle::emit`
-    // and `WebviewWindow::emit` broadcast to all webviews; Tauri's
-    // listener filter then skips webviews with no registered listener
-    // for the event, so the settings webview never received `mic-level`.
-    // But the previous dual-call pattern still produced two `eval_script`
-    // calls to the overlay per audio callback (one from each .emit()).
-    // `emit_to` with the overlay's window label produces a single
-    // eval_script call per callback, cutting the per-callback WebKit
-    // dispatch work in half.
-    let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_dimensions_match_the_default_constants_and_grow_with_the_views() {
+        let default = OverlayScopeSettings::default();
+        assert_eq!(
+            compact_dimensions(default.block_width_px(), default.view_height, false),
+            (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        );
+        assert_eq!(
+            compact_dimensions(default.block_width_px(), default.view_height, true),
+            (OVERLAY_STATS_WIDTH, OVERLAY_HEIGHT)
+        );
+        // No views: the pill shrinks to its base; taller views raise the row.
+        assert_eq!(
+            compact_dimensions(0, 22, false).0,
+            OVERLAY_REST_BASE_W + OVERLAY_WINDOW_SLACK_W
+        );
+        assert_eq!(
+            compact_dimensions(110, 40, false).1,
+            40.0 + 18.0 + OVERLAY_WINDOW_SLACK_H
+        );
+    }
 
     #[test]
     fn monitor_hit_test_uses_half_open_physical_bounds() {
@@ -883,7 +925,8 @@ mod tests {
                 OVERLAY_HEIGHT,
                 OverlayPosition::Bottom,
             ),
-            (3648, 2025, 384, 75)
+            // OVERLAY_WIDTH (280) at 150 %: 420 px, centred on the 3840 px monitor.
+            (3630, 2025, 420, 75)
         );
         assert_eq!(
             windows_overlay_bounds(
@@ -895,7 +938,7 @@ mod tests {
                 OVERLAY_HEIGHT,
                 OverlayPosition::Top,
             ),
-            (3648, 6, 384, 75)
+            (3630, 6, 420, 75)
         );
     }
 

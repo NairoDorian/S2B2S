@@ -614,6 +614,402 @@ impl LiveModeSettings {
     }
 }
 
+/* ───────────────────────── Live FFT (fork) ───────────────────────── */
+
+/// Which signal the Live FFT page analyses.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftSource {
+    /// The microphone at its native rate, before noise suppression — the
+    /// full bandwidth the device delivers (24 kHz at 48 kHz).
+    #[default]
+    Microphone,
+    /// The 48 kHz frames as they leave RNNoise (full bandwidth), or the
+    /// untouched microphone while suppression is off, so toggling it is a
+    /// direct before/after.
+    Denoised,
+    /// The 16 kHz frames a model hears: after resampling and noise
+    /// suppression, before the VAD. Bandwidth stops at 8 kHz.
+    Processed,
+}
+
+/// Frequency axis of the spectrum.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftScale {
+    #[default]
+    Log,
+    Mel,
+    Erb,
+    Bark,
+    Chroma,
+    Linear,
+    /// Mel + Log blend.
+    Melog,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftWarpInterp {
+    /// Two taps.
+    #[default]
+    Linear,
+    /// Catmull-Rom, four taps: a 16K FFT with cubic looks like 32K with linear.
+    Cubic,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftWindowLengthMode {
+    #[default]
+    Samples,
+    Milliseconds,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftWindowType {
+    #[default]
+    Kaiser,
+    Hann,
+    Hamming,
+    Blackman,
+    BlackmanHarris,
+    Rectangular,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftWeighting {
+    #[default]
+    Off,
+    /// IEC 61672 A-weighting.
+    A,
+    /// C-weighting.
+    C,
+    /// ITU-R 468 noise weighting.
+    Itu468,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftMagnitudeNorm {
+    /// `mean(window) == 1`; a full-scale sine peaks at `window / 2`.
+    #[default]
+    CoherentGain,
+    /// `sum(window) == 2`; a sine of amplitude 1 reads 1.0.
+    FullScale,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftLoudnessMode {
+    /// Linear magnitude.
+    Off,
+    /// Decibels relative to the reference.
+    #[default]
+    Db,
+    /// Decibels mapped onto 0…1 over `db_range`.
+    DbNormalized,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftDbReference {
+    /// 0 dB = the loudest bin of this frame.
+    FramePeak,
+    /// 0 dB = digital full scale.
+    #[default]
+    Dbfs,
+    /// 0 dB = a slow peak follower (1.5 s release).
+    Agc,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftBallisticsMode {
+    /// Per-frame smoothing coefficients (0 = follow instantly).
+    Coefficient,
+    /// Time constants in milliseconds, independent of the update rate.
+    #[default]
+    Milliseconds,
+}
+
+/// Zero-padded FFT lengths the page offers.
+pub const FFT_SIZES: [u32; 7] = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
+pub const MIN_FFT_OUTPUT_BINS: u32 = 32;
+/// Upper bound of the per-frame event payload (8192 floats ≈ 70 KB of JSON).
+pub const MAX_FFT_OUTPUT_BINS: u32 = 8192;
+pub const MIN_FFT_WINDOW_SAMPLES: u32 = 16;
+pub const MAX_FFT_WINDOW_SAMPLES: u32 = 65536;
+pub const MIN_FFT_UPDATE_RATE_HZ: u32 = 5;
+pub const MAX_FFT_UPDATE_RATE_HZ: u32 = 60;
+
+/// How the recording overlay's spectrum is drawn.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayScopeStyle {
+    #[default]
+    Area,
+    Line,
+    Bars,
+}
+
+pub const MIN_OVERLAY_WAVE_SAMPLES: u32 = 256;
+pub const MAX_OVERLAY_WAVE_SAMPLES: u32 = 16_384;
+pub const MIN_OVERLAY_VIEW_WIDTH: u32 = 32;
+pub const MAX_OVERLAY_VIEW_WIDTH: u32 = 160;
+pub const MIN_OVERLAY_VIEW_HEIGHT: u32 = 14;
+pub const MAX_OVERLAY_VIEW_HEIGHT: u32 = 48;
+
+/// The picture the recording overlay draws of the microphone (see
+/// `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
+/// follows `live_fft`; this only shapes the display. Mirrored by
+/// `src/lib/overlayScope.ts`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct OverlayScopeSettings {
+    /// Draw the spectrum view.
+    pub show_spectrum: bool,
+    /// Draw the waveform view.
+    pub show_wave: bool,
+    pub spectrum_style: OverlayScopeStyle,
+    /// Draw the spectrum rising from the centre line with its negative
+    /// mirrored below, so it reads like the centred waveform beside it.
+    pub spectrum_mirror: bool,
+    /// Keep a slowly falling marker at each column's recent peak, like the
+    /// Live FFT page's peak hold.
+    pub peak_hold: bool,
+    /// Samples of raw audio the waveform view covers (256…16384).
+    pub wave_samples: u32,
+    /// Raised-cosine fade at each end of that window, in samples
+    /// (0…half the window), so the trace starts and ends at zero.
+    pub wave_taper_samples: u32,
+    /// Auto-gain floor of the waveform as a full-scale fraction: quieter
+    /// signals are not blown up to full height (0.001…0.5).
+    pub wave_gain_floor: f32,
+    /// Width of each view in logical pixels (32…160).
+    pub view_width: u32,
+    /// Height of the views in logical pixels (14…48).
+    pub view_height: u32,
+}
+
+impl Default for OverlayScopeSettings {
+    fn default() -> Self {
+        Self {
+            show_spectrum: true,
+            show_wave: true,
+            spectrum_style: OverlayScopeStyle::Area,
+            spectrum_mirror: true,
+            peak_hold: false,
+            wave_samples: 4096,
+            wave_taper_samples: 512,
+            wave_gain_floor: 0.02,
+            view_width: 48,
+            view_height: 22,
+        }
+    }
+}
+
+impl OverlayScopeSettings {
+    pub fn normalized(mut self) -> Self {
+        let d = Self::default();
+        self.wave_samples = self
+            .wave_samples
+            .clamp(MIN_OVERLAY_WAVE_SAMPLES, MAX_OVERLAY_WAVE_SAMPLES);
+        self.wave_taper_samples = self.wave_taper_samples.min(self.wave_samples / 2);
+        self.wave_gain_floor = if self.wave_gain_floor.is_finite() {
+            self.wave_gain_floor.clamp(0.001, 0.5)
+        } else {
+            d.wave_gain_floor
+        };
+        self.view_width = self
+            .view_width
+            .clamp(MIN_OVERLAY_VIEW_WIDTH, MAX_OVERLAY_VIEW_WIDTH);
+        self.view_height = self
+            .view_height
+            .clamp(MIN_OVERLAY_VIEW_HEIGHT, MAX_OVERLAY_VIEW_HEIGHT);
+        self
+    }
+
+    /// Width of the scope block inside the pill: the views, the 6 px gap
+    /// between them and the 8 px trailing padding; zero without views.
+    /// `overlayScopeBlockWidth` in `src/lib/overlayScope.ts` is the same sum.
+    pub fn block_width_px(&self) -> u32 {
+        let views = u32::from(self.show_spectrum) + u32::from(self.show_wave);
+        if views == 0 {
+            0
+        } else {
+            views * self.view_width + 6 * (views - 1) + 8
+        }
+    }
+}
+
+/// Settings of the "Live FFT" page, grouped the way the page shows them
+/// (Spectrum, EQ, Window & Weighting, Loudness & Ballistics, Performance).
+/// `update_rate_hz` is the analysis frame rate; there is no planner policy
+/// or poll interval to configure, since rustfft plans are instant and the
+/// settings are pushed, not polled.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct LiveFftSettings {
+    pub source: FftSource,
+    // --- Spectrum ---
+    pub scale: FftScale,
+    pub warp_interpolation: FftWarpInterp,
+    /// Highest frequency on the axis; clamped to Nyquist at run time.
+    pub display_max_hz: f32,
+    /// Size of the warped spectrum handed to the page (32…8192).
+    pub output_bins: u32,
+    /// 0 = linear grid, 1 = fully perceptual.
+    pub warp_blend: f32,
+    /// Lowest frequency of the Log / Melog grid.
+    pub log_floor_hz: f32,
+    pub window_length_mode: FftWindowLengthMode,
+    /// Analysis window in samples (3175 = 72 ms at 44.1 kHz).
+    pub window_samples: u32,
+    /// Analysis window in milliseconds, used when the mode says so.
+    pub window_ms: f32,
+    /// Zero-padded transform length; grown to the next power of two above
+    /// the window when that is larger.
+    pub fft_size: u32,
+    // --- EQ (applied at ingest to new samples; stateful) ---
+    pub eq_enabled: bool,
+    pub high_shelf: bool,
+    pub low_shelf: bool,
+    pub high_gain_db: f32,
+    pub high_cutoff_hz: f32,
+    pub low_gain_db: f32,
+    pub low_cutoff_hz: f32,
+    pub eq_q: f32,
+    /// Wet/dry blend of the EQ (0…5).
+    pub eq_amount: f32,
+    // --- Window & Weighting ---
+    pub window_type: FftWindowType,
+    pub kaiser_beta: f32,
+    pub weighting: FftWeighting,
+    pub magnitude_norm: FftMagnitudeNorm,
+    // --- Loudness & Ballistics ---
+    pub loudness_mode: FftLoudnessMode,
+    pub db_reference: FftDbReference,
+    /// Floor of the dB display, in dB below the reference.
+    pub db_range: f32,
+    pub ballistics_enabled: bool,
+    pub ballistics_mode: FftBallisticsMode,
+    /// Per-frame attack coefficient (0…0.99).
+    pub attack: f32,
+    /// Per-frame release coefficient (0…0.99).
+    pub release: f32,
+    pub attack_ms: f32,
+    pub release_ms: f32,
+    // --- Performance ---
+    /// Run the transform on the analysis worker thread (on) or inline on the
+    /// audio consumer thread (off).
+    pub async_analysis: bool,
+    /// Spectrum frames per second sent to the page (5…60).
+    pub update_rate_hz: u32,
+    // --- Voice detection ---
+    /// Run the speech detector on the analysed session and report its
+    /// per-frame verdicts to the page (`VadTestEvent`), so the threshold and
+    /// noise suppression can be tuned against the spectrum. Changing it
+    /// restarts a running session (the VAD policy is fixed per recording).
+    pub show_vad: bool,
+}
+
+impl Default for LiveFftSettings {
+    fn default() -> Self {
+        Self {
+            source: FftSource::Microphone,
+            scale: FftScale::Log,
+            warp_interpolation: FftWarpInterp::Linear,
+            display_max_hz: 24_000.0,
+            output_bins: 1024,
+            warp_blend: 0.963,
+            log_floor_hz: 20.0,
+            window_length_mode: FftWindowLengthMode::Samples,
+            window_samples: 3175,
+            window_ms: 72.0,
+            fft_size: 32_768,
+            eq_enabled: false,
+            high_shelf: true,
+            low_shelf: true,
+            high_gain_db: 6.0,
+            high_cutoff_hz: 1000.0,
+            low_gain_db: 0.0,
+            low_cutoff_hz: 200.0,
+            eq_q: 0.707,
+            eq_amount: 1.0,
+            window_type: FftWindowType::Kaiser,
+            kaiser_beta: 15.0,
+            weighting: FftWeighting::Off,
+            magnitude_norm: FftMagnitudeNorm::CoherentGain,
+            loudness_mode: FftLoudnessMode::Db,
+            db_reference: FftDbReference::Dbfs,
+            db_range: 90.0,
+            ballistics_enabled: true,
+            ballistics_mode: FftBallisticsMode::Milliseconds,
+            attack: 0.0,
+            release: 0.0,
+            attack_ms: 15.0,
+            release_ms: 250.0,
+            async_analysis: true,
+            update_rate_hz: 30,
+            show_vad: false,
+        }
+    }
+}
+
+impl LiveFftSettings {
+    /// The page's "Raw" preset: linear magnitude, frame-peak reference,
+    /// ballistics off.
+    pub fn raw_defaults() -> Self {
+        Self {
+            loudness_mode: FftLoudnessMode::Off,
+            db_reference: FftDbReference::FramePeak,
+            db_range: 80.0,
+            ballistics_enabled: false,
+            ballistics_mode: FftBallisticsMode::Coefficient,
+            attack_ms: 50.0,
+            release_ms: 200.0,
+            ..Self::default()
+        }
+    }
+
+    pub fn normalized(mut self) -> Self {
+        let finite = |v: f32, fallback: f32| if v.is_finite() { v } else { fallback };
+        let d = Self::default();
+        self.display_max_hz = finite(self.display_max_hz, d.display_max_hz).clamp(100.0, 192_000.0);
+        self.output_bins = self
+            .output_bins
+            .clamp(MIN_FFT_OUTPUT_BINS, MAX_FFT_OUTPUT_BINS);
+        self.warp_blend = finite(self.warp_blend, d.warp_blend).clamp(0.0, 1.0);
+        self.log_floor_hz = finite(self.log_floor_hz, d.log_floor_hz).clamp(1.0, 5000.0);
+        self.window_samples = self
+            .window_samples
+            .clamp(MIN_FFT_WINDOW_SAMPLES, MAX_FFT_WINDOW_SAMPLES);
+        self.window_ms = finite(self.window_ms, d.window_ms).clamp(1.0, 5000.0);
+        if !FFT_SIZES.contains(&self.fft_size) {
+            self.fft_size = d.fft_size;
+        }
+        self.high_gain_db = finite(self.high_gain_db, d.high_gain_db).clamp(-24.0, 24.0);
+        self.high_cutoff_hz = finite(self.high_cutoff_hz, d.high_cutoff_hz).clamp(20.0, 20_000.0);
+        self.low_gain_db = finite(self.low_gain_db, d.low_gain_db).clamp(-24.0, 24.0);
+        self.low_cutoff_hz = finite(self.low_cutoff_hz, d.low_cutoff_hz).clamp(20.0, 5000.0);
+        self.eq_q = finite(self.eq_q, d.eq_q).clamp(0.1, 4.0);
+        self.eq_amount = finite(self.eq_amount, d.eq_amount).clamp(0.0, 5.0);
+        self.kaiser_beta = finite(self.kaiser_beta, d.kaiser_beta).clamp(0.0, 100.0);
+        self.db_range = finite(self.db_range, d.db_range).clamp(10.0, 160.0);
+        self.attack = finite(self.attack, d.attack).clamp(0.0, 0.99);
+        self.release = finite(self.release, d.release).clamp(0.0, 0.99);
+        self.attack_ms = finite(self.attack_ms, d.attack_ms).clamp(0.0, 2000.0);
+        self.release_ms = finite(self.release_ms, d.release_ms).clamp(0.0, 5000.0);
+        self.update_rate_hz = self
+            .update_rate_hz
+            .clamp(MIN_FFT_UPDATE_RATE_HZ, MAX_FFT_UPDATE_RATE_HZ);
+        self
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub struct SecretMap(pub(crate) HashMap<String, String>);
@@ -810,6 +1206,18 @@ pub struct AppSettings {
     /// live VAD test in Settings → Advanced shows its effect.
     #[serde(default)]
     pub denoise_enabled: bool,
+    /// RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
+    /// untouched.
+    #[serde(default = "default_denoise_strength")]
+    pub denoise_strength: f32,
+    /// RNNoise's own speech probability below which the suppressor mutes
+    /// the frame (0–1); 0 turns the gate off.
+    #[serde(default)]
+    pub denoise_vad_threshold: f32,
+    /// How long audio keeps passing after the last frame above that
+    /// threshold, in milliseconds.
+    #[serde(default = "default_denoise_vad_grace_ms")]
+    pub denoise_vad_grace_ms: u32,
     /// Speech-probability threshold of the Earshot detector (0.05–0.95).
     #[serde(default = "default_vad_threshold_earshot")]
     pub vad_threshold_earshot: f32,
@@ -890,6 +1298,13 @@ pub struct AppSettings {
     /// "Live Mode" page (fork feature).
     #[serde(default)]
     pub live_mode: LiveModeSettings,
+    /// "Live FFT" page (fork feature).
+    #[serde(default)]
+    pub live_fft: LiveFftSettings,
+    /// The recording overlay's picture of the microphone (which views, style,
+    /// waveform window, size); the analysis follows `live_fft`.
+    #[serde(default)]
+    pub overlay_scope: OverlayScopeSettings,
     /// In-app llama.cpp server (fork feature).
     #[serde(default)]
     pub llama: LlamaSettings,
@@ -912,6 +1327,14 @@ pub fn clamp_ui_scale(scale: f32) -> f32 {
 
 fn default_vad_threshold_earshot() -> f32 {
     DEFAULT_VAD_THRESHOLD_EARSHOT
+}
+
+fn default_denoise_strength() -> f32 {
+    1.0
+}
+
+fn default_denoise_vad_grace_ms() -> u32 {
+    200
 }
 
 fn default_model() -> String {
@@ -1434,6 +1857,9 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         denoise_enabled: false,
+        denoise_strength: default_denoise_strength(),
+        denoise_vad_threshold: 0.0,
+        denoise_vad_grace_ms: default_denoise_vad_grace_ms(),
         vad_threshold_earshot: default_vad_threshold_earshot(),
         overlay_style: default_overlay_style(),
         overlay_direct_mode: false,
@@ -1464,6 +1890,8 @@ pub fn get_default_settings() -> AppSettings {
         file_transcription: FileTranscriptionSettings::default(),
         llama: LlamaSettings::default(),
         live_mode: LiveModeSettings::default(),
+        live_fft: LiveFftSettings::default(),
+        overlay_scope: OverlayScopeSettings::default(),
     }
 }
 

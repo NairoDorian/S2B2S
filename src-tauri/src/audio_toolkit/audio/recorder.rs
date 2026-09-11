@@ -16,7 +16,10 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::audio_toolkit::{
     VoiceActivityDetector,
-    audio::{AudioVisualiser, DenoiseChain, FrameResampler},
+    audio::{
+        AudioVisualiser, DenoiseChain, DenoiseControls, DenoiseParams, FrameResampler,
+        RNNOISE_SAMPLE_RATE,
+    },
     constants,
     vad::{self, VadFrame},
 };
@@ -56,6 +59,9 @@ pub(crate) enum Cmd {
         vad_policy: VadPolicy,
         pause_hold_ms: u32,
         capture_raw: bool,
+        /// Keep nothing: the session only feeds live consumers (VAD test,
+        /// Live FFT), so the 16 kHz audio is not accumulated either.
+        discard_audio: bool,
         sent_at: Instant,
         ready_tx: mpsc::Sender<()>,
     },
@@ -74,6 +80,7 @@ impl Cmd {
             vad_policy,
             pause_hold_ms: DEFAULT_SPEECH_PAUSE_HOLD_MS,
             capture_raw: false,
+            discard_audio: false,
             sent_at,
             ready_tx,
         }
@@ -214,11 +221,30 @@ pub struct VadFrameReport {
     pub kept: bool,
     /// Peak absolute sample of the 16 kHz frame (0–1), a cheap input level.
     pub level: f32,
+    /// RNNoise's own speech probability of the latest 10 ms frame, when the
+    /// suppressor ran on this audio (the gate threshold compares against it).
+    pub denoise_prob: Option<f32>,
 }
 
 /// Receives a [`VadFrameReport`] for every 16 kHz frame while a recording is
 /// active. Only used by the live VAD test; the callback gates itself.
 pub type VadFrameCallback = Arc<dyn Fn(VadFrameReport) + Send + Sync + 'static>;
+
+/// A consumer of the microphone signal that is not the recording itself
+/// (the Live FFT page). Three tap points: the native-rate mono chunk, before
+/// resampling and noise suppression; the 48 kHz frames as they leave RNNoise
+/// (the native chunk again while suppression is off, so toggling it is a
+/// direct A/B); and the 16 kHz frames after both and before the VAD. The `wants_*` checks run per chunk / per frame on the
+/// audio consumer thread, so implementations gate with atomics, and `push`
+/// must never block or allocate on that thread.
+pub trait AnalysisSink: Send + Sync {
+    fn wants_native(&self) -> bool;
+    fn wants_denoised(&self) -> bool;
+    fn wants_processed(&self) -> bool;
+    fn push(&self, samples: &[f32], sample_rate: u32);
+}
+
+pub type AnalysisSinkRef = Arc<dyn AnalysisSink>;
 
 /// Tracks how long the user has actually been speaking, in frame-sized steps.
 ///
@@ -368,9 +394,13 @@ pub struct AudioRecorder {
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
     vad_frame_cb: Option<VadFrameCallback>,
+    /// Live FFT tap; gates itself per chunk with atomics.
+    analysis: Option<AnalysisSinkRef>,
     /// RNNoise suppression on/off, read by the consumer thread per chunk so a
     /// toggle applies mid-recording without reopening anything.
     denoise_enabled: Arc<AtomicBool>,
+    /// RNNoise's tunables (strength, gate), read per chunk the same way.
+    denoise_controls: Arc<DenoiseControls>,
     /// Milliseconds of speech in the most recent recording, published by the
     /// consumer thread's [`SpeechClock`]. Final once `stop()` has returned.
     speech_ms: Arc<AtomicU64>,
@@ -393,12 +423,22 @@ impl AudioRecorder {
             audio_cb: None,
             speech_cb: None,
             vad_frame_cb: None,
+            analysis: None,
             denoise_enabled: Arc::new(AtomicBool::new(false)),
+            denoise_controls: Arc::new(DenoiseControls::new(DenoiseParams::default())),
             speech_ms: Arc::new(AtomicU64::new(0)),
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Attach the Live FFT tap. It sees the native-rate chunk (before
+    /// resampling and noise suppression) or the 16 kHz frames after them,
+    /// whichever it asks for, and only while a recording is active.
+    pub fn with_analysis_sink(mut self, sink: AnalysisSinkRef) -> Self {
+        self.analysis = Some(sink);
+        self
     }
 
     /// Attach a single VAD engine, reconfigured per session for the offline vs
@@ -472,6 +512,18 @@ impl AudioRecorder {
         self.denoise_enabled.store(enabled, Ordering::Relaxed);
     }
 
+    /// Initial RNNoise tunables (see [`Self::set_denoise_params`]).
+    pub fn with_denoise_params(self, params: DenoiseParams) -> Self {
+        self.denoise_controls.set(params);
+        self
+    }
+
+    /// Change RNNoise's strength / gate. Applies from the next drained chunk,
+    /// mid-recording included.
+    pub fn set_denoise_params(&self, params: DenoiseParams) {
+        self.denoise_controls.set(params);
+    }
+
     /// Change the detector's speech threshold in place. Takes effect on the
     /// next frame, including mid-recording, and does not touch the stream.
     pub fn set_vad_threshold(&self, threshold: f32) {
@@ -521,7 +573,9 @@ impl AudioRecorder {
         let audio_cb = self.audio_cb.clone();
         let speech_cb = self.speech_cb.clone();
         let vad_frame_cb = self.vad_frame_cb.clone();
+        let analysis = self.analysis.clone();
         let denoise_enabled = Arc::clone(&self.denoise_enabled);
+        let denoise_controls = Arc::clone(&self.denoise_controls);
         let speech_ms = Arc::clone(&self.speech_ms);
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
@@ -661,7 +715,9 @@ impl AudioRecorder {
                         audio_cb,
                         speech_cb,
                         vad_frame_cb,
+                        analysis,
                         denoise_enabled,
+                        denoise_controls,
                         speech_ms,
                         stream_running_at,
                     );
@@ -715,6 +771,19 @@ impl AudioRecorder {
         pause_hold_ms: u32,
         capture_raw: bool,
     ) -> Result<mpsc::Receiver<()>, Box<dyn std::error::Error>> {
+        self.start_with_options(vad_policy, pause_hold_ms, capture_raw, false)
+    }
+
+    /// Like [`Self::start`]; with `discard_audio` the session keeps no
+    /// samples at all (live consumers only), so it can run for hours
+    /// without growing.
+    pub fn start_with_options(
+        &self,
+        vad_policy: VadPolicy,
+        pause_hold_ms: u32,
+        capture_raw: bool,
+        discard_audio: bool,
+    ) -> Result<mpsc::Receiver<()>, Box<dyn std::error::Error>> {
         let tx = self
             .cmd_tx
             .as_ref()
@@ -723,7 +792,8 @@ impl AudioRecorder {
         tx.send(Cmd::Start {
             vad_policy,
             pause_hold_ms,
-            capture_raw,
+            capture_raw: capture_raw && !discard_audio,
+            discard_audio,
             sent_at: Instant::now(),
             ready_tx,
         })?;
@@ -963,12 +1033,16 @@ fn handle_frame(
     speech_cb: &Option<SpeechActivityCallback>,
     vad_frame_cb: &Option<VadFrameCallback>,
     vad_errors: &mut u64,
+    keep_audio: bool,
     out_buf: &mut Vec<f32>,
+    denoise_prob: Option<f32>,
 ) {
     let mut kept = false;
     let mut emit = |buf: &[f32]| {
         kept = true;
-        out_buf.extend_from_slice(buf);
+        if keep_audio {
+            out_buf.extend_from_slice(buf);
+        }
         if let Some(cb) = audio_cb {
             cb(buf);
         }
@@ -1016,6 +1090,7 @@ fn handle_frame(
             voiced,
             kept,
             level: level.min(1.0),
+            denoise_prob,
         });
     }
 }
@@ -1062,6 +1137,7 @@ pub(crate) struct CaptureProcessor {
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
     vad_frame_cb: Option<VadFrameCallback>,
+    analysis: Option<AnalysisSinkRef>,
     speech_clock: SpeechClock,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
@@ -1072,6 +1148,7 @@ pub(crate) struct CaptureProcessor {
     /// nothing for it.
     denoise: Option<DenoiseChain>,
     denoise_enabled: Arc<AtomicBool>,
+    denoise_controls: Arc<DenoiseControls>,
     /// Which path carried the previous chunk; a change resets both so no
     /// buffered tail from the other path leaks out later.
     denoise_active: bool,
@@ -1080,6 +1157,9 @@ pub(crate) struct CaptureProcessor {
     first_chunk_logged: bool,
     vad_policy: VadPolicy,
     capture_raw: bool,
+    /// Keep no audio at all (VAD test, Live FFT): the frames still reach
+    /// every live consumer, they are just not accumulated.
+    discard_audio: bool,
     raw_captured_samples: Vec<f32>,
     processed_samples: Vec<f32>,
     vad_errors: u64,
@@ -1106,7 +1186,9 @@ impl CaptureProcessor {
             audio_cb,
             None,
             None,
+            None,
             Arc::new(AtomicBool::new(false)),
+            Arc::new(DenoiseControls::new(DenoiseParams::default())),
             Arc::new(AtomicU64::new(0)),
             stream_running_at,
         )
@@ -1121,7 +1203,9 @@ impl CaptureProcessor {
         audio_cb: Option<AudioFrameCallback>,
         speech_cb: Option<SpeechActivityCallback>,
         vad_frame_cb: Option<VadFrameCallback>,
+        analysis: Option<AnalysisSinkRef>,
         denoise_enabled: Arc<AtomicBool>,
+        denoise_controls: Arc<DenoiseControls>,
         speech_clock_total: Arc<AtomicU64>,
         stream_running_at: Instant,
     ) -> Self {
@@ -1165,6 +1249,7 @@ impl CaptureProcessor {
             audio_cb,
             speech_cb,
             vad_frame_cb,
+            analysis,
             speech_clock,
             stream_running_at,
             visualizer,
@@ -1172,11 +1257,13 @@ impl CaptureProcessor {
             denoise: None,
             denoise_active: denoise_enabled.load(Ordering::Relaxed),
             denoise_enabled,
+            denoise_controls,
             out_frame_duration: frame_duration,
             max_drain_samples,
             first_chunk_logged: false,
             vad_policy: VadPolicy::Offline,
             capture_raw: false,
+            discard_audio: false,
             raw_captured_samples: Vec::new(),
             processed_samples: Vec::new(),
             vad_errors: 0,
@@ -1189,7 +1276,7 @@ impl CaptureProcessor {
 
     #[cfg(test)]
     pub(crate) fn begin_recording(&mut self, policy: VadPolicy, ready_tx: mpsc::Sender<()>) {
-        self.begin_recording_full(policy, DEFAULT_SPEECH_PAUSE_HOLD_MS, false, ready_tx);
+        self.begin_recording_full(policy, DEFAULT_SPEECH_PAUSE_HOLD_MS, false, false, ready_tx);
     }
 
     /// Reset per-recording state and arm the first-sample acknowledgement.
@@ -1198,6 +1285,7 @@ impl CaptureProcessor {
         policy: VadPolicy,
         pause_hold_ms: u32,
         capture_raw: bool,
+        discard_audio: bool,
         ready_tx: mpsc::Sender<()>,
     ) {
         self.awaiting_first_captured_chunk = Some(Instant::now());
@@ -1205,7 +1293,8 @@ impl CaptureProcessor {
         self.total_dropped_samples = 0;
         self.overrun_warning_logged = false;
         self.vad_policy = policy;
-        self.capture_raw = capture_raw;
+        self.capture_raw = capture_raw && !discard_audio;
+        self.discard_audio = discard_audio;
         self.raw_captured_samples.clear();
         self.processed_samples.clear();
         self.vad_errors = 0;
@@ -1258,14 +1347,26 @@ impl CaptureProcessor {
             self.raw_captured_samples.extend_from_slice(raw);
         }
 
-        if let Some(buckets) = self.visualizer.feed(raw) {
-            if let Some(callback) = &self.level_cb {
-                callback(buckets);
-            }
+        // The 16-bucket level meter runs only for a registered callback; the
+        // overlay draws the Live FFT scope instead (live_fft::scope), so the
+        // app registers none and this costs one branch.
+        if let Some(callback) = &self.level_cb
+            && let Some(buckets) = self.visualizer.feed(raw)
+        {
+            callback(buckets);
         }
 
-        // Noise suppression runs here, after the raw tap and the overlay
-        // level meter (both deliberately see the untouched microphone) and
+        // Live FFT native tap: the untouched microphone chunk, like the raw
+        // tap above. One atomic load per chunk while neither the page nor
+        // the overlay scope is listening.
+        if let Some(sink) = &self.analysis
+            && sink.wants_native()
+        {
+            sink.push(raw, self.in_sample_rate);
+        }
+
+        // Noise suppression runs here, after the raw tap and the native
+        // analysis tap (both deliberately see the untouched microphone) and
         // before the VAD, so the detector, the speech clock and the live VAD
         // test all work on the denoised signal.
         let denoise_on = self.denoise_enabled.load(Ordering::Relaxed);
@@ -1296,8 +1397,17 @@ impl CaptureProcessor {
         let speech_clock = &mut self.speech_clock;
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
+        let analysis = &self.analysis;
+        let keep_audio = !self.discard_audio;
 
-        let mut on_frame = |frame: &[f32]| {
+        let mut on_frame = |frame: &[f32], denoise_prob: Option<f32>| {
+            // Live FFT processed tap: the 16 kHz frames a model hears, after
+            // resampling / noise suppression and before the VAD.
+            if let Some(sink) = analysis
+                && sink.wants_processed()
+            {
+                sink.push(frame, constants::WHISPER_SAMPLE_RATE);
+            }
             handle_frame(
                 frame,
                 vad_policy,
@@ -1307,12 +1417,40 @@ impl CaptureProcessor {
                 speech_cb,
                 vad_frame_cb,
                 vad_errors,
+                keep_audio,
                 processed_samples,
+                denoise_prob,
             )
         };
         match (denoise_on, self.denoise.as_mut()) {
-            (true, Some(chain)) => chain.push(raw, &mut on_frame),
-            _ => self.frame_resampler.push(raw, &mut on_frame),
+            (true, Some(chain)) => {
+                let params = self.denoise_controls.get();
+                chain.push(
+                    raw,
+                    params,
+                    |denoised| {
+                        // Live FFT "after noise suppression" tap: the 48 kHz
+                        // frames as they leave RNNoise.
+                        if let Some(sink) = analysis
+                            && sink.wants_denoised()
+                        {
+                            sink.push(denoised, RNNOISE_SAMPLE_RATE as u32);
+                        }
+                    },
+                    |frame, prob| on_frame(frame, Some(prob)),
+                );
+            }
+            _ => {
+                // Suppression off: that tap shows the untouched microphone,
+                // so toggling it on the Live FFT page is a direct A/B.
+                if let Some(sink) = analysis
+                    && sink.wants_denoised()
+                {
+                    sink.push(raw, self.in_sample_rate);
+                }
+                self.frame_resampler
+                    .push(raw, |frame| on_frame(frame, None));
+            }
         }
 
         if let Some(started) = self.awaiting_first_captured_chunk.take() {
@@ -1353,8 +1491,9 @@ impl CaptureProcessor {
         let speech_clock = &mut self.speech_clock;
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
+        let keep_audio = !self.discard_audio;
 
-        let mut on_frame = |frame: &[f32]| {
+        let mut on_frame = |frame: &[f32], denoise_prob: Option<f32>| {
             handle_frame(
                 frame,
                 vad_policy,
@@ -1364,12 +1503,17 @@ impl CaptureProcessor {
                 speech_cb,
                 vad_frame_cb,
                 vad_errors,
+                keep_audio,
                 processed_samples,
+                denoise_prob,
             )
         };
         match (self.denoise_active, self.denoise.as_mut()) {
-            (true, Some(chain)) => chain.finish(&mut on_frame),
-            _ => self.frame_resampler.finish(&mut on_frame),
+            (true, Some(chain)) => {
+                let params = self.denoise_controls.get();
+                chain.finish(params, |_| {}, |frame, prob| on_frame(frame, Some(prob)));
+            }
+            _ => self.frame_resampler.finish(|frame| on_frame(frame, None)),
         }
 
         if vad_policy != VadPolicy::Disabled {
@@ -1438,6 +1582,7 @@ fn run_consumer(
                         vad_policy: policy,
                         pause_hold_ms,
                         capture_raw,
+                        discard_audio,
                         sent_at,
                         ready_tx,
                     } => {
@@ -1455,6 +1600,7 @@ fn run_consumer(
                             policy,
                             pause_hold_ms,
                             capture_raw,
+                            discard_audio,
                             ready_tx,
                         );
                         recording = true;

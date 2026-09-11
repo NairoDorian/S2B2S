@@ -14,9 +14,10 @@ interface SpeechStatsProps {
  * a timer that runs only while you are actually talking, and the running
  * average words per minute.
  *
- * Sits next to Voice Activity Detection rather than with the overlay settings
- * because the pause tolerance is a VAD parameter — it decides how long silence
- * has to last before the speech timer stops counting.
+ * Lives on the Overlay page with the rest of the overlay's controls. The
+ * pause tolerance is a VAD parameter (it decides how long silence has to
+ * last before the speech timer stops counting), which is why the detector's
+ * own threshold stays on the Advanced page.
  */
 export const SpeechStats: React.FC<SpeechStatsProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {

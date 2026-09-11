@@ -67,6 +67,9 @@ rodio = { git = "https://github.com/RustAudio/rodio" }
 reqwest = { version = "^0.13.5", features = ["json", "stream", "gzip", "brotli", "deflate"] }
 futures-util = "^0.3.34"
 rustfft = "6.4.1"
+# Live FFT page: real-to-complex transform on top of rustfft. Already a
+# transitive dependency of rubato, so no new crate is compiled.
+realfft = "3.5.0"
 strsim = "0.11.1"
 natural = "0.5.0"
 regex = "1.13.1"

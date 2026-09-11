@@ -50,17 +50,23 @@
      the card's max footprint (--ov-work-w for compact, --ov-open-w for Live),
      since the card is anchored flush to the screen edge in CSS. Keep overlay.rs
      in sync when these change. */
-  --ov-rest-w: 172px; /* resting compact pill (minimal, recording) -- roomy enough
-                         for the English working label before the grow starts */
-  --ov-pill-w: 184px; /* base width / Live pill before it opens or collapses */
+  --ov-rest-w: 236px; /* resting compact pill (minimal, recording) -- fits the
+                         two 48px scope canvases between the lamp and the cancel
+                         button, and the English working label */
+  --ov-pill-w: 248px; /* base width / Live pill before it opens or collapses */
   --ov-work-w: 216px; /* working pill (transcribing / polishing) -- wide enough to
                          center longer labels; shared by Live (collapsed) + minimal */
-  --ov-stats-w: 244px; /* resting pill carrying speech stats (minimal, or Live
-                          before it opens) -- fits "10:08 - 142 wpm" + cancel.
-                          Mirrored by OVERLAY_STATS_WIDTH in overlay.rs */
+  --ov-stats-w: 308px; /* resting pill carrying speech stats (minimal, or Live
+                          before it opens) -- fits the scope, "10:08 - 142 wpm"
+                          and cancel. Mirrored by OVERLAY_STATS_WIDTH in overlay.rs */
   --ov-open-w: 392px; /* Live panel, expanded */
   --ov-base-h: 40px; /* control-row height (.sbase) */
   --ov-cap-max-h: 64px; /* max height of the scrolling live-text region */
+  /* Scope views (overlay_scope). The overlay rewrites these and the pill
+     widths above from the setting before it shows (src/lib/overlayScope.ts);
+     the values here are the defaults for the first paint. */
+  --ov-scope-w: 48px;
+  --ov-scope-h: 22px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -444,65 +450,45 @@
   color: var(--s-faint);
 }
 
-/* Waveform — reactive only after the first microphone callback. While arming,
-   a muted travelling pulse acknowledges the shortcut without pretending that
-   audio levels are already being received. */
+/* The miniature analyser (OverlayScope.tsx): an area spectrum and a line of
+   the last 4096 samples, side by side. Reactive only after the first
+   microphone callback; while arming, a muted pulse acknowledges the shortcut
+   without pretending that audio is already being received. */
 .swave {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
   padding-right: 8px;
-  height: 18px;
+  height: var(--ov-scope-h);
   flex: none;
 }
-.swave i {
-  width: 4px;
-  min-height: 3px;
-  max-height: 18px;
-  border-radius: 0;
-  background: var(--s-accent);
-  transition:
-    height 80ms linear,
-    background-color 180ms ease,
-    opacity 180ms ease;
+.sscope {
+  display: block;
+  width: var(--ov-scope-w);
+  height: var(--ov-scope-h);
+  flex: none;
+  transition: opacity 180ms ease;
 }
-/* Silence: the bars stay reactive (the microphone still has a level, and room
-   tone should still register) but drop to the neutral colour, so speech vs.
-   silence reads at a glance from the corner of the eye. */
-.swave.quiet i {
-  background: var(--s-muted);
-  opacity: 0.55;
+/* Silence: the traces stay live (room tone should still register) but drop to
+   the neutral colour, so speech vs. silence reads at a glance from the corner
+   of the eye. The colour itself is picked by the canvas from --s-muted. */
+.swave.quiet .sscope {
+  opacity: 0.75;
 }
-.swave.arming i {
-  height: 6px !important;
-  background: var(--s-muted);
+.swave.arming .sscope {
   opacity: 0.35;
-  animation: swave-arming 900ms ease-in-out infinite;
+  animation: sscope-arming 900ms ease-in-out infinite;
 }
-.swave.arming i:nth-child(2),
-.swave.arming i:nth-child(8) {
-  animation-delay: 75ms;
-}
-.swave.arming i:nth-child(3),
-.swave.arming i:nth-child(7) {
+.swave.arming .sscope-wave {
   animation-delay: 150ms;
 }
-.swave.arming i:nth-child(4),
-.swave.arming i:nth-child(6) {
-  animation-delay: 225ms;
-}
-.swave.arming i:nth-child(5) {
-  animation-delay: 300ms;
-}
-@keyframes swave-arming {
+@keyframes sscope-arming {
   0%,
   100% {
-    transform: scaleY(0.55);
-    opacity: 0.25;
+    opacity: 0.2;
   }
   50% {
-    transform: scaleY(1.5);
-    opacity: 0.7;
+    opacity: 0.6;
   }
 }
 .sx {

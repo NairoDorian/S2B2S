@@ -11,12 +11,15 @@ import type {
 } from "@/bindings";
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
+import { OverlayScope } from "./OverlayScope";
+import {
+  OVERLAY_SCOPE_DEFAULTS,
+  applyOverlayScopeCss,
+  resolveOverlayScope,
+  type ResolvedOverlayScope,
+} from "@/lib/overlayScope";
 
 type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
-
-// Number of reactive bars in the waveform (the simple, smoothed style shared by
-// every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
-const WAVE_BARS = 9;
 
 // Ideographs, kana and halfwidth katakana. These scripts are written without
 // spaces, so splitting on whitespace would score a whole Japanese sentence as
@@ -45,7 +48,15 @@ const RecordingOverlay: React.FC = () => {
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
   const [captureReady, setCaptureReady] = useState(false);
-  const [levels, setLevels] = useState<number[]>(Array(WAVE_BARS).fill(0));
+  // Poll rate of the miniature analyser: the Live FFT page's update rate,
+  // read with the other overlay settings on every show.
+  const [scopeRate, setScopeRate] = useState(30);
+  // The picture settings (`overlay_scope`): views, style, waveform window,
+  // size. Read with the other overlay settings on every show; the geometry
+  // is published as CSS variables before the card becomes visible.
+  const [scopeConfig, setScopeConfig] = useState<ResolvedOverlayScope>(
+    OVERLAY_SCOPE_DEFAULTS,
+  );
   const [streamText, setStreamText] = useState<StreamTextEvent>({
     committed: "",
     tentative: "",
@@ -71,7 +82,6 @@ const RecordingOverlay: React.FC = () => {
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
 
-  const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
   // user is at the bottom; if they scroll up to read history, auto-follow pauses
   // until they scroll back down.
@@ -190,8 +200,6 @@ const RecordingOverlay: React.FC = () => {
         // them would overwrite that event and leave the overlay stuck arming.
         if (overlayState === "recording" || overlayState === "streaming") {
           setCaptureReady(false);
-          smoothedLevelsRef.current = Array(16).fill(0);
-          setLevels(Array(WAVE_BARS).fill(0));
           stopTypewriter();
           targetTextRef.current = { committed: "", tentative: "" };
           displayedTextRef.current = { committed: "", tentative: "" };
@@ -213,6 +221,10 @@ const RecordingOverlay: React.FC = () => {
             directModeRef.current = settings.data.overlay_direct_mode ?? false;
             directSpeedRef.current = settings.data.overlay_direct_speed ?? 30;
             setStatsEnabled(settings.data.overlay_speech_stats ?? true);
+            setScopeRate(settings.data.live_fft?.update_rate_hz ?? 30);
+            const scope = resolveOverlayScope(settings.data.overlay_scope);
+            applyOverlayScopeCss(scope);
+            setScopeConfig(scope);
           }
         } catch {
           // Keep the previous/default placement if settings can't be read.
@@ -236,18 +248,6 @@ const RecordingOverlay: React.FC = () => {
       const unlistenReady = await listen("recording-ready", () => {
         setElapsed(0);
         setCaptureReady(true);
-      });
-
-      const unlistenLevel = await listen<number[]>("mic-level", (event) => {
-        const newLevels = event.payload as number[];
-        // Exponential smoothing across the 16 buckets, then take the first N
-        // bars for the shared waveform.
-        const smoothed = smoothedLevelsRef.current.map((prev, i) => {
-          const target = newLevels[i] || 0;
-          return prev * 0.7 + target * 0.3;
-        });
-        smoothedLevelsRef.current = smoothed;
-        setLevels(smoothed.slice(0, WAVE_BARS));
       });
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
@@ -290,7 +290,6 @@ const RecordingOverlay: React.FC = () => {
         unlistenShow();
         unlistenHide();
         unlistenReady();
-        unlistenLevel();
         unlistenStream();
         unlistenSpeech();
         unlistenPhase();
@@ -377,20 +376,21 @@ const RecordingOverlay: React.FC = () => {
       : null;
 
   // ---- Shared building blocks (one visual language for every overlay form) ----
-  const waveform = (
-    <div
-      className={`swave ${captureReady ? "ready" : "arming"} ${quiet ? "quiet" : ""}`}
-    >
-      {levels.map((v, i) => (
-        <i
-          key={i}
-          style={{
-            height: `${Math.max(3, Math.min(18, 3 + Math.pow(v, 0.7) * 15))}px`,
-          }}
+  // The miniature analyser: an area spectrum and the last 4096 samples as a
+  // line, both computed with the Live FFT page's settings (OverlayScope).
+  const waveform =
+    scopeConfig.show_spectrum || scopeConfig.show_wave ? (
+      <div
+        className={`swave ${captureReady ? "ready" : "arming"} ${quiet ? "quiet" : ""}`}
+      >
+        <OverlayScope
+          rateHz={scopeRate}
+          ready={captureReady}
+          quiet={quiet}
+          config={scopeConfig}
         />
-      ))}
-    </div>
-  );
+      </div>
+    ) : null;
 
   const cancelBtn = (
     <button

@@ -82,10 +82,22 @@ export const commands = {
 	changeSaveRawAudioSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_save_raw_audio_setting", { enabled })),
 	changeVadEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_vad_enabled_setting", { enabled })),
 	/**
+	 *  Persist the overlay's scope picture (`overlay_scope`), refresh the cached
+	 *  geometry the show path sizes the window with, hand the waveform window
+	 *  to the analyser and re-place a visible overlay.
+	 */
+	changeOverlayScopeSettings: (scope: OverlayScopeSettings) => typedError<null, string>(__TAURI_INVOKE("change_overlay_scope_settings", { scope })),
+	/**
 	 *  Toggle RNNoise suppression. Persisted for future recorders and pushed to
 	 *  the live one, which switches paths on its next chunk.
 	 */
 	changeDenoiseEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_denoise_enabled_setting", { enabled })),
+	/**  RNNoise wet/dry strength (0–1). */
+	changeDenoiseStrengthSetting: (strength: number | null) => typedError<null, string>(__TAURI_INVOKE("change_denoise_strength_setting", { strength })),
+	/**  RNNoise's own speech-probability gate threshold (0–1, 0 = off). */
+	changeDenoiseVadThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_denoise_vad_threshold_setting", { threshold })),
+	/**  Grace period of that gate, in milliseconds. */
+	changeDenoiseVadGraceSetting: (graceMs: number) => typedError<null, string>(__TAURI_INVOKE("change_denoise_vad_grace_setting", { graceMs })),
 	changeFillerWordRemovalEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_filler_word_removal_enabled_setting", { enabled })),
 	changeAppLanguageSetting: (language: string) => typedError<null, string>(__TAURI_INVOKE("change_app_language_setting", { language })),
 	changeUpdateChecksSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_update_checks_setting", { enabled })),
@@ -378,12 +390,32 @@ export const commands = {
 	liveModeListSessions: () => typedError<LiveSessionInfo[], string>(__TAURI_INVOKE("live_mode_list_sessions")),
 	/**  The folder used when no output folder is configured, for display. */
 	liveModeDefaultOutputDir: () => typedError<string, string>(__TAURI_INVOKE("live_mode_default_output_dir")),
+	/**
+	 *  Persist the page's parameters and hand them to the running analysis,
+	 *  which applies them on its next frame. A threading-mode change restarts
+	 *  the session, which can reopen the microphone, so the hand-off runs on a
+	 *  blocking thread.
+	 */
+	changeLiveFftSettings: (settings: LiveFftSettings) => typedError<null, string>(__TAURI_INVOKE("change_live_fft_settings", { settings })),
+	/**
+	 *  Start the analyser: opens the microphone (a device open can block, so
+	 *  this stays off the webview thread) and streams `LiveFftFrameEvent`s.
+	 */
+	liveFftStart: () => typedError<null, string>(__TAURI_INVOKE("live_fft_start")),
+	liveFftStop: () => typedError<null, string>(__TAURI_INVOKE("live_fft_stop")),
+	liveFftStatus: () => __TAURI_INVOKE<LiveFftStatus>("live_fft_status"),
+	/**  The page's Reset button: clears ballistics, AGC and EQ state. */
+	liveFftReset: () => __TAURI_INVOKE<void>("live_fft_reset"),
+	/**  The "Raw" preset: linear magnitude, frame-peak reference, no ballistics. */
+	liveFftRawDefaults: () => __TAURI_INVOKE<LiveFftSettings>("live_fft_raw_defaults"),
 };
 
 /** Events */
 export const events = {
 	fileTranscriptionEvent: makeEvent<FileTranscriptionEvent>("file-transcription-event"),
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
+	liveFftFrameEvent: makeEvent<LiveFftFrameEvent>("live-fft-frame-event"),
+	liveFftStateEvent: makeEvent<LiveFftStateEvent>("live-fft-state-event"),
 	liveModeStateEvent: makeEvent<LiveModeStateEvent>("live-mode-state-event"),
 	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent>("live-mode-transcript-event"),
 	llamaDownloadEvent: makeEvent<LlamaDownloadEvent>("llama-download-event"),
@@ -525,6 +557,21 @@ export type AppSettings_Deserialize = {
 	 *  live VAD test in Settings → Advanced shows its effect.
 	 */
 	denoise_enabled?: boolean,
+	/**
+	 *  RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
+	 *  untouched.
+	 */
+	denoise_strength?: number | null,
+	/**
+	 *  RNNoise's own speech probability below which the suppressor mutes
+	 *  the frame (0–1); 0 turns the gate off.
+	 */
+	denoise_vad_threshold?: number | null,
+	/**
+	 *  How long audio keeps passing after the last frame above that
+	 *  threshold, in milliseconds.
+	 */
+	denoise_vad_grace_ms?: number,
 	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot?: number | null,
 	/**
@@ -584,6 +631,13 @@ export type AppSettings_Deserialize = {
 	file_transcription?: FileTranscriptionSettings,
 	/**  "Live Mode" page (fork feature). */
 	live_mode?: LiveModeSettings,
+	/**  "Live FFT" page (fork feature). */
+	live_fft?: LiveFftSettings,
+	/**
+	 *  The recording overlay's picture of the microphone (which views, style,
+	 *  waveform window, size); the analysis follows `live_fft`.
+	 */
+	overlay_scope?: OverlayScopeSettings,
 	/**  In-app llama.cpp server (fork feature). */
 	llama?: LlamaSettings,
 };
@@ -707,6 +761,21 @@ export type AppSettings_Serialize = {
 	 *  live VAD test in Settings → Advanced shows its effect.
 	 */
 	denoise_enabled: boolean,
+	/**
+	 *  RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
+	 *  untouched.
+	 */
+	denoise_strength: number | null,
+	/**
+	 *  RNNoise's own speech probability below which the suppressor mutes
+	 *  the frame (0–1); 0 turns the gate off.
+	 */
+	denoise_vad_threshold: number | null,
+	/**
+	 *  How long audio keeps passing after the last frame above that
+	 *  threshold, in milliseconds.
+	 */
+	denoise_vad_grace_ms: number,
 	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot: number | null,
 	/**
@@ -766,6 +835,13 @@ export type AppSettings_Serialize = {
 	file_transcription: FileTranscriptionSettings,
 	/**  "Live Mode" page (fork feature). */
 	live_mode: LiveModeSettings,
+	/**  "Live FFT" page (fork feature). */
+	live_fft: LiveFftSettings,
+	/**
+	 *  The recording overlay's picture of the microphone (which views, style,
+	 *  waveform window, size); the analysis follows `live_fft`.
+	 */
+	overlay_scope: OverlayScopeSettings,
 	/**  In-app llama.cpp server (fork feature). */
 	llama: LlamaSettings,
 };
@@ -845,6 +921,76 @@ export type DurationMetricSummary = {
 	average_ms: number | null,
 	maximum_ms: number | null,
 };
+
+export type FftBallisticsMode = 
+/**  Per-frame smoothing coefficients (0 = follow instantly). */
+"coefficient" | 
+/**  Time constants in milliseconds, independent of the update rate. */
+"milliseconds";
+
+export type FftDbReference = 
+/**  0 dB = the loudest bin of this frame. */
+"frame_peak" | 
+/**  0 dB = digital full scale. */
+"dbfs" | 
+/**  0 dB = a slow peak follower (1.5 s release). */
+"agc";
+
+export type FftLoudnessMode = 
+/**  Linear magnitude. */
+"off" | 
+/**  Decibels relative to the reference. */
+"db" | 
+/**  Decibels mapped onto 0…1 over `db_range`. */
+"db_normalized";
+
+export type FftMagnitudeNorm = 
+/**  `mean(window) == 1`; a full-scale sine peaks at `window / 2`. */
+"coherent_gain" | 
+/**  `sum(window) == 2`; a sine of amplitude 1 reads 1.0. */
+"full_scale";
+
+/**  Frequency axis of the spectrum. */
+export type FftScale = "log" | "mel" | "erb" | "bark" | "chroma" | "linear" | 
+/**  Mel + Log blend. */
+"melog";
+
+/**  Which signal the Live FFT page analyses. */
+export type FftSource = 
+/**
+ *  The microphone at its native rate, before noise suppression — the
+ *  full bandwidth the device delivers (24 kHz at 48 kHz).
+ */
+"microphone" | 
+/**
+ *  The 48 kHz frames as they leave RNNoise (full bandwidth), or the
+ *  untouched microphone while suppression is off, so toggling it is a
+ *  direct before/after.
+ */
+"denoised" | 
+/**
+ *  The 16 kHz frames a model hears: after resampling and noise
+ *  suppression, before the VAD. Bandwidth stops at 8 kHz.
+ */
+"processed";
+
+export type FftWarpInterp = 
+/**  Two taps. */
+"linear" | 
+/**  Catmull-Rom, four taps: a 16K FFT with cubic looks like 32K with linear. */
+"cubic";
+
+export type FftWeighting = "off" | 
+/**  IEC 61672 A-weighting. */
+"a" | 
+/**  C-weighting. */
+"c" | 
+/**  ITU-R 468 noise weighting. */
+"itu468";
+
+export type FftWindowLengthMode = "samples" | "milliseconds";
+
+export type FftWindowType = "kaiser" | "hann" | "hamming" | "blackman" | "blackman_harris" | "rectangular";
 
 export type FileJobStatus = "queued" | "decoding" | "transcribing" | "merging" | "post_processing" | "saving" | "done" | "failed" | "cancelled";
 
@@ -1001,6 +1147,138 @@ export type LiveChunkInfo = {
 	bytes: number | null,
 	text_chars: number,
 };
+
+/**
+ *  One analysed frame: `output_bins` values in the unit the loudness mode
+ *  selects (linear magnitude, dB, or 0…1). Sent to the main window only,
+ *  at `update_rate_hz`.
+ */
+export type LiveFftFrameEvent = {
+	seq: number,
+	bins: (number | null)[],
+	peak_hz: number | null,
+	peak_value: number | null,
+	silent: boolean,
+	dsp_us: number | null,
+};
+
+export type LiveFftPhase = "idle" | "starting" | "running" | "stopping" | "error";
+
+/**
+ *  Settings of the "Live FFT" page, grouped the way the page shows them
+ *  (Spectrum, EQ, Window & Weighting, Loudness & Ballistics, Performance).
+ *  `update_rate_hz` is the analysis frame rate; there is no planner policy
+ *  or poll interval to configure, since rustfft plans are instant and the
+ *  settings are pushed, not polled.
+ */
+export type LiveFftSettings = {
+	source?: FftSource,
+	scale?: FftScale,
+	warp_interpolation?: FftWarpInterp,
+	/**  Highest frequency on the axis; clamped to Nyquist at run time. */
+	display_max_hz?: number | null,
+	/**  Size of the warped spectrum handed to the page (32…8192). */
+	output_bins?: number,
+	/**  0 = linear grid, 1 = fully perceptual. */
+	warp_blend?: number | null,
+	/**  Lowest frequency of the Log / Melog grid. */
+	log_floor_hz?: number | null,
+	window_length_mode?: FftWindowLengthMode,
+	/**  Analysis window in samples (3175 = 72 ms at 44.1 kHz). */
+	window_samples?: number,
+	/**  Analysis window in milliseconds, used when the mode says so. */
+	window_ms?: number | null,
+	/**
+	 *  Zero-padded transform length; grown to the next power of two above
+	 *  the window when that is larger.
+	 */
+	fft_size?: number,
+	eq_enabled?: boolean,
+	high_shelf?: boolean,
+	low_shelf?: boolean,
+	high_gain_db?: number | null,
+	high_cutoff_hz?: number | null,
+	low_gain_db?: number | null,
+	low_cutoff_hz?: number | null,
+	eq_q?: number | null,
+	/**  Wet/dry blend of the EQ (0…5). */
+	eq_amount?: number | null,
+	window_type?: FftWindowType,
+	kaiser_beta?: number | null,
+	weighting?: FftWeighting,
+	magnitude_norm?: FftMagnitudeNorm,
+	loudness_mode?: FftLoudnessMode,
+	db_reference?: FftDbReference,
+	/**  Floor of the dB display, in dB below the reference. */
+	db_range?: number | null,
+	ballistics_enabled?: boolean,
+	ballistics_mode?: FftBallisticsMode,
+	/**  Per-frame attack coefficient (0…0.99). */
+	attack?: number | null,
+	/**  Per-frame release coefficient (0…0.99). */
+	release?: number | null,
+	attack_ms?: number | null,
+	release_ms?: number | null,
+	/**
+	 *  Run the transform on the analysis worker thread (on) or inline on the
+	 *  audio consumer thread (off).
+	 */
+	async_analysis?: boolean,
+	/**  Spectrum frames per second sent to the page (5…60). */
+	update_rate_hz?: number,
+	/**
+	 *  Run the speech detector on the analysed session and report its
+	 *  per-frame verdicts to the page (`VadTestEvent`), so the threshold and
+	 *  noise suppression can be tuned against the spectrum. Changing it
+	 *  restarts a running session (the VAD policy is fixed per recording).
+	 */
+	show_vad?: boolean,
+};
+
+/**  Emitted on every phase change and roughly once a second while running. */
+export type LiveFftStateEvent = {
+	status: LiveFftStatus,
+};
+
+/**  Status snapshot — the telemetry rows the page shows. */
+export type LiveFftStatus = {
+	phase: LiveFftPhase,
+	error: string | null,
+	stop_reason: LiveFftStopReason | null,
+	/**  Rate of the analysed signal (native microphone rate or 16 kHz). */
+	sample_rate: number,
+	fft_size: number,
+	window_samples: number,
+	linear_bins: number,
+	/**  Magnitude bins actually computed. */
+	magnitude_bins: number,
+	output_bins: number,
+	identity_warp: boolean,
+	/**  Magnitude of a full-scale sine under the current normalisation. */
+	full_scale_ref: number | null,
+	/**  Highest frequency on the axis after the Nyquist clamp. */
+	display_max_hz: number | null,
+	nyquist_hz: number | null,
+	update_rate_hz: number,
+	async_analysis: boolean,
+	/**  Frames analysed this session. */
+	frames: number,
+	/**  Samples the ring could not take (the worker fell behind). */
+	dropped_samples: number,
+	dsp_us_last: number | null,
+	dsp_us_avg: number | null,
+	dsp_us_max: number | null,
+	started_at_ms: number | null,
+	/**  Frequency of every output bin (rebuilt with the warp tables). */
+	axis_hz: (number | null)[],
+};
+
+/**  Why the last session ended on its own. */
+export type LiveFftStopReason = 
+/**  The recording was ended elsewhere (cancel hotkey, tray). */
+"cancelled" | 
+/**  The main window stayed hidden for [`HIDDEN_AUTO_STOP`]. */
+"window_hidden";
 
 export type LiveModePhase = "idle" | "starting" | "listening" | "rotating" | "stopping" | "error";
 
@@ -1289,6 +1567,49 @@ export type OverlayPosition_Deserialize = "top" | "bottom" | "none";
 export type OverlayPosition_Serialize = "top" | "bottom";
 
 /**
+ *  The picture the recording overlay draws of the microphone (see
+ *  `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
+ *  follows `live_fft`; this only shapes the display. Mirrored by
+ *  `src/lib/overlayScope.ts`.
+ */
+export type OverlayScopeSettings = {
+	/**  Draw the spectrum view. */
+	show_spectrum?: boolean,
+	/**  Draw the waveform view. */
+	show_wave?: boolean,
+	spectrum_style?: OverlayScopeStyle,
+	/**
+	 *  Draw the spectrum rising from the centre line with its negative
+	 *  mirrored below, so it reads like the centred waveform beside it.
+	 */
+	spectrum_mirror?: boolean,
+	/**
+	 *  Keep a slowly falling marker at each column's recent peak, like the
+	 *  Live FFT page's peak hold.
+	 */
+	peak_hold?: boolean,
+	/**  Samples of raw audio the waveform view covers (256…16384). */
+	wave_samples?: number,
+	/**
+	 *  Raised-cosine fade at each end of that window, in samples
+	 *  (0…half the window), so the trace starts and ends at zero.
+	 */
+	wave_taper_samples?: number,
+	/**
+	 *  Auto-gain floor of the waveform as a full-scale fraction: quieter
+	 *  signals are not blown up to full height (0.001…0.5).
+	 */
+	wave_gain_floor?: number | null,
+	/**  Width of each view in logical pixels (32…160). */
+	view_width?: number,
+	/**  Height of the views in logical pixels (14…48). */
+	view_height?: number,
+};
+
+/**  How the recording overlay's spectrum is drawn. */
+export type OverlayScopeStyle = "area" | "line" | "bars";
+
+/**
  *  Which recording overlay to display. `Minimal` and `Live` share one base
  *  (the pill); `Live` grows into the panel that shows live transcription text.
  *  `None` hides the overlay entirely. Decoupled from whether the model runs in
@@ -1383,7 +1704,7 @@ export type SoundTheme = "marimba" | "pop" | "custom";
 /**
  *  Live speech statistics for the recording overlay.
  * 
- *  Unlike `mic-level`, this is not a fixed-rate stream: the recorder sends it
+ *  Not a fixed-rate stream: the recorder sends it
  *  when the speaking/silent state flips, and roughly every 150 ms while speech
  *  continues. A silent stretch produces no events at all.
  */
@@ -1488,8 +1809,8 @@ export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "x
 
 /**
  *  One update of the live VAD test: what the detector thought of the latest
- *  microphone frame. Emitted only while the test runs, never during normal
- *  dictation.
+ *  microphone frame. Emitted only while the Advanced page's test or the Live
+ *  FFT page's voice-detection view runs, never during normal dictation.
  */
 export type VadTestEvent = {
 	/**  Raw 0–1 speech score before hysteresis (`None` with VAD disabled). */
@@ -1503,6 +1824,11 @@ export type VadTestEvent = {
 	kept: boolean,
 	/**  Peak input level of the frame, 0–1. */
 	level: number | null,
+	/**
+	 *  RNNoise's own speech probability of the latest 10 ms frame while
+	 *  suppression is on; its gate threshold compares against it.
+	 */
+	denoise_prob: number | null,
 };
 
 export type WindowsMicrophonePermissionStatus = {

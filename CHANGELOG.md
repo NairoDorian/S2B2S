@@ -16,6 +16,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Overlay settings page (2026-09-11).** A new sidebar page gathers the
+  recording overlay's settings, which were spread over Advanced: style and
+  position, direct typing of the live text and its speed, the speech
+  statistics, and a new Analyser group for the picture the overlay draws
+  while recording. That group sets which of the two views are shown, the
+  spectrum style (area, line, bars), how many samples of raw audio the
+  waveform covers, the fade at its ends, its auto-gain floor and the view
+  size; the pill and the native window grow and shrink with the views.
+  The spectrum is mirrored about the centre line by default (its negative
+  drawn below it), so it reads like the centred waveform beside it, and
+  peak hold, the page's remaining display choice, is an overlay setting
+  too. The analysis behind the spectrum stays the Live FFT page's, with a
+  direct link, and a test now asserts the overlay's bins are bit-identical
+  to the page's for the same settings (EQ shelves, window, weighting,
+  scale, dB, ballistics included). Persisted as `overlay_scope`.
+- **RNNoise parameters and an "after noise suppression" spectrum
+  (2026-09-11).** RNNoise's model has no knobs, so the three things that
+  shape its output are now settings, applied per 10 ms frame from atomics
+  and live mid-recording: suppression strength (wet/dry mix), a gate on
+  RNNoise's own speech probability (off by default) and the gate's hold
+  time. They sit under the noise-suppression toggle on the Advanced page
+  and in the Live FFT page's voice-detection group, and the live meters
+  show RNNoise's probability with the gate marker. The analyser gained a
+  third source, "After noise suppression (48 kHz)": RNNoise's output at
+  full bandwidth, or the untouched microphone while suppression is off,
+  so toggling suppression shows exactly what it removes; the voice group
+  offers a one-click switch to it.
+- **Voice detection and noise suppression on the Live FFT page
+  (2026-09-11).** A new group under the analyser shows the speech
+  detector's verdict frame by frame (the same meter as the Advanced page's
+  live test: score against the threshold marker, input level, kept /
+  dropped) while the analyser runs, next to the VAD toggle, the VAD
+  sensitivity slider and the RNNoise toggle, so both can be tuned against
+  the spectrum; with the source set to the processed 16 kHz frames the
+  spectrum shows what noise suppression removes. "Show voice detection"
+  (`live_fft.show_vad`) runs the detector on the analyser's own recording
+  and restarts a running session when toggled.
+- **Stale build artifacts are pruned before every build (2026-09-11).**
+  `src-tauri/target` had grown to 75 GB: cargo never deletes the outputs of
+  units that stopped existing, so each dependency or pin bump left the old
+  hashed artifacts, build-script outputs (six copies of the transcribe.cpp
+  native build) and incremental caches (171 of them) behind.
+  `scripts/prune-target.ts`, run by the build runner before `tauri dev` /
+  `tauri build` (and by hand as `bun run prune:target [--dry-run]`),
+  removes units whose version or git revision is no longer in `Cargo.lock`,
+  superseded incremental caches, all but the two newest builds of the app
+  crate and installers of another version, and reports what it freed.
+  Nothing current is touched, so builds are not slower afterwards.
+  `HANDY_NO_PRUNE=1` skips it.
+- **Miniature analyser in the recording overlay (2026-09-11).** The
+  overlay's nine level bars are replaced by two small live views drawn
+  from the Live FFT page's own pipeline and settings: an area spectrum
+  (scale, warp, window, EQ, weighting, loudness, dB range and ballistics
+  exactly as configured on the Live FFT page, at its update rate) and a
+  line of the last 4096 microphone samples, tapered to zero at both ends
+  so the rolling trace never starts or ends mid-swing. The analysis runs on
+  its own `overlay-scope` thread only while the overlay shows a recording,
+  and the overlay polls one binary frame per update (`overlay_scope_frame`,
+  ~20 KB of raw f32, no JSON) instead of receiving events. The 16-bucket
+  level meter that fed the old bars no longer runs during dictation. The
+  compact pill is 64 px wider to make room for the two views.
+- **Live FFT page (2026-09-11).** A real-time spectrum analyser for the
+  microphone with a full analyser parameter set in five groups: Spectrum (Log /
+  Mel / ERB / Bark / Chroma / Linear / Melog scales, warp blend, linear or Catmull-Rom
+  interpolation, display max, output bins, log floor, window length in
+  samples or milliseconds, zero-pad length), EQ (RBJ high/low shelves applied
+  at ingest), Window & weighting (Kaiser / Hann / Hamming / Blackman /
+  Blackman-Harris / Rectangular, A / C / ITU-R 468, coherent-gain or
+  full-scale normalisation), Loudness & ballistics (linear / dB / dB
+  normalised, frame-peak / 0 dBFS / slow-AGC reference, dB range,
+  attack/release as coefficients or milliseconds, reset) and Performance
+  (async analysis on a worker thread or inline on the audio thread, update
+  rate). The display adds bars / line / area styles, peak hold, a grid with
+  frequency and dB ticks, a hover readout, a peak marker with the nearest
+  note, a scrolling waterfall with three colormaps, freeze, presets
+  (including a raw linear-magnitude one) and telemetry (FFT size, window,
+  resolution, DSP time, dropped samples). The DSP is pure Rust on `realfft`
+  (already a transitive dependency) with unit tests; the audio consumer thread
+  only pushes into a wait-free ring. The
+  analyser stops itself when the window has been hidden for two minutes, and
+  the VAD test / Live FFT sessions no longer accumulate audio they never
+  return (`discard_audio`).
+
 - **Local LLM page: llama.cpp managed in-app (2026-09-11).** The
   `llama-server` that post-processing and the Multi-STT merge use no longer
   has to be launched by hand. Install a build from the llama.cpp releases
@@ -181,6 +264,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Locale files load on demand (2026-09-11).** `src/i18n/index.ts` used an
+  eager `import.meta.glob`, so all 24 `translation.json` files (2.1 MB of
+  JSON) sat in the chunk both the settings window and the overlay parse at
+  startup, for the one language that is ever read. The glob is now lazy
+  behind a small i18next backend: every locale is its own chunk, imported the
+  first time that language is used, and `i18nReady` (fallback bundle loaded,
+  language synced from settings) gates the first render of both windows so
+  the first paint is already in the user's language. This also retires
+  Vite's "chunks larger than 500 kB" warning for that chunk; the limit is
+  now 1000 kB (`vite.config.ts`) because the settings window is one ~700 kB
+  chunk loaded from disk by design.
+- **Tailwind scans only `src/` (2026-09-11).** Tailwind v4's automatic
+  source detection walks the whole repository to build its watch globs,
+  gitignored `src-tauri/target` (about 70k files) included. That walk was
+  the 2 to 8 s `@tailwindcss/vite` share of every frontend build (the actual
+  scan and CSS generation take about 100 ms). `App.css` now imports Tailwind
+  with `source(".")`; the generated CSS loses only four utilities that were
+  false positives from words in Rust source and docs.
 - **`update-deps` log is readable when cargo cannot resolve (2026-09-11).**
   A `cargo update` conflict used to dump cargo's full error twice and then
   blame "workspace/peer requirements"; the script now parses the error,
@@ -312,6 +413,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every build recompiled the app crate (2026-09-11).** `build.rs` deleted
+  and recreated `src-tauri/transcribe-libs` on every run, but that folder
+  is one of tauri-build's resource inputs (`rerun-if-changed`), so cargo
+  saw a changed input after every run and re-ran the build script, and with
+  it recompiled the whole crate, on every `cargo build` / `test` / `tauri
+build`, with or without a source change (four minutes in release). The
+  staging now rewrites the folder only when the staged set differs, and the
+  CI-only VC++ runtime copy skips files that are already current.
+- **`bun run build:fast` no longer fails after bundling (2026-09-11).** The
+  build ended with `A public key has been found, but no private key` once
+  both installers were written:
+  `bundle.createUpdaterArtifacts` was on while `plugins.updater.pubkey` is
+  upstream's key, for which this fork has no private key, so the updater
+  signing step could never succeed. It is now off; the MSI and NSIS
+  installers are unchanged and no `.sig` / updater manifest is produced.
+  `build.rs` also drops the `STATIC_VCRUNTIME=true` the released Tauri CLI
+  still exports, which the `dev`-branch `tauri-build` deprecated in favour of
+  `build.windows.staticVCRuntime` (same default), so that deprecation
+  warning is gone from release builds.
 - **Direct streaming no longer double-pastes.** With post-processing on, the
   raw live text was typed and the polished text pasted after it (auto-submit
   twice); with Multi-STT the merged result was pasted after the primary

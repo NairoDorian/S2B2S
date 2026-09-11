@@ -1,3 +1,4 @@
+use crate::audio_toolkit::audio::DenoiseParams;
 use crate::audio_toolkit::{
     AudioRecorder, VadPolicy, VoiceActivityDetector, list_input_devices,
     vad::{
@@ -301,18 +302,32 @@ struct MicrophoneResolution {
 /// Binding id the live VAD test records under.
 pub const VAD_TEST_BINDING: &str = "vad_test";
 
-/// Whether the live VAD test (Settings → Advanced) is running. Read on the
-/// audio consumer thread for every frame, so it is an atomic rather than a
-/// lock; when it is off the per-frame report costs one load and returns.
-static VAD_TEST_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Who wants the detector's per-frame reports (`VadTestEvent`): bit
+/// [`VAD_REPORT_TEST`] for the live VAD test (Settings → Advanced), bit
+/// [`VAD_REPORT_LIVE_FFT`] for the Live FFT page's voice-detection view.
+/// Read on the audio consumer thread for every frame, so it is an atomic
+/// rather than a lock; when it is zero the per-frame report costs one load
+/// and returns.
+static VAD_REPORT_FLAGS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub const VAD_REPORT_TEST: u8 = 1;
+pub const VAD_REPORT_LIVE_FFT: u8 = 2;
+
+/// Turn one consumer's interest in `VadTestEvent`s on or off.
+pub fn set_vad_reporting(flag: u8, on: bool) {
+    if on {
+        VAD_REPORT_FLAGS.fetch_or(flag, Ordering::Relaxed);
+    } else {
+        VAD_REPORT_FLAGS.fetch_and(!flag, Ordering::Relaxed);
+    }
+}
 
 /// Every N-th frame is reported while the test runs: 16 ms frames at 1:2 give
 /// ~31 updates per second, plenty for a meter and light on the webview.
 const VAD_TEST_REPORT_EVERY: u64 = 2;
 
 /// One update of the live VAD test: what the detector thought of the latest
-/// microphone frame. Emitted only while the test runs, never during normal
-/// dictation.
+/// microphone frame. Emitted only while the Advanced page's test or the Live
+/// FFT page's voice-detection view runs, never during normal dictation.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
 pub struct VadTestEvent {
     /// Raw 0–1 speech score before hysteresis (`None` with VAD disabled).
@@ -324,6 +339,19 @@ pub struct VadTestEvent {
     pub kept: bool,
     /// Peak input level of the frame, 0–1.
     pub level: f32,
+    /// RNNoise's own speech probability of the latest 10 ms frame while
+    /// suppression is on; its gate threshold compares against it.
+    pub denoise_prob: Option<f32>,
+}
+
+/// RNNoise's tunables from the persisted settings, clamped.
+pub(crate) fn denoise_params(settings: &AppSettings) -> DenoiseParams {
+    DenoiseParams {
+        strength: settings.denoise_strength,
+        vad_threshold: settings.denoise_vad_threshold,
+        vad_grace_ms: settings.denoise_vad_grace_ms,
+    }
+    .normalized()
 }
 
 /// Speech-probability threshold the Earshot detector should be built with:
@@ -376,12 +404,7 @@ fn create_audio_recorder(
         )
         .with_selected_channel(selected_channel)
         .with_denoise_enabled(settings.denoise_enabled)
-        .with_level_callback({
-            let app_handle = app_handle.clone();
-            move |levels| {
-                utils::emit_levels(&app_handle, &levels);
-            }
-        })
+        .with_denoise_params(denoise_params(&settings))
         .with_speech_activity_callback({
             let app_handle = app_handle.clone();
             move |activity| {
@@ -392,7 +415,7 @@ fn create_audio_recorder(
             let app_handle = app_handle.clone();
             let counter = AtomicU64::new(0);
             move |report| {
-                if !VAD_TEST_ACTIVE.load(Ordering::Relaxed) {
+                if VAD_REPORT_FLAGS.load(Ordering::Relaxed) == 0 {
                     return;
                 }
                 if counter.fetch_add(1, Ordering::Relaxed) % VAD_TEST_REPORT_EVERY != 0 {
@@ -403,10 +426,12 @@ fn create_audio_recorder(
                     voiced: report.voiced,
                     kept: report.kept,
                     level: report.level,
+                    denoise_prob: report.denoise_prob,
                 }
                 .emit(&app_handle);
             }
         })
+        .with_analysis_sink(crate::live_fft::tap())
         .with_audio_callback({
             let router = stream_router;
             move |frame| {
@@ -418,6 +443,18 @@ fn create_audio_recorder(
 }
 
 /* ──────────────────────────────────────────────────────────────── */
+
+/// Per-session capture options beyond the VAD policy.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RecordingStartOptions {
+    /// Force the native-rate raw tap on or off instead of following
+    /// `save_raw_audio`.
+    pub capture_raw_override: Option<bool>,
+    /// Keep no audio at all: the frames still reach every live consumer
+    /// (VAD test meter, Live FFT), they are just never accumulated, so such
+    /// a session can run for hours without growing.
+    pub discard_audio: bool,
+}
 
 /// One recording session's first-sample notification. Waiting on this never
 /// blocks the shortcut coordinator: callers hand it to a dedicated worker.
@@ -913,6 +950,25 @@ impl AudioRecordingManager {
         vad_policy: VadPolicy,
         capture_raw_override: Option<bool>,
     ) -> Result<RecordingReadiness, String> {
+        self.try_start_recording_with_options(
+            binding_id,
+            vad_policy,
+            RecordingStartOptions {
+                capture_raw_override,
+                discard_audio: false,
+            },
+        )
+    }
+
+    /// The general form: raw-tap override plus `discard_audio` for sessions
+    /// that only feed live consumers (VAD test, Live FFT) and must not grow.
+    pub fn try_start_recording_with_options(
+        &self,
+        binding_id: &str,
+        vad_policy: VadPolicy,
+        options: RecordingStartOptions,
+    ) -> Result<RecordingReadiness, String> {
+        let capture_raw_override = options.capture_raw_override;
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {
@@ -938,7 +994,12 @@ impl AudioRecordingManager {
             // save it; at 48 kHz float it is ~11 MB per minute otherwise wasted.
             let capture_raw = capture_raw_override.unwrap_or(session_settings.save_raw_audio);
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                match rec.start(vad_policy, pause_hold_ms, capture_raw) {
+                match rec.start_with_options(
+                    vad_policy,
+                    pause_hold_ms,
+                    capture_raw,
+                    options.discard_audio,
+                ) {
                     Ok(receiver) => {
                         let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
                         *self.is_recording.lock().unwrap() = true;
@@ -978,6 +1039,24 @@ impl AudioRecordingManager {
     /// Turn RNNoise suppression on or off on the live recorder. Applies from
     /// the next chunk, mid-recording included, so the live VAD test shows the
     /// effect immediately. A recorder built later reads the persisted setting.
+    /// Push RNNoise's strength / gate to the live recorder; applies from
+    /// the next chunk. A recorder built later reads the persisted settings.
+    pub fn set_denoise_params(&self, params: DenoiseParams) {
+        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            rec.set_denoise_params(params);
+            info!(
+                "Noise suppression: strength {:.0}%, gate {}, grace {} ms",
+                params.strength * 100.0,
+                if params.vad_threshold > 0.0 {
+                    format!("at {:.0}%", params.vad_threshold * 100.0)
+                } else {
+                    "off".to_string()
+                },
+                params.vad_grace_ms
+            );
+        }
+    }
+
     pub fn set_denoise_enabled(&self, enabled: bool) {
         if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
             rec.set_denoise_enabled(enabled);
@@ -994,10 +1073,19 @@ impl AudioRecordingManager {
     /// captured audio is discarded on stop. While it runs, the transcription
     /// hotkeys get "Already recording", exactly like Live Mode.
     pub fn start_vad_test(&self) -> Result<(), String> {
-        let readiness = self.try_start_recording(VAD_TEST_BINDING, VadPolicy::Streaming)?;
+        // Nothing is kept: the audio would otherwise accumulate for the
+        // whole test (up to five minutes) with no reader.
+        let readiness = self.try_start_recording_with_options(
+            VAD_TEST_BINDING,
+            VadPolicy::Streaming,
+            RecordingStartOptions {
+                capture_raw_override: Some(false),
+                discard_audio: true,
+            },
+        )?;
         // The first-sample notification is only needed by the chime path.
         drop(readiness);
-        VAD_TEST_ACTIVE.store(true, Ordering::Relaxed);
+        set_vad_reporting(VAD_REPORT_TEST, true);
         info!("Live VAD test started");
         Ok(())
     }
@@ -1005,20 +1093,40 @@ impl AudioRecordingManager {
     /// Stop the live VAD test and discard its audio. A no-op when the test is
     /// not running (including when the cancel hotkey already ended it).
     pub fn stop_vad_test(&self) {
-        VAD_TEST_ACTIVE.store(false, Ordering::Relaxed);
-        let is_test = matches!(
-            &*self.state.lock().unwrap(),
-            RecordingState::Recording { binding_id } if binding_id == VAD_TEST_BINDING
-        );
-        if is_test {
-            self.cancel_recording();
+        set_vad_reporting(VAD_REPORT_TEST, false);
+        if self.cancel_recording_if_binding(VAD_TEST_BINDING) {
             info!("Live VAD test stopped");
         }
     }
 
-    /// Whether the live VAD test currently owns the recorder.
+    /// Cancel the active recording only if it belongs to `binding_id`: a
+    /// page ending its own session must never cancel a dictation that
+    /// started in the meantime. Returns whether anything was cancelled.
+    pub fn cancel_recording_if_binding(&self, binding_id: &str) -> bool {
+        let is_ours = matches!(
+            &*self.state.lock().unwrap(),
+            RecordingState::Recording { binding_id: active } if active == binding_id
+        );
+        if is_ours {
+            self.cancel_recording();
+        }
+        is_ours
+    }
+
+    /// Whether the active recording belongs to `binding_id`.
+    pub fn is_recording_under(&self, binding_id: &str) -> bool {
+        matches!(
+            &*self.state.lock().unwrap(),
+            RecordingState::Recording { binding_id: active } if active == binding_id
+        )
+    }
+
+    /// Whether the live VAD test currently owns the recorder (the Live FFT
+    /// page's voice-detection view records under its own binding and must
+    /// not be mistaken for it).
     pub fn is_vad_test_running(&self) -> bool {
-        VAD_TEST_ACTIVE.load(Ordering::Relaxed) && self.is_recording()
+        VAD_REPORT_FLAGS.load(Ordering::Relaxed) & VAD_REPORT_TEST != 0
+            && self.is_recording_under(VAD_TEST_BINDING)
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {

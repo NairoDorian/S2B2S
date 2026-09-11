@@ -779,8 +779,8 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
     settings.overlay_style = parsed;
     settings::write_settings(&app, settings);
 
-    // Keep the cached overlay-enabled flag in sync so emit_levels stops (or
-    // resumes) emitting on the next audio callback.
+    // Keep the cached overlay-enabled flag in sync so the speech-activity and
+    // readiness events stop (or resume) on the next audio callback.
     crate::overlay::update_overlay_enabled_cache(parsed != OverlayStyle::None);
 
     // Reposition in case the window needs to re-center for the new style.
@@ -1705,6 +1705,27 @@ pub fn change_vad_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), S
     Ok(())
 }
 
+/// Persist the overlay's scope picture (`overlay_scope`), refresh the cached
+/// geometry the show path sizes the window with, hand the waveform window
+/// to the analyser and re-place a visible overlay.
+#[tauri::command]
+#[specta::specta]
+pub fn change_overlay_scope_settings(
+    app: AppHandle,
+    scope: settings::OverlayScopeSettings,
+) -> Result<(), String> {
+    let scope = scope.normalized();
+    let mut current = settings::get_settings(&app);
+    current.overlay_scope = scope.clone();
+    settings::write_settings(&app, current);
+    crate::overlay::update_overlay_scope_cache(&scope);
+    if let Some(fft) = app.try_state::<std::sync::Arc<crate::live_fft::LiveFftManager>>() {
+        fft.update_overlay_scope_settings(scope);
+    }
+    crate::utils::update_overlay_position(&app);
+    Ok(())
+}
+
 /// Toggle RNNoise suppression. Persisted for future recorders and pushed to
 /// the live one, which switches paths on its next chunk.
 #[tauri::command]
@@ -1721,6 +1742,53 @@ pub async fn change_denoise_enabled_setting(app: AppHandle, enabled: bool) -> Re
     tokio::task::spawn_blocking(move || manager.set_denoise_enabled(enabled))
         .await
         .map_err(|e| format!("audio task join failed: {e}"))
+}
+
+/// Persist RNNoise's tunables and push them to the live recorder, which
+/// applies them on its next chunk.
+async fn apply_denoise_params(
+    app: &AppHandle,
+    settings: settings::AppSettings,
+) -> Result<(), String> {
+    let params = crate::managers::audio::denoise_params(&settings);
+    settings::write_settings(app, settings);
+    let manager = app
+        .state::<std::sync::Arc<crate::managers::audio::AudioRecordingManager>>()
+        .inner()
+        .clone();
+    tokio::task::spawn_blocking(move || manager.set_denoise_params(params))
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))
+}
+
+/// RNNoise wet/dry strength (0–1).
+#[tauri::command]
+#[specta::specta]
+pub async fn change_denoise_strength_setting(app: AppHandle, strength: f32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.denoise_strength = strength;
+    apply_denoise_params(&app, settings).await
+}
+
+/// RNNoise's own speech-probability gate threshold (0–1, 0 = off).
+#[tauri::command]
+#[specta::specta]
+pub async fn change_denoise_vad_threshold_setting(
+    app: AppHandle,
+    threshold: f32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.denoise_vad_threshold = threshold;
+    apply_denoise_params(&app, settings).await
+}
+
+/// Grace period of that gate, in milliseconds.
+#[tauri::command]
+#[specta::specta]
+pub async fn change_denoise_vad_grace_setting(app: AppHandle, grace_ms: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.denoise_vad_grace_ms = grace_ms;
+    apply_denoise_params(&app, settings).await
 }
 
 /// Set the speech-probability threshold of the VAD. The persisted value is

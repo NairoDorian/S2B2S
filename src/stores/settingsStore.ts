@@ -225,6 +225,12 @@ const settingUpdaters: {
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   denoise_enabled: (value) =>
     commands.changeDenoiseEnabledSetting(value as boolean),
+  denoise_strength: (value) =>
+    commands.changeDenoiseStrengthSetting(value as number),
+  denoise_vad_threshold: (value) =>
+    commands.changeDenoiseVadThresholdSetting(value as number),
+  denoise_vad_grace_ms: (value) =>
+    commands.changeDenoiseVadGraceSetting(value as number),
   llama: (value) => commands.changeLlamaSettings(value as LlamaSettings),
   filler_word_removal_enabled: (value) =>
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
@@ -306,6 +312,12 @@ const settingUpdaters: {
     ),
   live_mode: (value) =>
     commands.changeLiveModeSettings(value as LiveModeSettings),
+  live_fft: (value) =>
+    commands.changeLiveFftSettings(value as NonNullable<Settings["live_fft"]>),
+  overlay_scope: (value) =>
+    commands.changeOverlayScopeSettings(
+      value as NonNullable<Settings["overlay_scope"]>,
+    ),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

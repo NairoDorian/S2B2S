@@ -13,6 +13,7 @@ mod file_transcription;
 mod helpers;
 mod input;
 mod job_object;
+mod live_fft;
 mod live_mode;
 mod llama_releases;
 mod llama_server;
@@ -287,6 +288,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(Arc::new(live_mode::LiveModeManager::new(
         app_handle.clone(),
     )));
+    // Live FFT: no thread until a session starts; the recorder-side tap is
+    // a process-wide static so the always-on microphone (opened above on
+    // its own thread) is already wired to it.
+    app_handle.manage(Arc::new(live_fft::LiveFftManager::new(app_handle.clone())));
 
     // Windows / Linux need no accessibility permission: register the hotkeys
     // and the paste input now, instead of ~8 s later when the webview mounts
@@ -800,7 +805,11 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_save_raw_audio_setting,
             shortcut::change_vad_enabled_setting,
+            shortcut::change_overlay_scope_settings,
             shortcut::change_denoise_enabled_setting,
+            shortcut::change_denoise_strength_setting,
+            shortcut::change_denoise_vad_threshold_setting,
+            shortcut::change_denoise_vad_grace_setting,
             shortcut::change_filler_word_removal_enabled_setting,
             shortcut::change_app_language_setting,
             shortcut::change_update_checks_setting,
@@ -919,6 +928,12 @@ pub fn run(cli_args: CliArgs) {
             commands::live_mode::live_mode_status,
             commands::live_mode::live_mode_list_sessions,
             commands::live_mode::live_mode_default_output_dir,
+            commands::live_fft::change_live_fft_settings,
+            commands::live_fft::live_fft_start,
+            commands::live_fft::live_fft_stop,
+            commands::live_fft::live_fft_status,
+            commands::live_fft::live_fft_reset,
+            commands::live_fft::live_fft_raw_defaults,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -933,6 +948,8 @@ pub fn run(cli_args: CliArgs) {
             file_transcription::FileTranscriptionEvent,
             live_mode::LiveModeStateEvent,
             live_mode::LiveModeTranscriptEvent,
+            live_fft::LiveFftStateEvent,
+            live_fft::LiveFftFrameEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -940,7 +957,24 @@ pub fn run(cli_args: CliArgs) {
         .export(Typescript::default(), "../src/bindings.ts")
         .expect("Failed to export typescript bindings");
 
-    let invoke_handler = specta_builder.invoke_handler();
+    let typed_handler = specta_builder.invoke_handler();
+    // `overlay_scope_frame` answers with raw bytes (`tauri::ipc::Response`),
+    // which tauri-specta cannot type, so it is dispatched beside the typed
+    // commands instead of through `collect_commands!`. The helper hands the
+    // macro closure the signature it needs to infer the runtime type.
+    fn handler_for_wry<F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool>(f: F) -> F {
+        f
+    }
+    let binary_handler = handler_for_wry(tauri::generate_handler![
+        commands::live_fft::overlay_scope_frame
+    ]);
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| -> bool {
+        if invoke.message.command() == "overlay_scope_frame" {
+            binary_handler(invoke)
+        } else {
+            typed_handler(invoke)
+        }
+    };
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.
@@ -1150,13 +1184,14 @@ pub fn run(cli_args: CliArgs) {
             secure_input::init(&app_handle);
 
             // Populate the overlay-enabled cache from initial settings so the
-            // audio path (overlay::emit_levels, called ~24 Hz during recording)
+            // audio path (overlay::emit_speech_activity, on every speech flip)
             // can do a single atomic load instead of reading the Tauri store.
             // Kept in sync by shortcut::change_overlay_style_setting.
             overlay::update_overlay_enabled_cache(
                 settings.overlay_style != settings::OverlayStyle::None,
             );
             overlay::update_speech_stats_enabled_cache(settings.overlay_speech_stats);
+            overlay::update_overlay_scope_cache(&settings.overlay_scope);
 
             // Pre-warm GPU/accelerator enumeration on a background thread. The first
             // get_available_accelerators call enumerates transcribe-cpp compute
@@ -1245,6 +1280,10 @@ pub fn run(cli_args: CliArgs) {
         }
         // Teardown transcribe.cpp before exit
         tauri::RunEvent::Exit => {
+            if let Some(fft) = app.try_state::<Arc<live_fft::LiveFftManager>>() {
+                fft.stop_overlay_scope();
+                let _ = fft.stop();
+            }
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
                 tm.unload_all_extra_models();
