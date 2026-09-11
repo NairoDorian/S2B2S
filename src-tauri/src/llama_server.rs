@@ -337,7 +337,11 @@ impl LlamaServerManager {
                 });
                 return;
             }
-            if health_ok(port) {
+            let announced = self.server_announced_listening(port);
+            if health_ok(port) || announced {
+                if announced {
+                    info!("llama-server announced it is listening; treating it as ready");
+                }
                 let now_ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_millis() as f64)
@@ -378,6 +382,18 @@ impl LlamaServerManager {
                 return;
             }
         }
+    }
+
+    /// Whether the captured output already contains llama-server's own
+    /// "listening on http://127.0.0.1:<port>" line — a readiness signal that
+    /// does not depend on the probe.
+    fn server_announced_listening(&self, port: u16) -> bool {
+        let needle = format!("listening on http://127.0.0.1:{port}");
+        self.logs
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|l| l.contains(&needle))
     }
 
     fn log_tail(&self, n: usize) -> String {
@@ -525,13 +541,7 @@ fn health_ok(port: u16) -> bool {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
     if stream
-        .write_all(
-            b"GET /health HTTP/1.1
-Host: 127.0.0.1
-Connection: close
-
-",
-        )
+        .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         .is_err()
     {
         return false;
