@@ -191,6 +191,15 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 
 fn initialize_core_logic(app_handle: &AppHandle) {
     let startup_started = std::time::Instant::now();
+    log::info!(
+        "Handy {} starting on {} {} — data dir {}",
+        app_handle.package_info().version,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        portable::app_data_dir(app_handle)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "?".into())
+    );
     // Note: on macOS, Enigo (keyboard/mouse simulation) and the shortcuts are
     // NOT initialized here: the frontend calls `initialize_enigo` /
     // `initialize_shortcuts` after onboarding, so no permission dialog appears
@@ -247,12 +256,32 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     llama_server::adopt_detected_install_if_unconfigured(app_handle);
     let llama_manager = llama_server::init(app_handle);
     app_handle.manage(Arc::clone(&llama_manager));
-    if settings::get_settings(app_handle).llama.autostart {
-        std::thread::spawn(move || {
-            if let Err(e) = llama_manager.start() {
-                log::warn!("llama-server autostart failed: {e}");
-            }
-        });
+    {
+        let llama_settings = settings::get_settings(app_handle).llama;
+        if llama_settings.autostart {
+            log::info!("llama-server: starting in the background (Start with Handy is on)");
+            std::thread::spawn(move || {
+                if let Err(e) = llama_manager.start() {
+                    log::warn!("llama-server autostart failed: {e}");
+                }
+            });
+        } else {
+            log::info!(
+                "llama-server: idle — Start with Handy is off; on-demand start is {} (port {}, model {})",
+                if llama_settings.start_on_demand {
+                    "on"
+                } else {
+                    "off"
+                },
+                llama_settings.port,
+                llama_settings
+                    .model_path
+                    .as_deref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "none selected".into())
+            );
+        }
     }
     system_monitor::start(app_handle.clone());
     app_handle.manage(Arc::new(live_mode::LiveModeManager::new(

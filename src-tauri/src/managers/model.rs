@@ -1340,7 +1340,21 @@ impl ModelManager {
     /// transcribe-cpp recognises are surfaced; arbitrary (e.g. LLM) GGUFs that
     /// share the cache are ignored.
     fn discover_hf_cache_models(available_models: &mut HashMap<String, ModelInfo>) {
+        let before: HashSet<String> = available_models.keys().cloned().collect();
         Self::discover_hf_cache_models_in(&hf_cache_dir(), available_models);
+        let mut found: Vec<&str> = available_models
+            .keys()
+            .filter(|id| !before.contains(*id))
+            .map(String::as_str)
+            .collect();
+        found.sort();
+        if !found.is_empty() {
+            info!(
+                "HF cache: {} model file(s) already on disk: {}",
+                found.len(),
+                found.join(", ")
+            );
+        }
     }
 
     /// Scan a Hugging Face cache root (`<cache>/models--*`) for GGUF snapshots.
@@ -1421,7 +1435,7 @@ impl ModelManager {
                             ..Default::default()
                         },
                     );
-                    info!(
+                    debug!(
                         "Discovered catalog quant in HF cache: {} ({})",
                         info.id, repo_id
                     );
@@ -1444,7 +1458,7 @@ impl ModelManager {
                 let display = probed_display_name(&probe)
                     .unwrap_or_else(|| fname.trim_end_matches(".gguf").to_string());
 
-                info!("Discovered HF cache model: {} ({})", model_id, repo_id);
+                debug!("Discovered HF cache model: {} ({})", model_id, repo_id);
                 let latency_kind = native_streaming_latency_kind(&model_id);
                 available_models.insert(
                     model_id.clone(),
