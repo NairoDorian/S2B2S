@@ -181,6 +181,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **libc back on the 0.2 line (2026-09-11).** `update-deps --prerelease`
+  had taken `libc 1.0.0-alpha.4`, a v1.0-branch snapshot the libc README
+  does not recommend; every other crate uses 0.2.189 (same-day twin), so
+  the alpha only added a second libc on Linux. The script now keeps
+  `libc` on its stable line. `zip 9.0.0-pre3` stays: it is the newest
+  pre-release (2026-08-11), its breaking changes are handled and covered
+  by a test; `tauri-plugin-updater` still carries its own zip 4.6.1.
 - **The Local LLM page offers one llama.cpp release, not a list (2026-09-11).**
   The newest build of the selected channel that ships a binary for the
   detected backend, with Install disabled once that tag is installed.

@@ -51,6 +51,15 @@ const PRERELEASE_MODE = cliArgs.has("--prerelease");
 const DRY_RUN = cliArgs.has("--dry-run");
 const SHOW_HELP = cliArgs.has("--help") || cliArgs.has("-h");
 
+/**
+ * Crates that stay on their STABLE line even under --prerelease.
+ * `libc`: its README says "depend on 0.2"; the 1.0.0-alpha.* tags are
+ * snapshots of the v1.0 `main` branch published on the same day as the
+ * matching 0.2.x. Every other crate in the graph depends on 0.2, so taking
+ * the alpha only compiles a second libc on Linux (2026-09-11 research).
+ */
+const CARGO_STABLE_ONLY: ReadonlySet<string> = new Set(["libc"]);
+
 /** NPM dist-tags probed when --prerelease is active — every tag is evaluated, the best strictly-newer candidate wins. */
 const PRERELEASE_TAGS: readonly string[] = [
   "next",
@@ -631,7 +640,7 @@ async function updateEverything() {
         const latest = await fetchLatestCrateVersion(
           name,
           currClean,
-          PRERELEASE_MODE,
+          PRERELEASE_MODE && !CARGO_STABLE_ONLY.has(name),
         );
         const needs = latest !== null && compareVersions(latest, currClean) > 0;
         allStatuses.push({

@@ -141,7 +141,10 @@ objc2-service-management = "0.3.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
 gtk = "^0.18.2"
-libc = "^1.0.0-alpha.4"
+# Stays on 0.2: the libc README says to depend on 0.2, the 1.0.0-alpha.*
+# tags are v1.0 branch snapshots, and every other crate here uses 0.2 (a
+# second libc would be compiled on Linux). update-deps.ts knows this.
+libc = "^0.2.189"
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
   "cuda",
