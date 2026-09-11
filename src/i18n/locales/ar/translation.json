@@ -1133,8 +1133,8 @@
           "stable": "Stable",
           "nightly": "Nightly"
         },
-        "releases": "Releases",
-        "releasesDescription": "From github.com/ggml-org/llama.cpp, cached for ten minutes. A CUDA build is about 180 MB; the optional cudart package adds about 500 MB.",
+        "releases": "Latest release",
+        "releasesDescription": "The newest llama.cpp build of the selected channel from github.com/ggml-org/llama.cpp (cached for ten minutes). A CUDA build is about 180 MB; the optional cudart package adds about 500 MB.",
         "loading": "Loading releases…",
         "downloading": "Downloading",
         "extracting": "Unpacking…",
@@ -1154,7 +1154,8 @@
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; Handy adds it for llama-server when it starts it.",
-        "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too."
+        "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
+        "alreadyInstalled": "installed"
       },
       "model": {
         "title": "Model files",

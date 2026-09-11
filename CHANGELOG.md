@@ -181,6 +181,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Local LLM page offers one llama.cpp release, not a list (2026-09-11).**
+  The newest build of the selected channel that ships a binary for the
+  detected backend, with Install disabled once that tag is installed.
 - **llama.cpp installs no longer bundle the 500 MB CUDA runtime by default
   (2026-09-11).** The cudart package (cublasLt64 438 MB + cublas64 + cudart64)
   is now an opt-in toggle, exactly like the download script's

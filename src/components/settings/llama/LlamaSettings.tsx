@@ -227,6 +227,22 @@ export const LlamaSettings: React.FC = () => {
   const totalBytes = download?.total_bytes ?? 0;
   const busy = isUpdating("llama");
   const toolkit = store.cudaToolkit;
+  // One release only: the newest of the channel that ships a build for the
+  // wanted backend (releases without binaries point at a backing tag).
+  const wantedBackend =
+    cfg.backend === "auto" ? store.detectedBackend : cfg.backend;
+  const latestRelease =
+    store.releases.find((r) =>
+      r.assets.some((a) => a.backend === wantedBackend),
+    ) ??
+    store.releases.find((r) => r.assets.length > 0) ??
+    store.releases[0];
+  const latestAsset = latestRelease
+    ? (latestRelease.assets.find((a) => a.backend === wantedBackend) ??
+      latestRelease.assets[0])
+    : undefined;
+  const latestInstalled =
+    !!latestRelease && store.installed.some((i) => i.tag === latestRelease.tag);
   const cudaToolkitDescription = !toolkit
     ? t("settings.llama.backend.includeCudartMissing")
     : [
@@ -495,51 +511,42 @@ export const LlamaSettings: React.FC = () => {
               </div>
             </div>
           )}
-          <ul className="divide-y divide-mid-gray/20 border border-mid-gray/20 max-h-56 overflow-y-auto">
-            {store.releases.slice(0, 12).map((release) => {
-              const asset =
-                release.assets.find(
-                  (a) =>
-                    a.backend ===
-                    (cfg.backend === "auto"
-                      ? store.detectedBackend
-                      : cfg.backend),
-                ) ?? release.assets[0];
-              return (
-                <li
-                  key={release.tag}
-                  className="flex items-center gap-3 px-3 py-2 text-xs"
+          <ul className="divide-y divide-mid-gray/20 border border-mid-gray/20">
+            {latestRelease && (
+              <li
+                key={latestRelease.tag}
+                className="flex items-center gap-3 px-3 py-2 text-xs"
+              >
+                <span className="font-mono text-text">{latestRelease.tag}</span>
+                <span className="text-text/50 truncate flex-1">
+                  {latestRelease.published_at.slice(0, 10)}
+                  {latestAsset
+                    ? ` · ${latestAsset.backend} · ${formatMb(latestAsset.size_bytes ?? 0)}`
+                    : ""}
+                  {latestInstalled
+                    ? ` · ${t("settings.llama.backend.alreadyInstalled")}`
+                    : ""}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={downloading || latestInstalled}
+                  onClick={() =>
+                    void store.install(
+                      latestRelease.tag,
+                      cfg.backend,
+                      cfg.include_cudart,
+                    )
+                  }
                 >
-                  <span className="font-mono text-text">{release.tag}</span>
-                  <span className="text-text/50 truncate flex-1">
-                    {release.published_at.slice(0, 10)}
-                    {asset
-                      ? ` · ${asset.backend} · ${formatMb(asset.size_bytes ?? 0)}`
-                      : release.backing_tag
-                        ? ` · → ${release.backing_tag.replace("nightly-tag:", "")}`
-                        : ""}
+                  <span className="inline-flex items-center gap-1.5">
+                    <Download className="w-3.5 h-3.5" />
+                    {t("settings.llama.backend.install")}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={downloading}
-                    onClick={() =>
-                      void store.install(
-                        release.tag,
-                        cfg.backend,
-                        cfg.include_cudart,
-                      )
-                    }
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Download className="w-3.5 h-3.5" />
-                      {t("settings.llama.backend.install")}
-                    </span>
-                  </Button>
-                </li>
-              );
-            })}
-            {!store.releasesLoading && store.releases.length === 0 && (
+                </Button>
+              </li>
+            )}
+            {!store.releasesLoading && !latestRelease && (
               <li className="px-3 py-2 text-xs text-text/50">
                 {t("settings.llama.backend.noReleases")}
               </li>
