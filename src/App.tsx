@@ -375,7 +375,8 @@ function App() {
           {/* Scrollable content area */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center p-4 gap-4">
+              {/* Extra end padding keeps the top-right shortcuts launcher off the content. */}
+              <div className="flex flex-col items-center p-4 pe-14 gap-4">
                 <AccessibilityPermissions />
                 <SecureInputWarning />
                 <QuickHelp activeSection={currentSection} />

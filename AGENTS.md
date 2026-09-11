@@ -191,12 +191,14 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   hand-off (`openHelp(anchor)`); `lib/anchorNavigation.ts` switches page,
   waits for the target element, scrolls, focuses and pulses
   `.settings-anchor-highlight` (App.css)
-- `components/hotkey-sidebar/` - Right-edge cheat sheet of the assigned
+- `components/hotkey-sidebar/` - Shortcut cheat sheet as a top-right overlay:
+  a keyboard button in the window corner toggles a panel of the assigned
   shortcuts (`lib/hotkeyGuide.ts` is the table of bindings → category /
   page / feature gate; `ShortcutInput` wraps each control in a
-  `shortcut-<id>` anchor). Pinned state and width live in `localStorage`.
-  Shows a "set your shortcut" call-out instead of hiding when nothing is
-  bound, since fresh installs ship without a transcribe hotkey
+  `shortcut-<id>` anchor). Closes on Escape / click-outside / jump. Shows a
+  "set your shortcut" call-out (and a warning dot on the button) instead of
+  hiding when nothing is bound, since fresh installs ship without a
+  transcribe hotkey
 - `components/settings/llama/LlamaSettings.tsx` + `stores/llamaStore.ts` -
   Local LLM page (server control + logs, release install, model pickers,
   command-line editor with live preview); `footer/BrainIndicator.tsx` and

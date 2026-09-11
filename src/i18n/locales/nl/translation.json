@@ -1382,10 +1382,8 @@
   },
   "hotkeySidebar": {
     "title": "Your shortcuts",
-    "openSidebar": "Show your shortcuts",
-    "closeSidebar": "Hide shortcuts",
-    "pinSidebar": "Keep open",
-    "unpinSidebar": "Auto-hide",
+    "openSidebar": "Show shortcuts",
+    "closeSidebar": "Close",
     "configureHint": "Click a shortcut to change it.",
     "jumpTo": "Go to the {{name}} setting",
     "categories": {

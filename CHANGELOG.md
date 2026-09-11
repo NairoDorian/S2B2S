@@ -181,6 +181,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Shortcut cheat sheet moved to a top-right overlay (2026-09-11).** The
+  right-edge tab with pin and resize is gone; a keyboard button in the
+  window's top-right corner, reachable from every page, toggles a panel of
+  the assigned shortcuts that closes on Escape, click-outside or after a
+  jump. A warning dot on the button flags that no transcribe shortcut is
+  set.
 - **Window and sidebar sizing (2026-09-11).** The main window opens at
   1080×780 with a 960×720 minimum, enough for the whole sidebar and a
   one-line status bar (model, brain, CPU/RAM/GPU/VRAM meters, updater). The
