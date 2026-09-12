@@ -1459,22 +1459,29 @@ impl Coordinator {
         // stream and any separator would land inside a word.
         tentative.push_str(&self.primary_tentative);
 
-        if !force && committed == self.published_committed && tentative == self.published_tentative
-        {
-            return;
-        }
-        self.published_committed = committed.clone();
-        self.published_tentative = tentative.clone();
+        // The overlay event is deduped: an unchanged text is not re-sent, which
+        // is what keeps a silent pause from emitting 20 times a second.
+        let changed =
+            force || committed != self.published_committed || tentative != self.published_tentative;
+        if changed {
+            self.published_committed = committed.clone();
+            self.published_tentative = tentative.clone();
 
-        self.tm.emit_composed_stream_text(
-            &committed,
-            &tentative,
-            (self.failed_chunks > 0).then_some(self.failed_chunks),
-        );
+            self.tm.emit_composed_stream_text(
+                &committed,
+                &tentative,
+                (self.failed_chunks > 0).then_some(self.failed_chunks),
+            );
+        }
 
         if self.owns_typing {
             let mut full = committed;
             full.push_str(&tentative);
+            // Outside the dedupe on purpose. The writer holds a revision that
+            // arrived while it was still behind, and it is *this* call that
+            // retries it: an unchanged text is what the writer catching up
+            // looks like from here, so skipping the call would leave a merge
+            // unpushed for as long as the speaker stays quiet.
             self.push_writer_target(&full);
         }
     }
@@ -1487,8 +1494,10 @@ impl Coordinator {
     /// reaches any revision: by backspacing the divergence and typing the rest,
     /// which is what the typewriter is for and what the user watches work. It is
     /// held until the writer has caught up so that a revision never lands on top
-    /// of one still being typed. The flush at the end always applies the latest
-    /// text.
+    /// of one still being typed, and [`Self::publish`] calls this on every tick
+    /// — including the ticks that emit nothing — so the hold is released the
+    /// moment the writer is free rather than at the next word. The flush at the
+    /// end always applies the latest text.
     fn push_writer_target(&mut self, target: &str) {
         let Some(writer) = &self.writer else {
             return;
