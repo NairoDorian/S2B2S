@@ -374,6 +374,11 @@ pub struct TranscriptionManager {
     /// the sink owns what the overlay displays and emits the composed text
     /// itself. Read on the audio-fed worker thread, so a relaxed atomic.
     stream_text_sink_exclusive: Arc<AtomicBool>,
+    /// Process-lifetime running totals of the stream worker's feed and compute
+    /// time, readable from outside the worker thread (see [`StreamTiming`]).
+    /// The experimental Multi-STT streaming coordinator reports the primary
+    /// model's rate from these at each chunk close.
+    stream_timing: Arc<StreamTiming>,
 }
 
 /// Callback receiving every live-text update: `(committed, tentative,
@@ -412,6 +417,7 @@ impl TranscriptionManager {
             stream_attempt: Arc::new(Mutex::new(None)),
             stream_text_sink: Arc::new(Mutex::new(None)),
             stream_text_sink_exclusive: Arc::new(AtomicBool::new(false)),
+            stream_timing: Arc::new(StreamTiming::default()),
         };
 
         // Start the idle watcher
@@ -1109,7 +1115,7 @@ impl TranscriptionManager {
                 None
             };
 
-            let mut perf = StreamPerf::new();
+            let mut perf = StreamPerf::new(Arc::clone(&self.stream_timing));
             while let Ok(cmd) = rx.recv() {
                 match cmd {
                     StreamCmd::Feed(pcm) => {
@@ -1442,6 +1448,17 @@ impl TranscriptionManager {
         *self.stream_text_sink.lock().unwrap() = sink;
         self.stream_text_sink_exclusive
             .store(exclusive, Ordering::Release);
+    }
+
+    /// Running totals of the live stream worker's feed and compute time, for
+    /// callers that need to report the streaming model's rate but do not run on
+    /// the worker thread ([`StreamTiming`]). The experimental Multi-STT
+    /// streaming coordinator is the only caller: the primary model streams
+    /// continuously rather than decoding chunk by chunk, so the only way to say
+    /// how fast it ran over a chunk is to difference these totals across the
+    /// chunk's lifetime.
+    pub fn stream_timing(&self) -> Arc<StreamTiming> {
+        Arc::clone(&self.stream_timing)
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
@@ -1787,7 +1804,62 @@ impl TranscriptionManager {
     }
 }
 
+/// Process-lifetime totals of what the stream worker has consumed and spent.
+///
+/// [`StreamPerf`] is worker-local: it is created inside `run_stream_worker`
+/// and dies with it, so nothing outside that thread can read how much audio the
+/// live stream has been fed or how much model compute it has burned. The
+/// experimental Multi-STT streaming coordinator needs exactly those two numbers
+/// to report the primary model's rate at each chunk close — it cannot time a
+/// per-chunk decode because the primary does not decode per chunk, it streams
+/// continuously.
+///
+/// Two relaxed atomic adds per feed, read on demand. Never reset: a reader
+/// takes a baseline once and reports deltas, so a counter that outlives a
+/// session is harmless and a reset racing a reader is not. Both counters are
+/// monotonic, so a delta is always `now.saturating_sub(baseline)`.
+#[derive(Debug, Default)]
+pub struct StreamTiming {
+    /// 16 kHz samples handed to `stream.feed()`.
+    fed_samples: AtomicU64,
+    /// Microseconds spent inside `feed()` / `finalize()`.
+    compute_micros: AtomicU64,
+}
+
+impl StreamTiming {
+    fn record_feed(&self, samples: usize) {
+        self.fed_samples
+            .fetch_add(samples as u64, Ordering::Relaxed);
+    }
+
+    fn record_compute(&self, elapsed: Duration) {
+        self.compute_micros
+            .fetch_add(elapsed.as_micros() as u64, Ordering::Relaxed);
+    }
+
+    /// `(fed_samples, compute_micros)` as one consistent-enough read. The two
+    /// loads are separate, so a feed landing between them reports the sample
+    /// count of a slightly later moment than the compute time; at a chunk
+    /// boundary that is at most one 16 ms frame and only ever makes the
+    /// reported rate marginally conservative.
+    pub fn totals(&self) -> (u64, u64) {
+        (
+            self.fed_samples.load(Ordering::Relaxed),
+            self.compute_micros.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Turn a `(fed_samples, compute_micros)` delta into `(audio_secs,
+    /// compute_secs)`, the pair every rate line in the log is built from.
+    pub fn secs(delta: (u64, u64)) -> (f64, f64) {
+        (delta.0 as f64 / 16_000.0, delta.1 as f64 / 1_000_000.0)
+    }
+}
+
 struct StreamPerf {
+    /// Shared with the manager so a reader outside the worker thread can see
+    /// the same totals this struct accumulates for its own periodic log.
+    timing: Arc<StreamTiming>,
     feed_count: u64,
     emit_count: u64,
     streamed_samples: u64,
@@ -1800,8 +1872,9 @@ struct StreamPerf {
 }
 
 impl StreamPerf {
-    fn new() -> Self {
+    fn new(timing: Arc<StreamTiming>) -> Self {
         Self {
+            timing,
             feed_count: 0,
             emit_count: 0,
             streamed_samples: 0,
@@ -1817,10 +1890,12 @@ impl StreamPerf {
     fn record_feed(&mut self, samples: usize) {
         self.feed_count += 1;
         self.streamed_samples += samples as u64;
+        self.timing.record_feed(samples);
     }
 
     fn record_compute(&mut self, elapsed: Duration) {
         self.stream_compute_elapsed += elapsed;
+        self.timing.record_compute(elapsed);
     }
 
     fn record_update(
@@ -1899,7 +1974,12 @@ fn benchmark_audio_secs(audio: &[f32]) -> f64 {
     audio.len() as f64 / 16_000.0
 }
 
-fn real_time_factor(audio_secs: f64, compute_secs: f64) -> f64 {
+/// Audio seconds per compute second — the `Nx real-time` every rate line in the
+/// log reports. `0.0` when nothing was computed (reported as such rather than
+/// as an infinite rate). Shared with the experimental Multi-STT streaming
+/// coordinator so its per-chunk primary-model line and this module's
+/// `Live preview perf` line mean the same thing by the same arithmetic.
+pub(crate) fn real_time_factor(audio_secs: f64, compute_secs: f64) -> f64 {
     if compute_secs > 0.0 {
         audio_secs / compute_secs
     } else {
@@ -3384,6 +3464,47 @@ mod tests {
 
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()
+    }
+
+    /// [`StreamTiming`] is what the Multi-STT streaming coordinator differences
+    /// across a chunk to report the primary model's rate, so the two properties
+    /// that make that arithmetic safe are pinned here: the counters only ever
+    /// grow, and a delta converts to the same `(audio_secs, compute_secs)` pair
+    /// the worker's own `Live preview perf` line uses.
+    #[test]
+    fn stream_timing_accumulates_and_converts_a_delta_to_seconds() {
+        let timing = StreamTiming::default();
+        assert_eq!(timing.totals(), (0, 0));
+
+        // One second of 16 kHz audio, split across two feeds of a different
+        // size each, and 250 ms of compute — so a passing test cannot come from
+        // a single coincidentally-equal write.
+        timing.record_feed(6_000);
+        timing.record_compute(Duration::from_millis(100));
+        timing.record_feed(10_000);
+        timing.record_compute(Duration::from_millis(150));
+        assert_eq!(timing.totals(), (16_000, 250_000));
+
+        let (audio_secs, compute_secs) = StreamTiming::secs(timing.totals());
+        assert!((audio_secs - 1.0).abs() < f64::EPSILON);
+        assert!((compute_secs - 0.25).abs() < f64::EPSILON);
+        assert!((real_time_factor(audio_secs, compute_secs) - 4.0).abs() < 1e-9);
+
+        // A second read with nothing fed in between differences to zero, which
+        // is what makes the coordinator's line stay silent for a chunk with no
+        // new audio behind it rather than reporting a stale rate.
+        let delta = (timing.totals().0 - 16_000, timing.totals().1 - 250_000);
+        assert_eq!(StreamTiming::secs(delta), (0.0, 0.0));
+    }
+
+    /// The rate helper is shared with `multi_stt_stream`, and its zero-compute
+    /// arm is what keeps a feed that failed before touching the model from
+    /// reading as an infinite rate.
+    #[test]
+    fn real_time_factor_is_zero_when_nothing_was_computed() {
+        assert_eq!(real_time_factor(5.0, 0.0), 0.0);
+        assert_eq!(real_time_factor(0.0, 5.0), 0.0);
+        assert!((real_time_factor(10.0, 2.0) - 5.0).abs() < 1e-9);
     }
 
     #[test]

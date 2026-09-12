@@ -78,7 +78,7 @@ use crate::actions::{MultiSttHistoryBrain, has_merge_prompt, multi_stt_merge_tra
 use crate::audio_toolkit::audio::{ChunkTap, chunk_tap};
 use crate::direct_stream_writer::DirectStreamWriter;
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::transcription::TranscriptionManager;
+use crate::managers::transcription::{StreamTiming, TranscriptionManager, real_time_factor};
 use crate::settings::{AppSettings, PasteMethod, get_settings};
 
 /// The rate the tap and the streaming model both run at (see [`ChunkTap`]).
@@ -740,6 +740,13 @@ pub fn start(
     });
     let owns_typing = writer.is_some();
 
+    // The primary model's rate is reported per chunk as a difference of these
+    // totals, so the baseline has to be taken before the stream worker can feed
+    // anything. `start` runs strictly before the action calls `start_stream`
+    // (`actions.rs`), so reading them here is the session's zero point.
+    let primary_timing = tm.stream_timing();
+    let primary_seen = primary_timing.totals();
+
     let coordinator = Coordinator {
         app: app.clone(),
         tm: Arc::clone(tm),
@@ -755,6 +762,8 @@ pub fn start(
         primary_tentative: String::new(),
         live_copied: 0,
         stream_committed_ms: 0,
+        primary_timing,
+        primary_seen,
         alive: Arc::clone(&alive),
         next_chunk_id: 1,
         open: Chunk::new(0),
@@ -968,6 +977,14 @@ struct Coordinator {
     /// for, reported at each close so a lagging stream is visible in the log.
     stream_committed_ms: i64,
 
+    /// The primary model's process-lifetime stream totals
+    /// ([`StreamTiming`]), read to report its rate per chunk.
+    primary_timing: Arc<StreamTiming>,
+    /// The totals [`Self::primary_timing`] held when the last rate was reported.
+    /// A chunk's rate is the difference between two reads, because the primary
+    /// streams continuously and has no per-chunk decode to time on its own.
+    primary_seen: (u64, u64),
+
     /// This session's liveness, as [`is_active`] reads it. See [`Session`].
     alive: Arc<AtomicBool>,
 
@@ -1167,6 +1184,58 @@ impl Coordinator {
         }
     }
 
+    /// Report the primary streaming model's text and rate for the chunk that
+    /// just closed.
+    ///
+    /// The primary is not decoded per chunk — it streams continuously, which is
+    /// the whole point of the mode — so there is no per-chunk decode call to
+    /// time. What is knowable is how much audio it was fed and how much compute
+    /// it spent between two chunk boundaries, which is the same rate the
+    /// `Live preview perf` line reports, scoped to one chunk. The text is the
+    /// primary's own live text for that chunk (`Chunk::live`), never the merged
+    /// text a merge may put on screen afterwards: the point of the line is to
+    /// show what the streaming model produced before anything corrected it.
+    ///
+    /// Silent when no audio was fed since the last report — a chunk that closed
+    /// with nothing new behind it has no rate to state.
+    fn log_primary_rate(&mut self) {
+        let now = self.primary_timing.totals();
+        let delta = (
+            now.0.saturating_sub(self.primary_seen.0),
+            now.1.saturating_sub(self.primary_seen.1),
+        );
+        self.primary_seen = now;
+
+        let (audio_secs, compute_secs) = StreamTiming::secs(delta);
+        if audio_secs <= 0.0 {
+            return;
+        }
+        let text = self
+            .closed
+            .last()
+            .map(|chunk| chunk.live.trim())
+            .unwrap_or_default();
+        if compute_secs > 0.0 {
+            info!(
+                "Multi-STT streaming: chunk {} model 1 (primary stream) transcribed {:.2}s of \
+                 audio in {:.2}s ({:.2}x real-time): '{}'",
+                self.closed.len(),
+                audio_secs,
+                compute_secs,
+                real_time_factor(audio_secs, compute_secs),
+                crate::utils::redact_text(text)
+            );
+        } else {
+            info!(
+                "Multi-STT streaming: chunk {} model 1 (primary stream) transcribed {:.2}s of \
+                 audio: '{}'",
+                self.closed.len(),
+                audio_secs,
+                crate::utils::redact_text(text)
+            );
+        }
+    }
+
     /// Close the open chunk and merge it.
     ///
     /// The chunk is taken whole — all of the audio since the last break and all
@@ -1197,6 +1266,7 @@ impl Coordinator {
             context_samples as i64 / SAMPLES_PER_MS,
             (stream_position_ms - self.stream_committed_ms).max(0)
         );
+        self.log_primary_rate();
 
         let input = self.window_for(index, true);
         self.dispatch(input);
@@ -1537,6 +1607,7 @@ impl Coordinator {
         self.retain_context_audio();
 
         let index = self.closed.len() - 1;
+        self.log_primary_rate();
         if has_content {
             let settings = get_settings(&self.app);
             let input = self.window_for(index, true);
