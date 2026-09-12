@@ -1933,6 +1933,80 @@ mod tests {
         assert_eq!(chunk.display_text(), "Hello, world. And the next.");
     }
 
+    /// The session's text, composed the way `compose_committed` does: every
+    /// closed chunk's current text, joined.
+    fn session_text(chunks: &[Chunk]) -> String {
+        let mut out = String::new();
+        for chunk in chunks {
+            append_join(&mut out, &chunk.display_text());
+        }
+        out
+    }
+
+    #[test]
+    fn a_merge_leaves_the_chunks_before_it_untouched() {
+        // The property the DirectStreaming output path rests on. The coordinator
+        // pushes the session's text as the writer's target, and a merge rewrites
+        // one closed chunk inside it; the writer reaches a rewritten target by
+        // backspacing the divergence and retyping the rest. If the chunks before
+        // the corrected one were not a prefix of the new text, that backspace
+        // would start at the first character of the session and retype all of it,
+        // into the user's document, at typing speed. Because they are a prefix,
+        // the backspace covers the corrected chunk's remainder and the chunks
+        // after it, and nothing else.
+        let mut chunks = vec![
+            closed_chunk(1, "the cat sat on the mat.", 3_000),
+            closed_chunk(2, "the dog barked at the door.", 3_000),
+            closed_chunk(3, "and then it ran off", 2_000),
+        ];
+        let before = session_text(&chunks);
+
+        chunks[1].apply_merge("the dog barked loudly at the door.".to_string(), false);
+        let after = session_text(&chunks);
+
+        // What both share: the first chunk whole, the join, and the corrected
+        // chunk up to the word the merge changed.
+        let kept = "the cat sat on the mat. the dog barked ";
+        assert!(before.starts_with(kept));
+        assert!(after.starts_with(kept));
+        // And what is left to backspace is the rest of the corrected chunk plus
+        // every chunk after it — never anything before it.
+        assert_eq!(&before[kept.len()..], "at the door. and then it ran off");
+        assert_eq!(
+            &after[kept.len()..],
+            "loudly at the door. and then it ran off"
+        );
+    }
+
+    #[test]
+    fn a_merge_that_shortens_a_chunk_deletes_the_block_it_replaces() {
+        // The other half of the same mechanism, and the one a reader of the
+        // direct-streaming path asks about first: a merge is under no obligation
+        // to be the same length as the text it replaces. Here it drops a stutter,
+        // so the writer has to backspace *more* than it retypes — the wrong block
+        // is deleted, not overwritten. Nothing about the mechanism changes: the
+        // divergence is still found by the common prefix, so the deletion starts
+        // at the word the merge dropped and reaches exactly as far as the old
+        // text ran.
+        let mut chunks = vec![
+            closed_chunk(1, "and then and then", 2_000),
+            closed_chunk(2, "we went home", 2_000),
+        ];
+        let before = session_text(&chunks);
+
+        chunks[0].apply_merge("and then".to_string(), false);
+        let after = session_text(&chunks);
+
+        let kept = "and then ";
+        assert!(before.starts_with(kept));
+        assert!(after.starts_with(kept));
+        // Before / after the divergence: 21 characters backspaced away and 12
+        // typed back, so the block that was wrong is gone rather than covered.
+        // The chunk after the merged one is retyped only because it follows.
+        assert_eq!(&before[kept.len()..], "and then we went home");
+        assert_eq!(&after[kept.len()..], "we went home");
+    }
+
     #[test]
     fn the_fallback_puts_every_model_on_its_own_line() {
         let mut outputs: [String; 4] = Default::default();
