@@ -1,6 +1,8 @@
 use crate::clipboard::{backspace_direct, paste_direct};
 use crate::settings::AppSettings;
 use log::{debug, warn};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -15,18 +17,25 @@ enum DirectStreamCmd {
 pub struct DirectStreamWriter {
     tx: Option<Sender<DirectStreamCmd>>,
     worker_handle: Option<JoinHandle<()>>,
+    /// Characters the worker still has to type (or backspace away) to reach the
+    /// target, published by the worker after every step. Zero means it has
+    /// caught up exactly.
+    pending_chars: Arc<AtomicUsize>,
 }
 
 impl DirectStreamWriter {
     pub fn new(app_handle: AppHandle, speed: u32, settings: AppSettings) -> Self {
         let (tx, rx) = mpsc::channel();
+        let pending_chars = Arc::new(AtomicUsize::new(0));
+        let worker_pending = Arc::clone(&pending_chars);
         let handle = thread::spawn(move || {
-            run_direct_stream_worker(app_handle, rx, speed, settings);
+            run_direct_stream_worker(app_handle, rx, speed, settings, worker_pending);
         });
 
         Self {
             tx: Some(tx),
             worker_handle: Some(handle),
+            pending_chars,
         }
     }
 
@@ -34,6 +43,17 @@ impl DirectStreamWriter {
         if let Some(tx) = &self.tx {
             let _ = tx.send(DirectStreamCmd::UpdateTarget(text));
         }
+    }
+
+    /// Whether the worker has typed everything it was last given.
+    ///
+    /// A revision replaces text that has already been typed, and the worker
+    /// reaches it by backspacing the divergence and retyping — so a caller that
+    /// revises faster than the typewriter types leaves it permanently behind,
+    /// typing text the user has already watched being replaced. The Multi-STT
+    /// streaming coordinator gates its revisions on this.
+    pub fn is_caught_up(&self) -> bool {
+        self.pending_chars.load(Ordering::Acquire) == 0
     }
 
     pub fn flush(mut self, final_text: Option<String>) {
@@ -190,11 +210,26 @@ fn sync_to_target(
     }
 }
 
+/// Characters still to type before `typed` reaches `target`, or zero when they
+/// are equal. Zero is exact rather than derived from a length difference: a
+/// half-finished backspace can leave the two the same length but different.
+fn pending_chars(target: &str, typed: &str) -> usize {
+    if typed == target {
+        return 0;
+    }
+    target
+        .chars()
+        .count()
+        .saturating_sub(typed.chars().count())
+        .max(1)
+}
+
 fn run_direct_stream_worker(
     app_handle: AppHandle,
     rx: Receiver<DirectStreamCmd>,
     speed: u32,
     settings: AppSettings,
+    pending: Arc<AtomicUsize>,
 ) {
     let speed = speed.clamp(10, 60);
     let interval_ms = (1000 / speed).clamp(8, 100) as u64;
@@ -247,6 +282,10 @@ fn run_direct_stream_worker(
             #[cfg(target_os = "linux")]
             settings.typing_tool,
         );
+
+        // Publish progress after every step so a caller that wants to revise
+        // already-typed text can wait for the writer to catch up first.
+        pending.store(pending_chars(&target_text, &typed_text), Ordering::Release);
     }
 
     // Flush any remaining characters immediately so output is 100% synchronized
@@ -290,5 +329,45 @@ fn run_direct_stream_worker(
         let _ = reply.send(());
     }
 
+    // Caught up by construction, and the writer is finished: leaving a stale
+    // non-zero here would make `is_caught_up` lie if the caller still holds the
+    // handle during the flush handshake.
+    pending.store(0, Ordering::Release);
+
     debug!("DirectStreamWriter finished writing");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_is_zero_exactly_when_caught_up() {
+        assert_eq!(pending_chars("hello", "hello"), 0);
+        assert_eq!(pending_chars("hello", "hel"), 2);
+        assert_eq!(pending_chars("hello", ""), 5);
+        // The writer is mid-backspace: same length, different text. A length
+        // difference would report zero here and let a caller revise on top of a
+        // typewriter that has not finished retracting.
+        assert_eq!(pending_chars("hello", "helps"), 1);
+    }
+
+    #[test]
+    fn pending_counts_characters_not_bytes() {
+        // Four CJK characters, twelve bytes: a byte-based count would report
+        // 12 pending and never read as caught up.
+        assert_eq!(pending_chars("你好世界", "你好"), 2);
+        assert_eq!(pending_chars("你好世界", "你好世界"), 0);
+    }
+
+    #[test]
+    fn the_divergent_suffix_is_what_a_revision_retypes() {
+        // The property the Multi-STT revision relies on: a merged rewrite of the
+        // tail keeps the prefix, so the retype is bounded by the tail's length.
+        let typed = "the cat sat on the mat";
+        let revised = "the cat sat on the log";
+        let common = common_prefix_char_len(typed, revised);
+        assert_eq!(&typed[..common], "the cat sat on the ");
+        assert_eq!(typed.chars().count() - common, 3);
+    }
 }

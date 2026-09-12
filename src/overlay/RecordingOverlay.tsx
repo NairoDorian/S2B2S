@@ -40,6 +40,12 @@ const countWords = (text: string): number => {
 const WPM_MIN_SPEECH_MS = 2500;
 const WPM_MIN_WORDS = 3;
 
+// The experimental Multi-STT streaming mode shows the whole session's text, so
+// the card has to grow with it. Its height is reported to the backend in these
+// steps — about one call per line of text rather than one per character, and the
+// step itself supplies the slack for borders and padding rounding.
+const TEXT_HEIGHT_STEP_PX = 24;
+
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
@@ -81,6 +87,15 @@ const RecordingOverlay: React.FC = () => {
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
+  // Experimental Multi-STT streaming mode: the text on screen is the whole
+  // session's, composed chunk by chunk, so the card grows with it instead of
+  // hiding the earlier chunks behind the fade. `textCap` is the backend's answer
+  // to a height report — the same number it sized the window with, past which
+  // this card scrolls back (see `overlay_stream_text_height`).
+  const [wholeSession, setWholeSession] = useState(false);
+  const [failedChunks, setFailedChunks] = useState(0);
+  const [textCap, setTextCap] = useState<number | null>(null);
+  const reportedHeightRef = useRef(-1);
 
   // Live-text scroll-back: the text region "sticks" to the newest line while the
   // user is at the bottom; if they scroll up to read history, auto-follow pauses
@@ -207,6 +222,12 @@ const RecordingOverlay: React.FC = () => {
           setSpeaking(false);
           setSpeechMs(0);
           setWordCount(0);
+          // A previous session's composed text must not size this card: the
+          // mode announces itself with its first event, and the height with it.
+          setWholeSession(false);
+          setFailedChunks(0);
+          setTextCap(null);
+          reportedHeightRef.current = -1;
         }
 
         await syncLanguageFromSettings();
@@ -261,7 +282,21 @@ const RecordingOverlay: React.FC = () => {
             `${event.payload.committed} ${event.payload.tentative}`.trim(),
           ),
         );
-        if (!directModeRef.current) {
+        // The experimental Multi-STT streaming mode composes the whole session's
+        // text and flags its failed chunks (the failure is never in the text
+        // itself — with DirectStreaming that text lands in the user's document).
+        if (event.payload.whole_session) {
+          setWholeSession(true);
+          setFailedChunks(event.payload.failed_chunks ?? 0);
+        }
+        // The experimental Multi-STT streaming mode composes the whole session's
+        // text itself, and a merge replaces sentences that are already on
+        // screen. There is nothing to reveal, so the update is applied as one
+        // block: the typewriter could only retype its way back to every
+        // correction, one to three characters per tick. It stays the rule for
+        // normal dictation, which is what the setting is for.
+        if (!directModeRef.current || event.payload.whole_session) {
+          stopTypewriter();
           displayedTextRef.current = event.payload;
           setStreamText(event.payload);
         } else {
@@ -344,6 +379,31 @@ const RecordingOverlay: React.FC = () => {
     setOverflowing(el.scrollHeight > el.clientHeight + 1);
     if (pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [streamText]);
+
+  // Grow the card with the session's text (experimental Multi-STT streaming mode)
+  // and read back the height it may reach before scrolling. Measured after layout
+  // so the report matches what is on screen, and rounded up to a step so this is
+  // one call per line of text; the backend clamps to its own monitor-based cap and
+  // returns that clamp, which is what bounds this card too.
+  useLayoutEffect(() => {
+    if (!wholeSession) return;
+    const el = capRef.current;
+    if (!el) return;
+    const stepped =
+      Math.ceil(el.scrollHeight / TEXT_HEIGHT_STEP_PX) * TEXT_HEIGHT_STEP_PX;
+    if (stepped === reportedHeightRef.current) return;
+    reportedHeightRef.current = stepped;
+    commands
+      .overlayStreamTextHeight(stepped)
+      .then((max) => {
+        // 0 means the backend has no streaming card on screen (the overlay is
+        // fading out): keep the cap we already have rather than collapsing.
+        if (typeof max === "number" && max > 0) setTextCap(max);
+      })
+      .catch(() => {
+        // No cap from the backend: the card keeps the default and scrolls.
+      });
+  }, [streamText, wholeSession]);
 
   // Each fresh streaming session starts pinned to the bottom, fade cleared.
   useEffect(() => {
@@ -444,7 +504,11 @@ const RecordingOverlay: React.FC = () => {
   // readouts in the right-hand cluster instead would put every pixel of slack
   // between the waveform and the numbers — separating things that belong
   // together, by a gap that grows with the card.
-  const listeningRow = (showTimer: boolean, showCancel: boolean) => (
+  const listeningRow = (
+    showTimer: boolean,
+    showCancel: boolean,
+    badge: React.ReactNode = null,
+  ) => (
     <div className={`sbase ${showStats ? "has-stats" : ""}`}>
       <div className="sbase-l">
         <span
@@ -457,6 +521,7 @@ const RecordingOverlay: React.FC = () => {
       {showStats && <div className="smeta">{readouts(showTimer)}</div>}
       <div className="sbase-r">
         {!showStats && readouts(showTimer)}
+        {badge}
         {showCancel && cancelBtn}
       </div>
     </div>
@@ -486,8 +551,27 @@ const RecordingOverlay: React.FC = () => {
     const open = hasText;
     const collapsed = working && !hasText;
 
+    // A chunk whose merge failed shows the extras' outputs concatenated — still
+    // the session's text, just not the cleaned version. It is marked here rather
+    // than in the text: with DirectStreaming the text is typed into the user's
+    // document, and a marker inside it would be typed too.
+    const failBadge =
+      failedChunks > 0 ? (
+        <span className="sfail" title={t("overlay.chunkFailedHint")}>
+          {t("overlay.chunkFailed", { count: failedChunks })}
+        </span>
+      ) : null;
+
     return (
-      <div dir={direction} className={`ov-stage ${position}`}>
+      <div
+        dir={direction}
+        className={`ov-stage ${position}`}
+        style={
+          textCap === null
+            ? undefined
+            : ({ "--ov-cap-max-h": `${textCap}px` } as React.CSSProperties)
+        }
+      >
         <div
           key={session}
           className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
@@ -520,7 +604,7 @@ const RecordingOverlay: React.FC = () => {
                   : t("overlay.transcribing"),
                 true,
               )
-            : listeningRow(open, true)}
+            : listeningRow(open, true, failBadge)}
         </div>
       </div>
     );

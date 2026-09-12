@@ -32,7 +32,7 @@ import { useNavigationStore } from "./stores/navigationStore";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
-import { commands } from "@/bindings";
+import { commands, events } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 import { applyUiScale } from "@/lib/utils/theme";
 
@@ -222,6 +222,24 @@ function App() {
           },
         );
       }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
+  // The experimental Multi-STT streaming mode raises this when a chunk's merge
+  // fails. The chunk's text is still there — the extras' outputs side by side,
+  // marked in the overlay — and the next pause retries it, so this is a warning
+  // and not an error. The backend emits it only when the number of failed
+  // chunks grows, so a retry that fails again does not repeat the toast.
+  useEffect(() => {
+    const unlisten = events.multiSttStreamChunkFailedEvent.listen((event) => {
+      toast.warning(t("multiStt.streamingFirst.chunkFailedTitle"), {
+        description: t("multiStt.streamingFirst.chunkFailedToast", {
+          chunk: event.payload.chunk,
+        }),
+      });
     });
     return () => {
       unlisten.then((fn) => fn());

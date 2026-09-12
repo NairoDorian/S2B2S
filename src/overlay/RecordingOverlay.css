@@ -29,6 +29,11 @@
   --dark-s-muted: #a3a09a;
   --light-s-faint: #9a9a9a;
   --dark-s-faint: #6f6c66;
+  /* The failed-chunk marker's color. Deliberately not the accent: the accent is
+     this app's gold, so an accent chip reads as decoration. Deeper on light,
+     lighter on dark, like the other pairs here. */
+  --light-s-warn: #a35b00;
+  --dark-s-warn: #e0a94a;
   /* Hairlines reuse the app's mid-gray at low opacity in light — same vocabulary
      as the app's border-mid-gray/* utilities — and flip to the near-white text
      token for contrast on dark. */
@@ -44,6 +49,7 @@
   --s-faint: var(--light-s-faint);
   --s-border: var(--light-s-border);
   --s-hair: var(--light-s-hair);
+  --s-warn: var(--light-s-warn);
 
   /* Card geometry — single source of truth for the visible overlay sizes. The
      native overlay window (overlay.rs) is sized from these: it must be at least
@@ -75,6 +81,7 @@
     --s-faint: var(--dark-s-faint);
     --s-border: var(--dark-s-border);
     --s-hair: var(--dark-s-hair);
+    --s-warn: var(--dark-s-warn);
   }
 }
 
@@ -93,6 +100,7 @@
   --s-faint: var(--light-s-faint);
   --s-border: var(--light-s-border);
   --s-hair: var(--light-s-hair);
+  --s-warn: var(--light-s-warn);
 }
 
 :root[data-theme="dark"] {
@@ -101,6 +109,7 @@
   --s-faint: var(--dark-s-faint);
   --s-border: var(--dark-s-border);
   --s-hair: var(--dark-s-hair);
+  --s-warn: var(--dark-s-warn);
 }
 
 /* ============================================================
@@ -410,6 +419,19 @@
 }
 .scard.open .stimer {
   opacity: 1;
+}
+
+/* A chunk whose merge failed (experimental Multi-STT streaming mode). The text
+   above it is still the session's, just not the cleaned version, so the marker
+   says so in the row rather than in the text — with DirectStreaming the text is
+   typed into the user's document, and a marker inside it would be typed too. */
+.sfail {
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--s-warn, #e0a020) 55%, transparent);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--s-warn, #e0a020);
+  white-space: nowrap;
 }
 
 /* Speech stats — a clock that runs only while you are talking, and the running

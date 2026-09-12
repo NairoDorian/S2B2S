@@ -433,6 +433,9 @@ fn create_audio_recorder(
             }
         })
         .with_analysis_sink(crate::live_fft::tap())
+        // Mid-recording audio for the experimental Multi-STT streaming mode.
+        // Always attached, inert unless a session holds it.
+        .with_chunk_tap(crate::audio_toolkit::audio::chunk_tap())
         .with_audio_callback({
             let router = stream_router;
             move |frame| {

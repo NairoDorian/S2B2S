@@ -1301,6 +1301,61 @@ pub fn change_multi_stt_merge_prompt(
     Ok(())
 }
 
+/// Experimental Multi-STT streaming-first mode: the primary model's live stream
+/// becomes the 1st output and chunk merges replace its rough text in place.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_streaming_first_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_streaming_first_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// The silence that closes a chunk in the experimental streaming-first mode.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_streaming_pause_ms_setting(
+    app: AppHandle,
+    pause_ms: u32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_streaming_pause_ms = pause_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// How many already-spoken sentences lead each merge window of the experimental
+/// streaming-first mode. Read at the next close, so it applies mid-session.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_streaming_context_sentences_setting(
+    app: AppHandle,
+    sentences: u32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_streaming_context_sentences = sentences;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// How many sentences a chunk may hold before it is closed and merged without a
+/// pause. Read at the next close, so it applies mid-session.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_streaming_max_sentences_setting(
+    app: AppHandle,
+    sentences: u32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_streaming_max_sentences = sentences;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Result<(), String> {

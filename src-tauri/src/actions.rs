@@ -1522,11 +1522,36 @@ impl ShortcutAction for MultiSttAction {
         let preview_only = live_stream_is_preview_only(&settings, true);
         let statistics_manager = app.state::<Arc<StatisticsManager>>();
         let statistics = statistics_manager.begin_normal_run(&binding_id);
+        // Experimental streaming mode: the primary model's live text becomes the
+        // overlay's text and is replaced in place, chunk by chunk, as the extras
+        // and the merge land. Arming happens before the recorder starts, so the
+        // coordinator sees the recording's very first frame.
+        // The overlay is handed to the coordinator for the whole session, so it
+        // must own the text before the stream worker can emit its first raw
+        // update and win the race.
+        let streaming_mode =
+            crate::multi_stt_stream::start(app, &tm, &rm, model_supports_streaming);
         if model_supports_streaming {
+            // `false`: with the experimental mode on, the coordinator does the
+            // live typing from its own thread (it owns the only
+            // `DirectStreamWriter`); the worker must never create a second one.
+            // Without the mode, Multi-STT's stream is preview-only anyway, so
+            // this stays false on both paths.
             tm.start_stream(false, statistics.clone());
         }
+        let overlay_style = if streaming_mode {
+            // The mode is the session's text on screen, and the Minimal overlay
+            // never renders the transcript — so it forces Live whatever the
+            // user's choice is. (A preview-only stream forces it too, but only
+            // when DirectStreaming is the paste method; this mode needs it on
+            // every path.)
+            debug!("Multi-STT streaming-first mode: the session coordinator owns the overlay text");
+            OverlayStyle::Live
+        } else {
+            effective_overlay_style(&settings, preview_only, model_supports_streaming)
+        };
 
-        match effective_overlay_style(&settings, preview_only, model_supports_streaming) {
+        match overlay_style {
             OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
             OverlayStyle::None => {}
@@ -1553,6 +1578,10 @@ impl ShortcutAction for MultiSttAction {
             shortcut::register_cancel_shortcut(app);
         } else {
             statistics.finish(StatisticsRunStatus::Failed);
+            // The mode is armed but no recording will ever feed it: drop the
+            // coordinator (and its tap claim) rather than leaving it to drain
+            // the next recording's audio.
+            crate::multi_stt_stream::cancel();
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
@@ -1610,10 +1639,16 @@ impl ShortcutAction for MultiSttAction {
             .unwrap_or_else(|| sm.begin_normal_run(binding_id));
         statistics.mark_input_stopped(stop_time, merge_requested);
 
+        // In the experimental streaming mode the overlay belongs to the
+        // coordinator: it is showing the session's text, and a working phase
+        // event would replace it with a spinner while the last chunk merges.
+        let coordinator_active = crate::multi_stt_stream::is_active();
         let preview_only = live_stream_is_preview_only(&stop_settings, true);
         let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
-        if use_streaming_overlay {
+        if coordinator_active {
+            // nothing: the coordinator owns the overlay
+        } else if use_streaming_overlay {
             tm.emit_stream_working(StreamWorkKind::Transcribing);
         } else {
             show_transcribing_overlay(app);
@@ -1685,6 +1720,67 @@ impl ShortcutAction for MultiSttAction {
                 recorded.raw_samples.len()
             );
 
+            // === EXPERIMENTAL STREAMING MODE ===
+            // The coordinator has been doing the work while the user spoke: its
+            // chunks hold the merged text, and the primary stream's final words
+            // reach it through the sink inside `finalize_stream`. So the stream
+            // is finalized here and the session is asked to close its last chunk
+            // — one blocking handshake, on the blocking pool because `finish`
+            // waits on a merge. Any path that cannot produce a session outcome
+            // clears the coordinator and falls through to the batch pipeline:
+            // extra coordinator state left behind would claim the next
+            // recording's audio tap.
+            // `coordinator_active` implies the primary model streams natively:
+            // the coordinator refuses to arm otherwise, and this is the same
+            // recording it armed for.
+            let stream_tracked = if coordinator_active {
+                match tm.finalize_stream() {
+                    StreamFinalization::Completed(tracked) => Some(tracked),
+                    // Nothing was decoded live: the batch path is a better answer
+                    // than a session built on no text. The reason is not logged —
+                    // `Failed`/`Timeout` carry model text.
+                    _ => {
+                        debug!(
+                            "Multi-STT streaming: the primary stream did not complete; falling \
+                             back to the batch path"
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let stream_outcome = if stream_tracked.is_some() {
+                let stream_finish_start = Instant::now();
+                let outcome = tauri::async_runtime::spawn_blocking(|| {
+                    crate::multi_stt_stream::finish(crate::multi_stt_stream::FINISH_TIMEOUT)
+                })
+                .await
+                .ok()
+                .flatten();
+                if outcome.is_none() {
+                    warn!(
+                        "Multi-STT streaming: the session did not return a result after {:?}; \
+                         falling back to the batch path",
+                        stream_finish_start.elapsed()
+                    );
+                }
+                outcome
+            } else {
+                None
+            };
+
+            // A finished session with no text at all is treated like an empty
+            // recording: the WAV and the history row belong to the batch path.
+            let stream_outcome = stream_outcome.filter(|o| !o.final_text.trim().is_empty());
+            if coordinator_active && stream_outcome.is_none() {
+                // Either the stream never completed or the session came back
+                // empty. Both leave a coordinator alive: release it, or it would
+                // claim the next recording's audio tap.
+                crate::multi_stt_stream::cancel();
+            }
+
             if rm.was_cancelled_since(cancel_generation) {
                 debug!("Multi-STT: Cancelled after recording stop");
                 statistics.finish(StatisticsRunStatus::Cancelled);
@@ -1719,6 +1815,9 @@ impl ShortcutAction for MultiSttAction {
                 );
                 statistics.finish(StatisticsRunStatus::Empty);
                 tm.cancel_stream();
+                // An armed coordinator whose recording had nothing to say is
+                // released with everything else that this recording owned.
+                crate::multi_stt_stream::cancel();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 let perf_settings = get_settings(&ah);
@@ -1920,25 +2019,40 @@ impl ShortcutAction for MultiSttAction {
             let stats3 = statistics.clone();
             let stats4 = statistics.clone();
 
-            let task1 = tauri::async_runtime::spawn_blocking(move || match tm1.finalize_stream() {
-                StreamFinalization::Completed(tracked) if !tracked.text.trim().is_empty() => {
+            // In the streaming mode the stream was already finalized (the
+            // coordinator needed its last words), so the tracked result is used
+            // as it stands instead of finalizing a second time — a stream can be
+            // consumed exactly once, and the second call would come back
+            // `NeverStarted` and quietly re-decode the whole recording.
+            let task1 = tauri::async_runtime::spawn_blocking(move || match stream_tracked {
+                Some(tracked) if !tracked.text.trim().is_empty() => {
                     info!(
                         "Multi-STT: Model 1 (primary) transcription: '{}'",
                         utils::redact_text(&tracked.text)
                     );
                     Some(tracked)
                 }
-                StreamFinalization::Completed(_) | StreamFinalization::NeverStarted => {
-                    tm1.transcribe_tracked(s1, stats1).ok()
-                }
-                StreamFinalization::Failed(err) => {
-                    error!("Multi-STT: Model 1 finalize failed: {}", err);
-                    tm1.transcribe_tracked(s1, stats1).ok()
-                }
-                StreamFinalization::Timeout(err) => {
-                    error!("Multi-STT: Model 1 finalize timeout: {}", err);
-                    None
-                }
+                Some(_) => tm1.transcribe_tracked(s1, stats1).ok(),
+                None => match tm1.finalize_stream() {
+                    StreamFinalization::Completed(tracked) if !tracked.text.trim().is_empty() => {
+                        info!(
+                            "Multi-STT: Model 1 (primary) transcription: '{}'",
+                            utils::redact_text(&tracked.text)
+                        );
+                        Some(tracked)
+                    }
+                    StreamFinalization::Completed(_) | StreamFinalization::NeverStarted => {
+                        tm1.transcribe_tracked(s1, stats1).ok()
+                    }
+                    StreamFinalization::Failed(err) => {
+                        error!("Multi-STT: Model 1 finalize failed: {}", err);
+                        tm1.transcribe_tracked(s1, stats1).ok()
+                    }
+                    StreamFinalization::Timeout(err) => {
+                        error!("Multi-STT: Model 1 finalize timeout: {}", err);
+                        None
+                    }
+                },
             });
 
             let task2 = if let Some(ref model_id) = extra_model_2 {
@@ -2000,26 +2114,70 @@ impl ShortcutAction for MultiSttAction {
                 None => None,
             };
 
-            let output1 = tracked1
+            // === EXPERIMENTAL STREAMING MODE: THE SESSION'S OWN RESULT ===
+            // The chunks were decoded and merged while the user spoke, so this
+            // replaces the batch decode → merge pipeline wholesale. Slot 1 is the
+            // primary model's own session text and slots 2–4 are the extras'
+            // outputs as recorded for each chunk that closed; both are already
+            // assembled by the coordinator, which is why the batch merge below is
+            // skipped. A successful merge this session made is `brain`; a chunk
+            // that fell back to the concatenation has `failed_chunks` > 0.
+            let streaming_final = stream_outcome.map(|outcome| {
+                info!(
+                    "Multi-STT streaming: using the session result — {} chunks, {} failed, \
+                     decode {:.0} ms, merge {:.0} ms",
+                    outcome.chunk_count,
+                    outcome.failed_chunks,
+                    outcome.decode_latency_ms,
+                    outcome.merge_latency_ms
+                );
+                (
+                    outcome.final_text,
+                    outcome.model_outputs,
+                    outcome.brain,
+                    outcome.failed_chunks,
+                    outcome.owns_typing,
+                )
+            });
+
+            let output1 = match &streaming_final {
+                Some((final_text, ..)) => final_text.clone(),
+                None => tracked1
+                    .as_ref()
+                    .map(|t| t.text.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            };
+            let output2 = match &streaming_final {
+                Some((_, outputs, ..)) => outputs[1].clone(),
+                None => tracked2
+                    .as_ref()
+                    .map(|t| t.text.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            };
+            let output3 = match &streaming_final {
+                Some((_, outputs, ..)) => outputs[2].clone(),
+                None => tracked3
+                    .as_ref()
+                    .map(|t| t.text.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            };
+            let output4 = match &streaming_final {
+                Some((_, outputs, ..)) => outputs[3].clone(),
+                None => tracked4
+                    .as_ref()
+                    .map(|t| t.text.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            };
+            // Whether the session typed the text into the app itself, in which
+            // case it has already delivered the result and there is nothing left
+            // to paste.
+            let typed_by_session = streaming_final
                 .as_ref()
-                .map(|t| t.text.as_str())
-                .unwrap_or("")
-                .to_string();
-            let output2 = tracked2
-                .as_ref()
-                .map(|t| t.text.as_str())
-                .unwrap_or("")
-                .to_string();
-            let output3 = tracked3
-                .as_ref()
-                .map(|t| t.text.as_str())
-                .unwrap_or("")
-                .to_string();
-            let output4 = tracked4
-                .as_ref()
-                .map(|t| t.text.as_str())
-                .unwrap_or("")
-                .to_string();
+                .is_some_and(|(_, _, _, _, owns_typing)| *owns_typing);
 
             info!(
                 "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars, Output4={} chars",
@@ -2056,10 +2214,32 @@ impl ShortcutAction for MultiSttAction {
             }
 
             // === MERGE TRANSCRIPTIONS ===
+            // In the streaming mode there is nothing left to merge here: every
+            // chunk already went through the extras and the LLM, and the session's
+            // assembled text is the final one. `llm_merge_succeeded` means the
+            // whole session merged — a single failed chunk has already fallen back
+            // to the visible concatenation, so the power restore waits for the
+            // retry to clear it.
             let merge_start = Instant::now();
             let settings_for_merge = get_settings(&ah);
-            let (merged, brain_details, llm_merge_succeeded, merge_latency_ms) = if merge_requested
+            let (merged, brain_details, llm_merge_succeeded, merge_latency_ms) = if let Some((
+                final_text,
+                _,
+                brain,
+                failed_chunks,
+                _,
+            )) =
+                streaming_final.clone()
             {
+                let succeeded = brain.is_some() && failed_chunks == 0;
+                if !succeeded {
+                    warn!(
+                        "Multi-STT streaming: the session ended with {} failed chunk(s)",
+                        failed_chunks
+                    );
+                }
+                (final_text, brain, succeeded, None)
+            } else if merge_requested {
                 if use_streaming_overlay {
                     tm.emit_stream_working(StreamWorkKind::Polishing);
                 } else {
@@ -2310,8 +2490,28 @@ impl ShortcutAction for MultiSttAction {
                 warn!("Multi-STT: Skipping history entry because the WAV could not be saved");
             }
 
-            // Paste merged result (runs concurrently with background history save)
-            if merged.is_empty() {
+            // A session that typed its text into the app itself has already
+            // delivered the result: pasting it again would leave two copies. This
+            // is the one case the experimental mode changes about the paste
+            // contract (see `Direct Streaming` in AGENTS.md), and it is why the
+            // final text is *not* routed through `final_paste_method`.
+            if typed_by_session {
+                debug!("Multi-STT streaming: the session typed the text; no paste");
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+                if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
+                    let normal_shortcut = normal_settings
+                        .multi_stt_performance_mode_normal_shortcut
+                        .clone();
+                    let ah_for_normal = ah.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::clipboard::simulate_key_combination(
+                            &ah_for_normal,
+                            &normal_shortcut,
+                        );
+                    });
+                }
+            } else if merged.is_empty() {
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 // LLM didn't respond and nothing to paste — still restore power.
@@ -2387,7 +2587,12 @@ impl ShortcutAction for MultiSttAction {
     }
 }
 
-fn has_merge_prompt(settings: &AppSettings) -> bool {
+/// Whether a merge prompt is configured at all. Shared with
+/// `multi_stt_stream`, which refuses to arm the experimental streaming mode
+/// without one: that mode's whole contract is "the merged text replaces the
+/// rough text", and with nothing to merge with it would only quadruple the
+/// live transcript on screen.
+pub(crate) fn has_merge_prompt(settings: &AppSettings) -> bool {
     settings
         .multi_stt_merge_prompt
         .as_ref()

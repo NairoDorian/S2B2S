@@ -279,6 +279,14 @@ const settingUpdaters: {
     commands.changeMultiSttPerformanceModeNormalShortcut(value as string),
   multi_stt_merge_prompt: (value) =>
     commands.changeMultiSttMergePrompt(value as LLMPrompt | null),
+  multi_stt_streaming_first_enabled: (value) =>
+    commands.changeMultiSttStreamingFirstEnabledSetting(value as boolean),
+  multi_stt_streaming_pause_ms: (value) =>
+    commands.changeMultiSttStreamingPauseMsSetting(value as number),
+  multi_stt_streaming_context_sentences: (value) =>
+    commands.changeMultiSttStreamingContextSentencesSetting(value as number),
+  multi_stt_streaming_max_sentences: (value) =>
+    commands.changeMultiSttStreamingMaxSentencesSetting(value as number),
   mic_idle_timeout_value: (value) =>
     commands.changeMicIdleTimeoutSettings(
       value as number,

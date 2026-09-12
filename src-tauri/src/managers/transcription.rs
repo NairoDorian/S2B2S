@@ -98,6 +98,25 @@ pub struct BenchmarkProgressEvent {
 pub struct StreamTextEvent {
     pub committed: String,
     pub tentative: String,
+    /// Experimental Multi-STT streaming mode only (`None` everywhere else, so
+    /// the plain path serializes byte-identically): how many of the session's
+    /// chunks ended in a merge failure. The overlay shows a badge for a
+    /// non-zero count — the failure is never written into the text itself,
+    /// because with `DirectStreaming` that text is typed into the user's
+    /// document and a marker would be typed with it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_chunks: Option<u32>,
+    /// Whether this text is the whole session's, composed chunk by chunk (the
+    /// experimental Multi-STT streaming mode). The overlay uses it to grow its
+    /// card with the text and read the backend's height cap, which only makes
+    /// sense when nothing is being hidden: `false` on every other path, so the
+    /// plain overlay's fixed cap is untouched.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub whole_session: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Phase of the streaming overlay card, emitted to drive its UI state.
@@ -345,14 +364,28 @@ pub struct TranscriptionManager {
     active_engine_lease: Arc<AtomicU64>,
     /// Pending statistics attempt for an in-flight live stream.
     stream_attempt: Arc<Mutex<Option<PendingStatisticsAttempt>>>,
-    /// Optional in-process observer of the live text (committed, tentative),
-    /// called on the stream worker thread alongside the overlay event. Live
-    /// Mode installs one to mirror the stream into its transcript file.
+    /// Optional in-process observer of the live text, called on the stream
+    /// worker thread alongside the overlay event. Live Mode installs one to
+    /// mirror the stream into its transcript file; the experimental Multi-STT
+    /// streaming mode installs one to re-chunk and re-merge the text, and asks
+    /// for it exclusively so its own composed text is what the overlay shows.
     stream_text_sink: Arc<Mutex<Option<StreamTextSink>>>,
+    /// When set, `emit_stream_text` calls the sink and skips the overlay event:
+    /// the sink owns what the overlay displays and emits the composed text
+    /// itself. Read on the audio-fed worker thread, so a relaxed atomic.
+    stream_text_sink_exclusive: Arc<AtomicBool>,
 }
 
-/// Callback receiving every live-text update: `(committed, tentative)`.
-pub type StreamTextSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
+/// Callback receiving every live-text update: `(committed, tentative,
+/// audio_committed_ms, input_received_ms)`.
+///
+/// `audio_committed_ms` is the family's own statement of how much audio the
+/// committed text accounts for — a *hint* with family-dependent granularity,
+/// not a byte boundary into `committed` — which is what the Multi-STT streaming
+/// coordinator anchors its audio cuts to. `input_received_ms` is the total audio
+/// the stream has been fed since it began, which is what lets that coordinator
+/// check its own copy of the same signal is still in step.
+pub type StreamTextSink = Arc<dyn Fn(&str, &str, i64, i64) + Send + Sync>;
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
@@ -378,6 +411,7 @@ impl TranscriptionManager {
             active_engine_lease: Arc::new(AtomicU64::new(0)),
             stream_attempt: Arc::new(Mutex::new(None)),
             stream_text_sink: Arc::new(Mutex::new(None)),
+            stream_text_sink_exclusive: Arc::new(AtomicBool::new(false)),
         };
 
         // Start the idle watcher
@@ -1094,7 +1128,12 @@ impl TranscriptionManager {
                                 if update.committed_changed || update.tentative_changed {
                                     let text = stream.text();
                                     perf.record_emit();
-                                    self.emit_stream_text(&text.committed, &text.tentative);
+                                    self.emit_stream_text(
+                                        &text.committed,
+                                        &text.tentative,
+                                        update.audio_committed_ms,
+                                        update.input_received_ms,
+                                    );
                                     if let Some(writer) = &direct_writer {
                                         writer.update_target(text.display());
                                     }
@@ -1120,7 +1159,17 @@ impl TranscriptionManager {
                                     update.audio_committed_ms,
                                     update.buffered_ms,
                                 );
-                                let finalized_text = stream.text().display();
+                                let text = stream.text();
+                                let finalized_text = text.display();
+                                // After finalize the committed prefix holds the
+                                // whole text, so a sink that has been tracking
+                                // the chunk boundaries gets its last words here.
+                                self.notify_stream_text_sink(
+                                    &text.committed,
+                                    &text.tentative,
+                                    update.audio_committed_ms,
+                                    update.input_received_ms,
+                                );
                                 if let Some(writer) = direct_writer.take() {
                                     writer.flush(Some(finalized_text.clone()));
                                 }
@@ -1319,23 +1368,80 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
-    fn emit_stream_text(&self, committed: &str, tentative: &str) {
+    /// Hand a live-text update to the installed sink, if any. Split out of
+    /// [`Self::emit_stream_text`] because the finalize path needs the sink and
+    /// only the sink: a sink that composes its own text (the experimental
+    /// Multi-STT streaming mode) is still holding a chunk open when the stream
+    /// ends, and without the final text its last words would be missing from
+    /// that chunk's merge.
+    fn notify_stream_text_sink(
+        &self,
+        committed: &str,
+        tentative: &str,
+        audio_committed_ms: i64,
+        input_received_ms: i64,
+    ) {
+        let sink = self.stream_text_sink.lock().unwrap().clone();
+        if let Some(sink) = sink {
+            sink(committed, tentative, audio_committed_ms, input_received_ms);
+        }
+    }
+
+    fn emit_stream_text(
+        &self,
+        committed: &str,
+        tentative: &str,
+        audio_committed_ms: i64,
+        input_received_ms: i64,
+    ) {
+        self.notify_stream_text_sink(committed, tentative, audio_committed_ms, input_received_ms);
+        // An exclusive sink composes the displayed text itself (it re-chunks
+        // the stream), so emitting the worker's raw text here would race it.
+        if self.stream_text_sink_exclusive.load(Ordering::Acquire) {
+            return;
+        }
         let _ = StreamTextEvent {
             committed: committed.to_string(),
             tentative: tentative.to_string(),
+            failed_chunks: None,
+            whole_session: false,
         }
         .emit(&self.app_handle);
-        let sink = self.stream_text_sink.lock().unwrap().clone();
-        if let Some(sink) = sink {
-            sink(committed, tentative);
+    }
+
+    /// Publish a [`StreamTextEvent`] composed elsewhere (the experimental
+    /// Multi-STT streaming coordinator). Only meaningful together with an
+    /// exclusive sink; the plain stream worker uses `emit_stream_text`.
+    pub fn emit_composed_stream_text(
+        &self,
+        committed: &str,
+        tentative: &str,
+        failed_chunks: Option<u32>,
+    ) {
+        let _ = StreamTextEvent {
+            committed: committed.to_string(),
+            tentative: tentative.to_string(),
+            failed_chunks,
+            // This is the one path that composes the whole session's text: the
+            // overlay grows its card for it and reads the height cap back.
+            whole_session: true,
         }
+        .emit(&self.app_handle);
     }
 
     /// Install (or, with `None`, remove) the in-process live-text observer.
     /// Only one sink exists at a time; Live Mode owns it for the duration of a
     /// session and clears it on stop.
-    pub fn set_stream_text_sink(&self, sink: Option<StreamTextSink>) {
+    ///
+    /// `exclusive` makes the sink responsible for the overlay's text as well:
+    /// see [`Self::emit_composed_stream_text`]. The experimental Multi-STT
+    /// streaming mode is the only exclusive user — it replaces the streaming
+    /// model's rough text with the merged text, so the overlay must show the
+    /// composed version and never the raw one.
+    pub fn set_stream_text_sink(&self, sink: Option<StreamTextSink>, exclusive: bool) {
         *self.stream_text_sink.lock().unwrap() = sink;
+        self.stream_text_sink_exclusive
+            .store(exclusive, Ordering::Release);
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {

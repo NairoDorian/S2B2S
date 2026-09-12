@@ -17,7 +17,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use crate::audio_toolkit::{
     VoiceActivityDetector,
     audio::{
-        AudioVisualiser, DenoiseChain, DenoiseControls, DenoiseParams, FrameResampler,
+        AudioVisualiser, ChunkTap, DenoiseChain, DenoiseControls, DenoiseParams, FrameResampler,
         RNNOISE_SAMPLE_RATE,
     },
     constants,
@@ -396,6 +396,9 @@ pub struct AudioRecorder {
     vad_frame_cb: Option<VadFrameCallback>,
     /// Live FFT tap; gates itself per chunk with atomics.
     analysis: Option<AnalysisSinkRef>,
+    /// Mid-recording audio tap for the experimental Multi-STT streaming mode.
+    /// Gates itself per frame with one relaxed atomic load ([`ChunkTap`]).
+    chunk_tap: Option<Arc<ChunkTap>>,
     /// RNNoise suppression on/off, read by the consumer thread per chunk so a
     /// toggle applies mid-recording without reopening anything.
     denoise_enabled: Arc<AtomicBool>,
@@ -424,6 +427,7 @@ impl AudioRecorder {
             speech_cb: None,
             vad_frame_cb: None,
             analysis: None,
+            chunk_tap: None,
             denoise_enabled: Arc::new(AtomicBool::new(false)),
             denoise_controls: Arc::new(DenoiseControls::new(DenoiseParams::default())),
             speech_ms: Arc::new(AtomicU64::new(0)),
@@ -438,6 +442,14 @@ impl AudioRecorder {
     /// whichever it asks for, and only while a recording is active.
     pub fn with_analysis_sink(mut self, sink: AnalysisSinkRef) -> Self {
         self.analysis = Some(sink);
+        self
+    }
+
+    /// Attach the mid-recording audio tap used by the experimental Multi-STT
+    /// streaming mode. It receives the same VAD-kept 16 kHz frames the decoder
+    /// and the batch buffer get, and only while a session holds it.
+    pub fn with_chunk_tap(mut self, tap: Arc<ChunkTap>) -> Self {
+        self.chunk_tap = Some(tap);
         self
     }
 
@@ -575,6 +587,7 @@ impl AudioRecorder {
         let speech_cb = self.speech_cb.clone();
         let vad_frame_cb = self.vad_frame_cb.clone();
         let analysis = self.analysis.clone();
+        let chunk_tap = self.chunk_tap.clone();
         let denoise_enabled = Arc::clone(&self.denoise_enabled);
         let denoise_controls = Arc::clone(&self.denoise_controls);
         let speech_ms = Arc::clone(&self.speech_ms);
@@ -717,6 +730,7 @@ impl AudioRecorder {
                         speech_cb,
                         vad_frame_cb,
                         analysis,
+                        chunk_tap,
                         denoise_enabled,
                         denoise_controls,
                         speech_ms,
@@ -1036,6 +1050,7 @@ fn handle_frame(
     vad_errors: &mut u64,
     keep_audio: bool,
     out_buf: &mut Vec<f32>,
+    chunk_tap: Option<&ChunkTap>,
     denoise_prob: Option<f32>,
 ) {
     let mut kept = false;
@@ -1043,6 +1058,14 @@ fn handle_frame(
         kept = true;
         if keep_audio {
             out_buf.extend_from_slice(buf);
+            // Mid-recording tap, on the *same* frames and in the same order as
+            // the batch buffer above and the stream feed below — that identical
+            // timeline is what lets `audio_committed_ms` index into it.
+            if let Some(tap) = chunk_tap
+                && tap.is_active()
+            {
+                tap.push(buf);
+            }
         }
         if let Some(cb) = audio_cb {
             cb(buf);
@@ -1139,6 +1162,9 @@ pub(crate) struct CaptureProcessor {
     speech_cb: Option<SpeechActivityCallback>,
     vad_frame_cb: Option<VadFrameCallback>,
     analysis: Option<AnalysisSinkRef>,
+    /// Mid-recording copy of the VAD-filtered 16 kHz frames, drained by the
+    /// experimental Multi-STT streaming coordinator. See `ChunkTap`.
+    chunk_tap: Option<Arc<ChunkTap>>,
     speech_clock: SpeechClock,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
@@ -1188,6 +1214,9 @@ impl CaptureProcessor {
             None,
             None,
             None,
+            // Tests exercise the VAD and denoise chains, not the mid-recording
+            // tap the Multi-STT streaming coordinator owns.
+            None,
             Arc::new(AtomicBool::new(false)),
             Arc::new(DenoiseControls::new(DenoiseParams::default())),
             Arc::new(AtomicU64::new(0)),
@@ -1205,6 +1234,7 @@ impl CaptureProcessor {
         speech_cb: Option<SpeechActivityCallback>,
         vad_frame_cb: Option<VadFrameCallback>,
         analysis: Option<AnalysisSinkRef>,
+        chunk_tap: Option<Arc<ChunkTap>>,
         denoise_enabled: Arc<AtomicBool>,
         denoise_controls: Arc<DenoiseControls>,
         speech_clock_total: Arc<AtomicU64>,
@@ -1251,6 +1281,7 @@ impl CaptureProcessor {
             speech_cb,
             vad_frame_cb,
             analysis,
+            chunk_tap,
             speech_clock,
             stream_running_at,
             visualizer,
@@ -1399,6 +1430,7 @@ impl CaptureProcessor {
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
         let analysis = &self.analysis;
+        let chunk_tap = self.chunk_tap.as_deref();
         let keep_audio = !self.discard_audio;
 
         let mut on_frame = |frame: &[f32], denoise_prob: Option<f32>| {
@@ -1420,6 +1452,7 @@ impl CaptureProcessor {
                 vad_errors,
                 keep_audio,
                 processed_samples,
+                chunk_tap,
                 denoise_prob,
             )
         };
@@ -1492,6 +1525,7 @@ impl CaptureProcessor {
         let speech_clock = &mut self.speech_clock;
         let vad_errors = &mut self.vad_errors;
         let processed_samples = &mut self.processed_samples;
+        let chunk_tap = self.chunk_tap.as_deref();
         let keep_audio = !self.discard_audio;
 
         let mut on_frame = |frame: &[f32], denoise_prob: Option<f32>| {
@@ -1506,6 +1540,7 @@ impl CaptureProcessor {
                 vad_errors,
                 keep_audio,
                 processed_samples,
+                chunk_tap,
                 denoise_prob,
             )
         };

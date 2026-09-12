@@ -1294,6 +1294,30 @@ pub struct AppSettings {
     pub multi_stt_performance_mode_full_power_shortcut: String,
     #[serde(default = "default_multi_stt_normal_shortcut")]
     pub multi_stt_performance_mode_normal_shortcut: String,
+    /// Experimental: run the primary streaming model as the live 1st model and
+    /// replace its rough text in place, chunk by chunk, as the extras and the
+    /// merge land (`multi_stt_stream`). Needs a streaming-capable primary model
+    /// and a merge prompt; without either, Multi-STT takes its normal batch path.
+    #[serde(default)]
+    pub multi_stt_streaming_first_enabled: bool,
+    /// How long the speaker has to pause before the open chunk is closed at its
+    /// last sentence end and merged. Same test Live Mode uses for its silence
+    /// boundary.
+    #[serde(default = "default_multi_stt_streaming_pause_ms")]
+    pub multi_stt_streaming_pause_ms: u32,
+    /// How many already-spoken sentences a merge window of the experimental
+    /// streaming-first mode carries in front of what is new. The window is then
+    /// `[start of the last previous sentence .. now]` instead of everything
+    /// accumulated since the last cut, so a sentence the stream ended early
+    /// still reaches the merge joined to what follows it. 0 sends only what is
+    /// new since the cut.
+    #[serde(default = "default_multi_stt_streaming_context_sentences")]
+    pub multi_stt_streaming_context_sentences: u32,
+    /// How many sentences a chunk may hold before it closes at a sentence end and
+    /// is merged even though the speaker never paused — what bounds a long run of
+    /// speech. 0 closes on pauses only (the 60 s valve still applies).
+    #[serde(default = "default_multi_stt_streaming_max_sentences")]
+    pub multi_stt_streaming_max_sentences: u32,
     // Microphone idle timeout
     #[serde(default = "default_mic_idle_timeout_value")]
     pub mic_idle_timeout_value: u32,
@@ -1372,6 +1396,26 @@ fn default_multi_stt_full_power_shortcut() -> String {
 
 fn default_multi_stt_normal_shortcut() -> String {
     "ctrl+alt+space".to_string()
+}
+
+/// One second: long enough that a breath or a comma does not close a chunk,
+/// short enough that the correction lands while the speaker still remembers the
+/// sentence.
+fn default_multi_stt_streaming_pause_ms() -> u32 {
+    1000
+}
+
+/// One sentence: every merge window then begins where the sentence before the
+/// new one did, so a pause inside a sentence still hands the extras that
+/// sentence's whole audio and a wrong split at the pause can be undone.
+fn default_multi_stt_streaming_context_sentences() -> u32 {
+    1
+}
+
+/// Three sentences: a window the extras re-decode in a second or two, and one
+/// that still carries a sentence of context into the merge.
+fn default_multi_stt_streaming_max_sentences() -> u32 {
+    3
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -1894,6 +1938,10 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_performance_mode_trigger_on_start: false,
         multi_stt_performance_mode_full_power_shortcut: default_multi_stt_full_power_shortcut(),
         multi_stt_performance_mode_normal_shortcut: default_multi_stt_normal_shortcut(),
+        multi_stt_streaming_first_enabled: false,
+        multi_stt_streaming_pause_ms: default_multi_stt_streaming_pause_ms(),
+        multi_stt_streaming_context_sentences: default_multi_stt_streaming_context_sentences(),
+        multi_stt_streaming_max_sentences: default_multi_stt_streaming_max_sentences(),
         mic_idle_timeout_value: default_mic_idle_timeout_value(),
         mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
         mic_idle_infinite: false,

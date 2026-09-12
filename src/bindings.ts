@@ -47,6 +47,23 @@ export const commands = {
 	name: string,
 	prompt: string,
 } | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_prompt", { prompt })),
+	/**
+	 *  Experimental Multi-STT streaming-first mode: the primary model's live stream
+	 *  becomes the 1st output and chunk merges replace its rough text in place.
+	 */
+	changeMultiSttStreamingFirstEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_first_enabled_setting", { enabled })),
+	/**  The silence that closes a chunk in the experimental streaming-first mode. */
+	changeMultiSttStreamingPauseMsSetting: (pauseMs: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_pause_ms_setting", { pauseMs })),
+	/**
+	 *  How many already-spoken sentences lead each merge window of the experimental
+	 *  streaming-first mode. Read at the next close, so it applies mid-session.
+	 */
+	changeMultiSttStreamingContextSentencesSetting: (sentences: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_context_sentences_setting", { sentences })),
+	/**
+	 *  How many sentences a chunk may hold before it is closed and merged without a
+	 *  pause. Read at the next close, so it applies mid-session.
+	 */
+	changeMultiSttStreamingMaxSentencesSetting: (sentences: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_max_sentences_setting", { sentences })),
 	changeMultiSttTranslateModel2: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_2", { enabled })),
 	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
 	changeMultiSttTranslateModel4: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_4", { enabled })),
@@ -412,6 +429,17 @@ export const commands = {
 	liveFftReset: () => __TAURI_INVOKE<void>("live_fft_reset"),
 	/**  The "Raw" preset: linear magnitude, frame-peak reference, no ballistics. */
 	liveFftRawDefaults: () => __TAURI_INVOKE<LiveFftSettings>("live_fft_raw_defaults"),
+	/**
+	 *  Report the streaming card's transcript height (logical px) and grow the native
+	 *  window to fit it. Returns the height the frontend may render before scrolling.
+	 * 
+	 *  Called by `RecordingOverlay.tsx` in 24 px steps while the Multi-STT
+	 *  streaming-first session fills the card, so this runs about once per line of
+	 *  text rather than per character. The reply is the same capped value the window
+	 *  was just sized with, so the cap the card applies and the window it lives in
+	 *  are one number.
+	 */
+	overlayStreamTextHeight: (heightPx: number) => __TAURI_INVOKE<number>("overlay_stream_text_height", { heightPx }),
 };
 
 /** Events */
@@ -424,10 +452,11 @@ export const events = {
 	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent>("live-mode-transcript-event"),
 	llamaDownloadEvent: makeEvent<LlamaDownloadEvent>("llama-download-event"),
 	llamaServerStateEvent: makeEvent<LlamaServerStateEvent>("llama-server-state-event"),
+	multiSttStreamChunkFailedEvent: makeEvent<MultiSttStreamChunkFailedEvent>("multi-stt-stream-chunk-failed-event"),
 	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
 	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
-	streamTextEvent: makeEvent<StreamTextEvent>("stream-text-event"),
+	streamTextEvent: makeEvent<StreamTextEvent_Deserialize>("stream-text-event"),
 	systemStatsEvent: makeEvent<SystemStatsEvent>("system-stats-event"),
 	vadTestEvent: makeEvent<VadTestEvent>("vad-test-event"),
 };
@@ -627,6 +656,34 @@ export type AppSettings_Deserialize = {
 	multi_stt_performance_mode_trigger_on_start?: boolean,
 	multi_stt_performance_mode_full_power_shortcut?: string,
 	multi_stt_performance_mode_normal_shortcut?: string,
+	/**
+	 *  Experimental: run the primary streaming model as the live 1st model and
+	 *  replace its rough text in place, chunk by chunk, as the extras and the
+	 *  merge land (`multi_stt_stream`). Needs a streaming-capable primary model
+	 *  and a merge prompt; without either, Multi-STT takes its normal batch path.
+	 */
+	multi_stt_streaming_first_enabled?: boolean,
+	/**
+	 *  How long the speaker has to pause before the open chunk is closed at its
+	 *  last sentence end and merged. Same test Live Mode uses for its silence
+	 *  boundary.
+	 */
+	multi_stt_streaming_pause_ms?: number,
+	/**
+	 *  How many already-spoken sentences a merge window of the experimental
+	 *  streaming-first mode carries in front of what is new. The window is then
+	 *  `[start of the last previous sentence .. now]` instead of everything
+	 *  accumulated since the last cut, so a sentence the stream ended early
+	 *  still reaches the merge joined to what follows it. 0 sends only what is
+	 *  new since the cut.
+	 */
+	multi_stt_streaming_context_sentences?: number,
+	/**
+	 *  How many sentences a chunk may hold before it closes at a sentence end and
+	 *  is merged even though the speaker never paused — what bounds a long run of
+	 *  speech. 0 closes on pauses only (the 60 s valve still applies).
+	 */
+	multi_stt_streaming_max_sentences?: number,
 	mic_idle_timeout_value?: number,
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
@@ -831,6 +888,34 @@ export type AppSettings_Serialize = {
 	multi_stt_performance_mode_trigger_on_start: boolean,
 	multi_stt_performance_mode_full_power_shortcut: string,
 	multi_stt_performance_mode_normal_shortcut: string,
+	/**
+	 *  Experimental: run the primary streaming model as the live 1st model and
+	 *  replace its rough text in place, chunk by chunk, as the extras and the
+	 *  merge land (`multi_stt_stream`). Needs a streaming-capable primary model
+	 *  and a merge prompt; without either, Multi-STT takes its normal batch path.
+	 */
+	multi_stt_streaming_first_enabled: boolean,
+	/**
+	 *  How long the speaker has to pause before the open chunk is closed at its
+	 *  last sentence end and merged. Same test Live Mode uses for its silence
+	 *  boundary.
+	 */
+	multi_stt_streaming_pause_ms: number,
+	/**
+	 *  How many already-spoken sentences a merge window of the experimental
+	 *  streaming-first mode carries in front of what is new. The window is then
+	 *  `[start of the last previous sentence .. now]` instead of everything
+	 *  accumulated since the last cut, so a sentence the stream ended early
+	 *  still reaches the merge joined to what follows it. 0 sends only what is
+	 *  new since the cut.
+	 */
+	multi_stt_streaming_context_sentences: number,
+	/**
+	 *  How many sentences a chunk may hold before it closes at a sentence end and
+	 *  is merged even though the speaker never paused — what bounds a long run of
+	 *  speech. 0 closes on pauses only (the 60 s valve still applies).
+	 */
+	multi_stt_streaming_max_sentences: number,
 	mic_idle_timeout_value: number,
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,
@@ -1562,6 +1647,19 @@ export type ModelSource =
 export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
 
 /**
+ *  Emitted when a chunk's merge fails, so the main window can raise a toast.
+ *  Rate-limited by construction: it fires only when the number of chunks
+ *  currently showing a failed merge goes *up*, so a retry that fails again does
+ *  not repeat it.
+ */
+export type MultiSttStreamChunkFailedEvent = {
+	/**  1-based number of the chunk that failed. */
+	chunk: number,
+	/**  How many chunks of the session are showing a failed merge right now. */
+	failed_chunks: number,
+};
+
+/**
  *  Which transcribe-cpp stream extension a catalog streaming model exposes for
  *  low-latency tuning. `None` means the model has no configurable latency
  *  extension (non-streaming models).
@@ -1791,9 +1889,60 @@ export type StreamPhaseEvent_Serialize = {
  *  `committed` is the append-only, flicker-free prefix; `tentative` is the
  *  volatile suffix the model may still rewrite.
  */
-export type StreamTextEvent = {
+export type StreamTextEvent = StreamTextEvent_Serialize | StreamTextEvent_Deserialize;
+
+/**
+ *  Live transcription snapshot emitted to the overlay during a streaming run.
+ *  `committed` is the append-only, flicker-free prefix; `tentative` is the
+ *  volatile suffix the model may still rewrite.
+ */
+export type StreamTextEvent_Deserialize = {
 	committed: string,
 	tentative: string,
+	/**
+	 *  Experimental Multi-STT streaming mode only (`None` everywhere else, so
+	 *  the plain path serializes byte-identically): how many of the session's
+	 *  chunks ended in a merge failure. The overlay shows a badge for a
+	 *  non-zero count — the failure is never written into the text itself,
+	 *  because with `DirectStreaming` that text is typed into the user's
+	 *  document and a marker would be typed with it.
+	 */
+	failed_chunks: number | null,
+	/**
+	 *  Whether this text is the whole session's, composed chunk by chunk (the
+	 *  experimental Multi-STT streaming mode). The overlay uses it to grow its
+	 *  card with the text and read the backend's height cap, which only makes
+	 *  sense when nothing is being hidden: `false` on every other path, so the
+	 *  plain overlay's fixed cap is untouched.
+	 */
+	whole_session?: boolean,
+};
+
+/**
+ *  Live transcription snapshot emitted to the overlay during a streaming run.
+ *  `committed` is the append-only, flicker-free prefix; `tentative` is the
+ *  volatile suffix the model may still rewrite.
+ */
+export type StreamTextEvent_Serialize = {
+	committed: string,
+	tentative: string,
+	/**
+	 *  Experimental Multi-STT streaming mode only (`None` everywhere else, so
+	 *  the plain path serializes byte-identically): how many of the session's
+	 *  chunks ended in a merge failure. The overlay shows a badge for a
+	 *  non-zero count — the failure is never written into the text itself,
+	 *  because with `DirectStreaming` that text is typed into the user's
+	 *  document and a marker would be typed with it.
+	 */
+	failed_chunks?: number | null,
+	/**
+	 *  Whether this text is the whole session's, composed chunk by chunk (the
+	 *  experimental Multi-STT streaming mode). The overlay uses it to grow its
+	 *  card with the text and read the backend's height cap, which only makes
+	 *  sense when nothing is being hidden: `false` on every other path, so the
+	 *  plain overlay's fixed cap is untouched.
+	 */
+	whole_session?: boolean,
 };
 
 /**  Semantic kind of "working" phase, used to localize the spinner label. */

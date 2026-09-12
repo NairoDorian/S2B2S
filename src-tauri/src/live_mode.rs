@@ -367,7 +367,7 @@ impl LiveModeManager {
 
     fn finish_session(&self, error: Option<anyhow::Error>) {
         let tm = self.app.state::<Arc<TranscriptionManager>>();
-        tm.set_stream_text_sink(None);
+        tm.set_stream_text_sink(None, false);
         tm.maybe_unload_immediately("live mode");
         self.active.store(false, Ordering::Release);
         self.update_status(|s| match &error {
@@ -435,23 +435,26 @@ impl LiveModeManager {
             let app = app.clone();
             let granularity = live.granularity;
             let last_write = Mutex::new(Instant::now() - LIVE_WRITE_INTERVAL);
-            tm.set_stream_text_sink(Some(Arc::new(move |committed: &str, tentative: &str| {
-                let tail = live_tail_text(committed, tentative, granularity);
-                let _ = LiveModeTranscriptEvent {
-                    reset: false,
-                    stable_appended: String::new(),
-                    live: tail.clone(),
-                }
-                .emit(&app);
-                let mut last = last_write.lock().unwrap();
-                if last.elapsed() < LIVE_WRITE_INTERVAL {
-                    return;
-                }
-                *last = Instant::now();
-                if let Err(e) = writer.lock().unwrap().set_live(&tail) {
-                    warn!("Live Mode: failed to write live text: {e}");
-                }
-            })));
+            tm.set_stream_text_sink(
+                Some(Arc::new(move |committed: &str, tentative: &str, _, _| {
+                    let tail = live_tail_text(committed, tentative, granularity);
+                    let _ = LiveModeTranscriptEvent {
+                        reset: false,
+                        stable_appended: String::new(),
+                        live: tail.clone(),
+                    }
+                    .emit(&app);
+                    let mut last = last_write.lock().unwrap();
+                    if last.elapsed() < LIVE_WRITE_INTERVAL {
+                        return;
+                    }
+                    *last = Instant::now();
+                    if let Err(e) = writer.lock().unwrap().set_live(&tail) {
+                        warn!("Live Mode: failed to write live text: {e}");
+                    }
+                })),
+                false,
+            );
         }
 
         let vad_policy = if settings.vad_enabled {

@@ -1,4 +1,5 @@
 // Re-export all audio components
+mod chunk_tap;
 mod denoise;
 mod device;
 mod recorder;
@@ -6,6 +7,7 @@ mod resampler;
 mod utils;
 mod visualizer;
 
+pub use chunk_tap::{ChunkTap, tap as chunk_tap};
 pub use denoise::{
     DenoiseChain, DenoiseControls, DenoiseParams, MAX_DENOISE_VAD_GRACE_MS, RNNOISE_FRAME_SAMPLES,
     RNNOISE_SAMPLE_RATE,

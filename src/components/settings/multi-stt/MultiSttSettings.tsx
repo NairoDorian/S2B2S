@@ -7,6 +7,7 @@ import { type ModelInfo } from "@/bindings";
 import {
   SettingContainer,
   SettingsGroup,
+  Slider,
   Textarea,
   ToggleSwitch,
 } from "@/components/ui";
@@ -839,6 +840,139 @@ export const MultiSttSettings: React.FC = () => {
                 )}
               </div>
             </SettingContainer>
+          </SettingsGroup>
+
+          {/* Experimental: the streaming model becomes the live 1st model */}
+          <SettingsGroup title={t("multiStt.streamingFirst.title")}>
+            <div className="space-y-3">
+              <ToggleSwitch
+                checked={
+                  (getSetting(
+                    "multi_stt_streaming_first_enabled",
+                  ) as boolean) ?? false
+                }
+                onChange={(enabled) =>
+                  updateSetting("multi_stt_streaming_first_enabled", enabled)
+                }
+                isUpdating={isUpdating("multi_stt_streaming_first_enabled")}
+                label={t("multiStt.streamingFirst.enabledLabel")}
+                description={t("multiStt.streamingFirst.enabledDescription")}
+                descriptionMode="tooltip"
+                grouped={false}
+              />
+
+              {((getSetting("multi_stt_streaming_first_enabled") as boolean) ??
+                false) && (
+                <>
+                  <Slider
+                    value={
+                      (getSetting("multi_stt_streaming_pause_ms") as number) ??
+                      1000
+                    }
+                    onChange={(value) =>
+                      updateSetting(
+                        "multi_stt_streaming_pause_ms",
+                        Math.round(value),
+                      )
+                    }
+                    min={300}
+                    max={5000}
+                    step={100}
+                    label={t("multiStt.streamingFirst.pauseLabel")}
+                    description={t("multiStt.streamingFirst.pauseDescription")}
+                    descriptionMode="tooltip"
+                    grouped={false}
+                    formatValue={(v) => `${Math.round(v)} ms`}
+                    onReset={() =>
+                      updateSetting("multi_stt_streaming_pause_ms", 1000)
+                    }
+                    disabled={isUpdating("multi_stt_streaming_pause_ms")}
+                  />
+
+                  {/* What the extras re-read at each close: one already-spoken
+                      sentence of context in front of what is new, and a ceiling
+                      on how many sentences a window may hold. */}
+                  <Slider
+                    value={
+                      (getSetting(
+                        "multi_stt_streaming_context_sentences",
+                      ) as number) ?? 1
+                    }
+                    onChange={(value) =>
+                      updateSetting(
+                        "multi_stt_streaming_context_sentences",
+                        Math.round(value),
+                      )
+                    }
+                    min={0}
+                    max={3}
+                    step={1}
+                    label={t("multiStt.streamingFirst.contextLabel")}
+                    description={t(
+                      "multiStt.streamingFirst.contextDescription",
+                    )}
+                    descriptionMode="tooltip"
+                    grouped={false}
+                    formatValue={(v) =>
+                      v === 0
+                        ? t("multiStt.streamingFirst.contextOff")
+                        : t("multiStt.streamingFirst.contextValue", {
+                            count: Math.round(v),
+                          })
+                    }
+                    onReset={() =>
+                      updateSetting("multi_stt_streaming_context_sentences", 1)
+                    }
+                    disabled={isUpdating(
+                      "multi_stt_streaming_context_sentences",
+                    )}
+                  />
+
+                  <Slider
+                    value={
+                      (getSetting(
+                        "multi_stt_streaming_max_sentences",
+                      ) as number) ?? 3
+                    }
+                    onChange={(value) =>
+                      updateSetting(
+                        "multi_stt_streaming_max_sentences",
+                        Math.round(value),
+                      )
+                    }
+                    min={0}
+                    max={10}
+                    step={1}
+                    label={t("multiStt.streamingFirst.maxSentencesLabel")}
+                    description={t(
+                      "multiStt.streamingFirst.maxSentencesDescription",
+                    )}
+                    descriptionMode="tooltip"
+                    grouped={false}
+                    formatValue={(v) =>
+                      v === 0
+                        ? t("multiStt.streamingFirst.maxSentencesOff")
+                        : t("multiStt.streamingFirst.maxSentencesValue", {
+                            count: Math.round(v),
+                          })
+                    }
+                    onReset={() =>
+                      updateSetting("multi_stt_streaming_max_sentences", 3)
+                    }
+                    disabled={isUpdating("multi_stt_streaming_max_sentences")}
+                  />
+
+                  {/* The 1st slot is the streaming model's own live text here,
+                      so a merge prompt is what turns the rough text into the
+                      merged one — without it the mode has nothing to do. */}
+                  <Alert variant="info" contained>
+                    <p className="text-sm">
+                      {t("multiStt.streamingFirst.note")}
+                    </p>
+                  </Alert>
+                </>
+              )}
+            </div>
           </SettingsGroup>
 
           {/* Status Summary */}

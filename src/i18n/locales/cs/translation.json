@@ -1668,7 +1668,10 @@
   "overlay": {
     "transcribing": "Přepisuji...",
     "processing": "Zpracovávám...",
-    "wpm": "wpm"
+    "wpm": "wpm",
+    "chunkFailed_one": "{{count}} chunk failed",
+    "chunkFailed_other": "{{count}} chunks failed",
+    "chunkFailedHint": "The merge of this chunk failed, so its text is the models' outputs side by side. The next pause retries it."
   },
   "whatsNew": {
     "title": "Novinky v Handy v{{version}}"
@@ -1731,6 +1734,26 @@
       "savePrompt": "Save Merge Prompt",
       "noPrompt": "Without a merge prompt, outputs will be concatenated",
       "clearPrompt": "Clear Merge Prompt"
+    },
+    "streamingFirst": {
+      "title": "Experimental: streaming 1st model",
+      "enabledLabel": "Stream the rough text while you speak",
+      "enabledDescription": "The primary model's live stream becomes the 1st output and you watch it form, including everything you have said earlier in the session. Each time you stop speaking for longer than the pause below, the extra models re-transcribe that part of the audio and the merge prompt replaces its rough text in place.",
+      "pauseLabel": "Pause that ends a chunk",
+      "pauseDescription": "How long you have to stop speaking before the extra models re-run over what you just said. Several sentences between two pauses are re-run together, as one chunk, so they keep their context; a pause in the middle of a sentence only polishes the text so far and that sentence keeps accumulating.",
+      "contextLabel": "Previous sentences re-run with the new ones",
+      "contextDescription": "How many sentences you have already spoken are handed to the extra models together with the new audio. They then hear the whole join, so a sentence that was ended at a pause and then continued can be put back together, and the audio that gets re-transcribed stays the same size however long you have been talking. 0 hands over only what is new.",
+      "contextOff": "None, only the new audio",
+      "contextValue_one": "{{count}} sentence of context",
+      "contextValue_other": "{{count}} sentences of context",
+      "maxSentencesLabel": "Sentences per chunk at most",
+      "maxSentencesDescription": "Close the chunk at a sentence end once it holds this many sentences, even if you have not paused, so a long stretch of speech is still corrected in pieces of a predictable size. 0 waits for a pause; the 60-second limit still applies.",
+      "maxSentencesOff": "No limit, pauses only",
+      "maxSentencesValue_one": "{{count}} sentence",
+      "maxSentencesValue_other": "{{count}} sentences",
+      "note": "Needs a streaming-capable primary model and a merge prompt; without either, Multi-STT runs as usual. The 1st slot is the streaming model's own live text. With the Direct Streaming paste method the text is typed into the app as it forms and each merge retypes the part it corrected.",
+      "chunkFailedTitle": "A chunk could not be merged",
+      "chunkFailedToast": "Chunk {{chunk}} failed to merge, so its text is the models' outputs side by side. The next pause retries it."
     },
     "status": {
       "title": "Model Status",

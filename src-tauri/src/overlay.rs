@@ -99,11 +99,8 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
     // thread inside the show path, where a settings read is pure added latency.
     let view_h = OVERLAY_SCOPE_VIEW_H.load(Ordering::Relaxed);
     if state == "streaming" {
-        let row_h = (f64::from(view_h) + OVERLAY_ROW_PADDING_H).max(OVERLAY_ROW_H);
-        return (
-            OVERLAY_STREAM_WIDTH,
-            OVERLAY_STREAM_HEIGHT + (row_h - OVERLAY_ROW_H),
-        );
+        let (width, base_height) = streaming_dimensions_baseline();
+        return (width, base_height + streaming_text_height());
     }
     compact_dimensions(
         OVERLAY_SCOPE_BLOCK_PX.load(Ordering::Relaxed),
@@ -579,6 +576,12 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
         // Invalidate any delayed hide still in flight from a previous session
         // (see `hide_recording_overlay`).
         OVERLAY_SHOW_GENERATION.fetch_add(1, Ordering::SeqCst);
+        // A transcript measured by a previous session's card must not size this
+        // one: the new card reports its own height as it fills.
+        if state != "streaming" {
+            OVERLAY_STREAM_TEXT_H.store(0, Ordering::Relaxed);
+        }
+        OVERLAY_STREAMING.store(state == "streaming", Ordering::Relaxed);
 
         #[cfg(target_os = "linux")]
         let shown_with_layer_shell = if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
@@ -747,6 +750,10 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     if let Some(fft) = app_handle.try_state::<Arc<crate::live_fft::LiveFftManager>>() {
         fft.stop_overlay_scope();
     }
+    // The next session's card starts compact and reports its own height as it
+    // fills, so a long session's transcript never sizes the next one.
+    OVERLAY_STREAMING.store(false, Ordering::Relaxed);
+    OVERLAY_STREAM_TEXT_H.store(0, Ordering::Relaxed);
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -792,6 +799,144 @@ static OVERLAY_SCOPE_VIEW_H: AtomicU32 = AtomicU32::new(22);
 pub fn update_overlay_scope_cache(scope: &OverlayScopeSettings) {
     OVERLAY_SCOPE_BLOCK_PX.store(scope.block_width_px(), Ordering::Relaxed);
     OVERLAY_SCOPE_VIEW_H.store(scope.view_height, Ordering::Relaxed);
+}
+
+/// Extra height (logical px) the streaming overlay's transcript needs beyond its
+/// base card, as last measured by the frontend, and the cap it may grow to.
+///
+/// The Multi-STT streaming-first mode shows the whole session's text, so the
+/// card has to grow with it. The frontend measures its own transcript and reports
+/// the height in 24 px steps (`overlay_stream_text_height`) — one call per line
+/// of text, not per character — and reads the cap from the same reply so its
+/// `--ov-cap-max-h` and this window size can never disagree. The cap is ~70 % of
+/// the monitor height (minus the card's own chrome), past which the card scrolls
+/// back instead of growing.
+static OVERLAY_STREAM_TEXT_H: AtomicU32 = AtomicU32::new(0);
+static OVERLAY_STREAM_TEXT_CAP: AtomicU32 = AtomicU32::new(0);
+
+/// The transcript height to add to the streaming card, never past the cap.
+///
+/// A cap of 0 means no monitor has been measured yet (no session has shown the
+/// overlay), in which case nothing is added: the first measurement arrives with
+/// the cap, so the card can never be sized off an unclamped report.
+fn streaming_text_height() -> f64 {
+    let cap = OVERLAY_STREAM_TEXT_CAP.load(Ordering::Relaxed);
+    f64::from(OVERLAY_STREAM_TEXT_H.load(Ordering::Relaxed).min(cap))
+}
+
+/// Whether the overlay is currently laid out as the streaming card. The measured
+/// transcript height belongs to that layout only — a later state change resets it.
+static OVERLAY_STREAMING: AtomicBool = AtomicBool::new(false);
+
+/// Report the streaming card's transcript height (logical px) and grow the native
+/// window to fit it. Returns the height the frontend may render before scrolling.
+///
+/// Called by `RecordingOverlay.tsx` in 24 px steps while the Multi-STT
+/// streaming-first session fills the card, so this runs about once per line of
+/// text rather than per character. The reply is the same capped value the window
+/// was just sized with, so the cap the card applies and the window it lives in
+/// are one number.
+#[tauri::command]
+#[specta::specta]
+pub fn overlay_stream_text_height(app: AppHandle, height_px: u32) -> u32 {
+    // Only the streaming card reports, and only while it is on screen: a card
+    // that is fading out or hidden must not resize the window under the next
+    // state's layout.
+    if !OVERLAY_STREAMING.load(Ordering::Relaxed) {
+        return OVERLAY_STREAM_TEXT_CAP.load(Ordering::Relaxed);
+    }
+    let cap = streaming_text_cap(&app);
+    OVERLAY_STREAM_TEXT_CAP.store(cap, Ordering::Relaxed);
+    OVERLAY_STREAM_TEXT_H.store(height_px.min(cap), Ordering::Relaxed);
+
+    let (width, height) = overlay_dimensions("streaming");
+    let handle = app.clone();
+    let _ =
+        app.run_on_main_thread(move || resize_streaming_overlay_on_main(&handle, width, height));
+    cap
+}
+
+/// The tallest the streaming card's transcript may be: the whole card capped at
+/// ~70 % of the monitor it is on, minus the card's own chrome.
+///
+/// The frontend's reported height is in CSS px and the window is sized in logical
+/// px, which are the same length on every platform (WebView2's accessibility text
+/// scale zooms both together, see `windows_text_scale_factor`), so the conversion
+/// is the monitor's device pixel ratio and nothing else.
+fn streaming_text_cap(app: &AppHandle) -> u32 {
+    let (_, base_height) = streaming_dimensions_baseline();
+    let logical_monitor_height = app
+        .get_webview_window("recording_overlay")
+        .and_then(|window| {
+            window
+                .current_monitor()
+                .ok()
+                .flatten()
+                .or_else(|| window.primary_monitor().ok().flatten())
+        })
+        .map(|monitor| {
+            let scale = monitor.scale_factor();
+            f64::from(monitor.size().height) / if scale > 0.0 { scale } else { 1.0 }
+        })
+        // No monitor to measure (the window is gone): leave the card at its base
+        // size rather than inventing a screen big enough for anything.
+        .unwrap_or(base_height);
+    (logical_monitor_height * 0.7 - base_height)
+        .max(0.0)
+        .round() as u32
+}
+
+/// The streaming card's size with no transcript measured yet — what the card
+/// grows from, and the chrome the transcript cap is measured against.
+fn streaming_dimensions_baseline() -> (f64, f64) {
+    let view_h = OVERLAY_SCOPE_VIEW_H.load(Ordering::Relaxed);
+    let row_h = (f64::from(view_h) + OVERLAY_ROW_PADDING_H).max(OVERLAY_ROW_H);
+    (
+        OVERLAY_STREAM_WIDTH,
+        OVERLAY_STREAM_HEIGHT + (row_h - OVERLAY_ROW_H),
+    )
+}
+
+/// Resize the visible streaming overlay to `width` x `height`, keeping it
+/// anchored where it is — the mirror of `show_overlay_state_on_main`'s sizing
+/// path without the show.
+fn resize_streaming_overlay_on_main(app_handle: &AppHandle, width: f64, height: f64) {
+    let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") else {
+        return;
+    };
+    // A hide is in flight: it has already faded this card out, so resizing would
+    // only leave a flash of the wrong layout behind.
+    if !overlay_window.is_visible().unwrap_or(false) {
+        return;
+    }
+
+    #[cfg(target_os = "linux")]
+    if LAYER_SHELL_ACTIVE.load(Ordering::SeqCst) {
+        let position = settings::get_settings(app_handle).overlay_position;
+        match overlay_window.gtk_window() {
+            Ok(gtk_window) => {
+                configure_layer_shell_surface(&gtk_window, position, width, height);
+            }
+            Err(error) => log::error!("Failed to access GTK overlay window: {error}"),
+        }
+        return;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = overlay_window.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }));
+        if let Some((x, y)) = calculate_overlay_position(app_handle, width, height) {
+            let _ = overlay_window
+                .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+        }
+    }
+
+    // Windows sizes and places in one native call — the layout's own set_size is
+    // tao's current-DPI conversion, which mislands a cross-monitor move.
+    #[cfg(target_os = "windows")]
+    if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
+        log::error!("Failed to resize recording overlay: {error}");
+    }
 }
 
 /// Cached "speech stats are enabled" flag, kept in sync with

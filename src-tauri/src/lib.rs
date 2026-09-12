@@ -20,6 +20,7 @@ mod llama_server;
 mod llm_client;
 mod managers;
 mod memory;
+mod multi_stt_stream;
 mod overlay;
 mod paste_tx;
 pub mod portable;
@@ -767,6 +768,10 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_multi_stt_extra_model,
             shortcut::change_multi_stt_extra_model_language,
             shortcut::change_multi_stt_merge_prompt,
+            shortcut::change_multi_stt_streaming_first_enabled_setting,
+            shortcut::change_multi_stt_streaming_pause_ms_setting,
+            shortcut::change_multi_stt_streaming_context_sentences_setting,
+            shortcut::change_multi_stt_streaming_max_sentences_setting,
             shortcut::change_multi_stt_translate_model_2,
             shortcut::change_multi_stt_translate_model_3,
             shortcut::change_multi_stt_translate_model_4,
@@ -929,6 +934,7 @@ pub fn run(cli_args: CliArgs) {
             commands::live_fft::live_fft_status,
             commands::live_fft::live_fft_reset,
             commands::live_fft::live_fft_raw_defaults,
+            overlay::overlay_stream_text_height,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -945,6 +951,7 @@ pub fn run(cli_args: CliArgs) {
             live_mode::LiveModeTranscriptEvent,
             live_fft::LiveFftStateEvent,
             live_fft::LiveFftFrameEvent,
+            multi_stt_stream::MultiSttStreamChunkFailedEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
