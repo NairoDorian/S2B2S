@@ -817,7 +817,7 @@
         "ggml": {
           "title": "ggml",
           "description": "オンデバイス機械学習推論のための高性能テンソルライブラリ",
-          "details": "ZER0 のローカルの音声からテキストへの文字起こしは transcribe.cpp と ggml を基盤としています。Georgi Gerganov 氏と貢献者の皆様の素晴らしい仕事に感謝します。"
+          "details": "{{app}} のローカルの音声からテキストへの文字起こしは transcribe.cpp と ggml を基盤としています。Georgi Gerganov 氏と貢献者の皆様の素晴らしい仕事に感謝します。"
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",

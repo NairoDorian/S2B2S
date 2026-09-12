@@ -817,7 +817,7 @@
         "ggml": {
           "title": "ggml",
           "description": "針對 OpenAI Whisper 自動語音辨識模型的高效能推理引擎",
-          "details": "ZER0 使用 ggml 進行快速的本機語音轉文字處理。感謝 Georgi Gerganov 和貢獻者們的傑出工作"
+          "details": "{{app}} 使用 ggml 進行快速的本機語音轉文字處理。感謝 Georgi Gerganov 和貢獻者們的傑出工作"
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",

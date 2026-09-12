@@ -817,7 +817,7 @@
         "ggml": {
           "title": "ggml",
           "description": "Biblioteca de tensores de alto rendimiento para inferencia de aprendizaje automático en el dispositivo",
-          "details": "El habla a texto local de ZER0 está construido sobre transcribe.cpp y ggml. Gracias al increíble trabajo de Georgi Gerganov y colaboradores."
+          "details": "El habla a texto local de {{app}} está construido sobre transcribe.cpp y ggml. Gracias al increíble trabajo de Georgi Gerganov y colaboradores."
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",

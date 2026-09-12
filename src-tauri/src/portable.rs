@@ -108,9 +108,9 @@ pub fn store_path(relative: &str) -> PathBuf {
 
 /// Move a pre-rename install's data to where 0.9.7 and later look for it.
 ///
-/// The fork renamed its bundle identifier from `com.pais.handy` to
-/// `com.nairodorian.zer0`, and Tauri derives the app data, cache and log
-/// directories from that identifier — so a straight rename would leave every
+/// The fork renamed its bundle identifier — `app_identity::LEGACY_IDENTIFIER` to
+/// `app_identity::IDENTIFIER` — and Tauri derives the app data, cache and log
+/// directories from that identifier, so a straight rename would leave every
 /// existing user with a fresh, empty profile: no models (gigabytes to
 /// re-download), no transcription history, no settings.
 ///

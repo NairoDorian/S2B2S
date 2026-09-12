@@ -817,7 +817,7 @@
         "ggml": {
           "title": "ggml",
           "description": "OpenAI의 Whisper 자동 음성 인식 모델의 고성능 추론",
-          "details": "ZER0는 빠르고 로컬 음성-텍스트 처리를 위해 ggml를 사용합니다. Georgi Gerganov와 기여자들의 놀라운 작업에 감사드립니다."
+          "details": "{{app}}는 빠르고 로컬 음성-텍스트 처리를 위해 ggml를 사용합니다. Georgi Gerganov와 기여자들의 놀라운 작업에 감사드립니다."
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",

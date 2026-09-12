@@ -817,7 +817,7 @@
         "ggml": {
           "title": "ggml",
           "description": "Högpresterande inferens av OpenAI:s Whisper-modell för automatisk taligenkänning",
-          "details": "ZER0 använder ggml för snabb, lokal tal-till-text-behandling. Tack till det fantastiska arbete som utförts av Georgi Gerganov med medarbetare."
+          "details": "{{app}} använder ggml för snabb, lokal tal-till-text-behandling. Tack till det fantastiska arbete som utförts av Georgi Gerganov med medarbetare."
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",

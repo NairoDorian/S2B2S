@@ -361,28 +361,43 @@ mod tests {
     // The tests below share the process-wide environment, so each uses its own
     // variable name. Two tests on the same name would race under `cargo test`'s
     // thread pool, and the failure would only appear on a loaded machine.
+    //
+    // The prefixed spellings are built from the constants rather than written
+    // out: these tests exist to prove that `app_env_var` *derives* the name from
+    // the prefix, and a test that hardcodes the prefixed form passes just as
+    // happily against an implementation that ignores the constant.
+
+    /// `<PREFIX><suffix>` for whichever prefix this build ships with.
+    fn current(suffix: &str) -> String {
+        format!("{}{suffix}", app_identity::ENV_PREFIX)
+    }
+
+    /// The same for the pre-rename prefix.
+    fn legacy(suffix: &str) -> String {
+        format!("{}{suffix}", app_identity::LEGACY_ENV_PREFIX)
+    }
 
     #[test]
     fn app_env_var_reads_the_current_prefix() {
-        unsafe { std::env::set_var("ZER0_TEST_VALUE_CURRENT", "42") };
+        unsafe { std::env::set_var(current("TEST_VALUE_CURRENT"), "42") };
         assert_eq!(app_env_var("TEST_VALUE_CURRENT").as_deref(), Some("42"));
-        unsafe { std::env::remove_var("ZER0_TEST_VALUE_CURRENT") };
+        unsafe { std::env::remove_var(current("TEST_VALUE_CURRENT")) };
     }
 
     #[test]
     fn app_env_var_falls_back_to_the_legacy_prefix() {
-        unsafe { std::env::set_var("HANDY_TEST_VALUE_LEGACY", "42") };
+        unsafe { std::env::set_var(legacy("TEST_VALUE_LEGACY"), "42") };
         assert_eq!(app_env_var("TEST_VALUE_LEGACY").as_deref(), Some("42"));
-        unsafe { std::env::remove_var("HANDY_TEST_VALUE_LEGACY") };
+        unsafe { std::env::remove_var(legacy("TEST_VALUE_LEGACY")) };
     }
 
     #[test]
     fn the_current_prefix_wins_over_the_legacy_one() {
-        unsafe { std::env::set_var("ZER0_TEST_VALUE_BOTH", "current") };
-        unsafe { std::env::set_var("HANDY_TEST_VALUE_BOTH", "legacy") };
+        unsafe { std::env::set_var(current("TEST_VALUE_BOTH"), "current") };
+        unsafe { std::env::set_var(legacy("TEST_VALUE_BOTH"), "legacy") };
         assert_eq!(app_env_var("TEST_VALUE_BOTH").as_deref(), Some("current"));
-        unsafe { std::env::remove_var("ZER0_TEST_VALUE_BOTH") };
-        unsafe { std::env::remove_var("HANDY_TEST_VALUE_BOTH") };
+        unsafe { std::env::remove_var(current("TEST_VALUE_BOTH")) };
+        unsafe { std::env::remove_var(legacy("TEST_VALUE_BOTH")) };
     }
 
     #[test]
@@ -392,16 +407,16 @@ mod tests {
 
     /// A flag is the truthiness of the same lookup, so a value that is not a
     /// number still reads as "set": this is what lets a value-typed flag such as
-    /// `ZER0_DEBUG_MIC_READY_DELAY_MS` and a boolean one such as
-    /// `ZER0_NO_PRUNE` share one naming rule.
+    /// `DEBUG_MIC_READY_DELAY_MS` and a boolean one such as `NO_PRUNE` share one
+    /// naming rule.
     #[test]
     fn app_env_flag_is_the_truthiness_of_app_env_var() {
-        unsafe { std::env::set_var("ZER0_TEST_FLAG_BOTH_FORMS", "0") };
+        unsafe { std::env::set_var(current("TEST_FLAG_BOTH_FORMS"), "0") };
         assert_eq!(app_env_var("TEST_FLAG_BOTH_FORMS").as_deref(), Some("0"));
         assert!(!app_env_flag("TEST_FLAG_BOTH_FORMS"));
 
-        unsafe { std::env::set_var("ZER0_TEST_FLAG_BOTH_FORMS", "1") };
+        unsafe { std::env::set_var(current("TEST_FLAG_BOTH_FORMS"), "1") };
         assert!(app_env_flag("TEST_FLAG_BOTH_FORMS"));
-        unsafe { std::env::remove_var("ZER0_TEST_FLAG_BOTH_FORMS") };
+        unsafe { std::env::remove_var(current("TEST_FLAG_BOTH_FORMS")) };
     }
 }

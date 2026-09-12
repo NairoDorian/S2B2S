@@ -917,7 +917,7 @@
         "ggml": {
           "title": "ggml",
           "description": "Biblioteca de tensors d'alt rendiment per a la inferència d'aprenentatge automàtic al dispositiu",
-          "details": "La transcripció local de veu a text del ZER0 es basa en el transcribe.cpp i el ggml. Gràcies a la gran feina de Georgi Gerganov i dels col·laboradors."
+          "details": "La transcripció local de veu a text del {{app}} es basa en el transcribe.cpp i el ggml. Gràcies a la gran feina de Georgi Gerganov i dels col·laboradors."
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",
