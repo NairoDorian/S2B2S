@@ -528,6 +528,20 @@ function generatedFiles(): Map<string, string> {
   ]);
 }
 
+/**
+ * The generated files plus the file they are generated from, as a set the
+ * identity checker can skip.
+ *
+ * These spell the product name by definition — they *are* the constants. The
+ * gate that guards them is `meta:check`, which fails when one drifts from the
+ * generator, so a checker that also flagged their contents would only ever
+ * report a false leak.
+ */
+export const GENERATED_PATHS: ReadonlySet<string> = new Set([
+  META_TS,
+  ...generatedFiles().keys(),
+]);
+
 // ---------------------------------------------------------------------------
 // the mirror table
 // ---------------------------------------------------------------------------

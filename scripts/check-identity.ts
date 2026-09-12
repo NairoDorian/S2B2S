@@ -30,7 +30,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
-import { APP } from "./app-meta";
+import { APP, GENERATED_PATHS } from "./app-meta";
 
 const LEGACY = APP.legacy;
 
@@ -86,18 +86,6 @@ const EXEMPTIONS: Exemption[] = [
     file: "scripts/check-identity.ts",
     allow: new RegExp(LEGACY.name, "i"),
     reason: "This file: the patterns and reasons it matches against.",
-  },
-  {
-    file: "src-tauri/src/app_identity.rs",
-    allow: /^(pub const LEGACY_|\s*\/\/\/|\s*\/\/)/,
-    reason:
-      "Generated from app-meta.ts; holds the LEGACY_* compatibility constants.",
-  },
-  {
-    file: "src/lib/appIdentity.ts",
-    allow: /^(export const LEGACY_|\s*\/\/)/,
-    reason:
-      "Generated from app-meta.ts; holds the LEGACY_* compatibility constants.",
   },
   {
     file: "src-tauri/src/portable.rs",
@@ -207,9 +195,9 @@ const EXEMPTIONS: Exemption[] = [
   },
   {
     file: "src/lib/modelId.ts",
-    allow: /handy-computer\//,
+    allow: /handy-computer/,
     reason:
-      "The one place the external HF org is stripped off a model id for display. The org is not ours.",
+      "The one place the external HF org is stripped off a model id for display. The org is not ours — and the pattern stops at the org name, because the source spells the separator as an escaped slash (`/^handy-computer\\//`) that a pattern including it would miss.",
   },
 
   // --- attribution, which must survive the rename ---------------------------
@@ -377,10 +365,12 @@ function scan(): Leak[] {
 
   for (const path of trackedFiles()) {
     if (SKIP_EXT.has(extname(path))) continue;
-    // The generated module is the definition of these values, not a leak.
-    if (path === "scripts/app-meta.ts" || path === "src/lib/appIdentity.ts") {
-      continue;
-    }
+    // The generated mirrors and the file they are generated from are the
+    // definition of these values, not a leak. `meta:check` is their gate: it
+    // fails when one drifts from the generator, which is the failure that
+    // actually matters — a hand-edit that reintroduces the old name inside a
+    // generated file is caught there, because the next `meta:sync` reverts it.
+    if (GENERATED_PATHS.has(path)) continue;
 
     let text: string;
     try {

@@ -5,27 +5,37 @@ on:
     branches: [main]
     paths:
       - "src/**"
-      - "src-tauri/src/catalog/catalog.json"
+      - "src-tauri/**"
       - "scripts/**"
+      - "nix/**"
+      - "flake.nix"
+      - ".githooks/**"
+      - ".github/**"
+      - "docs/**"
       - "package.json"
       - "bun.lock"
       - ".oxlintrc*"
       - ".prettierrc*"
       - "tsconfig*"
       - "tailwind.config.*"
-      - ".github/workflows/**"
+      - "*.md"
   pull_request:
     paths:
       - "src/**"
-      - "src-tauri/src/catalog/catalog.json"
+      - "src-tauri/**"
       - "scripts/**"
+      - "nix/**"
+      - "flake.nix"
+      - ".githooks/**"
+      - ".github/**"
+      - "docs/**"
       - "package.json"
       - "bun.lock"
       - ".oxlintrc*"
       - ".prettierrc*"
       - "tsconfig*"
       - "tailwind.config.*"
-      - ".github/workflows/**"
+      - "*.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -43,6 +53,19 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # The product name, the bundle identifier, the binary name and the repo
+      # URL live in `scripts/app-meta.ts` and in generated mirrors that carry a
+      # "DO NOT EDIT" banner. This step fails when a mirror has drifted from its
+      # source (`meta:check`) or when a stale name survives anywhere a gate is
+      # supposed to catch it (`check:identity`). Both are pure file reads.
+      - name: Check the single source of truth for the product identity
+        run: |
+          bun run meta:check
+          bun run check:identity
+
+      - name: Typecheck
+        run: bun run typecheck
 
       - name: Check translation consistency
         run: bun run check:translations
