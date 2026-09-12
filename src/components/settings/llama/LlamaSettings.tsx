@@ -86,7 +86,9 @@ const DEFAULTS: Cfg = {
   draft_model_path: null,
   mmproj_path: null,
   mmproj_enabled: false,
-  port: 62966,
+  // Keep in step with DEFAULT_LLAMA_PORT (settings.rs): registered range, not
+  // ephemeral — Windows reserves blocks above 49152 that nothing can bind.
+  port: 18080,
   context_size: 8192,
   gpu_layers: -1,
   threads: -1,

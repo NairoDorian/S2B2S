@@ -16,3 +16,24 @@
 # Both are passed via CMAKE_CUDA_FLAGS; -Xcompiler forwards
 # /Zc:preprocessor to the host cl.exe invoked by nvcc.
 TRANSCRIBE_CMAKE_ARGS = "-DCMAKE_CUDA_FLAGS=\"-std=c++17 -Xcompiler=/Zc:preprocessor\" -DGGML_CCACHE=OFF"
+
+# Which model architectures the native transcribe.cpp build compiles.
+#
+# `arch-dl` (enabled in src-tauri/Cargo.toml) turns each family into a
+# `transcribe-arch-<family>.dll` beside libtranscribe, and THIS selects the set:
+# `minimal-multilingual` = parakeet + granite + qwen3_asr (3 plugins),
+# `full` = all 18. It is a native-build setting, not a cargo feature, so the
+# value is part of the CMake cache key — the two sets never share a cache entry
+# and switching between them costs one native rebuild, not a corrupted build.
+#
+# Default here = the minimal set, so a bare `cargo build` / `cargo clippy` /
+# `cargo test` in a terminal is the fast posture rather than an 18-architecture
+# CUDA build. `force = false` is what makes `bun run tauri dev:full` and
+# `build:full` able to override it: scripts/tauri-runner.ts sets
+# TRANSCRIBE_MODEL_SET=full in the environment it hands to cargo, and an already
+# set value wins over this entry.
+#
+# Direct `cargo build --features` invocations are unaffected by design; the
+# `minimal-multilingual` cargo feature (transcribe-cpp) is the in-manifest way
+# to pin it.
+TRANSCRIBE_MODEL_SET = { value = "minimal-multilingual", force = false }

@@ -240,6 +240,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
     managers::transcription::init_transcribe_backend();
+    managers::arch_plugins::init_arch_plugin_dirs(app_handle);
 
     // Apply accelerator preferences before any model loads
     managers::transcription::apply_accelerator_settings(app_handle);
@@ -258,6 +259,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     llama_server::adopt_detected_install_if_unconfigured(app_handle);
     let llama_manager = llama_server::init(app_handle);
     app_handle.manage(Arc::clone(&llama_manager));
+    // A port or alias changed while Handy was closed leaves the `custom`
+    // provider pointing at the old address; repair it here so the first
+    // post-processing request of the session does not fail to connect.
+    llama_manager.relink_custom_provider(false);
     {
         let llama_settings = settings::get_settings(app_handle).llama;
         if llama_settings.autostart {
@@ -501,21 +506,6 @@ where
     }
 }
 
-#[cfg(test)]
-mod headless_guard_tests {
-    use super::run_headless_guarded;
-
-    #[test]
-    fn preserves_normal_exit_codes() {
-        assert_eq!(run_headless_guarded(|| 2), 2);
-    }
-
-    #[test]
-    fn converts_worker_panics_to_runtime_failures() {
-        assert_eq!(run_headless_guarded(|| panic!("simulated failure")), 1);
-    }
-}
-
 /// Headless one-shot transcription for the `--transcribe-file` / `--list-devices`
 /// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
@@ -651,11 +641,11 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         // If the model's unload-timeout is "Immediately", transcribe() unloads
         // the engine after each run; reload (untimed) so repeats keep working
         // and the inference timing below stays clean.
-        if !tm.is_model_loaded() {
-            if let Err(e) = tm.load_model_with_device(&model_id, device_index) {
-                eprintln!("error: reload before run {} failed: {}", i + 1, e);
-                return 1;
-            }
+        if !tm.is_model_loaded()
+            && let Err(e) = tm.load_model_with_device(&model_id, device_index)
+        {
+            eprintln!("error: reload before run {} failed: {}", i + 1, e);
+            return 1;
         }
         let t = Instant::now();
         match tm.transcribe(samples.clone()) {
@@ -858,11 +848,15 @@ pub fn run(cli_args: CliArgs) {
             commands::set_log_level,
             commands::open_recordings_folder,
             commands::open_models_folder,
+            commands::open_plugins_folder,
             commands::open_log_dir,
             commands::open_app_data_dir,
             commands::check_apple_intelligence_available,
             commands::initialize_enigo,
             commands::initialize_shortcuts,
+            commands::models::get_arch_plugins,
+            commands::models::load_arch_plugin,
+            commands::models::register_arch_dir,
             commands::models::get_available_models,
             commands::models::get_model_info,
             commands::models::download_model,
@@ -1111,6 +1105,7 @@ pub fn run(cli_args: CliArgs) {
                 app_handle.manage(model_manager);
                 app_handle.manage(transcription_manager);
                 managers::transcription::init_transcribe_backend();
+                managers::arch_plugins::init_arch_plugin_dirs(&app_handle);
                 managers::transcription::apply_accelerator_settings(&app_handle);
 
                 let handle = app_handle.clone();
@@ -1298,12 +1293,27 @@ pub fn run(cli_args: CliArgs) {
             }
             // The job object would end llama-server anyway; stop it cleanly
             // first so the port is released before the process goes.
-            if settings::get_settings(app).llama.stop_on_exit {
-                if let Some(llama) = llama_server::global() {
-                    llama.stop();
-                }
+            if settings::get_settings(app).llama.stop_on_exit
+                && let Some(llama) = llama_server::global()
+            {
+                llama.stop();
             }
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod headless_guard_tests {
+    use super::run_headless_guarded;
+
+    #[test]
+    fn preserves_normal_exit_codes() {
+        assert_eq!(run_headless_guarded(|| 2), 2);
+    }
+
+    #[test]
+    fn converts_worker_panics_to_runtime_failures() {
+        assert_eq!(run_headless_guarded(|| panic!("simulated failure")), 1);
+    }
 }

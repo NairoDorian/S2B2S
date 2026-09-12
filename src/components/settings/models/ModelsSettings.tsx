@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   AudioLines,
+  Blocks,
   ChevronDown,
   FolderOpen,
   Globe,
@@ -18,7 +19,7 @@ import {
   MODEL_CAPABILITY_LANGUAGES,
   supportsLanguageCode,
 } from "@/lib/constants/languages.ts";
-import { commands, type ModelInfo } from "@/bindings";
+import { commands, type ArchPluginInfo, type ModelInfo } from "@/bindings";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -233,6 +234,44 @@ export const ModelsSettings: React.FC = () => {
     );
   }
 
+  const [archPlugins, setArchPlugins] = useState<ArchPluginInfo[]>([]);
+
+  const fetchArchPlugins = () => {
+    commands.getArchPlugins().then((result) => {
+      if (result.status === "ok") {
+        setArchPlugins(result.data);
+      }
+    });
+  };
+
+  useEffect(() => {
+    fetchArchPlugins();
+  }, []);
+
+  const externalPluginCount = archPlugins.length;
+
+  // Complete sentences per state rather than prose assembled from fragments:
+  // a translator can reorder "Open … (N loaded)" freely, which a template
+  // literal of concatenated pieces would not allow.
+  const pluginsFolderLabel = t("settings.models.openPluginsFolder");
+  const pluginsFolderTooltip =
+    externalPluginCount > 0
+      ? t("settings.models.openPluginsFolderLoaded", {
+          count: externalPluginCount,
+        })
+      : t("settings.models.openPluginsFolderEmpty");
+
+  const openPluginsFolder = async () => {
+    try {
+      const result = await commands.openPluginsFolder();
+      if (result.status !== "ok") {
+        throw new Error(String(result.error));
+      }
+    } catch (error) {
+      console.error("Failed to open plugins folder:", error);
+    }
+  };
+
   const openModelsFolder = async () => {
     try {
       const result = await commands.openModelsFolder();
@@ -286,10 +325,27 @@ export const ModelsSettings: React.FC = () => {
                 <FolderOpen className="w-3.5 h-3.5" />
               </button>
 
+              {/* Open architecture plugins directory (transcribe-arch-*.dll) */}
+              <button
+                type="button"
+                onClick={openPluginsFolder}
+                title={pluginsFolderTooltip}
+                aria-label={pluginsFolderLabel}
+                className="relative flex items-center justify-center w-8 h-8 text-sm font-medium rounded-lg bg-mid-gray/10 text-text/60 hover:bg-mid-gray/20 transition-colors"
+              >
+                <Blocks className="w-3.5 h-3.5" />
+                {externalPluginCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-logo-primary" />
+                )}
+              </button>
+
               {/* Rescan local sources for models added outside Handy */}
               <button
                 type="button"
-                onClick={() => rescanLocalModels()}
+                onClick={() => {
+                  rescanLocalModels();
+                  fetchArchPlugins();
+                }}
                 disabled={isRescanning}
                 title={t("settings.models.rescan.tooltip")}
                 aria-label={t("settings.models.rescan.tooltip")}

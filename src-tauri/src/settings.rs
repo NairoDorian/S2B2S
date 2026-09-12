@@ -481,6 +481,17 @@ pub struct LlamaSettings {
     pub include_cudart: bool,
 }
 
+/// Default port for the in-app llama-server.
+///
+/// Deliberately in the registered range (1024-49151) rather than the ephemeral
+/// one: Windows hands out dynamic port reservations to Hyper-V, WSL and Docker
+/// from 49152-65535, and a port inside a reservation cannot be bound by
+/// anything. The previous default, 62966, sat in the middle of one such block
+/// (62940-63039) and made the server fail on startup with nothing to explain
+/// it — no process is listening, so the health check correctly reports "not
+/// running" and only llama.cpp's stderr hints at the cause.
+pub const DEFAULT_LLAMA_PORT: u16 = 18080;
+
 impl Default for LlamaSettings {
     fn default() -> Self {
         Self {
@@ -489,7 +500,7 @@ impl Default for LlamaSettings {
             draft_model_path: None,
             mmproj_path: None,
             mmproj_enabled: false,
-            port: 62966,
+            port: DEFAULT_LLAMA_PORT,
             context_size: 8192,
             gpu_layers: -1,
             threads: -1,
@@ -523,7 +534,7 @@ impl LlamaSettings {
         self.mmproj_path = clean(self.mmproj_path);
         self.custom_args = clean(self.custom_args);
         if self.port < 1024 {
-            self.port = 62966;
+            self.port = DEFAULT_LLAMA_PORT;
         }
         self.context_size = self.context_size.clamp(512, 262_144);
         self.gpu_layers = self.gpu_layers.max(-1);

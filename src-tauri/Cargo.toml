@@ -123,8 +123,20 @@ windows = { version = "0.62.2", features = [
 winreg = "0.56.0"
 
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+# `arch-dl` builds each model architecture as a loadable `transcribe-arch-<family>.dll`
+# beside libtranscribe instead of compiling it into the core, so ONE build serves
+# any model set and a family can be added or swapped without relinking. WHICH
+# families get built is `TRANSCRIBE_MODEL_SET` (minimal-multilingual = parakeet,
+# granite, qwen3_asr; full = all 18) — a native-build knob, not a cargo feature,
+# so `bun run tauri dev` and `bun run tauri build:full` share this manifest and
+# differ only in environment. See scripts/tauri-runner.ts and .cargo/config.toml.
+#
+# It implies `shared` (the plugins resolve symbols out of libtranscribe at load
+# time), which `dynamic-backends` already requires here, so this changes nothing
+# about the linking posture — it only moves architectures out of the core.
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
+  "arch-dl",
   "cuda",
 ] }
 
@@ -148,8 +160,13 @@ gtk = "^0.18.2"
 # tags are v1.0 branch snapshots, and every other crate here uses 0.2 (a
 # second libc would be compiled on Linux). update-deps.ts knows this.
 libc = "^0.2.189"
+# Same posture as Windows x86_64 above, `arch-dl` included. macOS and Windows
+# aarch64 stay static (no `arch-dl`): they do not build a shared libtranscribe,
+# so architectures remain compiled in there — every model still works, there is
+# just no plugin directory to swap.
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
+  "arch-dl",
   "cuda",
 ] }
 

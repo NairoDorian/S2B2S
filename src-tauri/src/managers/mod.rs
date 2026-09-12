@@ -1,3 +1,4 @@
+pub mod arch_plugins;
 pub mod audio;
 pub mod gguf_meta;
 pub mod history;

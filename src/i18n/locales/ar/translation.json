@@ -595,7 +595,18 @@
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
       "audioDetailsNoCut": "{{total}} total : {{speech}} speech",
-      "audioTotalOnly": "{{total}} total"
+      "audioTotalOnly": "{{total}} total",
+      "multiSttDetailsTab": "Multi-STT Details",
+      "multiSttCleanedOutputTab": "Cleaned Output",
+      "multiSttRawLogTab": "Raw Log",
+      "multiSttModelSlot": "Model {{slot}}",
+      "multiSttBrainLabel": "ðŸ§  Brain LLM",
+      "multiSttBrainCleanedOutput": "Cleaned Output",
+      "multiSttBrainPromptLabel": "Prompt: {{name}}",
+      "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
+      "multiSttNoOutput": "â€” no output â€”",
+      "multiSttCopyModelOutput": "Copy this model's output",
+      "multiSttCopyBrainOutput": "Copy cleaned Brain output"
     },
     "debug": {
       "title": "تصحيح الأخطاء",
@@ -816,7 +827,11 @@
         "label": "إعادة الفحص",
         "tooltip": "إعادة الفحص بحثًا عن النماذج المضافة إلى مجلد النماذج أو ذاكرة Hugging Face التخزينية المؤقتة خارج Handy"
       },
-      "openFolder": "Open Models Folder"
+      "openFolder": "Open Models Folder",
+      "openPluginsFolder": "Open Architecture Plugins Folder",
+      "openPluginsFolderEmpty": "Open the architecture plugins folder (transcribe-arch-*.dll)",
+      "openPluginsFolderLoaded_one": "Open the architecture plugins folder ({{count}} external plugin loaded)",
+      "openPluginsFolderLoaded_other": "Open the architecture plugins folder ({{count}} external plugins loaded)"
     },
     "statistics": {
       "title": "Transcription Statistics",

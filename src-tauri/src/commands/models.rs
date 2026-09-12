@@ -376,3 +376,23 @@ pub async fn benchmark_single_quantization(
 
     Ok(result)
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_arch_plugins(
+    app: AppHandle,
+) -> Result<Vec<crate::managers::arch_plugins::ArchPluginInfo>, String> {
+    Ok(crate::managers::arch_plugins::list_arch_plugins(&app))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn load_arch_plugin(path: String) -> Result<(), String> {
+    crate::managers::arch_plugins::load_arch_plugin(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn register_arch_dir(dir: String) -> Result<(), String> {
+    crate::managers::arch_plugins::register_arch_dir(std::path::Path::new(&dir))
+}

@@ -214,6 +214,7 @@ export const commands = {
 	setLogLevel: (level: LogLevel) => typedError<null, string>(__TAURI_INVOKE("set_log_level", { level })),
 	openRecordingsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_recordings_folder")),
 	openModelsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_models_folder")),
+	openPluginsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_plugins_folder")),
 	openLogDir: () => typedError<null, string>(__TAURI_INVOKE("open_log_dir")),
 	openAppDataDir: () => typedError<null, string>(__TAURI_INVOKE("open_app_data_dir")),
 	/**
@@ -232,6 +233,9 @@ export const commands = {
 	 *  This is idempotent - calling it multiple times is safe.
 	 */
 	initializeShortcuts: () => typedError<null, string>(__TAURI_INVOKE("initialize_shortcuts")),
+	getArchPlugins: () => typedError<ArchPluginInfo[], string>(__TAURI_INVOKE("get_arch_plugins")),
+	loadArchPlugin: (path: string) => typedError<null, string>(__TAURI_INVOKE("load_arch_plugin", { path })),
+	registerArchDir: (dir: string) => typedError<null, string>(__TAURI_INVOKE("register_arch_dir", { dir })),
 	getAvailableModels: () => typedError<ModelInfo[], string>(__TAURI_INVOKE("get_available_models")),
 	getModelInfo: (modelId: string) => typedError<{
 	id: string,
@@ -844,6 +848,18 @@ export type AppSettings_Serialize = {
 	overlay_scope: OverlayScopeSettings,
 	/**  In-app llama.cpp server (fork feature). */
 	llama: LlamaSettings,
+};
+
+/**  Metadata describing an architecture plugin module. */
+export type ArchPluginInfo = {
+	/**  Architecture identifier (e.g. "parakeet", "granite", "qwen3_asr", "whisper"). */
+	name: string,
+	/**  Absolute filesystem path to the plugin module. */
+	path: string,
+	/**  Whether Handy explicitly loaded this module (see `EXPLICITLY_LOADED`). */
+	is_loaded: boolean,
+	/**  File size in bytes. */
+	file_size_bytes: number | null,
 };
 
 export type AudioDevice = {

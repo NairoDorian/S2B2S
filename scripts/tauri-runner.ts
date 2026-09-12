@@ -3,13 +3,40 @@
 // Wraps `@tauri-apps/cli` with:
 // 1. The `check-transcribe-deps` check before running Tauri (imported from
 //    scripts/check-transcribe-deps.ts so there is a single implementation).
-// 2. Fast local GPU build flag support (`--fast` / `--local-gpu` / `--local` / `-localgpu`):
-//    When passed to `tauri build` (via `bun run build:fast`), sets TRANSCRIBE_CUDA_ARCHITECTURES=auto
-//    so release builds auto-detect only the local system GPU (for fast local release builds)
-//    instead of compiling the full multi-arch distribution set (via `bun run build:full`).
+// 2. The transcribe.cpp **build posture**: which model architectures the native
+//    library compiles, and whether CUDA targets only this machine's GPU.
 // 3. Pruning stale build artifacts from src-tauri/target before every run
 //    (scripts/prune-target.ts): superseded dependency versions, git revisions,
 //    incremental caches and installers. Skipped when HANDY_NO_PRUNE=1.
+//
+// # Build postures
+//
+// transcribe.cpp builds each model family as a loadable
+// `transcribe-arch-<family>.dll` (the `arch-dl` cargo feature, always on for
+// Windows x86_64 and Linux — see src-tauri/Cargo.toml) and `TRANSCRIBE_MODEL_SET`
+// picks WHICH families:
+//
+//   minimal-multilingual   parakeet + granite + qwen3_asr   (3 plugins)
+//   full                   all 18 families                  (18 plugins)
+//
+// The preset is part of the CMake cache key, so the two postures cache
+// separately and switching costs one native rebuild without invalidating the
+// other. `.cargo/config.toml` defaults a bare `cargo build` to minimal;
+// everything below is about overriding that for the full builds.
+//
+//   bun run tauri dev          minimal, default CUDA targets   fast iteration
+//   bun run tauri dev:fast     minimal, CUDA arch = local GPU  fastest iteration
+//   bun run tauri dev:full     full set, default CUDA targets  all models
+//   bun run build:fast         minimal, CUDA arch = local GPU  local release
+//   bun run build:full         full set, default CUDA targets  distribution
+//
+// `--full` and `--fast` are the primitives; `dev:full` / `build:fast` and the
+// bare `:full` / `:fast` spellings are accepted as sugar so `bun run tauri
+// build:full` behaves like `bun run build:full`.
+//
+// A model whose family is not in the minimal set fails to load in that posture
+// — that is the trade, and it is why the resolved posture is printed on every
+// run rather than left implicit.
 
 import { resolve } from "path";
 import { checkTranscribeDeps } from "./check-transcribe-deps";
@@ -17,31 +44,98 @@ import { printReport, pruneTarget } from "./prune-target";
 
 const root = resolve(import.meta.dirname, "..");
 
-// 1. Process arguments
-const rawArgs = process.argv.slice(2);
-const filteredArgs: string[] = [];
-let localGpuRequested = false;
+/** The two model-architecture sets transcribe.cpp can be built with. */
+const MINIMAL_MODEL_SET = "minimal-multilingual";
+const FULL_MODEL_SET = "full";
 
-for (const arg of rawArgs) {
-  if (
-    arg === "--fast" ||
-    arg === "-fast" ||
-    arg === "--local-gpu" ||
-    arg === "--local" ||
-    arg === "-localgpu"
-  ) {
-    localGpuRequested = true;
-  } else {
-    filteredArgs.push(arg);
+type Posture = {
+  /** `TRANSCRIBE_MODEL_SET`: which `transcribe-arch-*.dll` get built. */
+  modelSet: string;
+  /** `TRANSCRIBE_CUDA_ARCHITECTURES=auto`: local GPU only, not the full matrix. */
+  localGpu: boolean;
+};
+
+/** Resolve a `dev:full` / `build:fast` style subcommand token into argv + posture. */
+function expandModeToken(arg: string): { args: string[]; posture?: Partial<Posture> } | null {
+  const [command, mode] = arg.split(":");
+  if (!mode || (command !== "dev" && command !== "build")) {
+    return null;
+  }
+  if (mode === "full") {
+    return { args: [command, "--full"] };
+  }
+  if (mode === "fast") {
+    return { args: [command, "--fast"] };
+  }
+  return null;
+}
+
+// 1. Process arguments — posture flags are consumed here, everything else is
+//    forwarded to the Tauri CLI untouched.
+// `--local-gpu` and friends predate `--fast` and remain the documented spelling
+// of the fast local-release build, so each maps onto the same posture.
+const POSTURE_FLAGS: Record<string, "full" | "fast"> = {
+  "--full": "full",
+  "--fast": "fast",
+  "-fast": "fast",
+  "--local-gpu": "fast",
+  "--local": "fast",
+  "-localgpu": "fast",
+};
+
+const passthroughArgs: string[] = [];
+const postureFlags = new Set<"full" | "fast">();
+
+for (const arg of process.argv.slice(2)) {
+  const expanded = expandModeToken(arg);
+  for (const token of expanded ? expanded.args : [arg]) {
+    const postureFlag = POSTURE_FLAGS[token];
+    if (postureFlag) {
+      postureFlags.add(postureFlag);
+      continue;
+    }
+    passthroughArgs.push(token);
   }
 }
 
-if (localGpuRequested) {
-  process.env.TRANSCRIBE_CUDA_ARCHITECTURES = "auto";
-  console.log(
-    "[tauri-runner] Fast build mode enabled (TRANSCRIBE_CUDA_ARCHITECTURES=auto): auto-detecting system GPU for this build.",
+const fullRequested = postureFlags.has("full");
+const fastRequested = postureFlags.has("fast");
+
+// `--full` and `--fast` describe opposite postures; silently picking one would
+// hide a typo, so refuse instead. (`build --fast --full` is not a build anyone
+// means to run.)
+if (fullRequested && fastRequested) {
+  console.error(
+    "[tauri-runner] --full and --fast are mutually exclusive: --full builds every " +
+      `model architecture (${FULL_MODEL_SET}), --fast narrows CUDA to the local GPU ` +
+      `and the minimal set (${MINIMAL_MODEL_SET}).`,
   );
+  process.exit(2);
 }
+
+const posture: Posture = {
+  modelSet: fullRequested ? FULL_MODEL_SET : MINIMAL_MODEL_SET,
+  localGpu: fastRequested,
+};
+
+// Written before the spawn so cargo (and its build scripts) inherit them. An
+// explicit assignment also beats `.cargo/config.toml`'s `force = false` default,
+// which is exactly how `dev:full` overrides the minimal preset.
+process.env.TRANSCRIBE_MODEL_SET = posture.modelSet;
+if (posture.localGpu) {
+  process.env.TRANSCRIBE_CUDA_ARCHITECTURES = "auto";
+}
+
+const archCount = posture.modelSet === FULL_MODEL_SET ? 18 : 3;
+console.log(
+  `[tauri-runner] transcribe.cpp posture: TRANSCRIBE_MODEL_SET=${posture.modelSet} ` +
+    `(${archCount} architecture module${archCount === 1 ? "" : "s"}` +
+    `${posture.modelSet === FULL_MODEL_SET ? ": every model" : ": parakeet, granite, qwen3_asr"}, ` +
+    `built as transcribe-arch-*.dll beside libtranscribe)` +
+    (posture.localGpu
+      ? " and TRANSCRIBE_CUDA_ARCHITECTURES=auto (this machine's GPU only)."
+      : " and the full CUDA architecture matrix."),
+);
 
 // 2. Dependency check (never throws, never blocks the build)
 checkTranscribeDeps();
@@ -58,8 +152,8 @@ if (process.env.HANDY_NO_PRUNE !== "1") {
   }
 }
 
-// 4. Spawn tauri CLI with filtered arguments
-const proc = Bun.spawnSync([process.execPath, "x", "tauri", ...filteredArgs], {
+// 4. Spawn tauri CLI with the posture flags removed
+const proc = Bun.spawnSync([process.execPath, "x", "tauri", ...passthroughArgs], {
   cwd: root,
   stdio: ["inherit", "inherit", "inherit"],
   env: process.env,

@@ -26,10 +26,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_specta::Event;
 
-use crate::settings::{LlamaSettings, PostProcessProvider, get_settings, write_settings};
+use crate::settings::{
+    AppSettings, LlamaSettings, PostProcessProvider, get_settings, write_settings,
+};
 
 const LOG_CAPACITY: usize = 400;
 /// Model load of a few GB from a cold disk can take a while; give up after this.
@@ -209,6 +211,7 @@ impl LlamaServerManager {
                 "llama-server already listening on port {}; adopting it",
                 settings.port
             );
+            self.relink_custom_provider(true);
             return Ok(());
         }
 
@@ -373,6 +376,7 @@ impl LlamaServerManager {
                     "llama-server ready on port {port} after {:.1}s",
                     started.elapsed().as_secs_f64()
                 );
+                self.relink_custom_provider(true);
                 break;
             }
             let last = self.log_tail(1);
@@ -502,22 +506,34 @@ impl LlamaServerManager {
     /// its model, and becomes the active provider.
     pub fn apply_to_post_processing(&self) -> Result<(), String> {
         let mut settings = get_settings(&self.app);
-        let base_url = format!("http://127.0.0.1:{}/v1", settings.llama.port);
-        let alias = settings.llama.alias.clone();
-        let Some(provider) = settings
+        if !settings
             .post_process_providers
-            .iter_mut()
-            .find(|p| p.id == "custom")
-        else {
+            .iter()
+            .any(|p| p.id == "custom")
+        {
             return Err("No custom provider in settings".into());
-        };
-        provider.base_url = base_url;
-        settings
-            .post_process_models
-            .insert("custom".to_string(), alias);
+        }
+        link_custom_provider(&mut settings);
         settings.post_process_provider_id = "custom".to_string();
         write_settings(&self.app, settings);
         Ok(())
+    }
+
+    /// Keep the `custom` provider in step with the local server, and tell the
+    /// frontend when the settings actually moved. `running` says whether this
+    /// server is up right now; the sync still links when it is merely
+    /// startable, because `start_on_demand` will bring it up on the request.
+    pub fn relink_custom_provider(&self, running: bool) -> bool {
+        let mut settings = get_settings(&self.app);
+        if !sync_custom_provider_to_local_server(&mut settings, running) {
+            return false;
+        }
+        write_settings(&self.app, settings);
+        let _ = self.app.emit(
+            "settings-changed",
+            serde_json::json!({ "setting": "post_process_providers" }),
+        );
+        true
     }
 }
 
@@ -528,6 +544,22 @@ impl LlamaServerManager {
 pub async fn ensure_ready_for_provider(provider: &PostProcessProvider) {
     let Some(manager) = global() else { return };
     let settings = get_settings(&manager.app).llama;
+    // A loopback URL on a port that is not the supervised one is either another
+    // local server (fine, and common) or a stale address left by a port change
+    // (every request then fails to connect). The startup/ready sync re-points
+    // the stale case, so this only has to leave a trail — and it must not probe
+    // to tell them apart, because that would put a socket timeout in front of
+    // every request. Warn once per port per session instead.
+    if let Some(port) = loopback_port(&provider.base_url).filter(|p| *p != settings.port) {
+        static WARNED: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+        if WARNED.swap(port, Ordering::Relaxed) != port {
+            warn!(
+                "Provider '{}' targets {}/{port} while the local llama-server is on port {}; \
+                 requests to it only work if another local server is listening there",
+                provider.id, provider.base_url, settings.port
+            );
+        }
+    }
     if !settings.start_on_demand || !targets_local_server(&provider.base_url, settings.port) {
         return;
     }
@@ -583,10 +615,122 @@ fn health_ok(port: u16) -> bool {
     head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
 }
 
+/// The port a loopback base URL points at, or `None` when the URL is not a
+/// loopback one. The authority is parsed rather than substring-matched, so a
+/// remote host that merely contains "localhost" — or a path that echoes a
+/// port number — is never mistaken for the supervised server.
+fn loopback_port(base_url: &str) -> Option<u16> {
+    let (scheme, rest) = base_url.split_once("://")?;
+    let default_port = if scheme.eq_ignore_ascii_case("https") {
+        443
+    } else {
+        80
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
+    let (host, port) = if let Some(tail) = authority.strip_prefix('[') {
+        // IPv6 literal: [::1] or [::1]:8080
+        let (host, tail) = tail.split_once(']')?;
+        let port = match tail.strip_prefix(':') {
+            Some(p) => p.parse::<u16>().ok()?,
+            None => default_port,
+        };
+        (host, port)
+    } else {
+        match authority.rsplit_once(':') {
+            Some((host, p)) => (host, p.parse::<u16>().ok()?),
+            None => (authority, default_port),
+        }
+    };
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "127.0.0.1" | "localhost" | "::1"
+    )
+    .then_some(port)
+}
+
 fn targets_local_server(base_url: &str, port: u16) -> bool {
-    let lower = base_url.to_lowercase();
-    let is_local = lower.contains("127.0.0.1") || lower.contains("localhost");
-    is_local && lower.contains(&format!(":{port}"))
+    loopback_port(base_url) == Some(port)
+}
+
+/// Whether the `custom` provider's URL should be repointed at the supervised
+/// server. Pure so the rule can be tested without a socket.
+///
+/// `url_port == llama_port` is the already-linked case: keep the alias and
+/// model in step with the settings. Otherwise the URL is only taken over when
+/// nothing answers on it — a stale address whose server has moved, which is
+/// exactly the state a changed port leaves behind. A URL that *does* answer on
+/// another port belongs to someone else (Ollama on 11434, LM Studio, …) and
+/// works; rewriting it would break a working setup.
+fn should_adopt_local_server(
+    url_port: u16,
+    llama_port: u16,
+    usable: bool,
+    url_answers: bool,
+) -> bool {
+    usable && (url_port == llama_port || !url_answers)
+}
+
+/// Write the local server's URL and alias into the `custom` provider.
+/// Returns whether anything changed. The caller decides *when* to link; this
+/// is the unconditional write shared by the manual button and the sync.
+fn link_custom_provider(settings: &mut AppSettings) -> bool {
+    let base_url = format!("http://127.0.0.1:{}/v1", settings.llama.port);
+    let alias = settings.llama.alias.clone();
+    let Some(provider) = settings
+        .post_process_providers
+        .iter_mut()
+        .find(|p| p.id == "custom")
+    else {
+        return false;
+    };
+    let mut changed = provider.base_url != base_url;
+    provider.base_url = base_url;
+    if settings.post_process_models.get("custom") != Some(&alias) {
+        settings
+            .post_process_models
+            .insert("custom".to_string(), alias);
+        changed = true;
+    }
+    changed
+}
+
+/// Point the `custom` provider at the local llama-server when it should be.
+///
+/// Called when the server becomes usable — started, adopted, or its settings
+/// changed — and once at startup. It never touches a provider whose URL is not
+/// loopback (a deliberate remote choice) and never changes which provider is
+/// active; linking is not selecting. Returns whether the settings changed, so
+/// callers only pay for a write and an event when something really moved.
+pub fn sync_custom_provider_to_local_server(settings: &mut AppSettings, running: bool) -> bool {
+    let Some(provider) = settings
+        .post_process_providers
+        .iter()
+        .find(|p| p.id == "custom")
+    else {
+        return false;
+    };
+    let Some(url_port) = loopback_port(&provider.base_url) else {
+        return false;
+    };
+    // A server Handy could start counts as usable: `start_on_demand` brings it
+    // up when the request goes out, so the URL may point at it while it is
+    // still down. Without both an executable and a model there is nothing to
+    // point at, and an existing URL is left alone.
+    let startable = resolve_server_exe(&settings.llama).is_some()
+        && settings
+            .llama
+            .model_path
+            .as_deref()
+            .is_some_and(|p| !p.trim().is_empty());
+    let usable = running || startable;
+    // An agreeing URL has nothing to decide, and this runs on the settings
+    // path — probe only when the URL actually disagrees.
+    let url_answers = url_port == settings.llama.port || health_ok(url_port);
+    if !should_adopt_local_server(url_port, settings.llama.port, usable, url_answers) {
+        return false;
+    }
+    link_custom_provider(settings)
 }
 
 /// The `llama-server` binary for the configured folder, if present.
@@ -860,6 +1004,7 @@ pub fn adopt_detected_install_if_unconfigured(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::DEFAULT_LLAMA_PORT;
 
     fn settings_with(model: &Path) -> LlamaSettings {
         LlamaSettings {
@@ -879,7 +1024,7 @@ mod tests {
         s.draft_model_path = Some(draft.to_string_lossy().to_string());
         let args = build_args(&s).unwrap();
         let joined = args.join(" ");
-        assert!(joined.starts_with(&format!("-m {} --port 62966 -c 8192 --parallel 1 --flash-attn on --no-context-shift -ngl -1 --threads -1 --jinja --temp 0.05 --top-p 0.35 --top-k 64 --min-p 0 --reasoning off --model-draft ", model.to_string_lossy())), "{joined}");
+        assert!(joined.starts_with(&format!("-m {} --port {DEFAULT_LLAMA_PORT} -c 8192 --parallel 1 --flash-attn on --no-context-shift -ngl -1 --threads -1 --jinja --temp 0.05 --top-p 0.35 --top-k 64 --min-p 0 --reasoning off --model-draft ", model.to_string_lossy())), "{joined}");
         assert!(
             joined.ends_with(
                 "--spec-type draft-mtp --spec-draft-n-max 4 --alias gemma-4-E2B-Q4-MTP --metrics"
@@ -904,9 +1049,67 @@ mod tests {
         assert_eq!(gguf_kind("mtp-gemma-4-E2B-it-Q4_0.gguf"), "draft");
         assert_eq!(gguf_kind("mmproj-F16.gguf"), "mmproj");
         assert_eq!(gguf_kind("gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"), "model");
-        assert!(targets_local_server("http://127.0.0.1:62966/v1", 62966));
-        assert!(targets_local_server("http://localhost:62966/v1/", 62966));
-        assert!(!targets_local_server("http://localhost:11434/v1", 62966));
-        assert!(!targets_local_server("https://api.openai.com/v1", 62966));
+        // Deliberately not DEFAULT_LLAMA_PORT: the point is that the check
+        // uses the port it is handed, not the configured default.
+        let port = 43210;
+        assert!(targets_local_server("http://127.0.0.1:43210/v1", port));
+        assert!(targets_local_server("http://localhost:43210/v1/", port));
+        assert!(!targets_local_server("http://localhost:11434/v1", port));
+        assert!(!targets_local_server("https://api.openai.com/v1", port));
+    }
+
+    #[test]
+    fn loopback_port_reads_the_authority_only() {
+        assert_eq!(loopback_port("http://127.0.0.1:18080/v1"), Some(18080));
+        assert_eq!(loopback_port("http://localhost:11434/v1/"), Some(11434));
+        assert_eq!(loopback_port("http://localhost/v1"), Some(80));
+        assert_eq!(loopback_port("https://localhost/v1"), Some(443));
+        assert_eq!(loopback_port("http://[::1]:8080/v1"), Some(8080));
+        assert_eq!(
+            loopback_port("http://user:pw@127.0.0.1:9000/v1"),
+            Some(9000)
+        );
+        // Not loopback: the host is what decides, not a substring anywhere in
+        // the URL. A remote host that merely starts with "localhost" and a
+        // loopback path under a remote host both stay untouched.
+        assert_eq!(loopback_port("https://api.openai.com/v1"), None);
+        assert_eq!(loopback_port("http://localhost.example.com:18080/v1"), None);
+        assert_eq!(loopback_port("https://example.com/127.0.0.1:18080"), None);
+        assert_eq!(loopback_port("http://127.0.0.1:notaport/v1"), None);
+    }
+
+    #[test]
+    fn adoption_rule_keeps_a_working_third_party_server() {
+        const LLAMA: u16 = 18080;
+        // Already pointing at the supervised server: keep it in step.
+        assert!(should_adopt_local_server(LLAMA, LLAMA, true, true));
+        // Stale address: nothing answers where it points.
+        assert!(should_adopt_local_server(62966, LLAMA, true, false));
+        // Ollama on its default port is a working setup, not a stale URL.
+        assert!(!should_adopt_local_server(11434, LLAMA, true, true));
+        // Nothing to point at — no executable or no model.
+        assert!(!should_adopt_local_server(62966, LLAMA, false, false));
+    }
+
+    #[test]
+    fn link_writes_url_and_alias_and_reports_change() {
+        let mut s = AppSettings::default();
+        s.llama.port = 18080;
+        s.llama.alias = "gemma-4-E2B-Q4-MTP".into();
+        assert!(link_custom_provider(&mut s));
+        let custom = s
+            .post_process_providers
+            .iter()
+            .find(|p| p.id == "custom")
+            .unwrap();
+        assert_eq!(custom.base_url, "http://127.0.0.1:18080/v1");
+        assert_eq!(
+            s.post_process_models.get("custom").map(String::as_str),
+            Some("gemma-4-E2B-Q4-MTP")
+        );
+        // Idempotent: a second call has nothing left to write.
+        assert!(!link_custom_provider(&mut s));
+        // Linking is not selecting — `apply_to_post_processing` does that.
+        assert_ne!(s.post_process_provider_id, "custom");
     }
 }

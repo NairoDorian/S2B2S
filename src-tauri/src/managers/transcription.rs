@@ -679,8 +679,31 @@ impl TranscriptionManager {
                 .map(transcribe_device_label)
                 .unwrap_or_else(|| "automatic".to_string());
             let model_options = ModelOptions { backend, device };
+
+            // If the model belongs to an architecture requiring an external dynamic plugin,
+            // ensure the plugin is activated/loaded from the registered plugin directories.
+            if let Some(info) = self.model_manager.get_model_info(model_id) {
+                let arch_hint = crate::catalog::file_in_catalog(&info.filename, None)
+                    .and_then(|(d, _)| d.caps.architecture.clone())
+                    .unwrap_or_default();
+                if !arch_hint.is_empty() {
+                    let _ = crate::managers::arch_plugins::ensure_arch_plugin_for_model(
+                        &arch_hint,
+                        &self.app_handle,
+                    );
+                }
+            }
+
             let model = Model::load_with(&model_path, &model_options).map_err(|e| {
-                let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
+                let err_str = e.to_string();
+                let error_msg = if err_str.contains("unsupported architecture") || err_str.contains("-9") {
+                    format!(
+                        "Failed to load model {}: architecture requires a dynamic plugin (transcribe-arch-*.dll) in your plugins directory. Error: {}",
+                        model_id, e
+                    )
+                } else {
+                    format!("Failed to load whisper model {}: {}", model_id, e)
+                };
                 emit_loading_failed(&error_msg);
                 anyhow::anyhow!(error_msg)
             })?;
@@ -800,12 +823,9 @@ impl TranscriptionManager {
     /// than falling back to CPU/auto). transcribe-cpp (whisper-family) reports
     /// its real backend string; `None` when no model is loaded.
     pub fn current_backend(&self) -> Option<String> {
-        match self.lock_engine().as_ref() {
-            Some(LoadedEngine::TranscribeCpp(session)) => {
-                Some(session.model().backend().to_string())
-            }
-            None => None,
-        }
+        self.lock_engine()
+            .as_ref()
+            .map(|LoadedEngine::TranscribeCpp(session)| session.model().backend().to_string())
     }
 
     /// Whether a live streaming run is currently in flight.
@@ -2417,7 +2437,7 @@ impl TranscriptionManager {
         &self,
         variant_id: &str,
         quant: &str,
-        model_path: &std::path::PathBuf,
+        model_path: &std::path::Path,
         settings: &AppSettings,
         audio: &[f32],
     ) -> Result<Vec<f64>> {
@@ -2820,8 +2840,31 @@ impl TranscriptionManager {
                 select_transcribe_backend(accelerator)
             };
             let model_options = ModelOptions { backend, device };
-            let model = Model::load_with(model_path, &model_options)
-                .map_err(|e| anyhow::anyhow!("Failed to load model {}: {}", model_id, e))?;
+
+            // Ensure architecture plugin is activated if required
+            if let Some(info) = self.model_manager.get_model_info(model_id) {
+                let arch_hint = crate::catalog::file_in_catalog(&info.filename, None)
+                    .and_then(|(d, _)| d.caps.architecture.clone())
+                    .unwrap_or_default();
+                if !arch_hint.is_empty() {
+                    let _ = crate::managers::arch_plugins::ensure_arch_plugin_for_model(
+                        &arch_hint,
+                        &self.app_handle,
+                    );
+                }
+            }
+
+            let model = Model::load_with(model_path, &model_options).map_err(|e| {
+                let err_str = e.to_string();
+                if err_str.contains("unsupported architecture") || err_str.contains("-9") {
+                    anyhow::anyhow!(
+                        "Failed to load model {}: architecture requires a dynamic plugin (transcribe-arch-*.dll) in your plugins directory. Error: {}",
+                        model_id, e
+                    )
+                } else {
+                    anyhow::anyhow!("Failed to load model {}: {}", model_id, e)
+                }
+            })?;
             let session = model
                 .session()
                 .map_err(|e| anyhow::anyhow!("Failed to create session for {}: {}", model_id, e))?;
@@ -3192,6 +3235,43 @@ pub fn get_available_accelerators() -> AvailableAccelerators {
     }
 }
 
+impl Drop for TranscriptionManager {
+    fn drop(&mut self) {
+        // Skip shutdown unless this is the very last clone. TranscriptionManager
+        // is cloned by initiate_model_load() and the watcher thread — those
+        // clones dropping must not kill the watcher. The watcher thread holds
+        // its own clone, so engine's strong_count is always >= 2 while the
+        // watcher is alive. When it reaches 1, only this instance remains
+        // and we can safely shut down.
+        if Arc::strong_count(&self.engine) > 1 {
+            return;
+        }
+
+        // Signal the watcher thread to shutdown
+        self.shutdown_signal.store(true, Ordering::Relaxed);
+
+        // Wait for the thread to finish gracefully.
+        // Use match instead of unwrap to avoid panicking if the mutex is
+        // poisoned — a panic inside Drop calls abort().
+        let mut guard = match self.watcher_handle.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!(
+                    "Recovered poisoned watcher_handle mutex during TranscriptionManager drop — a panic occurred earlier this session"
+                );
+                e.into_inner()
+            }
+        };
+        if let Some(handle) = guard.take() {
+            if let Err(e) = handle.join() {
+                warn!("Failed to join idle watcher thread: {:?}", e);
+            } else {
+                debug!("Idle watcher thread joined successfully");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3509,42 +3589,5 @@ mod tests {
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("es"));
         assert_eq!(plan.target_language, None);
-    }
-}
-
-impl Drop for TranscriptionManager {
-    fn drop(&mut self) {
-        // Skip shutdown unless this is the very last clone. TranscriptionManager
-        // is cloned by initiate_model_load() and the watcher thread — those
-        // clones dropping must not kill the watcher. The watcher thread holds
-        // its own clone, so engine's strong_count is always >= 2 while the
-        // watcher is alive. When it reaches 1, only this instance remains
-        // and we can safely shut down.
-        if Arc::strong_count(&self.engine) > 1 {
-            return;
-        }
-
-        // Signal the watcher thread to shutdown
-        self.shutdown_signal.store(true, Ordering::Relaxed);
-
-        // Wait for the thread to finish gracefully.
-        // Use match instead of unwrap to avoid panicking if the mutex is
-        // poisoned — a panic inside Drop calls abort().
-        let mut guard = match self.watcher_handle.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!(
-                    "Recovered poisoned watcher_handle mutex during TranscriptionManager drop — a panic occurred earlier this session"
-                );
-                e.into_inner()
-            }
-        };
-        if let Some(handle) = guard.take() {
-            if let Err(e) = handle.join() {
-                warn!("Failed to join idle watcher thread: {:?}", e);
-            } else {
-                debug!("Idle watcher thread joined successfully");
-            }
-        }
     }
 }

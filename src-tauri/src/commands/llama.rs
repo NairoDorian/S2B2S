@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::llama_releases::{self, InstalledLlamaServer, LlamaRelease};
 use crate::llama_server::{
-    self, GgufFile, LlamaDetectedInstall, LlamaServerManager, LlamaServerStateEvent,
+    self, GgufFile, LlamaDetectedInstall, LlamaServerManager, LlamaServerStateEvent, LlamaStatus,
 };
 use crate::settings::{LlamaSettings, get_settings, write_settings};
 
@@ -59,8 +59,19 @@ pub async fn restart_llama_server(app: AppHandle) -> Result<(), String> {
 #[specta::specta]
 pub fn change_llama_settings(app: AppHandle, settings: LlamaSettings) -> Result<(), String> {
     let mut current = get_settings(&app);
+    let previous = current.llama.clone();
     current.llama = settings.normalized();
+    // The `custom` provider's URL embeds the port and its model the alias, so
+    // those two moving means the link needs redoing. Guarded rather than
+    // unconditional because this command runs on every keystroke of the
+    // server fields, and the sync probes a socket when the URL disagrees.
+    let relink = current.llama.port != previous.port || current.llama.alias != previous.alias;
     write_settings(&app, current);
+    if relink {
+        let m = manager(&app);
+        let running = m.snapshot().status == LlamaStatus::Ready;
+        m.relink_custom_provider(running);
+    }
     Ok(())
 }
 

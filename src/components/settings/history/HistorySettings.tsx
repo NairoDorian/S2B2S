@@ -513,6 +513,29 @@ export const HistorySettings: React.FC = () => {
   );
 };
 
+interface MultiSttHistoryModel {
+  slot: number;
+  model_id: string;
+  text: string;
+}
+
+interface MultiSttHistoryBrain {
+  provider_id: string;
+  provider_label: string;
+  model_name: string;
+  prompt_name?: string | null;
+  latency_ms?: number | null;
+  raw_output: string;
+  cleaned_output: string;
+}
+
+interface MultiSttHistoryMeta {
+  version: number;
+  models: MultiSttHistoryModel[];
+  brain?: MultiSttHistoryBrain | null;
+  final_merged_text: string;
+}
+
 interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
@@ -539,14 +562,42 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const [retrying, setRetrying] = useState<
     "standard" | "post_process" | "multi_stt" | null
   >(null);
-  const [activeTab, setActiveTab] = useState<"polished" | "raw">(
-    entry.post_processed_text ? "polished" : "raw",
+  const [activeTab, setActiveTab] = useState<"polished" | "raw" | "multi_stt_details">(
+    entry.mode === "multi_stt" || entry.file_name.includes("handy-multi")
+      ? "multi_stt_details"
+      : entry.post_processed_text
+        ? "polished"
+        : "raw",
   );
   const [showPromptDetails, setShowPromptDetails] = useState(false);
+  const [showBrainRaw, setShowBrainRaw] = useState(false);
 
   const hasTranscription = entry.transcription_text.trim().length > 0;
   const isMultiStt =
     entry.mode === "multi_stt" || entry.file_name.includes("handy-multi");
+
+  const multiSttMeta = useMemo(() => {
+    if (!isMultiStt) return null;
+    const raw = entry.transcription_text;
+    const match = raw.match(/<!--MULTI_STT_METADATA:(.+?)-->$/s);
+    if (match) {
+      try {
+        return JSON.parse(match[1]) as MultiSttHistoryMeta;
+      } catch {
+        /* fall through */
+      }
+    }
+    return null;
+  }, [isMultiStt, entry.transcription_text]);
+
+  // For Multi-STT entries, the primary cleaned text is post_processed_text (merged output)
+  // or fall back to parsing the final_merged_text from metadata
+  const multiSttCleanedText = useMemo(() => {
+    if (!isMultiStt) return null;
+    if (entry.post_processed_text) return entry.post_processed_text;
+    if (multiSttMeta) return multiSttMeta.final_merged_text;
+    return null;
+  }, [isMultiStt, entry.post_processed_text, multiSttMeta]);
 
   const handleLoadAudio = useCallback(
     () => getAudioUrl(entry.file_name),
@@ -554,15 +605,22 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   );
 
   const textToDisplay = useMemo(() => {
+    // Multi-STT: always show the merged/cleaned output for the copy button / primary text area
+    if (isMultiStt && multiSttCleanedText) {
+      return multiSttCleanedText;
+    }
     if (activeTab === "polished" && entry.post_processed_text) {
       return entry.post_processed_text;
     }
     return entry.transcription_text;
-  }, [activeTab, entry.post_processed_text, entry.transcription_text]);
+  }, [isMultiStt, multiSttCleanedText, activeTab, entry.post_processed_text, entry.transcription_text]);
 
   const handleCopyText = () => {
-    if (!textToDisplay.trim()) return;
-    onCopyText(textToDisplay);
+    const text = isMultiStt && multiSttCleanedText
+      ? multiSttCleanedText
+      : textToDisplay;
+    if (!text.trim()) return;
+    onCopyText(text);
     setShowCopied(true);
     setTimeout(() => setShowCopied(false), 2000);
   };
@@ -928,78 +986,243 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
         )}
       </div>
 
-      {/* View Switcher Tabs (when post-processed text exists) */}
-      {entry.post_processed_text && (
-        <div className="flex items-center gap-1.5 pt-0.5">
-          <button
-            onClick={() => setActiveTab("polished")}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "polished"
-                ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
-                : "bg-mid-gray/10 text-text/60 hover:text-text"
-            }`}
-          >
-            <Sparkles className="w-3 h-3" />
-            <span>{t("settings.history.polishedTextTab")}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("raw")}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "raw"
-                ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
-                : "bg-mid-gray/10 text-text/60 hover:text-text"
-            }`}
-          >
-            <FileText className="w-3 h-3" />
-            <span>{t("settings.history.rawTranscriptTab")}</span>
-          </button>
+      {/* View Switcher Tabs */}
+      {(entry.post_processed_text || isMultiStt) && (
+        <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+          {/* For Multi-STT: show Details / Cleaned / Raw Log tabs */}
+          {isMultiStt && (
+            <>
+              <button
+                onClick={() => setActiveTab("multi_stt_details")}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === "multi_stt_details"
+                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                    : "bg-mid-gray/10 text-text/60 hover:text-text"
+                }`}
+              >
+                <Layers className="w-3 h-3" />
+                <span>{t("settings.history.multiSttDetailsTab")}</span>
+              </button>
+              <button
+                onClick={() => setActiveTab("polished")}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === "polished"
+                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    : "bg-mid-gray/10 text-text/60 hover:text-text"
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>{t("settings.history.multiSttCleanedOutputTab")}</span>
+              </button>
+              <button
+                onClick={() => setActiveTab("raw")}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === "raw"
+                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    : "bg-mid-gray/10 text-text/60 hover:text-text"
+                }`}
+              >
+                <FileText className="w-3 h-3" />
+                <span>{t("settings.history.multiSttRawLogTab")}</span>
+              </button>
+            </>
+          )}
+          {/* Non-multi-STT tabs */}
+          {!isMultiStt && entry.post_processed_text && (
+            <>
+              <button
+                onClick={() => setActiveTab("polished")}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === "polished"
+                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    : "bg-mid-gray/10 text-text/60 hover:text-text"
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>{t("settings.history.polishedTextTab")}</span>
+              </button>
+              <button
+                onClick={() => setActiveTab("raw")}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === "raw"
+                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    : "bg-mid-gray/10 text-text/60 hover:text-text"
+                }`}
+              >
+                <FileText className="w-3 h-3" />
+                <span>{t("settings.history.rawTranscriptTab")}</span>
+              </button>
+            </>
+          )}
         </div>
       )}
 
-      {/* Transcript Text Display */}
-      <div className="relative">
-        <p
-          className={`text-sm select-text cursor-text whitespace-pre-wrap break-words rounded-md p-2.5 bg-card/40 border border-mid-gray/15 ${
-            retrying !== null
-              ? "text-text/40 animate-pulse"
-              : hasTranscription
-                ? "text-text/95"
-                : "text-text/40 italic"
-          }`}
-        >
-          {retrying === "standard"
-            ? t("settings.history.transcribing")
-            : retrying === "post_process"
-              ? t("settings.history.postProcessing")
-              : retrying === "multi_stt"
-                ? t("settings.history.multiSttTranscribing")
-                : hasTranscription
-                  ? textToDisplay
-                  : t("settings.history.transcriptionFailed")}
-        </p>
-
-        {/* Expandable prompt details */}
-        {entry.post_process_prompt && (
-          <div className="mt-1">
-            <button
-              onClick={() => setShowPromptDetails(!showPromptDetails)}
-              className="text-[11px] text-text/50 hover:text-logo-primary flex items-center gap-1 transition-colors"
-            >
-              {showPromptDetails ? (
-                <ChevronUp className="w-3 h-3" />
-              ) : (
-                <ChevronDown className="w-3 h-3" />
-              )}
-              <span>{t("settings.history.promptUsed")}</span>
-            </button>
-            {showPromptDetails && (
-              <pre className="mt-1 p-2 rounded bg-background/90 text-[11px] text-text/70 border border-mid-gray/20 whitespace-pre-wrap font-mono">
-                {entry.post_process_prompt}
-              </pre>
-            )}
+      {/* Multi-STT Details Panel */}
+      {isMultiStt && activeTab === "multi_stt_details" && multiSttMeta && (
+        <div className="space-y-3">
+          {/* 4 Model Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {multiSttMeta.models.map((m) => (
+              <div
+                key={m.slot}
+                className="rounded-lg border border-mid-gray/20 bg-card/40 p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25 shrink-0">
+                      {t("settings.history.multiSttModelSlot", { slot: m.slot })}
+                    </span>
+                    <span
+                      className="text-[11px] font-mono text-text/70 truncate"
+                      title={m.model_id}
+                    >
+                      {m.model_id.replace(/^handy-computer\//, "").replace(/\.gguf$/, "")}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (m.text.trim()) onCopyText(m.text);
+                    }}
+                    disabled={!m.text.trim()}
+                    title={t("settings.history.multiSttCopyModelOutput")}
+                    className="p-1 rounded text-text/40 hover:text-logo-primary hover:bg-mid-gray/10 transition-colors disabled:opacity-30 shrink-0"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </div>
+                <p
+                  className={`text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-mid-gray/15 min-h-[2.5rem] ${
+                    m.text.trim() ? "text-text/90" : "text-text/35 italic"
+                  }`}
+                >
+                  {m.text.trim() || t("settings.history.multiSttNoOutput")}
+                </p>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+
+          {/* Brain LLM Card */}
+          {multiSttMeta.brain && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {t("settings.history.multiSttBrainLabel")}
+                  </span>
+                  <span className="text-[11px] font-mono text-text/75 font-medium">
+                    {multiSttMeta.brain.model_name}
+                  </span>
+                  <span className="text-[10px] text-text/50 bg-mid-gray/10 px-1.5 py-0.5 rounded border border-mid-gray/20">
+                    {multiSttMeta.brain.provider_label} ({multiSttMeta.brain.provider_id})
+                  </span>
+                  {multiSttMeta.brain.prompt_name && (
+                    <span className="text-[10px] text-text/50 bg-mid-gray/10 px-1.5 py-0.5 rounded border border-mid-gray/20">
+                      {t("settings.history.multiSttBrainPromptLabel", { name: multiSttMeta.brain.prompt_name })}
+                    </span>
+                  )}
+                  {multiSttMeta.brain.latency_ms != null && (
+                    <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                      {multiSttMeta.brain.latency_ms >= 1000
+                        ? `${(multiSttMeta.brain.latency_ms / 1000).toFixed(1)}s LLM`
+                        : `${Math.round(multiSttMeta.brain.latency_ms)}ms LLM`}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    if (multiSttMeta.brain?.cleaned_output.trim())
+                      onCopyText(multiSttMeta.brain.cleaned_output);
+                  }}
+                  disabled={!multiSttMeta.brain.cleaned_output.trim()}
+                  title={t("settings.history.multiSttCopyBrainOutput")}
+                  className="p-1 rounded text-text/40 hover:text-logo-primary hover:bg-mid-gray/10 transition-colors disabled:opacity-30 shrink-0"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Cleaned output */}
+              <div>
+                <p className="text-[10px] text-text/50 mb-1 font-medium uppercase tracking-wider">
+                  {t("settings.history.multiSttBrainCleanedOutput")}
+                </p>
+                <p className="text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-amber-500/15 text-text/90">
+                  {multiSttMeta.brain.cleaned_output || t("settings.history.multiSttNoOutput")}
+                </p>
+              </div>
+
+              {/* Raw output toggle */}
+              {multiSttMeta.brain.raw_output && (
+                <div>
+                  <button
+                    onClick={() => setShowBrainRaw((v) => !v)}
+                    className="text-[10px] text-text/50 hover:text-amber-400 flex items-center gap-1 transition-colors font-medium uppercase tracking-wider"
+                  >
+                    {showBrainRaw ? (
+                      <ChevronUp className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                    {t("settings.history.multiSttBrainRawToggle")}
+                  </button>
+                  {showBrainRaw && (
+                    <pre className="mt-1 p-2 rounded bg-background/90 text-[10px] text-text/65 border border-amber-500/20 whitespace-pre-wrap font-mono overflow-x-auto max-h-56 overflow-y-auto">
+                      {multiSttMeta.brain.raw_output}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Transcript Text Display (non-details tabs) */}
+      {activeTab !== "multi_stt_details" && (
+        <div className="relative">
+          <p
+            className={`text-sm select-text cursor-text whitespace-pre-wrap break-words rounded-md p-2.5 bg-card/40 border border-mid-gray/15 ${
+              retrying !== null
+                ? "text-text/40 animate-pulse"
+                : hasTranscription
+                  ? "text-text/95"
+                  : "text-text/40 italic"
+            }`}
+          >
+            {retrying === "standard"
+              ? t("settings.history.transcribing")
+              : retrying === "post_process"
+                ? t("settings.history.postProcessing")
+                : retrying === "multi_stt"
+                  ? t("settings.history.multiSttTranscribing")
+                  : hasTranscription
+                    ? textToDisplay
+                    : t("settings.history.transcriptionFailed")}
+          </p>
+
+          {/* Expandable prompt details */}
+          {entry.post_process_prompt && (
+            <div className="mt-1">
+              <button
+                onClick={() => setShowPromptDetails(!showPromptDetails)}
+                className="text-[11px] text-text/50 hover:text-logo-primary flex items-center gap-1 transition-colors"
+              >
+                {showPromptDetails ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+                <span>{t("settings.history.promptUsed")}</span>
+              </button>
+              {showPromptDetails && (
+                <pre className="mt-1 p-2 rounded bg-background/90 text-[11px] text-text/70 border border-mid-gray/20 whitespace-pre-wrap font-mono">
+                  {entry.post_process_prompt}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Audio Waveform Player */}
       <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full mt-1" />

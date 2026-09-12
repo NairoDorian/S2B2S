@@ -430,37 +430,69 @@ pub async fn multi_stt_history_entry(
     let multi_transcription_latency_ms = transcribe_start.elapsed().as_secs_f64() * 1000.0;
 
     let merge_start = std::time::Instant::now();
-    let merged_opt = crate::actions::multi_stt_merge_transcriptions(
+    let merge_outcome = crate::actions::multi_stt_merge_transcriptions(
         &settings, &output1, &output2, &output3, &output4,
     )
     .await;
 
-    let merged = merged_opt.unwrap_or_else(|| {
-        let mut combined = output1.clone();
-        for out in [&output2, &output3, &output4] {
-            if !out.is_empty() {
-                if !combined.is_empty() {
-                    combined.push('\n');
-                }
-                combined.push_str(out);
-            }
+    let latency = merge_start.elapsed().as_secs_f64() * 1000.0;
+    let merge_latency_ms = Some(latency);
+
+    let (merged, brain_details) = match merge_outcome {
+        Some(outcome) => {
+            let brain = crate::actions::MultiSttHistoryBrain {
+                provider_id: outcome.provider_id,
+                provider_label: outcome.provider_label,
+                model_name: outcome.model_name,
+                prompt_name: outcome.prompt_name,
+                latency_ms: Some(latency),
+                raw_output: outcome.raw_text,
+                cleaned_output: outcome.cleaned_text.clone(),
+            };
+            (outcome.cleaned_text, Some(brain))
         }
-        combined
-    });
+        None => {
+            let mut combined = output1.clone();
+            for out in [&output2, &output3, &output4] {
+                if !out.is_empty() {
+                    if !combined.is_empty() {
+                        combined.push('\n');
+                    }
+                    combined.push_str(out);
+                }
+            }
+            (combined, None)
+        }
+    };
 
-    let merge_latency_ms = Some(merge_start.elapsed().as_secs_f64() * 1000.0);
+    let model_1_id = settings.selected_model.clone();
+    let model_2_id = settings
+        .multi_stt_model_2
+        .as_deref()
+        .unwrap_or("none")
+        .to_string();
+    let model_3_id = settings
+        .multi_stt_model_3
+        .as_deref()
+        .unwrap_or("none")
+        .to_string();
+    let model_4_id = settings
+        .multi_stt_model_4
+        .as_deref()
+        .unwrap_or("none")
+        .to_string();
 
-    let multi_transcript = format!(
-        "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\nModel 4: {}\n{}\n=== Merged ===\n{}",
-        settings.selected_model,
-        output1,
-        settings.multi_stt_model_2.as_deref().unwrap_or("none"),
-        output2,
-        settings.multi_stt_model_3.as_deref().unwrap_or("none"),
-        output3,
-        settings.multi_stt_model_4.as_deref().unwrap_or("none"),
-        output4,
-        merged
+    let multi_transcript = crate::actions::format_multi_stt_history_transcript(
+        &model_1_id,
+        &output1,
+        &model_2_id,
+        &output2,
+        &model_3_id,
+        &output3,
+        &model_4_id,
+        &output4,
+        brain_details,
+        &merged,
     );
 
     let merge_prompt_text = settings

@@ -19,6 +19,7 @@ use crate::utils::{
 use ferrous_opencc::{OpenCC, config::BuiltinConfig};
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -1170,6 +1171,116 @@ impl ShortcutAction for TestAction {
 
 struct MultiSttAction;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiSttMergeOutcome {
+    pub cleaned_text: String,
+    pub raw_text: String,
+    pub provider_id: String,
+    pub provider_label: String,
+    pub model_name: String,
+    pub prompt_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiSttHistoryModel {
+    pub slot: usize,
+    pub model_id: String,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiSttHistoryBrain {
+    pub provider_id: String,
+    pub provider_label: String,
+    pub model_name: String,
+    pub prompt_name: Option<String>,
+    pub latency_ms: Option<f64>,
+    pub raw_output: String,
+    pub cleaned_output: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiSttHistoryMetadata {
+    pub version: u32,
+    pub models: Vec<MultiSttHistoryModel>,
+    pub brain: Option<MultiSttHistoryBrain>,
+    pub final_merged_text: String,
+}
+
+pub(crate) fn format_multi_stt_history_transcript(
+    model1: &str,
+    output1: &str,
+    model2: &str,
+    output2: &str,
+    model3: &str,
+    output3: &str,
+    model4: &str,
+    output4: &str,
+    brain: Option<MultiSttHistoryBrain>,
+    final_merged: &str,
+) -> String {
+    let mut text = String::new();
+    text.push_str("=== Multi-STT Results ===\n");
+    text.push_str(&format!("Model 1: {}\n{}\n", model1, output1));
+    text.push_str(&format!("Model 2: {}\n{}\n", model2, output2));
+    text.push_str(&format!("Model 3: {}\n{}\n", model3, output3));
+    text.push_str(&format!("Model 4: {}\n{}\n", model4, output4));
+
+    if let Some(ref b) = brain {
+        text.push_str(&format!(
+            "\n=== Brain Model ===\nProvider: {} ({})\nModel: {}\n",
+            b.provider_label, b.provider_id, b.model_name
+        ));
+        if let Some(ref p) = b.prompt_name {
+            text.push_str(&format!("Prompt: {}\n", p));
+        }
+        if let Some(lat) = b.latency_ms {
+            text.push_str(&format!("Latency: {:.0} ms\n", lat));
+        }
+        text.push_str(&format!(
+            "\n--- Brain Cleaned Output ---\n{}\n",
+            b.cleaned_output
+        ));
+        text.push_str(&format!("\n--- Brain Raw Output ---\n{}\n", b.raw_output));
+    }
+
+    text.push_str(&format!("\n=== Merged ===\n{}\n", final_merged));
+
+    let metadata = MultiSttHistoryMetadata {
+        version: 1,
+        models: vec![
+            MultiSttHistoryModel {
+                slot: 1,
+                model_id: model1.to_string(),
+                text: output1.to_string(),
+            },
+            MultiSttHistoryModel {
+                slot: 2,
+                model_id: model2.to_string(),
+                text: output2.to_string(),
+            },
+            MultiSttHistoryModel {
+                slot: 3,
+                model_id: model3.to_string(),
+                text: output3.to_string(),
+            },
+            MultiSttHistoryModel {
+                slot: 4,
+                model_id: model4.to_string(),
+                text: output4.to_string(),
+            },
+        ],
+        brain,
+        final_merged_text: final_merged.to_string(),
+    };
+
+    if let Ok(json_str) = serde_json::to_string(&metadata) {
+        text.push_str(&format!("\n<!--MULTI_STT_METADATA:{}-->", json_str));
+    }
+
+    text
+}
+
 /// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}, ${output4}
 /// and sends to the LLM API (same provider as post-processing).
 pub(crate) async fn multi_stt_merge_transcriptions(
@@ -1178,7 +1289,7 @@ pub(crate) async fn multi_stt_merge_transcriptions(
     output2: &str,
     output3: &str,
     output4: &str,
-) -> Option<String> {
+) -> Option<MultiSttMergeOutcome> {
     let merge_prompt = match &settings.multi_stt_merge_prompt {
         Some(p) => p.clone(),
         None => {
@@ -1244,18 +1355,26 @@ pub(crate) async fn multi_stt_merge_transcriptions(
         match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt, false)
             .await
         {
-            Ok(Some(content)) => {
+            Ok(Some(raw_content)) => {
                 // Same sanitising as post-processing: a reasoning model on the
                 // same provider must not paste its <think> block, and invisible
                 // characters must not leak into the pasted text.
-                let content = strip_invisible_chars(strip_think_block(&content))
+                let cleaned_text = strip_invisible_chars(strip_think_block(&raw_content))
                     .trim()
                     .to_string();
                 debug!(
-                    "Multi-STT merge succeeded. Output length: {} chars",
-                    content.len()
+                    "Multi-STT merge succeeded. Output length: {} chars, raw length: {} chars",
+                    cleaned_text.len(),
+                    raw_content.len()
                 );
-                Some(content)
+                Some(MultiSttMergeOutcome {
+                    cleaned_text,
+                    raw_text: raw_content,
+                    provider_id: provider.id.clone(),
+                    provider_label: provider.label.clone(),
+                    model_name: model.clone(),
+                    prompt_name: Some(merge_prompt.name.clone()),
+                })
             }
             Ok(None) => {
                 error!("Multi-STT merge: LLM API response has no content");
@@ -1939,7 +2058,8 @@ impl ShortcutAction for MultiSttAction {
             // === MERGE TRANSCRIPTIONS ===
             let merge_start = Instant::now();
             let settings_for_merge = get_settings(&ah);
-            let (merged, llm_merge_succeeded) = if merge_requested {
+            let (merged, brain_details, llm_merge_succeeded, merge_latency_ms) = if merge_requested
+            {
                 if use_streaming_overlay {
                     tm.emit_stream_working(StreamWorkKind::Polishing);
                 } else {
@@ -1979,8 +2099,21 @@ impl ShortcutAction for MultiSttAction {
                     return;
                 };
 
+                let latency = merge_start.elapsed().as_secs_f64() * 1000.0;
+
                 match merge_outcome {
-                    Some(content) => (content, true),
+                    Some(outcome) => {
+                        let brain = MultiSttHistoryBrain {
+                            provider_id: outcome.provider_id,
+                            provider_label: outcome.provider_label,
+                            model_name: outcome.model_name,
+                            prompt_name: outcome.prompt_name,
+                            latency_ms: Some(latency),
+                            raw_output: outcome.raw_text,
+                            cleaned_output: outcome.cleaned_text.clone(),
+                        };
+                        (outcome.cleaned_text, Some(brain), true, Some(latency))
+                    }
                     None => {
                         // Fallback: concatenate with newlines
                         warn!(
@@ -2005,7 +2138,7 @@ impl ShortcutAction for MultiSttAction {
                             }
                             combined.push_str(&output4);
                         }
-                        (combined, false)
+                        (combined, None, false, Some(latency))
                     }
                 }
             } else {
@@ -2029,13 +2162,7 @@ impl ShortcutAction for MultiSttAction {
                     }
                     combined.push_str(&output4);
                 }
-                (combined, false)
-            };
-
-            let merge_latency_ms = if merge_requested {
-                Some(merge_start.elapsed().as_secs_f64() * 1000.0)
-            } else {
-                None
+                (combined, None, false, None)
             };
 
             // Finish attempts for statistics
@@ -2102,17 +2229,34 @@ impl ShortcutAction for MultiSttAction {
             }
 
             // Save to history in background (parallel with paste for speed)
-            let multi_transcript = format!(
-                "=== Multi-STT Results ===\nModel 1: {}\n{}\nModel 2: {}\n{}\nModel 3: {}\n{}\nModel 4: {}\n{}\n=== Merged ===\n{}",
-                settings.selected_model,
-                output1,
-                settings.multi_stt_model_2.as_deref().unwrap_or("none"),
-                output2,
-                settings.multi_stt_model_3.as_deref().unwrap_or("none"),
-                output3,
-                settings.multi_stt_model_4.as_deref().unwrap_or("none"),
-                output4,
-                merged
+            let model_1_id = settings.selected_model.clone();
+            let model_2_id = settings
+                .multi_stt_model_2
+                .as_deref()
+                .unwrap_or("none")
+                .to_string();
+            let model_3_id = settings
+                .multi_stt_model_3
+                .as_deref()
+                .unwrap_or("none")
+                .to_string();
+            let model_4_id = settings
+                .multi_stt_model_4
+                .as_deref()
+                .unwrap_or("none")
+                .to_string();
+
+            let multi_transcript = format_multi_stt_history_transcript(
+                &model_1_id,
+                &output1,
+                &model_2_id,
+                &output2,
+                &model_3_id,
+                &output3,
+                &model_4_id,
+                &output4,
+                brain_details,
+                &merged,
             );
             let hm_clone = Arc::clone(&hm);
             let file_name = format!("handy-multi-{recording_timestamp}.wav");

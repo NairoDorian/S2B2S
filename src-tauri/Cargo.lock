@@ -1291,7 +1291,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.5",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -7242,7 +7242,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7698,7 +7698,7 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp"
 version = "0.2.3"
-source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#0c2a6b9aafb4538b259d82e051aa1242b80f6bdf"
+source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#574b0647b0781fec99fe4297f4849dff3cb5520c"
 dependencies = [
  "log",
  "thiserror 2.0.20",
@@ -7708,7 +7708,7 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp-sys"
 version = "0.2.3"
-source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#0c2a6b9aafb4538b259d82e051aa1242b80f6bdf"
+source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#574b0647b0781fec99fe4297f4849dff3cb5520c"
 dependencies = [
  "cmake",
  "serde_json",

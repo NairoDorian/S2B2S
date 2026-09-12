@@ -729,7 +729,7 @@ impl FileTranscriptionManager {
             )
             .await;
             text = match merged {
-                Some(merged) => merged,
+                Some(outcome) => outcome.cleaned_text,
                 None => {
                     let mut combined = primary_text.clone();
                     for extra in outputs.iter().filter(|o| !o.trim().is_empty()) {
