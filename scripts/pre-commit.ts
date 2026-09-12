@@ -119,7 +119,30 @@ function stageGenerated(): void {
   }
 }
 
+/**
+ * Warn when this clone has no hook installed.
+ *
+ * `hooks:install` is a one-time per-clone step, and a clone that skipped it
+ * looks exactly like a clone that ran it — until a broken commit lands. The
+ * gate can tell the difference from `core.hooksPath` and should say so, because
+ * "the hook is not installed" is the one failure this routine cannot report by
+ * failing.
+ */
+function warnIfHookMissing(): void {
+  const configured = spawnSync("git", ["config", "--get", "core.hooksPath"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  });
+  if (configured.status === 0 && configured.stdout.trim() === ".githooks")
+    return;
+  console.log(
+    `${TAG} note: the git hook is not installed in this clone, so commits ` +
+      `skip this gate. Run \`bun run hooks:install\` once to enable it.`,
+  );
+}
+
 const selected = STEPS.filter((s) => (s.heavy ? full : true));
+warnIfHookMissing();
 if (!full) {
   console.log(
     `${TAG} fast gate (${selected.length} steps); \`bun run precommit:full\` adds clippy and the tests`,

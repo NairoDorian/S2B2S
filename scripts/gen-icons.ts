@@ -21,8 +21,15 @@
  * tray icons are the *line drawing* alone, matching the sidebar's icons, with
  * a state badge in the corner while recording or transcribing.
  *
- * No image library and no browser are involved, so this runs anywhere Bun does
- * and produces byte-identical output every time.
+ * No image library and no browser are involved, so this runs anywhere Bun does.
+ *
+ * The output is reproducible with **one exception**: `tauri icon` writes a
+ * different `icon.icns` on every run — same byte length, different bytes, twice
+ * in a row from identical input — so a regeneration always leaves that one file
+ * dirty in git even when nothing about the mark changed. Every other file,
+ * including the tray PNGs from the SDF rasteriser, is byte-identical. Read the
+ * ICNS diff as "the tool re-ran", not as "the icon changed"; if the mark really
+ * moved, the PNGs move with it.
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
