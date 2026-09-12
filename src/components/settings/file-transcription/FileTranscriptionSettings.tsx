@@ -71,11 +71,11 @@ const formatSeconds = (secs: number): string => {
 
 const STATUS_CLASSES: Record<FileJobStatus, string> = {
   queued: "bg-mid-gray/15 text-text/70 border-mid-gray/20",
-  decoding: "bg-logo-primary/15 text-text border-logo-primary/30",
-  transcribing: "bg-logo-primary/20 text-text border-logo-primary/40",
-  merging: "bg-logo-primary/20 text-text border-logo-primary/40",
-  post_processing: "bg-logo-primary/20 text-text border-logo-primary/40",
-  saving: "bg-logo-primary/15 text-text border-logo-primary/30",
+  decoding: "bg-accent/15 text-text border-accent/30",
+  transcribing: "bg-accent/20 text-text border-accent/40",
+  merging: "bg-accent/20 text-text border-accent/40",
+  post_processing: "bg-accent/20 text-text border-accent/40",
+  saving: "bg-accent/15 text-text border-accent/30",
   done: "bg-green-500/15 text-green-500 border-green-500/30",
   failed: "bg-red-500/15 text-red-400 border-red-500/30",
   cancelled: "bg-mid-gray/15 text-text/60 border-mid-gray/20",
@@ -131,7 +131,7 @@ const QueueRow: React.FC<{
   return (
     <li className="flex flex-col gap-2 px-3 py-2.5 border-b border-mid-gray/15 last:border-b-0">
       <div className="flex items-center gap-3 min-w-0">
-        <FileAudio className="w-4 h-4 shrink-0 text-logo-primary" />
+        <FileAudio className="w-4 h-4 shrink-0 text-accent" />
         <div className="flex-1 min-w-0">
           <p className="text-sm truncate" title={item.path}>
             {item.name}
@@ -415,15 +415,15 @@ export const FileTranscriptionSettings: React.FC = () => {
             }}
             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
               dragOver
-                ? "border-logo-primary bg-logo-primary/10"
-                : "border-mid-gray/30 hover:border-logo-primary/50 hover:bg-mid-gray/5"
+                ? "border-accent bg-accent/10"
+                : "border-mid-gray/30 hover:border-accent/50 hover:bg-mid-gray/5"
             }`}
           >
             <div className="flex flex-col items-center gap-2">
               <div
-                className={`p-3 rounded-full ${dragOver ? "bg-logo-primary/20" : "bg-mid-gray/10"}`}
+                className={`p-3 rounded-full ${dragOver ? "bg-accent/20" : "bg-mid-gray/10"}`}
               >
-                <Upload className="w-6 h-6 text-logo-primary" />
+                <Upload className="w-6 h-6 text-accent" />
               </div>
               <p className="text-sm font-medium">
                 {t("settings.fileTranscription.dropZone.title")}

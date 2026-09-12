@@ -1,27 +1,28 @@
 // Standalone assert check (no JS unit-test runner in this repo). Run with:
 //   bun src/components/update-checker/portableInstaller.test.ts
 import assert from "node:assert";
-import {
-  resolvePortableInstallerUrl,
-  PORTABLE_RELEASES_URL,
-} from "./portableInstaller";
+import { APP_NAME, RELEASES_URL } from "@/lib/appIdentity";
+import { resolvePortableInstallerUrl } from "./portableInstaller";
 
-const X64_SETUP =
-  "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_0.9.5_x64-setup.exe";
-const ARM64_SETUP =
-  "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_0.9.5_arm64-setup.exe";
+// The fixtures are built from the generated identity rather than typed out, so a
+// rename or a version bump cannot leave a test asserting against an address the
+// app no longer uses. `v<version>` is only a sample tag — the resolver never
+// parses it.
+const TAG_URL = `${RELEASES_URL.replace(/\/latest$/, "")}/download/v0.9.7`;
+const X64_SETUP = `${TAG_URL}/${APP_NAME}_0.9.7_x64-setup.exe`;
+const ARM64_SETUP = `${TAG_URL}/${APP_NAME}_0.9.7_arm64-setup.exe`;
 
 // Trimmed copy of the real latest.json served from the updater endpoint.
 const manifest = {
-  version: "0.9.5",
+  version: "0.9.7",
   platforms: {
     "windows-x86_64-nsis": { url: X64_SETUP, signature: "…" },
     "windows-x86_64-msi": {
-      url: "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_0.9.5_x64_en-US.msi",
+      url: `${TAG_URL}/${APP_NAME}_0.9.7_x64_en-US.msi`,
     },
     "windows-aarch64-nsis": { url: ARM64_SETUP, signature: "…" },
     "darwin-aarch64": {
-      url: "https://github.com/cjpais/Handy/releases/download/v0.9.5/Handy_aarch64.app.tar.gz",
+      url: `${TAG_URL}/${APP_NAME}_aarch64.app.tar.gz`,
     },
   },
 };
@@ -41,25 +42,25 @@ assert.equal(
 // no manifest (check() failed or returned no update) -> releases page fallback
 assert.equal(
   resolvePortableInstallerUrl(undefined, "windows", "x86_64"),
-  PORTABLE_RELEASES_URL,
+  RELEASES_URL,
 );
 
 // no NSIS bundle for this arch -> releases page fallback
 assert.equal(
   resolvePortableInstallerUrl(manifest, "windows", "x86"),
-  PORTABLE_RELEASES_URL,
+  RELEASES_URL,
 );
 
 // non-Windows portable install -> releases page, never a Windows .exe
 assert.equal(
   resolvePortableInstallerUrl(manifest, "macos", "aarch64"),
-  PORTABLE_RELEASES_URL,
+  RELEASES_URL,
 );
 
 // malformed manifest -> releases page fallback
 assert.equal(
   resolvePortableInstallerUrl({ platforms: "nope" }, "windows", "x86_64"),
-  PORTABLE_RELEASES_URL,
+  RELEASES_URL,
 );
 
 console.log("portableInstaller: all assertions passed");

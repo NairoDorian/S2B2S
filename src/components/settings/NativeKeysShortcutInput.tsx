@@ -11,21 +11,23 @@ import { sessionToast as toast } from "@/lib/sessionToast";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SECURE_INPUT_HELP_URL } from "../SecureInputWarning";
 
-interface HandyKeysShortcutInputProps {
+interface NativeKeysShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
 }
 
-interface HandyKeysEvent {
+interface NativeKeysEvent {
   modifiers: string[];
   key: string | null;
   is_key_down: boolean;
   hotkey_string: string;
 }
 
-export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
+export const NativeKeysShortcutInput: React.FC<
+  NativeKeysShortcutInputProps
+> = ({
   descriptionMode = "tooltip",
   grouped = false,
   shortcutId,
@@ -63,7 +65,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     }
 
     // Stop backend recording
-    await commands.stopHandyKeysRecording().catch(console.error);
+    await commands.stopNativeKeysRecording().catch(console.error);
 
     // Restore original binding
     if (originalBinding) {
@@ -83,7 +85,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     setOriginalBinding("");
   }, [isRecording, originalBinding, shortcutId, updateBinding, t]);
 
-  // Set up event listener for handy-keys events
+  // Set up the listener for the native keyboard backend's events
   useEffect(() => {
     if (!isRecording) return;
 
@@ -118,7 +120,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
           unlistenRef.current();
           unlistenRef.current = null;
         }
-        await commands.stopHandyKeysRecording().catch(console.error);
+        await commands.stopNativeKeysRecording().catch(console.error);
         setIsRecording(false);
         setCurrentKeys("");
         currentKeysRef.current = "";
@@ -127,8 +129,8 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         setOriginalBinding("");
       };
 
-      const unlisten = await listen<HandyKeysEvent>(
-        "handy-keys-event",
+      const unlisten = await listen<NativeKeysEvent>(
+        "native-keys-event",
         async (event) => {
           if (cleanup) return;
 
@@ -179,7 +181,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         unlistenRef.current = null;
       }
       // Stop backend recording on unmount to prevent orphaned recording loops
-      commands.stopHandyKeysRecording().catch(console.error);
+      commands.stopNativeKeysRecording().catch(console.error);
     };
   }, [
     isRecording,
@@ -219,7 +221,7 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
     // capture just the modifier) — it also flips the warning banner on, so
     // the toast points at a visible explanation.
     try {
-      const result = await commands.startHandyKeysRecording(shortcutId);
+      const result = await commands.startNativeKeysRecording(shortcutId);
       if (result.status === "error") {
         if (String(result.error).includes("secure-input-active")) {
           toast.error(t("secureInput.recorderBlocked"), {
@@ -327,13 +329,13 @@ export const HandyKeysShortcutInput: React.FC<HandyKeysShortcutInputProps> = ({
         {isRecording ? (
           <div
             ref={shortcutRef}
-            className="px-2 py-1 text-sm font-semibold border border-logo-primary bg-logo-primary/30 rounded-md"
+            className="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
           >
             {formatCurrentKeys()}
           </div>
         ) : (
           <div
-            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary"
+            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent"
             onClick={startRecording}
           >
             {formatKeyCombination(binding.current_binding, osType)}

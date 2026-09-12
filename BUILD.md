@@ -1,8 +1,48 @@
 # Build Instructions
 
-This guide covers how to set up the development environment and build Handy from source across different platforms.
+This guide covers how to set up the development environment and build ZER0 from source across different platforms.
 
-> **NOTE:** This is the `Handy_Multi_STT` fork. In addition to upstream Handy features, this branch adds **Multi-STT** mode (running up to four STT models in parallel with optional LLM-based merging). See [README.md](README.md#multi-stt-mode-fork-feature) for details on the Multi-STT feature.
+> **NOTE:** ZER0 began as a fork of the MIT-licensed
+> [Handy](https://github.com/cjpais/Handy) project by CJ Pais and is now its own
+> project. The `Handy_Multi_STT` branch it was developed on keeps that name; the
+> product, the binary and every path below are ZER0's own.
+
+## Pre-commit routine
+
+Every change goes through the same gate, and it is one command:
+
+```bash
+bun run hooks:install   # once per clone: points git at .githooks/
+bun run precommit       # the gate, ~10 s
+bun run precommit:full  # the gate plus clippy and the Rust test suite
+```
+
+`bun run precommit` runs, in order: identity mirrors (`meta:sync`), identity in
+sync (`meta:check`), no stale product name (`check:identity`), translations
+complete, `lint`, `typecheck`, `format:check`, and the repomix pack. The
+`--full` variant adds `lint:backend` (clippy) and `test:backend` (the Rust test
+suite), which is what `pre-commit` itself deliberately omits — see the header of
+`scripts/pre-commit.ts` for why.
+
+**Keeping things current is part of the routine, not a separate chore:**
+
+```bash
+bun run update          # rtk to latest, deps with --prerelease, then repomix
+bun run update:rtk      # just the RTK CLI used by the maintainer's agent hook
+bun run update-deps -- --prerelease
+```
+
+`bun run update-deps` **always** takes `--prerelease` here: this project tracks
+the newest published versions of its dependencies on purpose, so a release
+candidate is what the next release is tested against. `bun run update` wraps
+all three in the right order and is the command to run before starting a
+release.
+
+All shell commands in this project go through **`rtk`** (the token-optimizing
+CLI proxy) with the single exception of `bun`, which is never proxied: `rtk bun
+install` and friends are not supported, so `bun` is run directly and everything
+else (`git`, `cargo`, `gh`, `node`, …) goes through `rtk`. Run `rtk gain` to
+see what it has saved.
 
 ## Prerequisites
 
@@ -97,8 +137,8 @@ exactly like Apple Silicon (transcribe.cpp with Metal).
 ### 1. Clone the Repository
 
 ```bash
-git clone git@github.com:cjpais/Handy.git
-cd Handy
+git clone git@github.com:NairoDorian/S2B2S.git
+cd S2B2S
 ```
 
 ### 2. Install Dependencies
@@ -122,7 +162,7 @@ pure Rust — and speech models come from the in-app catalog on first run.
 
 ### 4. Build for Production
 
-Handy provides two release build commands:
+ZER0 provides two release build commands:
 
 ```bash
 # Fast local build (auto-detects and compiles CUDA kernels only for your local GPU):
@@ -152,33 +192,33 @@ the next build needs is removed. To see what would go, or to run it by hand:
 ```powershell
 bun run prune:target --dry-run   # list only
 bun run prune:target --verbose   # remove and print every path
-$env:HANDY_NO_PRUNE = "1"         # skip the automatic run for this shell
+$env:ZER0_NO_PRUNE = "1"          # skip the automatic run for this shell
 ```
 
 ## Linux Install (from source)
 
-The raw binary (`src-tauri/target/release/handy`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
+The raw binary (`src-tauri/target/release/zer0`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
 
 **Install from the deb bundle** (works on any Linux distro):
 
 ```bash
 cd /tmp
-ar x /path/to/Handy/src-tauri/target/release/bundle/deb/Handy_*_amd64.deb data.tar.gz
+ar x /path/to/ZER0/src-tauri/target/release/bundle/deb/ZER0_*_amd64.deb data.tar.gz
 tar xzf data.tar.gz
-sudo cp usr/bin/handy /usr/bin/
+sudo cp usr/bin/zer0 /usr/bin/
 sudo cp -a usr/lib/. /usr/lib/
 sudo cp -r usr/share/icons/hicolor/* /usr/share/icons/hicolor/
-sudo cp usr/share/applications/Handy.desktop /usr/share/applications/
+sudo cp usr/share/applications/ZER0.desktop /usr/share/applications/
 ```
 
-The runtime libraries live in the app-private `/usr/lib/Handy/` (on the binary's rpath), so no `ldconfig` step is needed.
+The runtime libraries live in the app-private `/usr/usr/lib/ZER0/` (on the binary's rpath), so no `ldconfig` step is needed.
 
 After subsequent rebuilds, copy the binary and any refreshed runtime libraries:
 
 ```bash
-sudo cp src-tauri/target/release/handy /usr/bin/
-sudo mkdir -p /usr/lib/Handy
-sudo cp -a src-tauri/transcribe-libs/. /usr/lib/Handy/
+sudo cp src-tauri/target/release/zer0 /usr/bin/
+sudo mkdir -p /usr/usr/lib/ZER0
+sudo cp -a src-tauri/transcribe-libs/. /usr/usr/lib/ZER0/
 ```
 
 Resources only need re-copying if they change upstream (new icons, sounds, models, etc.).
@@ -189,15 +229,15 @@ Resources only need re-copying if they change upstream (new icons, sounds, model
 
 Local builds use the ad-hoc `signingIdentity: "-"`. A rebuild can have a new macOS code
 identity while the old **System Settings > Privacy & Security > Accessibility** entry
-remains visibly enabled, leaving Handy on `Waiting...`.
+remains visibly enabled, leaving ZER0 on `Waiting...`.
 
-After installing the final bundle at `/Applications/Handy.app`, quit Handy, clear only its
+After installing the final bundle at `/Applications/ZER0.app`, quit ZER0, clear only its
 stale Accessibility record, then reopen it:
 
 ```bash
-osascript -e 'tell application id "com.pais.handy" to quit' || true
-tccutil reset Accessibility com.pais.handy
-open /Applications/Handy.app
+osascript -e 'tell application id "com.nairodorian.zer0" to quit' || true
+tccutil reset Accessibility com.nairodorian.zer0
+open /Applications/ZER0.app
 ```
 
 Grant Accessibility again when prompted. This does not reset Microphone or other TCC
@@ -207,14 +247,14 @@ For optional diagnosis, compare the designated requirements of the previous and 
 bundles:
 
 ```bash
-codesign -dr - /path/to/previous/Handy.app 2>&1
-codesign -dr - /Applications/Handy.app 2>&1
+codesign -dr - /path/to/previous/ZER0.app 2>&1
+codesign -dr - /Applications/ZER0.app 2>&1
 ```
 
 An ad-hoc requirement contains a `cdhash`; a changed requirement confirms the rebuild is
 not covered by the old grant. The reset procedure does not require this check.
 
-See [issue #1618](https://github.com/cjpais/Handy/issues/1618) for the related onboarding
+See upstream issue #1618 for the related onboarding
 and stale-permission report.
 
 ### AppImage build fails on Arch / rolling-release distros
@@ -224,7 +264,7 @@ and stale-permission report.
 The error from Tauri:
 
 ```
-Bundling Handy_*_amd64.AppImage
+Bundling ZER0_*_amd64.AppImage
 failed to bundle project `failed to run linuxdeploy`
 ```
 
@@ -233,7 +273,7 @@ Tauri swallows the real linuxdeploy error. To see it, run linuxdeploy manually:
 ```bash
 cd src-tauri/target/release/bundle/appimage
 ~/.cache/tauri/linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
-  --appdir Handy.AppDir --plugin gtk --output appimage
+  --appdir ZER0.AppDir --plugin gtk --output appimage
 ```
 
 **Workaround:** The binary, deb, and rpm bundles all build fine — only the AppImage step fails. To skip it:
@@ -288,7 +328,7 @@ around either case with a short Cargo target directory:
 $env:CARGO_TARGET_DIR = "C:\h"
 
 # Or persist it for all future terminals (note: redirects ALL your
-# Rust projects' build output, not just Handy):
+# Rust projects' build output, not just ZER0):
 [Environment]::SetEnvironmentVariable('CARGO_TARGET_DIR', 'C:\h', 'User')
 ```
 
@@ -299,11 +339,11 @@ and `bun run tauri build` work normally.
 
 ### Windows `tauri build` fails at bundling with `program not found`
 
-If the build compiles all the way to `Built application at: ...\handy.exe` and
+If the build compiles all the way to `Built application at: ...\zer0.exe` and
 then fails with:
 
 ```
-Signing C:\...\handy.exe with a custom signing command
+Signing C:\...\zer0.exe with a custom signing command
 failed to bundle project `program not found`
 ```
 

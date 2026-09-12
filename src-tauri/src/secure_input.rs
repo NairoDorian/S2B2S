@@ -470,7 +470,7 @@ mod imp {
             && app
                 .try_state::<crate::commands::ShortcutsInitialized>()
                 .is_some()
-            && settings.keyboard_implementation == KeyboardImplementation::HandyKeys;
+            && settings.keyboard_implementation == KeyboardImplementation::NativeKeys;
 
         let mut next = FallbackState::default();
         let mut immune = 0usize;

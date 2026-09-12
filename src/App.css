@@ -10,8 +10,7 @@
   --color-text: var(--color-text);
   --color-background: var(--color-background);
   --color-background-ui: var(--color-background-ui);
-  --color-logo-primary: var(--color-logo-primary);
-  --color-logo-stroke: var(--color-logo-stroke);
+  --color-accent: var(--color-accent);
   --color-text-stroke: var(--color-text-stroke);
   --color-mid-gray: var(--color-mid-gray);
   --color-warning: var(--color-warning);
@@ -99,7 +98,7 @@ pre {
 
 /* Focus rings are square too, and in the accent colour. */
 :focus-visible {
-  outline: 1px solid var(--color-logo-primary);
+  outline: 1px solid var(--color-accent);
   outline-offset: 1px;
 }
 
@@ -110,7 +109,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 10px;
   height: 18px;
   border-radius: 0;
-  background: var(--color-logo-primary);
+  background: var(--color-accent);
   border: 1px solid var(--color-background);
   cursor: pointer;
 }
@@ -169,16 +168,6 @@ input[type="range"]::-webkit-slider-thumb {
   }
 }
 
-.logo-primary {
-  fill: var(--color-logo-primary);
-}
-
-.logo-stroke {
-  fill: var(--color-logo-stroke);
-  stroke: var(--color-logo-stroke);
-  stroke-width: 1;
-}
-
 /* Deep-link targets (shortcut controls, Help headings): a breathing ring
    after navigateToSettingsAnchor / scrollAndFocusAnchor lands on them. */
 .settings-anchor {
@@ -191,18 +180,15 @@ input[type="range"]::-webkit-slider-thumb {
 
 @keyframes settings-anchor-breathe {
   0% {
-    outline: 2px solid
-      color-mix(in srgb, var(--color-logo-primary) 85%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 85%, transparent);
     outline-offset: 2px;
-    box-shadow: 0 0 0 0
-      color-mix(in srgb, var(--color-logo-primary) 30%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
   45% {
-    outline: 2px solid
-      color-mix(in srgb, var(--color-logo-primary) 55%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
     outline-offset: 3px;
     box-shadow: 0 0 0 5px
-      color-mix(in srgb, var(--color-logo-primary) 16%, transparent);
+      color-mix(in srgb, var(--color-accent) 16%, transparent);
   }
   100% {
     outline: 2px solid transparent;
@@ -214,8 +200,7 @@ input[type="range"]::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .settings-anchor-highlight {
     animation: none;
-    outline: 2px solid
-      color-mix(in srgb, var(--color-logo-primary) 75%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 75%, transparent);
     outline-offset: 3px;
   }
 }

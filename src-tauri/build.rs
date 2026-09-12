@@ -6,17 +6,24 @@ fn main() {
 
     // Linux ships transcribe-cpp as a shared libtranscribe + loadable ggml
     // backend modules (the `dynamic-backends` posture in Cargo.toml). Bake an
-    // $ORIGIN-relative rpath into the `handy` binary so it finds libtranscribe
-    // next to it in the package — deb/rpm install into the app-private
-    // `/usr/lib/Handy` (the dir tauri already uses for resources; keeps
-    // Handy's libs out of the ldconfig-scanned `/usr/lib`, issue #1639) while
-    // the AppImage keeps them in `usr/lib` (linuxdeploy's layout), hence both
-    // entries. transcribe's
-    // init_backends_default() then loads the ggml modules co-located there.
-    // (Windows resolves DLLs from the exe directory, so it needs no rpath;
-    // macOS links transcribe-cpp statically via the `metal` feature.)
+    // $ORIGIN-relative rpath into the binary so it finds libtranscribe next to
+    // it in the package — deb/rpm install into the app-private lib dir under
+    // `/usr/lib` that tauri already uses for resources (which also keeps the
+    // app's libs out of the ldconfig-scanned `/usr/lib` itself, issue #1639)
+    // while the AppImage keeps them in `usr/lib` (linuxdeploy's layout), hence
+    // both entries. transcribe's init_backends_default() then loads the ggml
+    // modules co-located there. (Windows resolves DLLs from the exe directory,
+    // so it needs no rpath; macOS links transcribe-cpp statically via the
+    // `metal` feature.)
+    //
+    // That directory is named after the identity module's `NAME`, the same
+    // string `tauri.conf.json`'s `resources` map installs into: an rpath that
+    // does not match it is a binary that cannot find its own libraries.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Handy:$ORIGIN/../lib");
+        println!(
+            "cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/{}:$ORIGIN/../lib",
+            ident("NAME")
+        );
     }
 
     // Stage transcribe-cpp's shared runtime libraries (and the dlopen'd ggml
@@ -43,21 +50,105 @@ fn main() {
     tauri_build::build()
 }
 
+/// The generated identity module, parsed as text.
+///
+/// `build.rs` is compiled into its own crate *before* the one it builds, so it
+/// cannot `use crate::app_identity::NAME`, and `include!`ing the module would
+/// splice its `//!` header into the middle of this file. The values it needs
+/// therefore come from reading the generated source — which is still the same
+/// single source of truth: a rename edits `scripts/app-meta.ts` and both this
+/// script and the crate follow.
+fn identity() -> &'static std::collections::BTreeMap<String, String> {
+    use std::collections::BTreeMap;
+    use std::sync::OnceLock;
+
+    static CACHE: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("src")
+            .join("app_identity.rs");
+        println!("cargo:rerun-if-changed={}", path.display());
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+
+        let mut out = BTreeMap::new();
+        for line in text.lines() {
+            // Exactly the shape the generator writes: `pub const NAME: &str = "value";`
+            let Some(rest) = line.strip_prefix("pub const ") else {
+                continue;
+            };
+            let Some((name, rest)) = rest.split_once(": &str = \"") else {
+                continue;
+            };
+            let Some((value, _)) = rest.split_once('"') else {
+                continue;
+            };
+            out.insert(name.to_string(), value.to_string());
+        }
+        out
+    })
+}
+
+/// One constant from [`identity`].
+///
+/// Panics rather than defaulting: a `NAME` that silently fell back to a literal
+/// here would reintroduce exactly the hardcoded identity this replaces, and it
+/// would do it in a build script where nothing looks for it.
+fn ident(name: &str) -> &'static str {
+    identity().get(name).map(String::as_str).unwrap_or_else(|| {
+        panic!("src/app_identity.rs has no `{name}`; run `bun run meta:sync` to regenerate it")
+    })
+}
+
+/// The current spelling of an environment flag, without the value.
+///
+/// For messages that name the flag the user must set. [`env_flag`] uses it too,
+/// so there is one place the prefix is applied.
+fn flag_name(suffix: &str) -> String {
+    format!("{}{suffix}", ident("ENV_PREFIX"))
+}
+
+/// Read an environment flag under the current prefix, falling back to the
+/// pre-rename one.
+///
+/// Mirrors `utils::app_env_flag`, which the crate itself uses for every other
+/// flag, so a shell profile, CI job or Nix wrapper written before the rename
+/// keeps working. Both spellings are registered with cargo, so exporting either
+/// one re-runs this script.
+///
+/// Returns an [`OsString`](std::ffi::OsString) because the value can be a path
+/// list, which is not required to be UTF-8.
+fn env_flag(suffix: &str) -> Option<std::ffi::OsString> {
+    let current = flag_name(suffix);
+    let legacy = format!("{}{suffix}", ident("LEGACY_ENV_PREFIX"));
+    println!("cargo:rerun-if-env-changed={current}");
+    println!("cargo:rerun-if-env-changed={legacy}");
+
+    if let Some(value) = std::env::var_os(&current) {
+        return Some(value);
+    }
+    let value = std::env::var_os(&legacy)?;
+    println!(
+        "cargo:warning={legacy} is the pre-rename spelling of {current}; \
+         set {current} instead"
+    );
+    Some(value)
+}
+
 /// Stage the MSVC runtime DLLs into `transcribe-libs/` for app-local deployment.
 ///
-/// Handy's native stack links the VC++ runtime dynamically (/MD). Shipping the
-/// DLLs beside `handy.exe` covers machines with no redistributable installed and
+/// The native stack links the VC++ runtime dynamically (/MD). Shipping the DLLs
+/// beside the executable covers machines with no redistributable installed and
 /// machines whose system redist is older than the CI toolset (issue #1527).
 ///
-/// Driven by `HANDY_VC_REDIST_DIRS`, set by CI to the redist dirs from the same
-/// Visual Studio install that compiled the native code. Copies only the runtime
-/// DLL families Handy imports and no-ops when the env var is unset.
+/// Driven by the `VC_REDIST_DIRS` flag (see [`env_flag`]), set by CI to the
+/// redist dirs from the same Visual Studio install that compiled the native
+/// code. Copies only the runtime DLL families the app imports and no-ops when
+/// the flag is unset.
 fn stage_vc_runtime_dlls() {
     use std::path::PathBuf;
 
-    println!("cargo:rerun-if-env-changed=HANDY_VC_REDIST_DIRS");
-
-    let Some(redist_dirs) = std::env::var_os("HANDY_VC_REDIST_DIRS") else {
+    let Some(redist_dirs) = env_flag("VC_REDIST_DIRS") else {
         return;
     };
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
@@ -70,7 +161,13 @@ fn stage_vc_runtime_dlls() {
     let mut copied: Vec<String> = Vec::new();
     for dir in std::env::split_paths(&redist_dirs) {
         for entry in std::fs::read_dir(&dir)
-            .unwrap_or_else(|e| panic!("HANDY_VC_REDIST_DIRS: read {}: {e}", dir.display()))
+            .unwrap_or_else(|e| {
+                panic!(
+                    "{}: read {}: {e}",
+                    flag_name("VC_REDIST_DIRS"),
+                    dir.display()
+                )
+            })
             .flatten()
         {
             let src = entry.path();
@@ -95,9 +192,11 @@ fn stage_vc_runtime_dlls() {
     for required in ["msvcp140.dll", "vcruntime140.dll"] {
         if !copied.iter().any(|n| n == required) {
             panic!(
-                "HANDY_VC_REDIST_DIRS is set but {required} was not found in it; \
-                 the app-local VC++ runtime would be incomplete and Handy would \
-                 crash on machines without a current redist (issue #1527)"
+                "{} is set but {required} was not found in it; the app-local \
+                 VC++ runtime would be incomplete and {} would crash on machines \
+                 without a current redist (issue #1527)",
+                flag_name("VC_REDIST_DIRS"),
+                ident("NAME")
             );
         }
     }
@@ -120,9 +219,10 @@ fn stage_vc_runtime_dlls() {
 /// this is a no-op there. `RUNTIME_DIR` (core libs) and `MODULE_DIR` (dlopen'd
 /// ggml modules) may be the same dir — the `BTreeSet` below dedups them.
 ///
-/// Where the staged dir lands: Windows bundles it beside `handy.exe` (DLLs resolve
-/// from the exe dir); Linux deb/rpm map it into the app-private `/usr/lib/Handy`
-/// and the AppImage into `usr/lib`, both on the binary's rpath.
+/// Where the staged dir lands: Windows bundles it beside the executable (DLLs
+/// resolve from the exe dir); Linux deb/rpm map it into the app-private lib dir
+/// under `/usr/lib` and the AppImage into `usr/lib`, both on the binary's rpath
+/// (see the rpath block in `main`).
 fn stage_transcribe_runtime_libs() {
     use std::collections::BTreeSet;
     use std::path::PathBuf;
@@ -448,11 +548,11 @@ fn build_apple_intelligence_bridge() {
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
     let framework_path =
         Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
-    // HANDY_FORCE_AI_STUB=1 is an explicit escape hatch: force the stub even when
-    // the active toolchain could build the real path (e.g. to skip the Swift
+    // `FORCE_AI_STUB=1` is an explicit escape hatch: force the stub even when the
+    // active toolchain could build the real path (e.g. to skip the Swift
     // compile, or if the auto-detection below misfires). The common CLT-only case
     // is detected automatically just below, so this flag is rarely needed.
-    let force_stub = env::var("HANDY_FORCE_AI_STUB").as_deref() == Ok("1");
+    let force_stub = env_flag("FORCE_AI_STUB").is_some_and(|v| v == "1");
 
     // Auto-detect a Command-Line-Tools-only toolchain. The CLT SDK contains
     // FoundationModels.framework, so the `framework_path.exists()` check alone
@@ -467,8 +567,9 @@ fn build_apple_intelligence_bridge() {
         println!(
             "cargo:warning=Command Line Tools-only toolchain detected; Apple Intelligence \
              (FoundationModels) needs full Xcode. Falling back to stubs. Install Xcode and run \
-             `sudo xcode-select -s /Applications/Xcode.app`, or set HANDY_FORCE_AI_STUB=1 to \
-             silence this message."
+             `sudo xcode-select -s /Applications/Xcode.app`, or set {}=1 to silence this \
+             message.",
+            flag_name("FORCE_AI_STUB")
         );
     }
 
@@ -479,7 +580,7 @@ fn build_apple_intelligence_bridge() {
         REAL_SWIFT_FILE
     } else {
         // The SDK genuinely lacking FoundationModels is only one reason we build
-        // stubs — CLT-only detection and HANDY_FORCE_AI_STUB (each warned about
+        // stubs — CLT-only detection and the FORCE_AI_STUB flag (each warned about
         // above) also land here, and for those the framework does exist. Only
         // claim it's "not found" when that's actually true.
         if framework_path.exists() {

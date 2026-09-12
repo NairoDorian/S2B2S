@@ -1,4 +1,4 @@
-# Plan: transcribe.cpp-only Handy — drop ONNX Runtime and Silero, keep Earshot
+# Plan: transcribe.cpp-only ZER0 — drop ONNX Runtime and Silero, keep Earshot
 
 _Drafted 2026-08-26 for the `Handy_Multi_STT` fork. Status: **implemented
 2026-09-10** in a single change set (see `CHANGELOG.md` → Changed / Removed

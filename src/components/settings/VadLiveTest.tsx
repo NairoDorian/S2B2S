@@ -112,7 +112,7 @@ export const VadLiveTest: React.FC<VadLiveTestProps> = React.memo(
                   onClick={() => updateSetting("denoise_enabled", !denoise)}
                   className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50 ${
                     denoise
-                      ? "bg-logo-primary/20 text-text border-logo-primary/40"
+                      ? "bg-accent/20 text-text border-accent/40"
                       : "bg-mid-gray/10 text-text/60 border-mid-gray/20"
                   }`}
                 >

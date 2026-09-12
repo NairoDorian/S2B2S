@@ -47,12 +47,16 @@ pub struct ProviderIvars {
 define_class!(
     // SAFETY: NSObject has no subclassing requirements and the ivars are
     // plain Rust values guarded by a Mutex.
+    //
+    // No `#[name]`: objc2 derives the runtime name from the module path and
+    // the struct name when it is omitted, so nothing here spells the
+    // application's identity. Nothing looks this class up by name — it is
+    // retained as a Rust value — so the derived name is what we want anyway.
     #[unsafe(super(NSObject))]
-    #[name = "HandyPasteProvider"]
     #[ivars = ProviderIvars]
-    pub struct HandyPasteProvider;
+    pub struct PasteTxProvider;
 
-    impl HandyPasteProvider {
+    impl PasteTxProvider {
         // NSPasteboardOwner informal protocol: the pasteboard is asking for the
         // promised data — our receipt that a consumer read the clipboard.
         #[unsafe(method(pasteboard:provideDataForType:))]
@@ -86,7 +90,7 @@ define_class!(
     }
 );
 
-impl HandyPasteProvider {
+impl PasteTxProvider {
     fn new(state: Arc<Mutex<TxState>>, text: String) -> Retained<Self> {
         let this = Self::alloc().set_ivars(ProviderIvars { state, text });
         unsafe { msg_send![super(this), init] }
@@ -98,7 +102,7 @@ struct MacPending {
     saved_text: Option<String>,
     saved_image: Option<tauri::image::Image<'static>>,
     change_count: NSInteger,
-    provider: Option<Retained<HandyPasteProvider>>,
+    provider: Option<Retained<PasteTxProvider>>,
     auto_submit: bool,
     auto_submit_key: AutoSubmitKey,
     /// ClipboardHandling::CopyToClipboard — instead of restoring, settle by
@@ -277,7 +281,7 @@ pub(super) fn run(
     };
 
     let state = Arc::new(Mutex::new(TxState::new()));
-    let provider = HandyPasteProvider::new(state.clone(), text.to_string());
+    let provider = PasteTxProvider::new(state.clone(), text.to_string());
     let pasteboard = NSPasteboard::generalPasteboard();
 
     let mut types: Vec<Retained<NSString>> = Vec::with_capacity(1 + CONCEALMENT_TYPES.len());

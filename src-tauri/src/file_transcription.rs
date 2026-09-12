@@ -853,7 +853,8 @@ pub fn render_transcript(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "transcript".to_string());
             format!(
-                "# {name}\n\n_Handy {} · model `{model_id}` · {}_\n\n{}\n",
+                "# {name}\n\n_{} {} · model `{model_id}` · {}_\n\n{}\n",
+                crate::app_identity::NAME,
                 mode_label(mode),
                 chrono::Local::now().format("%Y-%m-%d %H:%M"),
                 text.trim_end()
@@ -1032,8 +1033,7 @@ mod tests {
 
     #[test]
     fn write_without_overwrite_appends_suffix() {
-        let dir = std::env::temp_dir().join(format!("handy-ft-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::utils::temp_test_dir("ft");
         let preferred = dir.join("a.txt");
         let first = write_without_overwrite(&preferred, b"1").unwrap();
         let second = write_without_overwrite(&preferred, b"2").unwrap();

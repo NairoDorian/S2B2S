@@ -15,7 +15,7 @@
 //! restore and auto-submit all finish on the worker.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use std::sync::{Arc, Mutex, Once, mpsc::Sender};
+use std::sync::{Arc, Mutex, Once, OnceLock, mpsc::Sender};
 use std::thread;
 use std::time::Instant;
 
@@ -24,9 +24,10 @@ use tauri::Manager;
 use windows::Win32::Foundation::{
     ERROR_SUCCESS, HANDLE, HGLOBAL, HINSTANCE, HWND, LPARAM, LRESULT, SetLastError, WPARAM,
 };
-use windows::core::{PCWSTR, w};
+use windows::core::PCWSTR;
 
 use super::{TxState, WaitDecision, evaluate, send_chord};
+use crate::app_identity;
 use crate::clipboard::send_return_key;
 use crate::input::EnigoState;
 use crate::settings::{AutoSubmitKey, ClipboardHandling, PasteMethod};
@@ -50,7 +51,26 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_DESTROYCLIPBOARD, WM_RENDERALLFORMATS, WM_RENDERFORMAT, WM_TIMER, WNDCLASSW,
 };
 
-const CLASS_NAME: PCWSTR = w!("HandyPasteTxWindow");
+/// The window class — and title — of the hidden message-only window that owns
+/// the clipboard.
+///
+/// `w!` needs a string literal, so a name built from `app_identity` cannot use
+/// it: the wide, nul-terminated form is encoded once on first use and the
+/// buffer lives for the process. Both strings are process-local (a class is
+/// registered per process and the window is `HWND_MESSAGE`, so it is never
+/// visible), which is why the name's only real job is to be this
+/// application's rather than a leftover's.
+fn window_class_name() -> PCWSTR {
+    static WIDE: OnceLock<Vec<u16>> = OnceLock::new();
+    let wide = WIDE.get_or_init(|| {
+        format!("{}PasteTx", app_identity::NAME)
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect()
+    });
+    PCWSTR(wide.as_ptr())
+}
+
 const TIMER_ID: usize = 1;
 const TIMER_INTERVAL_MS: u32 = 25;
 /// Skip clipboard formats larger than this when snapshotting.
@@ -201,7 +221,7 @@ fn ensure_window_class(hinstance: HINSTANCE) {
         let wc = WNDCLASSW {
             lpfnWndProc: Some(paste_wnd_proc),
             hInstance: hinstance,
-            lpszClassName: CLASS_NAME,
+            lpszClassName: window_class_name(),
             ..Default::default()
         };
         unsafe {
@@ -509,8 +529,8 @@ fn pump_thread(shared: Arc<WinTxShared>, ready: Sender<Result<(), String>>) {
 
         let hwnd = match CreateWindowExW(
             WINDOW_EX_STYLE::default(),
-            CLASS_NAME,
-            w!("HandyPasteTx"),
+            window_class_name(),
+            window_class_name(),
             WINDOW_STYLE::default(),
             0,
             0,

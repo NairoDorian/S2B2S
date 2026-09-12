@@ -69,10 +69,10 @@ const formatBytes = (bytes: number): string => {
 
 const PHASE_CLASSES: Record<LiveModePhase, string> = {
   idle: "bg-mid-gray/15 text-text/70 border-mid-gray/20",
-  starting: "bg-logo-primary/15 text-text border-logo-primary/30",
+  starting: "bg-accent/15 text-text border-accent/30",
   listening: "bg-green-500/15 text-green-500 border-green-500/30",
-  rotating: "bg-logo-primary/20 text-text border-logo-primary/40",
-  stopping: "bg-logo-primary/15 text-text border-logo-primary/30",
+  rotating: "bg-accent/20 text-text border-accent/40",
+  stopping: "bg-accent/15 text-text border-accent/30",
   error: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
@@ -219,7 +219,7 @@ export const LiveModeSettings: React.FC = () => {
               {phase === "listening" ? (
                 <Mic className="w-6 h-6 text-green-500 animate-pulse" />
               ) : active ? (
-                <Loader2 className="w-6 h-6 text-logo-primary animate-spin" />
+                <Loader2 className="w-6 h-6 text-accent animate-spin" />
               ) : (
                 <Radio className="w-6 h-6 text-mid-gray" />
               )}
@@ -363,12 +363,10 @@ export const LiveModeSettings: React.FC = () => {
                 <>
                   {store.stable}
                   {store.live && (
-                    <span className="text-logo-primary">{store.live}</span>
+                    <span className="text-accent">{store.live}</span>
                   )}
                   {phase === "listening" && (
-                    <span className="text-logo-primary animate-pulse">
-                      {"▍"}
-                    </span>
+                    <span className="text-accent animate-pulse">{"▍"}</span>
                   )}
                 </>
               )

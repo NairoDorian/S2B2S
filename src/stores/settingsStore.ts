@@ -765,7 +765,8 @@ export const useSettingsStore = create<SettingsStore>()(
     },
 
     // Check whether update checks are locked by system configuration
-    // (e.g. HANDY_DISABLE_UPDATER, set by the Nix package)
+    // (the updater-disable environment flag, set by the Nix package; its full
+    // name is `ENV_PREFIX` + `DISABLE_UPDATER` in lib/appIdentity.ts)
     loadUpdateChecksLocked: async () => {
       try {
         const locked = await commands.isUpdateChecksLocked();

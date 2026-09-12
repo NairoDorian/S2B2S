@@ -97,7 +97,7 @@ const components: Components = {
     );
   },
   blockquote: ({ children }) => (
-    <blockquote className="border-s-2 border-logo-primary/50 ps-3 text-sm leading-relaxed text-text/70">
+    <blockquote className="border-s-2 border-accent/50 ps-3 text-sm leading-relaxed text-text/70">
       {children}
     </blockquote>
   ),
@@ -136,7 +136,7 @@ const components: Components = {
           event.preventDefault();
           void openSafeUrl(href);
         }}
-        className="text-logo-primary underline decoration-logo-primary/40 underline-offset-2 hover:decoration-logo-primary"
+        className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
       >
         {children}
       </a>

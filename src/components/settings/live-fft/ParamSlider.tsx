@@ -94,7 +94,7 @@ export const ParamSlider: React.FC<ParamSliderProps> = ({
             const p = Number(e.target.value) / 1000;
             onChange(clamp(fromPos(p, min, max, log)));
           }}
-          className="flex-1 min-w-[90px] accent-logo-primary cursor-pointer disabled:cursor-not-allowed"
+          className="flex-1 min-w-[90px] accent-accent cursor-pointer disabled:cursor-not-allowed"
         />
         <input
           type="text"
@@ -110,7 +110,7 @@ export const ParamSlider: React.FC<ParamSliderProps> = ({
             }
           }}
           aria-label={label}
-          className="w-[76px] shrink-0 rounded-md border border-mid-gray/20 bg-background px-2 py-1 text-xs font-mono text-end focus:outline-none focus:border-logo-primary disabled:opacity-50"
+          className="w-[76px] shrink-0 rounded-md border border-mid-gray/20 bg-background px-2 py-1 text-xs font-mono text-end focus:outline-none focus:border-accent disabled:opacity-50"
         />
         <span className="w-8 shrink-0 text-[11px] text-mid-gray truncate">
           {format ? format(value) : (unit ?? "")}

@@ -14,11 +14,7 @@ const Meter: React.FC<{ label: string; percent: number; title: string }> = ({
 }) => {
   const clamped = Math.max(0, Math.min(100, percent));
   const tone =
-    clamped >= 90
-      ? "bg-error"
-      : clamped >= 75
-        ? "bg-warning"
-        : "bg-logo-primary";
+    clamped >= 90 ? "bg-error" : clamped >= 75 ? "bg-warning" : "bg-accent";
   return (
     <div className="flex items-center gap-1 shrink-0" title={title}>
       <span className="font-mono text-[10px] uppercase tracking-wider text-text/50">

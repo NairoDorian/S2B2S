@@ -2,8 +2,11 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
+import { APP } from "./app-meta";
+
 /**
- * Ultimate All-Inclusive Dependency Updater & Sub-Dependency Tracker for Handy.
+ * Ultimate All-Inclusive Dependency Updater & Sub-Dependency Tracker for this
+ * project.
  * Inspired by Minimalistic_App.
  *
  * Capabilities:
@@ -1069,7 +1072,7 @@ async function updateEverything() {
     process.exit(1);
   }
   const cargoCwd = path.resolve("src-tauri");
-  const OWN_PACKAGE = "handy";
+  const OWN_PACKAGE = APP.slug;
   /** Direct crates whose bump was reverted this run, with the reason. */
   const heldCargo = new Map<string, string>();
   let acceptedCargo: DependencyStatus[] = outdatedCargo.slice();

@@ -150,7 +150,7 @@ export const VadMeter: React.FC<VadMeterProps> = ({
           style={{ left: pct(frames.peak) }}
         />
         <div
-          className="absolute top-0 h-full w-0.5 bg-logo-primary"
+          className="absolute top-0 h-full w-0.5 bg-accent"
           style={{ left: pct(threshold) }}
         />
       </div>
@@ -168,7 +168,7 @@ export const VadMeter: React.FC<VadMeterProps> = ({
         <span
           className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium border ${
             kept
-              ? "bg-logo-primary/15 text-text border-logo-primary/30"
+              ? "bg-accent/15 text-text border-accent/30"
               : "bg-mid-gray/10 text-text/50 border-mid-gray/20"
           }`}
         >
@@ -190,7 +190,7 @@ export const VadMeter: React.FC<VadMeterProps> = ({
             />
             {denoiseThreshold > 0 && (
               <div
-                className="absolute top-0 h-full w-0.5 bg-logo-primary"
+                className="absolute top-0 h-full w-0.5 bg-accent"
                 style={{ left: pct(denoiseThreshold) }}
               />
             )}

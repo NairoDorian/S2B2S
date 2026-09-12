@@ -1,8 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use app_lib::CliArgs;
 use clap::Parser;
-use handy_app_lib::CliArgs;
 
 fn main() {
     let cli_args = CliArgs::parse();
@@ -17,12 +17,11 @@ fn main() {
     {
         // Avoid overlay/capture layer crashes (#2049). Set before backend
         // initialization, preserving user overrides.
-        if std::env::var_os("VK_LOADER_LAYERS_DISABLE").is_none()
-            && !handy_app_lib::env_flag_enabled("HANDY_KEEP_VULKAN_IMPLICIT_LAYERS")
-        {
+        let keep_implicit = app_lib::app_env_flag("KEEP_VULKAN_IMPLICIT_LAYERS");
+        if std::env::var_os("VK_LOADER_LAYERS_DISABLE").is_none() && !keep_implicit {
             unsafe { std::env::set_var("VK_LOADER_LAYERS_DISABLE", "~implicit~") };
         }
     }
 
-    handy_app_lib::run(cli_args)
+    app_lib::run(cli_args)
 }

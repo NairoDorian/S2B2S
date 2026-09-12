@@ -12,12 +12,12 @@
 //! already searches, in order, the model file's directory and its `arch/`
 //! subdirectory, every directory registered here, `$TRANSCRIBE_ARCH_DIR`, and
 //! the directory holding libtranscribe. `cmake --install` puts the plugins
-//! beside libtranscribe and Handy's `build.rs` stages them next to `handy.exe`,
-//! which is the last of those — so a stock install opens every model with no
-//! help from this file.
+//! beside libtranscribe and `build.rs` stages them next to the application
+//! binary, which is the last of those — so a stock install opens every model
+//! with no help from this file.
 //!
 //! What is left here is for the layouts that search cannot cover: letting a user
-//! drop a plugin into a Handy-owned folder ([`init_arch_plugin_dirs`],
+//! drop a plugin into an app-owned folder ([`init_arch_plugin_dirs`],
 //! `register_arch_dir`), and reporting what is installed ([`list_arch_plugins`]).
 //!
 //! A model whose family is not in the build's set fails to load with
@@ -52,7 +52,7 @@ unsafe extern "C" {
 ///
 /// Not the whole truth about what is loaded: the library also auto-discovers
 /// plugins from its own search path at model-open time, and the C API exposes no
-/// way to enumerate those. Treat a `false` here as "Handy did not have to load
+/// way to enumerate those. Treat a `false` here as "the app did not have to load
 /// it", not as "it is not loaded".
 static EXPLICITLY_LOADED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static REGISTERED_DIRS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(|| Mutex::new(Vec::new()));
@@ -64,7 +64,7 @@ pub struct ArchPluginInfo {
     pub name: String,
     /// Absolute filesystem path to the plugin module.
     pub path: String,
-    /// Whether Handy explicitly loaded this module (see `EXPLICITLY_LOADED`).
+    /// Whether the app explicitly loaded this module (see `EXPLICITLY_LOADED`).
     pub is_loaded: bool,
     /// File size in bytes.
     pub file_size_bytes: Option<u64>,

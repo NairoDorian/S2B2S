@@ -41,9 +41,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
               tabIndex={0}
               role="button"
               className={`w-full px-3 py-2 text-start hover:bg-mid-gray/10 transition-colors cursor-pointer focus:outline-none ${
-                currentModelId === model.id
-                  ? "bg-logo-primary/10 text-logo-primary"
-                  : ""
+                currentModelId === model.id ? "bg-accent/10 text-accent" : ""
               }`}
             >
               <div className="flex items-center justify-between">
@@ -56,7 +54,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                       </span>
                     )}
                     {model.supports_streaming && (
-                      <span className="ms-1.5 text-[10px] font-medium text-logo-primary/70 uppercase">
+                      <span className="ms-1.5 text-[10px] font-medium text-accent/70 uppercase">
                         {t("modelSelector.streaming")}
                       </span>
                     )}
@@ -66,7 +64,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                   </div>
                 </div>
                 {currentModelId === model.id && (
-                  <div className="text-xs text-logo-primary">
+                  <div className="text-xs text-accent">
                     {t("modelSelector.active")}
                   </div>
                 )}

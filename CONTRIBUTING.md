@@ -1,4 +1,4 @@
-# Contributing to Handy
+# Contributing to ZER0
 
 > **NOTE:** This is the `Handy_Multi_STT` fork. In addition to upstream Handy
 > features, this branch adds **Multi-STT** mode — running up to four
@@ -6,17 +6,18 @@
 > [AGENTS.md](AGENTS.md) for the full architecture. Contributions to
 > Multi-STT features are welcome.
 
-Thank you for your interest in contributing to Handy! This guide will help you get started with contributing to this open source speech-to-text application.
+Thank you for your interest in contributing to ZER0! This guide will help you get started with contributing to this open source speech-to-text application.
 
 ## ⚠️ Feature Freeze
 
-**Handy is currently undergoing a feature freeze.** If you are submitting a PR which is a new feature that the community has not asked for, it will be rejected. If the community has asked for it, or you have explicitly gathered support, it may still be considered.
+**ZER0 is a fork with a small maintainer team.** A PR that adds a whole feature the maintainer has not asked for is likely to be declined as it lands; a PR that fixes something, hardens something, or adds a small well-argued capability is welcome. Open an issue or a discussion first if you are unsure which side of that line your change falls on.
 
-**Bug fixes are the top priority.** There are 60+ issues to fix. Please focus your contributions on fixing bugs and improving stability.
+**Bug fixes are the top priority.** A working behaviour that broke, a crash, a
+stale path or a wrong default is always worth fixing and always welcome.
 
 ## 📖 Philosophy
 
-Handy aims to be the most forkable speech-to-text app. The goal is to create both a useful tool and a foundation for others to build upon—a well-patterned, simple codebase that serves the community. We prioritize:
+ZER0 aims to be the most forkable speech-to-text app. The goal is to create both a useful tool and a foundation for others to build upon—a well-patterned, simple codebase that serves the community. We prioritize:
 
 - **Simplicity**: Clear, maintainable code over clever solutions
 - **Extensibility**: Make it easy for others to fork and customize
@@ -40,14 +41,15 @@ Before you begin, ensure you have the following installed:
 2. **Clone your fork**:
 
    ```bash
-   git clone git@github.com:YOUR_USERNAME/Handy.git
-   cd Handy
+   git clone git@github.com:YOUR_USERNAME/S2B2S.git
+   cd S2B2S
    ```
 
-3. **Add upstream remote**:
+3. **Point your clone at the canonical repository** (your fork is `origin` by
+   default; add this as `upstream` so you can rebase onto it):
 
    ```bash
-   git remote add upstream git@github.com:cjpais/Handy.git
+   git remote add upstream git@github.com:NairoDorian/S2B2S.git
    ```
 
 4. **Install dependencies**:
@@ -69,9 +71,38 @@ Before you begin, ensure you have the following installed:
 
 For detailed platform-specific setup instructions, see [BUILD.md](BUILD.md).
 
+### Before You Commit: the Pre-commit Routine
+
+Every change goes through one gate, and you set it up once:
+
+```bash
+bun run hooks:install   # once per clone: points git at .githooks/
+bun run precommit       # the gate — identity, translations, lint, types,
+                        # format, and the repomix pack, in ~10 s
+bun run precommit:full  # the same, plus clippy and the Rust test suite
+```
+
+CI runs the same checks, so a green `precommit` locally is a green CI. Use
+`precommit:full` before a release or a PR to a release branch.
+
+Two house rules come with it:
+
+- **Every shell command goes through `rtk`** (the token-optimizing CLI proxy) —
+  `rtk git …`, `rtk cargo …`, `rtk gh …` — with one exception: `bun` commands
+  are never proxied, so `bun run …` is typed as-is.
+- **Dependencies are always updated with `--prerelease`**: `bun run update-deps
+-- --prerelease`, or just `bun run update`, which also takes the RTK CLI to
+  its latest release (`bun run update:rtk`) and regenerates the repomix pack.
+  This project deliberately tracks the newest published version of every
+  dependency, so the next release is tested against what is actually newest.
+
+**Never spell the product name by hand.** It lives in `scripts/app-meta.ts` and
+its generated mirrors; `bun run check:identity` fails the build when a stale
+name survives. `bun run meta:sync` after editing `app-meta.ts`.
+
 ### Understanding the Codebase
 
-Handy follows a clean architecture pattern:
+ZER0 follows a clean architecture pattern:
 
 **Backend (Rust - `src-tauri/src/`):**
 
@@ -101,8 +132,8 @@ For more details, see the Architecture section in [README.md](README.md) or [AGE
 
 ### Before Submitting a Bug Report
 
-1. **Search existing issues** at [github.com/cjpais/Handy/issues](https://github.com/cjpais/Handy/issues)
-2. **Check discussions** at [github.com/cjpais/Handy/discussions](https://github.com/cjpais/Handy/discussions)
+1. **Search existing issues** at [github.com/NairoDorian/S2B2S/issues](https://github.com/NairoDorian/S2B2S/issues)
+2. **Check discussions** at [github.com/NairoDorian/S2B2S/discussions](https://github.com/NairoDorian/S2B2S/discussions)
 3. **Try the latest release** to see if the issue has been fixed
 4. **Enable debug mode** (`Cmd/Ctrl+Shift+D`) to gather diagnostic information
 
@@ -134,21 +165,20 @@ We use GitHub Discussions for feature requests rather than issues. This keeps is
 
 ### Before Suggesting a Feature
 
-1. **Search existing discussions** at [github.com/cjpais/Handy/discussions](https://github.com/cjpais/Handy/discussions)
+1. **Search existing discussions** at [github.com/NairoDorian/S2B2S/discussions](https://github.com/NairoDorian/S2B2S/discussions)
 2. **Check common feature requests**:
-   - [Post-processing / Editing Transcripts](https://github.com/cjpais/Handy/discussions/168)
-   - [Keyboard Shortcuts / Hotkeys](https://github.com/cjpais/Handy/discussions/211)
+   - Browse the open discussions for the topic you have in mind; the upstream project's threads on post-processing and hotkeys are worth reading for background but are not mirrored here.
 
 ### Submitting a Feature Request
 
-1. Go to [Discussions](https://github.com/cjpais/Handy/discussions)
+1. Go to [Discussions](https://github.com/NairoDorian/S2B2S/discussions)
 2. Click "New discussion"
 3. Choose the appropriate category (Ideas, Feature Requests, etc.)
 4. Describe your feature idea including:
    - The problem you're trying to solve
    - Your proposed solution
    - Any alternatives you've considered
-   - How it fits with Handy's philosophy
+   - How it fits with ZER0's philosophy
 
 ## 🔧 Making Code Contributions
 
@@ -157,19 +187,19 @@ We use GitHub Discussions for feature requests rather than issues. This keeps is
 **This is critical:** Before writing any code, please do the following:
 
 1. **Search existing issues and PRs** - Check both open AND closed issues and pull requests. Someone may have already addressed this, or there may be a reason it was closed.
-   - [Open issues](https://github.com/cjpais/Handy/issues)
-   - [Closed issues](https://github.com/cjpais/Handy/issues?q=is%3Aissue+is%3Aclosed)
-   - [Open PRs](https://github.com/cjpais/Handy/pulls)
-   - [Closed PRs](https://github.com/cjpais/Handy/pulls?q=is%3Apr+is%3Aclosed)
+   - [Open issues](https://github.com/NairoDorian/S2B2S/issues)
+   - [Closed issues](https://github.com/NairoDorian/S2B2S/issues?q=is%3Aissue+is%3Aclosed)
+   - [Open PRs](https://github.com/NairoDorian/S2B2S/pulls)
+   - [Closed PRs](https://github.com/NairoDorian/S2B2S/pulls?q=is%3Apr+is%3Aclosed)
 
 2. **If something was previously closed** - If you want to revisit a closed issue or PR, you need to:
    - Provide a strong argument for why it should be reconsidered
-   - Gather community feedback first via [Discussions](https://github.com/cjpais/Handy/discussions)
+   - Gather community feedback first via [Discussions](https://github.com/NairoDorian/S2B2S/discussions)
    - Link to that discussion in your PR
 
-3. **Get community feedback for features** - PRs with demonstrated community interest are **much more likely to be merged**. Start a discussion, get feedback, and link to it in your PR. This helps ensure Handy stays focused and useful for the most people without becoming bloated.
+3. **Get community feedback for features** - PRs with demonstrated community interest are **much more likely to be merged**. Start a discussion, get feedback, and link to it in your PR. This helps ensure ZER0 stays focused and useful for the most people without becoming bloated.
 
-Community feedback is essential to keeping Handy the best it can be for everyone. It helps prioritize what matters most and prevents feature creep.
+Community feedback is essential to keeping ZER0 the best it can be for everyone. It helps prioritize what matters most and prevents feature creep.
 
 ### Development Workflow
 
@@ -224,7 +254,7 @@ Community feedback is essential to keeping Handy the best it can be for everyone
    ```
 
 7. **Create a Pull Request**:
-   - Go to the [Handy repository](https://github.com/cjpais/Handy)
+   - Go to the [ZER0 repository](https://github.com/NairoDorian/S2B2S)
    - Click "New Pull Request"
    - Select your fork and branch
    - Fill out the PR template completely, including:
@@ -235,7 +265,7 @@ Community feedback is essential to keeping Handy the best it can be for everyone
      - Screenshots/videos if applicable
      - Breaking changes (if any)
 
-   **Remember:** PRs with community support are prioritized. If you haven't already, start a [discussion](https://github.com/cjpais/Handy/discussions) to gather feedback before or alongside your PR. It is not explicitly required to gather feedback, but it certainly helps your PR get merged faster.
+   **Remember:** PRs with community support are prioritized. If you haven't already, start a [discussion](https://github.com/NairoDorian/S2B2S/discussions) to gather feedback before or alongside your PR. It is not explicitly required to gather feedback, but it certainly helps your PR get merged faster.
 
 ### AI Assistance Disclosure
 
@@ -330,13 +360,13 @@ Look for issues labeled `good first issue` or `help wanted` if you're new to the
 ## 📞 Getting Help
 
 - **Discord**: Join our [Discord community](https://discord.com/invite/WVBeWsNXK4)
-- **Discussions**: Ask questions in [GitHub Discussions](https://github.com/cjpais/Handy/discussions)
-- **Email**: Reach out at [contact@handy.computer](mailto:contact@handy.computer)
+- **Discussions**: Ask questions in [GitHub Discussions](https://github.com/NairoDorian/S2B2S/discussions)
+- **Issues**: File a bug or a question at [github.com/NairoDorian/S2B2S/issues](https://github.com/NairoDorian/S2B2S/issues)
 
 ## 📜 License
 
-By contributing to Handy, you agree that your contributions will be licensed under the MIT License. See [LICENSE](LICENSE) for details.
+By contributing to ZER0, you agree that your contributions will be licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Thank you for contributing to Handy!** Your efforts help make speech-to-text technology more accessible, private, and extensible for everyone.
+**Thank you for contributing to ZER0!** Your efforts help make speech-to-text technology more accessible, private, and extensible for everyone.

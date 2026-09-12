@@ -245,7 +245,7 @@ impl StreamRouter {
     }
 }
 
-/// A loaded inference engine. Every model Handy can load (Whisper family,
+/// A loaded inference engine. Every model the app can load (Whisper family,
 /// Parakeet, Moonshine, Canary, … as GGUF) runs through transcribe-cpp, so
 /// this is a single-variant enum: it keeps the `match`/`if let` sites that
 /// Multi-STT's `extra_engines` share with the primary path readable, and
@@ -704,7 +704,7 @@ impl TranscriptionManager {
                     let device =
                         resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref());
                     // Backend::Auto accepts an exact CPU/GPU device. When
-                    // no exact device is saved, retain Handy's strict
+                    // no exact device is saved, retain the strict
                     // accelerator/backend policy and native fallback.
                     let backend = if device.is_some() {
                         Backend::Auto
@@ -1490,10 +1490,13 @@ impl TranscriptionManager {
         audio: Vec<f32>,
         statistics: Option<&StatisticsRunContext>,
     ) -> Result<(String, Option<PendingStatisticsAttempt>)> {
+        // Development-only fault injection: set (to any value) to make every
+        // transcription fail, for exercising the failure paths.
         #[cfg(debug_assertions)]
-        if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
+        if crate::utils::app_env_var("FORCE_TRANSCRIPTION_FAILURE").is_some() {
             return Err(anyhow::anyhow!(
-                "Simulated transcription failure (HANDY_FORCE_TRANSCRIPTION_FAILURE)"
+                "Simulated transcription failure: {}FORCE_TRANSCRIPTION_FAILURE is set",
+                crate::app_identity::ENV_PREFIX
             ));
         }
 
@@ -2011,7 +2014,7 @@ fn effective_language_for_model(
     }
 }
 
-/// Resolve how confidently Handy knows the language of the text produced by a
+/// Resolve how confidently the app knows the language of the text produced by a
 /// transcription run. The UI language is deliberately not part of this
 /// decision.
 fn resolve_output_language_evidence(
@@ -2026,7 +2029,7 @@ fn resolve_output_language_evidence(
 
     // Stored language intent is only evidence when this specific engine run
     // actually received the hint. Some multilingual engines (notably Parakeet
-    // V3) always auto-detect and ignore Handy's selection; transcribe-cpp also
+    // V3) always auto-detect and ignore the app's selection; transcribe-cpp also
     // drops a requested hint when the loaded model does not advertise it.
     if let Some(language) = applied_language_hint.filter(|lang| !lang.is_empty() && *lang != "auto")
     {
@@ -3231,7 +3234,7 @@ fn resolve_device_index(index: usize) -> Result<(Backend, Option<Device>)> {
     Ok((Backend::Auto, Some(device)))
 }
 
-/// Map Handy's whisper accelerator setting to a transcribe-cpp [`Backend`].
+/// Map the whisper accelerator setting to a transcribe-cpp [`Backend`].
 ///
 /// `Auto` lets the library pick the best device (with CPU fallback). `Cpu` forces
 /// strict CPU. `Gpu` requests the platform GPU backend, but only if a device for

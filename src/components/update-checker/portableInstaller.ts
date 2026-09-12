@@ -7,14 +7,17 @@
 // than being rebuilt from the bundler's file-naming convention: it stays correct
 // if asset names or the repo slug change, and it points at the immutable
 // `releases/download/v<version>/…` tag URL instead of a moving `latest` link.
+//
+// The fallback is the generated `RELEASES_URL`, not a literal: this is the one
+// other place in the frontend that needs the repository address, and a second
+// hand-written copy is a rename that misses.
 
-export const PORTABLE_RELEASES_URL =
-  "https://github.com/cjpais/Handy/releases/latest";
+import { RELEASES_URL } from "@/lib/appIdentity";
 
 /**
  * Pick the NSIS installer URL for the running target out of the update manifest.
  * Falls back to the generic releases page whenever there is no matching entry —
- * e.g. a portable install on a platform Handy ships no NSIS bundle for.
+ * e.g. a portable install on a platform this build ships no NSIS bundle for.
  *
  * @param rawJson `Update.rawJson`, the deserialized `latest.json` manifest
  * @param platformName value from `@tauri-apps/plugin-os` `platform()`
@@ -26,16 +29,16 @@ export function resolvePortableInstallerUrl(
   archName: string,
 ): string {
   // NSIS is a Windows-only bundle; nothing else has an installer to link to.
-  if (platformName !== "windows") return PORTABLE_RELEASES_URL;
+  if (platformName !== "windows") return RELEASES_URL;
 
   const platforms = rawJson?.platforms;
-  if (!platforms || typeof platforms !== "object") return PORTABLE_RELEASES_URL;
+  if (!platforms || typeof platforms !== "object") return RELEASES_URL;
 
   const entry = (platforms as Record<string, unknown>)[
     `windows-${archName}-nsis`
   ];
-  if (!entry || typeof entry !== "object") return PORTABLE_RELEASES_URL;
+  if (!entry || typeof entry !== "object") return RELEASES_URL;
 
   const url = (entry as Record<string, unknown>).url;
-  return typeof url === "string" ? url : PORTABLE_RELEASES_URL;
+  return typeof url === "string" ? url : RELEASES_URL;
 }

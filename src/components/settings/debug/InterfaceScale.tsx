@@ -13,7 +13,7 @@ const MAX_SCALE = 1.6;
 
 /**
  * Zoom for the whole settings window, for screens whose OS scaling makes
- * Handy too small or too large. Applied as CSS zoom on the document root
+ * the interface too small or too large. Applied as CSS zoom on the document root
  * (see `applyUiScale`), so layout scales with it.
  */
 export const InterfaceScale: React.FC<InterfaceScaleProps> = ({

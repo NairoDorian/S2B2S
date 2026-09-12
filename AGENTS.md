@@ -2,11 +2,25 @@
 
 This file provides guidance to AI coding assistants working with code in this repository.
 
-> **NOTE**: This is the `Handy_Multi_STT` fork. In addition to upstream Handy
-> features, this branch adds **Multi-STT** mode — running up to four speech-to-text
-> models in parallel and optionally merging their outputs via an LLM. See the
-> Architecture Overview and Settings System sections below for fork-specific
-> additions.
+**The product is ZER0.** It began as a fork of the MIT-licensed
+[Handy](https://github.com/cjpais/Handy) project by CJ Pais — credited in
+`LICENSE`, `README.md` and the About page — and is now its own project with its
+own name, identity and release line. The branch is still called
+`Handy_Multi_STT`; nothing else is.
+
+Two consequences for every change you make here:
+
+- **Never spell the product name by hand.** Values come from `scripts/app-meta.ts`
+  and its generated mirrors (`src/lib/appIdentity.ts`, `src-tauri/src/app_identity.rs`).
+  `bun run check:identity` fails the build when a stale name survives a rename, so
+  read the constant instead of writing the string. `bun run meta:sync` after
+  editing `app-meta.ts`; `bun run meta:check` verifies the mirrors in CI.
+- **Attribution stays.** The upstream notice in `LICENSE` is a legal requirement
+  and is never edited; the fork's origin is named in prose.
+
+> **NOTE**: this branch additionally carries **Multi-STT** mode — running up to
+> four speech-to-text models in parallel and optionally merging their outputs via
+> an LLM. See the Architecture Overview and Settings System sections below.
 
 ## Performance first
 
@@ -17,6 +31,44 @@ hot toggles are atomics, commands never block the webview, events are
 throttled and gated, resources stay warm, child processes run detached on a
 supervisor thread, meters sample on one thread). State the cost of any new
 thread, poll or dependency in the commit message.
+
+## The pre-commit routine
+
+**Run `bun run precommit` before every commit.** It is the gate, and it is one
+command:
+
+```bash
+bun run hooks:install   # once per clone: points git at .githooks/
+bun run precommit       # identity → translations → lint → typecheck → format → repomix
+bun run precommit:full  # the same, plus clippy and the Rust test suite
+```
+
+`bun run precommit` runs, in order: `meta:sync` (regenerate the identity
+mirrors), `meta:check` (they are in sync), `check:identity` (no stale product
+name anywhere), `check:translations`, `lint`, `typecheck`, `format:check`, and
+the repomix pack. `precommit:full` adds `lint:backend` (clippy) and
+`test:backend` (cargo test). The hook deliberately does **not** run clippy and
+the Rust suite by default — a ten-minute hook is a hook everyone bypasses with
+`--no-verify`; run `precommit:full` before a release or a PR.
+
+**Keeping everything current is part of the routine:**
+
+```bash
+bun run update          # rtk → latest, deps with --prerelease, then repomix
+bun run update:rtk      # just the RTK CLI (tooling for the agent hook)
+bun run update-deps -- --prerelease
+bun run repomix         # regenerate repomix-output.xml (also in the gate)
+bun run repomix:check   # fail if the pack is older than the newest tracked file
+```
+
+`update-deps` **always** takes `--prerelease` in this project: the point is to
+track the newest published version of every dependency, so the next release is
+tested against what is actually newest. `bun run update` chains all three in the
+right order and is what to run before starting release work.
+
+**`rtk` is used for every shell command**, with one exception: `bun` commands
+are never proxied (`rtk bun …` is not supported). So `rtk git …`, `rtk cargo …`,
+`rtk gh …`, `rtk node …` — and plain `bun run …`.
 
 ## Development Commands
 
@@ -66,7 +118,7 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 | -------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tauri-runner.ts`          | `bun run tauri`, `build:fast`, `build:full`                                  | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; `--fast`/`--local-gpu` sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto`                                                                                                                                                                                                                                     |
 | `check-transcribe-deps.ts` | `tauri-runner.ts` (imported), or run directly                                | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` git pin in `Cargo.lock` when `NairoDorian/transcribe.cpp` `main` moves; never fails, never blocks a build                                                                                                                                                                                                        |
-| `prune-target.ts`          | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]` | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `HANDY_NO_PRUNE=1` skips it                       |
+| `prune-target.ts`          | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]` | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `ZER0_NO_PRUNE=1` skips it                        |
 | `check-translations.ts`    | `bun run check:translations`, CI                                             | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                          |
 | `check-nix-deps.ts`        | `postinstall`                                                                | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                    |
 | `update-deps.ts`           | `bun run update-deps [--prerelease]`                                         | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD) |
@@ -87,7 +139,7 @@ For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
 ## Architecture Overview
 
-Handy is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).
+ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).
 
 ### Backend Structure (src-tauri/src/)
 
@@ -224,7 +276,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
 - `catalog/` - Bundled model catalog (`catalog.json`)
 - `utils.rs` - Platform detection helpers, `cancel_current_operation`,
   Windows real-time process setup (`init_windows_process_performance`)
-- `tests/vad_speech_clock_probe.rs` - Opt-in VAD regression probe (`HANDY_PROBE_WAV`)
+- `tests/vad_speech_clock_probe.rs` - Opt-in VAD regression probe (`ZER0_PROBE_WAV`)
 
 ### Frontend Structure (src/)
 
@@ -364,7 +416,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 ### Voice Activity Detection
 
-Handy's only voice activity detector is **Earshot** (`earshot` crate, pure
+ZER0's only voice activity detector is **Earshot** (`earshot` crate, pure
 Rust, ~8 KiB of state, constructed in microseconds — there is no model file,
 no ONNX Runtime and nothing to download). It runs on the audio consumer thread
 once per 16 ms frame and is what makes `vad_enabled` mean anything: frames it
@@ -426,7 +478,7 @@ disabled every frame counts as speech, so it can never suppress a recording
 made with filtering off.
 
 `src-tauri/tests/vad_speech_clock_probe.rs` is an opt-in regression check: point
-`HANDY_PROBE_WAV` at a 16 kHz mono speech recording and it asserts the real
+`ZER0_PROBE_WAV` at a 16 kHz mono speech recording and it asserts the real
 chain reports a sane fraction of voiced frames. It skips when the variable is
 unset.
 
@@ -798,8 +850,8 @@ text by the time they stop.
 
 - **Two things compose, and only two: the live stream and the sliding window.**
   The primary model streams as it always did — that is what is on screen, and it
-  is never re-transcribed. What the break adds is a *re-decode of a bounded
-  window* by the extra models, merged with the prompt, replacing the rough text
+  is never re-transcribed. What the break adds is a _re-decode of a bounded
+  window_ by the extra models, merged with the prompt, replacing the rough text
   of the chunk that just closed. The mode is therefore not "batch Multi-STT run
   repeatedly": the audio handed to the extras is a window the settings size, and
   the rest of the session is already settled text that no model will see again.
@@ -809,7 +861,7 @@ text by the time they stop.
   works; it still runs whenever the streaming mode is off, when the primary
   model cannot stream, when no merge prompt is configured, or when the stream
   never starts (`StreamFinalization::NeverStarted`). Nothing in this section
-  changes it. The difference is *when* the work happens and what it is done on:
+  changes it. The difference is _when_ the work happens and what it is done on:
   the batch path decodes the whole session once, at stop; the streaming mode
   decodes a bounded window at each pause, while the user is still speaking, and
   the text is already merged by the time the recording ends.
@@ -845,7 +897,7 @@ text by the time they stop.
   evidence: the extras hear the joined audio, so a word cut at the pause, a
   pronoun whose referent is in the previous chunk, or a clause whose verb is in
   the next one all reach the merge with their surroundings. And because a merge
-  is a *rewrite of a chunk that is already on screen*, that evidence lands as a
+  is a _rewrite of a chunk that is already on screen_, that evidence lands as a
   correction the user watches happen: the preview shows the sentence complete
   itself across successive pauses, and the final transcription is the same text
   after the last one. The count is a slider (0–3) rather than a constant because
@@ -897,7 +949,7 @@ text by the time they stop.
   the text being spoken, and the finished text is pasted **once**, at stop, by
   the ordinary Multi-STT paste. That is why the mode forces `OverlayStyle::Live`
   whatever the user's overlay setting is: the Minimal overlay does not render the
-  transcript, so on this path a minimal overlay would mean *no* live view at all.
+  transcript, so on this path a minimal overlay would mean _no_ live view at all.
   With `paste_method = direct_streaming` the coordinator instead owns the
   `DirectStreamWriter` (`owns_typing`) and pushes the composed text as its
   target, so the corrections land in the user's document as they happen; the
@@ -1040,7 +1092,7 @@ For translation contribution guidelines, see [CONTRIBUTING_TRANSLATIONS.md](CONT
 
 ## CLI Parameters
 
-Handy supports command-line parameters on all platforms for integration with scripts, window managers, and autostart configurations.
+ZER0 supports command-line parameters on all platforms for integration with scripts, window managers, and autostart configurations.
 
 **Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
 
@@ -1071,9 +1123,14 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no code signing in this fork (`signCommand` removed from `tauri.conf.json`) and no updater artifacts (`createUpdaterArtifacts` off: the updater pubkey is upstream's, so there is no private key to sign with), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the Handy process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `HANDY_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
-- **Linux**: CUDA acceleration (upstream: OpenBLAS + Vulkan), limited Wayland support, overlay uses GTK layer shell (disable with `HANDY_NO_GTK_LAYER_SHELL=1`)
-- **Nix/NixOS**: the Nix package sets `HANDY_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
+- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no code signing in this fork (`signCommand` removed from `tauri.conf.json`) and no updater artifacts (`createUpdaterArtifacts` off: the updater pubkey is upstream's, so there is no private key to sign with), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
+- **Linux**: CUDA acceleration (upstream: OpenBLAS + Vulkan), limited Wayland support, overlay uses GTK layer shell (disable with `ZER0_NO_GTK_LAYER_SHELL=1`)
+- **Nix/NixOS**: the Nix package sets `ZER0_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
+
+Every one of those flags is `ENV_PREFIX` + the suffix (`src-tauri/src/app_identity.rs`),
+and each falls back to the `HANDY_`-prefixed spelling with a warning, so a shell
+script or a desktop file written before the rename keeps working. Read the prefix
+from `app_identity` rather than copying it into new code.
 
 ## Troubleshooting
 
@@ -1084,9 +1141,12 @@ See the [Troubleshooting](README.md#troubleshooting) section in README.md.
 **MANDATORY. Before opening any PR, issue, or discussion in this repo: you MUST read the relevant template file and follow it strictly.** That includes sections that look "ceremonial" — checklists, AI Assistance disclosures, "Human Written Description". A generic Summary/Test-plan layout is not acceptable.
 
 - **Opening a PR:** Read [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Every section listed there is mandatory. If a section requires a human-written paragraph (e.g. "Human Written Description"), leave a clear TODO placeholder and ask the human contributor to fill it in — do not invent their voice.
-- **Opening an issue:** Read [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). Blank issues are disabled; pick the right template (`bug_report.md` for bugs). Feature requests do not belong in issues — they go to [Discussions](https://github.com/cjpais/Handy/discussions) (see `.github/ISSUE_TEMPLATE/config.yml`).
-- **Proposing a feature:** Handy is under a feature freeze. New features require community support gathered in [Discussions](https://github.com/cjpais/Handy/discussions) before any PR is opened — see the PR template's "Community Feedback" section.
+- **Opening an issue:** Read [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). Blank issues are disabled; pick the right template (`bug_report.md` for bugs). Feature requests do not belong in issues — they go to [Discussions](https://github.com/NairoDorian/S2B2S/discussions) (see `.github/ISSUE_TEMPLATE/config.yml`).
+- **Proposing a feature:** new features require community support gathered in [Discussions](https://github.com/NairoDorian/S2B2S/discussions) before any PR is opened — see the PR template's "Community Feedback" section.
 - **Translations:** Follow [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md).
 - **Full contributor workflow:** [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**Commits:** Use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Focus the message on _why_, not _what_.
+**Commits:** Use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Focus the message on _why_, not _what_. End the message with
+`Co-Authored-By: Claude Code <noreply@anthropic.com>` when an assistant wrote it, and
+state the cost of any new thread, poll or dependency (see `docs/PERFORMANCE.md`
+rule 10).

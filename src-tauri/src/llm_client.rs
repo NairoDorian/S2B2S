@@ -1,3 +1,4 @@
+use crate::app_identity;
 use crate::settings::PostProcessProvider;
 use log::{debug, error, info};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, REFERER, USER_AGENT};
@@ -139,17 +140,34 @@ struct ChatMessageResponse {
 fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
 
-    // Common headers
+    // Common headers.
+    //
+    // `Referer` / `User-Agent` / `X-Title` are what OpenRouter and compatible
+    // routers show as the requesting application, so they name this fork and
+    // link to its own repository. They cannot be `from_static` any more: the
+    // values come from `app_identity`, which is a `const` and not a literal.
+    // That costs one short allocation per request, on a path that is already
+    // building a client and making a network call.
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(
         REFERER,
-        HeaderValue::from_static("https://github.com/cjpais/Handy"),
+        HeaderValue::from_str(app_identity::REPO_URL)
+            .map_err(|e| format!("Invalid Referer header value: {e}"))?,
     );
+    // The contact URL is the OpenRouter convention, appended here rather than
+    // baked into `USER_AGENT`: it is what that service asks for, not what every
+    // request should say.
+    let user_agent = format!("{} (+{})", app_identity::USER_AGENT, app_identity::REPO_URL);
     headers.insert(
         USER_AGENT,
-        HeaderValue::from_static("Handy/1.0 (+https://github.com/cjpais/Handy)"),
+        HeaderValue::from_str(&user_agent)
+            .map_err(|e| format!("Invalid User-Agent header value: {e}"))?,
     );
-    headers.insert("X-Title", HeaderValue::from_static("Handy"));
+    headers.insert(
+        "X-Title",
+        HeaderValue::from_str(app_identity::NAME)
+            .map_err(|e| format!("Invalid X-Title header value: {e}"))?,
+    );
 
     // Provider-specific auth headers
     if !api_key.is_empty() {

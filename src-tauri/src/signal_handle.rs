@@ -29,8 +29,8 @@ pub fn send_transcription_input(app: &AppHandle, binding_id: &str, source: &str)
 /// (transcription with post-processing) is only handled on macOS: on Linux,
 /// WebKitGTK's JavaScriptCore garbage collector sends SIGUSR1 to its own
 /// threads to suspend them, so handling it caused phantom recordings on every
-/// GC cycle (#1660). Linux users should use `handy --toggle-post-process`
-/// instead.
+/// GC cycle (#1660). Linux users should use the `--toggle-post-process` CLI
+/// flag instead.
 #[cfg(unix)]
 pub fn setup_signal_handler(app_handle: AppHandle) {
     #[cfg(target_os = "macos")]

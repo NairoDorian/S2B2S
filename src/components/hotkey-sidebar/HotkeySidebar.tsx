@@ -95,8 +95,8 @@ export const HotkeySidebar: React.FC = () => {
         title={toggleLabel}
         className={`flex items-center gap-1.5 h-8 px-2 border text-xs font-medium cursor-pointer transition-colors ${
           isOpen
-            ? "border-logo-primary bg-logo-primary/15 text-logo-primary"
-            : "border-mid-gray/30 bg-background text-text/70 hover:border-logo-primary hover:text-text"
+            ? "border-accent bg-accent/15 text-accent"
+            : "border-mid-gray/30 bg-background text-text/70 hover:border-accent hover:text-text"
         }`}
       >
         <Keyboard className="w-4 h-4" />
@@ -114,7 +114,7 @@ export const HotkeySidebar: React.FC = () => {
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-mid-gray/20">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-text/70 flex items-center gap-2">
-              <Keyboard className="w-4 h-4 text-logo-primary" />
+              <Keyboard className="w-4 h-4 text-accent" />
               {t("hotkeySidebar.title")}
             </h2>
             <button

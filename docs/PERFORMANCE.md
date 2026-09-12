@@ -1,10 +1,15 @@
 # Performance and latency rules
 
-Handy is a real-time tool: a hotkey press must feel instant, the transcript
-must land before the user looks up, and nothing the settings window does may
-steal time from the audio thread. Every change on this fork is judged against
-this file first. **Read it before adding a feature, a setting, a poll, an
-event, a dependency or a thread.**
+ZER0 is a real-time tool: a hotkey press must feel instant, the transcript must
+land before the user looks up, and nothing the settings window does may steal
+time from the audio thread. Every change in this project is judged against this
+file first. **Read it before adding a feature, a setting, a poll, an event, a
+dependency or a thread.**
+
+> Before committing, `bun run precommit` (see [AGENTS.md](../AGENTS.md#the-pre-commit-routine)).
+> Shell commands go through `rtk` — except `bun`, which is never proxied — and
+> dependencies are updated with `bun run update-deps -- --prerelease`: this
+> project tracks the newest published version of every dependency on purpose.
 
 ## The budget
 
@@ -61,8 +66,10 @@ event, a dependency or a thread.**
    unsubscribes on unmount and stops any backend activity it started (the
    live VAD test stops itself).
 10. **Measure before and after.** Use the Statistics page, the debug timing
-    logs and the opt-in probes (`HANDY_PROBE_WAV`). A change that adds a
-    dependency, a thread or a poll states its cost in the commit message.
+    logs and the opt-in probes (`ZER0_PROBE_WAV` — the prefix is
+    `app_identity::ENV_PREFIX`, so read it rather than copy it if it ever
+    changes). A change that adds a dependency, a thread or a poll states its
+    cost in the commit message.
 
 ## Startup order (measured from the dev log, 2026-09-11)
 

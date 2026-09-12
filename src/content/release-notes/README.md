@@ -1,8 +1,10 @@
 # Release Notes
 
-> **NOTE:** This is the `Handy_Multi_STT` fork. This branch adds **Multi-STT** mode —
-> running up to four STT models in parallel with optional LLM-based output merging.
-> See [AGENTS.md](../../../AGENTS.md) for the full architecture.
+> **NOTE:** This project is **ZER0**, a fork of Handy by CJ Pais that has grown
+> into its own application. Beyond the upstream feature set it adds **Multi-STT**
+> mode — running up to four STT models in parallel with optional LLM-based output
+> merging — alongside Live Mode, Transcribe Files, Live FFT and in-app llama.cpp
+> management. See [AGENTS.md](../../../AGENTS.md) for the full architecture.
 
 Add user-facing release notes as Markdown files named by app version:
 

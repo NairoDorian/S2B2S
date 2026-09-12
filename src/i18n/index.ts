@@ -3,6 +3,7 @@ import { initReactI18next } from "react-i18next";
 import { locale } from "@tauri-apps/plugin-os";
 import { LANGUAGE_METADATA } from "./languages";
 import { commands } from "@/bindings";
+import { APP_NAME } from "@/lib/appIdentity";
 import {
   getLanguageDirection,
   updateDocumentDirection,
@@ -126,6 +127,11 @@ const initialized = i18n
     fallbackLng: "en",
     interpolation: {
       escapeValue: false, // React already escapes values
+      // `{{app}}` is available in every string without each key having to pass
+      // it. A locale that names the product — "Start with {{app}}", "{{app}}
+      // needs some permissions to work properly" — therefore survives a rename
+      // untouched, and 25 files never have to be edited for one new word.
+      defaultVariables: { app: APP_NAME },
     },
     react: {
       useSuspense: false, // Disable suspense for SSR compatibility

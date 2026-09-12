@@ -1,17 +1,23 @@
 [package]
-name = "handy"
-version = "0.9.6"
-description = "Handy"
-authors = ["cjpais"]
+name = "zer0"
+version = "0.9.7"
+description = "ZER0 — real-time speech to text"
+authors = ["NairoDorian"]
 edition = "2024"
 license = "MIT"
-default-run = "handy"
+default-run = "zer0"
 
 [profile.dev]
 incremental = true
 
+# A fixed `app_lib`, deliberately NOT derived from the package name: the
+# library name is structural, not identity. Every `use` in `main.rs` and in
+# `tests/` would otherwise be a hardcoded copy of the product name that a
+# rename would have to chase, and Rust has no way to write a `use` path from a
+# constant. A distinct name from the binary target also avoids the collision
+# the bare package name would cause on some platforms.
 [lib]
-name = "handy_app_lib"
+name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -172,7 +178,7 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 
 # TEMPORARY: tao pinned past 0.35.3 for the Wayland client-side-decorations fix
 # (tao #1218, fixes tauri #11856 — dead titlebar buttons after visible(false) →
-# show()) and the thread event target shutdown fix (tao #1274 / Handy #1710).
+# show()) and the thread event target shutdown fix (tao #1274 / upstream #1710).
 # Pinned to upstream tauri-apps/tao rev da7441aa (where #1274 merged, compatible
 # with Tauri 2.x's tao 0.35.x constraint).
 # tao-macros must be patched to the SAME rev even though nothing here depends on

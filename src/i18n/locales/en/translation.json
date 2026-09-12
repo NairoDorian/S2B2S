@@ -112,7 +112,7 @@
     },
     "permissions": {
       "title": "Permissions Required",
-      "description": "Handy needs a couple of permissions to work properly.",
+      "description": "{{app}} needs a couple of permissions to work properly.",
       "microphone": {
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
@@ -204,7 +204,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Handy Shortcuts",
+        "title": "{{app}} Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -273,7 +273,7 @@
       },
       "rescan": {
         "label": "Rescan",
-        "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Handy"
+        "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside {{app}}"
       },
       "openFolder": "Open Models Folder",
       "openPluginsFolder": "Open Architecture Plugins Folder",
@@ -346,11 +346,11 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Handy when you log in to your computer."
+        "description": "Automatically start {{app}} when you log in to your computer."
       },
       "showTrayIcon": {
         "label": "Show Tray Icon",
-        "description": "Display the Handy icon in the system tray."
+        "description": "Display the {{app}} icon in the system tray."
       },
       "overlay": {
         "style": {
@@ -755,8 +755,8 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Handy",
-        "lockedDescription": "Disabled by system configuration (HANDY_DISABLE_UPDATER)"
+        "description": "Automatically check for new versions of {{app}}",
+        "lockedDescription": "Disabled by system configuration ({{envVar}})"
       },
       "whatsNewPreview": {
         "title": "Preview What's New",
@@ -825,6 +825,8 @@
         "bindingsReset": "Keyboard shortcuts were incompatible and reset to defaults"
       },
       "paths": {
+        "title": "Debug Paths",
+        "description": "Absolute paths of the directories this app writes to, for troubleshooting",
         "appData": "App Data:",
         "models": "Models:",
         "settings": "Settings:"
@@ -851,7 +853,7 @@
       },
       "keyboardDiagnostic": {
         "title": "Keyboard Diagnostic",
-        "description": "Checks whether keyboard events reach Handy. Only event counts are recorded — never which keys you press.",
+        "description": "Checks whether keyboard events reach {{app}}. Only event counts are recorded — never which keys you press.",
         "run": "Run 10s diagnostic",
         "running": "Listening… press your shortcut a few times (e.g. Option+Space)",
         "secureInputLabel": "Secure Input",
@@ -865,7 +867,7 @@
         "mouse": "Mouse",
         "verdictBlocked": "Secure Input is blocking key events — keyed shortcuts cannot work until it is resolved.",
         "verdictSuspicious": "Modifier events arrived but no key events — something is suppressing keys even though Secure Input reports disabled. Please report this on GitHub.",
-        "verdictOk": "Key events are reaching Handy normally.",
+        "verdictOk": "Key events are reaching {{app}} normally.",
         "verdictNoEvents": "No events captured — did you press any keys during the test?",
         "failed": "Diagnostic failed: {{error}}"
       },
@@ -888,49 +890,49 @@
       },
       "interfaceScale": {
         "label": "Interface scale",
-        "description": "Zoom the whole window (70–160 %). Use it when the OS display scaling makes Handy too small or too large; the minimum window size stays the same."
+        "description": "Zoom the whole window (70–160 %). Use it when the OS display scaling makes {{app}} too small or too large; the minimum window size stays the same."
       }
     },
     "about": {
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Handy"
+        "description": "Current version of {{app}}"
       },
       "whatsNewUpdates": {
         "label": "Show What's New",
-        "description": "Show release notes after Handy updates"
+        "description": "Show release notes after {{app}} updates"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Handy stores its data"
+        "description": "Location where {{app}} stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
         "description": "View source code and contribute",
         "button": "View on GitHub"
       },
-      "supportDevelopment": {
-        "title": "Support Development",
-        "description": "Help us continue building Handy",
-        "button": "Donate"
-      },
       "acknowledgments": {
         "title": "Acknowledgments",
         "ggml": {
           "title": "ggml",
           "description": "High-performance tensor library for on-device machine learning inference",
-          "details": "Handy's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "ZER0's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         },
         "rnnoise": {
           "title": "RNNoise / nnnoiseless",
           "description": "Recurrent-network noise suppression, pure Rust",
           "details": "Optional microphone noise suppression uses nnnoiseless, a Rust port of Xiph's RNNoise (BSD-3-Clause). Thanks to Jean-Marc Valin and Joe Neeman."
+        },
+        "handy": {
+          "title": "Handy",
+          "description": "The project {{app}} is forked from",
+          "details": "{{app}} began as a fork of Handy by CJ Pais and is distributed under the same MIT licence. Thanks to CJ Pais and the Handy contributors."
         }
       }
     },
     "fileTranscription": {
-      "description": "Turn recordings into text files. Add files or whole folders, pick how they should be transcribed, and Handy writes a .txt or .md next to each recording or into a folder of your choice.",
+      "description": "Turn recordings into text files. Add files or whole folders, pick how they should be transcribed, and {{app}} writes a .txt or .md next to each recording or into a folder of your choice.",
       "groups": {
         "files": "1. Audio files",
         "options": "2. Mode & output",
@@ -1075,7 +1077,7 @@
       "outputFolder": {
         "title": "Output folder",
         "description": "Each session gets its own sub-folder (live_<date>_<time>) with the transcript and the audio chunks.",
-        "default": "Handy data folder / live_mode",
+        "default": "{{app}} data folder / live_mode",
         "choose": "Choose folder…",
         "reset": "Use default"
       },
@@ -1453,7 +1455,7 @@
           "label": "Update rate",
           "description": "Spectrum frames per second sent to the page."
         },
-        "note": "Handy analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
       },
       "voice": {
         "title": "Voice detection & noise suppression",
@@ -1479,7 +1481,7 @@
       },
       "server": {
         "title": "Server",
-        "description": "The llama.cpp server Handy supervises. It runs detached (no console window), is stopped with Handy, and its output is kept below.",
+        "description": "The llama.cpp server {{app}} supervises. It runs detached (no console window), is stopped with {{app}}, and its output is kept below.",
         "start": "Start",
         "stop": "Stop",
         "restart": "Restart",
@@ -1489,10 +1491,10 @@
         "appliedToast": "Post-processing now targets the local server on port {{port}}.",
         "startOnDemand": "Start when needed",
         "startOnDemandDescription": "When a post-processing or merge request targets this server and it is not running, start it and wait for it to be ready (up to three minutes).",
-        "autostart": "Start with Handy",
-        "autostartDescription": "Launch the server in the background when Handy starts, so the first request never waits for a model load.",
-        "stopOnExit": "Stop when Handy quits",
-        "stopOnExitDescription": "Off keeps the server (and the GPU memory it holds) alive after Handy exits.",
+        "autostart": "Start with {{app}}",
+        "autostartDescription": "Launch the server in the background when {{app}} starts, so the first request never waits for a model load.",
+        "stopOnExit": "Stop when {{app}} quits",
+        "stopOnExitDescription": "Off keeps the server (and the GPU memory it holds) alive after {{app}} exits.",
         "logs": "Server output",
         "logsDescription": "The last 400 lines of llama-server's output.",
         "showLogs": "Show output",
@@ -1523,7 +1525,7 @@
         "install": "Install",
         "noReleases": "No releases loaded.",
         "installed": "Installed builds",
-        "installedDescription": "Builds installed by Handy under its data folder.",
+        "installedDescription": "Builds installed by {{app}} under its data folder.",
         "use": "Use",
         "active": "Active",
         "missingServer": "llama-server missing",
@@ -1535,7 +1537,7 @@
         "removeRuntime": "Remove runtime",
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
         "includeCudartOnPath": "That folder is on PATH.",
-        "includeCudartOffPath": "That folder is not on PATH; Handy adds it for llama-server when it starts it.",
+        "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
         "alreadyInstalled": "installed"
       },
@@ -1618,7 +1620,7 @@
     }
   },
   "whatsNew": {
-    "title": "New in Handy v{{version}}"
+    "title": "New in {{app}} v{{version}}"
   },
   "common": {
     "loading": "Loading...",
@@ -1634,7 +1636,7 @@
     "noOptionsFound": "No options found"
   },
   "accessibility": {
-    "permissionsDescription": "Handy needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "{{app}} needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings"
   },
   "errors": {
@@ -1657,11 +1659,11 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Handy interface"
+    "description": "Change the language of the {{app}} interface"
   },
   "theme": {
     "title": "Application Theme",
-    "description": "Choose whether Handy follows your system theme or stays light or dark",
+    "description": "Choose whether {{app}} follows your system theme or stays light or dark",
     "options": {
       "system": "System",
       "light": "Light",
@@ -1670,7 +1672,7 @@
   },
   "accentColor": {
     "title": "Accent Color",
-    "description": "Choose a custom color for the interface, logos, and recording overlay",
+    "description": "Choose a custom color for the interface, icons, and recording overlay",
     "custom": "Custom Color",
     "reset": "Reset to Default",
     "presets": {
@@ -1806,13 +1808,13 @@
     },
     "empty": {
       "title": "No shortcut set yet",
-      "message": "Handy has no transcription hotkey until you pick one, so nothing happens when you press keys. Choose one in General.",
+      "message": "{{app}} has no transcription hotkey until you pick one, so nothing happens when you press keys. Choose one in General.",
       "action": "Set the Transcribe shortcut"
     }
   },
   "quickHelp": {
     "learnMore": "Learn more",
-    "general": "Pick the shortcut you hold or tap to dictate, the microphone Handy listens to, and the sounds it plays.",
+    "general": "Pick the shortcut you hold or tap to dictate, the microphone {{app}} listens to, and the sounds it plays.",
     "history": "Every transcription is kept here with its audio. Re-run it with another mode, copy it, or save the ones worth keeping.",
     "statistics": "How much you dictate, how fast you speak, and how long transcription and post-processing take.",
     "models": "Download and switch the local speech model. Everything runs on this computer through transcribe.cpp; smaller models are faster, larger ones more accurate.",
@@ -1828,7 +1830,7 @@
   },
   "help": {
     "title": "Help",
-    "intro": "Handy turns speech into text on this computer and pastes it where you were typing. Pick a goal below, search, or read through the sections.",
+    "intro": "{{app}} turns speech into text on this computer and pastes it where you were typing. Pick a goal below, search, or read through the sections.",
     "contents": "Contents",
     "openPage": "Open {{page}}",
     "aboutLink": "Version, licences and acknowledgments are on the About page.",
@@ -1864,7 +1866,7 @@
     "sections": {
       "transcription": {
         "title": "Press the shortcut. Speak. Text appears.",
-        "summary": "Set a Transcribe shortcut in General (a fresh install has none) and choose whether it toggles recording or works while held. Pick the microphone Handy listens to. When you stop, the text is pasted into the app you were using; the History page keeps a copy with the audio.\n\nThe right-edge tab shows the shortcuts that are currently assigned and jumps to the control that changes them."
+        "summary": "Set a Transcribe shortcut in General (a fresh install has none) and choose whether it toggles recording or works while held. Pick the microphone {{app}} listens to. When you stop, the text is pasted into the app you were using; the History page keeps a copy with the audio.\n\nThe right-edge tab shows the shortcuts that are currently assigned and jumps to the control that changes them."
       },
       "models": {
         "title": "Choose a local model.",
@@ -1913,13 +1915,13 @@
       },
       "llama": {
         "title": "Local LLM: the brain behind post-processing and merging.",
-        "summary": "The Local LLM page runs llama.cpp for you. Install a build (CUDA, Vulkan or CPU) from the releases list or point Handy at a folder that already has llama-server, pick the model, its MTP draft and the optional mmproj, and press Start. The command line shown is exactly what runs. \"Use for post-processing & merge\" points the LLM provider at this server; with \"Start when needed\" on, the first post-process request starts it and waits. The status-bar brain shows Stopped / Starting / Ready / Error, next to the CPU, RAM, GPU and VRAM meters."
+        "summary": "The Local LLM page runs llama.cpp for you. Install a build (CUDA, Vulkan or CPU) from the releases list or point {{app}} at a folder that already has llama-server, pick the model, its MTP draft and the optional mmproj, and press Start. The command line shown is exactly what runs. \"Use for post-processing & merge\" points the LLM provider at this server; with \"Start when needed\" on, the first post-process request starts it and waits. The status-bar brain shows Stopped / Starting / Ready / Error, next to the CPU, RAM, GPU and VRAM meters."
       }
     },
     "aiAssist": {
       "title": "Ask an AI assistant",
-      "description": "Copy this prompt into your favourite AI chat; it points the assistant at the source code so it can answer questions about how Handy behaves.",
-      "prompt": "I am using Handy (Multi-STT fork), a local speech-to-text app. Its source is at {{url}}. Please read the README and AGENTS.md there before answering. My question: ",
+      "description": "Copy this prompt into your favourite AI chat; it points the assistant at the source code so it can answer questions about how {{app}} behaves.",
+      "prompt": "I am using {{app}} (Multi-STT fork), a local speech-to-text app. Its source is at {{url}}. Please read the README and AGENTS.md there before answering. My question: ",
       "copy": "Copy prompt",
       "copied": "Copied",
       "copyFailed": "Could not copy"

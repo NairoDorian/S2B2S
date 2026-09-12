@@ -1,6 +1,6 @@
-//! Windows job object that ties child processes to Handy's lifetime.
+//! Windows job object that ties child processes to this app's lifetime.
 //!
-//! `llama-server` is a long-lived child. If Handy dies without running its
+//! `llama-server` is a long-lived child. If the app dies without running its
 //! exit hook (crash, task-manager kill), a plain `Command::spawn` child would
 //! keep the GPU and the port. Assigning it to a job created with
 //! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` makes the kernel end it when the last
@@ -31,7 +31,8 @@ pub fn register(child: &std::process::Child) {
             Ok(h) => h,
             Err(e) => {
                 log::warn!(
-                    "CreateJobObjectW failed: {e}; child processes will not be tied to Handy"
+                    "CreateJobObjectW failed: {e}; child processes will not be tied to {}",
+                    crate::app_identity::NAME
                 );
                 return None;
             }

@@ -9,7 +9,7 @@
 //! coalesced into it, so bursts of state changes never queue up native work.
 //!
 //! Why: native tray updates are the lever we control for the macOS tray
-//! disappearance bug (tauri-apps/tauri#12060, Handy #1948). Before this, every
+//! disappearance bug (tauri-apps/tauri#12060). Before this, every
 //! recording cycle rebuilt the full menu 3-6 times from several threads, and
 //! concurrent rebuilds could interleave and leave a stale menu behind.
 //!
@@ -20,6 +20,7 @@
 //! a hidden tray relies on tray-icon recreating it from the last applied
 //! icon/menu/tooltip, so those must only ever be set through the applier.
 
+use crate::app_identity;
 use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
@@ -188,29 +189,36 @@ fn windows_taskbar_theme() -> Option<AppTheme> {
 /// `warning` overlays a badge on the idle icon while keyboard shortcuts are
 /// blocked (macOS Secure Input); recording/transcribing states keep their
 /// normal icons so in-flight activity stays recognizable.
+///
+/// The files are named `tray_<theme>_<state>.png` after the **taskbar** theme,
+/// not after the ink: `tray_dark_*` is the set for a dark taskbar and carries
+/// light ink, which is what the OS wants against a dark background. Every icon
+/// is generated from the one mark in `src/lib/brandMark.ts` by
+/// `bun run icons:generate` — none of them are hand-drawn, and none of the file
+/// names carry the product name.
 pub fn get_icon_path(theme: AppTheme, state: TrayIconState, warning: bool) -> &'static str {
     if warning && state == TrayIconState::Idle {
         return match theme {
-            AppTheme::Dark => "resources/tray_idle_warning.png",
-            AppTheme::Light => "resources/tray_idle_warning_dark.png",
+            AppTheme::Dark => "resources/tray_dark_idle_warning.png",
+            AppTheme::Light => "resources/tray_light_idle_warning.png",
             // Linux never sets the warning flag (Secure Input is macOS-only),
             // but fall back to the normal icon just in case.
-            AppTheme::Colored => "resources/handy.png",
+            AppTheme::Colored => "resources/tray_color_idle.png",
         };
     }
     match (theme, state) {
-        // Dark theme uses light icons
-        (AppTheme::Dark, TrayIconState::Idle) => "resources/tray_idle.png",
-        (AppTheme::Dark, TrayIconState::Recording) => "resources/tray_recording.png",
-        (AppTheme::Dark, TrayIconState::Transcribing) => "resources/tray_transcribing.png",
-        // Light theme uses dark icons
-        (AppTheme::Light, TrayIconState::Idle) => "resources/tray_idle_dark.png",
-        (AppTheme::Light, TrayIconState::Recording) => "resources/tray_recording_dark.png",
-        (AppTheme::Light, TrayIconState::Transcribing) => "resources/tray_transcribing_dark.png",
-        // Colored theme uses gold icons (for Linux)
-        (AppTheme::Colored, TrayIconState::Idle) => "resources/handy.png",
-        (AppTheme::Colored, TrayIconState::Recording) => "resources/recording.png",
-        (AppTheme::Colored, TrayIconState::Transcribing) => "resources/transcribing.png",
+        // A dark taskbar takes light icons.
+        (AppTheme::Dark, TrayIconState::Idle) => "resources/tray_dark_idle.png",
+        (AppTheme::Dark, TrayIconState::Recording) => "resources/tray_dark_recording.png",
+        (AppTheme::Dark, TrayIconState::Transcribing) => "resources/tray_dark_transcribing.png",
+        // A light taskbar takes dark icons.
+        (AppTheme::Light, TrayIconState::Idle) => "resources/tray_light_idle.png",
+        (AppTheme::Light, TrayIconState::Recording) => "resources/tray_light_recording.png",
+        (AppTheme::Light, TrayIconState::Transcribing) => "resources/tray_light_transcribing.png",
+        // The colour theme (Linux) takes the accent.
+        (AppTheme::Colored, TrayIconState::Idle) => "resources/tray_color_idle.png",
+        (AppTheme::Colored, TrayIconState::Recording) => "resources/tray_color_recording.png",
+        (AppTheme::Colored, TrayIconState::Transcribing) => "resources/tray_color_transcribing.png",
     }
 }
 
@@ -445,15 +453,19 @@ pub fn tray_tooltip() -> String {
 
 fn version_label() -> String {
     if cfg!(debug_assertions) {
-        format!("Handy v{} (Dev)", env!("CARGO_PKG_VERSION"))
+        format!(
+            "{} v{} (Dev)",
+            app_identity::NAME,
+            env!("CARGO_PKG_VERSION")
+        )
     } else {
-        format!("Handy v{}", env!("CARGO_PKG_VERSION"))
+        format!("{} v{}", app_identity::NAME, env!("CARGO_PKG_VERSION"))
     }
 }
 
 /// Builds the tray menu and tooltip for the given inputs. Pure with respect
 /// to app state: everything it depends on is in `inputs`, plus the
-/// process-constant `HANDY_DISABLE_UPDATER` env flag behind
+/// process-constant updater disable flag behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
 fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
     let strings = get_tray_translations(Some(inputs.locale.clone()));
@@ -572,8 +584,9 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         )?
     };
 
-    // When update checks are forced off (e.g. HANDY_DISABLE_UPDATER, set by
-    // the Nix package), the item is dropped from the menu rather than shown
+    // When update checks are forced off (e.g. by the Nix package, which sets
+    // the disable-updater environment flag), the item is dropped from the menu
+    // rather than shown
     // disabled — it can never do anything in that case, and a disabled item
     // still shifts every entry below it by one position. A manually-disabled
     // toggle in Debug Settings keeps the old greyed-out behavior via the
@@ -610,10 +623,10 @@ pub fn set_tray_visibility(app: &AppHandle, visible: bool) {
     }
 }
 
-/// Recovery for the macOS tray-disappearance bug (#1948, tauri-apps/tauri#12060):
+/// Recovery for the macOS tray-disappearance bug (tauri-apps/tauri#12060):
 /// the `NSStatusItem` can silently vanish with no error surfaced to the app.
 /// Hiding and re-showing the tray recreates it with its current icon, menu and
-/// tooltip. Called when the user "relaunches" Handy while it is already running
+/// tooltip. Called when the user "relaunches" the app while it is already running
 /// (`RunEvent::Reopen` for Spotlight/Finder/Dock, the single-instance callback
 /// for a second process) — the natural "where did my icon go?" moment — so a
 /// relaunch brings the icon back without a full quit.
@@ -674,7 +687,7 @@ mod tests {
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
         HistoryEntry {
             id: 1,
-            file_name: "handy-1.wav".to_string(),
+            file_name: "recording-1.wav".to_string(),
             timestamp: 0.0,
             saved: false,
             title: "Recording".to_string(),

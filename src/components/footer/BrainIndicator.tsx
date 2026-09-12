@@ -38,7 +38,7 @@ export const BrainIndicator: React.FC = () => {
       title={`${t("footer.brain")}: ${label}${state?.message ? `\n${state.message}` : ""}`}
       className="flex items-center gap-1.5 shrink-0 hover:text-text/90 transition-colors cursor-pointer"
     >
-      <BrainCircuit className="w-3.5 h-3.5 text-logo-primary" />
+      <BrainCircuit className="w-3.5 h-3.5 text-accent" />
       <span className={`w-2 h-2 ${dot}`} />
       <span className="max-w-24 truncate font-mono">
         {status === "ready" ? detail : label}

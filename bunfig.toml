@@ -5,7 +5,7 @@
 # native streams, Bun.Image, Bun.markdown, Bun.cron, Bun.Terminal, and Node.js
 # 26.x compatibility with 1,517 newly passing Node.js test suite tests.
 
-# Skip automatic .env file loading. Handy is a Tauri desktop app and uses
+# Skip automatic .env file loading. This is a Tauri desktop app and uses
 # Tauri's own env/secret management (tauri.conf.json, build scripts). This
 # prevents stray .env files from injecting vars into the dev server / build.
 # System environment variables (e.g. TAURI_DEV_HOST) are unaffected.

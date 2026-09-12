@@ -150,7 +150,7 @@ export const HelpSettings: React.FC = () => {
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("help.search.placeholder")}
           aria-label={t("help.search.placeholder")}
-          className="w-full rounded-lg border border-mid-gray/20 bg-background ps-9 pe-3 py-2 text-sm text-text placeholder:text-text/40 focus:outline-none focus:ring-2 focus:ring-logo-primary/50"
+          className="w-full rounded-lg border border-mid-gray/20 bg-background ps-9 pe-3 py-2 text-sm text-text placeholder:text-text/40 focus:outline-none focus:ring-2 focus:ring-accent/50"
         />
         {normalizedQuery && (
           <div className="mt-2 rounded-lg border border-mid-gray/20 bg-background divide-y divide-mid-gray/20">
@@ -167,7 +167,7 @@ export const HelpSettings: React.FC = () => {
                     setQuery("");
                     scrollToAnchor(entry.anchor);
                   }}
-                  className="w-full text-start px-3 py-2 text-sm hover:bg-logo-primary/10 cursor-pointer"
+                  className="w-full text-start px-3 py-2 text-sm hover:bg-accent/10 cursor-pointer"
                 >
                   <span className="font-medium text-text">
                     {t(entry.titleKey)}
@@ -195,9 +195,9 @@ export const HelpSettings: React.FC = () => {
                 key={action.id}
                 type="button"
                 onClick={() => scrollToAnchor(action.anchor)}
-                className="flex items-start gap-3 rounded-lg border border-mid-gray/20 bg-background p-3 text-start hover:border-logo-primary hover:bg-logo-primary/5 transition-colors cursor-pointer"
+                className="flex items-start gap-3 rounded-lg border border-mid-gray/20 bg-background p-3 text-start hover:border-accent hover:bg-accent/5 transition-colors cursor-pointer"
               >
-                <Icon className="w-5 h-5 shrink-0 text-logo-primary mt-0.5" />
+                <Icon className="w-5 h-5 shrink-0 text-accent mt-0.5" />
                 <span>
                   <span className="block text-sm font-medium text-text">
                     {t(`help.smartHelp.actions.${action.id}.label`)}
@@ -223,7 +223,7 @@ export const HelpSettings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => scrollToAnchor(section.anchor)}
-                className="text-text hover:text-logo-primary cursor-pointer"
+                className="text-text hover:text-accent cursor-pointer"
               >
                 {`${i + 1}. ${t(section.titleKey)}`}
               </button>
@@ -234,7 +234,7 @@ export const HelpSettings: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => scrollToAnchor(sub.anchor)}
-                        className="hover:text-logo-primary cursor-pointer"
+                        className="hover:text-accent cursor-pointer"
                       >
                         {`${i + 1}${String.fromCharCode(97 + j)}. ${t(sub.titleKey)}`}
                       </button>

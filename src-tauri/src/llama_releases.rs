@@ -23,7 +23,8 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 const REPO: &str = "ggml-org/llama.cpp";
-const USER_AGENT: &str = "Handy-llama-manager/1.0";
+// No local user agent: `app_identity::USER_AGENT` is the one this app sends
+// everywhere, so the GitHub API sees the same identity as the model downloads.
 const CACHE_TTL: Duration = Duration::from_secs(600);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
 
@@ -102,7 +103,7 @@ static CACHE: Mutex<Option<(Instant, Vec<LlamaRelease>)>> = Mutex::new(None);
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
-        .user_agent(USER_AGENT)
+        .user_agent(crate::app_identity::USER_AGENT)
         .connect_timeout(Duration::from_secs(15))
         .build()
         .expect("reqwest client")
@@ -678,7 +679,7 @@ pub struct CudaToolkitInfo {
     pub runtime_dir: String,
     /// Toolkit version as the installer names it (`13.3`), when known.
     pub version: Option<String>,
-    /// Whether `runtime_dir` is on the PATH Handy was started with. When it is
+    /// Whether `runtime_dir` is on the PATH the app was started with. When it is
     /// not, `LlamaServerManager::start` prepends it to the child's PATH.
     pub on_path: bool,
     /// Whether cuBLAS (`cublas64_*` + `cublasLt64_*`) sits next to cudart —
@@ -823,13 +824,13 @@ pub fn bundled_cuda_runtime_mb(dir: &str) -> u32 {
     (bytes / 1_048_576) as u32
 }
 
-/// Remove the bundled CUDA runtime DLLs from an install made by Handy — the
+/// Remove the bundled CUDA runtime DLLs from an install this app made — the
 /// ~500 MB a CUDA build carries when the toolkit already provides them.
 pub fn remove_bundled_cuda_runtime(app: &AppHandle, dir: &str) -> Result<u32, String> {
     let root = servers_root(app)?;
     let path = PathBuf::from(dir);
     if !path.starts_with(&root) {
-        return Err("Only installs made by Handy can be trimmed here".into());
+        return Err("Only installs made by this app can be trimmed here".into());
     }
     let freed = bundled_cuda_runtime_mb(dir);
     for entry in std::fs::read_dir(&path)
@@ -850,7 +851,7 @@ pub fn remove_installed(app: &AppHandle, dir: &str) -> Result<(), String> {
     let root = servers_root(app)?;
     let path = PathBuf::from(dir);
     if !path.starts_with(&root) {
-        return Err("Only installs made by Handy can be removed here".into());
+        return Err("Only installs made by this app can be removed here".into());
     }
     let settings = crate::settings::get_settings(app);
     if settings.llama.server_dir.as_deref() == Some(dir) {
@@ -900,15 +901,7 @@ mod tests {
     #[test]
     fn unzip_flat_strips_a_single_top_level_folder() {
         use std::io::Write;
-        let tmp = std::env::temp_dir().join(format!(
-            "handy-unzip-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&tmp).unwrap();
+        let tmp = crate::utils::temp_test_dir("unzip-test");
         let archive = tmp.join("release.zip");
         {
             let file = std::fs::File::create(&archive).unwrap();

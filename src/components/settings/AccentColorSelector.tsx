@@ -99,7 +99,7 @@ export const AccentColorSelector: React.FC<AccentColorSelectorProps> =
               onClick={() => colorInputRef.current?.click()}
               className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110 active:scale-95 border border-mid-gray/40 cursor-pointer ${
                 !isPreset
-                  ? "ring-2 ring-offset-2 ring-offset-background ring-logo-primary"
+                  ? "ring-2 ring-offset-2 ring-offset-background ring-accent"
                   : ""
               }`}
               style={{

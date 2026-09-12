@@ -20,7 +20,7 @@
 //!   minutes is stopped so the microphone is not held for nothing), and
 //!   publishes a status heartbeat.
 //!
-//! A session is a normal Handy recording under the `live_fft` binding with
+//! A session is a normal recording under the `live_fft` binding with
 //! the VAD off and the captured audio discarded (nothing is transcribed or
 //! saved), so the transcription hotkeys get "Already recording" while it
 //! runs, exactly like the live VAD test.

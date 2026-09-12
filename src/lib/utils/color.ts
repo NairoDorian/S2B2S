@@ -14,13 +14,17 @@ export interface RGB {
   b: number; // 0 - 255
 }
 
+/**
+ * The four colours a single user-chosen accent resolves to.
+ *
+ * `light` and `dark` are the two theme variants of the accent itself, and
+ * `backgroundUi` is the saturated tone the filled controls (buttons, toggles,
+ * slider tracks) use so white text stays legible on them.
+ */
 export interface AccentPalette {
-  lightLogoPrimary: string;
-  lightLogoStroke: string;
-  darkLogoPrimary: string;
-  darkLogoStroke: string;
+  light: string;
+  dark: string;
   backgroundUi: string;
-  logoHighlight: string;
 }
 
 export const DEFAULT_ACCENT_COLOR = "#1FE0FF";
@@ -151,55 +155,35 @@ export function hslToHex(hsl: HSL): string {
 
 /**
  * Derives a complete, coordinated theme palette from a single base color.
+ *
+ * One hex in, the three colours the app needs out. Light mode takes the colour
+ * as given — it is being placed on paper, where a saturated hue reads fine —
+ * while dark mode lifts its lightness into a band that stays luminous on a
+ * near-black ground. Everything the user does not choose is derived, so a new
+ * preset needs no palette work of its own.
  */
 export function computeAccentPalette(baseHex: string): AccentPalette {
   const rgb = parseHex(baseHex) || parseHex(DEFAULT_ACCENT_COLOR)!;
   const hsl = rgbToHsl(rgb);
 
-  // Light mode primary: normalized hex
-  const lightLogoPrimary = rgbToHex(rgb);
+  // Light mode: the colour as chosen, on a light surface.
+  const light = rgbToHex(rgb);
 
-  // Light mode stroke: dark tone matching the hue for sharp contrast on light surface
-  const lightLogoStroke = hslToHex({
-    h: hsl.h,
-    s: Math.max(25, Math.round(hsl.s * 0.4)),
-    l: 16,
-  });
-
-  // Dark mode primary: luminous, vibrant version for dark surface
-  const darkLogoPrimary = hslToHex({
+  // Dark mode: the same hue, lifted to a luminance that survives the dark
+  // background and never crosses into white.
+  const dark = hslToHex({
     h: hsl.h,
     s: Math.min(100, Math.round(hsl.s * 1.1)),
     l: Math.min(68, Math.max(54, Math.round(hsl.l * 1.05))),
   });
 
-  // Dark mode stroke: pale pastel tint for soft outline on dark surface
-  const darkLogoStroke = hslToHex({
-    h: hsl.h,
-    s: Math.max(30, Math.round(hsl.s * 0.5)),
-    l: 86,
-  });
-
-  // UI background (buttons, toggles, slider tracks): rich saturated tone with high contrast against white text
+  // Filled controls (buttons, toggles, slider tracks): saturated enough that
+  // white text on top keeps its contrast, whatever the user picked.
   const backgroundUi = hslToHex({
     h: hsl.h,
     s: Math.min(100, Math.max(70, hsl.s)),
     l: 42,
   });
 
-  // Logo highlight inner path
-  const logoHighlight = hslToHex({
-    h: hsl.h,
-    s: Math.max(35, Math.round(hsl.s * 0.6)),
-    l: 84,
-  });
-
-  return {
-    lightLogoPrimary,
-    lightLogoStroke,
-    darkLogoPrimary,
-    darkLogoStroke,
-    backgroundUi,
-    logoHighlight,
-  };
+  return { light, dark, backgroundUi };
 }

@@ -215,10 +215,10 @@ export const StatisticsSettings: React.FC = () => {
                 type="button"
                 aria-pressed={selectedRange === range}
                 onClick={() => setSelectedRange(range)}
-                className={`cursor-pointer rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-logo-primary ${
+                className={`cursor-pointer rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
                   selectedRange === range
-                    ? "border-logo-primary bg-logo-primary/20"
-                    : "border-mid-gray/20 bg-mid-gray/10 hover:border-logo-primary hover:bg-logo-primary/10"
+                    ? "border-accent bg-accent/20"
+                    : "border-mid-gray/20 bg-mid-gray/10 hover:border-accent hover:bg-accent/10"
                 }`}
               >
                 {t(`settings.statistics.range.options.${range}`)}
@@ -487,7 +487,7 @@ const LatencyCard: React.FC<LatencyCardProps> = ({
   return (
     <article className="rounded-lg border border-mid-gray/20 bg-mid-gray/5 p-4 sm:col-span-2">
       <div className="flex items-start gap-3">
-        <div className="rounded-md bg-logo-primary/15 p-2 text-text">
+        <div className="rounded-md bg-accent/15 p-2 text-text">
           <Icon className="h-4 w-4" aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
@@ -556,7 +556,7 @@ const LoadingState: React.FC = () => {
       aria-live="polite"
     >
       <LoaderCircle
-        className="h-7 w-7 animate-spin text-logo-primary"
+        className="h-7 w-7 animate-spin text-accent"
         aria-hidden="true"
       />
       <div>

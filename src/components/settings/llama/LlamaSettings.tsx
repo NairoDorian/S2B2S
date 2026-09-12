@@ -502,7 +502,7 @@ export const LlamaSettings: React.FC = () => {
               </div>
               <div className="h-1.5 bg-mid-gray/20 overflow-hidden">
                 <div
-                  className="h-full bg-logo-primary transition-[width]"
+                  className="h-full bg-accent transition-[width]"
                   style={{
                     width:
                       totalBytes > 0
@@ -570,7 +570,7 @@ export const LlamaSettings: React.FC = () => {
                   className="flex items-center gap-3 px-3 py-2 text-xs"
                 >
                   <span
-                    className={`font-mono ${active ? "text-logo-primary" : "text-text"}`}
+                    className={`font-mono ${active ? "text-accent" : "text-text"}`}
                   >
                     {inst.name}
                   </span>
@@ -603,7 +603,7 @@ export const LlamaSettings: React.FC = () => {
                     </Button>
                   )}
                   {active && (
-                    <span className="text-[10px] uppercase tracking-wider text-logo-primary">
+                    <span className="text-[10px] uppercase tracking-wider text-accent">
                       {t("settings.llama.backend.active")}
                     </span>
                   )}

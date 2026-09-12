@@ -2,9 +2,13 @@
 //! recording, asserting that the raw per-frame verdict the speech clock depends
 //! on actually tracks speech.
 //!
-//!   HANDY_PROBE_WAV=<path> cargo test --test vad_speech_clock_probe -- --nocapture
+//!   <PROBE_WAV flag>=<path> cargo test --test vad_speech_clock_probe -- --nocapture
+//!
+//! `app_lib::app_env_var("PROBE_WAV")` resolves the flag's full name, so the
+//! command line above is the one the run itself would print.
 
-use handy_app_lib::audio_toolkit::{
+use app_lib::app_env_var;
+use app_lib::audio_toolkit::{
     EarshotVad, VoiceActivityDetector,
     audio::read_wav_samples,
     constants::VAD_FRAME_SAMPLES,
@@ -16,8 +20,11 @@ use handy_app_lib::audio_toolkit::{
 
 #[test]
 fn real_vad_chain_reports_speech_over_real_audio() {
-    let Ok(wav) = std::env::var("HANDY_PROBE_WAV") else {
-        eprintln!("skipped: set HANDY_PROBE_WAV to a 16kHz mono speech recording");
+    // Read through the app's own accessor rather than `env::var` with a literal
+    // name: the prefix is part of the identity, and a probe that spelled it
+    // would be one more place a rename has to find.
+    let Ok(wav) = app_env_var("PROBE_WAV") else {
+        eprintln!("skipped: set the PROBE_WAV flag to a 16kHz mono speech recording");
         return;
     };
     let samples = read_wav_samples(&wav).expect("read wav");

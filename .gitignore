@@ -54,3 +54,6 @@ __pycache__/
 
 # Windows shortcuts
 *.lnk
+
+# Repomix whole-repository pack (derived; regenerate with `bun run repomix`)
+repomix-output.xml

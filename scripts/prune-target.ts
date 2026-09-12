@@ -26,8 +26,9 @@
 //
 // Nothing current is touched, so the next build is no slower than it would
 // have been. The only guess is "newest two" for the app crate; a wrong guess
-// costs one recompilation of that unit, never a broken build. Set
-// HANDY_NO_PRUNE=1 to skip the automatic run.
+// costs one recompilation of that unit, never a broken build. Set the `NO_PRUNE`
+// flag to skip the automatic run (its prefix comes from app-meta.ts — see
+// scripts/lib/env-flag.ts).
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import { join, resolve } from "path";

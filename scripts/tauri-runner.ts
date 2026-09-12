@@ -7,7 +7,9 @@
 //    library compiles, and whether CUDA targets only this machine's GPU.
 // 3. Pruning stale build artifacts from src-tauri/target before every run
 //    (scripts/prune-target.ts): superseded dependency versions, git revisions,
-//    incremental caches and installers. Skipped when HANDY_NO_PRUNE=1.
+//    incremental caches and installers. Skipped when the `NO_PRUNE` flag is
+//    set — the prefix comes from app-meta.ts, so see scripts/lib/env-flag.ts
+//    for the spelling rather than typing one here.
 //
 // # Build postures
 //
@@ -40,6 +42,7 @@
 
 import { resolve } from "path";
 import { checkTranscribeDeps } from "./check-transcribe-deps";
+import { appEnvFlag } from "./lib/env-flag";
 import { printReport, pruneTarget } from "./prune-target";
 
 const root = resolve(import.meta.dirname, "..");
@@ -56,7 +59,9 @@ type Posture = {
 };
 
 /** Resolve a `dev:full` / `build:fast` style subcommand token into argv + posture. */
-function expandModeToken(arg: string): { args: string[]; posture?: Partial<Posture> } | null {
+function expandModeToken(
+  arg: string,
+): { args: string[]; posture?: Partial<Posture> } | null {
   const [command, mode] = arg.split(":");
   if (!mode || (command !== "dev" && command !== "build")) {
     return null;
@@ -144,7 +149,7 @@ checkTranscribeDeps();
 //    so a pin bump's old revision is already "gone from Cargo.lock" and goes
 //    with it. Only stale units are touched, so the build that follows is no
 //    slower than it would have been.
-if (process.env.HANDY_NO_PRUNE !== "1") {
+if (!appEnvFlag("NO_PRUNE")) {
   try {
     printReport(pruneTarget({ tauriDir: resolve(root, "src-tauri") }), false);
   } catch (error) {
@@ -153,10 +158,13 @@ if (process.env.HANDY_NO_PRUNE !== "1") {
 }
 
 // 4. Spawn tauri CLI with the posture flags removed
-const proc = Bun.spawnSync([process.execPath, "x", "tauri", ...passthroughArgs], {
-  cwd: root,
-  stdio: ["inherit", "inherit", "inherit"],
-  env: process.env,
-});
+const proc = Bun.spawnSync(
+  [process.execPath, "x", "tauri", ...passthroughArgs],
+  {
+    cwd: root,
+    stdio: ["inherit", "inherit", "inherit"],
+    env: process.env,
+  },
+);
 
 process.exit(proc.exitCode ?? 0);

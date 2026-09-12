@@ -218,7 +218,14 @@ pub enum RecordingRetentionPeriod {
 #[serde(rename_all = "snake_case")]
 pub enum KeyboardImplementation {
     Tauri,
-    HandyKeys,
+    /// The native backend (`shortcut::native_keys`, on the `handy-keys` crate).
+    ///
+    /// The serialized value stays `"handy_keys"` and must not follow a rename:
+    /// it is already written into every user's `settings_store.json`, and a new
+    /// spelling would read as "unknown variant" and drop the setting. The
+    /// `rename` below is the frozen wire value, not a name.
+    #[serde(rename = "handy_keys")]
+    NativeKeys,
 }
 
 impl Default for KeyboardImplementation {
@@ -226,7 +233,7 @@ impl Default for KeyboardImplementation {
         #[cfg(target_os = "linux")]
         return KeyboardImplementation::Tauri;
         #[cfg(not(target_os = "linux"))]
-        return KeyboardImplementation::HandyKeys;
+        return KeyboardImplementation::NativeKeys;
     }
 }
 
@@ -291,7 +298,7 @@ impl SoundTheme {
 }
 
 /// UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
-/// and `Dark` force one of the two palettes Handy already ships.
+/// and `Dark` force one of the two palettes the app already ships.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Theme {
@@ -433,7 +440,7 @@ impl FileTranscriptionSettings {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 #[serde(default)]
 pub struct LlamaSettings {
-    /// Folder that contains `llama-server(.exe)`: an install made by Handy
+    /// Folder that contains `llama-server(.exe)`: an install made by the app
     /// (`<app data>/llama_cpp/<backend>-<tag>`) or any existing one.
     pub server_dir: Option<String>,
     pub model_path: Option<String>,
@@ -466,7 +473,7 @@ pub struct LlamaSettings {
     /// `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
     /// prompts in the S2B2S benchmarks).
     pub attn_rot_disable: bool,
-    /// Start the server when Handy starts.
+    /// Start the server when the app starts.
     pub autostart: bool,
     /// Start the server when a request targets it and it is not running.
     pub start_on_demand: bool,
@@ -1049,7 +1056,7 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
-/* still handy for composing the initial JSON in the store ------------- */
+/* still needed for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
 /// its `get_default_settings()` value when missing from a stored settings
@@ -2302,16 +2309,18 @@ pub fn normalize_binding(s: &str) -> String {
 }
 
 /// Update checks are forced off (without touching the persisted setting) when
-/// `HANDY_DISABLE_UPDATER` is set — e.g. by the Nix package, since self-update
-/// can't work against an immutable /nix/store install.
+/// the `DISABLE_UPDATER` flag is set — e.g. by the Nix package, since
+/// self-update can't work against an immutable /nix/store install. The full
+/// variable name is `{ENV_PREFIX}DISABLE_UPDATER`; the pre-0.9.7
+/// `HANDY_DISABLE_UPDATER` is still honoured.
 pub fn update_checks_forced_disabled() -> bool {
     use std::sync::OnceLock;
     static IS_UPDATER_DISABLED: OnceLock<bool> = OnceLock::new();
-    *IS_UPDATER_DISABLED.get_or_init(|| utils::env_flag_enabled("HANDY_DISABLE_UPDATER"))
+    *IS_UPDATER_DISABLED.get_or_init(|| utils::app_env_flag("DISABLE_UPDATER"))
 }
 
 /// Effective updater state: the user's stored preference, overridden to `false`
-/// while `HANDY_DISABLE_UPDATER` is set. Callers deciding whether to actually
+/// while the disable-updater flag is set. Callers deciding whether to actually
 /// check for updates must use this rather than reading `update_checks_enabled`
 /// directly, so the forced-off state never leaks into the persisted setting.
 pub fn update_checks_effectively_enabled(settings: &AppSettings) -> bool {
@@ -2434,7 +2443,7 @@ mod tests {
             "overlay_position": "bottom",
             "debug_mode": false,
             "log_level": 2,
-            "custom_words": ["Handy", "cjpais"],
+            "custom_words": ["NeMo", "parakeet"],
             "model_unload_timeout": "min5",
             "word_correction_threshold": 0.18,
             "history_limit": 5,
@@ -2618,14 +2627,14 @@ mod tests {
         let map = stored.as_object_mut().unwrap();
         map.insert("paste_delay_ms".into(), serde_json::json!("sixty"));
         map.insert("sound_theme".into(), serde_json::json!(42));
-        map.insert("custom_words".into(), serde_json::json!(["handy"]));
+        map.insert("custom_words".into(), serde_json::json!(["nemo"]));
 
         assert!(serde_json::from_value::<AppSettings>(stored.clone()).is_err());
 
         let salvaged = salvage_settings(&stored);
         assert_eq!(salvaged.paste_delay_ms, default_paste_delay_ms());
         assert_eq!(salvaged.sound_theme, default_sound_theme());
-        assert_eq!(salvaged.custom_words, vec!["handy".to_string()]);
+        assert_eq!(salvaged.custom_words, vec!["nemo".to_string()]);
     }
 
     #[test]

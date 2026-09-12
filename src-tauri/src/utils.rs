@@ -1,8 +1,9 @@
 use crate::TranscriptionCoordinator;
+use crate::app_identity;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::shortcut;
-use log::info;
+use log::{info, warn};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
@@ -42,7 +43,7 @@ pub fn init_windows_process_performance() {
         }
 
         // 2. Disable Windows 11 background power throttling (EcoQoS / Efficiency Mode)
-        // so threads are not relegated to E-cores or downclocked when Handy is in the system tray.
+        // so threads are not relegated to E-cores or downclocked while the app sits in the system tray.
         let mut throttling_state = PROCESS_POWER_THROTTLING_STATE {
             Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
             ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
@@ -57,7 +58,10 @@ pub fn init_windows_process_performance() {
         if let Err(e) = res {
             log::debug!("SetProcessInformation (EcoQoS disable) skipped or unsupported: {e}");
         } else {
-            log::info!("Disabled Windows EcoQoS power throttling for Handy");
+            log::info!(
+                "Disabled Windows EcoQoS power throttling for {}",
+                app_identity::NAME
+            );
         }
 
         // 3. Request 1ms global system timer resolution. Deliberately never
@@ -109,7 +113,7 @@ fn native_windows_machine() -> Option<u16> {
 
     type IsWow64Process2 = unsafe extern "system" fn(HANDLE, *mut u16, *mut u16) -> BOOL;
 
-    // Resolve IsWow64Process2 dynamically so merely starting Handy never raises
+    // Resolve IsWow64Process2 dynamically so merely starting the app never raises
     // the minimum Windows version. Windows-on-ARM versions provide this API,
     // while a missing symbol or failed query safely preserves the x64 behavior.
     unsafe {
@@ -214,18 +218,108 @@ pub fn is_gnome_wayland() -> bool {
     is_wayland() && is_gnome()
 }
 
+/// Truthiness of a flag *value*: "1", "true", "yes" and "on" are true;
+/// "0", "false", "no", "off" and the empty string are false, case-insensitively.
+///
+/// Shared by [`env_flag_enabled`] and [`app_env_var`] so the two entry points
+/// cannot drift apart on what "set to true" means.
+fn env_flag_truthy(value: &str) -> bool {
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "0" | "false" | "no" | "off"
+    )
+}
+
 /// Returns true when the environment variable is set to a truthy value
 /// (e.g. "1", "true", "yes", "on").
 /// "0", "false", "no", "off" and empty string are treated as falsy (case-insensitive).
 /// Returns false when the variable is not set.
 pub fn env_flag_enabled(name: &str) -> bool {
-    match std::env::var(name) {
-        Ok(v) => !matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "" | "0" | "false" | "no" | "off"
-        ),
-        Err(_) => false,
+    std::env::var(name)
+        .map(|value| env_flag_truthy(&value))
+        .unwrap_or(false)
+}
+
+/// Read an application variable by its suffix alone — the prefix comes from
+/// [`app_identity::ENV_PREFIX`], so no call site spells it.
+///
+/// The legacy `HANDY_`-prefixed spelling is tried second. These variables are
+/// set by build scripts, CI, the Nix package and users' own launch
+/// configurations, so dropping the old spelling outright would silently change
+/// behaviour for anyone who set one — a Nix user's `HANDY_DISABLE_UPDATER`
+/// would stop disabling the updater, with nothing in the log to say why. The new
+/// name wins when both are set; the old one still works and says so, which is a
+/// handful of one-shot reads on the startup and overlay-init paths.
+///
+/// This is the value-typed form, for variables that carry a number or a path
+/// ([`app_env_flag`] is the boolean form built on it).
+///
+/// # Panics
+///
+/// Debug builds panic on a suffix that is not `[A-Z0-9_]+`, which catches a
+/// caller passing a pre-prefixed or lower-case name at the first test rather
+/// than at the one launch where the variable mattered.
+pub fn app_env_var(suffix: &str) -> Option<String> {
+    debug_assert!(
+        !suffix.is_empty()
+            && suffix
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'),
+        "app_env_var takes the bare suffix, e.g. \"DISABLE_UPDATER\", got {suffix:?}",
+    );
+
+    let name = format!("{}{suffix}", app_identity::ENV_PREFIX);
+    if let Ok(value) = std::env::var(&name) {
+        return Some(value);
     }
+
+    let legacy = format!("{}{suffix}", app_identity::LEGACY_ENV_PREFIX);
+    if legacy != name
+        && let Ok(value) = std::env::var(&legacy)
+    {
+        warn!("{legacy} is set — that is the pre-0.9.7 name, please rename it to {name}");
+        return Some(value);
+    }
+    None
+}
+
+/// Read an application flag by its suffix alone, as a boolean — the prefix comes
+/// from [`app_identity::ENV_PREFIX`], so no call site spells it.
+///
+/// See [`app_env_var`] for the legacy-spelling rule and the suffix contract.
+pub fn app_env_flag(suffix: &str) -> bool {
+    app_env_var(suffix)
+        .map(|value| env_flag_truthy(&value))
+        .unwrap_or(false)
+}
+
+/// A fresh, empty directory under the system temp directory for a test that
+/// needs to touch the filesystem.
+///
+/// The name is `<slug>-<purpose>-<pid>-<n>`, with `n` counted per process, so
+/// two tests never share a directory and a leftover is obviously this app's.
+/// That is what a test-written directory should look like; the alternative
+/// (`<purpose>-<pid>`, which several tests used to build inline) breaks the
+/// moment two tests pick the same purpose, or when a directory survives a
+/// run that panicked — the next run then starts from dirty state and fails
+/// somewhere unrelated.
+///
+/// The caller owns cleanup: `std::fs::remove_dir_all` at the end, and a test
+/// that panics deliberately leaves the directory behind to be inspected.
+#[cfg(test)]
+pub fn temp_test_dir(purpose: &str) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+
+    let path = std::env::temp_dir().join(format!(
+        "{}-{purpose}-{}-{}",
+        app_identity::SLUG,
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed),
+    ));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("create the test's temp directory");
+    path
 }
 
 #[cfg(test)]
@@ -240,23 +334,74 @@ mod tests {
         assert!(!native_machine_is_arm64(None)); // API unavailable or failed
     }
 
+    // `env_flag_enabled` takes a *raw* name rather than a suffix, so these two
+    // tests deliberately use a name outside the application's namespace: the
+    // point is the truthiness rule itself, and a name derived from the prefix
+    // would make the rule and the prefix lookup fail together.
     #[test]
     fn env_flag_enabled_true_for_truthy_values() {
         for value in ["1", "true", "TRUE", "yes", "on", " 1 "] {
-            unsafe { std::env::set_var("HANDY_TEST_FLAG_TRUTHY", value) };
-            assert!(env_flag_enabled("HANDY_TEST_FLAG_TRUTHY"), "{value:?}");
+            unsafe { std::env::set_var("TEST_FLAG_TRUTHY", value) };
+            assert!(env_flag_enabled("TEST_FLAG_TRUTHY"), "{value:?}");
         }
-        unsafe { std::env::remove_var("HANDY_TEST_FLAG_TRUTHY") };
+        unsafe { std::env::remove_var("TEST_FLAG_TRUTHY") };
     }
 
     #[test]
     fn env_flag_enabled_false_for_falsy_or_unset() {
-        assert!(!env_flag_enabled("HANDY_TEST_FLAG_UNSET"));
+        assert!(!env_flag_enabled("TEST_FLAG_UNSET"));
 
         for value in ["0", "false", "FALSE", "no", "off", ""] {
-            unsafe { std::env::set_var("HANDY_TEST_FLAG_FALSY", value) };
-            assert!(!env_flag_enabled("HANDY_TEST_FLAG_FALSY"), "{value:?}");
+            unsafe { std::env::set_var("TEST_FLAG_FALSY", value) };
+            assert!(!env_flag_enabled("TEST_FLAG_FALSY"), "{value:?}");
         }
-        unsafe { std::env::remove_var("HANDY_TEST_FLAG_FALSY") };
+        unsafe { std::env::remove_var("TEST_FLAG_FALSY") };
+    }
+
+    // The tests below share the process-wide environment, so each uses its own
+    // variable name. Two tests on the same name would race under `cargo test`'s
+    // thread pool, and the failure would only appear on a loaded machine.
+
+    #[test]
+    fn app_env_var_reads_the_current_prefix() {
+        unsafe { std::env::set_var("ZER0_TEST_VALUE_CURRENT", "42") };
+        assert_eq!(app_env_var("TEST_VALUE_CURRENT").as_deref(), Some("42"));
+        unsafe { std::env::remove_var("ZER0_TEST_VALUE_CURRENT") };
+    }
+
+    #[test]
+    fn app_env_var_falls_back_to_the_legacy_prefix() {
+        unsafe { std::env::set_var("HANDY_TEST_VALUE_LEGACY", "42") };
+        assert_eq!(app_env_var("TEST_VALUE_LEGACY").as_deref(), Some("42"));
+        unsafe { std::env::remove_var("HANDY_TEST_VALUE_LEGACY") };
+    }
+
+    #[test]
+    fn the_current_prefix_wins_over_the_legacy_one() {
+        unsafe { std::env::set_var("ZER0_TEST_VALUE_BOTH", "current") };
+        unsafe { std::env::set_var("HANDY_TEST_VALUE_BOTH", "legacy") };
+        assert_eq!(app_env_var("TEST_VALUE_BOTH").as_deref(), Some("current"));
+        unsafe { std::env::remove_var("ZER0_TEST_VALUE_BOTH") };
+        unsafe { std::env::remove_var("HANDY_TEST_VALUE_BOTH") };
+    }
+
+    #[test]
+    fn app_env_var_is_none_when_neither_spelling_is_set() {
+        assert_eq!(app_env_var("TEST_VALUE_UNSET"), None);
+    }
+
+    /// A flag is the truthiness of the same lookup, so a value that is not a
+    /// number still reads as "set": this is what lets a value-typed flag such as
+    /// `ZER0_DEBUG_MIC_READY_DELAY_MS` and a boolean one such as
+    /// `ZER0_NO_PRUNE` share one naming rule.
+    #[test]
+    fn app_env_flag_is_the_truthiness_of_app_env_var() {
+        unsafe { std::env::set_var("ZER0_TEST_FLAG_BOTH_FORMS", "0") };
+        assert_eq!(app_env_var("TEST_FLAG_BOTH_FORMS").as_deref(), Some("0"));
+        assert!(!app_env_flag("TEST_FLAG_BOTH_FORMS"));
+
+        unsafe { std::env::set_var("ZER0_TEST_FLAG_BOTH_FORMS", "1") };
+        assert!(app_env_flag("TEST_FLAG_BOTH_FORMS"));
+        unsafe { std::env::remove_var("ZER0_TEST_FLAG_BOTH_FORMS") };
     }
 }

@@ -2,7 +2,14 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone, Default)]
-#[command(name = "handy", about = "Handy - Speech to Text")]
+// `env!` rather than the `app_identity` constants: an attribute needs a literal
+// or a macro that expands to one, and these two are already derived from
+// `Cargo.toml`, which `scripts/app-meta.ts` mirrors from the same source. The
+// name is the binary name, which is what `--help` should show.
+#[command(
+    name = env!("CARGO_PKG_NAME"),
+    about = env!("CARGO_PKG_DESCRIPTION")
+)]
 pub struct CliArgs {
     /// Start with the main window hidden
     #[arg(long)]

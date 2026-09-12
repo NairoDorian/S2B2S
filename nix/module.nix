@@ -1,4 +1,8 @@
-# NixOS module for Handy speech-to-text
+# GENERATED FILE — DO NOT EDIT.
+#
+# Source: `scripts/app-meta.ts` — run `bun run meta:sync` to regenerate.
+#
+# NixOS module for ZER0 speech-to-text.
 #
 # Handles system-level configuration that the package wrapper cannot:
 #   - udev rule for /dev/uinput (rdev grab() needs it for virtual input)
@@ -7,12 +11,12 @@
 #
 # Usage in your flake:
 #
-#   inputs.handy.url = "github:cjpais/Handy";
+#   inputs.zer0.url = "https://github.com/NairoDorian/S2B2S";
 #
 #   nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
 #     modules = [
-#       handy.nixosModules.default
-#       { programs.handy.enable = true; }
+#       zer0.nixosModules.default
+#       { programs.zer0.enable = true; }
 #     ];
 #   };
 {
@@ -22,16 +26,16 @@
   ...
 }:
 let
-  cfg = config.programs.handy;
+  cfg = config.programs.zer0;
 in
 {
-  options.programs.handy = {
-    enable = lib.mkEnableOption "Handy offline speech-to-text";
+  options.programs.zer0 = {
+    enable = lib.mkEnableOption "ZER0 offline speech-to-text";
 
     package = lib.mkOption {
       type = lib.types.package;
-      defaultText = lib.literalExpression "handy.packages.\${system}.handy";
-      description = "The Handy package to use.";
+      defaultText = lib.literalExpression "zer0.packages.\${system}.zer0";
+      description = "The ZER0 package to use.";
     };
   };
 

@@ -69,7 +69,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
       observer.observe(canvas);
 
       const ensureLut = () => {
-        const accent = cssColor("--color-logo-primary", "#1FE0FF");
+        const accent = cssColor("--color-accent", "#1FE0FF");
         const kind = propsRef.current.colormap;
         if (kind !== lutKind || accent !== lutAccent) {
           lut = buildColormap(kind, accent);

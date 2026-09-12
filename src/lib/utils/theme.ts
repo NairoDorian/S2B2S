@@ -1,13 +1,14 @@
 import { commands, type Theme } from "@/bindings";
 import { emit } from "@tauri-apps/api/event";
+import { readPref, writePref } from "@/lib/appIdentity";
 import { computeAccentPalette, DEFAULT_ACCENT_COLOR, parseHex } from "./color";
 
 /**
  * Appearance theme handling.
  *
- * Handy already ships a full light palette and a full dark palette (see
- * `App.css`). This module lets the user pick which one is used instead of
- * always following the OS:
+ * The app ships a full light palette and a full dark palette (see `App.css`).
+ * This module lets the user pick which one is used instead of always following
+ * the OS:
  *  - `system` removes the override so the `prefers-color-scheme` media query
  *    governs (the historical behaviour).
  *  - `light` / `dark` set `data-theme` on the document root, whose
@@ -16,10 +17,15 @@ import { computeAccentPalette, DEFAULT_ACCENT_COLOR, parseHex } from "./color";
  * The choice is persisted in `AppSettings` (source of truth) and mirrored to
  * localStorage so it can be applied synchronously on boot, before React mounts,
  * avoiding a flash of the wrong palette.
+ *
+ * The mirror keys are suffixes, not names: `readPref` / `writePref` apply the
+ * application's storage prefix and fall back to the pre-rename one, so a theme
+ * chosen before 0.9.7 survives the rename.
  */
 
-export const THEME_STORAGE_KEY = "handy.theme";
-export const ACCENT_COLOR_STORAGE_KEY = "handy.accent_color";
+/** Preference suffixes, resolved by `readPref` / `writePref`. */
+const THEME_PREF = "theme";
+const ACCENT_COLOR_PREF = "accent_color";
 
 export const THEME_OPTIONS: Theme[] = ["system", "light", "dark"];
 
@@ -34,23 +40,13 @@ export const applyTheme = (theme: Theme): void => {
   } else {
     root.dataset.theme = theme;
   }
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // localStorage may be unavailable (e.g. private mode); the setting still
-    // persists in AppSettings, so this only costs a one-frame flash on boot.
-  }
+  writePref(THEME_PREF, theme);
 };
 
 /** Read the last-applied theme for synchronous boot-time application. */
 export const getStoredTheme = (): Theme => {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (isTheme(stored)) return stored;
-  } catch {
-    // ignore
-  }
-  return "system";
+  const stored = readPref(THEME_PREF);
+  return isTheme(stored) ? stored : "system";
 };
 
 /** Apply the persisted theme from AppSettings (the source of truth). */
@@ -65,7 +61,14 @@ export const syncThemeFromSettings = async (): Promise<void> => {
   }
 };
 
-/** Apply an accent color palette dynamically to the document root. */
+/**
+ * Apply an accent color palette dynamically to the document root.
+ *
+ * Only the two *palette source* variables are written, never the active
+ * `--color-accent`. The active token is a `var(--light|dark-color-accent)`
+ * reference resolved by the media query / `data-theme` selectors in
+ * `theme.css`, so the theme override keeps deciding which of the two applies.
+ */
 export const applyAccentColor = (hex: string, broadcast = false): void => {
   if (!parseHex(hex)) {
     hex = DEFAULT_ACCENT_COLOR;
@@ -73,21 +76,11 @@ export const applyAccentColor = (hex: string, broadcast = false): void => {
   const palette = computeAccentPalette(hex);
   const root = document.documentElement;
 
-  root.style.setProperty(
-    "--light-color-logo-primary",
-    palette.lightLogoPrimary,
-  );
-  root.style.setProperty("--light-color-logo-stroke", palette.lightLogoStroke);
-  root.style.setProperty("--dark-color-logo-primary", palette.darkLogoPrimary);
-  root.style.setProperty("--dark-color-logo-stroke", palette.darkLogoStroke);
+  root.style.setProperty("--light-color-accent", palette.light);
+  root.style.setProperty("--dark-color-accent", palette.dark);
   root.style.setProperty("--color-background-ui", palette.backgroundUi);
-  root.style.setProperty("--color-logo-highlight", palette.logoHighlight);
 
-  try {
-    localStorage.setItem(ACCENT_COLOR_STORAGE_KEY, hex);
-  } catch {
-    // ignore
-  }
+  writePref(ACCENT_COLOR_PREF, hex);
 
   if (broadcast) {
     emit("accent-color-changed", hex).catch(console.warn);
@@ -96,13 +89,8 @@ export const applyAccentColor = (hex: string, broadcast = false): void => {
 
 /** Read the last-applied accent color for synchronous boot-time application. */
 export const getStoredAccentColor = (): string => {
-  try {
-    const stored = localStorage.getItem(ACCENT_COLOR_STORAGE_KEY);
-    if (stored && parseHex(stored)) return stored;
-  } catch {
-    // ignore
-  }
-  return DEFAULT_ACCENT_COLOR;
+  const stored = readPref(ACCENT_COLOR_PREF);
+  return stored && parseHex(stored) ? stored : DEFAULT_ACCENT_COLOR;
 };
 
 /** Apply the persisted accent color from AppSettings (the source of truth). */
@@ -118,7 +106,7 @@ export const syncAccentColorFromSettings = async (): Promise<void> => {
   }
 };
 
-export const UI_SCALE_STORAGE_KEY = "handy.ui_scale";
+export const UI_SCALE_PREF = "ui_scale";
 const MIN_UI_SCALE = 0.7;
 const MAX_UI_SCALE = 1.6;
 
@@ -139,20 +127,11 @@ export const applyUiScale = (scale: number): void => {
     zoom?: string;
   };
   style.zoom = clamped === 1 ? "" : String(clamped);
-  try {
-    localStorage.setItem(UI_SCALE_STORAGE_KEY, String(clamped));
-  } catch {
-    // Persisted in AppSettings anyway; only the boot flash is affected.
-  }
+  writePref(UI_SCALE_PREF, String(clamped));
 };
 
-export const getStoredUiScale = (): number => {
-  try {
-    return clampUiScale(localStorage.getItem(UI_SCALE_STORAGE_KEY) ?? 1);
-  } catch {
-    return 1;
-  }
-};
+export const getStoredUiScale = (): number =>
+  clampUiScale(readPref(UI_SCALE_PREF) ?? 1);
 
 export const syncUiScaleFromSettings = async (): Promise<void> => {
   try {

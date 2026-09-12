@@ -1129,7 +1129,7 @@ mod tests {
                 post_process_requested
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                format!("handy-{}.wav", timestamp as i64),
+                crate::app_identity::recording_file_name(timestamp as i64),
                 timestamp as i64,
                 false,
                 format!("Recording {}", timestamp),

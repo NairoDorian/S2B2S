@@ -51,7 +51,7 @@ interface Colors {
 }
 
 const readColors = (): Colors => ({
-  accent: cssColor("--color-logo-primary", "#1FE0FF"),
+  accent: cssColor("--color-accent", "#1FE0FF"),
   text: cssColor("--color-text", "#e6e6e6"),
 });
 

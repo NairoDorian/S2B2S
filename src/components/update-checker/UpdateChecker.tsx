@@ -8,10 +8,8 @@ import { arch, platform } from "@tauri-apps/plugin-os";
 import { ProgressBar } from "../shared";
 import { useSettings } from "../../hooks/useSettings";
 import { commands } from "../../bindings";
-import {
-  resolvePortableInstallerUrl,
-  PORTABLE_RELEASES_URL,
-} from "./portableInstaller";
+import { RELEASES_URL } from "../../lib/appIdentity";
+import { resolvePortableInstallerUrl } from "./portableInstaller";
 
 interface UpdateCheckerProps {
   className?: string;
@@ -27,17 +25,18 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const [showUpToDate, setShowUpToDate] = useState(false);
   const [showPortableUpdateDialog, setShowPortableUpdateDialog] =
     useState(false);
-  const [portableInstallerUrl, setPortableInstallerUrl] = useState<string>(
-    PORTABLE_RELEASES_URL,
-  );
+  const [portableInstallerUrl, setPortableInstallerUrl] =
+    useState<string>(RELEASES_URL);
 
   const { settings, isLoading, updateChecksLocked } = useSettings();
   // Wait for the lock state too (null = not loaded yet), otherwise the first
-  // render could fire an update check before HANDY_DISABLE_UPDATER is known.
+  // render could fire an update check before the updater-disable flag is known
+  // — it is `ENV_PREFIX` + `DISABLE_UPDATER`, so see `lib/appIdentity.ts` for
+  // the prefix rather than spelling the whole name here.
   const settingsLoaded =
     !isLoading && settings !== null && updateChecksLocked !== null;
-  // Forced-off by system configuration (HANDY_DISABLE_UPDATER) overrides the
-  // stored preference without persisting it, mirroring the backend's effective
+  // Forced off by system configuration (that same flag) overrides the stored
+  // preference without persisting it, mirroring the backend's effective
   // updater state.
   const updateChecksEnabled =
     (settings?.update_checks_enabled ?? false) && updateChecksLocked === false;
@@ -206,7 +205,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
 
   // When no installer could be resolved for this target the button falls back to
   // the releases index, so the dialog has to say "browse" rather than "download".
-  const hasDirectInstaller = portableInstallerUrl !== PORTABLE_RELEASES_URL;
+  const hasDirectInstaller = portableInstallerUrl !== RELEASES_URL;
 
   return (
     <>
@@ -229,7 +228,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
                 {t("common.close")}
               </button>
               <button
-                className="px-3 py-1.5 text-sm rounded bg-logo-primary text-white hover:bg-logo-primary/80 transition-colors"
+                className="px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent/80 transition-colors"
                 onClick={() => {
                   openUrl(portableInstallerUrl);
                   setShowPortableUpdateDialog(false);
@@ -250,7 +249,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
             disabled={isUpdateDisabled}
             className={`transition-colors disabled:opacity-50 tabular-nums ${
               updateAvailable
-                ? "text-logo-primary hover:text-logo-primary/80 font-medium"
+                ? "text-accent hover:text-accent/80 font-medium"
                 : "text-text/60 hover:text-text/80"
             }`}
           >

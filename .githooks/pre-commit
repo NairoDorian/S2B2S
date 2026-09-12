@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# The commit gate. Installed by `bun run hooks:install`, which points git at
+# this directory (`core.hooksPath`); nothing here is copied into `.git/hooks`,
+# so editing this file takes effect immediately and the hook travels with the
+# repository instead of living on one machine.
+#
+# The routine itself is `scripts/pre-commit.ts` — see its header for what runs,
+# in what order, and what is deliberately left to `bun run precommit:full`.
+# This file is the shim git can execute, because git runs hooks with `sh` and
+# the routine has to be the same code on Windows, Linux and macOS.
+#
+# Bypass with `git commit --no-verify`. For a genuinely trivial commit (a typo
+# in a doc) that is the right call; for anything that touches code it is not,
+# and CI runs the same checks anyway.
+
+exec bun run precommit

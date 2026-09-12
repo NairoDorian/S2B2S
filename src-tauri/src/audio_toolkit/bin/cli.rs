@@ -1,7 +1,7 @@
 use hound::WavWriter;
 use std::io::{self, Write};
 
-use handy_app_lib::audio_toolkit::{
+use app_lib::audio_toolkit::{
     AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, VadPolicy, VoiceActivityDetector,
     audio::{CpalDeviceInfo, list_input_devices},
     vad::{

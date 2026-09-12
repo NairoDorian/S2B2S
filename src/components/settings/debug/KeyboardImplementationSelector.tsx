@@ -6,9 +6,12 @@ import { useSettings } from "../../../hooks/useSettings";
 import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 
+// The labels are English like the sibling debug selectors; only the `value`s
+// are wire values, and `handy_keys` is one of them — it is what every existing
+// settings store already holds, so it is frozen and must not be renamed.
 const KEYBOARD_IMPLEMENTATION_OPTIONS: DropdownOption[] = [
   { value: "tauri", label: "Tauri Global Shortcut" },
-  { value: "handy_keys", label: "Handy Keys" },
+  { value: "handy_keys", label: "Native Keys" },
 ];
 
 interface KeyboardImplementationSelectorProps {

@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Square,
 } from "lucide-react";
+import { readPref, writePref } from "@/lib/appIdentity";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import {
   commands,
@@ -72,7 +73,8 @@ const READOUT_INTERVAL_MS = 250;
 /** Slider drags are coalesced before they reach the settings store. */
 const SAVE_DEBOUNCE_MS = 60;
 
-const VIEW_KEY = "handy.live_fft.view";
+/** Preference suffix, resolved by `readPref` / `writePref`. */
+const VIEW_PREF = "live_fft.view";
 
 interface ViewPrefs {
   style: SpectrumStyle;
@@ -91,28 +93,26 @@ const DEFAULT_VIEW: ViewPrefs = {
 };
 
 const readView = (): ViewPrefs => {
+  const raw = readPref(VIEW_PREF);
+  if (!raw) return DEFAULT_VIEW;
   try {
-    const raw = window.localStorage.getItem(VIEW_KEY);
-    if (!raw) return DEFAULT_VIEW;
     return { ...DEFAULT_VIEW, ...(JSON.parse(raw) as Partial<ViewPrefs>) };
   } catch {
+    // A preference written by another version could be malformed; the
+    // defaults are always a valid view.
     return DEFAULT_VIEW;
   }
 };
 
 const writeView = (view: ViewPrefs) => {
-  try {
-    window.localStorage.setItem(VIEW_KEY, JSON.stringify(view));
-  } catch {
-    // Display preference only.
-  }
+  writePref(VIEW_PREF, JSON.stringify(view));
 };
 
 const PHASE_CLASSES: Record<LiveFftPhase, string> = {
   idle: "bg-mid-gray/15 text-text/70 border-mid-gray/20",
-  starting: "bg-logo-primary/15 text-text border-logo-primary/30",
+  starting: "bg-accent/15 text-text border-accent/30",
   running: "bg-green-500/15 text-green-500 border-green-500/30",
-  stopping: "bg-logo-primary/15 text-text border-logo-primary/30",
+  stopping: "bg-accent/15 text-text border-accent/30",
   error: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
@@ -395,7 +395,7 @@ export const LiveFftSettings: React.FC = () => {
               {phase === "running" ? (
                 <Activity className="w-6 h-6 text-green-500" />
               ) : active ? (
-                <Loader2 className="w-6 h-6 text-logo-primary animate-spin" />
+                <Loader2 className="w-6 h-6 text-accent animate-spin" />
               ) : (
                 <AudioLines className="w-6 h-6 text-mid-gray" />
               )}
@@ -1142,7 +1142,7 @@ const ToggleChip: React.FC<ToggleChipProps> = ({ active, onClick, label }) => (
     onClick={onClick}
     className={`px-2 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
       active
-        ? "bg-logo-primary/20 text-text border-logo-primary/40"
+        ? "bg-accent/20 text-text border-accent/40"
         : "bg-mid-gray/10 text-text/60 border-mid-gray/20 hover:bg-mid-gray/15"
     }`}
   >

@@ -11,7 +11,7 @@ export const LATENCY_PRESET_ORDER: NativeStreamingLatencyPreset[] = [
   "accurate",
 ];
 
-/** Handy's default when a model has no stored preset. */
+/** The default when a model has no stored preset. */
 export const DEFAULT_LATENCY_PRESET: NativeStreamingLatencyPreset = "accurate";
 
 export const latencyPresetLabelKey = (
@@ -52,18 +52,18 @@ export const LatencyPanel: React.FC<LatencyPanelProps> = ({
               aria-checked={isSelected}
               onClick={() => onSelect(preset)}
               className={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors ${
-                isSelected ? "bg-logo-primary/10" : "hover:bg-mid-gray/10"
+                isSelected ? "bg-accent/10" : "hover:bg-mid-gray/10"
               }`}
             >
               <Check
                 className={`mt-0.5 h-3 w-3 shrink-0 ${
-                  isSelected ? "text-logo-primary" : "text-transparent"
+                  isSelected ? "text-accent" : "text-transparent"
                 }`}
               />
               <span className="min-w-0">
                 <span
                   className={`block font-medium ${
-                    isSelected ? "text-logo-primary" : "text-text/85"
+                    isSelected ? "text-accent" : "text-text/85"
                   }`}
                 >
                   {t(latencyPresetLabelKey(preset))}

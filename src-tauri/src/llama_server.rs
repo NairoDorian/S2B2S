@@ -3,7 +3,7 @@
 //!
 //! Replaces the hand-run `launch_server_E2B_Q4.ps1`: the same `llama-server`
 //! command line is built from `LlamaSettings`, the child is spawned detached
-//! (no console, tied to Handy through a Windows job object), its output is
+//! (no console, tied to the app through a Windows job object), its output is
 //! kept in a ring buffer, readiness is polled on `/health`, and state changes
 //! reach the UI as `LlamaServerStateEvent`. Requests to the local endpoint
 //! call [`ensure_ready_for_provider`] first, so a cold start happens once and
@@ -114,7 +114,7 @@ pub struct GgufFile {
     pub kind: String,
 }
 
-/// An existing llama.cpp install found outside Handy's data dir.
+/// An existing llama.cpp install found outside the app's data dir.
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct LlamaDetectedInstall {
     pub server_dir: String,
@@ -203,8 +203,9 @@ impl LlamaServerManager {
                 *s = stopped;
                 s.status = LlamaStatus::Ready;
                 s.message = Some(format!(
-                    "Using a llama-server already listening on port {} (not started by Handy)",
-                    settings.port
+                    "Using a llama-server already listening on port {} (not started by {})",
+                    settings.port,
+                    crate::app_identity::NAME
                 ));
             });
             info!(
@@ -713,7 +714,7 @@ pub fn sync_custom_provider_to_local_server(settings: &mut AppSettings, running:
     let Some(url_port) = loopback_port(&provider.base_url) else {
         return false;
     };
-    // A server Handy could start counts as usable: `start_on_demand` brings it
+    // A server the app could start counts as usable: `start_on_demand` brings it
     // up when the request goes out, so the URL may point at it while it is
     // still down. Without both an executable and a model there is nothing to
     // point at, and an existing URL is left alone.

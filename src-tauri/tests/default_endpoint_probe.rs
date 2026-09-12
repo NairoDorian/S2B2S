@@ -3,18 +3,24 @@
 //! microphone, so it skips unless asked for:
 //!
 //! ```text
-//! HANDY_PROBE_MIC=1 cargo test --test default_endpoint_probe -- --nocapture
+//! <APP>_PROBE_MIC=1 cargo test --test default_endpoint_probe -- --nocapture
 //! ```
+//!
+//! `<APP>_` is the prefix `app_lib::app_identity::ENV_PREFIX` holds.
+
+use app_lib::app_env_flag;
+use app_lib::audio_toolkit::audio::default_input_endpoint;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use handy_app_lib::audio_toolkit::audio::default_input_endpoint;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 #[test]
 fn concrete_default_input_resolves_and_captures() {
-    if std::env::var_os("HANDY_PROBE_MIC").is_none() {
-        eprintln!("HANDY_PROBE_MIC not set; skipping");
+    // The app's own accessor, so the prefix is never spelled here (see the
+    // module doc of the sibling vad_speech_clock_probe for the same reasoning).
+    if !app_env_flag("PROBE_MIC") {
+        eprintln!("the PROBE_MIC flag is not set; skipping");
         return;
     }
     let endpoint = default_input_endpoint().expect("a default input endpoint");

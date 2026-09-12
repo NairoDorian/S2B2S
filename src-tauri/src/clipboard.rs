@@ -351,7 +351,7 @@ fn detect_ydotool_key_syntax() -> YdotoolKeySyntax {
                     syntax
                 })
             } else {
-                // Preserve Handy's existing behavior and compatibility with current ydotool.
+                // Preserve the existing behavior and compatibility with current ydotool.
                 log::warn!(
                     "Could not recognize ydotool key --help output (exit status {:?}); using raw-keycode syntax",
                     output.status.code()
@@ -439,7 +439,7 @@ fn type_text_via_xdotool(text: &str) -> Result<(), String> {
     // `--clearmodifiers` restores the modifiers that were held when xdotool
     // started. If the user releases one while xdotool is typing, that synthetic
     // restore can leave the modifier latched on the XTEST keyboard (#1817).
-    // Release both sides of Handy's supported push-style modifiers to clear any
+    // Release both sides of the supported push-style modifiers to clear any
     // stale restore. Lock keys are intentionally excluded because key events
     // toggle them.
     //
@@ -1035,7 +1035,8 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
         use std::thread;
 
         let script_path = std::env::temp_dir().join(format!(
-            "handy-external-script-{}-{}.sh",
+            "{}-external-script-{}-{}.sh",
+            crate::app_identity::SLUG,
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

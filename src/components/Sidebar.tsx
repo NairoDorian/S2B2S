@@ -18,8 +18,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import HandyTextLogo from "./icons/HandyTextLogo";
-import HandyHand from "./icons/HandyHand";
+import BrandLockup from "./icons/BrandLockup";
+import BrandMark from "./icons/BrandMark";
+import { readPref, writePref } from "@/lib/appIdentity";
 import { useSettings } from "../hooks/useSettings";
 import {
   GeneralSettings,
@@ -59,7 +60,7 @@ interface SectionConfig {
 export const SECTIONS_CONFIG = {
   general: {
     labelKey: "sidebar.general",
-    icon: HandyHand,
+    icon: BrandMark,
     component: GeneralSettings,
     enabled: () => true,
   },
@@ -161,23 +162,9 @@ const MIN_WIDTH = 160;
 const MAX_WIDTH = 360;
 /** Icon-only width: 24 px icon + padding + the active edge. */
 const COLLAPSED_WIDTH = 56;
-const WIDTH_KEY = "handy.sidebar.width";
-const COLLAPSED_KEY = "handy.sidebar.collapsed";
-
-const readStorage = (key: string): string | null => {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
-const writeStorage = (key: string, value: string) => {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // UI preference only.
-  }
-};
+/** Preference suffixes, resolved by `readPref` / `writePref`. */
+const WIDTH_PREF = "sidebar.width";
+const COLLAPSED_PREF = "sidebar.collapsed";
 
 /**
  * Left navigation. Resizable by dragging its right edge (160–360 px),
@@ -191,10 +178,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t } = useTranslation();
   const { settings } = useSettings();
   const [collapsed, setCollapsed] = useState(
-    () => readStorage(COLLAPSED_KEY) === "true",
+    () => readPref(COLLAPSED_PREF) === "true",
   );
   const [width, setWidth] = useState(() => {
-    const saved = Number(readStorage(WIDTH_KEY));
+    const saved = Number(readPref(WIDTH_PREF));
     return Number.isFinite(saved) && saved >= MIN_WIDTH
       ? Math.min(MAX_WIDTH, saved)
       : DEFAULT_WIDTH;
@@ -209,7 +196,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
-      writeStorage(COLLAPSED_KEY, String(!prev));
+      writePref(COLLAPSED_PREF, String(!prev));
       return !prev;
     });
   }, []);
@@ -234,7 +221,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const onUp = () => {
       setResizing(false);
       setWidth((w) => {
-        writeStorage(WIDTH_KEY, String(w));
+        writePref(WIDTH_PREF, String(w));
         return w;
       });
     };
@@ -259,9 +246,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       <div className="flex items-center justify-center shrink-0 px-2 h-16 border-b border-mid-gray/20">
         {collapsed ? (
-          <HandyHand width={28} height={28} />
+          <BrandMark size={28} />
         ) : (
-          <HandyTextLogo width={Math.min(120, width - 40)} />
+          <BrandLockup size={26} maxWidth={Math.max(60, width - 40)} />
         )}
       </div>
 
@@ -281,7 +268,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 collapsed ? "justify-center" : ""
               } ${
                 isActive
-                  ? "border-logo-primary bg-logo-primary/10 text-logo-primary"
+                  ? "border-accent bg-accent/10 text-accent"
                   : "border-transparent hover:bg-mid-gray/15 hover:opacity-100 opacity-80"
               }`}
               onClick={() => onSectionChange(section.id)}
@@ -319,8 +306,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           aria-orientation="vertical"
           aria-label={t("sidebar.resize")}
           onMouseDown={onResizeStart}
-          className={`absolute top-0 -end-0.5 w-1.5 h-full cursor-ew-resize hover:bg-logo-primary/40 transition-colors ${
-            resizing ? "bg-logo-primary/60" : ""
+          className={`absolute top-0 -end-0.5 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 transition-colors ${
+            resizing ? "bg-accent/60" : ""
           }`}
         />
       )}

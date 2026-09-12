@@ -1,5 +1,7 @@
 import { execSync } from "node:child_process";
 
+import { APP } from "./app-meta";
+
 /**
  * Reinstalls the `rtk` CLI at the ABSOLUTE LATEST GitHub commit or release tag.
  *
@@ -19,7 +21,7 @@ const PER_PAGE = 100;
 
 const API_HEADERS: Record<string, string> = {
   Accept: "application/vnd.github+json",
-  "User-Agent": "handy-rtk-updater",
+  "User-Agent": `${APP.slug}-rtk-updater`,
 };
 
 interface SemverParts {

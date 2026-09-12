@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> This file tracks the **`Handy_Multi_STT` fork** on top of upstream
-> [cjpais/Handy](https://github.com/cjpais/Handy). The fork carries upstream's
-> version number (currently **0.9.6**, merged 2026-08-26) and has not cut a
-> release of its own yet, so all fork work is listed under `[Unreleased]`.
-> Upstream's own release notes live in `src/content/release-notes/` and on the
-> upstream releases page.
+> This file tracks **ZER0**, a personal fork of
+> [cjpais/Handy](https://github.com/cjpais/Handy) maintained on the
+> `Handy_Multi_STT` branch of
+> [NairoDorian/S2B2S](https://github.com/NairoDorian/S2B2S). Handy is the
+> upstream this project forked from — its releases, release notes and issue
+> tracker are not this project's.
+>
+> The fork's version tracked upstream's through 0.9.6. From **0.9.7** ZER0
+> carries its own version and cuts its own releases, so entries move out of
+> `[Unreleased]` into a version heading at release time. The notes shown in the
+> app's What's New dialog live in `src/content/release-notes/`.
 
 ## [Unreleased]
 

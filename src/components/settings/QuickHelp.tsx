@@ -50,7 +50,7 @@ export const QuickHelp: React.FC<QuickHelpProps> = ({ activeSection }) => {
           event.preventDefault();
           openHelp(help.anchor);
         }}
-        className="shrink-0 rounded-md px-1 text-xs font-medium text-logo-primary underline decoration-logo-primary/50 underline-offset-2 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-logo-primary/60"
+        className="shrink-0 rounded-md px-1 text-xs font-medium text-accent underline decoration-accent/50 underline-offset-2 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
       >
         {t("quickHelp.learnMore")}
       </a>

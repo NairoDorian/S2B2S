@@ -140,9 +140,9 @@ export const commands = {
 	 */
 	getAvailableAccelerators: () => __TAURI_INVOKE<AvailableAccelerators>("get_available_accelerators"),
 	/**  Start key recording mode */
-	startHandyKeysRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_handy_keys_recording", { bindingId })),
+	startNativeKeysRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_native_keys_recording", { bindingId })),
 	/**  Stop key recording mode */
-	stopHandyKeysRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_handy_keys_recording")),
+	stopNativeKeysRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_native_keys_recording")),
 	getSecureInputStatus: () => __TAURI_INVOKE<SecureInputStatus>("get_secure_input_status"),
 	runKeyboardDiagnostic: (durationSecs: number | null) => typedError<KeyboardDiagnosticReport, string>(__TAURI_INVOKE("run_keyboard_diagnostic", { durationSecs })),
 	triggerUpdateCheck: () => typedError<null, string>(__TAURI_INVOKE("trigger_update_check")),
@@ -195,7 +195,7 @@ export const commands = {
 	/**  Toolkit version as the installer names it (`13.3`), when known. */
 	version: string | null,
 	/**
-	 *  Whether `runtime_dir` is on the PATH Handy was started with. When it is
+	 *  Whether `runtime_dir` is on the PATH the app was started with. When it is
 	 *  not, `LlamaServerManager::start` prepends it to the child's PATH.
 	 */
 	on_path: boolean,
@@ -929,7 +929,7 @@ export type ArchPluginInfo = {
 	name: string,
 	/**  Absolute filesystem path to the plugin module. */
 	path: string,
-	/**  Whether Handy explicitly loaded this module (see `EXPLICITLY_LOADED`). */
+	/**  Whether the app explicitly loaded this module (see `EXPLICITLY_LOADED`). */
 	is_loaded: boolean,
 	/**  File size in bytes. */
 	file_size_bytes: number | null,
@@ -988,7 +988,7 @@ export type CudaToolkitInfo = {
 	/**  Toolkit version as the installer names it (`13.3`), when known. */
 	version: string | null,
 	/**
-	 *  Whether `runtime_dir` is on the PATH Handy was started with. When it is
+	 *  Whether `runtime_dir` is on the PATH the app was started with. When it is
 	 *  not, `LlamaServerManager::start` prepends it to the child's PATH.
 	 */
 	on_path: boolean,
@@ -1445,7 +1445,7 @@ export type LiveTranscriptGranularity =
 /**  Only write text up to the last completed word. */
 "word";
 
-/**  An existing llama.cpp install found outside Handy's data dir. */
+/**  An existing llama.cpp install found outside the app's data dir. */
 export type LlamaDetectedInstall = {
 	server_dir: string,
 	model_path: string | null,
@@ -1514,7 +1514,7 @@ export type LlamaServerStateEvent = {
  */
 export type LlamaSettings = {
 	/**
-	 *  Folder that contains `llama-server(.exe)`: an install made by Handy
+	 *  Folder that contains `llama-server(.exe)`: an install made by the app
 	 *  (`<app data>/llama_cpp/<backend>-<tag>`) or any existing one.
 	 */
 	server_dir?: string | null,
@@ -1552,7 +1552,7 @@ export type LlamaSettings = {
 	 *  prompts in the S2B2S benchmarks).
 	 */
 	attn_rot_disable?: boolean,
-	/**  Start the server when Handy starts. */
+	/**  Start the server when the app starts. */
 	autostart?: boolean,
 	/**  Start the server when a request targets it and it is not running. */
 	start_on_demand?: boolean,
@@ -1607,11 +1607,11 @@ export type ModelLoadStatus = {
 };
 
 /**
- *  Where a model comes from and how Handy obtains it — the routing discriminant
+ *  Where a model comes from and how the app obtains it — the routing discriminant
  *  for downloading and on-disk resolution.
  */
 export type ModelSource = 
-/**  Direct HTTP download from a URL (current blob.handy.computer hosting). */
+/**  Direct HTTP download from a URL (the catalog's own hosting). */
 ({ Url: {
 	url: string,
 	/**  Expected SHA-256 for integrity verification; `None` skips it. */
@@ -1949,7 +1949,7 @@ export type SystemStatsEvent = {
 
 /**
  *  UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
- *  and `Dark` force one of the two palettes Handy already ships.
+ *  and `Dark` force one of the two palettes the app already ships.
  */
 export type Theme = "system" | "light" | "dark";
 

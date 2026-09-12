@@ -25,6 +25,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { isMultiRecordingFileName } from "@/lib/appIdentity";
+import { displayModelId } from "@/lib/modelId";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import {
   commands,
@@ -51,8 +53,8 @@ const IconButton: React.FC<{
     disabled={disabled}
     className={`p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed disabled:text-text/20 ${
       active
-        ? "text-logo-primary hover:text-logo-primary/80 bg-logo-primary/10"
-        : "text-text/50 hover:text-logo-primary hover:bg-mid-gray/10"
+        ? "text-accent hover:text-accent/80 bg-accent/10"
+        : "text-text/50 hover:text-accent hover:bg-mid-gray/10"
     } ${className ?? ""}`}
     title={title}
   >
@@ -326,7 +328,7 @@ export const HistorySettings: React.FC = () => {
       if (
         activeFilter === "multi_stt" &&
         entry.mode !== "multi_stt" &&
-        !entry.file_name.includes("handy-multi")
+        !isMultiRecordingFileName(entry.file_name)
       ) {
         return false;
       }
@@ -352,7 +354,7 @@ export const HistorySettings: React.FC = () => {
   if (loading && entries.length === 0) {
     content = (
       <div className="px-4 py-8 text-center text-text/60">
-        <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-logo-primary mb-2" />
+        <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-accent mb-2" />
         <p className="text-sm">{t("settings.history.loading")}</p>
       </div>
     );
@@ -427,7 +429,7 @@ export const HistorySettings: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t("settings.history.searchPlaceholder")}
-              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-md bg-background border border-mid-gray/30 text-text placeholder:text-text/40 focus:outline-none focus:border-logo-primary/60 transition-colors"
+              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-md bg-background border border-mid-gray/30 text-text placeholder:text-text/40 focus:outline-none focus:border-accent/60 transition-colors"
             />
           </div>
 
@@ -455,7 +457,7 @@ export const HistorySettings: React.FC = () => {
                 onClick={() => setActiveFilter(filter.id)}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
                   activeFilter === filter.id
-                    ? "bg-logo-primary text-white"
+                    ? "bg-accent text-white"
                     : "bg-background/80 text-text/70 hover:text-text hover:bg-mid-gray/20 border border-mid-gray/20"
                 }`}
               >
@@ -562,8 +564,10 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const [retrying, setRetrying] = useState<
     "standard" | "post_process" | "multi_stt" | null
   >(null);
-  const [activeTab, setActiveTab] = useState<"polished" | "raw" | "multi_stt_details">(
-    entry.mode === "multi_stt" || entry.file_name.includes("handy-multi")
+  const [activeTab, setActiveTab] = useState<
+    "polished" | "raw" | "multi_stt_details"
+  >(
+    entry.mode === "multi_stt" || isMultiRecordingFileName(entry.file_name)
       ? "multi_stt_details"
       : entry.post_processed_text
         ? "polished"
@@ -574,7 +578,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
 
   const hasTranscription = entry.transcription_text.trim().length > 0;
   const isMultiStt =
-    entry.mode === "multi_stt" || entry.file_name.includes("handy-multi");
+    entry.mode === "multi_stt" || isMultiRecordingFileName(entry.file_name);
 
   const multiSttMeta = useMemo(() => {
     if (!isMultiStt) return null;
@@ -613,12 +617,17 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
       return entry.post_processed_text;
     }
     return entry.transcription_text;
-  }, [isMultiStt, multiSttCleanedText, activeTab, entry.post_processed_text, entry.transcription_text]);
+  }, [
+    isMultiStt,
+    multiSttCleanedText,
+    activeTab,
+    entry.post_processed_text,
+    entry.transcription_text,
+  ]);
 
   const handleCopyText = () => {
-    const text = isMultiStt && multiSttCleanedText
-      ? multiSttCleanedText
-      : textToDisplay;
+    const text =
+      isMultiStt && multiSttCleanedText ? multiSttCleanedText : textToDisplay;
     if (!text.trim()) return;
     onCopyText(text);
     setShowCopied(true);
@@ -788,13 +797,11 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           {/* Model Badge */}
           {entry.model_id && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-mid-gray/15 text-text/80 border border-mid-gray/20">
-              <Cpu className="w-3 h-3 text-logo-primary" />
+              <Cpu className="w-3 h-3 text-accent" />
               <span>
                 {isMultiStt
                   ? `Multi-STT (${(entry.extra_models?.length ?? 0) + 1} models)`
-                  : entry.model_id
-                      .replace(/^handy-computer\//, "")
-                      .replace(/\.gguf$/, "")}
+                  : displayModelId(entry.model_id)}
               </span>
             </span>
           )}
@@ -854,7 +861,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
               width={15}
               height={15}
               className={
-                retrying === "standard" ? "animate-spin text-logo-primary" : ""
+                retrying === "standard" ? "animate-spin text-accent" : ""
               }
             />
           </IconButton>
@@ -1007,7 +1014,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                 onClick={() => setActiveTab("polished")}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "polished"
-                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    ? "bg-accent/20 text-accent border border-accent/40"
                     : "bg-mid-gray/10 text-text/60 hover:text-text"
                 }`}
               >
@@ -1018,7 +1025,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                 onClick={() => setActiveTab("raw")}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "raw"
-                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    ? "bg-accent/20 text-accent border border-accent/40"
                     : "bg-mid-gray/10 text-text/60 hover:text-text"
                 }`}
               >
@@ -1034,7 +1041,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                 onClick={() => setActiveTab("polished")}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "polished"
-                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    ? "bg-accent/20 text-accent border border-accent/40"
                     : "bg-mid-gray/10 text-text/60 hover:text-text"
                 }`}
               >
@@ -1045,7 +1052,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                 onClick={() => setActiveTab("raw")}
                 className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ${
                   activeTab === "raw"
-                    ? "bg-logo-primary/20 text-logo-primary border border-logo-primary/40"
+                    ? "bg-accent/20 text-accent border border-accent/40"
                     : "bg-mid-gray/10 text-text/60 hover:text-text"
                 }`}
               >
@@ -1070,13 +1077,15 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25 shrink-0">
-                      {t("settings.history.multiSttModelSlot", { slot: m.slot })}
+                      {t("settings.history.multiSttModelSlot", {
+                        slot: m.slot,
+                      })}
                     </span>
                     <span
                       className="text-[11px] font-mono text-text/70 truncate"
                       title={m.model_id}
                     >
-                      {m.model_id.replace(/^handy-computer\//, "").replace(/\.gguf$/, "")}
+                      {displayModelId(m.model_id)}
                     </span>
                   </div>
                   <button
@@ -1085,7 +1094,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                     }}
                     disabled={!m.text.trim()}
                     title={t("settings.history.multiSttCopyModelOutput")}
-                    className="p-1 rounded text-text/40 hover:text-logo-primary hover:bg-mid-gray/10 transition-colors disabled:opacity-30 shrink-0"
+                    className="p-1 rounded text-text/40 hover:text-accent hover:bg-mid-gray/10 transition-colors disabled:opacity-30 shrink-0"
                   >
                     <Copy className="w-3 h-3" />
                   </button>
@@ -1113,11 +1122,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                     {multiSttMeta.brain.model_name}
                   </span>
                   <span className="text-[10px] text-text/50 bg-mid-gray/10 px-1.5 py-0.5 rounded border border-mid-gray/20">
-                    {multiSttMeta.brain.provider_label} ({multiSttMeta.brain.provider_id})
+                    {multiSttMeta.brain.provider_label} (
+                    {multiSttMeta.brain.provider_id})
                   </span>
                   {multiSttMeta.brain.prompt_name && (
                     <span className="text-[10px] text-text/50 bg-mid-gray/10 px-1.5 py-0.5 rounded border border-mid-gray/20">
-                      {t("settings.history.multiSttBrainPromptLabel", { name: multiSttMeta.brain.prompt_name })}
+                      {t("settings.history.multiSttBrainPromptLabel", {
+                        name: multiSttMeta.brain.prompt_name,
+                      })}
                     </span>
                   )}
                   {multiSttMeta.brain.latency_ms != null && (
@@ -1135,7 +1147,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                   }}
                   disabled={!multiSttMeta.brain.cleaned_output.trim()}
                   title={t("settings.history.multiSttCopyBrainOutput")}
-                  className="p-1 rounded text-text/40 hover:text-logo-primary hover:bg-mid-gray/10 transition-colors disabled:opacity-30 shrink-0"
+                  className="p-1 rounded text-text/40 hover:text-accent hover:bg-mid-gray/10 transition-colors disabled:opacity-30 shrink-0"
                 >
                   <Copy className="w-3 h-3" />
                 </button>
@@ -1147,7 +1159,8 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                   {t("settings.history.multiSttBrainCleanedOutput")}
                 </p>
                 <p className="text-xs select-text cursor-text whitespace-pre-wrap break-words rounded p-2 bg-background/60 border border-amber-500/15 text-text/90">
-                  {multiSttMeta.brain.cleaned_output || t("settings.history.multiSttNoOutput")}
+                  {multiSttMeta.brain.cleaned_output ||
+                    t("settings.history.multiSttNoOutput")}
                 </p>
               </div>
 
@@ -1205,7 +1218,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             <div className="mt-1">
               <button
                 onClick={() => setShowPromptDetails(!showPromptDetails)}
-                className="text-[11px] text-text/50 hover:text-logo-primary flex items-center gap-1 transition-colors"
+                className="text-[11px] text-text/50 hover:text-accent flex items-center gap-1 transition-colors"
               >
                 {showPromptDetails ? (
                   <ChevronUp className="w-3 h-3" />

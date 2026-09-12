@@ -1,4 +1,4 @@
-/* Handy Colors */
+/* Color tokens */
 
 :root {
   /* Palette source of truth. Each themed color is defined once as a
@@ -9,13 +9,11 @@
      still be replaced per user (custom_accent_color → computeAccentPalette). */
   --light-color-text: #101418;
   --light-color-background: #f2f4f5;
-  --light-color-logo-primary: #0c8fa3;
-  --light-color-logo-stroke: #0a3f48;
+  --light-color-accent: #0c8fa3;
 
   --dark-color-text: #e6f1f3;
   --dark-color-background: #0b0e11;
-  --dark-color-logo-primary: #1fe0ff;
-  --dark-color-logo-stroke: #9ff2ff;
+  --dark-color-accent: #1fe0ff;
 
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
@@ -34,8 +32,7 @@
      below, or is forced by `data-theme` (see the overrides below). */
   --color-text: var(--light-color-text);
   --color-background: var(--light-color-background);
-  --color-logo-primary: var(--light-color-logo-primary);
-  --color-logo-stroke: var(--light-color-logo-stroke);
+  --color-accent: var(--light-color-accent);
   --color-warning: var(--light-color-warning);
   --color-error: var(--light-color-error);
 }
@@ -44,8 +41,7 @@
   :root {
     --color-text: var(--dark-color-text);
     --color-background: var(--dark-color-background);
-    --color-logo-primary: var(--dark-color-logo-primary);
-    --color-logo-stroke: var(--dark-color-logo-stroke);
+    --color-accent: var(--dark-color-accent);
     --color-warning: var(--dark-color-warning);
     --color-error: var(--dark-color-error);
   }
@@ -55,7 +51,7 @@
  * Explicit theme override, driven by the `theme` setting via
  * `document.documentElement.dataset.theme`. When set, the higher-specificity
  * attribute selectors win over the `prefers-color-scheme` media query above,
- * so a user can keep Handy light or dark regardless of the OS setting.
+ * so a user can keep the app light or dark regardless of the OS setting.
  * `system` (or no attribute) leaves the OS in charge.
  *
  * Lives here (not in App.css) so every window that imports the shared palette —
@@ -64,8 +60,7 @@
 :root[data-theme="light"] {
   --color-text: var(--light-color-text);
   --color-background: var(--light-color-background);
-  --color-logo-primary: var(--light-color-logo-primary);
-  --color-logo-stroke: var(--light-color-logo-stroke);
+  --color-accent: var(--light-color-accent);
   --color-warning: var(--light-color-warning);
   --color-error: var(--light-color-error);
 }
@@ -73,8 +68,7 @@
 :root[data-theme="dark"] {
   --color-text: var(--dark-color-text);
   --color-background: var(--dark-color-background);
-  --color-logo-primary: var(--dark-color-logo-primary);
-  --color-logo-stroke: var(--dark-color-logo-stroke);
+  --color-accent: var(--dark-color-accent);
   --color-warning: var(--dark-color-warning);
   --color-error: var(--dark-color-error);
 }

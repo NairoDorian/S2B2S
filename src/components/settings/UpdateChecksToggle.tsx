@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import { ENV_PREFIX } from "@/lib/appIdentity";
 
 interface UpdateChecksToggleProps {
   descriptionMode?: "inline" | "tooltip";
@@ -26,7 +27,13 @@ export const UpdateChecksToggle: React.FC<UpdateChecksToggleProps> = ({
       label={t("settings.debug.updateChecks.label")}
       description={
         updateChecksLocked
-          ? t("settings.debug.updateChecks.lockedDescription")
+          ? // The flag is interpolated rather than spelled inside the locale
+            // value: it is the environment prefix, which belongs to the
+            // generated identity, and 24 hand-edited copies of it would be 24
+            // places a rename has to find.
+            t("settings.debug.updateChecks.lockedDescription", {
+              envVar: `${ENV_PREFIX}DISABLE_UPDATER`,
+            })
           : t("settings.debug.updateChecks.description")
       }
       descriptionMode={descriptionMode}

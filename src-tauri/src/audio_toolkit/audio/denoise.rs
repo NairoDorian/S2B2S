@@ -2,7 +2,7 @@
 //!
 //! `nnnoiseless` is a pure-Rust port of Xiph's RNNoise: a small recurrent
 //! network that estimates per-band gains for 10 ms frames of 48 kHz audio.
-//! Handy's capture path runs at the microphone's native rate and hands the VAD
+//! The capture path runs at the microphone's native rate and hands the VAD
 //! 16 kHz frames, so the chain here is
 //!
 //! ```text

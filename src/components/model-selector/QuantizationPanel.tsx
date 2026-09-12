@@ -108,7 +108,7 @@ export const QuantizationPanel: React.FC<QuantizationPanelProps> = ({
           <li key={id}>
             <div
               className={`mx-1 rounded-md transition-colors ${
-                isCurrent ? "bg-logo-primary/10" : "hover:bg-mid-gray/10"
+                isCurrent ? "bg-accent/10" : "hover:bg-mid-gray/10"
               }`}
             >
               <div className="flex items-center gap-1">
@@ -126,12 +126,12 @@ export const QuantizationPanel: React.FC<QuantizationPanelProps> = ({
                     className={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(variant.quant)}`}
                   />
                   <span
-                    className={`truncate font-medium ${isCurrent ? "text-logo-primary" : "text-text/85"}`}
+                    className={`truncate font-medium ${isCurrent ? "text-accent" : "text-text/85"}`}
                   >
                     {variant.quant}
                   </span>
                   {isCurrent && (
-                    <Check className="h-3 w-3 shrink-0 text-logo-primary" />
+                    <Check className="h-3 w-3 shrink-0 text-accent" />
                   )}
                   {isFastest && (
                     <span className="shrink-0 rounded-sm bg-emerald-500/15 px-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
@@ -213,10 +213,10 @@ export const QuantizationPanel: React.FC<QuantizationPanelProps> = ({
                     <div
                       className={`h-full rounded-full transition-[width] duration-300 ${
                         isDownloading
-                          ? "bg-logo-primary/60"
+                          ? "bg-accent/60"
                           : isFastest
                             ? "bg-emerald-500"
-                            : "bg-logo-primary/60"
+                            : "bg-accent/60"
                       }`}
                       style={{
                         width: `${Math.max(4, Math.min(100, isDownloading ? (percentage ?? 0) : speedRatio * 100))}%`,

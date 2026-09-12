@@ -209,8 +209,8 @@ export const KeyComboInput: React.FC<KeyComboInputProps> = ({
       className={`flex items-center gap-2 ${grouped ? "" : "py-2"}`}
     >
       <div
-        className={`px-3 py-1.5 text-sm font-mono font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary transition-colors min-w-[200px] ${
-          editing ? "border-logo-primary bg-logo-primary/30" : ""
+        className={`px-3 py-1.5 text-sm font-mono font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent transition-colors min-w-[200px] ${
+          editing ? "border-accent bg-accent/30" : ""
         } ${isUpdating(settingKey) ? "opacity-50" : ""}`}
         onClick={editing ? undefined : startEditing}
         onDoubleClick={editing ? undefined : startEditing}

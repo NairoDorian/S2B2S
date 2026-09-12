@@ -4,19 +4,19 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink, TriangleAlert, X } from "lucide-react";
 import { commands, type SecureInputStatus } from "@/bindings";
+import { REPO_URL } from "@/lib/appIdentity";
 
-// Detailed remediation steps live in the docs rather than in the banner
-export const SECURE_INPUT_HELP_URL =
-  "https://handy.computer/docs/troubleshooting#shortcuts-stopped-working-on-macos-secure-input";
+// Detailed remediation steps live in the README rather than in the banner.
+export const SECURE_INPUT_HELP_URL = `${REPO_URL}#troubleshooting`;
 
 /**
  * Compact warning banner shown while macOS Secure Input is stuck on.
  *
  * Secure Input (password fields, Terminal's "Secure Keyboard Entry", a stuck
- * loginwindow) blocks key events from reaching Handy's keyboard listener, so
- * keyed shortcuts silently stop firing (issue #1578). The backend monitor
- * emits `secure-input-changed` on state transitions; `sustained` filters out
- * the normal momentary activation from focusing a password field.
+ * loginwindow) blocks key events from reaching the keyboard listener, so keyed
+ * shortcuts silently stop firing. The backend monitor emits
+ * `secure-input-changed` on state transitions; `sustained` filters out the
+ * normal momentary activation from focusing a password field.
  */
 const SecureInputWarning: React.FC = () => {
   const { t } = useTranslation();

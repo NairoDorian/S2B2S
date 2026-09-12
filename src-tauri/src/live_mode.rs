@@ -3,7 +3,7 @@
 //!
 //! One session = one folder `<output dir>/live_<timestamp>/` holding
 //! `transcript.txt` (or `.md`) and `chunk_0001.wav`, `chunk_0002.wav`, …
-//! Each chunk is a normal Handy recording: `AudioRecordingManager` captures
+//! Each chunk is a normal recording: `AudioRecordingManager` captures
 //! (raw tap forced on) while `TranscriptionManager::start_stream` runs the
 //! model's native live stream. When a chunk reaches its target length — on
 //! the first pause after 80 % of it, if `prefer_silence_boundary` is on — the
@@ -410,8 +410,9 @@ impl LiveModeManager {
         let header = match live.transcript_format {
             TranscriptOutputFormat::Txt => String::new(),
             TranscriptOutputFormat::Md => format!(
-                "# Live transcript {}\n\n_Handy Live Mode · model `{model_id}`_\n\n",
-                chrono::Local::now().format("%Y-%m-%d %H:%M")
+                "# Live transcript {}\n\n_{} Live Mode · model `{model_id}`_\n\n",
+                chrono::Local::now().format("%Y-%m-%d %H:%M"),
+                crate::app_identity::NAME
             ),
         };
         let writer = Arc::new(Mutex::new(TranscriptWriter::create(
@@ -766,8 +767,7 @@ mod tests {
 
     #[test]
     fn writer_rewrites_live_tail_and_commits() {
-        let dir = std::env::temp_dir().join(format!("handy-live-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::utils::temp_test_dir("live");
         let path = dir.join("t.txt");
         let mut w = TranscriptWriter::create(&path, "H\n").unwrap();
         w.set_live("abc def").unwrap();
@@ -785,7 +785,7 @@ mod tests {
 
     #[test]
     fn list_sessions_finds_transcripts() {
-        let root = std::env::temp_dir().join(format!("handy-live-list-{}", std::process::id()));
+        let root = crate::utils::temp_test_dir("live-list");
         let s1 = root.join("live_2026-01-01_10-00-00");
         std::fs::create_dir_all(&s1).unwrap();
         std::fs::write(s1.join("transcript.txt"), "hi").unwrap();

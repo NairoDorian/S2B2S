@@ -26,6 +26,15 @@ bun run build:full             # Release build, full multi-arch CUDA matrix
 **Checks (run before committing):**
 
 ```bash
+bun run precommit              # THE gate: meta:sync, meta:check, check:identity,
+                               # check:translations, lint, typecheck, format:check, repomix
+bun run precommit:full         # the same plus clippy and the Rust test suite
+bun run hooks:install          # once per clone: point git at .githooks/
+```
+
+The individual steps, if you want to run one on its own:
+
+```bash
 bun run typecheck              # tsc -b
 bun run lint                   # oxlint (with eslint-plugin-i18next)
 bun run format:check           # prettier --check + cargo fmt --check
@@ -36,7 +45,10 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 **Maintenance scripts:**
 
 ```bash
-bun run update-deps [--prerelease] [--dry-run]   # bump npm + Cargo deps
+bun run update                 # rtk → latest, deps with --prerelease, then repomix
+bun run update:rtk             # RTK CLI (the agent hook's proxy) to its latest release
+bun run update-deps [--prerelease] [--dry-run]   # bump npm + Cargo deps — ALWAYS --prerelease here
+bun run repomix                # regenerate repomix-output.xml (also in the gate)
 bun scripts/check-transcribe-deps.ts             # re-pin transcribe.cpp fork (also runs before every `tauri` invocation)
 bun run update:rtk                               # update the RTK CLI (maintainer tooling)
 ```
@@ -63,7 +75,7 @@ bun run update:rtk                               # update the RTK CLI (maintaine
 - PascalCase for components, camelCase for variables/functions
 - No literal strings in JSX — every user-facing string goes through i18next
   (`oxlint` fails the build otherwise); for literal data use an expression
-  container: `{"%APPDATA%/handy"}`
+  container: `{"%APPDATA%/ZER0"}`
 
 **Imports:**
 

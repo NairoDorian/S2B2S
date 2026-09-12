@@ -1,4 +1,5 @@
 mod actions;
+pub mod app_identity;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -38,7 +39,7 @@ pub use cli::CliArgs;
 #[cfg(debug_assertions)]
 use specta_typescript::Typescript;
 use tauri_specta::{Builder, collect_commands, collect_events};
-pub use utils::env_flag_enabled;
+pub use utils::{app_env_flag, app_env_var, env_flag_enabled};
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
@@ -87,7 +88,7 @@ fn level_filter_from_u8(value: u8) -> log::LevelFilter {
 /// A debug build's console is the developer's window onto the app, and every
 /// diagnostic the code emits is a `debug!` line that only appears if this floor
 /// exists — otherwise debugging any feature starts by remembering to prefix the
-/// command with `$env:RUST_LOG=handy_app_lib=debug`. A release build has no such
+/// command with `$env:RUST_LOG=app_lib=debug`. A release build has no such
 /// floor: its console is the user's, and the Log Level setting is the whole rule.
 fn console_level() -> log::LevelFilter {
     let configured = level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed));
@@ -102,7 +103,7 @@ fn console_level() -> log::LevelFilter {
 ///
 /// `RUST_LOG` still wins outright when it is set — an explicit per-module
 /// directive is a deliberate thing to type, and honouring it verbatim is what
-/// makes `RUST_LOG=handy_app_lib=trace` work — but with it unset the console
+/// makes `RUST_LOG=app_lib=trace` work — but with it unset the console
 /// follows [`console_level`] instead of a hardcoded `Info`.
 #[derive(Clone)]
 enum ConsoleFilter {
@@ -229,8 +230,13 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 
 fn initialize_core_logic(app_handle: &AppHandle) {
     let startup_started = std::time::Instant::now();
+    // Before anything reads a path: move a pre-rename install's data dir,
+    // cache and logs to where this version looks for them. A no-op on every
+    // start after the first. See `portable::migrate_legacy_app_data`.
+    portable::migrate_legacy_app_data(app_handle);
     log::info!(
-        "Handy {} starting on {} {} — data dir {}",
+        "{} {} starting on {} {} — data dir {}",
+        app_identity::NAME,
         app_handle.package_info().version,
         std::env::consts::OS,
         std::env::consts::ARCH,
@@ -295,14 +301,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     llama_server::adopt_detected_install_if_unconfigured(app_handle);
     let llama_manager = llama_server::init(app_handle);
     app_handle.manage(Arc::clone(&llama_manager));
-    // A port or alias changed while Handy was closed leaves the `custom`
+    // A port or alias changed while the app was closed leaves the `custom`
     // provider pointing at the old address; repair it here so the first
     // post-processing request of the session does not fail to connect.
     llama_manager.relink_custom_provider(false);
     {
         let llama_settings = settings::get_settings(app_handle).llama;
         if llama_settings.autostart {
-            log::info!("llama-server: starting in the background (Start with Handy is on)");
+            log::info!(
+                "llama-server: starting in the background ({} is on)",
+                "llama.autostart"
+            );
             std::thread::spawn(move || {
                 if let Err(e) = llama_manager.start() {
                     log::warn!("llama-server autostart failed: {e}");
@@ -310,7 +319,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             });
         } else {
             log::info!(
-                "llama-server: idle — Start with Handy is off; on-demand start is {} (port {}, model {})",
+                "llama-server: idle — autostart is off; on-demand start is {} (port {}, model {})",
                 if llama_settings.start_on_demand {
                     "on"
                 } else {
@@ -740,9 +749,10 @@ pub fn run(cli_args: CliArgs) {
     // Avoid ggml-metal residency-set teardown assertions when a native engine
     // outlives the Tauri shutdown sequence (#1902). This must happen before
     // transcribe-cpp initializes its Metal device. Advanced users can restore
-    // upstream residency behavior with HANDY_METAL_RESIDENCY=1.
+    // upstream residency behavior with <prefix>METAL_RESIDENCY=1, where the
+    // prefix is `app_identity::ENV_PREFIX`.
     #[cfg(target_os = "macos")]
-    if std::env::var("HANDY_METAL_RESIDENCY").as_deref() == Ok("1") {
+    if utils::app_env_var("METAL_RESIDENCY").as_deref() == Some("1") {
         // ggml treats GGML_METAL_NO_RESIDENCY as presence-based, so remove an
         // inherited value as well when explicitly opting back in.
         unsafe { std::env::remove_var("GGML_METAL_NO_RESIDENCY") };
@@ -852,8 +862,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
             shortcut::get_available_accelerators,
-            shortcut::handy_keys::start_handy_keys_recording,
-            shortcut::handy_keys::stop_handy_keys_recording,
+            shortcut::native_keys::start_native_keys_recording,
+            shortcut::native_keys::stop_native_keys_recording,
             secure_input::get_secure_input_status,
             secure_input::run_keyboard_diagnostic,
             trigger_update_check,
@@ -1046,11 +1056,11 @@ pub fn run(cli_args: CliArgs) {
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
-                            file_name: Some("handy".into()),
+                            file_name: Some(app_identity::RECORDING_BASENAME.into()),
                         }
                     } else {
                         TargetKind::LogDir {
-                            file_name: Some("handy".into()),
+                            file_name: Some(app_identity::RECORDING_BASENAME.into()),
                         }
                     })
                     .filter(|metadata| {
@@ -1075,7 +1085,7 @@ pub fn run(cli_args: CliArgs) {
         builder = builder.plugin(tauri_nspanel::init());
     }
 
-    // Single-instance forwards CLI args to an already-running Handy and exits.
+    // Single-instance forwards CLI args to an already-running instance and exits.
     // That would make the headless path
     // (--transcribe-file/--list-devices/--list-models) a silent no-op whenever the
     // app is already open, so skip it in headless mode and run a standalone
@@ -1121,9 +1131,10 @@ pub fn run(cli_args: CliArgs) {
         .setup(move |app| {
             #[cfg(target_os = "windows")]
             log::info!(
-                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, HANDY_KEEP_VULKAN_IMPLICIT_LAYERS={}",
+                "Vulkan layer policy: VK_LOADER_LAYERS_DISABLE={:?}, {}KEEP_VULKAN_IMPLICIT_LAYERS={}",
                 std::env::var_os("VK_LOADER_LAYERS_DISABLE"),
-                utils::env_flag_enabled("HANDY_KEEP_VULKAN_IMPLICIT_LAYERS"),
+                app_identity::ENV_PREFIX,
+                utils::app_env_flag("KEEP_VULKAN_IMPLICIT_LAYERS"),
             );
 
             specta_builder.mount_events(app);
@@ -1176,7 +1187,7 @@ pub fn run(cli_args: CliArgs) {
             // for portable mode (redirects WebView2 cache to portable Data dir)
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-                    .title("Handy")
+                    .title(app_identity::NAME)
                     // Sized so the 13-entry sidebar is fully visible without
                     // scrolling (13 × 44 px + logo) and the status bar — model
                     // pill, quantization, streaming latency, brain, CPU / RAM /

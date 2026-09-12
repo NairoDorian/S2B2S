@@ -1,3 +1,4 @@
+import { REPO_URL } from "@/lib/appIdentity";
 import type { SidebarSection } from "../../Sidebar";
 
 /**
@@ -111,4 +112,4 @@ export const SMART_HELP_ACTIONS = [
 ] as const;
 
 /** Where users can point an AI assistant for source-level answers. */
-export const SOURCE_URL = "https://github.com/NairoDorian/S2B2S";
+export const SOURCE_URL = REPO_URL;
