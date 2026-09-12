@@ -875,8 +875,8 @@ export const MultiSttSettings: React.FC = () => {
                         Math.round(value),
                       )
                     }
-                    min={300}
-                    max={5000}
+                    min={100}
+                    max={10000}
                     step={100}
                     label={t("multiStt.streamingFirst.pauseLabel")}
                     description={t("multiStt.streamingFirst.pauseDescription")}
@@ -889,18 +889,18 @@ export const MultiSttSettings: React.FC = () => {
                     disabled={isUpdating("multi_stt_streaming_pause_ms")}
                   />
 
-                  {/* What the extras re-read at each close: one already-spoken
-                      sentence of context in front of what is new, and a ceiling
-                      on how many sentences a window may hold. */}
+                  {/* What the extras re-read at each close: how many already
+                      closed chunks are sent in front of the one being merged,
+                      so a long session never re-decodes itself. */}
                   <Slider
                     value={
                       (getSetting(
-                        "multi_stt_streaming_context_sentences",
+                        "multi_stt_streaming_context_chunks",
                       ) as number) ?? 1
                     }
                     onChange={(value) =>
                       updateSetting(
-                        "multi_stt_streaming_context_sentences",
+                        "multi_stt_streaming_context_chunks",
                         Math.round(value),
                       )
                     }
@@ -921,45 +921,9 @@ export const MultiSttSettings: React.FC = () => {
                           })
                     }
                     onReset={() =>
-                      updateSetting("multi_stt_streaming_context_sentences", 1)
+                      updateSetting("multi_stt_streaming_context_chunks", 1)
                     }
-                    disabled={isUpdating(
-                      "multi_stt_streaming_context_sentences",
-                    )}
-                  />
-
-                  <Slider
-                    value={
-                      (getSetting(
-                        "multi_stt_streaming_max_sentences",
-                      ) as number) ?? 3
-                    }
-                    onChange={(value) =>
-                      updateSetting(
-                        "multi_stt_streaming_max_sentences",
-                        Math.round(value),
-                      )
-                    }
-                    min={0}
-                    max={10}
-                    step={1}
-                    label={t("multiStt.streamingFirst.maxSentencesLabel")}
-                    description={t(
-                      "multiStt.streamingFirst.maxSentencesDescription",
-                    )}
-                    descriptionMode="tooltip"
-                    grouped={false}
-                    formatValue={(v) =>
-                      v === 0
-                        ? t("multiStt.streamingFirst.maxSentencesOff")
-                        : t("multiStt.streamingFirst.maxSentencesValue", {
-                            count: Math.round(v),
-                          })
-                    }
-                    onReset={() =>
-                      updateSetting("multi_stt_streaming_max_sentences", 3)
-                    }
-                    disabled={isUpdating("multi_stt_streaming_max_sentences")}
+                    disabled={isUpdating("multi_stt_streaming_context_chunks")}
                   />
 
                   {/* The 1st slot is the streaming model's own live text here,

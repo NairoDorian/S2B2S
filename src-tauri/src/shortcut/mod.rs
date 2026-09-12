@@ -1315,7 +1315,8 @@ pub fn change_multi_stt_streaming_first_enabled_setting(
     Ok(())
 }
 
-/// The silence that closes a chunk in the experimental streaming-first mode.
+/// The silence that divides the session into chunks in the experimental
+/// streaming-first mode: every pause this long closes the chunk being spoken.
 #[tauri::command]
 #[specta::specta]
 pub fn change_multi_stt_streaming_pause_ms_setting(
@@ -1328,30 +1329,16 @@ pub fn change_multi_stt_streaming_pause_ms_setting(
     Ok(())
 }
 
-/// How many already-spoken sentences lead each merge window of the experimental
+/// How many already-closed chunks lead each merge window of the experimental
 /// streaming-first mode. Read at the next close, so it applies mid-session.
 #[tauri::command]
 #[specta::specta]
-pub fn change_multi_stt_streaming_context_sentences_setting(
+pub fn change_multi_stt_streaming_context_chunks_setting(
     app: AppHandle,
-    sentences: u32,
+    chunks: u32,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.multi_stt_streaming_context_sentences = sentences;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
-/// How many sentences a chunk may hold before it is closed and merged without a
-/// pause. Read at the next close, so it applies mid-session.
-#[tauri::command]
-#[specta::specta]
-pub fn change_multi_stt_streaming_max_sentences_setting(
-    app: AppHandle,
-    sentences: u32,
-) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.multi_stt_streaming_max_sentences = sentences;
+    settings.multi_stt_streaming_context_chunks = chunks;
     settings::write_settings(&app, settings);
     Ok(())
 }

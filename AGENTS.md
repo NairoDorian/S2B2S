@@ -183,9 +183,9 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri 2.
   for `PasteMethod::DirectStreaming`; also the reconciler the experimental
   Multi-STT streaming mode retypes through; see Direct Streaming below
 - `multi_stt_stream.rs` - The experimental Multi-STT streaming-first
-  coordinator (fork): sentence segmentation, the chunk model and the merge
-  jobs that replace the live text in place; see Multi-STT Streaming First
-  below
+  coordinator (fork): the break-delimited chunk model, the bounded merge window
+  and the merge jobs that replace the live text in place; see Multi-STT
+  Streaming First below
 - `llama_server.rs` - In-app llama.cpp supervisor (fork): builds the
   `llama-server` command line from `settings.llama` (defaults = the
   maintainer's `launch_server_E2B_Q4.ps1`: Gemma 4 E2B Q4 + MTP draft, 8k
@@ -481,9 +481,8 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
 - `multi_stt_performance_mode_enabled` / `multi_stt_performance_mode_trigger_on_start` - Simulate a "full power" shortcut when a Multi-STT recording ends (or starts, with trigger-on-start) and a "normal" shortcut after the merge/paste, for external power-profile tools
 - `multi_stt_performance_mode_full_power_shortcut` (default `ctrl+space`) / `multi_stt_performance_mode_normal_shortcut` (default `ctrl+alt+space`) - The simulated key combinations. While performance mode is enabled, a transcription hotkey equal to either is not registered (`shortcut::should_register_binding`) and the shortcut recorder rejects it, so the simulated keys can never retrigger Handy
 - `multi_stt_streaming_first_enabled` (default off) / `multi_stt_streaming_pause_ms`
-  (default 1000) / `multi_stt_streaming_context_sentences` (default 1) /
-  `multi_stt_streaming_max_sentences` (default 3) - The experimental
-  streaming-first mode; see below
+  (default 1000, settable 100–10000) / `multi_stt_streaming_context_chunks`
+  (default 1, settable 0–3) - The experimental streaming-first mode; see below
 
 Extra models are managed by `TranscriptionManager` (`extra_engines` HashMap) with explicit
 load/unload lifecycle, separate from the primary model. They are unloaded when Multi-STT is
@@ -781,50 +780,57 @@ the merge prompt rewrite it in place while the recording is still running.
 Backend: `multi_stt_stream.rs`; audio: `audio_toolkit/audio/chunk_tap.rs`;
 overlay: the Live overlay, which grows with the text.
 
-- **The unit of work is a chunk**: the run of speech between two long breaks,
-  one sentence or several. Chunks **accumulate** — a break mid-sentence does
-  not close one, because the extras need the whole sentence's audio as context;
-  the break only merges the partial so the user sees a polished version during
-  the pause. A chunk closes when a break
-  (`multi_stt_streaming_pause_ms` of `last_speech_ms()` standing still, the
-  test Live Mode uses) finds a cuttable sentence end in it, or when
-  `MAX_CHUNK_SECONDS` (60, a constant) fires at one. Never at a fixed length: a
-  long sentence is never cut, and nothing before the last cut point is decoded
-  or rewritten twice.
-- **The cut recedes, so the window is bounded.** The cut lands
-  `multi_stt_streaming_context_sentences` ends _earlier_ than the chunk's last
-  one, and the sentences past it are carried into the next chunk as its leading
-  context — both halves of the join reach the extras, so a sentence the stream
-  ended early at a pause can be put back together, and a pause inside a sentence
-  polishes exactly `[previous sentence + what has been spoken]`. The carried
-  ends keep the stream time each was **first seen** with (`recede_ends`): they
-  are re-timed by neither the shift nor the next `rebuild_ends`, which would put
-  them after the sentence they end, inside the pause the next cut is measured
-  from. `multi_stt_streaming_max_sentences` (default 3) closes a chunk once it
-  holds that many ends, so a run the speaker never pauses in is merged in pieces
-  of a predictable size instead of growing to the valve; a cap at or below the
-  context could never cut and is clamped up to `context + 1`. Total decode work
-  per sentence stays ~1× — the cap still triggers on `cap` ends while the window
-  is `cap - context` sentences, so the merge _count_ rises and each window is
-  smaller, not the work per sentence.
-- **A break with nothing to cut at polishes, but only if there is text.** A
-  merge covering `live[..0]` replaces nothing, and `Chunk::display_text` would
-  then append the whole live text to its result once the model commits, showing
-  the same words twice — so the chunk waits for the next break (`has_text` in
-  `decide`, which is also what makes the case reachable from a unit test).
-- **Sentence ends are timed, not guessed.** `sentence_ends` scans the
-  _committed_ stream text for byte offsets just past `. ! ? … 。 ！ ？` (plus
-  any closing quote/bracket); each is stored with the `audio_committed_ms` of
-  the `StreamUpdate` that first showed it. That timestamp is documented as a
-  drain _hint_, so the audio cut is biased back by `SENTENCE_BOUNDARY_BIAS_MS`
-  — regions at a seam overlap by a few hundred ms, which costs a duplicated
-  word in a decode instead of a clipped one.
+- **The unit of work is a chunk, and a chunk is the audio between two breaks.**
+  A break is `multi_stt_streaming_pause_ms` of `last_speech_ms()` standing still
+  (the test Live Mode uses for its silence boundary) — **every** break closes the
+  chunk that was open, with no second condition and nothing detected in the text.
+  That is the whole delimiter, and it is decided on the audio alone: a run of
+  speech in any language, punctuated or not, closes at every pause the speaker
+  makes, so the session is a list of slices with an obvious start and end.
+  `MAX_CHUNK_SECONDS` (60, a constant) is the only other trigger, and it is a
+  valve rather than a policy: someone who talks for a minute without pausing
+  still gets merged, and neither a chunk nor a merge window can grow without
+  bound. Nothing else closes a chunk — never a length, never a character.
+- **The audio sent to the extras is a window, never the session.** Feeding the
+  extras everything since the recording began is what makes the mode useless on
+  a long session: each break would re-decode the whole dictation, so the cost
+  would grow with the session rather than with the chunk
+  `multi_stt_streaming_context_chunks` (0–3, default 1) already-closed chunks
+  are sent in front of the one that just closed, so the window is at most four
+  chunks and is flat in the length of the session. The context is an **input
+  only** — the merge's text replaces the closed chunk's text and nothing else.
+- **Every slot of a merge covers the same span, and that is the invariant.** The
+  extras decode `[context audio + chunk audio]`, so their text begins with the
+  context's words, while slot 1 (`${output}`) is the primary's own live text for
+  the chunk. Each extra's decode is therefore **cropped** back to the chunk by
+  `strip_context_prefix`, which finds a run of the context's words (12 down to 3,
+  longest first, tolerating `CONTEXT_SEAM_DRIFT` words of disagreement at the
+  seam) in the decode and cuts after it. The ruler is the context chunks'
+  `display_text()` — the text that is already on screen. A decode the crop cannot
+  align is dropped for that chunk, which costs one model's opinion and never text
+  that is already on screen; slot 1 is always intact.
+- **Why the window cannot replace what it covers.** A merge whose output replaced
+  the whole window would overlap its neighbour's window by `context` chunks, and
+  folding two overlapping windows either drops the chunk that left the window or
+  shows the context's words twice. Per-chunk ownership is what makes the text
+  composable: the context is only ever an input, earlier chunks keep their own
+  text, and nothing is dropped, duplicated or shown twice.
 - **The tap** is a process-wide `ChunkTap` the recorder pushes the VAD-filtered
   16 kHz frames into, in the same place `handle_frame` hands them to the batch
-  buffer and the stream feed — so `audio_committed_ms * 16` indexes it without
-  any resampling correction. A session holds it by _token_ (`begin` / `end` /
-  `is_current`), so a coordinator that outlives its recording cannot swallow
-  the next one's audio. Off: one relaxed atomic load per frame.
+  buffer and the stream feed — so a chunk's audio is the recording's own speech
+  without the silence the VAD dropped. A session holds it by _token_ (`begin` /
+  `end` / `is_current`), so a coordinator that outlives its recording cannot
+  swallow the next one's audio. Off: one relaxed atomic load per frame.
+  `audio_committed_ms` is read at each close only to _report_ how far behind the
+  stream's committed text is (the `chunk n closed` log line); it never cuts
+  anything, so a mis-timed hint cannot shift a seam.
+- **Retained audio, and the memory bound.** A closed chunk keeps its audio while
+  it can still be a merge's context — the next `context_chunks` closes — and
+  while a retry of its own merge is pending, and is freed after that
+  (`retain_context_audio`). Worst case is `context_chunks + 1` chunks plus one
+  pending retry, and a chunk at the valve is ~3.8 MB. The retry state is one
+  chunk id, not a copy of the audio: the audio is read back off the retained
+  chunk.
 - **Text model**: `display = closed chunks' current text + the open chunk's`.
   A merge replaces only its own chunk, so the rough streaming text degrades
   into the polished one in place and earlier chunks are untouched. On merge
@@ -834,11 +840,12 @@ overlay: the Live overlay, which grows with the text.
   document) — the overlay badge and `MultiSttStreamChunkFailedEvent` carry it.
 - **Live typing**: the coordinator owns the `DirectStreamWriter` when
   `paste_method = direct_streaming` and pushes the composed text as its target;
-  the writer's prefix diff backspaces and retypes only the divergent suffix
-  (the open chunk), gated on `is_caught_up()` so a revision never outruns the
-  typewriter. `flush` at stop types the remainder and applies the trailing
-  space / newline / auto-submit behaviour. Any other paste method pastes the
-  final text once via Ctrl+V, as Multi-STT does today.
+  the writer's prefix diff backspaces and retypes only the divergent suffix —
+  the chunk a merge just replaced, and everything after it — gated on
+  `is_caught_up()` so a revision never outruns the typewriter. `flush` at stop
+  types the remainder and applies the trailing space / newline / auto-submit
+  behaviour. Any other paste method pastes the final text once via Ctrl+V, as
+  Multi-STT does today.
 - **Overlay**: the mode's events carry `whole_session` (grow the card with the
   transcript) and `failed_chunks` (the badge). The card reports its height in
   24 px steps through `overlay_stream_text_height`, which `overlay.rs` adds to
@@ -847,8 +854,8 @@ overlay: the Live overlay, which grows with the text.
   `whole_session` is set by exactly one emitter (`emit_composed_stream_text`, the
   exclusive-sink path), so it _is_ "this payload is the mode's preview": the
   overlay applies such an update as one block, stopping the typewriter first.
-  A merge replaces sentences that are already on screen, and a character-by-
-  character reveal could only retype its way back to every correction — one
+  A merge replaces text that is already on screen, and a character-by-character
+  reveal could only retype its way back to every correction — one
   render per 1–3 characters instead of one per update. Normal dictation keeps
   `overlay_direct_mode`'s typewriter, including its rewind-to-common-prefix
   revision path. The `DirectStreamWriter` path is deliberately untouched:
@@ -880,18 +887,21 @@ overlay: the Live overlay, which grows with the text.
 
 Cost: one 50 ms thread per recording in this mode; on the audio path one mutex
 lock and one memcpy per 16 ms frame (≈62/s) while it is armed, nothing while it
-is off; one merge per chunk — three decodes of that chunk's audio plus one short
-LLM call, so cost is linear in chunks and never repeats earlier audio. The
-receding cut does not add a decode per merge: the cap still triggers on `cap`
-ends while the window is `cap - context` sentences, so the merges are more
-numerous and each is smaller — total decode work per sentence stays ~1×. The
-preview costs less than what it replaced: one render per update instead of the
-typewriter's one per 1–3 characters, and the card's measuring layout effect runs
-once per update instead of once per tick. Each publish carries the whole
-session's text (the same shape the plain streaming path already emits, bounded
-by `TICK` at ≤ 20/s, deduped against the last publish), and composes it into a
-fresh `String` per changed tick — O(session) memcpy at a few KB for a realistic
-session, which is not the cost here.
+is off; one merge per break — three decodes of the **window** (`context_chunks +
+1` chunks, at most four) plus one short LLM call. The cost per break is therefore
+bounded by the settings, not by how long the session has been running: a
+thirty-minute dictation costs the same per pause as the first one, where feeding
+the extras the whole session would make each break more expensive than the last.
+Memory is bounded the same way: `context_chunks + 1` chunks of audio plus one
+retry, ≈3.8 MB per chunk at the 60 s valve, and a chunk's audio is freed as soon
+as it can neither be context nor be retried. The preview costs less than what it
+replaced: one render per update instead of the typewriter's one per 1–3
+characters, and the card's measuring layout effect runs once per update instead
+of once per tick. Each publish carries the whole session's text (the same shape
+the plain streaming path already emits, bounded by `TICK` at ≤ 20/s, deduped
+against the last publish), and composes it into a fresh `String` per changed tick
+— O(session) memcpy at a few KB for a realistic session, which is not the cost
+here.
 
 ### Single Instance Architecture
 

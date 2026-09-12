@@ -81,26 +81,61 @@ fn level_filter_from_u8(value: u8) -> log::LevelFilter {
     }
 }
 
-fn build_console_filter() -> env_filter::Filter {
-    let mut builder = EnvFilterBuilder::new();
+/// The level the console target runs at when `RUST_LOG` says nothing: the app's
+/// own configured level, floored at `Debug` in a debug build.
+///
+/// A debug build's console is the developer's window onto the app, and every
+/// diagnostic the code emits is a `debug!` line that only appears if this floor
+/// exists — otherwise debugging any feature starts by remembering to prefix the
+/// command with `$env:RUST_LOG=handy_app_lib=debug`. A release build has no such
+/// floor: its console is the user's, and the Log Level setting is the whole rule.
+fn console_level() -> log::LevelFilter {
+    let configured = level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed));
+    if cfg!(debug_assertions) {
+        configured.max(log::LevelFilter::Debug)
+    } else {
+        configured
+    }
+}
 
+/// The console target's filter.
+///
+/// `RUST_LOG` still wins outright when it is set — an explicit per-module
+/// directive is a deliberate thing to type, and honouring it verbatim is what
+/// makes `RUST_LOG=handy_app_lib=trace` work — but with it unset the console
+/// follows [`console_level`] instead of a hardcoded `Info`.
+#[derive(Clone)]
+enum ConsoleFilter {
+    Env(env_filter::Filter),
+    Setting,
+}
+
+impl ConsoleFilter {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        match self {
+            Self::Env(filter) => filter.enabled(metadata),
+            Self::Setting => metadata.level() <= console_level(),
+        }
+    }
+}
+
+fn build_console_filter() -> ConsoleFilter {
     match std::env::var("RUST_LOG") {
         Ok(spec) if !spec.trim().is_empty() => {
+            let mut builder = EnvFilterBuilder::new();
             if let Err(err) = builder.try_parse(&spec) {
                 log::warn!(
-                    "Ignoring invalid RUST_LOG value '{}': {}. Falling back to info-level console logging",
+                    "Ignoring invalid RUST_LOG value '{}': {}; falling back to the configured log \
+                     level",
                     spec,
                     err
                 );
-                builder.filter_level(log::LevelFilter::Info);
+                return ConsoleFilter::Setting;
             }
+            ConsoleFilter::Env(builder.build())
         }
-        _ => {
-            builder.filter_level(log::LevelFilter::Info);
-        }
+        _ => ConsoleFilter::Setting,
     }
-
-    builder.build()
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -723,8 +758,9 @@ pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
     portable::init();
 
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
+    // Console logging: RUST_LOG when it is set, otherwise the app's own log
+    // level (floored at Debug in a debug build, so `bun run dev:fast` carries
+    // the app's diagnostics with no environment variable to remember)
     let console_filter = build_console_filter();
 
     let specta_builder = Builder::<tauri::Wry>::new()
@@ -770,8 +806,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_multi_stt_merge_prompt,
             shortcut::change_multi_stt_streaming_first_enabled_setting,
             shortcut::change_multi_stt_streaming_pause_ms_setting,
-            shortcut::change_multi_stt_streaming_context_sentences_setting,
-            shortcut::change_multi_stt_streaming_max_sentences_setting,
+            shortcut::change_multi_stt_streaming_context_chunks_setting,
             shortcut::change_multi_stt_translate_model_2,
             shortcut::change_multi_stt_translate_model_3,
             shortcut::change_multi_stt_translate_model_4,

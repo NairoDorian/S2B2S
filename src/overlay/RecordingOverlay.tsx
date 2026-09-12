@@ -290,7 +290,7 @@ const RecordingOverlay: React.FC = () => {
           setFailedChunks(event.payload.failed_chunks ?? 0);
         }
         // The experimental Multi-STT streaming mode composes the whole session's
-        // text itself, and a merge replaces sentences that are already on
+        // text itself, and a merge replaces whole chunks that are already on
         // screen. There is nothing to reveal, so the update is applied as one
         // block: the typewriter could only retype its way back to every
         // correction, one to three characters per tick. It stays the rule for

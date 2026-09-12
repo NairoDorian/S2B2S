@@ -2,52 +2,64 @@
 //! instant rough text, and the Multi-STT pipeline replaces it in place, chunk by
 //! chunk, as the speaker pauses.
 //!
-//! # The unit of work is a chunk
+//! # A chunk is the audio between two breaks
 //!
-//! A **chunk** is the run of speech between two long breaks — one sentence, or
-//! three, or more. It is *one* merge input: the extra models need the whole
-//! audio context of what was said, so three sentences are decoded as three
-//! sentences, not three times one sentence. That is what makes a break
-//! mid-sentence safe: the chunk stays open and accumulates, so nothing is frozen
-//! while the sentence is still half-spoken.
+//! A **chunk** is the run of audio between two breaks. The speaker stops for
+//! `multi_stt_streaming_pause_ms` — settable from 100 ms to 10 s — and the chunk
+//! that was open closes there. *Every* break closes a chunk: there is no second
+//! condition to satisfy and nothing to detect in the text, so a session of any
+//! length is just a list of slices with an obvious start and end. The close is
+//! decided on the audio alone.
 //!
-//! A chunk is bounded by **sentence ends, not by time or length**. The cut point
-//! for the next chunk is a complete sentence end in it, timed into the audio. A
-//! long sentence is therefore never cut to fit a limit, and nothing behind the
-//! cut is ever merged twice.
+//! [`MAX_CHUNK_SECONDS`] (60 s) is the one other trigger, and it is a valve
+//! rather than a policy: someone who talks for a minute without pausing still
+//! gets merged, and no chunk can grow without bound.
 //!
-//! Two settings bound the window further, both read at each close:
+//! # The audio sent to the extras is a window, never the session
 //!
-//! - `multi_stt_streaming_max_sentences` (default 3) closes a chunk once it
-//!   holds that many sentence ends, so a run the speaker never pauses in is still
-//!   merged in pieces of a predictable size instead of growing to the 60 s valve.
-//! - `multi_stt_streaming_context_sentences` (default 1) makes the cut land that
-//!   many ends *earlier* than the last one, so the merge window is
-//!   `[start of the last previous sentence .. now]` rather than everything since
-//!   the last cut. The carried sentences are the next window's leading context:
-//!   the extras hear the whole joint, so a sentence the stream ended early at a
-//!   pause can be joined to what follows it, and a pause inside a sentence
-//!   polishes exactly `[previous sentence + what has been spoken]`.
+//! Feeding the extra models everything since the recording began is what makes
+//! the mode useless on a long session: every break would re-decode the whole
+//! dictation, so the cost would grow with the session instead of with the chunk.
+//! A merge is therefore fed `multi_stt_streaming_context_chunks` (0–3, default 1)
+//! already-closed chunks followed by the chunk that just closed: a window of at
+//! most four chunks, flat in the length of the session.
 //!
-//! # Where the timestamps come from
+//! The window is not free. The extras' decode covers the context's words as well
+//! as the chunk's, while the text the merge replaces is the chunk's alone. Each
+//! extra's decode is therefore **cropped** back to the chunk by
+//! [`strip_context_prefix`], against the context chunks' own displayed text —
+//! which is the text already on screen, so the ruler is exactly the words the
+//! user is looking at. Every slot of the merge then covers the same span (the
+//! chunk), which is what lets a merge be applied to one chunk and to nothing
+//! else. A decode the crop cannot align is dropped for that chunk rather than
+//! guessed at.
 //!
-//! `StreamUpdate::audio_committed_ms` is the family's own statement of how much
-//! audio the committed text accounts for. It is documented as a *hint*, and it
-//! is captured when a sentence end is **first seen**, not when the chunk closes:
-//! by close time the pause is over and the timestamp would sit past the silence,
-//! so the cut would swallow the whole break. A sentence end is seen on the
-//! worker thread and consumed on this module's own thread, so the capture is a
-//! snapshot of the last published update rather than an exact instant — see
-//! [`SENTENCE_BOUNDARY_BIAS_MS`] for how that error is made harmless.
+//! That per-chunk ownership is the whole design. A merge that covered
+//! `[context chunks + chunk]` and replaced all of it would overlap the previous
+//! merge's window by `context` chunks, and folding two overlapping windows
+//! either drops the chunk that left the window or shows the context's words
+//! twice. Here the context is only ever an *input* to the merge: the text it
+//! produces belongs to the chunk, earlier chunks keep their own, and nothing is
+//! dropped, duplicated or shown twice.
+//!
+//! # What the tap holds
+//!
+//! The tap receives the same VAD-filtered frames the primary stream is fed, in
+//! the same order, so a chunk's audio is the recording's own speech without the
+//! silence the VAD dropped, and `audio_committed_ms` is a coordinate in that same
+//! stream. It is read at each close to *report* how far behind the stream's
+//! committed text is (the `chunk n closed` log line) and never to cut anything:
+//! audio and text are both taken whole, so a mis-timed hint cannot shift a seam.
 //!
 //! # Shape
 //!
 //! One thread per recording, ticked every [`TICK`], the shape of
 //! `LiveModeManager::run_session`'s inner loop. Per tick it drains the mid-
 //! recording audio tap (the copy of the frames the primary model is being fed),
-//! reads the stream's latest text, rebuilds the open chunk's sentence ends,
-//! tests for a break, and drives the chunk lifecycle. At most one merge job runs
-//! at a time.
+//! absorbs the stream's latest text, tests for a break and drives the chunk
+//! lifecycle. At most one merge job runs at a time: a break that arrives while
+//! one is in flight is acted on as soon as it lands, and if the speaker resumes
+//! before that the chunk simply keeps the speech that followed.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,31 +84,35 @@ use crate::settings::{AppSettings, PasteMethod, get_settings};
 /// The rate the tap and the streaming model both run at (see [`ChunkTap`]).
 const SAMPLES_PER_MS: i64 = 16;
 
-/// How far *before* a sentence end's reported timestamp the audio is cut.
-///
-/// `audio_committed_ms` is a family-reported hint with family-dependent
-/// granularity, and it is read from the last published update rather than at the
-/// instant the sentence end appeared. The cut is therefore biased backwards and
-/// the next chunk starts at the same biased point, so the two regions **overlap**
-/// by this much: an over-estimate then costs one duplicated word at the seam,
-/// while an under-estimate is recovered because the next chunk still contains
-/// the word. Cutting at the unbiased estimate with no forward padding would lose
-/// audio from both chunks instead.
-const SENTENCE_BOUNDARY_BIAS_MS: i64 = 250;
-
-/// A chunk that has grown this long without a break is closed at its last
-/// sentence end. A safety valve for someone who never pauses — deliberately not
-/// a setting and deliberately not a sentence cap: it only ever cuts where a
-/// sentence already ended, so it can never split one. The one exception is a
-/// model that reaches this length without punctuating at all, which has no
-/// sentence end to cut at (see [`Step::CloseAll`]).
+/// A chunk that has grown this long without a break is closed anyway. A valve
+/// for someone who never pauses — deliberately not a setting: it only exists so
+/// that no chunk and no merge window can grow without bound.
 const MAX_CHUNK_SECONDS: i64 = 60;
 
-/// Below this much closed audio a cut is not worth a merge: the extras would
-/// decode near-silence and could return nothing, which would delete text that is
-/// already on screen. A cut that lands earlier is treated as a mid-sentence
-/// break — the chunk is polished and stays open.
-const MIN_CLOSE_MS: i64 = 500;
+/// The most already-closed chunks a merge window may carry. Matches the range the
+/// settings page offers and caps what a hand-edited store can ask for: each
+/// context chunk is up to [`MAX_CHUNK_SECONDS`] of audio held in memory and
+/// re-decoded by three models.
+const MAX_CONTEXT_CHUNKS: usize = 3;
+
+/// How much of the context's tail the crop tries to find in an extra's decode,
+/// longest first. The tail is what abuts the chunk, so it is the boundary being
+/// sought; a longer run is a more certain one, and the shorter lengths are only
+/// reached when a model disagrees with the primary over the last words.
+const CONTEXT_TAIL_TOKENS: usize = 12;
+
+/// The shortest run of context words a crop will accept as a boundary. Below
+/// this a "match" is as likely to be a coincidence somewhere else in the decode
+/// as the real seam, and cropping there would cut the chunk's own words off.
+const CONTEXT_TAIL_MIN_TOKENS: usize = 3;
+
+/// How many of the context's last words a decode may disagree about and still be
+/// cropped. The word at the seam is the one every model is least sure of — it is
+/// the word the break fell after, so it is the one with speech running up to the
+/// chunk's first sample — and without this slack a single mis-heard word there
+/// would defeat *every* anchor length at once, because every one of them ends at
+/// that word.
+const CONTEXT_SEAM_DRIFT: usize = 2;
 
 /// Tick period. 50 ms is Live Mode's cadence: fast enough that a pause is
 /// noticed promptly, slow enough that the per-tick string work is irrelevant.
@@ -133,65 +149,6 @@ pub struct MultiSttStreamChunkFailedEvent {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-/// Byte offsets just past each sentence end in `text`, ascending.
-///
-/// The offset points directly after the terminator and any closing quote or
-/// bracket, but *not* past the whitespace that follows it: the next chunk keeps
-/// that space, so concatenating two chunks' texts reproduces the streaming
-/// model's own text byte for byte.
-///
-/// A `.` whose *next character* is a digit is a decimal point, not a sentence
-/// end — cutting inside `3.14` would split one value across two merges, and
-/// unlike the abbreviation case below the model cannot recover from it. Only an
-/// immediately following digit counts: in `Version 1. 2 is old` the space is
-/// what separates two sentences, so skipping whitespace before the test would
-/// silently merge them.
-/// Abbreviations (`Mr.`, `e.g.`) are taken at face value: a cut there costs one
-/// extra decode of a few seconds of audio, and the tail carries over verbatim,
-/// so the text itself stays intact. That trade is deliberate and not worked
-/// around.
-///
-/// **The offsets are byte offsets**, as everywhere in this module, so a
-/// multi-byte terminator (`…`, `。`) advances by its UTF-8 width.
-pub fn sentence_ends(text: &str) -> Vec<usize> {
-    let mut ends = Vec::new();
-    for (idx, ch) in text.char_indices() {
-        if !is_terminator(ch) {
-            continue;
-        }
-        let after = idx + ch.len_utf8();
-        // Closing quotes/brackets belong to the sentence that just ended.
-        let mut end = after;
-        for (i, c) in text[after..].char_indices() {
-            if is_closer(c) {
-                end = after + i + c.len_utf8();
-            } else {
-                break;
-            }
-        }
-        if ch == '.' && is_decimal_tail(&text[end..]) {
-            continue;
-        }
-        ends.push(end);
-    }
-    ends
-}
-
-fn is_terminator(c: char) -> bool {
-    matches!(c, '.' | '!' | '?' | '…' | '。' | '！' | '？')
-}
-
-fn is_closer(c: char) -> bool {
-    matches!(
-        c,
-        '"' | '\'' | '”' | '’' | '»' | ')' | ']' | '}' | '）' | '】' | '」' | '』'
-    )
-}
-
-fn is_decimal_tail(rest: &str) -> bool {
-    rest.chars().next().is_some_and(|c| c.is_ascii_digit())
-}
-
 /// The largest index `<= at` that is a char boundary of `text`, or `text.len()`
 /// when `at` is past its end.
 ///
@@ -216,7 +173,7 @@ fn clamp_boundary(text: &str, at: usize) -> usize {
 /// Merge results are trimmed and the streaming text is not, so the separator
 /// cannot be left to either side: without this, `...said.` + `Hello` would run
 /// together. When both sides came from the same streaming text the rule is a
-/// no-op, because the split point kept the original whitespace.
+/// no-op, because the split kept the original whitespace.
 fn append_join(out: &mut String, piece: &str) {
     if piece.is_empty() {
         return;
@@ -230,155 +187,146 @@ fn append_join(out: &mut String, piece: &str) {
     out.push_str(piece);
 }
 
-/// Where a cut at `cut_ms` lands inside a chunk's audio, or `None` when it would
-/// leave too little audio behind it (see [`MIN_CLOSE_MS`]) to be worth merging.
-fn cut_index(audio_start_sample: i64, audio_len: usize, cut_ms: i64) -> Option<usize> {
-    let want = (cut_ms - SENTENCE_BOUNDARY_BIAS_MS) * SAMPLES_PER_MS - audio_start_sample;
-    if want < MIN_CLOSE_MS * SAMPLES_PER_MS {
+/// How many already-closed chunks a merge window carries in front of the one it
+/// merges, from the setting. Clamped to [`MAX_CONTEXT_CHUNKS`] because the
+/// store's JSON is hand-editable.
+fn context_depth(raw: u32) -> usize {
+    (raw as usize).min(MAX_CONTEXT_CHUNKS)
+}
+
+/// Whether the open chunk closes on this tick: a break, or the valve.
+///
+/// `has_audio` is the only structural guard there is, and it is not a policy:
+/// a chunk with no audio behind it has nothing to merge, and dispatching a job
+/// over an empty window would only cost three decodes of silence. Every break
+/// that has audio behind it closes its chunk.
+fn closes(paused: bool, has_audio: bool, chunk_ms: i64) -> bool {
+    has_audio && (paused || chunk_ms >= MAX_CHUNK_SECONDS * 1000)
+}
+
+/// A word of a text, folded for comparison, with the byte offset it starts at.
+type Token = (usize, String);
+
+/// Split a text into comparable words, each with its starting byte offset.
+///
+/// Case is folded so two models' decodes of the same speech compare equal, and
+/// punctuation and whitespace are dropped: they are exactly what the models
+/// disagree about. A run of ASCII letters and digits is one word (`don't` is
+/// two, which is fine — both sides split it the same way), while any other
+/// alphanumeric character is a word of its own, so a CJK clause becomes one word
+/// per character instead of one word for the whole clause.
+fn tokens(text: &str) -> Vec<Token> {
+    let mut out: Vec<Token> = Vec::new();
+    let mut open = false;
+    for (index, ch) in text.char_indices() {
+        let ascii = ch.is_ascii_alphanumeric();
+        let own = !ascii && ch.is_alphanumeric();
+        if !ascii && !own {
+            open = false;
+            continue;
+        }
+        // Mid-word: grow the run rather than starting a new one.
+        if ascii
+            && open
+            && let Some(last) = out.last_mut()
+        {
+            last.1.extend(ch.to_lowercase());
+            continue;
+        }
+        let mut folded = String::new();
+        folded.extend(ch.to_lowercase());
+        out.push((index, folded));
+        open = ascii;
+    }
+    out
+}
+
+/// The byte offset at which `want` first occurs in `haystack`, token by token.
+fn find_run(haystack: &[Token], want: &[Token]) -> Option<usize> {
+    if want.is_empty() || want.len() > haystack.len() {
         return None;
     }
-    Some(want.min(audio_len as i64) as usize)
+    (0..=haystack.len() - want.len()).find(|start| {
+        want.iter()
+            .zip(&haystack[*start..])
+            .all(|(a, b)| a.1 == b.1)
+    })
 }
 
-/// Split a chunk's audio at a cut, leaving the closed part in `audio` and
-/// returning the tail with the stream-coordinate index of its first sample.
+/// Crop one extra's decode of a merge window back to the window's last chunk.
 ///
-/// The single place this arithmetic lives, so the test that asserts no sample is
-/// lost or duplicated across a cut covers the production path.
-fn split_audio(
-    audio: &mut Vec<f32>,
-    audio_start_sample: i64,
-    cut_ms: i64,
-) -> Option<(Vec<f32>, i64)> {
-    let index = cut_index(audio_start_sample, audio.len(), cut_ms)?;
-    let tail_start = audio_start_sample + index as i64;
-    Some((audio.split_off(index), tail_start))
-}
-
-/// Move the sentence ends that survive a cut into the carried text's own
-/// coordinates: everything at or before `at` belonged to the text that froze,
-/// everything past it travels with the tail.
+/// The extras are fed `[the context chunks' audio] + [this chunk's]`, so their
+/// text starts with the context's words. The merge needs the chunk's words only:
+/// slot 1 is the primary's text for the chunk, and a merge whose slots cover
+/// different spans has no single span to replace.
 ///
-/// The timestamps are kept as they are — each end keeps the stream time it was
-/// *first* seen at. Re-deriving them instead (as [`Coordinator::rebuild_ends`]
-/// does for new ones) would time them at the revision that re-found them, i.e.
-/// after the sentence they end and inside the pause the next cut is measured
-/// against, which is the error the first-seen timestamps exist to avoid.
-fn recede_ends(ends: &mut Vec<(usize, i64)>, at: usize) {
-    ends.retain(|(offset, _)| *offset > at);
-    for (offset, _) in ends.iter_mut() {
-        *offset -= at;
+/// The anchor is a run of the context's words ending near the **end** of the
+/// context, because that end is the boundary, and it is looked for longest run
+/// first — the more words a run covers, the more certain it is the seam. Each
+/// length is tried with no drift before any drift, and `drift` is how many of the
+/// context's last words the decode is allowed to disagree about
+/// ([`CONTEXT_SEAM_DRIFT`]).
+///
+/// `None` means no run of at least [`CONTEXT_TAIL_MIN_TOKENS`] words aligned:
+/// the caller drops that model's output for this chunk, which costs one model's
+/// opinion and never text that is already on screen. A context shorter than that
+/// minimum is anchored on whatever it has, because a shorter anchor is a better
+/// risk than dropping every extra whenever the previous chunk was a single word —
+/// and the cost of being wrong is bounded in the safe direction: a run that
+/// matched too late cuts words off this chunk's own text, it never repeats the
+/// context's.
+///
+/// An empty context is not a failure but the setting's own 0 case — the extras
+/// heard the chunk alone, so there is nothing to crop.
+fn strip_context_prefix(decoded: &str, context: &str) -> Option<String> {
+    let context = tokens(context);
+    if context.is_empty() {
+        return Some(decoded.trim().to_string());
     }
-}
+    let decoded_tokens = tokens(decoded);
 
-/// What the lifecycle should do this tick.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Step {
-    Idle,
-    /// Close the chunk at this offset into its live text (a byte offset), with
-    /// this stream timestamp for the audio.
-    Close {
-        offset: usize,
-        audio_ms: i64,
-    },
-    /// Merge the chunk as it stands and keep it open: a break arrived before any
-    /// sentence ended, so the polish must not freeze a half-spoken sentence.
-    Polish,
-    /// Close the whole chunk, cut or not: the valve, for a chunk that grew past
-    /// [`MAX_CHUNK_SECONDS`] with no sentence end to cut at.
-    CloseAll,
-}
-
-/// The sentence end a close cuts at: `context` ends *back* from the last one, so
-/// the tail carried into the next chunk begins that many complete sentences
-/// before the newly spoken text (see [`decide`]). `None` when the chunk does not
-/// hold more ends than the context needs — a pause inside the first sentence
-/// after a close, where there is nothing to cut at yet.
-fn cut_end(ends: &[(usize, i64)], context: usize) -> Option<(usize, i64)> {
-    ends.len()
-        .checked_sub(context + 1)
-        .and_then(|index| ends.get(index).copied())
-}
-
-/// The sentence cap to use, from the raw setting: `0` disables it, and anything
-/// at or below `context` could never produce a cut — the candidate needs more
-/// ends than the context carries — so it would ask for a close on every tick and
-/// get none. The store's JSON is hand-editable, so the clamp lives here rather
-/// than only in the UI.
-fn sentence_cap(raw: u32, context: usize) -> usize {
-    if raw == 0 {
-        usize::MAX
-    } else {
-        (raw as usize).max(context + 1)
-    }
-}
-
-/// The whole lifecycle decision, as a pure function.
-///
-/// `ends` is the open chunk's sentence ends (offset, first-seen timestamp),
-/// `context` how many of those lead the merge window as already-spoken context,
-/// `cap` the sentence count that closes a chunk on its own ([`usize::MAX`] when
-/// the setting is off), `paused` a long break since the last close, `has_text`
-/// whether the open chunk holds any committed text for a merge to replace,
-/// `chunk_ms` the open chunk's audio duration.
-///
-/// The arm order is the design: a cuttable sentence end closes the chunk,
-/// whether the trigger was a break or the cap; a break with nothing to cut at
-/// polishes and keeps accumulating, so a half-spoken sentence is never frozen;
-/// only the valve ever closes a chunk whole, and only when there is no sentence
-/// end it could cut at instead — a repeated polish would never bound the chunk.
-///
-/// **The cut lands `context` ends before the last one**, so the tail that
-/// carries into the next chunk begins that many complete sentences early: the
-/// next merge window is `[start of the last previous sentence .. now]` rather
-/// than everything since the last cut, which is what keeps the audio sent to the
-/// extras bounded however long the session runs. With no such end to cut at
-/// (fewer sentences than the context needs) a break falls through to
-/// [`Step::Polish`] — whose window is then exactly that previous sentence plus
-/// what has been spoken, so the extras hear the whole joint and can glue back a
-/// sentence the stream ended early. A cap with nothing to cut at waits for the
-/// next sentence end instead: a merge with no break behind it would be work
-/// thrown away.
-// A flat signature on purpose: every case here is a row of values in the tests
-// below, and a struct would only add a name to each of them.
-#[allow(clippy::too_many_arguments)]
-fn decide(
-    ends: &[(usize, i64)],
-    context: usize,
-    cap: usize,
-    paused: bool,
-    has_text: bool,
-    chunk_ms: i64,
-    audio_start_sample: i64,
-    audio_len: usize,
-) -> Step {
-    let valves = chunk_ms >= MAX_CHUNK_SECONDS * 1000;
-    if !(paused || ends.len() >= cap || valves) {
-        return Step::Idle;
-    }
-    match cut_end(ends, context) {
-        Some((offset, audio_ms))
-            if cut_index(audio_start_sample, audio_len, audio_ms).is_some() =>
-        {
-            Step::Close { offset, audio_ms }
+    let longest = context.len().min(CONTEXT_TAIL_TOKENS);
+    let shortest = CONTEXT_TAIL_MIN_TOKENS.min(context.len());
+    for tail in (shortest..=longest).rev() {
+        for drift in 0..=CONTEXT_SEAM_DRIFT {
+            if context.len() < tail + drift {
+                continue;
+            }
+            let want = &context[context.len() - tail - drift..context.len() - drift];
+            let Some(start) = find_run(&decoded_tokens, want) else {
+                continue;
+            };
+            // Past the run come the words this decode got wrong (the context's
+            // own text already shows those, and it is not this chunk's to
+            // replace), and only then this chunk's own words.
+            let cut = decoded_tokens
+                .get(start + tail + drift)
+                .map_or(decoded.len(), |token| token.0);
+            return Some(decoded[cut..].trim().to_string());
         }
-        // The valve. A sentence end too early to cut at leaves this as the only
-        // way to bound the chunk; splitting a sentence here is the accepted cost
-        // of a model that does not punctuate.
-        _ if valves => Step::CloseAll,
-        // A break with nothing to cut at: polish what is there and keep
-        // accumulating, so a half-spoken sentence is never frozen. Under the
-        // minimum the work is not worth it and the chunk waits for the next
-        // break.
-        //
-        // Nothing committed yet is the other case to decline: the merge would
-        // cover `live[..0]`, and a merge that replaces no text is not a
-        // replacement — [`Chunk::display_text`] would append the whole live text
-        // to it once the model commits, showing the same words twice. The chunk
-        // waits for the next break, by which time the text it is polishing
-        // exists.
-        _ if paused && has_text && chunk_ms >= MIN_CLOSE_MS => Step::Polish,
-        _ => Step::Idle,
+    }
+    None
+}
+
+/// Crop a decode, saying so when it cannot be done. The model's output is
+/// dropped for this chunk rather than risk repeating text that is already on
+/// screen or cutting the chunk's own words off.
+fn crop_decode(model_id: &str, decoded: &str, context: &str) -> String {
+    if decoded.trim().is_empty() {
+        return String::new();
+    }
+    match strip_context_prefix(decoded, context) {
+        Some(cropped) => cropped,
+        None => {
+            warn!(
+                "Multi-STT streaming: '{}' decoded {} chars that could not be aligned with the \
+                 {} chars of context text; dropping its output for this chunk",
+                model_id,
+                decoded.chars().count(),
+                context.chars().count()
+            );
+            String::new()
+        }
     }
 }
 
@@ -389,71 +337,51 @@ fn decide(
 /// One chunk of the session: an append-only live text and the audio behind it.
 struct Chunk {
     /// Monotonic within a session; a merge result is matched back to its chunk
-    /// by this, because the open chunk can close while its job is still running.
+    /// by this, because later chunks exist by the time a job lands.
     id: u64,
-    /// The streaming model's own text for this chunk, append-only. It is the
-    /// anchor every text offset is computed against.
+    /// The streaming model's own text for this chunk, append-only. It is a
+    /// contiguous slice of the stream's committed text: each close hands the
+    /// open chunk's whole text over and starts the next one empty.
     live: String,
     /// The merged text, once a merge has landed.
     merged_text: Option<String>,
-    /// `live.len()` when `merged_text` was produced. What the streaming model
-    /// has added since has not been merged yet and is appended verbatim when
-    /// displaying — that is how a mid-sentence polish keeps showing the words
-    /// spoken after it.
-    merged_live_len: usize,
-    /// 16 kHz samples from this chunk's cut point. Taken out when a close job is
-    /// dispatched, so a closed chunk holds audio only while its merge is pending
-    /// or after one failed (see `Coordinator::retry`).
+    /// 16 kHz samples of this chunk's own audio. Kept after the chunk closes
+    /// while it can still be a merge window's context, and freed after that (see
+    /// `Coordinator::retain_context_audio`).
     audio: Vec<f32>,
-    /// Stream-coordinate sample index of `audio[0]`.
-    audio_start_sample: i64,
     /// Whether the last merge for this chunk failed, so it is showing the
     /// extras' concatenated text rather than a merged one.
     failed: bool,
 }
 
 impl Chunk {
-    fn new(id: u64, audio_start_sample: i64) -> Self {
+    fn new(id: u64) -> Self {
         Self {
             id,
             live: String::new(),
             merged_text: None,
-            merged_live_len: 0,
             audio: Vec::new(),
-            audio_start_sample,
             failed: false,
         }
     }
 
-    /// What this chunk contributes to the session's text: the merged text plus
-    /// whatever the streaming model added after the merge, or the plain live
-    /// text while nothing has been merged.
-    ///
-    /// The tail is appended verbatim, with no separator inserted: it is the
-    /// continuation of the very text the merge covered, so a space invented here
-    /// would land inside a word. The cut that produced it kept the original
-    /// whitespace, and the stream's text after a merge result keeps its own.
+    /// What this chunk contributes to the session's text: the merged text once a
+    /// merge has landed, the streaming model's own text until then.
     fn display_text(&self) -> String {
-        let Some(merged) = &self.merged_text else {
-            return self.live.clone();
-        };
-        let tail = &self.live[clamp_boundary(&self.live, self.merged_live_len)..];
-        if tail.is_empty() {
-            return merged.clone();
-        }
-        let mut out = merged.clone();
-        out.push_str(tail);
-        out
+        self.merged_text
+            .clone()
+            .unwrap_or_else(|| self.live.clone())
     }
 
     fn duration_ms(&self) -> i64 {
         self.audio.len() as i64 / SAMPLES_PER_MS
     }
 
-    /// Record a merge result covering `live[..live_len]`.
-    fn apply_merge(&mut self, text: String, live_len: usize, failed: bool) {
+    /// Record a merge result for this chunk. A chunk's text is complete before
+    /// its merge is dispatched — it closes first and is never appended to again
+    /// — so there is no tail to keep outside the merged text.
+    fn apply_merge(&mut self, text: String, failed: bool) {
         self.merged_text = Some(text);
-        self.merged_live_len = live_len;
         self.failed = failed;
     }
 }
@@ -462,18 +390,22 @@ impl Chunk {
 // Merge job
 // ---------------------------------------------------------------------------
 
-/// One chunk's merge input, snapshotted when the job is dispatched — the chunk
-/// can keep growing while the job runs.
+/// One chunk's merge input, snapshotted when the job is dispatched.
 struct JobInput {
     chunk_id: u64,
     /// The primary model's own text for this chunk, which is what `${output}`
     /// (slot 1) receives.
     live: String,
-    /// 16 kHz, from the chunk's cut point.
+    /// The window: the context chunks' audio, then this chunk's.
     audio: Vec<f32>,
+    /// How many samples of `audio` belong to the context chunks, i.e. where this
+    /// chunk's own audio starts. 0 when the window carries no context.
+    context_samples: usize,
+    /// The context chunks' displayed text, the ruler the extras' decodes are
+    /// cropped against.
+    context_text: String,
     /// Whether this job's per-model outputs belong in the session's history
-    /// metadata. True for the merge that closes a chunk, false for a
-    /// mid-sentence polish (superseded by the next one) and for a retry (the
+    /// metadata. True for the merge that closes a chunk, false for a retry (the
     /// outputs are already recorded).
     record_outputs: bool,
 }
@@ -482,8 +414,7 @@ struct JobResult {
     /// The dispatch generation this job was created under. See [`MergeQueue`].
     generation: u64,
     chunk_id: u64,
-    /// `live.len()` when the job was dispatched; the merged text covers exactly
-    /// this much of the chunk's live text.
+    /// `live.len()` when the job was dispatched.
     live_len: usize,
     record_outputs: bool,
     /// `None` when no merge text was produced; `outputs` still holds the extras.
@@ -492,11 +423,6 @@ struct JobResult {
     brain: Option<MultiSttHistoryBrain>,
     /// A merge was configured and asked for but did not produce text.
     failed: bool,
-    /// The job's audio, handed back only for a failed close so the next break
-    /// can retry this chunk instead of losing its polish. Letting the job return
-    /// it keeps the alternative — a second copy held by the coordinator — out of
-    /// the steady state.
-    retry_audio: Option<Vec<f32>>,
     decode_latency_ms: f64,
     merge_latency_ms: f64,
 }
@@ -518,16 +444,29 @@ async fn run_merge_job(
         chunk_id,
         live,
         audio,
+        context_samples,
+        context_text,
         record_outputs,
     } = input;
     let live_len = live.len();
     let decode_start = Instant::now();
 
-    // Each extra decodes the chunk's audio in full. The clones are ~4 MB at the
-    // 60 s valve, against decodes that cost far more.
+    info!(
+        "Multi-STT streaming: chunk {} merge started — {} ms of window audio ({} ms of it \
+         context), {} chars to replace",
+        chunk_id + 1,
+        audio.len() as i64 / SAMPLES_PER_MS,
+        context_samples as i64 / SAMPLES_PER_MS,
+        live.chars().count()
+    );
+
+    // Each extra decodes the whole window. The clones are the window's samples —
+    // at most four chunks, ~7.7 MB at the valve — against decodes that cost far
+    // more.
     let spawn_extra = |slot: usize, model_id: Option<String>| {
         let tm = Arc::clone(&tm);
         let audio = audio.clone();
+        let context = context_text.clone();
         model_id.map(move |model_id| {
             tauri::async_runtime::spawn_blocking(move || {
                 if !tm.is_extra_model_loaded(&model_id) {
@@ -538,7 +477,7 @@ async fn run_merge_job(
                     return (slot, String::new());
                 }
                 match tm.transcribe_with_extra(&model_id, audio) {
-                    Ok(text) => (slot, text),
+                    Ok(text) => (slot, crop_decode(&model_id, &text, &context)),
                     Err(e) => {
                         warn!(
                             "Multi-STT streaming: extra model '{}' failed on this chunk: {}",
@@ -596,6 +535,15 @@ async fn run_merge_job(
     };
     let merge_latency_ms = merge_start.elapsed().as_secs_f64() * 1000.0;
 
+    info!(
+        "Multi-STT streaming: chunk {} merge finished — {} in {} ms decode, {} in {} ms merge",
+        chunk_id + 1,
+        if failed { "failed" } else { "ok" },
+        decode_latency_ms.round() as i64,
+        if merged.is_some() { "text" } else { "no text" },
+        merge_latency_ms.round() as i64
+    );
+
     JobResult {
         generation,
         chunk_id,
@@ -605,7 +553,6 @@ async fn run_merge_job(
         outputs,
         brain,
         failed,
-        retry_audio: (failed && record_outputs).then_some(audio),
         decode_latency_ms,
         merge_latency_ms,
     }
@@ -626,6 +573,31 @@ fn concatenate(primary: &str, outputs: &[String; 4]) -> String {
         combined.push_str(text);
     }
     combined
+}
+
+/// The context a merge window carries in front of `closed[index]`: the `depth`
+/// chunks before it, oldest first, as audio and as the text they already show.
+///
+/// The walk stops at the first chunk whose audio has been freed: the text and
+/// the audio must describe the same span — the text is the crop's ruler — so a
+/// chunk that can no longer be heard cannot contribute its words.
+fn window_context(closed: &[Chunk], index: usize, depth: usize) -> (Vec<f32>, String) {
+    let mut chunks: Vec<&Chunk> = Vec::new();
+    for candidate in closed[..index].iter().rev().take(depth) {
+        if candidate.audio.is_empty() {
+            break;
+        }
+        chunks.push(candidate);
+    }
+    chunks.reverse();
+
+    let mut audio = Vec::new();
+    let mut text = String::new();
+    for chunk in chunks {
+        audio.extend_from_slice(&chunk.audio);
+        append_join(&mut text, &chunk.display_text());
+    }
+    (audio, text)
 }
 
 /// What a finished session hands back to `MultiSttAction::stop`.
@@ -782,11 +754,11 @@ pub fn start(
         primary_text: String::new(),
         primary_tentative: String::new(),
         live_copied: 0,
+        stream_committed_ms: 0,
         alive: Arc::clone(&alive),
         next_chunk_id: 1,
-        open: Chunk::new(0, 0),
+        open: Chunk::new(0),
         closed: Vec::new(),
-        ends: Vec::new(),
         last_speech_ms: 0,
         last_speech_change: Instant::now(),
         last_close_speech_ms: 0,
@@ -810,8 +782,10 @@ pub fn start(
     *SESSION.lock().unwrap() = Some(Session { tx, handle, alive });
 
     info!(
-        "Multi-STT streaming: armed (break threshold {} ms, direct typing: {})",
+        "Multi-STT streaming: armed (break threshold {} ms, up to {} context chunk(s), direct \
+         typing: {})",
         get_settings(app).multi_stt_streaming_pause_ms,
+        context_depth(get_settings(app).multi_stt_streaming_context_chunks),
         owns_typing
     );
     true
@@ -879,6 +853,8 @@ pub fn cancel() {
 struct Snapshot {
     committed: String,
     tentative: String,
+    /// How much audio the committed text accounts for. Reported at each close,
+    /// never used to cut (see the module docs).
     audio_committed_ms: i64,
     input_received_ms: i64,
     revision: u64,
@@ -891,8 +867,7 @@ struct Snapshot {
 /// [`MERGE_TIMEOUT`] but cannot cancel it — the task is detached and finishes on
 /// its own — and the session dispatches a new one meanwhile. With one slot that
 /// second dispatch overwrote whatever the first had produced, so a chunk's merge
-/// was lost silently and permanently: a close merge's audio had already been
-/// taken from the chunk, so there was nothing left to retry from.
+/// was lost silently and permanently.
 ///
 /// Each job also carries the generation it was dispatched under, and only a
 /// result whose generation matches the one the session is waiting for releases
@@ -989,30 +964,32 @@ struct Coordinator {
     /// Absolute byte offset in `committed` up to which the open chunk's `live`
     /// has been copied.
     live_copied: usize,
+    /// The stream's own statement of how much audio its committed text accounts
+    /// for, reported at each close so a lagging stream is visible in the log.
+    stream_committed_ms: i64,
 
     /// This session's liveness, as [`is_active`] reads it. See [`Session`].
     alive: Arc<AtomicBool>,
 
     next_chunk_id: u64,
     open: Chunk,
+    /// Every chunk that has closed, in order. Their audio is what a merge
+    /// window's context is built from, so it is kept for a while after the
+    /// close (see [`Coordinator::retain_context_audio`]).
     closed: Vec<Chunk>,
-    /// Sentence ends in the *open* chunk's live text with the stream time each
-    /// was first seen, rebuilt on every text revision. Rebuilding — rather than
-    /// appending — is what lets later text invalidate an earlier end: `3.` looks
-    /// like a sentence until `14` arrives.
-    ends: Vec<(usize, i64)>,
 
     last_speech_ms: i64,
     last_speech_change: Instant,
-    /// The speech clock's value when the chunk was last closed or polished. A
-    /// break only counts again once speech has advanced past it, so one long
-    /// pause cannot trigger a merge on every tick.
+    /// The speech clock's value when the chunk was last closed. A break only
+    /// counts again once speech has advanced past it, so one long pause cannot
+    /// trigger a merge on every tick.
     last_close_speech_ms: i64,
 
-    /// The last failed chunk's audio and id, kept so the next break can retry its
-    /// merge (a transient provider failure should not cost the chunk its polish).
-    /// One chunk's worth, bounded by [`MAX_CHUNK_SECONDS`].
-    retry: Option<(u64, Vec<f32>)>,
+    /// The last failed chunk, kept so a later close can retry its merge (a
+    /// transient provider failure should not cost the chunk its polish). One
+    /// chunk's worth: a second failure replaces the first, which keeps its
+    /// concatenated fallback text.
+    retry: Option<u64>,
 
     merge: MergeQueue,
     failed_chunks: u32,
@@ -1087,8 +1064,9 @@ impl Coordinator {
             self.settings = get_settings(&self.app);
         }
 
-        // Audio first: the tap is drained every tick, so a cut is a local
-        // `split_off` and never an index into the past.
+        // Audio first: the tap is drained every tick, so a chunk's audio is
+        // whatever accumulated since the last break and nothing has to be
+        // indexed out of the past.
         self.tap.take_into(&mut self.scratch);
         if !self.scratch.is_empty() {
             self.open.audio.extend_from_slice(&self.scratch);
@@ -1109,9 +1087,10 @@ impl Coordinator {
             && speech > self.last_close_speech_ms
             && self.last_speech_change.elapsed() >= pause;
 
-        // One merge at a time. A break during a job is handled on a later tick,
-        // not queued: the sentence ends' timestamps were fixed when they were
-        // first seen, so a late close cuts in exactly the same place.
+        // One merge at a time. A break during a job is not lost: the pause
+        // persists until a close consumes it, so it is acted on the moment the
+        // job lands — unless the speaker resumed meanwhile, in which case the
+        // chunk keeps the speech that followed, as it should.
         if self.merge.running {
             self.watchdog_merge();
             if self.merge.running {
@@ -1120,53 +1099,21 @@ impl Coordinator {
             }
         }
 
-        let context = self.settings.multi_stt_streaming_context_sentences as usize;
-        let cap = sentence_cap(self.settings.multi_stt_streaming_max_sentences, context);
-        let step = decide(
-            &self.ends,
-            context,
-            cap,
-            paused,
-            !self.open.live.trim().is_empty(),
-            self.open.duration_ms(),
-            self.open.audio_start_sample,
-            self.open.audio.len(),
-        );
-        match step {
-            Step::Idle => {}
-            Step::Close { offset, audio_ms } => {
-                self.close_at(offset, audio_ms);
-                self.last_close_speech_ms = speech;
+        if closes(paused, !self.open.audio.is_empty(), self.open.duration_ms()) {
+            self.close_open_chunk();
+            self.last_close_speech_ms = speech;
+            // A failed chunk is retried at the next close, so the retry rate is
+            // the session's natural pace and a down provider is not hammered.
+            if !self.merge.running {
+                self.retry_failed_chunk();
             }
-            Step::CloseAll => {
-                self.close_entire_open_chunk();
-                self.last_close_speech_ms = speech;
-            }
-            Step::Polish => {
-                // The chunk stays open and keeps accumulating; the merge only
-                // replaces what is on screen while the speaker is paused. A
-                // polish never displaces a running job: the close that owns the
-                // chunk's fate takes precedence, and a polish into an occupied
-                // slot would be a merge whose result is thrown away.
-                if !self.merge.running {
-                    self.dispatch(self.open_job(false));
-                }
-                self.last_close_speech_ms = speech;
-            }
-        }
-
-        // A failed chunk is retried at the next break, so the retry rate is the
-        // session's natural pace and a down provider is not hammered.
-        if (paused || step != Step::Idle) && !self.merge.running {
-            self.retry_failed_chunk();
         }
 
         self.publish(false);
         true
     }
 
-    /// Read the stream's latest text into the open chunk and rebuild its
-    /// sentence ends.
+    /// Read the stream's latest text into the open chunk.
     fn absorb_stream_text(&mut self) {
         let snapshot = Arc::clone(&*self.snapshot.lock().unwrap());
         if snapshot.revision == self.seen_revision {
@@ -1176,7 +1123,7 @@ impl Coordinator {
 
         // The tap and the stream are fed the same frames in the same order (see
         // `ChunkTap`), so the tap must have seen exactly the audio the stream was
-        // fed. A structural mismatch would mean every timestamp is off by a
+        // fed. A structural mismatch would mean every reported lag is off by a
         // constant, which is worth one warning — the correction is not applied,
         // because a worker-thread lag of a frame or two is indistinguishable
         // from a real lead and would silently absorb it.
@@ -1186,8 +1133,8 @@ impl Coordinator {
             let tapped = self.tap.pushed_samples();
             if tapped > fed {
                 warn!(
-                    "Multi-STT streaming: the audio tap is {} samples ahead of the stream; sentence \
-                     timestamps may be off by {:.0} ms",
+                    "Multi-STT streaming: the audio tap is {} samples ahead of the stream; the \
+                     stream lag reported at each close may be off by {:.0} ms",
                     tapped - fed,
                     (tapped - fed) as f64 / SAMPLES_PER_MS as f64
                 );
@@ -1196,10 +1143,13 @@ impl Coordinator {
 
         self.primary_text = snapshot.committed.clone();
         self.primary_tentative = snapshot.tentative.clone();
+        self.stream_committed_ms = snapshot.audio_committed_ms;
 
         // `committed` only grows. If a family rewrites it anyway, offsets into it
-        // are meaningless: re-anchor on the current length and say so once. The
-        // audio is unaffected — it is cut by stream time, not by text offset.
+        // are meaningless: re-anchor on the current length and say so once. Only
+        // the open chunk is re-anchored — a closed chunk's text is frozen, and it
+        // is the text already on screen. The open chunk never carries a merge:
+        // every merge is dispatched at a close.
         if snapshot.committed.len() < self.live_copied {
             warn!(
                 "Multi-STT streaming: the committed text shrank ({} → {} bytes); re-anchoring the \
@@ -1208,8 +1158,6 @@ impl Coordinator {
                 snapshot.committed.len()
             );
             self.open.live.clear();
-            self.open.merged_text = None;
-            self.open.merged_live_len = 0;
             self.live_copied = snapshot.committed.len();
         }
         if snapshot.committed.len() > self.live_copied {
@@ -1217,129 +1165,82 @@ impl Coordinator {
             self.open.live.push_str(&snapshot.committed[at..]);
             self.live_copied = snapshot.committed.len();
         }
-        self.rebuild_ends(snapshot.audio_committed_ms);
     }
 
-    /// Recompute the open chunk's sentence ends, keeping the timestamp each was
-    /// first seen with. A sentence end is timed when it appears, not when the
-    /// chunk closes: by close time the pause is under way and the timestamp
-    /// would sit past the silence the break is measured on.
-    fn rebuild_ends(&mut self, audio_ms: i64) {
-        let fresh = sentence_ends(&self.open.live);
-        let mut rebuilt = Vec::with_capacity(fresh.len());
-        for offset in fresh {
-            let seen = self
-                .ends
-                .iter()
-                .find(|(o, _)| *o == offset)
-                .map(|(_, ms)| *ms)
-                .unwrap_or(audio_ms);
-            rebuilt.push((offset, seen));
-        }
-        self.ends = rebuilt;
+    /// Close the open chunk and merge it.
+    ///
+    /// The chunk is taken whole — all of the audio since the last break and all
+    /// of the streaming text it owns — so there is no seam to keep aligned,
+    /// nothing dropped and nothing shown twice. The next chunk starts empty here.
+    fn close_open_chunk(&mut self) {
+        let mut closed = std::mem::replace(&mut self.open, Chunk::new(self.next_chunk_id));
+        self.next_chunk_id += 1;
+        closed.failed = false;
+        self.closed.push(closed);
+        self.retain_context_audio();
+
+        let index = self.closed.len() - 1;
+        let context_samples = {
+            let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
+            window_context(&self.closed, index, depth).0.len()
+        };
+        // The stream's own audio position, which the tap has just drained up to:
+        // the difference to its committed text is the lag this close had to
+        // merge across.
+        let stream_position_ms = self.tap.pushed_samples() as i64 / SAMPLES_PER_MS;
+        info!(
+            "Multi-STT streaming: chunk {} closed — {} ms of audio, {} chars, {} ms of context, \
+             stream committed text {} ms behind the chunk's end",
+            self.closed.len(),
+            self.closed[index].duration_ms(),
+            self.closed[index].live.chars().count(),
+            context_samples as i64 / SAMPLES_PER_MS,
+            (stream_position_ms - self.stream_committed_ms).max(0)
+        );
+
+        let input = self.window_for(index, true);
+        self.dispatch(input);
+        self.recount_failed();
     }
 
-    /// The open chunk itself, as a job input. Its audio is cloned because the
-    /// chunk keeps growing while the job runs.
-    fn open_job(&self, record_outputs: bool) -> JobInput {
+    /// The merge input for the closed chunk at `index`: the context chunks the
+    /// setting asks for, then the chunk itself. The window is what bounds the
+    /// mode's cost — it never grows with the length of the session.
+    fn window_for(&self, index: usize, record_outputs: bool) -> JobInput {
+        let chunk = &self.closed[index];
+        let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
+        let (mut audio, context_text) = window_context(&self.closed, index, depth);
+        let context_samples = audio.len();
+        audio.extend_from_slice(&chunk.audio);
         JobInput {
-            chunk_id: self.open.id,
-            live: self.open.live.clone(),
-            audio: self.open.audio.clone(),
+            chunk_id: chunk.id,
+            live: chunk.live.clone(),
+            audio,
+            context_samples,
+            context_text,
             record_outputs,
         }
     }
 
-    /// Close the open chunk at a sentence end: the text before the cut freezes
-    /// and is merged, the tail carries into the new open chunk.
+    /// Free the audio of the closed chunks that have fallen out of the context
+    /// window.
     ///
-    /// The cut is `context` sentence ends *earlier* than the last one (see
-    /// [`decide`]), so the tail is not only the half-spoken sentence — it begins
-    /// with that many complete sentences, which the next merge window opens on as
-    /// already-spoken context. Text and audio both split at the same offset in
-    /// the same step, so the two regions meet exactly: nothing is dropped,
-    /// duplicated or shown twice, and no sentence straddles the seam.
-    fn close_at(&mut self, offset: usize, audio_ms: i64) {
-        let at = clamp_boundary(&self.open.live, offset);
-        // `decide` already established that this cut has audio behind it; a
-        // second chance here would only hide a bug.
-        let Some((tail_audio, tail_start)) =
-            split_audio(&mut self.open.audio, self.open.audio_start_sample, audio_ms)
-        else {
-            debug!("Multi-STT streaming: dropped a cut that no longer has audio behind it");
-            return;
-        };
-        let tail_text = self.open.live.split_off(at);
-
-        // A polish that ran mid-sentence covered text this cut now splits: its
-        // merged text belongs to neither side, so it is dropped and the closed
-        // chunk falls back to its raw live text until this close's own merge
-        // lands. Any earlier merge this cut does not touch is kept.
-        let mut merged = self.open.merged_text.take();
-        if self.open.merged_live_len > at {
-            merged = None;
+    /// A closed chunk keeps its audio while it can still be a merge's context —
+    /// the next `context_chunks` closes — because the window is served from these
+    /// buffers. That retention is what bounds the mode's memory: the window plus
+    /// the open chunk, `context_chunks + 1` chunks at most, and a chunk at the
+    /// 60 s valve is ~3.8 MB.
+    fn retain_context_audio(&mut self) {
+        let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
+        let keep_from = self.closed.len().saturating_sub(depth);
+        for (index, chunk) in self.closed.iter_mut().enumerate() {
+            // A chunk waiting to retry its own merge still needs its audio,
+            // however far back it is: a retry is offered at a close, and that
+            // close may be several chunks later.
+            if index < keep_from && Some(chunk.id) != self.retry && !chunk.audio.is_empty() {
+                chunk.audio = Vec::new();
+            }
         }
-        let merged_live_len = if merged.is_some() {
-            self.open.merged_live_len
-        } else {
-            0
-        };
-
-        let closed_audio = std::mem::take(&mut self.open.audio);
-        let closed_start = self.open.audio_start_sample;
-        let closed_id = self.open.id;
-        let mut closed = Chunk {
-            id: closed_id,
-            live: std::mem::take(&mut self.open.live),
-            merged_text: merged,
-            merged_live_len,
-            audio: closed_audio,
-            audio_start_sample: closed_start,
-            failed: false,
-        };
-
-        let mut next = Chunk::new(self.next_chunk_id, tail_start);
-        self.next_chunk_id += 1;
-        next.live = tail_text;
-        next.audio = tail_audio;
-        self.open = next;
-        // The carried text begins `context` sentence ends before the one that was
-        // cut at, so those ends move into the new chunk with it — as its leading
-        // context sentence, which is what the next merge window opens on.
-        recede_ends(&mut self.ends, at);
-
-        // A close merge owns the chunk's history outputs, and it is what decides
-        // the chunk's failure state — a failed polish is superseded by it.
-        self.dispatch(JobInput {
-            chunk_id: closed_id,
-            live: closed.live.clone(),
-            audio: std::mem::take(&mut closed.audio),
-            record_outputs: true,
-        });
-        self.closed.push(closed);
-        self.recount_failed();
-    }
-
-    /// Close the whole open chunk, cut or not: the valve, for a chunk that grew
-    /// past [`MAX_CHUNK_SECONDS`] with no sentence end to cut at. Nothing carries
-    /// over, so the next chunk starts with empty text and audio at this point.
-    fn close_entire_open_chunk(&mut self) {
-        let start = self.open.audio_start_sample + self.open.audio.len() as i64;
-        let mut closed = std::mem::replace(&mut self.open, Chunk::new(self.next_chunk_id, start));
-        self.next_chunk_id += 1;
-        closed.merged_text = None;
-        closed.merged_live_len = 0;
-        closed.failed = false;
-        self.ends.clear();
-
-        self.dispatch(JobInput {
-            chunk_id: closed.id,
-            live: closed.live.clone(),
-            audio: std::mem::take(&mut closed.audio),
-            record_outputs: true,
-        });
-        self.closed.push(closed);
-        self.recount_failed();
     }
 
     /// Hand a job to the blocking pool. Only one runs at a time; the callers
@@ -1405,7 +1306,6 @@ impl Coordinator {
             outputs,
             brain,
             failed,
-            retry_audio,
             decode_latency_ms,
             merge_latency_ms,
         } = result;
@@ -1423,15 +1323,15 @@ impl Coordinator {
                 self.closed.iter_mut().find(|c| c.id == chunk_id)
             };
             match target {
-                // The chunk's live text is shorter than the result's: a cut moved
-                // that text into the next chunk while the job ran, so the result
-                // now covers text it does not own. Dropping it leaves the raw
-                // live text on screen instead of text from another chunk.
+                // The chunk's live text is shorter than the result's: nothing in
+                // the mode grows a closed chunk's text, so this can only be a
+                // re-anchored open chunk. Dropping the result leaves its raw live
+                // text on screen instead of text from another chunk.
                 Some(chunk) if chunk.live.len() < live_len => {
                     debug!(
-                        "Multi-STT streaming: dropping a stale merge for chunk {} (its text was cut \
-                         while the job ran)",
-                        chunk_id
+                        "Multi-STT streaming: dropping a stale merge for chunk {} (its text was \
+                         re-anchored while the job ran)",
+                        chunk_id + 1
                     );
                     false
                 }
@@ -1448,16 +1348,15 @@ impl Coordinator {
                             warn!(
                                 "Multi-STT streaming: chunk {} has no text at all after a failed \
                                  merge",
-                                chunk_id
+                                chunk_id + 1
                             );
                             chunk.merged_text = None;
-                            chunk.merged_live_len = 0;
                             chunk.failed = true;
                         } else {
-                            chunk.apply_merge(fallback, live_len, true);
+                            chunk.apply_merge(fallback, true);
                         }
                     } else if let Some(text) = merged {
-                        chunk.apply_merge(text, live_len, false);
+                        chunk.apply_merge(text, false);
                     }
                     true
                 }
@@ -1485,8 +1384,11 @@ impl Coordinator {
                 session.push_str(text);
             }
         }
-        if let Some(audio) = retry_audio {
-            self.retry = Some((chunk_id, audio));
+        // A failed chunk waits for the next close to be retried, whether or not
+        // this job was a retry: a provider that is down for a minute should not
+        // cost the chunk its polish for the rest of the session.
+        if failed {
+            self.retry = Some(chunk_id);
         }
 
         let previous_failed = self.failed_chunks;
@@ -1511,32 +1413,29 @@ impl Coordinator {
             self.closed.iter().filter(|c| c.failed).count() as u32 + u32::from(self.open.failed);
     }
 
-    /// Retry the most recent failed chunk's merge, if any is waiting. A retry
-    /// records no outputs: that chunk's per-model texts are already part of the
-    /// session's metadata.
+    /// Retry the last failed chunk's merge, if any is waiting.
+    ///
+    /// A retry records no outputs: that chunk's per-model texts are already part
+    /// of the session's metadata. Its audio is read back off the chunk — a closed
+    /// chunk keeps it for the context window anyway — so nothing has to be held
+    /// on the side for a retry to be possible.
     fn retry_failed_chunk(&mut self) {
-        let Some((chunk_id, audio)) = self.retry.take() else {
+        let Some(chunk_id) = self.retry.take() else {
             return;
         };
-        let Some(live) = self
-            .closed
-            .iter()
-            .find(|c| c.id == chunk_id)
-            .map(|c| c.live.clone())
-        else {
-            // The chunk was dropped with a re-anchor; nothing to retry.
+        let Some(index) = self.closed.iter().position(|c| c.id == chunk_id) else {
+            // The chunk was re-anchored away; nothing to retry.
             return;
         };
+        if self.closed[index].audio.is_empty() {
+            return;
+        }
         debug!(
             "Multi-STT streaming: retrying the merge of failed chunk {}",
-            chunk_id
+            chunk_id + 1
         );
-        self.dispatch(JobInput {
-            chunk_id,
-            live,
-            audio,
-            record_outputs: false,
-        });
+        let input = self.window_for(index, false);
+        self.dispatch(input);
     }
 
     /// The session's text: every closed chunk in order, then the open one.
@@ -1583,12 +1482,13 @@ impl Coordinator {
     /// Hand the writer the text the app should be showing.
     ///
     /// A target that *extends* what was already pushed goes out immediately —
-    /// that is ordinary live typing. A target that rewrites it (a merge replaced
-    /// text the writer already typed) is pushed only once the writer has caught
-    /// up: it reaches a revision by backspacing the divergence and retyping, and
-    /// a revision handed to a writer that is still typing would leave it
-    /// permanently behind, typing text the user has already watched being
-    /// replaced. The flush at the end always applies the latest text.
+    /// that is ordinary live typing. A target that rewrites it is a merge that
+    /// replaced a closed chunk, and the writer reaches it exactly the way it
+    /// reaches any revision: by backspacing the divergence and typing the rest,
+    /// which is what the typewriter is for and what the user watches work. It is
+    /// held until the writer has caught up so that a revision never lands on top
+    /// of one still being typed. The flush at the end always applies the latest
+    /// text.
     fn push_writer_target(&mut self, target: &str) {
         let Some(writer) = &self.writer else {
             return;
@@ -1616,24 +1516,29 @@ impl Coordinator {
         self.absorb_stream_text();
         self.wait_for_merge();
 
-        // Close the open chunk whole — its text and audio as they stand, cut or
-        // not — and merge it synchronously, so the session's last words go
-        // through the same pipeline as every other chunk.
-        let job = self.open_job(true);
-        if !job.live.trim().is_empty() || !job.audio.is_empty() {
+        // The last chunk is a chunk like any other: it closes here — the
+        // recording ended, which is a break of sorts — and is merged
+        // synchronously, so the session's last words go through the same
+        // pipeline as every other chunk's.
+        let mut last = std::mem::replace(&mut self.open, Chunk::new(self.next_chunk_id));
+        self.next_chunk_id += 1;
+        last.failed = false;
+        let has_content = !last.live.trim().is_empty() || !last.audio.is_empty();
+        self.closed.push(last);
+        self.retain_context_audio();
+
+        let index = self.closed.len() - 1;
+        if has_content {
             let settings = get_settings(&self.app);
+            let input = self.window_for(index, true);
             let result = tauri::async_runtime::block_on(run_merge_job(
                 Arc::clone(&self.tm),
                 settings,
-                job,
+                input,
                 self.merge.generation,
             ));
             self.apply_job_result(result);
         }
-
-        let last = std::mem::replace(&mut self.open, Chunk::new(self.next_chunk_id, 0));
-        self.next_chunk_id += 1;
-        self.closed.push(last);
 
         let mut final_text = String::new();
         for chunk in &self.closed {
@@ -1736,60 +1641,43 @@ mod tests {
         vec![0.0; (ms * SAMPLES_PER_MS) as usize]
     }
 
-    #[test]
-    fn plain_sentence_ends_are_found() {
-        assert_eq!(sentence_ends("One. Two! Three?"), vec![4, 9, 16]);
-        assert_eq!(sentence_ends("no end here"), Vec::<usize>::new());
-        // Byte offsets: `…` is 3 bytes, so the end is at 8 + 3. The space that
-        // follows stays with the next chunk.
-        assert_eq!(sentence_ends("trailing… "), vec![11]);
+    /// A closed chunk with `live` text and `ms` of audio.
+    fn closed_chunk(id: u64, live: &str, ms: i64) -> Chunk {
+        let mut chunk = Chunk::new(id);
+        chunk.live = live.to_string();
+        chunk.audio = audio_of_ms(ms);
+        chunk
     }
 
     #[test]
-    fn a_decimal_point_is_not_a_sentence_end() {
-        // A cut inside a number would split one value across two merges.
-        assert_eq!(
-            sentence_ends("The value is 3.14 exactly"),
-            Vec::<usize>::new()
-        );
-        // A digit that follows only after a space is a new sentence, though.
-        assert_eq!(sentence_ends("Version 1. 2 is old"), vec![10]);
+    fn a_break_closes_the_chunk_and_nothing_else_does() {
+        // The break is the delimiter, on its own: no text condition, no minimum
+        // length, no punctuation to wait for.
+        assert!(closes(true, true, 200));
+        assert!(closes(true, true, 30_000));
+        // A running speaker's chunk stays open...
+        assert!(!closes(false, true, 200));
+        assert!(!closes(false, true, MAX_CHUNK_SECONDS * 1000 - 1));
+        // ...until the valve, which is the only other thing that closes one.
+        assert!(closes(false, true, MAX_CHUNK_SECONDS * 1000));
     }
 
     #[test]
-    fn trailing_closers_belong_to_the_sentence() {
-        // The first end is 16 — one past the closing quote, not one past the
-        // `.` at 14 — and the final `.` is an end of its own.
-        assert_eq!(
-            sentence_ends(r#"He said "Hello." Then left."#),
-            vec![16, 27]
-        );
-        assert_eq!(sentence_ends("(Really?) Yes."), vec![9, 14]);
+    fn a_break_with_no_audio_closes_nothing() {
+        // The one structural guard: a chunk with no audio behind it has nothing
+        // to merge, so a job over it would be three decodes of silence.
+        assert!(!closes(true, false, 0));
+        assert!(!closes(true, false, MAX_CHUNK_SECONDS * 1000));
     }
 
     #[test]
-    fn cjk_terminators_are_found() {
-        // Three bytes per character, so the offsets are 3 × the character count.
-        assert_eq!(sentence_ends("你好。我很好！"), vec![9, 21]);
-    }
-
-    #[test]
-    fn an_abbreviation_is_taken_as_an_end() {
-        // Documented false positive: it costs one extra decode of a few seconds
-        // of audio, and the tail carries over verbatim, so no text is lost.
-        assert_eq!(sentence_ends("Mr. Smith left."), vec![3, 15]);
-    }
-
-    #[test]
-    fn the_split_point_keeps_the_following_whitespace() {
-        // The point is that concatenating the two halves reproduces the stream's
-        // own text byte for byte, so nothing invents or drops a space.
-        let text = "One. Two. Three.";
-        let at = sentence_ends(text)[1];
-        let (head, tail) = text.split_at(at);
-        assert_eq!(format!("{head}{tail}"), text);
-        assert_eq!(head, "One. Two.");
-        assert_eq!(tail, " Three.");
+    fn the_context_depth_is_capped() {
+        assert_eq!(context_depth(0), 0);
+        assert_eq!(context_depth(1), 1);
+        assert_eq!(context_depth(MAX_CONTEXT_CHUNKS as u32), MAX_CONTEXT_CHUNKS);
+        // A hand-edited store cannot make the mode hold more audio than the
+        // settings page can ask for.
+        assert_eq!(context_depth(99), MAX_CONTEXT_CHUNKS);
     }
 
     #[test]
@@ -1806,8 +1694,8 @@ mod tests {
         append_join(&mut out, " Hello");
         assert_eq!(out, "said. Hello");
 
-        // A chunk's tail always starts with the split's own whitespace, so
-        // joining chunks never doubles a space.
+        // A chunk's text keeps the stream's own leading whitespace, so joining
+        // chunks never doubles a space.
         let mut out = String::new();
         append_join(&mut out, "你好。");
         append_join(&mut out, " 我很好！");
@@ -1815,103 +1703,146 @@ mod tests {
     }
 
     #[test]
-    fn a_cut_keeps_every_sample_and_biases_backwards() {
-        let mut audio = audio_of_ms(10_000);
-        let original = audio.len();
-        let (tail, tail_start) = split_audio(&mut audio, 0, 5_000).expect("a cut is available");
-        assert_eq!(audio.len() + tail.len(), original);
-        // Biased back by the bias, so the next chunk re-decodes a little of the
-        // seam instead of starting after it.
-        assert_eq!(
-            tail_start,
-            5_000 * SAMPLES_PER_MS - SENTENCE_BOUNDARY_BIAS_MS * SAMPLES_PER_MS
-        );
-        assert_eq!(audio.len() as i64, tail_start);
+    fn words_are_folded_and_punctuation_is_dropped() {
+        let words: Vec<String> = tokens("Hello, World. 3.14!")
+            .into_iter()
+            .map(|t| t.1)
+            .collect();
+        assert_eq!(words, vec!["hello", "world", "3", "14"]);
+
+        // A non-ASCII letter is a word of its own, so a CJK clause is many
+        // words rather than one — the crop needs a boundary inside it.
+        let cjk: Vec<String> = tokens("你好世界").into_iter().map(|t| t.1).collect();
+        assert_eq!(cjk, vec!["你", "好", "世", "界"]);
+
+        // Offsets are byte offsets: `你` is 3 bytes, so the second word starts
+        // at 3.
+        let offsets: Vec<usize> = tokens("你好").into_iter().map(|t| t.0).collect();
+        assert_eq!(offsets, vec![0, 3]);
     }
 
     #[test]
-    fn a_cut_is_relative_to_the_chunks_own_start() {
-        // The second chunk starts 8 s into the stream, so a sentence end at
-        // 10 s is 2 s into its own audio — not 10.
-        let mut audio = audio_of_ms(4_000);
-        let (tail, tail_start) =
-            split_audio(&mut audio, 8_000 * SAMPLES_PER_MS, 10_000).expect("a cut is available");
+    fn a_decode_is_cropped_back_to_the_chunks_own_words() {
+        let context = "First one. Second one.";
+        let decoded = "First one. Second one. And then this is new.";
         assert_eq!(
-            audio.len() as i64,
-            (2_000 - SENTENCE_BOUNDARY_BIAS_MS) * SAMPLES_PER_MS
-        );
-        assert_eq!(tail_start, 8_000 * SAMPLES_PER_MS + audio.len() as i64);
-        assert_eq!(
-            tail.len(),
-            ((4_000 - 2_000 + SENTENCE_BOUNDARY_BIAS_MS) * SAMPLES_PER_MS) as usize
+            strip_context_prefix(decoded, context).as_deref(),
+            Some("And then this is new.")
         );
     }
 
     #[test]
-    fn a_cut_that_leaves_too_little_audio_is_refused() {
-        let mut audio = audio_of_ms(4_000);
-        assert!(cut_index(0, audio.len(), 600).is_none());
-        assert!(split_audio(&mut audio, 0, 600).is_none());
-        assert_eq!(audio.len(), (4_000 * SAMPLES_PER_MS) as usize);
-    }
-
-    #[test]
-    fn a_receding_cut_covers_the_chunk_exactly() {
-        // The context sentence's audio leaves with its text, so the closed part
-        // and the carried tail still meet at the cut and cover the chunk between
-        // them: a receding cut changes where the seam is, not how much audio
-        // either side gets.
-        let mut audio = audio_of_ms(6_000);
-        let total = audio.len();
-        let (tail, tail_start) = split_audio(&mut audio, 0, 4_000).expect("a cut is available");
-        assert_eq!(audio.len() + tail.len(), total);
-        assert_eq!(tail_start, audio.len() as i64);
+    fn the_crop_follows_the_longest_shared_run() {
+        // The extras punctuate and capitalise differently, and mis-hear a word
+        // here and there: the crop only needs the context's *tail* to be
+        // recognised, and it takes the longest run it can.
+        let context = "the quick brown fox jumps over the lazy dog";
+        let decoded = "The quick brown fox jumps over the lazy log and then he sleeps";
         assert_eq!(
-            audio.len() as i64,
-            (4_000 - SENTENCE_BOUNDARY_BIAS_MS) * SAMPLES_PER_MS
+            strip_context_prefix(decoded, context).as_deref(),
+            Some("and then he sleeps")
         );
     }
 
-    /// `decide` with the settings that reproduce the pre-window behaviour — no
-    /// context sentence, no sentence cap — so these cases read as they did.
-    fn decide_plain(
-        ends: &[(usize, i64)],
-        paused: bool,
-        chunk_ms: i64,
-        audio_start_sample: i64,
-        audio_len: usize,
-    ) -> Step {
-        decide(
-            ends,
-            0,
-            usize::MAX,
-            paused,
-            // A chunk is only asked about once the streaming model has committed
-            // text to it; the cases that need the empty-chunk arm pass it through
-            // [`decide`] itself.
-            true,
-            chunk_ms,
-            audio_start_sample,
-            audio_len,
-        )
+    #[test]
+    fn a_misheard_word_at_the_seam_does_not_defeat_the_crop() {
+        // The seam word is the one every model is least sure of, and every anchor
+        // length ends at it — so without drift slack, one wrong word there would
+        // drop the model's whole output for the chunk.
+        let context = "one two three four five";
+        let decoded = "One two three four hive and the rest is new";
+        assert_eq!(
+            strip_context_prefix(decoded, context).as_deref(),
+            Some("and the rest is new")
+        );
     }
 
-    /// A `JobResult` for `generation`, empty of everything else, which is all
-    /// the merge bookkeeping looks at.
-    fn job_result(generation: u64, chunk_id: u64) -> JobResult {
-        JobResult {
-            generation,
-            chunk_id,
-            live_len: 0,
-            record_outputs: false,
-            merged: None,
-            outputs: Default::default(),
-            brain: None,
-            failed: false,
-            retry_audio: None,
-            decode_latency_ms: 0.0,
-            merge_latency_ms: 0.0,
-        }
+    #[test]
+    fn a_decode_that_disagrees_with_the_context_is_refused() {
+        // Nothing of the context's tail is in the decode, so there is no seam to
+        // find: the caller drops this model's output rather than cutting the
+        // chunk's own words off.
+        assert!(strip_context_prefix("unrelated words entirely", "One. Two. Three.").is_none());
+        // Too little of the tail to trust: one shared word is a coincidence.
+        assert!(strip_context_prefix("two", "One. Two. Three. Four.").is_none());
+    }
+
+    #[test]
+    fn no_context_means_no_crop() {
+        // The setting's 0 case: the extras heard the chunk alone.
+        assert_eq!(
+            strip_context_prefix("  the chunk's own words ", "").as_deref(),
+            Some("the chunk's own words")
+        );
+        // A context with no words in it — punctuation only — is the same case.
+        assert_eq!(
+            strip_context_prefix("the chunk's own words", "!!! ... ?").as_deref(),
+            Some("the chunk's own words")
+        );
+        // A context whose words are not in the decode at all is a refusal, not a
+        // no-op: there is no seam to find.
+        assert!(strip_context_prefix("the chunk's own words", "hello there friend").is_none());
+    }
+
+    #[test]
+    fn a_crop_that_ends_at_the_decodes_end_leaves_nothing() {
+        // The model decoded the whole window and stopped: there are no words of
+        // the chunk's own, which is an empty contribution and not a failure.
+        assert_eq!(
+            strip_context_prefix("One. Two. Three.", "One. Two. Three.").as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn the_window_carries_the_chunks_before_it() {
+        let closed = vec![
+            closed_chunk(1, "one", 2_000),
+            closed_chunk(2, "two", 3_000),
+            closed_chunk(3, "three", 4_000),
+        ];
+        // No context: the window is the chunk alone.
+        let (audio, text) = window_context(&closed, 2, 0);
+        assert!(audio.is_empty());
+        assert_eq!(text, "");
+
+        // One chunk of context: the one just before.
+        let (audio, text) = window_context(&closed, 2, 1);
+        assert_eq!(audio.len(), audio_of_ms(3_000).len());
+        assert_eq!(text, "two");
+
+        // Two: oldest first, so the text reads in the order it was spoken.
+        let (audio, text) = window_context(&closed, 2, 2);
+        assert_eq!(audio.len(), audio_of_ms(5_000).len());
+        assert_eq!(text, "one two");
+    }
+
+    #[test]
+    fn a_windows_text_uses_what_the_chunk_is_already_showing() {
+        // The context is the crop's ruler, so it has to be the text on screen —
+        // the merged one where a merge has landed, not the streaming rough draft.
+        let mut merged = closed_chunk(1, "hello world", 2_000);
+        merged.apply_merge("Hello, world.".to_string(), false);
+        let closed = vec![merged, closed_chunk(2, "next", 1_000)];
+        let (_, text) = window_context(&closed, 1, 1);
+        assert_eq!(text, "Hello, world.");
+    }
+
+    #[test]
+    fn the_walk_stops_where_the_audio_was_freed() {
+        // Text and audio must describe the same span, so a chunk whose audio has
+        // been freed cannot contribute its words.
+        let mut freed = closed_chunk(1, "one", 2_000);
+        freed.audio = Vec::new();
+        let closed = vec![
+            freed,
+            closed_chunk(2, "two", 3_000),
+            closed_chunk(3, "three", 4_000),
+        ];
+
+        let (audio, text) = window_context(&closed, 2, 2);
+        assert_eq!(audio.len(), audio_of_ms(3_000).len());
+        assert_eq!(text, "two");
     }
 
     #[test]
@@ -1944,8 +1875,7 @@ mod tests {
     #[test]
     fn a_second_result_never_overwrites_the_first() {
         // One slot held one result: a dispatch that overtook an abandoned job's
-        // result lost that chunk's merge for good, with its audio already taken
-        // off the chunk so there was nothing left to retry from.
+        // result lost that chunk's merge for good.
         let mut merge = MergeQueue::new();
         let first = merge.next_generation();
         // The second dispatch happens because the watchdog gave up on the first,
@@ -1960,321 +1890,38 @@ mod tests {
         assert_eq!(ids, vec![1, 2], "both results come back, oldest first");
     }
 
-    #[test]
-    fn a_break_with_nothing_committed_does_not_polish() {
-        // A merge covering no text is not a replacement: `display_text` would
-        // append the whole live text to its result once the model commits, so
-        // the same words would be shown twice. The chunk waits instead.
-        let audio_len = audio_of_ms(4_000).len();
-        assert_eq!(
-            decide(&[], 1, usize::MAX, true, false, 4_000, 0, audio_len),
-            Step::Idle
-        );
-        // The same state with text to replace is the polish it always was.
-        assert_eq!(
-            decide(&[], 1, usize::MAX, true, true, 4_000, 0, audio_len),
-            Step::Polish
-        );
-    }
-
-    #[test]
-    fn no_break_and_no_valve_is_idle() {
-        assert_eq!(
-            decide_plain(&[(10, 3_000)], false, 4_000, 0, audio_of_ms(4_000).len()),
-            Step::Idle
-        );
-        assert_eq!(decide_plain(&[], false, 4_000, 0, 16_000), Step::Idle);
-    }
-
-    #[test]
-    fn a_break_closes_a_multi_sentence_chunk_at_its_last_sentence_end() {
-        // Three sentences in one chunk: the run between two long breaks is the
-        // merge unit, and with no context sentence the cut is the last end in it.
-        let text = "First one. Second one. Third one.";
-        let ends = sentence_ends(text);
-        assert_eq!(ends.len(), 3);
-        let timed: Vec<(usize, i64)> = ends.iter().copied().zip([2_000, 5_000, 8_000]).collect();
-        let last = ends[2];
-        let audio_len = audio_of_ms(9_000).len();
-        assert_eq!(
-            decide_plain(&timed, true, 9_000, 0, audio_len),
-            Step::Close {
-                offset: last,
-                audio_ms: 8_000
-            }
-        );
-        // Everything up to the cut is what this chunk merges; the text past it
-        // goes to the next chunk.
-        assert_eq!(&text[..last], "First one. Second one. Third one.");
-    }
-
-    #[test]
-    fn a_context_sentence_is_carried_into_the_next_window() {
-        // Four sentence ends and one context sentence: the cut lands at the third
-        // end, so the text that carries into the next chunk begins one complete
-        // sentence back — the "previous sentence" the next merge window leads
-        // with, and the reason a wrongly ended sentence can still be joined.
-        let text = "One. Two. Three. Four.";
-        let ends = sentence_ends(text);
-        assert_eq!(ends.len(), 4);
-        let timed: Vec<(usize, i64)> = ends
-            .iter()
-            .copied()
-            .zip([2_000, 4_000, 6_000, 8_000])
-            .collect();
-        let audio_len = audio_of_ms(9_000).len();
-        assert_eq!(
-            decide(&timed, 1, usize::MAX, true, true, 9_000, 0, audio_len),
-            Step::Close {
-                offset: ends[2],
-                audio_ms: 6_000
-            }
-        );
-        // A second context sentence reaches one sentence further back.
-        assert_eq!(
-            decide(&timed, 2, usize::MAX, true, true, 9_000, 0, audio_len),
-            Step::Close {
-                offset: ends[1],
-                audio_ms: 4_000
-            }
-        );
-    }
-
-    #[test]
-    fn fewer_sentences_than_the_context_polishes_instead_of_cutting() {
-        // The chunk leads with its context sentence and the speaker pauses inside
-        // the next one: there is no end behind a cut yet, so the break polishes
-        // the whole chunk — which is exactly [the previous sentence + what has
-        // been spoken], the window the extras need to join the two halves.
-        let one = [(sentence_ends("One. Two")[0], 2_000)];
-        let audio_len = audio_of_ms(4_000).len();
-        assert_eq!(
-            decide(&one, 1, usize::MAX, true, true, 4_000, 0, audio_len),
-            Step::Polish
-        );
-        // And with no pause there is nothing to do: a merge mid-speech with no
-        // break behind it would be thrown away.
-        assert_eq!(
-            decide(&one, 1, usize::MAX, false, true, 4_000, 0, audio_len),
-            Step::Idle
-        );
-    }
-
-    #[test]
-    fn the_sentence_cap_closes_a_chunk_the_speaker_never_pauses_in() {
-        let text = "One. Two. Three. Four.";
-        let ends = sentence_ends(text);
-        let timed: Vec<(usize, i64)> = ends
-            .iter()
-            .copied()
-            .zip([2_000, 4_000, 6_000, 8_000])
-            .collect();
-        let audio_len = audio_of_ms(10_000).len();
-        // Three sentences in the chunk and no break at all: the cap is what
-        // closes it, at the cut the context sentence leaves behind.
-        assert_eq!(
-            decide(&timed[..3], 1, 3, false, true, 10_000, 0, audio_len),
-            Step::Close {
-                offset: ends[1],
-                audio_ms: 4_000
-            }
-        );
-        // Below the cap, and with no break, nothing happens yet.
-        assert_eq!(
-            decide(&timed[..2], 1, 3, false, true, 10_000, 0, audio_len),
-            Step::Idle
-        );
-    }
-
-    #[test]
-    fn a_cap_with_nothing_to_cut_at_waits_for_the_next_sentence() {
-        // The cap is reached but the only ends are too early in the chunk to cut
-        // at: under `SENTENCE_BOUNDARY_BIAS_MS` the candidate leaves less than
-        // `MIN_CLOSE_MS` of audio behind it. Nothing is closed and nothing is
-        // polished mid-speech: the next sentence end is what makes the cut
-        // possible.
-        let ends = [(5usize, 300i64), (9, 450), (20, 700)];
-        let audio_len = audio_of_ms(4_000).len();
-        assert_eq!(
-            decide(&ends, 0, 3, false, true, 4_000, 0, audio_len),
-            Step::Idle
-        );
-        // Under a break the same state is worth polishing, as it always was.
-        assert_eq!(
-            decide(&ends, 0, 3, true, true, 4_000, 0, audio_len),
-            Step::Polish
-        );
-    }
-
-    #[test]
-    fn a_cap_at_or_below_the_context_can_still_cut() {
-        // A cap of one sentence with one context sentence would ask for a close
-        // on every tick and never get one; it is clamped to what can cut.
-        assert_eq!(sentence_cap(0, 1), usize::MAX);
-        assert_eq!(sentence_cap(1, 1), 2);
-        assert_eq!(sentence_cap(2, 3), 4);
-        assert_eq!(sentence_cap(5, 1), 5);
-
-        let text = "One. Two.";
-        let ends = sentence_ends(text);
-        let timed: Vec<(usize, i64)> = ends.iter().copied().zip([2_000, 4_000]).collect();
-        let cap = sentence_cap(1, 1);
-        assert_eq!(
-            decide(
-                &timed,
-                1,
-                cap,
-                false,
-                true,
-                6_000,
-                0,
-                audio_of_ms(6_000).len()
-            ),
-            Step::Close {
-                offset: ends[0],
-                audio_ms: 2_000
-            }
-        );
-    }
-
-    #[test]
-    fn a_cut_moves_the_carried_sentence_ends_into_the_tail() {
-        // The ends past the cut travel with the text that carries over, and keep
-        // the time each was first seen with: re-timing them at the next revision
-        // would put them after the sentence they end, inside the pause.
-        let mut ends = vec![(10, 2_000), (20, 4_000), (30, 6_000)];
-        recede_ends(&mut ends, 20);
-        assert_eq!(ends, vec![(10, 6_000)]);
-
-        // An end exactly at the cut belongs to the closed text, and a tail with
-        // no end of its own carries none.
-        let mut none = vec![(10, 2_000)];
-        recede_ends(&mut none, 10);
-        assert!(none.is_empty());
-    }
-
-    #[test]
-    fn a_run_with_no_pause_is_merged_in_bounded_windows() {
-        // The default settings and a speaker who never pauses: every close takes
-        // the cap's worth of ends and leaves `context` of them behind, so each
-        // window is `cap - context` sentences and each close moves forward — the
-        // window never grows with how long the session has been running.
-        let (cap, context) = (3usize, 1usize);
-        let audio_len = audio_of_ms(30_000).len();
-        // The ends that survived the last close lead the next chunk; the speaker
-        // then adds sentence ends until the cap is reached again.
-        let mut ends: Vec<(usize, i64)> = Vec::new();
-        let mut spoken = 0i64;
-        for close in 0..4 {
-            while ends.len() < cap {
-                spoken += 1;
-                ends.push((spoken as usize * 10, 2_000 + spoken * 2_000));
-            }
-            assert_eq!(ends.len(), cap, "the cap is what triggered close {}", close);
-
-            let Step::Close { offset, .. } =
-                decide(&ends, context, cap, false, true, 30_000, 0, audio_len)
-            else {
-                panic!("close {} did not cut at a sentence end", close);
-            };
-            let index = ends
-                .iter()
-                .position(|(o, _)| *o == offset)
-                .expect("the cut is an end of this chunk");
-            assert_eq!(index + 1, cap - context, "the window's sentence count");
-
-            recede_ends(&mut ends, offset);
-            assert_eq!(ends.len(), context, "and the next chunk leads with them");
+    /// A `JobResult` for `generation`, empty of everything else, which is all
+    /// the merge bookkeeping looks at.
+    fn job_result(generation: u64, chunk_id: u64) -> JobResult {
+        JobResult {
+            generation,
+            chunk_id,
+            live_len: 0,
+            record_outputs: false,
+            merged: None,
+            outputs: Default::default(),
+            brain: None,
+            failed: false,
+            decode_latency_ms: 0.0,
+            merge_latency_ms: 0.0,
         }
     }
 
     #[test]
-    fn a_break_without_a_sentence_end_polishes_and_keeps_the_chunk_open() {
-        // A pause mid-sentence must not freeze half a sentence: the chunk stays
-        // open, accumulating, so its eventual merge has the whole sentence.
-        let audio_len = audio_of_ms(4_000).len();
-        assert_eq!(decide_plain(&[], true, 4_000, 0, audio_len), Step::Polish);
-        // A sentence end too early in the chunk to cut at behaves the same way.
-        assert_eq!(
-            decide_plain(&[(5, 600)], true, 4_000, 0, audio_len),
-            Step::Polish
-        );
-    }
-
-    #[test]
-    fn a_tiny_chunk_is_not_polished() {
-        // Under the minimum there is nothing worth three decodes and a merge.
-        assert_eq!(
-            decide_plain(&[], true, 300, 0, audio_of_ms(300).len()),
-            Step::Idle
-        );
-    }
-
-    #[test]
-    fn the_valve_closes_a_chunk_that_never_punctuates() {
-        let chunk_ms = MAX_CHUNK_SECONDS * 1000;
-        assert_eq!(
-            decide_plain(&[], false, chunk_ms, 0, audio_of_ms(chunk_ms).len()),
-            Step::CloseAll
-        );
-        // With a sentence end in the first moments of the chunk — too early to
-        // cut at — closing whole is the only way to bound it.
-        assert_eq!(
-            decide_plain(
-                &[(10, 600)],
-                false,
-                chunk_ms,
-                0,
-                audio_of_ms(chunk_ms).len()
-            ),
-            Step::CloseAll
-        );
-    }
-
-    #[test]
-    fn the_valve_cuts_at_a_sentence_end_when_one_is_reachable() {
-        let chunk_ms = MAX_CHUNK_SECONDS * 1000;
-        let audio_len = audio_of_ms(chunk_ms).len();
-        assert_eq!(
-            decide_plain(&[(10, 30_000)], false, chunk_ms, 0, audio_len),
-            Step::Close {
-                offset: 10,
-                audio_ms: 30_000
-            }
-        );
-    }
-
-    #[test]
     fn a_chunk_without_a_merge_shows_its_live_text() {
-        let mut chunk = Chunk::new(1, 0);
+        let mut chunk = Chunk::new(1);
         chunk.live = "hello world and more".to_string();
         assert_eq!(chunk.display_text(), "hello world and more");
     }
 
     #[test]
-    fn a_merge_replaces_only_the_text_it_covered() {
-        let mut chunk = Chunk::new(1, 0);
+    fn a_merge_replaces_the_chunks_whole_text() {
+        // A merge is dispatched only once the chunk has closed, so its text is
+        // complete: what it replaces is everything the chunk had.
+        let mut chunk = Chunk::new(1);
         chunk.live = "hello world. and the next".to_string();
-        // A merge of the first sentence only: the rest has not been merged yet
-        // and must still be on screen, verbatim.
-        chunk.apply_merge("Hello, world.".to_string(), "hello world.".len(), false);
-        assert_eq!(chunk.display_text(), "Hello, world. and the next");
-    }
-
-    #[test]
-    fn a_merge_never_splits_a_word_it_half_covers() {
-        // The polish lands mid-word because the model has not committed the rest
-        // yet: the tail is the continuation of the text the merge covered, so it
-        // is appended verbatim and no space is invented inside the word.
-        let mut chunk = Chunk::new(1, 0);
-        chunk.live = "hello wor".to_string();
-        chunk.apply_merge("Hello, wor".to_string(), "hello wor".len(), false);
-        assert_eq!(chunk.display_text(), "Hello, wor");
-
-        let mut chunk = Chunk::new(2, 0);
-        chunk.live = "hello world".to_string();
-        chunk.apply_merge("Hello, wor".to_string(), "hello wor".len(), false);
-        assert_eq!(chunk.display_text(), "Hello, world");
+        chunk.apply_merge("Hello, world. And the next.".to_string(), false);
+        assert_eq!(chunk.display_text(), "Hello, world. And the next.");
     }
 
     #[test]

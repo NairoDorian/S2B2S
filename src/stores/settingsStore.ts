@@ -283,10 +283,8 @@ const settingUpdaters: {
     commands.changeMultiSttStreamingFirstEnabledSetting(value as boolean),
   multi_stt_streaming_pause_ms: (value) =>
     commands.changeMultiSttStreamingPauseMsSetting(value as number),
-  multi_stt_streaming_context_sentences: (value) =>
-    commands.changeMultiSttStreamingContextSentencesSetting(value as number),
-  multi_stt_streaming_max_sentences: (value) =>
-    commands.changeMultiSttStreamingMaxSentencesSetting(value as number),
+  multi_stt_streaming_context_chunks: (value) =>
+    commands.changeMultiSttStreamingContextChunksSetting(value as number),
   mic_idle_timeout_value: (value) =>
     commands.changeMicIdleTimeoutSettings(
       value as number,

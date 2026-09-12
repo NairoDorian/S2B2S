@@ -52,18 +52,16 @@ export const commands = {
 	 *  becomes the 1st output and chunk merges replace its rough text in place.
 	 */
 	changeMultiSttStreamingFirstEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_first_enabled_setting", { enabled })),
-	/**  The silence that closes a chunk in the experimental streaming-first mode. */
+	/**
+	 *  The silence that divides the session into chunks in the experimental
+	 *  streaming-first mode: every pause this long closes the chunk being spoken.
+	 */
 	changeMultiSttStreamingPauseMsSetting: (pauseMs: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_pause_ms_setting", { pauseMs })),
 	/**
-	 *  How many already-spoken sentences lead each merge window of the experimental
+	 *  How many already-closed chunks lead each merge window of the experimental
 	 *  streaming-first mode. Read at the next close, so it applies mid-session.
 	 */
-	changeMultiSttStreamingContextSentencesSetting: (sentences: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_context_sentences_setting", { sentences })),
-	/**
-	 *  How many sentences a chunk may hold before it is closed and merged without a
-	 *  pause. Read at the next close, so it applies mid-session.
-	 */
-	changeMultiSttStreamingMaxSentencesSetting: (sentences: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_max_sentences_setting", { sentences })),
+	changeMultiSttStreamingContextChunksSetting: (chunks: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_context_chunks_setting", { chunks })),
 	changeMultiSttTranslateModel2: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_2", { enabled })),
 	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
 	changeMultiSttTranslateModel4: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_4", { enabled })),
@@ -664,26 +662,21 @@ export type AppSettings_Deserialize = {
 	 */
 	multi_stt_streaming_first_enabled?: boolean,
 	/**
-	 *  How long the speaker has to pause before the open chunk is closed at its
-	 *  last sentence end and merged. Same test Live Mode uses for its silence
-	 *  boundary.
+	 *  How long the speaker has to pause before the chunk being spoken closes
+	 *  and is merged — what divides the session into chunks (100–10000 ms).
+	 *  Same test Live Mode uses for its silence boundary.
 	 */
 	multi_stt_streaming_pause_ms?: number,
 	/**
-	 *  How many already-spoken sentences a merge window of the experimental
-	 *  streaming-first mode carries in front of what is new. The window is then
-	 *  `[start of the last previous sentence .. now]` instead of everything
-	 *  accumulated since the last cut, so a sentence the stream ended early
-	 *  still reaches the merge joined to what follows it. 0 sends only what is
-	 *  new since the cut.
+	 *  How many already-closed chunks a merge window of the experimental
+	 *  streaming-first mode carries in front of the one it merges. The window is
+	 *  then `[the previous chunks .. the closed one]` instead of everything
+	 *  accumulated since the recording began, so its size is flat in the length
+	 *  of the session. 0 sends only the chunk that just closed. See
+	 *  `multi_stt_stream::strip_context_prefix` for what the extras' decodes of
+	 *  the context are cropped back against.
 	 */
-	multi_stt_streaming_context_sentences?: number,
-	/**
-	 *  How many sentences a chunk may hold before it closes at a sentence end and
-	 *  is merged even though the speaker never paused — what bounds a long run of
-	 *  speech. 0 closes on pauses only (the 60 s valve still applies).
-	 */
-	multi_stt_streaming_max_sentences?: number,
+	multi_stt_streaming_context_chunks?: number,
 	mic_idle_timeout_value?: number,
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
@@ -896,26 +889,21 @@ export type AppSettings_Serialize = {
 	 */
 	multi_stt_streaming_first_enabled: boolean,
 	/**
-	 *  How long the speaker has to pause before the open chunk is closed at its
-	 *  last sentence end and merged. Same test Live Mode uses for its silence
-	 *  boundary.
+	 *  How long the speaker has to pause before the chunk being spoken closes
+	 *  and is merged — what divides the session into chunks (100–10000 ms).
+	 *  Same test Live Mode uses for its silence boundary.
 	 */
 	multi_stt_streaming_pause_ms: number,
 	/**
-	 *  How many already-spoken sentences a merge window of the experimental
-	 *  streaming-first mode carries in front of what is new. The window is then
-	 *  `[start of the last previous sentence .. now]` instead of everything
-	 *  accumulated since the last cut, so a sentence the stream ended early
-	 *  still reaches the merge joined to what follows it. 0 sends only what is
-	 *  new since the cut.
+	 *  How many already-closed chunks a merge window of the experimental
+	 *  streaming-first mode carries in front of the one it merges. The window is
+	 *  then `[the previous chunks .. the closed one]` instead of everything
+	 *  accumulated since the recording began, so its size is flat in the length
+	 *  of the session. 0 sends only the chunk that just closed. See
+	 *  `multi_stt_stream::strip_context_prefix` for what the extras' decodes of
+	 *  the context are cropped back against.
 	 */
-	multi_stt_streaming_context_sentences: number,
-	/**
-	 *  How many sentences a chunk may hold before it closes at a sentence end and
-	 *  is merged even though the speaker never paused — what bounds a long run of
-	 *  speech. 0 closes on pauses only (the 60 s valve still applies).
-	 */
-	multi_stt_streaming_max_sentences: number,
+	multi_stt_streaming_context_chunks: number,
 	mic_idle_timeout_value: number,
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,
