@@ -23,7 +23,7 @@ fn real_vad_chain_reports_speech_over_real_audio() {
     // Read through the app's own accessor rather than `env::var` with a literal
     // name: the prefix is part of the identity, and a probe that spelled it
     // would be one more place a rename has to find.
-    let Ok(wav) = app_env_var("PROBE_WAV") else {
+    let Some(wav) = app_env_var("PROBE_WAV") else {
         eprintln!("skipped: set the PROBE_WAV flag to a 16kHz mono speech recording");
         return;
     };
