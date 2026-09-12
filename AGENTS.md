@@ -482,7 +482,9 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
 - `multi_stt_performance_mode_full_power_shortcut` (default `ctrl+space`) / `multi_stt_performance_mode_normal_shortcut` (default `ctrl+alt+space`) - The simulated key combinations. While performance mode is enabled, a transcription hotkey equal to either is not registered (`shortcut::should_register_binding`) and the shortcut recorder rejects it, so the simulated keys can never retrigger Handy
 - `multi_stt_streaming_first_enabled` (default off) / `multi_stt_streaming_pause_ms`
   (default 1000, settable 100–10000) / `multi_stt_streaming_context_chunks`
-  (default 1, settable 0–3) - The experimental streaming-first mode; see below
+  (default 1, settable 0–3) - The experimental streaming-first mode: the pause
+  that ends a chunk, and how many already-closed chunks are re-run with it for
+  accuracy (see below). Both take effect mid-session, refreshed every 2 s
 
 Extra models are managed by `TranscriptionManager` (`extra_engines` HashMap) with explicit
 load/unload lifecycle, separate from the primary model. They are unloaded when Multi-STT is
@@ -772,6 +774,14 @@ the worker whether to create the writer, and `final_paste_method` returns the
 the raw stream and then pasting the processed result would leave two versions
 in the app — that is the case this rule exists to prevent.
 
+The two rows below the first are the **Ctrl+V shape**: `clipboard` / `ctrl_v` is
+the default paste method and the one the experimental streaming mode is built
+around. The live text is typed nowhere, nothing is typed over, and the finished
+text arrives in the foreground app in a single paste when the session ends — so
+the **overlay is the only place the text is visible while it is being spoken**,
+which is why that mode forces `OverlayStyle::Live` on every path rather than
+only when `DirectStreaming` is configured (see the note under the mode below).
+
 ### Multi-STT Streaming First (experimental, fork addition)
 
 `multi_stt_streaming_first_enabled` turns the Multi-STT primary model into the
@@ -780,6 +790,29 @@ the merge prompt rewrite it in place while the recording is still running.
 Backend: `multi_stt_stream.rs`; audio: `audio_toolkit/audio/chunk_tap.rs`;
 overlay: the Live overlay, which grows with the text.
 
+What the mode is for, in one sentence: **live streaming transcription that gets
+more accurate as you speak, without the GPU work growing with the session.**
+The user watches the text form and then watches it being corrected, at every
+pause, for as long as they keep talking — and the corrections are already in the
+text by the time they stop.
+
+- **Two things compose, and only two: the live stream and the sliding window.**
+  The primary model streams as it always did — that is what is on screen, and it
+  is never re-transcribed. What the break adds is a *re-decode of a bounded
+  window* by the extra models, merged with the prompt, replacing the rough text
+  of the chunk that just closed. The mode is therefore not "batch Multi-STT run
+  repeatedly": the audio handed to the extras is a window the settings size, and
+  the rest of the session is already settled text that no model will see again.
+- **The standard path — audio since the beginning — is untouched and still the
+  fallback.** `MultiSttAction`'s batch pipeline (record everything, decode
+  everything, merge everything at stop) was the mode's first implementation and
+  works; it still runs whenever the streaming mode is off, when the primary
+  model cannot stream, when no merge prompt is configured, or when the stream
+  never starts (`StreamFinalization::NeverStarted`). Nothing in this section
+  changes it. The difference is *when* the work happens and what it is done on:
+  the batch path decodes the whole session once, at stop; the streaming mode
+  decodes a bounded window at each pause, while the user is still speaking, and
+  the text is already merged by the time the recording ends.
 - **The unit of work is a chunk, and a chunk is the audio between two breaks.**
   A break is `multi_stt_streaming_pause_ms` of `last_speech_ms()` standing still
   (the test Live Mode uses for its silence boundary) — **every** break closes the
@@ -794,11 +827,31 @@ overlay: the Live overlay, which grows with the text.
 - **The audio sent to the extras is a window, never the session.** Feeding the
   extras everything since the recording began is what makes the mode useless on
   a long session: each break would re-decode the whole dictation, so the cost
-  would grow with the session rather than with the chunk
+  would grow with the session rather than with the chunk. Instead,
   `multi_stt_streaming_context_chunks` (0–3, default 1) already-closed chunks
   are sent in front of the one that just closed, so the window is at most four
-  chunks and is flat in the length of the session. The context is an **input
-  only** — the merge's text replaces the closed chunk's text and nothing else.
+  chunks and is flat in the length of the session. **That flatness is the point
+  of the whole design** — it is what keeps VRAM and decode time independent of
+  how long the user has been dictating, which is the one thing a session-long
+  re-decode cannot do. The context is an **input only**: the merge's text
+  replaces the closed chunk's text and nothing else.
+- **Why there is a context at all, and why it is the user's to size.** A spoken
+  sentence does not end at a pause. People hum, breathe, think, restart — a
+  single sentence can run across many breaks, and each of those breaks closes a
+  chunk in the middle of it. Without context, the extras would be handed the
+  second half of a sentence with nothing in front of it and the merge would
+  decide what it is from half the evidence, so a chunk that is a fragment would
+  be corrected as if it were whole. The context chunks are exactly that missing
+  evidence: the extras hear the joined audio, so a word cut at the pause, a
+  pronoun whose referent is in the previous chunk, or a clause whose verb is in
+  the next one all reach the merge with their surroundings. And because a merge
+  is a *rewrite of a chunk that is already on screen*, that evidence lands as a
+  correction the user watches happen: the preview shows the sentence complete
+  itself across successive pauses, and the final transcription is the same text
+  after the last one. The count is a slider (0–3) rather than a constant because
+  how far back the useful context reaches is a property of how the user speaks —
+  0 for clean dictation in short sentences, more for someone reasoning out loud
+  in long ones — and each step back costs one more chunk of audio per decode.
 - **Every slot of a merge covers the same span, and that is the invariant.** The
   extras decode `[context audio + chunk audio]`, so their text begins with the
   context's words, while slot 1 (`${output}`) is the primary's own live text for
@@ -838,14 +891,22 @@ overlay: the Live overlay, which grows with the text.
   `failed_chunks`, and is retried on the next break; the failure is never put
   in the text (with `DirectStreaming` that text is typed into the user's
   document) — the overlay badge and `MultiSttStreamChunkFailedEvent` carry it.
-- **Live typing**: the coordinator owns the `DirectStreamWriter` when
-  `paste_method = direct_streaming` and pushes the composed text as its target;
-  the writer's prefix diff backspaces and retypes only the divergent suffix —
-  the chunk a merge just replaced, and everything after it — gated on
+- **Output, and the two ways the mode reaches the app.** The mode is built
+  around **Ctrl+V**: with `clipboard` / `ctrl_v` — the default — nothing is
+  typed anywhere while the session runs, the overlay is the only live view of
+  the text being spoken, and the finished text is pasted **once**, at stop, by
+  the ordinary Multi-STT paste. That is why the mode forces `OverlayStyle::Live`
+  whatever the user's overlay setting is: the Minimal overlay does not render the
+  transcript, so on this path a minimal overlay would mean *no* live view at all.
+  With `paste_method = direct_streaming` the coordinator instead owns the
+  `DirectStreamWriter` (`owns_typing`) and pushes the composed text as its
+  target, so the corrections land in the user's document as they happen; the
+  writer's prefix diff backspaces and retypes only the divergent suffix — the
+  chunk a merge just replaced, and everything after it — gated on
   `is_caught_up()` so a revision never outruns the typewriter. `flush` at stop
   types the remainder and applies the trailing space / newline / auto-submit
-  behaviour. Any other paste method pastes the final text once via Ctrl+V, as
-  Multi-STT does today.
+  behaviour. `owns_typing` is carried on the session outcome so `MultiSttAction`
+  knows the text is already delivered and pastes nothing.
 - **Overlay**: the mode's events carry `whole_session` (grow the card with the
   transcript) and `failed_chunks` (the badge). The card reports its height in
   24 px steps through `overlay_stream_text_height`, which `overlay.rs` adds to

@@ -100,6 +100,18 @@ Anything added to startup goes after that line or on its own thread.
   only on recording start and on toggle, never per chunk.
 - transcribe.cpp model load is the dominant cold cost; `Immediately` unload
   trades memory for a multi-second load on every dictation.
+- The experimental Multi-STT streaming mode's per-break cost is the one place
+  where a session-length dependency would be fatal to the GPU, so it is bounded
+  by construction: the extras decode `multi_stt_streaming_context_chunks + 1`
+  chunks (at most four) plus one short LLM call **per pause**, and the audio
+  handed over is a sliding window of the last few chunks rather than everything
+  spoken so far. A thirty-minute dictation therefore costs the same at each
+  pause as the first one, and the VRAM the extra engines hold for a decode is a
+  function of the window, not of the session. Memory follows the same window:
+  `context_chunks + 1` chunks of audio plus one pending retry, ≈3.8 MB per 60 s
+  chunk at the valve, freed as soon as a chunk can be neither context nor
+  retried. The primary model's stream is what is on screen and is never
+  re-transcribed; only the window is.
 - Local llama.cpp with MTP speculative decoding (`--spec-type draft-mtp`) is
   the fastest configuration measured for the merge/clean prompts; keep the
   draft model on the same device as the main model.

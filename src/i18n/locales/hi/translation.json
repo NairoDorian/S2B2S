@@ -1742,11 +1742,11 @@
       "pauseLabel": "Pause that ends a chunk",
       "pauseDescription": "How long you have to stop speaking to end the chunk being spoken. Every pause this long closes one, and a chunk is the only unit here: nothing in the text is ever waited for, so the text is corrected at your own pauses and nowhere else. After 60 seconds with no pause the chunk is closed anyway.",
       "contextLabel": "Previous chunks re-run with the new one",
-      "contextDescription": "How many chunks you have already closed are handed to the extra models together with the new audio. They then hear the joined audio, so a word cut at a pause still reaches the merge with what surrounds it, while the audio re-transcribed at each pause stays the same size however long you have been talking. 0 hands over only the new chunk.",
+      "contextDescription": "How many chunks you have already closed are handed to the extra models together with the new one. One sentence can run across many pauses — a hum, a breath, a long reasoning — and this is what lets the merge finish it and correct the chunks carrying it, in the preview and in the final text. What is re-decoded at each pause stays the same size however long the session runs, so it never grows with what you have already said. 0 hands over only the new chunk.",
       "contextOff": "None, only the new chunk",
       "contextValue_one": "{{count}} chunk of context",
       "contextValue_other": "{{count}} chunks of context",
-      "note": "Needs a streaming-capable primary model and a merge prompt; without either, Multi-STT runs as usual. The 1st slot is the streaming model's own live text. With the Direct Streaming paste method the text is typed into the app as it forms and each merge retypes the part it corrected.",
+      "note": "Needs a streaming-capable primary model and a merge prompt; without either, Multi-STT runs as usual. The 1st slot is the streaming model's own live text. With the Ctrl+V paste method the overlay is the only live view and the finished text is pasted once when you stop; with Direct Streaming the text is typed into the app as it forms and each merge retypes the part it corrected.",
       "chunkFailedTitle": "A chunk could not be merged",
       "chunkFailedToast": "Chunk {{chunk}} failed to merge, so its text is the models' outputs side by side. The next pause retries it."
     },
