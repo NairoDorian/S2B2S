@@ -64,6 +64,69 @@ pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
     Ok(log_dir.to_string_lossy().to_string())
 }
 
+/// The log file the plugin's file target writes to: `<log dir>/<basename>.log`
+/// (`RotationStrategy::KeepOne`, so there is exactly one current file and the
+/// name never changes).
+fn current_log_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let log_dir = crate::portable::app_log_dir(app)
+        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+    Ok(log_dir.join(format!("{}.log", crate::app_identity::RECORDING_BASENAME)))
+}
+
+/// The last `limit` lines of the log file, oldest first.
+///
+/// The debug panel's live log viewer polls this as its ground truth: the
+/// `log://log` webview stream only carries records emitted while a listener is
+/// attached, so without the file the panel's history would depend entirely on
+/// when the page happened to be open. The tail read is capped at 512 KiB —
+/// plenty for any realistic line count at ~100 bytes a line, and it keeps a
+/// 500 MB rotated log from being read whole.
+#[tauri::command]
+#[specta::specta]
+pub fn get_recent_logs(app: AppHandle, limit: u32) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let path = current_log_file(&app)?;
+    let mut file =
+        std::fs::File::open(&path).map_err(|e| format!("Failed to open log file: {}", e))?;
+
+    const TAIL_CAP: u64 = 512 * 1024;
+    let len = file
+        .metadata()
+        .map_err(|e| format!("Failed to stat log file: {}", e))?
+        .len();
+    let start = len.saturating_sub(TAIL_CAP);
+    file.seek(SeekFrom::Start(start))
+        .map_err(|e| format!("Failed to seek log file: {}", e))?;
+
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)
+        .map_err(|e| format!("Failed to read log file: {}", e))?;
+
+    let mut lines: Vec<&str> = buf.lines().collect();
+    // When the cap cut into the middle of the file, the first line read is a
+    // partial record — drop it rather than show a truncated line.
+    if start > 0 && !lines.is_empty() {
+        lines.remove(0);
+    }
+    let skip = lines.len().saturating_sub(limit as usize);
+    Ok(lines
+        .into_iter()
+        .skip(skip)
+        .collect::<Vec<&str>>()
+        .join("\n"))
+}
+
+/// Truncate the log file. Explicit user action only — the panel itself never
+/// clears what it shows on its own.
+#[tauri::command]
+#[specta::specta]
+pub fn clear_logs(app: AppHandle) -> Result<(), String> {
+    let path = current_log_file(&app)?;
+    std::fs::File::create(&path).map_err(|e| format!("Failed to truncate log file: {}", e))?;
+    Ok(())
+}
+
 #[specta::specta]
 #[tauri::command]
 pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {

@@ -15,7 +15,17 @@
 // assert on structure and on what a click changes — never on a value that came
 // from here.
 import { test as base, expect } from "@playwright/test";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { settingsFixture, ipcFixtures } from "./fixtures.generated";
+
+/**
+ * The appdata directory, resolved from the environment at run time — never
+ * written into a file. The mock's `plugin:path|resolve_directory` answer uses
+ * it so a path display shows something realistic without this harness (or the
+ * repo) carrying any machine-specific value.
+ */
+const appDataDir = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
 
 /**
  * Shallow overrides merged over `settingsFixture` before the app boots.
@@ -45,10 +55,12 @@ export const test = base.extend<{
           const w = window as unknown as Record<string, unknown>;
           w.__TAURI_MOCK_SETTINGS__ = fixtures.settings;
           w.__TAURI_MOCK_IPC__ = fixtures.ipc;
+          w.__TAURI_MOCK_PATHS__ = fixtures.paths;
         },
         {
           settings: { ...settingsFixture, ...settingsOverrides },
           ipc: ipcFixtures,
+          paths: { appDataDir },
         },
       );
       await page.addInitScript({ path: "tests/harness/tauri-mock.js" });

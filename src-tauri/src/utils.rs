@@ -169,6 +169,11 @@ fn native_windows_machine() -> Option<u16> {
 pub fn cancel_current_operation(app: &AppHandle) {
     info!("Initiating operation cancellation...");
 
+    // The overlay preview is a recording like any other to the cancel hotkey;
+    // its own stop cleans its flag, statistics run and cancel shortcut before
+    // the generic teardown below re-does the shared parts harmlessly.
+    let _ = crate::overlay_preview::stop(app);
+
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);
 

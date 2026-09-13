@@ -1,14 +1,31 @@
-import { createSignal, createEffect, For } from "solid-js";
+import { createSignal, createEffect, For, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
+import { commands } from "@/bindings";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Button } from "../../ui/Button";
 
-// Maximum number of lines kept in memory / rendered at once.
-const MAX_LINES = 1000;
+// The console is a *console*: it shows every category all the time, keeps
+// growing, and never clears itself. The only selector is the tag row below —
+// owned by the console, no dropdown menus anywhere.
+
+// Maximum number of lines kept in memory / rendered at once. Old lines fall
+// off the top only when this hard cap is reached — a chatty app must not
+// balloon memory, but the cap is far above what a session realistically
+// produces, so in practice the log keeps growing for the whole sitting.
+const MAX_LINES = 2000;
+// How many lines the file poll asks the backend for. Fixed — there is no
+// "last N lines" selector; the file is the ground truth and the cap above
+// bounds what is kept.
+const FILE_POLL_LINES = 2000;
 // Incoming logs are buffered and flushed on this cadence so a burst of log
 // activity can never trigger a render per line.
 const FLUSH_INTERVAL_MS = 250;
+// The file is re-read on this cadence. It reconciles anything the live stream
+// missed (records emitted before this page attached, or while it was paused)
+// and is what makes the panel's history independent of when it was opened.
+const FILE_POLL_INTERVAL_MS = 2000;
 
 // Payload emitted by tauri-plugin-log `Webview` target on the `log://log`
 // event. `level` is the numeric LogLevel repr: Trace=1, Debug=2, Info=3,
@@ -18,53 +35,97 @@ interface LogEventPayload {
   level: number;
 }
 
+type Tag = "ERR" | "WRN" | "INF" | "DBG" | "TRC";
+
 interface LogLine {
   id: number;
-  level: number;
+  tag: Tag;
   time: string;
   message: string;
+  live: boolean;
+  raw: string;
 }
+
+const LIVE_LEVEL_TO_TAG: Record<number, Tag> = {
+  1: "TRC",
+  2: "DBG",
+  3: "INF",
+  4: "WRN",
+  5: "ERR",
+};
+
+// File lines look like:
+//   [2026-09-12][20:30:04][app_lib][DEBUG] message
+// Continuation lines of a wrapped record do not match and land as INFO with
+// the raw text intact — showing more text beats dropping a line.
+const parseFileLine = (raw: string): LogLine => {
+  const m = raw.match(/^\[([^\]]+)\]\[([^\]]+)\]\[[^\]]*\]\[(\w+)\]\s?(.*)$/);
+  if (!m) {
+    return {
+      id: 0,
+      tag: "INF",
+      time: "",
+      message: raw,
+      live: false,
+      raw,
+    };
+  }
+  const tag = (
+    m[4].toUpperCase().slice(0, 4) === "WARN"
+      ? "WRN"
+      : m[4].toUpperCase().slice(0, 4) === "ERRO"
+        ? "ERR"
+        : m[4].toUpperCase().slice(0, 4) === "TRAC"
+          ? "TRC"
+          : m[4].toUpperCase().slice(0, 4) === "DEBU"
+            ? "DBG"
+            : "INF"
+  ) as Tag;
+  return {
+    id: 0,
+    tag,
+    time: m[2],
+    message: m[5],
+    live: false,
+    raw,
+  };
+};
+
+const liveLineFrom = (payload: LogEventPayload, id: number): LogLine => {
+  const time = formatTime(new Date());
+  return {
+    id,
+    tag: LIVE_LEVEL_TO_TAG[payload.level] ?? "INF",
+    time,
+    message: payload.message,
+    live: true,
+    raw: `[${time}] ${payload.message}`,
+  };
+};
 
 // Level accents carry a light-theme color plus a brighter `dark:` variant, so
 // they read on both the light code-block surface and the dark console surface.
-const LEVEL_META: Record<
-  number,
-  { tag: string; tagClass: string; msgClass: string }
-> = {
-  1: {
-    tag: "TRACE",
-    tagClass: "text-mid-gray",
-    msgClass: "text-mid-gray",
-  },
-  2: {
-    tag: "DEBUG",
+const TAG_META: Record<Tag, { tagClass: string; msgClass: string }> = {
+  TRC: { tagClass: "text-mid-gray", msgClass: "text-mid-gray" },
+  DBG: {
     tagClass: "text-sky-600 dark:text-sky-400",
     msgClass: "text-text/80",
   },
-  3: {
-    tag: "INFO",
+  INF: {
     tagClass: "text-emerald-600 dark:text-emerald-400",
     msgClass: "text-text",
   },
-  4: {
-    tag: "WARN",
+  WRN: {
     tagClass: "text-amber-600 dark:text-amber-400",
     msgClass: "text-amber-700 dark:text-amber-300",
   },
-  5: {
-    tag: "ERROR",
+  ERR: {
     tagClass: "text-red-600 dark:text-red-400",
     msgClass: "text-red-700 dark:text-red-300",
   },
 };
 
-const UNKNOWN_META = {
-  tag: "LOG",
-  tagClass: "text-mid-gray",
-  msgClass: "text-text",
-};
-
-const metaFor = (level: number) => LEVEL_META[level] ?? UNKNOWN_META;
+const TAGS: readonly Tag[] = ["ERR", "WRN", "INF", "DBG", "TRC"];
 
 const formatTime = (date: Date): string => {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -78,12 +139,10 @@ interface LiveLogViewerProps {
   grouped?: boolean;
 }
 
-export const LiveLogViewer = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}: LiveLogViewerProps) => {
+export const LiveLogViewer = (props: LiveLogViewerProps) => {
   const { t } = useTranslation();
   const [logs, setLogs] = createSignal<LogLine[]>([]);
+  const [selectedTag, setSelectedTag] = createSignal<Tag | "ALL">("ALL");
   const [paused, setPaused] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
 
@@ -100,22 +159,25 @@ export const LiveLogViewer = ({
     },
   );
 
-  // Subscribe to the backend log stream. Lines land in a ref buffer rather than
-  // state so high log volume never overwhelms Solid.
+  // Subscribe to the backend log stream. Lines land in a ref buffer rather
+  // than state so high log volume never overwhelms Solid. Live lines append
+  // unconditionally — they are real log emissions; the file poll below
+  // reconciles any overlap.
   createEffect(
     () => undefined,
     () => {
       const unlisten = listen<LogEventPayload>("log://log", (event) => {
-        const line: LogLine = {
-          id: idCounter++,
-          level: event.payload.level,
-          time: formatTime(new Date()),
-          message: event.payload.message,
-        };
-        pending.push(line);
-        if (pending.length > MAX_LINES) {
-          pending.splice(0, pending.length - MAX_LINES);
+        const line = liveLineFrom(event.payload, idCounter++);
+        if (pausedRef) {
+          // Pausing freezes the view, not the collection: lines buffer (and
+          // the buffer is bounded) until resume replays them.
+          pending.push(line);
+          if (pending.length > MAX_LINES) {
+            pending.splice(0, pending.length - MAX_LINES);
+          }
+          return;
         }
+        pending.push(line);
       });
 
       return () => {
@@ -124,14 +186,18 @@ export const LiveLogViewer = ({
     },
   );
 
-  // Flush buffered lines into state on a fixed cadence to cap re-renders.
+  // Append the pending buffer into state on a fixed cadence to cap renders.
   createEffect(
     () => undefined,
     () => {
       const interval = setInterval(() => {
-        if (pausedRef || pending.length === 0) return;
+        if (pending.length === 0) return;
         const incoming = pending;
         pending = [];
+        if (pausedRef) {
+          pending = incoming;
+          return;
+        }
         setLogs((prev) => {
           const next = prev.concat(incoming);
           return next.length > MAX_LINES
@@ -144,11 +210,96 @@ export const LiveLogViewer = ({
     },
   );
 
-  // Keep the view pinned to the latest line unless the user has scrolled up.
+  // Merge a fresh batch of file lines into the console:
+  //   1. Drop live-streamed lines whose on-disk counterpart arrived.
+  //   2. Append file lines that are not already present (count-aware, so
+  //      repeated identical lines survive).
+  // Nothing here ever clears: the merge can only add, or replace a live line
+  // with its durable file twin.
+  const mergeFileLines = (fetched: LogLine[]) => {
+    setLogs((prev) => {
+      const rawCounts = new Map<string, number>();
+      for (const l of prev) {
+        rawCounts.set(l.raw, (rawCounts.get(l.raw) ?? 0) + 1);
+      }
+      const supersededLive = new Set<LogLine>();
+      for (const l of prev) {
+        if (!l.live) continue;
+        if (
+          fetched.some((f) => f.tag === l.tag && f.message.includes(l.message))
+        ) {
+          supersededLive.add(l);
+        }
+      }
+      const out: LogLine[] = [];
+      for (const l of prev) {
+        if (!supersededLive.has(l)) out.push(l);
+      }
+      let id = idCounter;
+      for (const f of fetched) {
+        const c = rawCounts.get(f.raw) ?? 0;
+        if (c > 0) {
+          rawCounts.set(f.raw, c - 1);
+          continue;
+        }
+        out.push({ ...f, id: id++ });
+      }
+      idCounter = id;
+      return out.length > MAX_LINES ? out.slice(out.length - MAX_LINES) : out;
+    });
+  };
+
+  const fetchFileTail = () => {
+    commands
+      .getRecentLogs(FILE_POLL_LINES)
+      .then((res) => {
+        if (res.status !== "ok") {
+          console.error("Failed to read log file:", res.error);
+          return;
+        }
+        const fetched = res.data
+          .split("\n")
+          .filter((l) => l.trim().length > 0)
+          .map(parseFileLine);
+        mergeFileLines(fetched);
+      })
+      .catch((err) => console.error("Failed to read log file:", err));
+  };
+
   createEffect(
     () => undefined,
     () => {
-      void logs();
+      // Seed with the file's history immediately, then keep reconciling.
+      fetchFileTail();
+      const interval = setInterval(fetchFileTail, FILE_POLL_INTERVAL_MS);
+      return () => clearInterval(interval);
+    },
+  );
+
+  // Resume: replay the buffered lines, then resync with the file.
+  createEffect(
+    () => paused(),
+    (isPaused, wasPaused) => {
+      if (wasPaused !== undefined && !isPaused) {
+        if (pending.length > 0) {
+          const incoming = pending;
+          pending = [];
+          setLogs((prev) => {
+            const next = prev.concat(incoming);
+            return next.length > MAX_LINES
+              ? next.slice(next.length - MAX_LINES)
+              : next;
+          });
+        }
+        fetchFileTail();
+      }
+    },
+  );
+
+  // Keep the view pinned to the latest line unless the user has scrolled up.
+  createEffect(
+    () => logs(),
+    () => {
       if (pinnedRef && scrollEl) {
         scrollEl.scrollTop = scrollEl.scrollHeight;
       }
@@ -162,15 +313,22 @@ export const LiveLogViewer = ({
     pinnedRef = distanceFromBottom < 24;
   };
 
+  // Explicit user action only — this is the one thing that empties the view,
+  // and it empties the log file with it so the two stay the same.
   const handleClear = () => {
     pending = [];
     setLogs([]);
     pinnedRef = true;
+    commands.clearLogs().catch((error) => {
+      console.error("Failed to clear log file:", error);
+      toast.error(String(error));
+    });
   };
 
   const handleCopy = async () => {
     const text = logs()
-      .map((l) => `${l.time} ${metaFor(l.level).tag} ${l.message}`)
+      .filter((l) => selectedTag() === "ALL" || l.tag === selectedTag())
+      .map((l) => `${l.time} ${l.tag} ${l.message}`)
       .join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -181,12 +339,14 @@ export const LiveLogViewer = ({
     }
   };
 
+  const tagCount = (tag: Tag) => logs().filter((l) => l.tag === tag).length;
+
   return (
     <SettingContainer
       title={t("settings.debug.liveLogs.title")}
       description={t("settings.debug.liveLogs.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode}
+      grouped={props.grouped ?? false}
       layout="stacked"
     >
       <div class="flex items-center justify-between mb-2 gap-2">
@@ -235,41 +395,84 @@ export const LiveLogViewer = ({
         </div>
       </div>
 
+      {/* The one selector the console owns: its own tag row. Inline chips,
+          not a dropdown menu — every category is always one click away, and
+          the counts show what is flowing even while filtered. */}
+      <div class="flex flex-wrap items-center gap-1.5 mb-2">
+        <button
+          type="button"
+          onClick={() => setSelectedTag("ALL")}
+          class={`px-2 py-0.5 rounded border text-[11px] font-mono cursor-pointer transition-colors ${
+            selectedTag() === "ALL"
+              ? "bg-accent/20 border-accent text-text"
+              : "border-mid-gray/20 text-mid-gray hover:border-mid-gray/50"
+          }`}
+        >
+          ALL
+        </button>
+        <For each={TAGS}>
+          {(tag) => (
+            <button
+              type="button"
+              onClick={() => setSelectedTag(tag)}
+              class={`px-2 py-0.5 rounded border text-[11px] font-mono cursor-pointer transition-colors ${
+                selectedTag() === tag
+                  ? "bg-accent/20 border-accent text-text"
+                  : "border-mid-gray/20 text-mid-gray hover:border-mid-gray/50"
+              }`}
+            >
+              {tag}
+              <span class="ms-1 text-mid-gray/70">{tagCount(tag)}</span>
+            </button>
+          )}
+        </For>
+      </div>
+
       <div
         ref={(el) => {
           scrollEl = el;
         }}
         onScroll={handleScroll}
-        class="h-72 overflow-y-auto rounded-lg border border-mid-gray/30 bg-[var(--color-log-surface)] p-3 font-mono text-xs leading-relaxed select-text"
+        class="h-80 overflow-y-auto rounded-lg border border-mid-gray/30 bg-[var(--color-log-surface)] p-3 font-mono text-xs leading-relaxed select-text"
       >
-        {logs().length === 0 ? (
-          <div class="text-mid-gray select-none">
-            {t("settings.debug.liveLogs.empty")}
-          </div>
-        ) : (
+        <Show
+          when={logs().some(
+            (l) => selectedTag() === "ALL" || l.tag === selectedTag(),
+          )}
+          fallback={
+            <div class="text-mid-gray select-none">
+              {logs().length === 0
+                ? t("settings.debug.liveLogs.empty")
+                : t("settings.debug.liveLogs.noFilterMatch")}
+            </div>
+          }
+        >
           <For each={logs()}>
-            {(line) => {
-              const meta = metaFor(line.level);
-              return (
+            {(line) => (
+              <Show
+                when={selectedTag() === "ALL" || line.tag === selectedTag()}
+              >
                 <div class="flex gap-2">
-                  <span class="text-mid-gray/80 shrink-0 select-none tabular-nums">
-                    {line.time}
-                  </span>
+                  <Show when={line.time}>
+                    <span class="text-mid-gray/80 shrink-0 select-none tabular-nums">
+                      {line.time}
+                    </span>
+                  </Show>
                   <span
-                    class={`${meta.tagClass} shrink-0 select-none w-[3.5rem]`}
+                    class={`${TAG_META[line.tag].tagClass} shrink-0 select-none w-[3.5rem]`}
                   >
-                    {meta.tag}
+                    {line.tag}
                   </span>
                   <span
-                    class={`${meta.msgClass} min-w-0 whitespace-pre-wrap break-words`}
+                    class={`${TAG_META[line.tag].msgClass} min-w-0 whitespace-pre-wrap break-words`}
                   >
                     {line.message}
                   </span>
                 </div>
-              );
-            }}
+              </Show>
+            )}
           </For>
-        )}
+        </Show>
       </div>
     </SettingContainer>
   );

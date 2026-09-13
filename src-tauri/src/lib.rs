@@ -23,6 +23,7 @@ mod managers;
 mod memory;
 mod multi_stt_stream;
 mod overlay;
+mod overlay_preview;
 mod paste_tx;
 pub mod portable;
 mod secure_input;
@@ -942,6 +943,8 @@ pub fn run(cli_args: CliArgs) {
             commands::is_portable,
             commands::audio::start_vad_test,
             commands::audio::stop_vad_test,
+            commands::audio::start_overlay_preview,
+            commands::audio::stop_overlay_preview,
             commands::llama::get_llama_server_state,
             commands::llama::get_llama_server_logs,
             commands::llama::start_llama_server,
@@ -965,6 +968,8 @@ pub fn run(cli_args: CliArgs) {
             commands::get_app_settings,
             commands::get_default_settings,
             commands::get_log_dir_path,
+            commands::get_recent_logs,
+            commands::clear_logs,
             commands::set_log_level,
             commands::open_recordings_folder,
             commands::open_models_folder,

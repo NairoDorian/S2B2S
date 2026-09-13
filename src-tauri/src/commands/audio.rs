@@ -373,6 +373,39 @@ pub async fn stop_vad_test(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("audio task join failed: {e}"))
 }
 
+const OVERLAY_PREVIEW_MAX_DURATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Start the overlay preview from Settings → Overlay: a real recording of the
+/// primary model (streaming live text when it can), whose only output is the
+/// overlay itself — nothing is typed or pasted, and the audio is discarded.
+/// Runs until `stop_overlay_preview`, the cancel hotkey, or the safety cap.
+#[tauri::command]
+#[specta::specta]
+pub async fn start_overlay_preview(app: AppHandle) -> Result<(), String> {
+    crate::overlay_preview::start(&app)?;
+
+    // Safety net: never leave the microphone open indefinitely from a
+    // settings-page button. A plain thread, so no tokio timer is needed.
+    std::thread::spawn(move || {
+        std::thread::sleep(OVERLAY_PREVIEW_MAX_DURATION);
+        if crate::overlay_preview::is_active() {
+            warn!(
+                "Overlay preview still running after {:?}; stopping it",
+                OVERLAY_PREVIEW_MAX_DURATION
+            );
+            let _ = crate::overlay_preview::stop(&app);
+        }
+    });
+    Ok(())
+}
+
+/// Stop the overlay preview and discard everything it held.
+#[tauri::command]
+#[specta::specta]
+pub async fn stop_overlay_preview(app: AppHandle) -> Result<(), String> {
+    crate::overlay_preview::stop(&app)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_microphone_channels(device_name: String) -> Result<u16, String> {

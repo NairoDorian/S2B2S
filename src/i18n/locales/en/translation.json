@@ -744,14 +744,15 @@
       },
       "liveLogs": {
         "title": "Live Logs",
-        "description": "Stream application logs in real time to diagnose issues without opening the log file. Only logs emitted while this panel is open are shown; respects the Log Level setting above.",
+        "description": "The app's log console: streamed live and reconciled with the on-disk log file, so history survives reopening this page. Everything is always visible; the tag row is the only filter.",
         "live": "Live",
         "paused": "Paused",
         "pause": "Pause",
         "resume": "Resume",
         "copied": "Copied",
         "lineCount": "{{count}} lines",
-        "empty": "Waiting for logs… Entries appear here as the app emits them."
+        "empty": "Waiting for logs… Entries appear here as the app emits them.",
+        "noFilterMatch": "No lines match this tag."
       },
       "updateChecks": {
         "label": "Check for Updates",
@@ -1124,6 +1125,13 @@
       }
     },
     "overlay": {
+      "preview": {
+        "title": "Preview",
+        "description": "Runs a real recording of the primary model — streaming live text when it can — whose only output is the overlay itself: nothing is typed or pasted anywhere, and no audio is kept. Watch the card and change its settings while it runs; it stops when you stop it, on the cancel hotkey, and at a 10-minute cap.",
+        "start": "Start overlay preview",
+        "stop": "Stop preview",
+        "runningNote": "Preview running — the transcription hotkeys are busy until you stop it. Changes below apply as the card re-reads its settings."
+      },
       "groups": {
         "appearance": "Appearance",
         "stats": "Speech stats"

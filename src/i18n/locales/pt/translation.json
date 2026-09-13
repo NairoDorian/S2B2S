@@ -655,7 +655,8 @@
         "resume": "Retomar",
         "copied": "Copiado",
         "lineCount": "{{count}} linhas",
-        "empty": "Aguardando logs… As entradas aparecem aqui à medida que o app as emite."
+        "empty": "Aguardando logs… As entradas aparecem aqui à medida que o app as emite.",
+        "noFilterMatch": "No lines match this tag."
       },
       "updateChecks": {
         "label": "Verificar Atualizações",
@@ -1179,6 +1180,13 @@
         },
         "analysisNote": "Scale, window, EQ, weighting, dB range, ballistics and update rate are the Live FFT page's settings.",
         "openLiveFft": "Open Live FFT"
+      },
+      "preview": {
+        "title": "Preview",
+        "description": "Runs a real recording of the primary model — streaming live text when it can — whose only output is the overlay itself: nothing is typed or pasted anywhere, and no audio is kept. Watch the card and change its settings while it runs; it stops when you stop it, on the cancel hotkey, and at a 10-minute cap.",
+        "start": "Start overlay preview",
+        "stop": "Stop preview",
+        "runningNote": "Preview running — the transcription hotkeys are busy until you stop it. Changes below apply as the card re-reads its settings."
       }
     },
     "liveFft": {

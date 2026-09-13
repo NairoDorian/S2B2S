@@ -120,6 +120,12 @@
     get_app_settings: settings,
     get_default_settings: settings,
 
+    // The debug panel's log console polls the log file; the mock has no file,
+    // so the tail is empty and the console shows only what its live stream
+    // receives (which is nothing, without the plugin's webview target).
+    get_recent_logs: "",
+    clear_logs: null,
+
     // Persistence: the app also writes settings through tauri-plugin-store.
     "plugin:store|load": 1,
     "plugin:store|get": [null, false],
@@ -137,7 +143,11 @@
     "plugin:os|locale": "en-US",
     "plugin:app|version": "0.0.0-test",
     "plugin:app|name": "zer0",
-    "plugin:path|resolve_directory": "C:/Users/Z/AppData/Roaming",
+    // Resolved from the environment by the fixture at inject time (see
+    // `fixtures.ts`) — this file carries no machine-specific path.
+    "plugin:path|resolve_directory":
+      (window.__TAURI_MOCK_PATHS__ && window.__TAURI_MOCK_PATHS__.appDataDir) ||
+      "/mock/appdata/roaming",
 
     // ---- scalars and legal nulls ------------------------------------------
     // Everything the app reads as an object or an array comes from the

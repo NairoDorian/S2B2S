@@ -156,6 +156,17 @@ export const commands = {
 	startVadTest: () => typedError<null, string>(__TAURI_INVOKE("start_vad_test")),
 	/**  Stop the live VAD test and discard its audio. */
 	stopVadTest: () => typedError<null, string>(__TAURI_INVOKE("stop_vad_test")),
+	/**
+	 * Start the overlay preview from Settings → Overlay: a real recording of the
+	 * primary model (streaming live text when it can), whose only output is the
+	 * overlay itself — nothing is typed or pasted, and the audio is discarded.
+	 * Runs until `stop_overlay_preview`, the cancel hotkey, or the safety cap.
+	 */
+	startOverlayPreview: () =>
+		typedError<null, string>(__TAURI_INVOKE("start_overlay_preview")),
+	/** Stop the overlay preview and discard everything it held. */
+	stopOverlayPreview: () =>
+		typedError<null, string>(__TAURI_INVOKE("stop_overlay_preview")),
 	getLlamaServerState: () => __TAURI_INVOKE<LlamaServerStateEvent>("get_llama_server_state"),
 	getLlamaServerLogs: () => __TAURI_INVOKE<string[]>("get_llama_server_logs"),
 	startLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("start_llama_server")),
@@ -226,6 +237,22 @@ export const commands = {
 	getAppSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_app_settings")),
 	getDefaultSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_default_settings")),
 	getLogDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_log_dir_path")),
+	/**
+	 * The last `limit` lines of the log file, oldest first.
+	 *
+	 * The debug panel's live log viewer polls this as its ground truth: the
+	 * `log://log` webview stream only carries records emitted while a listener is
+	 * attached, so without the file the panel's history would depend entirely on
+	 * when the page happened to be open. The tail read is capped at 512 KiB —
+	 * plenty for any realistic line count at ~100 bytes a line, and it keeps a
+	 * 500 MB rotated log from being read whole.
+	 */
+	getRecentLogs: (limit: number) => typedError<string, string>(__TAURI_INVOKE("get_recent_logs", { limit })),
+	/**
+	 * Truncate the log file. Explicit user action only — the panel itself never
+	 * clears what it shows on its own.
+	 */
+	clearLogs: () => typedError<null, string>(__TAURI_INVOKE("clear_logs")),
 	setLogLevel: (level: LogLevel) => typedError<null, string>(__TAURI_INVOKE("set_log_level", { level })),
 	openRecordingsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_recordings_folder")),
 	openModelsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_models_folder")),

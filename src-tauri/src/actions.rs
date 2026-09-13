@@ -168,9 +168,9 @@ fn restore_normal_power(app: &AppHandle, normal_shortcut: String) {
 /// cancelled in the meantime never gets a stale cue.
 ///
 /// `TranscribeAction::start` carries an inline copy of this sequence (kept
-/// inline there to stay diff-compatible with upstream); `MultiSttAction` uses
-/// this helper so the two paths cannot drift apart again.
-fn spawn_recording_ready_cue(
+/// inline there to stay diff-compatible with upstream); `MultiSttAction` and
+/// the overlay preview use this helper so the paths cannot drift apart again.
+pub(crate) fn spawn_recording_ready_cue(
     app: &AppHandle,
     rm: &Arc<AudioRecordingManager>,
     readiness: RecordingReadiness,

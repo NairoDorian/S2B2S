@@ -1,16 +1,15 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { commands } from "@/bindings";
 import { SettingContainer } from "../ui/SettingContainer";
 import { PathDisplay } from "../ui/PathDisplay";
 
 interface AppDataDirectoryProps {
-  descriptionMode?: "tooltip" | "inline";
+  descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
 }
 
 export const AppDataDirectory = (props: AppDataDirectoryProps) => {
-  const { descriptionMode = "inline", grouped = false } = props;
   const { t } = useTranslation();
   const [appDirPath, setAppDirPath] = createSignal<string>("");
   const [loading, setLoading] = createSignal(true);
@@ -49,38 +48,45 @@ export const AppDataDirectory = (props: AppDataDirectoryProps) => {
     }
   };
 
-  if (loading()) {
-    return (
-      <div class="animate-pulse">
-        <div class="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
-        <div class="h-8 bg-gray-100 rounded"></div>
-      </div>
-    );
-  }
-
-  if (error()) {
-    return (
-      <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
-        <p class="text-red-600 text-sm">
-          {t("errors.loadDirectory", { error: error() })}
-        </p>
-      </div>
-    );
-  }
-
+  // Branches live in the JSX: a component body runs once, so the body-level
+  // `if (loading()) return <skeleton/>` this replaces rendered the skeleton
+  // forever — the "blank white block" between Source Code and Log Directory.
+  // The skeleton itself uses theme tokens, not hardcoded grays that glow on
+  // the dark theme.
   return (
-    <SettingContainer
-      title={t("settings.about.appDataDirectory.title")}
-      description={t("settings.about.appDataDirectory.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
-      layout="stacked"
+    <Show
+      when={!loading()}
+      fallback={
+        <div class="animate-pulse">
+          <div class="h-4 bg-mid-gray/20 rounded w-1/3 mb-2"></div>
+          <div class="h-8 bg-mid-gray/10 rounded"></div>
+        </div>
+      }
     >
-      <PathDisplay
-        path={appDirPath()}
-        onOpen={handleOpen}
-        disabled={!appDirPath()}
-      />
-    </SettingContainer>
+      <Show
+        when={!error()}
+        fallback={
+          <div class="p-4 bg-red-500/10 border border-red-200/30 rounded-lg">
+            <p class="text-red-400 text-sm">
+              {t("errors.loadDirectory", { error: error() })}
+            </p>
+          </div>
+        }
+      >
+        <SettingContainer
+          title={t("settings.about.appDataDirectory.title")}
+          description={t("settings.about.appDataDirectory.description")}
+          descriptionMode={props.descriptionMode}
+          grouped={props.grouped ?? false}
+          layout="stacked"
+        >
+          <PathDisplay
+            path={appDirPath()}
+            onOpen={handleOpen}
+            disabled={!appDirPath()}
+          />
+        </SettingContainer>
+      </Show>
+    </Show>
   );
 };
