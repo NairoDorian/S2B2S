@@ -1,5 +1,5 @@
 use crate::utils;
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
@@ -1983,7 +1983,22 @@ impl AppSettings {
 /// one-time debug dump of the loaded settings.
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     let settings = get_settings(app);
-    debug!("Loaded settings: {:?}", settings);
+    // The struct is several kilobytes on one line — every binding, provider,
+    // prompt and nested settings group — so dumping it whole buries the startup
+    // console under two walls of text and the lines that matter scroll away.
+    // The summary is what a reader wants at DEBUG; the dump is one level down,
+    // for when one field's value is the actual question.
+    debug!(
+        "Loaded settings: schema {}, model '{}', log level {:?}, {} binding(s), multi-STT {}, \
+         streaming-first {}",
+        settings.settings_schema_version,
+        settings.selected_model,
+        settings.log_level,
+        settings.bindings.len(),
+        settings.multi_stt_enabled,
+        settings.multi_stt_streaming_first_enabled
+    );
+    trace!("Loaded settings: {:?}", settings);
     settings
 }
 

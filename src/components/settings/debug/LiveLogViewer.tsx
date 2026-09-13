@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, For } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Button } from "../../ui/Button";
@@ -10,7 +10,7 @@ const MAX_LINES = 1000;
 // activity can never trigger a render per line.
 const FLUSH_INTERVAL_MS = 250;
 
-// Payload emitted by tauri-plugin-log's `Webview` target on the `log://log`
+// Payload emitted by tauri-plugin-log `Webview` target on the `log://log`
 // event. `level` is the numeric LogLevel repr: Trace=1, Debug=2, Info=3,
 // Warn=4, Error=5. `message` is the raw log message (no timestamp/target).
 interface LogEventPayload {
@@ -78,86 +78,98 @@ interface LiveLogViewerProps {
   grouped?: boolean;
 }
 
-export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
+export const LiveLogViewer = ({
   descriptionMode = "tooltip",
   grouped = false,
-}) => {
+}: LiveLogViewerProps) => {
   const { t } = useTranslation();
-  const [logs, setLogs] = useState<LogLine[]>([]);
-  const [paused, setPaused] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [logs, setLogs] = createSignal<LogLine[]>([]);
+  const [paused, setPaused] = createSignal(false);
+  const [copied, setCopied] = createSignal(false);
 
-  const pendingRef = useRef<LogLine[]>([]);
-  const idRef = useRef(0);
-  const pausedRef = useRef(false);
-  const pinnedRef = useRef(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  let pending: LogLine[] = [];
+  let idCounter = 0;
+  let pausedRef = false;
+  let pinnedRef = true;
+  let scrollEl: HTMLDivElement | null = null;
 
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
+  createEffect(
+    () => undefined,
+    () => {
+      pausedRef = paused();
+    },
+  );
 
   // Subscribe to the backend log stream. Lines land in a ref buffer rather than
-  // state so high log volume never overwhelms React.
-  useEffect(() => {
-    const unlisten = listen<LogEventPayload>("log://log", (event) => {
-      const line: LogLine = {
-        id: idRef.current++,
-        level: event.payload.level,
-        time: formatTime(new Date()),
-        message: event.payload.message,
-      };
-      const pending = pendingRef.current;
-      pending.push(line);
-      if (pending.length > MAX_LINES) {
-        pending.splice(0, pending.length - MAX_LINES);
-      }
-    });
+  // state so high log volume never overwhelms Solid.
+  createEffect(
+    () => undefined,
+    () => {
+      const unlisten = listen<LogEventPayload>("log://log", (event) => {
+        const line: LogLine = {
+          id: idCounter++,
+          level: event.payload.level,
+          time: formatTime(new Date()),
+          message: event.payload.message,
+        };
+        pending.push(line);
+        if (pending.length > MAX_LINES) {
+          pending.splice(0, pending.length - MAX_LINES);
+        }
+      });
 
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
+      return () => {
+        unlisten.then((fn) => fn());
+      };
+    },
+  );
 
   // Flush buffered lines into state on a fixed cadence to cap re-renders.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (pausedRef.current || pendingRef.current.length === 0) return;
-      const incoming = pendingRef.current;
-      pendingRef.current = [];
-      setLogs((prev) => {
-        const next = prev.concat(incoming);
-        return next.length > MAX_LINES
-          ? next.slice(next.length - MAX_LINES)
-          : next;
-      });
-    }, FLUSH_INTERVAL_MS);
+  createEffect(
+    () => undefined,
+    () => {
+      const interval = setInterval(() => {
+        if (pausedRef || pending.length === 0) return;
+        const incoming = pending;
+        pending = [];
+        setLogs((prev) => {
+          const next = prev.concat(incoming);
+          return next.length > MAX_LINES
+            ? next.slice(next.length - MAX_LINES)
+            : next;
+        });
+      }, FLUSH_INTERVAL_MS);
 
-    return () => clearInterval(interval);
-  }, []);
+      return () => clearInterval(interval);
+    },
+  );
 
   // Keep the view pinned to the latest line unless the user has scrolled up.
-  useEffect(() => {
-    if (pinnedRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs]);
+  createEffect(
+    () => undefined,
+    () => {
+      void logs();
+      if (pinnedRef && scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }
+    },
+  );
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
+  const handleScroll = () => {
+    const el = scrollEl;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    pinnedRef.current = distanceFromBottom < 24;
-  }, []);
+    pinnedRef = distanceFromBottom < 24;
+  };
 
-  const handleClear = useCallback(() => {
-    pendingRef.current = [];
+  const handleClear = () => {
+    pending = [];
     setLogs([]);
-    pinnedRef.current = true;
-  }, []);
+    pinnedRef = true;
+  };
 
-  const handleCopy = useCallback(async () => {
-    const text = logs
+  const handleCopy = async () => {
+    const text = logs()
       .map((l) => `${l.time} ${metaFor(l.level).tag} ${l.message}`)
       .join("\n");
     try {
@@ -167,7 +179,7 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
     } catch (error) {
       console.error("Failed to copy logs:", error);
     }
-  }, [logs]);
+  };
 
   return (
     <SettingContainer
@@ -177,30 +189,30 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
       grouped={grouped}
       layout="stacked"
     >
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <div className="flex items-center gap-2 text-xs text-mid-gray min-w-0">
+      <div class="flex items-center justify-between mb-2 gap-2">
+        <div class="flex items-center gap-2 text-xs text-mid-gray min-w-0">
           <span
-            className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-              paused ? "bg-mid-gray" : "bg-emerald-500 animate-pulse"
+            class={`inline-block w-2 h-2 rounded-full shrink-0 ${
+              paused() ? "bg-mid-gray" : "bg-emerald-500 animate-pulse"
             }`}
           />
-          <span className="shrink-0">
-            {paused
+          <span class="shrink-0">
+            {paused()
               ? t("settings.debug.liveLogs.paused")
               : t("settings.debug.liveLogs.live")}
           </span>
-          <span className="shrink-0">·</span>
-          <span className="truncate">
-            {t("settings.debug.liveLogs.lineCount", { count: logs.length })}
+          <span class="shrink-0">·</span>
+          <span class="truncate">
+            {t("settings.debug.liveLogs.lineCount", { count: logs().length })}
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-2 shrink-0">
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setPaused((p) => !p)}
           >
-            {paused
+            {paused()
               ? t("settings.debug.liveLogs.resume")
               : t("settings.debug.liveLogs.pause")}
           </Button>
@@ -208,15 +220,15 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
             variant="secondary"
             size="sm"
             onClick={handleCopy}
-            disabled={logs.length === 0}
+            disabled={logs().length === 0}
           >
-            {copied ? t("settings.debug.liveLogs.copied") : t("common.copy")}
+            {copied() ? t("settings.debug.liveLogs.copied") : t("common.copy")}
           </Button>
           <Button
             variant="secondary"
             size="sm"
             onClick={handleClear}
-            disabled={logs.length === 0}
+            disabled={logs().length === 0}
           >
             {t("common.clear")}
           </Button>
@@ -224,35 +236,39 @@ export const LiveLogViewer: React.FC<LiveLogViewerProps> = ({
       </div>
 
       <div
-        ref={scrollRef}
+        ref={(el) => {
+          scrollEl = el;
+        }}
         onScroll={handleScroll}
-        className="h-72 overflow-y-auto rounded-lg border border-mid-gray/30 bg-[var(--color-log-surface)] p-3 font-mono text-xs leading-relaxed select-text"
+        class="h-72 overflow-y-auto rounded-lg border border-mid-gray/30 bg-[var(--color-log-surface)] p-3 font-mono text-xs leading-relaxed select-text"
       >
-        {logs.length === 0 ? (
-          <div className="text-mid-gray select-none">
+        {logs().length === 0 ? (
+          <div class="text-mid-gray select-none">
             {t("settings.debug.liveLogs.empty")}
           </div>
         ) : (
-          logs.map((line) => {
-            const meta = metaFor(line.level);
-            return (
-              <div key={line.id} className="flex gap-2">
-                <span className="text-mid-gray/80 shrink-0 select-none tabular-nums">
-                  {line.time}
-                </span>
-                <span
-                  className={`${meta.tagClass} shrink-0 select-none w-[3.5rem]`}
-                >
-                  {meta.tag}
-                </span>
-                <span
-                  className={`${meta.msgClass} min-w-0 whitespace-pre-wrap break-words`}
-                >
-                  {line.message}
-                </span>
-              </div>
-            );
-          })
+          <For each={logs()}>
+            {(line) => {
+              const meta = metaFor(line.level);
+              return (
+                <div class="flex gap-2">
+                  <span class="text-mid-gray/80 shrink-0 select-none tabular-nums">
+                    {line.time}
+                  </span>
+                  <span
+                    class={`${meta.tagClass} shrink-0 select-none w-[3.5rem]`}
+                  >
+                    {meta.tag}
+                  </span>
+                  <span
+                    class={`${meta.msgClass} min-w-0 whitespace-pre-wrap break-words`}
+                  >
+                    {line.message}
+                  </span>
+                </div>
+              );
+            }}
+          </For>
         )}
       </div>
     </SettingContainer>

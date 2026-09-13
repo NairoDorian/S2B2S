@@ -13,7 +13,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
+
+    /* JSX. `preserve` hands untransformed JSX to Vite's Solid plugin. Phase 3
+       switched `jsxImportSource` to `@solidjs/web` as the tree-wide default;
+       `tsconfig.json` is a type-checking setting only (noEmit is true), and
+       Vite picks the transform independently. */
+    "jsx": "preserve",
+    "jsxImportSource": "@solidjs/web",
 
     /* Path Aliases */
     "paths": {

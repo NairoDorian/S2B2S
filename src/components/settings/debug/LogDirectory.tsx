@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { commands } from "@/bindings";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { PathDisplay } from "../../ui/PathDisplay";
@@ -9,40 +9,43 @@ interface LogDirectoryProps {
   grouped?: boolean;
 }
 
-export const LogDirectory: React.FC<LogDirectoryProps> = ({
+export const LogDirectory = ({
   descriptionMode = "tooltip",
   grouped = false,
-}) => {
+}: LogDirectoryProps) => {
   const { t } = useTranslation();
-  const [logDir, setLogDir] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [logDir, setLogDir] = createSignal<string>("");
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal<string | null>(null);
 
-  useEffect(() => {
-    const loadLogDirectory = async () => {
-      try {
-        const result = await commands.getLogDirPath();
-        if (result.status === "ok") {
-          setLogDir(result.data);
-        } else {
-          setError(result.error);
+  createEffect(
+    () => undefined,
+    () => {
+      const loadLogDirectory = async () => {
+        try {
+          const result = await commands.getLogDirPath();
+          if (result.status === "ok") {
+            setLogDir(result.data);
+          } else {
+            setError(result.error);
+          }
+        } catch (err) {
+          const errorMessage =
+            err && typeof err === "object" && "message" in err
+              ? String(err.message)
+              : "Failed to load log directory";
+          setError(errorMessage);
+        } finally {
+          setLoading(false);
         }
-      } catch (err) {
-        const errorMessage =
-          err && typeof err === "object" && "message" in err
-            ? String(err.message)
-            : "Failed to load log directory";
-        setError(errorMessage);
-      } finally {
-        setLoading(false);
-      }
-    };
+      };
 
-    loadLogDirectory();
-  }, []);
+      loadLogDirectory();
+    },
+  );
 
   const handleOpen = async () => {
-    if (!logDir) return;
+    if (!logDir()) return;
     try {
       await commands.openLogDir();
     } catch (openError) {
@@ -58,16 +61,16 @@ export const LogDirectory: React.FC<LogDirectoryProps> = ({
       grouped={grouped}
       layout="stacked"
     >
-      {loading ? (
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-100 rounded" />
+      {loading() ? (
+        <div class="animate-pulse">
+          <div class="h-8 bg-gray-100 rounded" />
         </div>
-      ) : error ? (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-xs text-red-600">
-          {t("errors.loadDirectory", { error })}
+      ) : error() ? (
+        <div class="p-3 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+          {t("errors.loadDirectory", { error: error() })}
         </div>
       ) : (
-        <PathDisplay path={logDir} onOpen={handleOpen} disabled={!logDir} />
+        <PathDisplay path={logDir()} onOpen={handleOpen} disabled={!logDir()} />
       )}
     </SettingContainer>
   );

@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import { createSignal } from "solid-js";
 import { SettingContainer } from "./SettingContainer";
+import type { JSX } from "@solidjs/web";
 
 interface TextDisplayProps {
   label: string;
@@ -13,22 +14,22 @@ interface TextDisplayProps {
   onCopy?: (value: string) => void;
 }
 
-export const TextDisplay: React.FC<TextDisplayProps> = ({
-  label,
-  description,
-  value,
-  descriptionMode = "tooltip",
-  grouped = false,
-  placeholder = "Not available",
-  copyable = false,
-  monospace = false,
-  onCopy,
-}) => {
-  const [showCopied, setShowCopied] = useState(false);
+export const TextDisplay = (props: TextDisplayProps): JSX.Element => {
+  const {
+    label,
+    description,
+    value,
+    descriptionMode = "tooltip",
+    grouped = false,
+    placeholder = "Not available",
+    copyable = false,
+    monospace = false,
+    onCopy,
+  } = props;
+  const [showCopied, setShowCopied] = createSignal(false);
 
   const handleCopy = async () => {
     if (!value || !copyable) return;
-
     try {
       await navigator.clipboard.writeText(value);
       setShowCopied(true);
@@ -52,10 +53,10 @@ export const TextDisplay: React.FC<TextDisplayProps> = ({
       grouped={grouped}
       layout="stacked"
     >
-      <div className="flex items-center space-x-2">
-        <div className="flex-1 min-w-0">
+      <div class="flex items-center space-x-2">
+        <div class="flex-1 min-w-0">
           <div
-            className={`px-2 min-h-8 flex items-center bg-mid-gray/10 border border-mid-gray/80 rounded-md text-xs ${textClasses} ${!value ? "opacity-60" : ""}`}
+            class={`px-2 min-h-8 flex items-center bg-mid-gray/10 border border-mid-gray/80 rounded-md text-xs ${textClasses} ${!value ? "opacity-60" : ""}`}
           >
             {displayValue}
           </div>
@@ -63,21 +64,21 @@ export const TextDisplay: React.FC<TextDisplayProps> = ({
         {copyable && value && (
           <button
             onClick={handleCopy}
-            className="flex items-center justify-center px-2 py-1 w-12 min-h-8 text-xs font-semibold bg-mid-gray/10 hover:bg-accent/10 border border-mid-gray/80 hover:border-accent hover:text-accent rounded-md transition-all duration-150 flex-shrink-0 cursor-pointer"
+            class="flex items-center justify-center px-2 py-1 w-12 min-h-8 text-xs font-semibold bg-mid-gray/10 hover:bg-accent/10 border border-mid-gray/80 hover:border-accent hover:text-accent rounded-md transition-all duration-150 flex-shrink-0 cursor-pointer"
             title="Copy to clipboard"
           >
-            {showCopied ? (
-              <div className="flex items-center space-x-1">
+            {showCopied() ? (
+              <div class="flex items-center space-x-1">
                 <svg
-                  className="w-4 h-4"
+                  class="w-4 h-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width={2}
                     d="M5 13l4 4L19 7"
                   />
                 </svg>

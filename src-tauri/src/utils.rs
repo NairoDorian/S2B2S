@@ -3,7 +3,7 @@ use crate::app_identity;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::shortcut;
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
@@ -20,6 +20,36 @@ pub fn redact_text(text: &str) -> &str {
         text
     } else {
         "[REDACTED]"
+    }
+}
+
+/// Emit a multi-line payload — an LLM prompt, a model's answer, one STT model's
+/// transcript — as one log line per source line, under `label`.
+///
+/// The LLM and merge paths are the ones where "what did it actually send, and
+/// what came back" is the entire question, and a payload logged as a length
+/// answers none of it. A single `debug!` holding a 3 KB prompt is equally
+/// useless: it is one wrapped paragraph in a terminal. One line in, one line
+/// out, so a chunk's slots and the merge's answer can be read against each
+/// other.
+///
+/// `redact_text` keeps the body out of a release log while leaving a debug
+/// build — the only one whose console carries these lines — intact, and the
+/// level check keeps the payload from being formatted at all when nobody is
+/// listening.
+pub fn log_multiline(label: &str, text: &str) {
+    if !log::log_enabled!(log::Level::Debug) {
+        return;
+    }
+    let text = redact_text(text);
+    debug!(
+        "{} — {} chars, {} line(s)",
+        label,
+        text.chars().count(),
+        text.lines().count()
+    );
+    for (index, line) in text.lines().enumerate() {
+        debug!("  {:>3}| {}", index + 1, line);
     }
 }
 

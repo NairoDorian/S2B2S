@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
@@ -10,7 +9,7 @@ import {
   getUniqueCapabilityLanguages,
 } from "@/lib/constants/languages";
 
-export const ModelSettingsCard: React.FC = () => {
+export const ModelSettingsCard = () => {
   const { t } = useTranslation();
   const { currentModel, models } = useModelStore();
 
@@ -29,7 +28,6 @@ export const ModelSettingsCard: React.FC = () => {
   const supportsTranslation = currentModelInfo?.supports_translation ?? false;
   const hasAnySettings = showLanguageSelector || supportsTranslation;
 
-  // Don't render anything if no model is selected or no settings available
   if (!currentModel || !currentModelInfo || !hasAnySettings) {
     return null;
   }

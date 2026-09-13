@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, Show } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { commands } from "@/bindings";
@@ -10,16 +10,15 @@ interface ChannelSelectorProps {
   grouped?: boolean;
 }
 
-export const ChannelSelector: React.FC<ChannelSelectorProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
-    const { t } = useTranslation();
-    const { getSetting, updateSetting, isUpdating, isLoading } = useSettings();
-    const [channelCount, setChannelCount] = useState(1);
+export const ChannelSelector = (props: ChannelSelectorProps) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating, isLoading } = useSettings();
+  const [channelCount, setChannelCount] = createSignal(1);
 
-    const selectedMicrophone = getSetting("selected_microphone") || "default";
-    const selectedChannel = getSetting("selected_channel");
-
-    useEffect(() => {
+  createEffect(
+    // Re-fetch the channel count whenever the selected microphone changes.
+    () => getSetting("selected_microphone") || "default",
+    (selectedMicrophone) => {
       let cancelled = false;
       setChannelCount(1);
 
@@ -40,49 +39,46 @@ export const ChannelSelector: React.FC<ChannelSelectorProps> = React.memo(
       return () => {
         cancelled = true;
       };
-    }, [selectedMicrophone]);
+    },
+  );
 
-    // Don't render if the device only has one channel.
-    if (channelCount <= 1) {
-      return null;
-    }
+  const handleChannelSelect = async (value: string) => {
+    const channel = value === "average" ? null : parseInt(value, 10);
+    await updateSetting("selected_channel", channel);
+  };
 
-    const handleChannelSelect = async (value: string) => {
-      const channel = value === "average" ? null : parseInt(value, 10);
-      await updateSetting("selected_channel", channel);
-    };
+  // Built live: the option list follows the fetched channel count and the
+  // selected value follows the setting.
+  const options = () => [
+    { value: "average", label: t("settings.sound.channel.average") },
+    ...Array.from({ length: channelCount() }, (_, index) => ({
+      value: index.toString(),
+      label: t("settings.sound.channel.channel", { n: index + 1 }),
+    })),
+  ];
 
-    const options = [
-      { value: "average", label: t("settings.sound.channel.average") },
-      ...Array.from({ length: channelCount }, (_, index) => ({
-        value: index.toString(),
-        label: t("settings.sound.channel.channel", { n: index + 1 }),
-      })),
-    ];
+  const currentValue = () => {
+    const selectedChannel = getSetting("selected_channel");
+    return selectedChannel == null || selectedChannel >= channelCount()
+      ? "average"
+      : selectedChannel.toString();
+  };
 
-    // An old selection may not exist on a newly selected device. The recorder
-    // also falls back to averaging in that case, so reflect that effective value.
-    const currentValue =
-      selectedChannel == null || selectedChannel >= channelCount
-        ? "average"
-        : selectedChannel.toString();
-
-    return (
+  return (
+    <Show when={channelCount() > 1}>
       <SettingContainer
         title={t("settings.sound.channel.title")}
         description={t("settings.sound.channel.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
+        descriptionMode={props.descriptionMode}
+        grouped={props.grouped}
       >
         <Dropdown
-          options={options}
-          selectedValue={currentValue}
+          options={options()}
+          selectedValue={currentValue()}
           onSelect={handleChannelSelect}
-          disabled={isUpdating("selected_channel") || isLoading}
+          disabled={isUpdating("selected_channel") || isLoading()}
         />
       </SettingContainer>
-    );
-  },
-);
-
-ChannelSelector.displayName = "ChannelSelector";
+    </Show>
+  );
+};

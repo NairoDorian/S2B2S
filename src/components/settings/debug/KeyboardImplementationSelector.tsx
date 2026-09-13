@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Dropdown, type DropdownOption } from "../../ui/Dropdown";
 import { useSettings } from "../../../hooks/useSettings";
@@ -19,9 +18,10 @@ interface KeyboardImplementationSelectorProps {
   grouped?: boolean;
 }
 
-export const KeyboardImplementationSelector: React.FC<
-  KeyboardImplementationSelectorProps
-> = ({ descriptionMode = "tooltip", grouped = false }) => {
+export const KeyboardImplementationSelector = ({
+  descriptionMode = "tooltip",
+  grouped = false,
+}: KeyboardImplementationSelectorProps) => {
   const { t } = useTranslation();
   const { getSetting, isUpdating, refreshSettings } = useSettings();
   const currentImplementation =

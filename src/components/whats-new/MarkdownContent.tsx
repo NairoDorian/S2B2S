@@ -1,29 +1,10 @@
-import React from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { parseMarkdown, type Block, type Inline } from "./markdown";
+import type { JSX } from "@solidjs/web";
 
 interface MarkdownContentProps {
   markdown: string;
 }
-
-const allowedElements = [
-  "a",
-  "blockquote",
-  "br",
-  "code",
-  "em",
-  "h1",
-  "h2",
-  "h3",
-  "hr",
-  "img",
-  "li",
-  "ol",
-  "p",
-  "pre",
-  "strong",
-  "ul",
-];
 
 const isSafeUrl = (url: string) => {
   try {
@@ -51,111 +32,116 @@ const isSafeImageSrc = (src: string) => {
   return true;
 };
 
-const components: Components = {
-  h1: ({ children }) => (
-    <h3 className="text-base font-semibold leading-snug text-text">
-      {children}
-    </h3>
-  ),
-  h2: ({ children }) => (
-    <h3 className="text-[15px] font-semibold leading-snug text-text">
-      {children}
-    </h3>
-  ),
-  h3: ({ children }) => (
-    <h3 className="text-sm font-semibold leading-snug text-text">{children}</h3>
-  ),
-  p: ({ children }) => (
-    <p className="text-sm leading-relaxed text-text/80">{children}</p>
-  ),
-  ul: ({ children }) => (
-    <ul className="list-disc space-y-1 ps-5 text-sm leading-relaxed text-text/80">
-      {children}
-    </ul>
-  ),
-  li: ({ children }) => (
-    <li className="pl-1 marker:text-text/50">{children}</li>
-  ),
-  ol: ({ children }) => (
-    <ol className="list-decimal space-y-1 ps-5 text-sm leading-relaxed text-text/80">
-      {children}
-    </ol>
-  ),
-  br: () => <br />,
-  hr: () => <hr className="border-mid-gray/20" />,
-  img: ({ alt, src }) => {
-    if (!src || !isSafeImageSrc(src)) return null;
+const HEADING_CLASS = {
+  1: "text-base font-semibold leading-snug text-text",
+  2: "text-[15px] font-semibold leading-snug text-text",
+  3: "text-sm font-semibold leading-snug text-text",
+} as const;
 
-    return (
-      <img
-        src={src}
-        alt={alt ?? ""}
-        loading="lazy"
-        decoding="async"
-        className="mx-auto block max-h-72 max-w-full object-contain"
-      />
-    );
-  },
-  blockquote: ({ children }) => (
-    <blockquote className="border-s-2 border-accent/50 ps-3 text-sm leading-relaxed text-text/70">
-      {children}
-    </blockquote>
-  ),
-  code: ({ children, className }) => {
-    const isBlock = className?.startsWith("language-");
+const LIST_CLASS =
+  "list-disc space-y-1 ps-5 text-sm leading-relaxed text-text/80";
+const ORDERED_LIST_CLASS =
+  "list-decimal space-y-1 ps-5 text-sm leading-relaxed text-text/80";
 
-    if (isBlock) {
-      return (
-        <code className="block whitespace-pre font-mono text-xs">
-          {children}
-        </code>
-      );
+function renderInline(nodes: Inline[]): (string | JSX.Element)[] {
+  return nodes.map((node): string | JSX.Element => {
+    switch (node.type) {
+      case "text":
+        return node.value;
+      case "break":
+        return <br />;
+      case "strong":
+        return <strong>{renderInline(node.children)}</strong>;
+      case "em":
+        return <em>{renderInline(node.children)}</em>;
+      case "code":
+        return (
+          <code class="rounded bg-mid-gray/10 px-1 py-0.5 font-mono text-[0.85em]">
+            {node.value}
+          </code>
+        );
+      case "image":
+        if (!node.src || !isSafeImageSrc(node.src)) return null as any;
+
+        return (
+          <img
+            src={node.src}
+            alt={node.alt}
+            loading="lazy"
+            decoding="async"
+            class="mx-auto block max-h-72 max-w-full object-contain"
+          />
+        );
+      case "link":
+        if (!node.href || !isSafeUrl(node.href)) {
+          return <>{renderInline(node.children)}</>;
+        }
+
+        return (
+          <a
+            href={node.href}
+            rel="noreferrer"
+            onClick={(event) => {
+              event.preventDefault();
+              void openSafeUrl(node.href);
+            }}
+            class="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+          >
+            {renderInline(node.children)}
+          </a>
+        );
     }
+  });
+}
 
-    return (
-      <code className="rounded bg-mid-gray/10 px-1 py-0.5 font-mono text-[0.85em]">
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }) => (
-    <pre className="overflow-x-auto rounded-md bg-mid-gray/10 p-3 text-xs leading-relaxed text-text/80">
-      {children}
-    </pre>
-  ),
-  a: ({ children, href }) => {
-    if (!href || !isSafeUrl(href)) {
-      return <>{children}</>;
+function renderBlocks(blocks: Block[]): (JSX.Element | string)[] {
+  return blocks.map((block): JSX.Element | string => {
+    switch (block.type) {
+      case "heading":
+        return (
+          <h3 class={HEADING_CLASS[block.level]}>
+            {renderInline(block.children)}
+          </h3>
+        );
+      case "paragraph":
+        return (
+          <p class="text-sm leading-relaxed text-text/80">
+            {renderInline(block.children)}
+          </p>
+        );
+      case "list": {
+        const items = block.items.map((item) => (
+          <li class="pl-1 marker:text-text/50">{renderInline(item)}</li>
+        ));
+
+        return block.ordered ? (
+          <ol class={ORDERED_LIST_CLASS}>{items}</ol>
+        ) : (
+          <ul class={LIST_CLASS}>{items}</ul>
+        );
+      }
+      case "blockquote":
+        return (
+          <blockquote class="border-s-2 border-accent/50 ps-3 text-sm leading-relaxed text-text/70">
+            {renderInline(block.children)}
+          </blockquote>
+        );
+      case "code":
+        return (
+          <pre class="overflow-x-auto rounded-md bg-mid-gray/10 p-3 text-xs leading-relaxed text-text/80">
+            <code class="block whitespace-pre font-mono text-xs">
+              {block.value}
+            </code>
+          </pre>
+        );
+      case "hr":
+        return <hr class="border-mid-gray/20" />;
     }
+  });
+}
 
-    return (
-      <a
-        href={href}
-        rel="noreferrer"
-        onClick={(event) => {
-          event.preventDefault();
-          void openSafeUrl(href);
-        }}
-        className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
-      >
-        {children}
-      </a>
-    );
-  },
-};
-
-export const MarkdownContent: React.FC<MarkdownContentProps> = ({
-  markdown,
-}) => {
+export const MarkdownContent = (props: MarkdownContentProps) => {
   return (
-    <div className="space-y-3">
-      <ReactMarkdown
-        allowedElements={allowedElements}
-        components={components}
-        skipHtml
-      >
-        {markdown}
-      </ReactMarkdown>
-    </div>
+    <div class="space-y-3">{renderBlocks(parseMarkdown(props.markdown))}</div>
   );
 };

@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Button } from "../../ui/Button";
 import { SettingContainer } from "../../ui/SettingContainer";
 
@@ -7,15 +6,15 @@ export type OnboardingPreviewStep = "accessibility" | "model";
 
 interface OnboardingPreviewProps {
   onPreview: (step: OnboardingPreviewStep) => void;
-  descriptionMode?: "inline" | "tooltip";
+  descriptionMode?: "tooltip" | "inline";
   grouped?: boolean;
 }
 
-export const OnboardingPreview: React.FC<OnboardingPreviewProps> = ({
+export const OnboardingPreview = ({
   onPreview,
   descriptionMode = "tooltip",
   grouped = false,
-}) => {
+}: OnboardingPreviewProps) => {
   const { t } = useTranslation();
 
   return (
@@ -25,7 +24,7 @@ export const OnboardingPreview: React.FC<OnboardingPreviewProps> = ({
       descriptionMode={descriptionMode}
       grouped={grouped}
     >
-      <div className="flex gap-2">
+      <div class="flex gap-2">
         <Button
           variant="secondary"
           size="md"

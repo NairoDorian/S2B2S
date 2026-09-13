@@ -1,13 +1,21 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import solid from "@solidjs/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Phase 3 of docs/PLAN_SOLIDJS_2.md: the main window is now Solid, so
+// `@vitejs/plugin-react` is gone and the Solid plugin covers all of `src/`.
+// `tsconfig.json` still uses `jsx: "preserve"` so esbuild passes untransformed
+// JSX to the Solid plugin — both entry points go through the same compiler.
+// The overlay's per-file `/** @jsxImportSource @solidjs/web */` pragma is now
+// redundant (the default matches), but harmless; it stays in for clarity until
+// Phase 4 cleans up.
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [...solid(), tailwindcss()],
 
   // Path aliases
   resolve: {

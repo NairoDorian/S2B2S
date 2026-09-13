@@ -1,22 +1,16 @@
-import React, { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, Show } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { commands, type KeyboardDiagnosticReport } from "@/bindings";
 import { useOsType } from "../../../hooks/useOsType";
 
-/**
- * Count-only keyboard capture test (macOS).
- *
- * Opens a short-lived listener and tallies how many key-down / key-up /
- * modifier / mouse events reach the app — never *which* keys were pressed.
- * The signature of stuck Secure Input (issue #1578) is modifier events
- * flowing while key-down stays at zero.
- */
-export const KeyboardDiagnostic: React.FC = () => {
+export const KeyboardDiagnostic = () => {
   const { t } = useTranslation();
   const osType = useOsType();
-  const [running, setRunning] = useState(false);
-  const [report, setReport] = useState<KeyboardDiagnosticReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = createSignal(false);
+  const [report, setReport] = createSignal<KeyboardDiagnosticReport | null>(
+    null,
+  );
+  const [error, setError] = createSignal<string | null>(null);
 
   if (osType !== "macos") {
     return null;
@@ -71,50 +65,52 @@ export const KeyboardDiagnostic: React.FC = () => {
   };
 
   return (
-    <div className="p-4 space-y-2">
-      <div className="flex justify-between items-center gap-2">
+    <div class="p-4 space-y-2">
+      <div class="flex justify-between items-center gap-2">
         <div>
-          <p className="text-sm font-medium">
+          <p class="text-sm font-medium">
             {t("settings.debug.keyboardDiagnostic.title")}
           </p>
-          <p className="text-xs text-mid-gray">
+          <p class="text-xs text-mid-gray">
             {t("settings.debug.keyboardDiagnostic.description")}
           </p>
         </div>
         <button
           onClick={runDiagnostic}
-          disabled={running}
-          className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded cursor-pointer hover:border-accent disabled:opacity-50 disabled:cursor-default whitespace-nowrap"
+          disabled={running()}
+          class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded cursor-pointer hover:border-accent disabled:opacity-50 disabled:cursor-default whitespace-nowrap"
         >
           {t("settings.debug.keyboardDiagnostic.run")}
         </button>
       </div>
-      {running && (
-        <p className="text-sm animate-pulse">
+      {running() && (
+        <p class="text-sm animate-pulse">
           {t("settings.debug.keyboardDiagnostic.running")}
         </p>
       )}
-      {error !== null && (
-        <p className="text-sm text-red-500">
-          {t("settings.debug.keyboardDiagnostic.failed", { error })}
+      {error() !== null && (
+        <p class="text-sm text-red-500">
+          {t("settings.debug.keyboardDiagnostic.failed", { error: error() })}
         </p>
       )}
-      {report !== null && (
-        <div className="text-sm font-mono space-y-1">
-          <p>
-            {t("settings.debug.keyboardDiagnostic.secureInputLabel")}:{" "}
-            {secureInputLine(report)}
-          </p>
-          <p>
-            {t("settings.debug.keyboardDiagnostic.keyDown")}: {report.key_down}{" "}
-            · {t("settings.debug.keyboardDiagnostic.keyUp")}: {report.key_up} ·{" "}
-            {t("settings.debug.keyboardDiagnostic.flagsChanged")}:{" "}
-            {report.flags_changed} ·{" "}
-            {t("settings.debug.keyboardDiagnostic.mouse")}: {report.mouse}
-          </p>
-          <p className="font-sans font-medium">{verdict(report)}</p>
-        </div>
-      )}
+      <Show when={report()}>
+        {(r) => (
+          <div class="text-sm font-mono space-y-1">
+            <p>
+              {t("settings.debug.keyboardDiagnostic.secureInputLabel")}:{" "}
+              {secureInputLine(r())}
+            </p>
+            <p>
+              {t("settings.debug.keyboardDiagnostic.keyDown")}: {r().key_down} ·{" "}
+              {t("settings.debug.keyboardDiagnostic.keyUp")}: {r().key_up} ·{" "}
+              {t("settings.debug.keyboardDiagnostic.flagsChanged")}:{" "}
+              {r().flags_changed} ·{" "}
+              {t("settings.debug.keyboardDiagnostic.mouse")}: {r().mouse}
+            </p>
+            <p class="font-sans font-medium">{verdict(r())}</p>
+          </div>
+        )}
+      </Show>
     </div>
   );
 };

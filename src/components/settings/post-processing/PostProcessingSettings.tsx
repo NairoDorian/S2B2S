@@ -1,8 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Trans, useTranslation } from "react-i18next";
-import { RefreshCcw } from "lucide-react";
-import { commands } from "@/bindings";
-
+import { createSignal, createEffect } from "solid-js";
+import { useTranslation, TranslatedMarkup } from "@/i18n/useTranslation";
 import { Alert } from "../../ui/Alert";
 import {
   Dropdown,
@@ -13,7 +10,8 @@ import {
 import { Button } from "../../ui/Button";
 import { ResetButton } from "../../ui/ResetButton";
 import { Input } from "../../ui/Input";
-
+import { RefreshCcw } from "@/components/icons/lucide";
+import { commands } from "@/bindings";
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
 import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
@@ -21,8 +19,9 @@ import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
+import type { JSX } from "@solidjs/web";
 
-const PostProcessingSettingsApiComponent: React.FC = () => {
+const PostProcessingSettingsApiComponent = (): JSX.Element => {
   const { t } = useTranslation();
   const state = usePostProcessProviderState();
 
@@ -35,24 +34,24 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         layout="horizontal"
         grouped={true}
       >
-        <div className="flex items-center gap-2">
+        <div class="flex items-center gap-2">
           <ProviderSelect
-            options={state.providerOptions}
-            value={state.selectedProviderId}
+            options={state.providerOptions()}
+            value={state.selectedProviderId()}
             onChange={state.handleProviderSelect}
           />
         </div>
       </SettingContainer>
 
-      {state.isAppleProvider ? (
-        state.appleIntelligenceUnavailable ? (
+      {state.isAppleProvider() ? (
+        state.appleIntelligenceUnavailable() ? (
           <Alert variant="error" contained>
             {t("settings.postProcessing.api.appleIntelligence.unavailable")}
           </Alert>
         ) : null
       ) : (
         <>
-          {state.selectedProvider?.id === "custom" && (
+          {state.selectedProvider()?.id === "custom" && (
             <SettingContainer
               title={t("settings.postProcessing.api.baseUrl.title")}
               description={t("settings.postProcessing.api.baseUrl.description")}
@@ -60,14 +59,14 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
               layout="horizontal"
               grouped={true}
             >
-              <div className="flex items-center gap-2">
+              <div class="flex items-center gap-2">
                 <BaseUrlField
-                  value={state.baseUrl}
+                  value={state.baseUrl()}
                   onBlur={state.handleBaseUrlChange}
                   placeholder={t(
                     "settings.postProcessing.api.baseUrl.placeholder",
                   )}
-                  disabled={state.isBaseUrlUpdating}
+                  disabled={state.isBaseUrlUpdating()}
                   className="min-w-[380px]"
                 />
               </div>
@@ -81,14 +80,14 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             layout="horizontal"
             grouped={true}
           >
-            <div className="flex items-center gap-2">
+            <div class="flex items-center gap-2">
               <ApiKeyField
-                value={state.apiKey}
+                value={state.apiKey()}
                 onBlur={state.handleApiKeyChange}
                 placeholder={t(
                   "settings.postProcessing.api.apiKey.placeholder",
                 )}
-                disabled={state.isApiKeyUpdating}
+                disabled={state.isApiKeyUpdating()}
                 className="min-w-[320px]"
               />
             </div>
@@ -96,11 +95,11 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </>
       )}
 
-      {!state.isAppleProvider && (
+      {!state.isAppleProvider() && (
         <SettingContainer
           title={t("settings.postProcessing.api.model.title")}
           description={
-            state.isCustomProvider
+            state.isCustomProvider()
               ? t("settings.postProcessing.api.model.descriptionCustom")
               : t("settings.postProcessing.api.model.descriptionDefault")
           }
@@ -108,14 +107,14 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
           layout="stacked"
           grouped={true}
         >
-          <div className="flex items-center gap-2">
+          <div class="flex items-center gap-2">
             <ModelSelect
-              value={state.model}
-              options={state.modelOptions}
-              disabled={state.isModelUpdating}
-              isLoading={state.isFetchingModels}
+              value={state.model()}
+              options={state.modelOptions()}
+              disabled={state.isModelUpdating()}
+              isLoading={state.isFetchingModels()}
               placeholder={
-                state.modelOptions.length > 0
+                state.modelOptions().length > 0
                   ? t(
                       "settings.postProcessing.api.model.placeholderWithOptions",
                     )
@@ -128,12 +127,12 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             />
             <ResetButton
               onClick={state.handleRefreshModels}
-              disabled={state.isFetchingModels}
+              disabled={state.isFetchingModels()}
               ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
-              className="flex h-10 w-10 items-center justify-center"
+              class="flex h-10 w-10 items-center justify-center"
             >
               <RefreshCcw
-                className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
+                class={`h-4 w-4 ${state.isFetchingModels() ? "animate-spin" : ""}`}
               />
             </ResetButton>
           </div>
@@ -143,35 +142,34 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
   );
 };
 
-const PostProcessingSettingsPromptsComponent: React.FC = () => {
+const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating, refreshSettings } =
     useSettings();
-  const [isCreating, setIsCreating] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftText, setDraftText] = useState("");
+  const [isCreating, setIsCreating] = createSignal(false);
+  const [draftName, setDraftName] = createSignal("");
+  const [draftText, setDraftText] = createSignal("");
 
-  const prompts = getSetting("post_process_prompts") || [];
-  const selectedPromptId = getSetting("post_process_selected_prompt_id") || "";
-  const selectedPrompt =
-    prompts.find((prompt) => prompt.id === selectedPromptId) || null;
+  const prompts = () => getSetting("post_process_prompts") || [];
+  const selectedPromptId = () =>
+    getSetting("post_process_selected_prompt_id") || "";
+  const selectedPrompt = () =>
+    prompts().find((prompt) => prompt.id === selectedPromptId()) || null;
 
-  useEffect(() => {
-    if (isCreating) return;
+  createEffect(
+    () => selectedPrompt(),
+    (prompt) => {
+      if (isCreating()) return;
 
-    if (selectedPrompt) {
-      setDraftName(selectedPrompt.name);
-      setDraftText(selectedPrompt.prompt);
-    } else {
-      setDraftName("");
-      setDraftText("");
-    }
-  }, [
-    isCreating,
-    selectedPromptId,
-    selectedPrompt?.name,
-    selectedPrompt?.prompt,
-  ]);
+      if (prompt) {
+        setDraftName(prompt.name);
+        setDraftText(prompt.prompt);
+      } else {
+        setDraftName("");
+        setDraftText("");
+      }
+    },
+  );
 
   const handlePromptSelect = (promptId: string | null) => {
     if (!promptId) return;
@@ -180,12 +178,12 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
   };
 
   const handleCreatePrompt = async () => {
-    if (!draftName.trim() || !draftText.trim()) return;
+    if (!draftName().trim() || !draftText().trim()) return;
 
     try {
       const result = await commands.addPostProcessPrompt(
-        draftName.trim(),
-        draftText.trim(),
+        draftName().trim(),
+        draftText().trim(),
       );
       if (result.status === "ok") {
         await refreshSettings();
@@ -198,13 +196,14 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
   };
 
   const handleUpdatePrompt = async () => {
-    if (!selectedPromptId || !draftName.trim() || !draftText.trim()) return;
+    if (!selectedPromptId() || !draftName().trim() || !draftText().trim())
+      return;
 
     try {
       await commands.updatePostProcessPrompt(
-        selectedPromptId,
-        draftName.trim(),
-        draftText.trim(),
+        selectedPromptId(),
+        draftName().trim(),
+        draftText().trim(),
       );
       await refreshSettings();
     } catch (error) {
@@ -226,9 +225,10 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
 
   const handleCancelCreate = () => {
     setIsCreating(false);
-    if (selectedPrompt) {
-      setDraftName(selectedPrompt.name);
-      setDraftText(selectedPrompt.prompt);
+    const prompt = selectedPrompt();
+    if (prompt) {
+      setDraftName(prompt.name);
+      setDraftText(prompt.prompt);
     } else {
       setDraftName("");
       setDraftText("");
@@ -241,11 +241,15 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
     setDraftText("");
   };
 
-  const hasPrompts = prompts.length > 0;
-  const isDirty =
-    !!selectedPrompt &&
-    (draftName.trim() !== selectedPrompt.name ||
-      draftText.trim() !== selectedPrompt.prompt.trim());
+  const hasPrompts = () => prompts().length > 0;
+  const isDirty = () => {
+    const prompt = selectedPrompt();
+    return (
+      !!prompt &&
+      (draftName().trim() !== prompt.name ||
+        draftText().trim() !== prompt.prompt.trim())
+    );
+  };
 
   return (
     <SettingContainer
@@ -257,46 +261,46 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
       layout="stacked"
       grouped={true}
     >
-      <div className="space-y-3">
-        <div className="flex gap-2 min-w-0">
+      <div class="space-y-3">
+        <div class="flex gap-2 min-w-0">
           <Dropdown
-            selectedValue={selectedPromptId || null}
-            options={prompts.map((p) => ({
+            selectedValue={selectedPromptId() || null}
+            options={prompts().map((p) => ({
               value: p.id,
               label: p.name,
             }))}
             onSelect={(value) => handlePromptSelect(value)}
             placeholder={
-              prompts.length === 0
+              prompts().length === 0
                 ? t("settings.postProcessing.prompts.noPrompts")
                 : t("settings.postProcessing.prompts.selectPrompt")
             }
             disabled={
-              isUpdating("post_process_selected_prompt_id") || isCreating
+              isUpdating("post_process_selected_prompt_id") || isCreating()
             }
-            className="flex-1 min-w-0"
+            class="flex-1 min-w-0"
           />
           <Button
             onClick={handleStartCreate}
             variant="primary"
             size="md"
-            disabled={isCreating}
-            className="shrink-0"
+            disabled={isCreating()}
+            class="shrink-0"
           >
             {t("settings.postProcessing.prompts.createNew")}
           </Button>
         </div>
 
-        {!isCreating && hasPrompts && selectedPrompt && (
-          <div className="space-y-3">
-            <div className="space-y-2 flex flex-col">
-              <label className="text-sm font-semibold">
+        {!isCreating() && hasPrompts() && selectedPrompt() && (
+          <div class="space-y-3">
+            <div class="space-y-2 flex flex-col">
+              <label class="text-sm font-semibold">
                 {t("settings.postProcessing.prompts.promptLabel")}
               </label>
               <Input
                 type="text"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
+                value={draftName()}
+                onInput={(e) => setDraftName(e.target.value)}
                 placeholder={t(
                   "settings.postProcessing.prompts.promptLabelPlaceholder",
                 )}
@@ -304,39 +308,40 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
               />
             </div>
 
-            <div className="space-y-2 flex flex-col">
-              <label className="text-sm font-semibold">
+            <div class="space-y-2 flex flex-col">
+              <label class="text-sm font-semibold">
                 {t("settings.postProcessing.prompts.promptInstructions")}
               </label>
               <Textarea
-                value={draftText}
-                onChange={(e) => setDraftText(e.target.value)}
+                value={draftText()}
+                onInput={(e) => setDraftText(e.target.value)}
                 placeholder={t(
                   "settings.postProcessing.prompts.promptInstructionsPlaceholder",
                 )}
               />
-              <p className="text-xs text-mid-gray/70">
-                <Trans
-                  i18nKey="settings.postProcessing.prompts.promptTip"
-                  components={{ code: <code /> }}
+              <p class="text-xs text-mid-gray/70">
+                <TranslatedMarkup
+                  text={t("settings.postProcessing.prompts.promptTip")}
                 />
               </p>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            <div class="flex gap-2 pt-2">
               <Button
                 onClick={handleUpdatePrompt}
                 variant="primary"
                 size="md"
-                disabled={!draftName.trim() || !draftText.trim() || !isDirty}
+                disabled={
+                  !draftName().trim() || !draftText().trim() || !isDirty()
+                }
               >
                 {t("settings.postProcessing.prompts.updatePrompt")}
               </Button>
               <Button
-                onClick={() => handleDeletePrompt(selectedPromptId)}
+                onClick={() => handleDeletePrompt(selectedPromptId())}
                 variant="secondary"
                 size="md"
-                disabled={!selectedPromptId || prompts.length <= 1}
+                disabled={!selectedPromptId() || prompts().length <= 1}
               >
                 {t("settings.postProcessing.prompts.deletePrompt")}
               </Button>
@@ -344,26 +349,26 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
           </div>
         )}
 
-        {!isCreating && !selectedPrompt && (
-          <div className="p-3 bg-mid-gray/5 rounded-md border border-mid-gray/20">
-            <p className="text-sm text-mid-gray">
-              {hasPrompts
+        {!isCreating() && !selectedPrompt() && (
+          <div class="p-3 bg-mid-gray/5 rounded-md border border-mid-gray/20">
+            <p class="text-sm text-mid-gray">
+              {hasPrompts()
                 ? t("settings.postProcessing.prompts.selectToEdit")
                 : t("settings.postProcessing.prompts.createFirst")}
             </p>
           </div>
         )}
 
-        {isCreating && (
-          <div className="space-y-3">
-            <div className="space-y-2 block flex flex-col">
-              <label className="text-sm font-semibold text-text">
+        {isCreating() && (
+          <div class="space-y-3">
+            <div class="space-y-2 block flex flex-col">
+              <label class="text-sm font-semibold text-text">
                 {t("settings.postProcessing.prompts.promptLabel")}
               </label>
               <Input
                 type="text"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
+                value={draftName()}
+                onInput={(e) => setDraftName(e.target.value)}
                 placeholder={t(
                   "settings.postProcessing.prompts.promptLabelPlaceholder",
                 )}
@@ -371,31 +376,30 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
               />
             </div>
 
-            <div className="space-y-2 flex flex-col">
-              <label className="text-sm font-semibold">
+            <div class="space-y-2 flex flex-col">
+              <label class="text-sm font-semibold">
                 {t("settings.postProcessing.prompts.promptInstructions")}
               </label>
               <Textarea
-                value={draftText}
-                onChange={(e) => setDraftText(e.target.value)}
+                value={draftText()}
+                onInput={(e) => setDraftText(e.target.value)}
                 placeholder={t(
                   "settings.postProcessing.prompts.promptInstructionsPlaceholder",
                 )}
               />
-              <p className="text-xs text-mid-gray/70">
-                <Trans
-                  i18nKey="settings.postProcessing.prompts.promptTip"
-                  components={{ code: <code /> }}
+              <p class="text-xs text-mid-gray/70">
+                <TranslatedMarkup
+                  text={t("settings.postProcessing.prompts.promptTip")}
                 />
               </p>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            <div class="flex gap-2 pt-2">
               <Button
                 onClick={handleCreatePrompt}
                 variant="primary"
                 size="md"
-                disabled={!draftName.trim() || !draftText.trim()}
+                disabled={!draftName().trim() || !draftText().trim()}
               >
                 {t("settings.postProcessing.prompts.createPrompt")}
               </Button>
@@ -414,21 +418,21 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
   );
 };
 
-export const PostProcessingSettingsApi = React.memo(
-  PostProcessingSettingsApiComponent,
-);
+export const PostProcessingSettingsApi = (): JSX.Element => {
+  return <PostProcessingSettingsApiComponent />;
+};
 PostProcessingSettingsApi.displayName = "PostProcessingSettingsApi";
 
-export const PostProcessingSettingsPrompts = React.memo(
-  PostProcessingSettingsPromptsComponent,
-);
+export const PostProcessingSettingsPrompts = (): JSX.Element => {
+  return <PostProcessingSettingsPromptsComponent />;
+};
 PostProcessingSettingsPrompts.displayName = "PostProcessingSettingsPrompts";
 
-export const PostProcessingSettings: React.FC = () => {
+export const PostProcessingSettings = (): JSX.Element => {
   const { t } = useTranslation();
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div class="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
         <ShortcutInput
           shortcutId="transcribe_with_post_process"

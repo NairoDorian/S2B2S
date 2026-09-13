@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import {
@@ -14,38 +13,37 @@ interface AppLanguageSelectorProps {
   grouped?: boolean;
 }
 
-export const AppLanguageSelector: React.FC<AppLanguageSelectorProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
-    const { t, i18n } = useTranslation();
-    const { settings, updateSetting } = useSettings();
+export const AppLanguageSelector = (props: AppLanguageSelectorProps) => {
+  const { descriptionMode = "tooltip", grouped = false } = props;
+  const { t, i18n } = useTranslation();
+  const { settings, updateSetting } = useSettings();
 
-    const currentLanguage = (getSupportedLanguage(settings?.app_language) ||
+  const currentLanguage = () =>
+    (getSupportedLanguage(settings()?.app_language) ||
       i18n.language) as SupportedLanguageCode;
 
-    const languageOptions = SUPPORTED_LANGUAGES.map((lang) => ({
-      value: lang.code,
-      label: `${lang.nativeName} (${lang.name})`,
-    }));
+  const languageOptions = SUPPORTED_LANGUAGES.map((lang) => ({
+    value: lang.code,
+    label: `${lang.nativeName} (${lang.name})`,
+  }));
 
-    const handleLanguageChange = (langCode: string) => {
-      i18n.changeLanguage(langCode);
-      updateSetting("app_language", langCode);
-    };
+  const handleLanguageChange = (langCode: string) => {
+    i18n.changeLanguage(langCode);
+    updateSetting("app_language", langCode);
+  };
 
-    return (
-      <SettingContainer
-        title={t("appLanguage.title")}
-        description={t("appLanguage.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <Dropdown
-          options={languageOptions}
-          selectedValue={currentLanguage}
-          onSelect={handleLanguageChange}
-        />
-      </SettingContainer>
-    );
-  });
-
-AppLanguageSelector.displayName = "AppLanguageSelector";
+  return (
+    <SettingContainer
+      title={t("appLanguage.title")}
+      description={t("appLanguage.description")}
+      descriptionMode={descriptionMode}
+      grouped={grouped}
+    >
+      <Dropdown
+        options={languageOptions}
+        selectedValue={currentLanguage()}
+        onSelect={handleLanguageChange}
+      />
+    </SettingContainer>
+  );
+};

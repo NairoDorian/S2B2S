@@ -133,6 +133,73 @@ const MERGE_TIMEOUT: Duration = Duration::from_secs(90);
 /// `MultiSttAction::stop` waits for the coordinator, before falling back.
 pub const FINISH_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// How much audio the stream may have been fed and not yet drained and still
+/// count as having reached the end of the chunk's audio.
+///
+/// Not zero, and that is the whole of this constant. `audio_committed_ms` is the
+/// family's *drain hint* — `transcribe.h` says so in as many words ("Family-
+/// reported audio progress / drain hint. It is not a byte boundary into
+/// committed_text."), and Parakeet derives it from `mel_frames_consumed`, i.e.
+/// from how much audio the model has decoded, not from how much text it has
+/// published. Every streaming family keeps audio in flight while it runs: a
+/// right-context window it will not emit a word without. The `buffered` figure
+/// `Live preview perf` logs is this same difference, and on the model this was
+/// measured against it sat between 22 and 86 ms while decoding at 2.4x real
+/// time. Zero is therefore not "late", it is unreachable — and a break makes it
+/// more so, not less: the VAD feeds the stream nothing while the pause lasts, so
+/// the drain hint has no new input to advance on and the residual *freezes*. The
+/// log still reported the same 22 ms 3.5 s after a break, at which point the
+/// grace ran out and the session retired. With the old exact-zero test, every
+/// break waited out the grace, every session retired with zero chunks merged,
+/// and the mode corrected nothing on any recording.
+///
+/// A tolerance is safe for the same reason the wait for it is cheap: a break is
+/// `multi_stt_streaming_pause_ms` of *silence*, so the un-drained tail of a
+/// closed chunk is the end of the audio the stream was fed — a suffix, because a
+/// decoder consumes in order — and a suffix this short lies inside that silence
+/// and cannot hold a word that has not been written yet. Keep it below the
+/// smallest break for that to hold. It is also an order of magnitude below the
+/// backlog this must still catch: the model that motivated [`Break::Retire`]
+/// measured 4918 ms.
+const STREAM_DRAIN_TOLERANCE_MS: i64 = 500;
+
+/// How long a break waits for the chunk's own text to arrive before the chunk is
+/// closed with whatever has arrived.
+///
+/// A break is decided on the audio alone (`closes`), but the primary's text for
+/// that audio arrives on the model's own schedule, and the mode's invariant —
+/// *a chunk is merged against its own text, and its merged text replaces that
+/// text and nothing else* — is only true if the text is there. Two things can be
+/// missing, and they are independent:
+///
+/// - **The audio is not decoded yet** ([`STREAM_DRAIN_TOLERANCE_MS`]). Then the
+///   chunk's last words have not been read at all, and they will be read while
+///   the *next* chunk is open: they land in its `live` text, whose merged text
+///   already contains them. The same speech, twice.
+/// - **The audio is decoded but the text is not published** (`Chunk::live` is
+///   empty or short). Then slot 1 is missing text the extras' decode of the same
+///   audio does contain, and the merge — which is a rewrite, not an append —
+///   replaces the chunk's text with a version that cannot include words the
+///   primary never gave it. The same speech, twice, in the other direction.
+///
+/// A drain hint cannot stand in for the second: a family that decodes eagerly and
+/// commits late has drained completely while its text is still owed, so the
+/// closeness test passes while slot 1 is empty. That case is what
+/// [`break_outcome`] reads `has_text` for.
+///
+/// Waiting is cheap because a pause is silence by definition: the VAD feeds the
+/// stream nothing while it lasts, so the only work left is the model's backlog
+/// and it collapses on its own.
+///
+/// A chunk that is *still* owed its text when the grace runs out is the end of
+/// the mode for that session, because the wait is the mode's premise. The
+/// session retires itself instead of closing the chunk, and the batch path
+/// produces the text (see [`Coordinator::step`]): a model that publishes its
+/// committed text only at finalize, or one that cannot decode faster than the
+/// user speaks, has a lag that never collapses, and no routing change can
+/// recover text that does not exist yet.
+const TEXT_CATCHUP_GRACE: Duration = Duration::from_millis(2500);
+
 /// Emitted when a chunk's merge fails, so the main window can raise a toast.
 /// Rate-limited by construction: it fires only when the number of chunks
 /// currently showing a failed merge goes *up*, so a retry that fails again does
@@ -202,6 +269,63 @@ fn context_depth(raw: u32) -> usize {
 /// that has audio behind it closes its chunk.
 fn closes(paused: bool, has_audio: bool, chunk_ms: i64) -> bool {
     has_audio && (paused || chunk_ms >= MAX_CHUNK_SECONDS * 1000)
+}
+
+/// What a break in the audio does with the chunk that was open.
+#[derive(Debug, PartialEq, Eq)]
+enum Break {
+    /// Nothing yet. Either the pause has not lasted long enough to be a break,
+    /// or it is one and the chunk's own text is still owed: either the audio is
+    /// not decoded ([`STREAM_DRAIN_TOLERANCE_MS`]) or the text is not published
+    /// (`has_text`). The pause persists until a close consumes it, so waiting
+    /// costs nothing but the silence it is already made of.
+    Wait,
+    /// Close the chunk and merge it.
+    Close,
+    /// Close nothing. The session's premise has failed — see
+    /// [`TEXT_CATCHUP_GRACE`] — and the session retires itself.
+    Retire,
+}
+
+/// Decide what a break does, from what the chunk holds and how long the pause
+/// has lasted.
+///
+/// The chunk can be closed only when it owns the text its merge will replace,
+/// which is two independent things and needs both to be true:
+///
+/// - `has_text`: the chunk's `live` text — the primary's own words for this
+///   chunk's audio — is what a merge's slot 1 (`${output}`) is, and a merge is a
+///   *replacement* of the chunk's text, not an append to it. A chunk with none
+///   has nothing to replace, and the merge would be handed the extras' decode of
+///   the audio with no primary reading to reconcile it against. Its own text
+///   arrives during the next chunk's lifetime and is read into it, so the speech
+///   ends up on screen twice.
+/// - `stream_drain_ms` within [`STREAM_DRAIN_TOLERANCE_MS`]: the family has
+///   decoded the audio up to the end of the chunk. Not the same test: a family
+///   can drain its audio completely and publish the text for it later, which is
+///   exactly the case `has_text` covers and a drain hint cannot.
+///
+/// A break that has waited past [`TEXT_CATCHUP_GRACE`] with either still false
+/// is therefore not a chunk to close but a session to end: waiting longer cannot
+/// produce text the model has not written, and closing anyway is the duplication
+/// the wait exists to prevent.
+fn break_outcome(
+    closes: bool,
+    has_text: bool,
+    stream_drain_ms: i64,
+    paused_for: Duration,
+    pause: Duration,
+) -> Break {
+    if !closes {
+        return Break::Wait;
+    }
+    if has_text && stream_drain_ms <= STREAM_DRAIN_TOLERANCE_MS {
+        return Break::Close;
+    }
+    if paused_for >= pause + TEXT_CATCHUP_GRACE {
+        return Break::Retire;
+    }
+    Break::Wait
 }
 
 /// A word of a text, folded for comparison, with the byte offset it starts at.
@@ -761,7 +885,8 @@ pub fn start(
         primary_text: String::new(),
         primary_tentative: String::new(),
         live_copied: 0,
-        stream_committed_ms: 0,
+        stream_drained_ms: 0,
+        stream_input_ms: 0,
         primary_timing,
         primary_seen,
         alive: Arc::clone(&alive),
@@ -973,9 +1098,26 @@ struct Coordinator {
     /// Absolute byte offset in `committed` up to which the open chunk's `live`
     /// has been copied.
     live_copied: usize,
-    /// The stream's own statement of how much audio its committed text accounts
-    /// for, reported at each close so a lagging stream is visible in the log.
-    stream_committed_ms: i64,
+    /// The family's own drain cursor (`StreamText::audio_committed_ms`): how far
+    /// into the audio the stream has decoded. Not text — `transcribe.h` is
+    /// explicit that it is a hint and "not a byte boundary into
+    /// committed_text", and Parakeet sets it from `mel_frames_consumed`. Kept
+    /// for the `chunk n closed` log line and for [`STREAM_DRAIN_TOLERANCE_MS`],
+    /// which is the only thing that may read it.
+    stream_drained_ms: i64,
+    /// How much audio the stream has been fed, in the same accounting. The
+    /// difference to `stream_drained_ms` is the audio the family has taken in
+    /// and not decoded — the un-drained suffix of the session, which is what
+    /// `Live preview perf` reports as `buffered`.
+    ///
+    /// Both figures ride on the stream's text revision, so they are the values
+    /// as of the last text update rather than as of this tick. That makes the
+    /// difference an *upper* bound on the live backlog while the model decodes
+    /// faster than real time — its backlog shrinks between updates — which is
+    /// the direction a close test needs. The audio tap's own position is
+    /// deliberately not used: it measures what was pushed, not what the worker
+    /// has taken, and the two differ by the feed channel's backlog.
+    stream_input_ms: i64,
 
     /// The primary model's process-lifetime stream totals
     /// ([`StreamTiming`]), read to report its rate per chunk.
@@ -1116,13 +1258,71 @@ impl Coordinator {
             }
         }
 
-        if closes(paused, !self.open.audio.is_empty(), self.open.duration_ms()) {
-            self.close_open_chunk();
-            self.last_close_speech_ms = speech;
-            // A failed chunk is retried at the next close, so the retry rate is
-            // the session's natural pace and a down provider is not hammered.
-            if !self.merge.running {
-                self.retry_failed_chunk();
+        // A chunk is closed when its audio paused *and* it owns the text its
+        // merge will replace. Both halves of that are read here, and both come
+        // from the stream's own accounting, so nothing the tap does can bias
+        // them; see `break_outcome`, `STREAM_DRAIN_TOLERANCE_MS` and
+        // `TEXT_CATCHUP_GRACE` for why it takes two. The two ways this can end
+        // are a close and, past the grace, the session itself.
+        //
+        // A pause is silent by definition, so waiting is normally cheap: no new
+        // audio is fed and the model's un-drained backlog is all that is left to
+        // work through. `paused_for` is the age of the current speech state, so
+        // the grace is measured from the break itself rather than from whenever
+        // the speaker happened to go quiet.
+        let stream_drain_ms = (self.stream_input_ms - self.stream_drained_ms).max(0);
+        let has_text = !self.open.live.trim().is_empty();
+        let paused_for = self.last_speech_change.elapsed();
+
+        match break_outcome(
+            closes(paused, !self.open.audio.is_empty(), self.open.duration_ms()),
+            has_text,
+            stream_drain_ms,
+            paused_for,
+            pause,
+        ) {
+            Break::Wait => {}
+            Break::Close => {
+                self.close_open_chunk();
+                self.last_close_speech_ms = speech;
+                // A failed chunk is retried at the next close, so the retry rate
+                // is the session's natural pace and a down provider is not
+                // hammered.
+                if !self.merge.running {
+                    self.retry_failed_chunk();
+                }
+            }
+            Break::Retire => {
+                // The grace has run out with the chunk's own text still owed,
+                // and there is nothing left to wait for: the mode's premise is
+                // dead for this session, and closing the chunk now is exactly the
+                // duplication the grace exists to prevent.
+                //
+                // So the session retires itself rather than publish a preview it
+                // knows is wrong. Nothing is lost: the recording keeps running —
+                // the action's own sample buffer is what the batch path decodes —
+                // the overlay goes back to the primary's own live text, and the
+                // whole session is transcribed and merged at stop by the batch
+                // path, which is the mode's fallback everywhere else. One chunk's
+                // merge is the most this can waste, and the return is before the
+                // dispatch of another.
+                warn!(
+                    "Multi-STT streaming: chunk {} was still owed its own text {:?} after the \
+                     break (grace {:?}) — {} chars of it, and {} ms of audio the stream decodes \
+                     but has not drained. A chunk cannot be merged against text it does not have: \
+                     closing this one would leave slot 1 empty or short, and its words would \
+                     arrive during the next chunk and be read into it, showing the same speech \
+                     twice. Retiring the session: the recording keeps running, the overlay goes \
+                     back to the primary's own live text, and the batch path transcribes and \
+                     merges the whole session at stop",
+                    self.closed.len() + 1,
+                    paused_for,
+                    TEXT_CATCHUP_GRACE,
+                    self.open.live.chars().count(),
+                    stream_drain_ms,
+                );
+                self.publish_primary_text();
+                return false;
             }
         }
 
@@ -1160,7 +1360,8 @@ impl Coordinator {
 
         self.primary_text = snapshot.committed.clone();
         self.primary_tentative = snapshot.tentative.clone();
-        self.stream_committed_ms = snapshot.audio_committed_ms;
+        self.stream_drained_ms = snapshot.audio_committed_ms;
+        self.stream_input_ms = snapshot.input_received_ms;
 
         // `committed` only grows. If a family rewrites it anyway, offsets into it
         // are meaningless: re-anchor on the current length and say so once. Only
@@ -1253,18 +1454,23 @@ impl Coordinator {
             let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
             window_context(&self.closed, index, depth).0.len()
         };
-        // The stream's own audio position, which the tap has just drained up to:
-        // the difference to its committed text is the lag this close had to
-        // merge across.
+        // The stream's own audio position, which the tap has just drained up to.
+        // The difference to the family's drain cursor is the audio the close had
+        // to merge across without a decode: silence by construction, which is
+        // what makes the close legal at [`STREAM_DRAIN_TOLERANCE_MS`], so it is
+        // worth a line — a figure crawling towards the tolerance is the mode
+        // working near its edge, and one above it is the feed or the model
+        // falling behind rather than a bug in the seam.
         let stream_position_ms = self.tap.pushed_samples() as i64 / SAMPLES_PER_MS;
         info!(
             "Multi-STT streaming: chunk {} closed — {} ms of audio, {} chars, {} ms of context, \
-             stream committed text {} ms behind the chunk's end",
+             {} ms of it left un-drained (tolerance {} ms)",
             self.closed.len(),
             self.closed[index].duration_ms(),
             self.closed[index].live.chars().count(),
             context_samples as i64 / SAMPLES_PER_MS,
-            (stream_position_ms - self.stream_committed_ms).max(0)
+            (stream_position_ms - self.stream_drained_ms).max(0),
+            STREAM_DRAIN_TOLERANCE_MS
         );
         self.log_primary_rate();
 
@@ -1517,6 +1723,21 @@ impl Coordinator {
         out
     }
 
+    /// Give the overlay the primary stream's own text and drop the composed
+    /// preview.
+    ///
+    /// Called when the session retires itself. `shutdown` clears the exclusive
+    /// sink, which hands the overlay back to the plain stream's own events — but
+    /// those only arrive when the model produces text, so a model that has gone
+    /// quiet (or one that does not commit text until finalize) would leave the
+    /// abandoned composition on screen for the rest of the recording. This one
+    /// event replaces it with exactly what the plain path shows: the stream's
+    /// committed text and its volatile tail, nothing composed.
+    fn publish_primary_text(&mut self) {
+        self.tm
+            .emit_composed_stream_text(&self.primary_text, &self.primary_tentative, None);
+    }
+
     /// Publish the composed text: the closed chunks as `committed`, the open
     /// chunk plus the model's volatile tail as `tentative`. The whole session's
     /// text is therefore on the wire from the first second — the rough text is
@@ -1748,6 +1969,67 @@ mod tests {
         // to merge, so a job over it would be three decodes of silence.
         assert!(!closes(true, false, 0));
         assert!(!closes(true, false, MAX_CHUNK_SECONDS * 1000));
+    }
+
+    #[test]
+    fn a_break_waits_for_the_chunks_own_text_then_retires_the_session() {
+        let pause = Duration::from_millis(1000);
+        let broken = pause + Duration::from_millis(200);
+        let overdue = pause + TEXT_CATCHUP_GRACE;
+
+        // No break, or nothing to close: nothing happens, whatever the chunk
+        // holds and however long the pause has lasted.
+        assert_eq!(break_outcome(false, true, 0, overdue, pause), Break::Wait);
+        assert_eq!(
+            break_outcome(false, true, 4000, overdue, pause),
+            Break::Wait
+        );
+        assert_eq!(
+            break_outcome(false, false, 4000, overdue, pause),
+            Break::Wait
+        );
+
+        // A break whose chunk owns its text closes at once. "Drained" is the
+        // family's residual, not an exact zero: a running stream always has
+        // audio in flight, and the pause this is asked during feeds it none, so
+        // an exact zero never arrives at all.
+        assert_eq!(break_outcome(true, true, 0, broken, pause), Break::Close);
+        assert_eq!(
+            break_outcome(true, true, STREAM_DRAIN_TOLERANCE_MS, broken, pause),
+            Break::Close
+        );
+
+        // Text still out is worth waiting for — up to the grace, and no further.
+        assert_eq!(
+            break_outcome(true, true, STREAM_DRAIN_TOLERANCE_MS + 1, broken, pause),
+            Break::Wait
+        );
+        assert_eq!(break_outcome(true, true, 1200, broken, pause), Break::Wait);
+        assert_eq!(
+            break_outcome(true, true, 1200, overdue, pause),
+            Break::Retire
+        );
+
+        // A chunk with no text of its own waits however well drained the stream
+        // is. This is the case a drain hint cannot see: a family that decodes
+        // eagerly and publishes late has `audio_committed_ms` at the end of the
+        // audio while slot 1 is still empty, and closing there replaces the
+        // chunk's text with the extras' decode alone — then the primary's words
+        // arrive during the next chunk and are read into it. Both halves have to
+        // hold.
+        assert_eq!(break_outcome(true, false, 0, broken, pause), Break::Wait);
+        assert_eq!(
+            break_outcome(true, false, STREAM_DRAIN_TOLERANCE_MS, broken, pause),
+            Break::Wait
+        );
+        assert_eq!(break_outcome(true, false, 0, overdue, pause), Break::Retire);
+
+        // Text that arrived while the wait ran out closes the chunk rather than
+        // retiring: it is the chunk's own text, which is all the wait was for.
+        assert_eq!(
+            break_outcome(true, true, STREAM_DRAIN_TOLERANCE_MS, overdue, pause),
+            Break::Close
+        );
     }
 
     #[test]

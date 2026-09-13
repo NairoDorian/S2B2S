@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from "react";
+import { createEffect } from "solid-js";
+
 import type { FftLoudnessMode } from "@/bindings";
 import { getLatestFrame, type SpectrumFrame } from "@/stores/liveFftStore";
 import {
@@ -23,7 +24,6 @@ export interface HoverInfo {
 }
 
 interface SpectrumCanvasProps {
-  /** Frequency of every output bin (from the status event). */
   axisHz: ArrayLike<number>;
   mode: FftLoudnessMode;
   dbRange: number;
@@ -33,16 +33,14 @@ interface SpectrumCanvasProps {
   running: boolean;
   labels: { idle: string; silence: string };
   onHover?: (info: HoverInfo | null) => void;
-  className?: string;
+  class?: string;
 }
 
 const PAD_LEFT = 36;
 const PAD_RIGHT = 8;
 const PAD_TOP = 8;
 const PAD_BOTTOM = 18;
-/** Peak-hold fall per frame, in units of the drawing range (≈0.4 dB at 90 dB). */
 const PEAK_DECAY = 0.0045;
-/** Linear auto-range: how fast the ceiling follows a quieter signal. */
 const CEILING_DECAY = 0.995;
 
 interface Colors {
@@ -55,57 +53,31 @@ const readColors = (): Colors => ({
   text: cssColor("--color-text", "#e6e6e6"),
 });
 
-/**
- * The analyser display. A canvas driven by its own animation loop that
- * reads the newest frame from the store (no React state per frame) and
- * only repaints when a new frame, a resize, a theme refresh or a cursor
- * move calls for it.
- */
-export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
-  ({
-    axisHz,
-    mode,
-    dbRange,
-    style,
-    peakHold,
-    grid,
-    running,
-    labels,
-    onHover,
-    className = "",
-  }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const hoverRef = useRef<number | null>(null);
-    const propsRef = useRef({
-      axisHz,
-      mode,
-      dbRange,
-      style,
-      peakHold,
-      grid,
-      running,
-      labels,
-      onHover,
-    });
-    propsRef.current = {
-      axisHz,
-      mode,
-      dbRange,
-      style,
-      peakHold,
-      grid,
-      running,
-      labels,
-      onHover,
-    };
-    // A prop change must repaint even when no new frame arrives.
-    const propsVersion = useRef(0);
-    useEffect(() => {
-      propsVersion.current += 1;
-    }, [axisHz, mode, dbRange, style, peakHold, grid, running, labels]);
+export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
+  let canvasRef: HTMLCanvasElement | undefined;
+  let hoverRef: number | null = null;
+  let propsVersion = 0;
 
-    useEffect(() => {
-      const canvas = canvasRef.current;
+  createEffect(
+    () => [
+      props.axisHz,
+      props.mode,
+      props.dbRange,
+      props.style,
+      props.peakHold,
+      props.grid,
+      props.running,
+      props.labels,
+    ],
+    () => {
+      propsVersion += 1;
+    },
+  );
+
+  createEffect(
+    () => undefined,
+    () => {
+      const canvas = canvasRef;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -132,7 +104,7 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
       observer.observe(canvas);
 
       const paint = (frame: SpectrumFrame | null, hover: number | null) => {
-        const p = propsRef.current;
+        const p = props;
         const w = width;
         const h = height;
         const plotX = PAD_LEFT;
@@ -146,7 +118,6 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
 
         const scale: ValueScale = { mode: p.mode, dbRange: p.dbRange, ceiling };
 
-        // --- value grid ---
         if (p.grid) {
           ctx.strokeStyle = colors.text;
           ctx.fillStyle = colors.text;
@@ -176,7 +147,6 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
           ctx.globalAlpha = 1;
         }
 
-        // --- frame ---
         if (!frame) {
           ctx.globalAlpha = 0.45;
           ctx.fillStyle = colors.text;
@@ -197,7 +167,6 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
         }
         for (let i = 0; i < n; i++) units[i] = valueToUnit(bins[i], scale);
 
-        // Peak hold advances once per new frame.
         if (held.length !== n) {
           held = new Float32Array(n);
           heldSeq = -1;
@@ -281,7 +250,6 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
           ctx.globalAlpha = 1;
         }
 
-        // --- peak marker ---
         if (frame.silent) {
           ctx.globalAlpha = 0.4;
           ctx.fillStyle = colors.text;
@@ -314,7 +282,6 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
           }
         }
 
-        // --- cursor ---
         let info: HoverInfo | null = null;
         if (hover !== null && n > 0) {
           const bin = Math.min(n - 1, Math.max(0, Math.round(hover * (n - 1))));
@@ -375,20 +342,20 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
           colorsAt = now;
           dirty = true;
         }
-        const frame = propsRef.current.running ? getLatestFrame() : null;
+        const frame = props.running ? getLatestFrame() : null;
         const seq = frame?.seq ?? -1;
-        const hover = hoverRef.current;
+        const hover = hoverRef;
         if (
           !dirty &&
           seq === drawnSeq &&
           hover === drawnHover &&
-          propsVersion.current === drawnVersion
+          propsVersion === drawnVersion
         ) {
           return;
         }
         drawnSeq = seq;
         drawnHover = hover;
-        drawnVersion = propsVersion.current;
+        drawnVersion = propsVersion;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         paint(frame, hover);
       };
@@ -398,26 +365,26 @@ export const SpectrumCanvas: React.FC<SpectrumCanvasProps> = React.memo(
         cancelAnimationFrame(raf);
         observer.disconnect();
       };
-    }, []);
+    },
+  );
 
-    const updateHover = (event: React.MouseEvent<HTMLCanvasElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      const plotW = rect.width - PAD_LEFT - PAD_RIGHT;
-      const x = (event.clientX - rect.left - PAD_LEFT) / Math.max(1, plotW);
-      hoverRef.current = x >= 0 && x <= 1 ? x : null;
-    };
+  const updateHover = (
+    event: MouseEvent & { currentTarget: HTMLCanvasElement },
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const plotW = rect.width - PAD_LEFT - PAD_RIGHT;
+    const x = (event.clientX - rect.left - PAD_LEFT) / Math.max(1, plotW);
+    hoverRef = x >= 0 && x <= 1 ? x : null;
+  };
 
-    return (
-      <canvas
-        ref={canvasRef}
-        className={`block w-full ${className}`}
-        onMouseMove={updateHover}
-        onMouseLeave={() => {
-          hoverRef.current = null;
-        }}
-      />
-    );
-  },
-);
-
-SpectrumCanvas.displayName = "SpectrumCanvas";
+  return (
+    <canvas
+      ref={(el) => (canvasRef = el)}
+      class={`block w-full ${props.class ?? ""}`}
+      onMouseMove={updateHover}
+      onMouseLeave={() => {
+        hoverRef = null;
+      }}
+    />
+  );
+};

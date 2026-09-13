@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, Show } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
@@ -20,14 +20,17 @@ const allToolLabels: Record<string, string> = {
   xdotool: "xdotool",
 };
 
-export const TypingToolSetting: React.FC<TypingToolProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
-    const { t } = useTranslation();
-    const { getSetting, updateSetting, isUpdating } = useSettings();
-    const osType = useOsType();
-    const [availableTools, setAvailableTools] = useState<string[] | null>(null);
+export const TypingToolSetting = (props: TypingToolProps) => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const osType = useOsType();
+  const [availableTools, setAvailableTools] = createSignal<string[] | null>(
+    null,
+  );
 
-    useEffect(() => {
+  createEffect(
+    () => undefined,
+    () => {
       if (osType !== "linux") return;
       commands
         .getAvailableTypingTools()
@@ -35,48 +38,34 @@ export const TypingToolSetting: React.FC<TypingToolProps> = React.memo(
         .catch(() => {
           setAvailableTools(["auto"]);
         });
-    }, [osType]);
+    },
+  );
 
-    // Only show this setting on Linux
-    if (osType !== "linux") {
-      return null;
-    }
-
-    // Only show if paste method is "direct"
-    const pasteMethod = getSetting("paste_method");
-    if (pasteMethod !== "direct") {
-      return null;
-    }
-
-    const tools = availableTools ?? ["auto"];
-    const typingToolOptions = tools.map((tool) =>
-      tool === "auto"
-        ? {
-            value: "auto",
-            label: t("settings.advanced.typingTool.options.auto"),
-          }
-        : { value: tool, label: allToolLabels[tool] ?? tool },
-    );
-
-    const selectedTool = (getSetting("typing_tool") || "auto") as TypingTool;
-
-    return (
+  return (
+    <Show when={osType === "linux" && getSetting("paste_method") === "direct"}>
       <SettingContainer
         title={t("settings.advanced.typingTool.title")}
         description={t("settings.advanced.typingTool.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
+        descriptionMode={props.descriptionMode}
+        grouped={props.grouped}
         tooltipPosition="bottom"
       >
         <Dropdown
-          options={typingToolOptions}
-          selectedValue={selectedTool}
+          options={(availableTools() ?? ["auto"]).map((tool) =>
+            tool === "auto"
+              ? {
+                  value: "auto",
+                  label: t("settings.advanced.typingTool.options.auto"),
+                }
+              : { value: tool, label: allToolLabels[tool] ?? tool },
+          )}
+          selectedValue={(getSetting("typing_tool") || "auto") as TypingTool}
           onSelect={(value) =>
             updateSetting("typing_tool", value as TypingTool)
           }
           disabled={isUpdating("typing_tool")}
         />
       </SettingContainer>
-    );
-  },
-);
+    </Show>
+  );
+};

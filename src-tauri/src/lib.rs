@@ -82,20 +82,45 @@ fn level_filter_from_u8(value: u8) -> log::LevelFilter {
     }
 }
 
-/// The level the console target runs at when `RUST_LOG` says nothing: the app's
-/// own configured level, floored at `Debug` in a debug build.
+/// The log targets that belong to this app rather than to a dependency: the
+/// library crate every module here lives in, and the package name (the binary
+/// target's own records, i.e. `main.rs`).
+const APP_TARGETS: [&str; 2] = [env!("CARGO_CRATE_NAME"), env!("CARGO_PKG_NAME")];
+
+/// Whether a record's target is one of this app's own crates — `app_lib::actions`
+/// yes, `tao::window` no.
+fn is_app_target(target: &str) -> bool {
+    APP_TARGETS.contains(&target.split("::").next().unwrap_or(target))
+}
+
+/// The level the console target runs at for a record from `target`, when
+/// `RUST_LOG` says nothing.
 ///
-/// A debug build's console is the developer's window onto the app, and every
-/// diagnostic the code emits is a `debug!` line that only appears if this floor
-/// exists — otherwise debugging any feature starts by remembering to prefix the
-/// command with `$env:RUST_LOG=app_lib=debug`. A release build has no such
-/// floor: its console is the user's, and the Log Level setting is the whole rule.
-fn console_level() -> log::LevelFilter {
+/// A debug build's console is the developer's window onto the app, so it is
+/// floored well below the Log Level setting — otherwise debugging any feature
+/// starts by remembering to prefix the command with `$env:RUST_LOG=app_lib=debug`,
+/// and the diagnostics a developer runs `bun run tauri dev` to read (what the
+/// transcriber was fed and returned, what each Multi-STT model produced, what the
+/// merge and post-processing prompts were and what the brain answered) are
+/// exactly the ones the setting exists to keep out of a *user's* log.
+///
+/// The floor is per target because "everything" and "everything useful" are not
+/// the same thing. This app's own records run at `Trace` — the lowest level
+/// anything in this crate is written at — while a dependency's stay at `Debug`
+/// at most, so a chatty crate (an HTTP client tracing each header, a windowing
+/// library tracing each event) cannot bury the app's lines under its own.
+/// `RUST_LOG` opens that half when it is genuinely wanted; the app's half needs
+/// nothing typed. A release build has no floor at all: its console is the
+/// user's, and the Log Level setting is the whole rule.
+fn console_level(target: &str) -> log::LevelFilter {
     let configured = level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed));
-    if cfg!(debug_assertions) {
-        configured.max(log::LevelFilter::Debug)
+    if !cfg!(debug_assertions) {
+        return configured;
+    }
+    if is_app_target(target) {
+        log::LevelFilter::Trace
     } else {
-        configured
+        configured.max(log::LevelFilter::Debug)
     }
 }
 
@@ -103,8 +128,8 @@ fn console_level() -> log::LevelFilter {
 ///
 /// `RUST_LOG` still wins outright when it is set — an explicit per-module
 /// directive is a deliberate thing to type, and honouring it verbatim is what
-/// makes `RUST_LOG=app_lib=trace` work — but with it unset the console
-/// follows [`console_level`] instead of a hardcoded `Info`.
+/// makes `RUST_LOG=trace` reach into the dependencies this app links — but with
+/// it unset the console follows [`console_level`] instead of a hardcoded `Info`.
 #[derive(Clone)]
 enum ConsoleFilter {
     Env(env_filter::Filter),
@@ -115,7 +140,7 @@ impl ConsoleFilter {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
         match self {
             Self::Env(filter) => filter.enabled(metadata),
-            Self::Setting => metadata.level() <= console_level(),
+            Self::Setting => metadata.level() <= console_level(metadata.target()),
         }
     }
 }
@@ -136,6 +161,50 @@ fn build_console_filter() -> ConsoleFilter {
             ConsoleFilter::Env(builder.build())
         }
         _ => ConsoleFilter::Setting,
+    }
+}
+
+/// The stream the console target writes to: **stdout** for the interactive app,
+/// **stderr** for the headless one-shots.
+///
+/// Headless is the easy case, and the original reason. `--transcribe-file` /
+/// `--list-devices` / `--list-models` put the *result* on stdout — plain text, or
+/// JSON under `--json` — and CI parses it, so a log line there is corruption
+/// rather than noise. stderr keeps the two separable with a plain `2>/dev/null`.
+///
+/// The interactive case was assumed to be the mirror image of that, on the
+/// theory that the Tauri CLI follows the build by reading cargo's stdout and so
+/// leaves the child a pipe there. **It is not, and the assumption cost every
+/// console record the app wrote.** Measured from inside the app, in a real
+/// `bun run dev:fast` terminal — the line this process emits about its own fds,
+/// read back out of the file log, the target that always works:
+///
+/// ```text
+/// [2026-09-12][20:30:04][app_lib][DEBUG] Console log stream: ... (stdout is a
+/// terminal: true, stderr is a terminal: false)
+/// ```
+///
+/// fd 1 is the terminal and fd 2 is a pipe — the exact opposite of the theory —
+/// so records written to stderr went into something nobody displays: the user
+/// saw `Running target\debug\zer0.exe` and then silence, while the same records
+/// filled the file log and made the app look like it was logging fine. Something
+/// in the launch chain (bun → `scripts/tauri-runner.ts` → the Tauri CLI → cargo →
+/// this process) captures the child's stderr — the Tauri CLI interleaves the
+/// child's output with its own, and its own lines arrive through the same path —
+/// while stdout comes through untouched. Whatever the mechanism, the measurement
+/// is what decides this, and it points at stdout.
+///
+/// So the choice is neither symmetric nor derivable: the fd this process holds is
+/// all it can read, and a pipe an intermediate reads and discards is
+/// indistinguishable from a pipe a consumer asked for. It has to be measured, and
+/// re-measured if the launch chain changes (the startup line above is emitted
+/// every run for exactly that). Until then: stdout for the app a user watches,
+/// stderr for the modes whose result is on stdout.
+fn console_stream_kind(headless_mode: bool) -> TargetKind {
+    if headless_mode {
+        TargetKind::Stderr
+    } else {
+        TargetKind::Stdout
     }
 }
 
@@ -769,8 +838,9 @@ pub fn run(cli_args: CliArgs) {
     portable::init();
 
     // Console logging: RUST_LOG when it is set, otherwise the app's own log
-    // level (floored at Debug in a debug build, so `bun run dev:fast` carries
-    // the app's diagnostics with no environment variable to remember)
+    // level (a debug build floors it — at Trace for this crate's own records —
+    // so `bun run dev:fast` carries the app's diagnostics with no environment
+    // variable to remember). See `console_level`.
     let console_filter = build_console_filter();
 
     let specta_builder = Builder::<tauri::Wry>::new()
@@ -1039,16 +1109,9 @@ pub fn run(cli_args: CliArgs) {
                 .rotation_strategy(RotationStrategy::KeepOne)
                 .clear_targets()
                 .targets([
-                    // Console output respects RUST_LOG environment variable. In
-                    // headless mode (--transcribe-file/--list-devices/--list-models)
-                    // stdout carries only the result (JSON or plain), so send console
-                    // logs to stderr instead to keep stdout clean for CI parsing.
-                    Target::new(if headless_mode {
-                        TargetKind::Stderr
-                    } else {
-                        TargetKind::Stdout
-                    })
-                    .filter({
+                    // Interactive console output goes to stdout, headless to
+                    // stderr; see `console_stream_kind`.
+                    Target::new(console_stream_kind(headless_mode)).filter({
                         let console_filter = console_filter.clone();
                         move |metadata| console_filter.enabled(metadata)
                     }),
@@ -1223,6 +1286,40 @@ pub fn run(cli_args: CliArgs) {
 
             let tauri_log_level: tauri_plugin_log::LogLevel = settings.log_level.into();
             let file_log_level: log::Level = tauri_log_level.into();
+            // What this process was actually handed, whether it has a terminal to
+            // write to, and which store it just read its level from. Three
+            // separate things have silently taken the log away here, and each one
+            // is answered by a line below rather than by a rebuild: the wrong
+            // stream (a terminal shows records only from the fd it owns — see
+            // `console_stream_kind`), a store that no longer holds the level the
+            // user set (the rename left several stores on disk and `get_settings`
+            // above read exactly one of them), and a level low enough to drop the
+            // app's own diagnostics. All three are `info`, the level the app
+            // ships with, and they are emitted *before* FILE_LOG_LEVEL moves
+            // below, so the level being reported cannot filter out the line that
+            // reports it.
+            if let Ok(config_dir) = app.path().app_config_dir() {
+                log::info!(
+                    "Settings store: {} (log level {:?}, debug mode {})",
+                    config_dir
+                        .join(portable::store_path(settings::SETTINGS_STORE_PATH))
+                        .display(),
+                    settings.log_level,
+                    settings.debug_mode,
+                );
+            }
+            {
+                use std::io::IsTerminal;
+                log::info!(
+                    "Console log stream: {} (stdout is a terminal: {}, stderr is a terminal: {}); \
+                     file logs at {}, webview streaming {}",
+                    if headless_mode { "stderr" } else { "stdout" },
+                    std::io::stdout().is_terminal(),
+                    std::io::stderr().is_terminal(),
+                    file_log_level,
+                    settings.debug_mode,
+                );
+            }
             // Store the file log level in the atomic for the filter to use
             FILE_LOG_LEVEL.store(file_log_level.to_level_filter() as u8, Ordering::Relaxed);
             // Only forward logs to the webview while debug mode is on (the live log
@@ -1354,6 +1451,79 @@ pub fn run(cli_args: CliArgs) {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod console_logging_tests {
+    use super::{APP_TARGETS, is_app_target};
+
+    #[test]
+    fn app_targets_are_the_crates_this_repo_ships() {
+        // The library's modules, at every depth, plus the binary target.
+        for target in [
+            "app_lib",
+            "app_lib::managers::transcription",
+            "app_lib::multi_stt_stream",
+        ] {
+            assert!(is_app_target(target), "{target} should be an app target");
+        }
+        assert!(
+            is_app_target("zer0"),
+            "the binary target should be an app target"
+        );
+
+        // A dependency whose crate name merely starts with an app crate's name
+        // is not one of ours, and neither is a target that names no crate.
+        for target in ["app_library", "app_lib_extra::x", "tao::window", "wry", ""] {
+            assert!(
+                !is_app_target(target),
+                "{target} should not be an app target"
+            );
+        }
+        assert_eq!(APP_TARGETS.len(), 2);
+    }
+
+    /// The floor itself is a `debug_assertions` branch, so it is asserted where
+    /// it exists: this suite runs in the same profile `bun run dev` builds.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn a_dev_console_runs_the_apps_own_records_at_trace() {
+        use super::{FILE_LOG_LEVEL, console_level};
+        use std::sync::atomic::Ordering;
+
+        // Whatever the Log Level setting says, the app's own detail is visible:
+        // that is what makes the detail "activated by default", with no
+        // environment variable and no `--debug` to remember.
+        let saved = FILE_LOG_LEVEL.load(Ordering::Relaxed);
+        for configured in [log::LevelFilter::Off, log::LevelFilter::Info] {
+            FILE_LOG_LEVEL.store(configured as u8, Ordering::Relaxed);
+            assert_eq!(
+                console_level("app_lib::llm_client"),
+                log::LevelFilter::Trace
+            );
+            // A dependency still gets a floor, but only at `Debug`, so it cannot
+            // flood the console the app's own lines have to be read from.
+            assert_eq!(console_level("hyper::proto"), log::LevelFilter::Debug);
+        }
+        FILE_LOG_LEVEL.store(saved, Ordering::Relaxed);
+    }
+
+    /// Which stream the console target writes to is a *measured* decision, not a
+    /// derivable one (see `console_stream_kind`), so it is pinned here. It
+    /// regressed once already — stderr reads as the safer choice and was silent —
+    /// and nothing else in the suite would have noticed, because the file target
+    /// kept recording every one of the records the terminal never received.
+    #[test]
+    fn the_interactive_console_writes_where_the_terminal_shows_it() {
+        use super::console_stream_kind;
+        use tauri_plugin_log::TargetKind;
+
+        // The app a user watches: stdout, because that is the fd their terminal
+        // was measured to own.
+        assert!(matches!(console_stream_kind(false), TargetKind::Stdout));
+        // Headless one-shots: stderr, so `--list-models` / `--json` stay parseable.
+        assert!(matches!(console_stream_kind(true), TargetKind::Stderr));
+    }
 }
 
 #[cfg(test)]

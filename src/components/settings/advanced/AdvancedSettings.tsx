@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { CustomWords } from "../CustomWords";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -29,13 +28,13 @@ import { FillerWordRemoval } from "../FillerWordRemoval";
 import { VadSensitivity } from "../VadSensitivity";
 import { VadLiveTest } from "../VadLiveTest";
 
-export const AdvancedSettings: React.FC = () => {
+export const AdvancedSettings = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div class="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.advanced.groups.app")}>
         <StartHidden descriptionMode="tooltip" grouped={true} />
         <AutostartToggle descriptionMode="tooltip" grouped={true} />

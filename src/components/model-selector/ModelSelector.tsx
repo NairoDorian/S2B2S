@@ -1,17 +1,17 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useTranslation } from "react-i18next";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  Show,
+  onCleanup,
+} from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
-import { Gauge, LoaderCircle, Zap } from "lucide-react";
+import { Gauge, LoaderCircle, Zap } from "@/components/icons/lucide";
 import { commands } from "@/bindings";
 import type { NativeStreamingLatencyPreset, QuantVariant } from "@/bindings";
 import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
-import { useModelStore } from "../../stores/modelStore";
+import { useModelStore, selectModel } from "../../stores/modelStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import ModelStatusButton from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
@@ -26,6 +26,7 @@ import { getQuantColor } from "./quantColors";
 import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
 
 import { ModelStateEvent } from "@/lib/types/events";
+import type { JSX } from "@solidjs/web";
 
 type ModelStatus =
   | "ready"
@@ -36,209 +37,197 @@ type ModelStatus =
   | "unloaded"
   | "none";
 
-/** Which status-bar panel is expanded. Only ever one at a time. */
 type StatusPanel = "model" | "quant" | "latency";
 
 interface ModelSelectorProps {
   onError?: (error: string) => void;
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
+const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   const { t } = useTranslation();
-  const {
-    models,
-    currentModel,
-    downloadProgress,
-    downloadStats,
-    verifyingModels,
-    selectModel,
-  } = useModelStore();
+  const { onError } = props;
+  const modelStore = useModelStore();
+  const settingsStore = useSettingsStore();
 
-  const [modelStatus, setModelStatus] = useState<ModelStatus>("unloaded");
-  const [modelError, setModelError] = useState<string | null>(null);
-  const [openPanel, setOpenPanel] = useState<StatusPanel | null>(null);
-  // Track pending model switch for optimistic display
-  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
-
-  const barRef = useRef<HTMLDivElement>(null);
-
-  const [quantVariants, setQuantVariants] = useState<QuantVariant[] | null>(
+  const [modelStatus, setModelStatus] = createSignal<ModelStatus>("unloaded");
+  const [modelError, setModelError] = createSignal<string | null>(null);
+  const [openPanel, setOpenPanel] = createSignal<StatusPanel | null>(null);
+  const [pendingModelId, setPendingModelId] = createSignal<string | null>(null);
+  let barRef: HTMLDivElement | null = null;
+  const [quantVariants, setQuantVariants] = createSignal<QuantVariant[] | null>(
     null,
   );
-  const [pendingDownloads, setPendingDownloads] = useState<Set<string>>(
+  const [pendingDownloads, setPendingDownloads] = createSignal<Set<string>>(
     new Set(),
   );
 
   const benchmark = useQuantBenchmark();
 
-  const settings = useSettingsStore((s) => s.settings);
-  const setLatencyPreset = useSettingsStore((s) => s.setLatencyPreset);
+  const displayModelId = createMemo(
+    () => pendingModelId() || modelStore.currentModel,
+  );
 
-  const displayModelId = pendingModelId || currentModel;
+  const togglePanel = (panel: StatusPanel) => {
+    setOpenPanel(openPanel() === panel ? null : panel);
+  };
 
-  const togglePanel = useCallback((panel: StatusPanel) => {
-    setOpenPanel((current) => (current === panel ? null : panel));
-  }, []);
-
-  // Check model status when currentModel changes
-  useEffect(() => {
-    const checkStatus = async () => {
-      if (currentModel) {
+  createEffect(
+    () => undefined,
+    () => {
+      const current = modelStore.currentModel;
+      if (!current) {
+        setModelStatus("none");
+        return;
+      }
+      const checkStatus = async () => {
         try {
           const statusResult = await commands.getTranscriptionModelStatus();
           if (statusResult.status === "ok") {
             setModelStatus(
-              statusResult.data === currentModel ? "ready" : "unloaded",
+              statusResult.data === current ? "ready" : "unloaded",
             );
           }
         } catch {
           setModelStatus("error");
           setModelError("Failed to check model status");
         }
-      } else {
-        setModelStatus("none");
-      }
-    };
-    checkStatus();
-  }, [currentModel]);
+      };
+      checkStatus();
+    },
+  );
 
-  useEffect(() => {
-    // Listen for model loading lifecycle events
-    const modelStateUnlisten = listen<ModelStateEvent>(
-      "model-state-changed",
-      (event) => {
-        const { event_type, error } = event.payload;
-        switch (event_type) {
-          case "loading_started":
-            setModelStatus("loading");
-            setModelError(null);
-            break;
-          case "loading_completed":
-            setModelStatus("ready");
-            setModelError(null);
-            setPendingModelId(null);
-            break;
-          case "loading_failed":
-            setModelStatus("error");
-            setModelError(error || "Failed to load model");
-            setPendingModelId(null);
-            break;
-          case "unloaded":
-            setModelStatus("unloaded");
-            setModelError(null);
-            break;
-        }
-      },
-    );
-
-    // Auto-select model when download completes
-    const downloadCompleteUnlisten = listen<string>(
-      "model-download-complete",
-      (event) => {
-        const modelId = event.payload;
-        setPendingDownloads((prev) => {
-          if (!prev.has(modelId)) return prev;
-          const next = new Set(prev);
-          next.delete(modelId);
-          return next;
-        });
-        setTimeout(async () => {
-          try {
-            const isRecording = await commands.isRecording();
-            if (!isRecording) {
-              setPendingModelId(modelId);
+  createEffect(
+    () => undefined,
+    () => {
+      const modelStateUnlisten = listen<ModelStateEvent>(
+        "model-state-changed",
+        (event) => {
+          const { event_type, error } = event.payload;
+          switch (event_type) {
+            case "loading_started":
+              setModelStatus("loading");
               setModelError(null);
-              const success = await selectModel(modelId);
-              if (!success) {
-                setPendingModelId(null);
-              }
-            }
-          } catch {
-            // Ignore errors in auto-select
+              break;
+            case "loading_completed":
+              setModelStatus("ready");
+              setModelError(null);
+              setPendingModelId(null);
+              break;
+            case "loading_failed":
+              setModelStatus("error");
+              setModelError(error || "Failed to load model");
+              setPendingModelId(null);
+              break;
+            case "unloaded":
+              setModelStatus("unloaded");
+              setModelError(null);
+              break;
           }
-        }, 500);
-      },
-    );
+        },
+      );
+      const downloadCompleteUnlisten = listen<string>(
+        "model-download-complete",
+        (event) => {
+          const modelId = event.payload;
+          setPendingDownloads((prev) => {
+            if (!prev.has(modelId)) return prev;
+            const next = new Set(prev);
+            next.delete(modelId);
+            return next;
+          });
+          setTimeout(async () => {
+            try {
+              const isRecording = await commands.isRecording();
+              if (!isRecording) {
+                setPendingModelId(modelId);
+                setModelError(null);
+                const success = await selectModel(modelId);
+                if (!success) setPendingModelId(null);
+              }
+            } catch {}
+          }, 500);
+        },
+      );
+      onCleanup(() => {
+        modelStateUnlisten.then((fn) => fn());
+        downloadCompleteUnlisten.then((fn) => fn());
+      });
+    },
+  );
 
-    return () => {
-      modelStateUnlisten.then((fn) => fn());
-      downloadCompleteUnlisten.then((fn) => fn());
-    };
-  }, [selectModel]);
+  createEffect(
+    () => openPanel(),
+    (panel) => {
+      if (!panel) return;
+      const handlePointerDown = (event: MouseEvent) => {
+        if (barRef && !barRef.contains(event.target as Node))
+          setOpenPanel(null);
+      };
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === "Escape") setOpenPanel(null);
+      };
+      document.addEventListener("mousedown", handlePointerDown);
+      document.addEventListener("keydown", handleKeyDown);
+      onCleanup(() => {
+        document.removeEventListener("mousedown", handlePointerDown);
+        document.removeEventListener("keydown", handleKeyDown);
+      });
+    },
+  );
 
-  // Dismissal for every status-bar panel lives here, so the pills behave as one
-  // mutually-exclusive group instead of three independent dropdowns.
-  useEffect(() => {
-    if (!openPanel) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (barRef.current && !barRef.current.contains(event.target as Node)) {
-        setOpenPanel(null);
+  createEffect(
+    () => displayModelId(),
+    (id) => {
+      if (!id || !id.includes("/")) {
+        setQuantVariants(null);
+        return;
       }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenPanel(null);
-    };
+      let cancelled = false;
+      commands.getModelQuantVariants(id).then((result) => {
+        if (cancelled) return;
+        setQuantVariants(result.status === "ok" ? (result.data ?? null) : null);
+      });
+      onCleanup(() => {
+        cancelled = true;
+      });
+    },
+  );
 
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [openPanel]);
-
-  // Fetch quant variants for the current model when it changes
-  useEffect(() => {
-    const id = displayModelId;
-    if (!id || !id.includes("/")) {
-      setQuantVariants(null);
-      return;
-    }
-    let cancelled = false;
-    commands.getModelQuantVariants(id).then((result) => {
-      if (cancelled) return;
-      // On error clear the list too, otherwise the previous model family's
-      // quant pill and benchmark rows keep showing for the new model.
-      setQuantVariants(result.status === "ok" ? (result.data ?? null) : null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [displayModelId]);
-
-  const currentModelInfo = models.find((m) => m.id === displayModelId);
+  const currentModelInfo = modelStore.models.find(
+    (m) => m.id === displayModelId(),
+  );
   const latencyKind = currentModelInfo?.native_streaming_latency_kind;
   const currentPreset: NativeStreamingLatencyPreset =
-    settings?.native_streaming_latency_presets?.[displayModelId ?? ""] ??
-    DEFAULT_LATENCY_PRESET;
+    settingsStore.settings?.native_streaming_latency_presets?.[
+      displayModelId() ?? ""
+    ] ?? DEFAULT_LATENCY_PRESET;
 
-  const downloadPercentages = useMemo(() => {
+  const downloadPercentages = createMemo(() => {
     const map: Record<string, number> = {};
-    for (const progress of Object.values(downloadProgress)) {
+    for (const progress of Object.values(modelStore.downloadProgress)) {
       map[progress.model_id] = progress.percentage;
     }
     return map;
-  }, [downloadProgress]);
+  });
 
-  const currentVariant = quantVariants?.find(
-    (variant) => variant.model_id === displayModelId,
+  const currentVariant = quantVariants()?.find(
+    (variant) => variant.model_id === displayModelId(),
   );
 
-  const downloadedVariantCount = useMemo(
+  const downloadedVariantCount = createMemo(
     () =>
-      quantVariants?.filter((variant) =>
-        models.some((m) => m.id === variant.model_id && m.is_downloaded),
+      quantVariants()?.filter((variant) =>
+        modelStore.models.some(
+          (m) => m.id === variant.model_id && m.is_downloaded,
+        ),
       ).length ?? 0,
-    [quantVariants, models],
   );
 
-  const measuredVariantCount = useMemo(
+  const measuredVariantCount = createMemo(
     () =>
-      quantVariants?.filter(
-        (variant) => benchmark.results[variant.model_id] !== undefined,
+      quantVariants()?.filter(
+        (variant) => benchmark.results()[variant.model_id] !== undefined,
       ).length ?? 0,
-    [quantVariants, benchmark.results],
   );
 
   const handleModelSelect = async (modelId: string) => {
@@ -255,9 +244,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   };
 
   const handleQuantSelect = (variant: QuantVariant) => {
-    if (variant.model_id === displayModelId) return;
-    // Keep the panel open: the check mark moving to the new row is the
-    // confirmation, and comparing quants usually means several switches.
+    if (variant.model_id === displayModelId()) return;
     setPendingModelId(variant.model_id);
     setModelError(null);
     void selectModel(variant.model_id).then((success) => {
@@ -272,13 +259,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
 
   const handleQuantDownload = (variant: QuantVariant) => {
     setPendingDownloads((prev) => new Set(prev).add(variant.model_id));
-    // The command resolves only when the download has finished, failed or
-    // been cancelled, so the pending marker is cleared however it settles —
-    // otherwise a cancel that resolves `ok` left the row on "Downloading 0%".
     void commands.downloadModelQuant(variant.model_id).then((result) => {
-      if (result.status === "error") {
+      if (result.status === "error")
         console.error("Failed to download quant:", result.error);
-      }
       setPendingDownloads((prev) => {
         if (!prev.has(variant.model_id)) return prev;
         const next = new Set(prev);
@@ -289,18 +272,17 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   };
 
   const handleLatencyPresetSelect = (preset: NativeStreamingLatencyPreset) => {
-    if (displayModelId) {
-      void setLatencyPreset(displayModelId, preset);
-    }
+    if (displayModelId())
+      void settingsStore.setLatencyPreset(displayModelId(), preset);
     setOpenPanel(null);
   };
 
   const getModelDisplayText = (): string => {
-    const verifyingKeys = Object.keys(verifyingModels);
+    const verifyingKeys = Object.keys(modelStore.verifyingModels);
     if (verifyingKeys.length > 0) {
       if (verifyingKeys.length === 1) {
         const modelId = verifyingKeys[0];
-        const model = models.find((m) => m.id === modelId);
+        const model = modelStore.models.find((m) => m.id === modelId);
         const modelName = model
           ? getTranslatedModelName(model, t)
           : t("modelSelector.verifyingGeneric").replace("...", "");
@@ -309,8 +291,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         return t("modelSelector.verifyingGeneric");
       }
     }
-
-    const progressValues = Object.values(downloadProgress);
+    const progressValues = Object.values(modelStore.downloadProgress);
     if (progressValues.length > 0) {
       if (progressValues.length === 1) {
         const progress = progressValues[0];
@@ -325,8 +306,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         });
       }
     }
-
-    switch (modelStatus) {
+    switch (modelStatus()) {
       case "ready":
         return currentModelInfo
           ? getTranslatedModelName(currentModelInfo, t)
@@ -338,7 +318,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
             })
           : t("modelSelector.loadingGeneric");
       case "error":
-        return modelError || t("modelSelector.modelError");
+        return modelError() || t("modelSelector.modelError");
       case "unloaded":
         return currentModelInfo
           ? getTranslatedModelName(currentModelInfo, t)
@@ -352,53 +332,50 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     }
   };
 
-  // Derive display status from model status + store state
   const getDisplayStatus = (): ModelStatus => {
-    if (Object.keys(verifyingModels).length > 0) return "verifying";
-    if (Object.keys(downloadProgress).length > 0) return "downloading";
-    return modelStatus;
+    if (Object.keys(modelStore.verifyingModels).length > 0) return "verifying";
+    if (Object.keys(modelStore.downloadProgress).length > 0)
+      return "downloading";
+    return modelStatus();
   };
 
-  const referenceRecording = benchmark.referenceRecording;
+  const referenceRecording = benchmark.referenceRecording();
   const canBenchmark =
-    !!displayModelId && !!referenceRecording && downloadedVariantCount > 0;
+    !!displayModelId() && !!referenceRecording && downloadedVariantCount() > 0;
 
   const quantSubtitle = referenceRecording
     ? t("modelSelector.benchmark.reference", {
         when: new Date(
           (referenceRecording.timestamp ?? 0) * 1000,
-        ).toLocaleString(undefined, {
-          dateStyle: "short",
-          timeStyle: "short",
-        }),
+        ).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }),
       })
     : t("modelSelector.benchmark.noRecording");
 
   return (
-    <div ref={barRef} className="flex min-w-0 flex-nowrap items-center gap-2">
-      {/* Model Status and Switcher */}
-      <div className="relative shrink-0">
+    <div
+      ref={(el) => {
+        barRef = el;
+      }}
+      class="flex min-w-0 flex-nowrap items-center gap-2"
+    >
+      <div class="relative shrink-0">
         <ModelStatusButton
           status={getDisplayStatus()}
           displayText={getModelDisplayText()}
-          isDropdownOpen={openPanel === "model"}
+          isDropdownOpen={openPanel() === "model"}
           onClick={() => togglePanel("model")}
         />
-
-        {openPanel === "model" && (
+        <Show when={openPanel() === "model"}>
           <ModelDropdown
-            models={models}
-            currentModelId={displayModelId}
+            models={modelStore.models}
+            currentModelId={displayModelId()}
             onModelSelect={handleModelSelect}
           />
-        )}
+        </Show>
       </div>
-
-      {/* Quantization picker — the variants of the current model, with their
-          benchmark timings attached to the rows they describe. */}
-      {quantVariants && quantVariants.length > 0 && (
+      <Show when={quantVariants() && quantVariants()!.length > 0}>
         <StatusBarPopover
-          open={openPanel === "quant"}
+          open={openPanel() === "quant"}
           onToggle={() => togglePanel("quant")}
           label={t("modelSelector.quantPicker.pillLabel", {
             quant:
@@ -409,13 +386,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           trigger={
             <>
               {benchmark.isBusy ? (
-                <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-text/50" />
+                <LoaderCircle class="h-3 w-3 shrink-0 animate-spin text-text/50" />
               ) : (
                 <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(currentVariant?.quant ?? "")}`}
+                  class={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(currentVariant?.quant ?? "")}`}
                 />
               )}
-              <span className="max-w-20 truncate">
+              <span class="max-w-20 truncate">
                 {currentVariant?.quant ?? t("modelSelector.quantPicker.title")}
               </span>
             </>
@@ -424,27 +401,27 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
             <button
               type="button"
               onClick={() =>
-                displayModelId && void benchmark.runAll(displayModelId)
+                displayModelId() && void benchmark.runAll(displayModelId())
               }
               disabled={!canBenchmark || benchmark.isBusy}
               title={t("modelSelector.benchmark.method", {
                 runs: DEFAULT_TIMED_RUNS,
               })}
-              className="flex shrink-0 items-center gap-1 rounded-md border border-mid-gray/25 bg-mid-gray/10 px-2 py-1 text-[11px] font-medium text-text/75 transition-colors hover:bg-mid-gray/20 hover:text-text/90 disabled:cursor-not-allowed disabled:opacity-40"
+              class="flex shrink-0 items-center gap-1 rounded-md border border-mid-gray/25 bg-mid-gray/10 px-2 py-1 text-[11px] font-medium text-text/75 transition-colors hover:bg-mid-gray/20 hover:text-text/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {benchmark.isRunningAll ? (
+              {benchmark.isRunningAll() ? (
                 <>
-                  <LoaderCircle className="h-3 w-3 animate-spin" />
-                  <span className="tabular-nums">
+                  <LoaderCircle class="h-3 w-3 animate-spin" />
+                  <span class="tabular-nums">
                     {t("modelSelector.benchmark.runProgress", {
-                      done: measuredVariantCount,
-                      total: downloadedVariantCount,
+                      done: measuredVariantCount(),
+                      total: downloadedVariantCount(),
                     })}
                   </span>
                 </>
               ) : (
                 <>
-                  <Zap className="h-3 w-3" />
+                  <Zap class="h-3 w-3" />
                   <span>{t("modelSelector.benchmark.runAll")}</span>
                 </>
               )}
@@ -452,26 +429,23 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           }
         >
           <QuantizationPanel
-            variants={quantVariants}
-            models={models}
-            currentModelId={displayModelId}
-            downloadPercentages={downloadPercentages}
-            pendingDownloads={pendingDownloads}
+            variants={quantVariants() ?? []}
+            models={modelStore.models}
+            currentModelId={displayModelId()}
+            downloadPercentages={downloadPercentages()}
+            pendingDownloads={pendingDownloads()}
             benchmark={benchmark}
             onSelect={handleQuantSelect}
             onDownload={handleQuantDownload}
           />
-          <div className="border-t border-mid-gray/20 px-3 py-1.5 text-[10px] leading-snug text-text/40">
+          <div class="border-t border-mid-gray/20 px-3 py-1.5 text-[10px] leading-snug text-text/40">
             {t("modelSelector.benchmark.method", { runs: DEFAULT_TIMED_RUNS })}
           </div>
         </StatusBarPopover>
-      )}
-
-      {/* Native streaming latency — only for models that expose a configurable
-          streaming latency extension (e.g. Nemotron, Parakeet Unified). */}
-      {latencyKind && (
+      </Show>
+      <Show when={latencyKind}>
         <StatusBarPopover
-          open={openPanel === "latency"}
+          open={openPanel() === "latency"}
           onToggle={() => togglePanel("latency")}
           label={t("modelSelector.latencySelector.pillLabel", {
             preset: t(latencyPresetLabelKey(currentPreset)),
@@ -480,8 +454,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
           widthClass="w-[min(17rem,calc(100vw-2rem))]"
           trigger={
             <>
-              <Gauge className="h-3 w-3 shrink-0 text-text/50" />
-              <span className="max-w-24 truncate">
+              <Gauge class="h-3 w-3 shrink-0 text-text/50" />
+              <span class="max-w-24 truncate">
                 {t(latencyPresetLabelKey(currentPreset))}
               </span>
             </>
@@ -492,12 +466,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
             onSelect={handleLatencyPresetSelect}
           />
         </StatusBarPopover>
-      )}
-
-      {/* Download Progress Bar for Models */}
+      </Show>
       <DownloadProgressDisplay
-        downloadProgress={downloadProgress}
-        downloadStats={downloadStats}
+        downloadProgress={modelStore.downloadProgress}
+        downloadStats={modelStore.downloadStats}
       />
     </div>
   );

@@ -1,7 +1,11 @@
-import React, { useMemo } from "react";
-import { AlertCircle, AlertTriangle } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import { useSessionToastStore } from "@/stores/sessionToastStore";
+import { createMemo, For } from "solid-js";
+import { AlertCircle, AlertTriangle } from "@/components/icons/lucide";
+import { useTranslation } from "@/i18n/useTranslation";
+import {
+  setShowErrors,
+  setShowWarnings,
+  useSessionToastStore,
+} from "@/stores/sessionToastStore";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 
@@ -10,44 +14,43 @@ import { ToggleSwitch } from "../../ui/ToggleSwitch";
  * with per-level filters. A toast that auto-dismissed while the user was
  * looking elsewhere can be read (and copied) here. Ported from AIVORelay.
  */
-export const SessionToastHistory: React.FC = () => {
+export const SessionToastHistory = () => {
   const { t, i18n } = useTranslation();
-  const { toasts, showErrors, showWarnings, setShowErrors, setShowWarnings } =
-    useSessionToastStore();
+  const store = useSessionToastStore();
 
-  const errorCount = toasts.filter((toast) => toast.level === "error").length;
-  const warningCount = toasts.length - errorCount;
-  const visibleToasts = useMemo(
-    () =>
-      toasts
-        .filter(
-          (toast) =>
-            (toast.level === "error" && showErrors) ||
-            (toast.level === "warning" && showWarnings),
-        )
-        .reverse(),
-    [toasts, showErrors, showWarnings],
+  const errorCount = () =>
+    store.toasts.filter((toast) => toast.level === "error").length;
+  const warningCount = () => store.toasts.length - errorCount();
+  const visibleToasts = createMemo(() =>
+    store.toasts
+      .filter(
+        (toast) =>
+          (toast.level === "error" && store.showErrors) ||
+          (toast.level === "warning" && store.showWarnings),
+      )
+      .reverse(),
   );
 
-  const dateTimeFormatter = useMemo(
+  const dateTimeFormatter = createMemo(
     () =>
       new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
         dateStyle: "short",
         timeStyle: "medium",
       }),
-    [i18n.language, i18n.resolvedLanguage],
   );
 
   return (
     <SettingsGroup
-      title={t("settings.debug.sessionToasts.title", { count: toasts.length })}
+      title={t("settings.debug.sessionToasts.title", {
+        count: store.toasts.length,
+      })}
       description={t("settings.debug.sessionToasts.description")}
     >
       <ToggleSwitch
-        checked={showErrors}
+        checked={store.showErrors}
         onChange={setShowErrors}
         label={t("settings.debug.sessionToasts.filters.errors", {
-          count: errorCount,
+          count: errorCount(),
         })}
         description={t(
           "settings.debug.sessionToasts.filters.errorsDescription",
@@ -55,10 +58,10 @@ export const SessionToastHistory: React.FC = () => {
         grouped={true}
       />
       <ToggleSwitch
-        checked={showWarnings}
+        checked={store.showWarnings}
         onChange={setShowWarnings}
         label={t("settings.debug.sessionToasts.filters.warnings", {
-          count: warningCount,
+          count: warningCount(),
         })}
         description={t(
           "settings.debug.sessionToasts.filters.warningsDescription",
@@ -66,68 +69,70 @@ export const SessionToastHistory: React.FC = () => {
         grouped={true}
       />
 
-      {toasts.length === 0 ? (
-        <div className="px-4 py-4 text-sm text-text/60">
+      {store.toasts.length === 0 ? (
+        <div class="px-4 py-4 text-sm text-text/60">
           {t("settings.debug.sessionToasts.empty")}
         </div>
-      ) : visibleToasts.length === 0 ? (
-        <div className="px-4 py-4 text-sm text-text/60">
+      ) : visibleToasts().length === 0 ? (
+        <div class="px-4 py-4 text-sm text-text/60">
           {t("settings.debug.sessionToasts.filteredEmpty")}
         </div>
       ) : (
-        <div className="divide-y divide-mid-gray/20 max-h-96 overflow-y-auto">
-          {visibleToasts.map((toast) => {
-            const isError = toast.level === "error";
-            const Icon = isError ? AlertCircle : AlertTriangle;
-            return (
-              <article key={toast.id} className="px-4 py-3">
-                <div className="flex items-start gap-3">
-                  <Icon
-                    className={`mt-0.5 h-4 w-4 shrink-0 ${
-                      isError ? "text-red-400" : "text-warning"
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span
-                        className={`text-[10px] font-semibold uppercase tracking-wider ${
-                          isError ? "text-red-400" : "text-warning"
-                        }`}
-                      >
-                        {t(
-                          `settings.debug.sessionToasts.levels.${toast.level}`,
-                        )}
-                      </span>
-                      <time
-                        className="text-[11px] text-text/50"
-                        dateTime={new Date(toast.shownAt).toISOString()}
-                      >
-                        {dateTimeFormatter.format(toast.shownAt)}
-                      </time>
+        <div class="divide-y divide-mid-gray/20 max-h-96 overflow-y-auto">
+          <For each={visibleToasts()}>
+            {(toast) => {
+              const isError = toast.level === "error";
+              const Icon = isError ? AlertCircle : AlertTriangle;
+              return (
+                <article class="px-4 py-3">
+                  <div class="flex items-start gap-3">
+                    <Icon
+                      class={`mt-0.5 h-4 w-4 shrink-0 ${
+                        isError ? "text-red-400" : "text-warning"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <div class="min-w-0 flex-1">
+                      <div class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span
+                          class={`text-[10px] font-semibold uppercase tracking-wider ${
+                            isError ? "text-red-400" : "text-warning"
+                          }`}
+                        >
+                          {t(
+                            `settings.debug.sessionToasts.levels.${toast.level}`,
+                          )}
+                        </span>
+                        <time
+                          class="text-[11px] text-text/50"
+                          datetime={new Date(toast.shownAt).toISOString()}
+                        >
+                          {dateTimeFormatter().format(toast.shownAt)}
+                        </time>
+                      </div>
+                      {toast.message && (
+                        <p class="whitespace-pre-wrap break-words text-sm font-medium text-text select-text cursor-text">
+                          {toast.message}
+                        </p>
+                      )}
+                      {toast.description && (
+                        <p class="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-text/70 select-text cursor-text">
+                          {toast.description}
+                        </p>
+                      )}
+                      {toast.actionLabel && (
+                        <p class="mt-1.5 break-words text-xs text-text/50 select-text">
+                          {t("settings.debug.sessionToasts.action", {
+                            label: toast.actionLabel,
+                          })}
+                        </p>
+                      )}
                     </div>
-                    {toast.message && (
-                      <p className="whitespace-pre-wrap break-words text-sm font-medium text-text select-text cursor-text">
-                        {toast.message}
-                      </p>
-                    )}
-                    {toast.description && (
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-text/70 select-text cursor-text">
-                        {toast.description}
-                      </p>
-                    )}
-                    {toast.actionLabel && (
-                      <p className="mt-1.5 break-words text-xs text-text/50 select-text">
-                        {t("settings.debug.sessionToasts.action", {
-                          label: toast.actionLabel,
-                        })}
-                      </p>
-                    )}
                   </div>
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            }}
+          </For>
         </div>
       )}
     </SettingsGroup>

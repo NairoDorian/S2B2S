@@ -1,5 +1,5 @@
-import React from "react";
 import { Dropdown, type DropdownOption } from "../../ui/Dropdown";
+import type { JSX } from "@solidjs/web";
 
 interface ProviderSelectProps {
   options: DropdownOption[];
@@ -8,18 +8,19 @@ interface ProviderSelectProps {
   disabled?: boolean;
 }
 
-export const ProviderSelect: React.FC<ProviderSelectProps> = React.memo(
-  ({ options, value, onChange, disabled }) => {
-    return (
-      <Dropdown
-        options={options}
-        selectedValue={value}
-        onSelect={onChange}
-        disabled={disabled}
-        className="flex-1"
-      />
-    );
-  },
-);
-
-ProviderSelect.displayName = "ProviderSelect";
+export const ProviderSelect = ({
+  options,
+  value,
+  onChange,
+  disabled,
+}: ProviderSelectProps): JSX.Element => {
+  return (
+    <Dropdown
+      options={options}
+      selectedValue={value}
+      onSelect={onChange}
+      disabled={disabled}
+      class="flex-1"
+    />
+  );
+};

@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { createSignal, createEffect, createMemo, Show } from "solid-js";
+import { useTranslation, TranslatedMarkup } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { type ModelInfo } from "@/bindings";
-
 import {
   SettingContainer,
   SettingsGroup,
@@ -15,46 +14,39 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Dropdown } from "@/components/ui/Dropdown";
-import {
-  effectiveLanguage,
-  getLanguageLabel,
-  SELECTABLE_LANGUAGES,
-  supportsLanguageCode,
-} from "@/lib/constants/languages";
-
 import { ShortcutInput } from "../ShortcutInput";
 import { KeyComboInput } from "../KeyComboInput";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
 import { commands } from "@/bindings";
 import { ModelStateEvent } from "@/lib/types/events";
+import {
+  SELECTABLE_LANGUAGES,
+  effectiveLanguage,
+  getLanguageLabel,
+  supportsLanguageCode,
+} from "@/lib/constants/languages";
 
-/** Inline language selector for an extra multi-STT model slot. */
 interface PerModelLanguageSelectorProps {
   slot: 2 | 3 | 4;
   modelId: string | null;
   modelInfo: ModelInfo | undefined;
 }
 
-const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
-  slot,
-  modelId,
-  modelInfo,
-}) => {
+const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
   const settingKey =
-    slot === 2
+    props.slot === 2
       ? "multi_stt_language_model_2"
-      : slot === 3
+      : props.slot === 3
         ? "multi_stt_language_model_3"
         : "multi_stt_language_model_4";
-  const currentLang = (getSetting(settingKey) as string | null) ?? null;
+  const currentLang = () => (getSetting(settingKey) as string | null) ?? null;
 
-  // Build lang options from the model's supported languages + auto (if detection supported)
-  // NOTE: useMemo must be called BEFORE any early return (React hooks rule).
-  const langOptions = useMemo(() => {
-    if (!modelInfo || !modelId) return [];
+  const langOptions = createMemo(() => {
+    const modelInfo = props.modelInfo;
+    if (!modelInfo || !props.modelId) return [];
     if (
       !modelInfo.supports_language_selection ||
       modelInfo.supported_languages.length === 0
@@ -66,86 +58,91 @@ const PerModelLanguageSelector: React.FC<PerModelLanguageSelectorProps> = ({
         : supportsLanguageCode(modelInfo.supported_languages, lang.value),
     );
     return entries.map((lang) => ({ value: lang.value, label: lang.label }));
-  }, [modelId, modelInfo]);
+  });
 
-  const effectiveLang = useMemo(() => {
+  const effectiveLang = createMemo(() => {
+    const modelInfo = props.modelInfo;
     if (!modelInfo) return "auto";
     return effectiveLanguage(
-      currentLang || "auto",
+      currentLang() || "auto",
       modelInfo.supported_languages,
       modelInfo.supports_language_detection,
     );
-  }, [currentLang, modelInfo]);
+  });
 
-  if (!modelId || !modelInfo) return null;
+  const label = () =>
+    props.slot === 2
+      ? t("multiStt.models.model2Language")
+      : props.slot === 3
+        ? t("multiStt.models.model3Language")
+        : t("multiStt.models.model4Language");
 
-  const supportsSelection = modelInfo.supports_language_selection;
+  const selectedValue = (modelInfo: ModelInfo) => {
+    const lang = currentLang();
+    return modelInfo.supports_language_detection
+      ? lang
+      : lang && lang !== "auto"
+        ? lang
+        : effectiveLang();
+  };
 
-  // If the model does not support selection, show a disabled note
-  if (!supportsSelection) {
-    return (
-      <p className="text-xs text-mid-gray/50 italic mt-1 ml-1">
-        {t("multiStt.models.languageNotApplicable")}
-      </p>
-    );
-  }
+  const placeholder = (modelInfo: ModelInfo) =>
+    modelInfo.supports_language_detection
+      ? (getLanguageLabel("auto") ?? "Auto")
+      : (getLanguageLabel(effectiveLang()) ?? "Select language");
 
-  const selectedValue = modelInfo.supports_language_detection
-    ? currentLang
-    : currentLang && currentLang !== "auto"
-      ? currentLang
-      : effectiveLang;
-
-  const placeholder = modelInfo.supports_language_detection
-    ? (getLanguageLabel("auto") ?? "Auto")
-    : (getLanguageLabel(effectiveLang) ?? "Select language");
-
-  // Show a language dropdown
   return (
-    <div className="flex items-center gap-2 mt-2 ml-1">
-      <label className="text-xs text-mid-gray/70 whitespace-nowrap">
-        {slot === 2
-          ? t("multiStt.models.model2Language")
-          : slot === 3
-            ? t("multiStt.models.model3Language")
-            : t("multiStt.models.model4Language")}
-      </label>
-      <Dropdown
-        selectedValue={selectedValue}
-        options={langOptions}
-        onSelect={(value) => updateSetting(settingKey, value || null)}
-        placeholder={placeholder}
-        disabled={langOptions.length === 0}
-        className="min-w-[140px]"
-      />
-    </div>
+    <Show when={props.modelId && props.modelInfo ? props.modelInfo : undefined}>
+      {(modelInfo) => (
+        <Show
+          when={modelInfo().supports_language_selection}
+          fallback={
+            <p class="text-xs text-mid-gray/50 italic mt-1 ml-1">
+              {t("multiStt.models.languageNotApplicable")}
+            </p>
+          }
+        >
+          <div class="flex items-center gap-2 mt-2 ml-1">
+            <label class="text-xs text-mid-gray/70 whitespace-nowrap">
+              {label()}
+            </label>
+            <Dropdown
+              selectedValue={selectedValue(modelInfo())}
+              options={langOptions()}
+              onSelect={(value) => updateSetting(settingKey, value || null)}
+              placeholder={placeholder(modelInfo())}
+              disabled={langOptions().length === 0}
+              class="min-w-[140px]"
+            />
+          </div>
+        </Show>
+      )}
+    </Show>
   );
 };
 
-export const MultiSttSettings: React.FC = () => {
+export const MultiSttSettings = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const { models, currentModel } = useModelStore();
+  const store = useModelStore();
+  const models = () => store.models;
+  const currentModel = () => store.currentModel;
 
-  const multiSttEnabled = getSetting("multi_stt_enabled") ?? false;
-  const multiSttModel2 = getSetting("multi_stt_model_2") ?? null;
-  const multiSttModel3 = getSetting("multi_stt_model_3") ?? null;
-  const multiSttModel4 = getSetting("multi_stt_model_4") ?? null;
-  const multiSttMergePrompt = getSetting("multi_stt_merge_prompt") ?? null;
+  const multiSttEnabled = () => getSetting("multi_stt_enabled") ?? false;
+  const multiSttModel2 = () => getSetting("multi_stt_model_2") ?? null;
+  const multiSttModel3 = () => getSetting("multi_stt_model_3") ?? null;
+  const multiSttModel4 = () => getSetting("multi_stt_model_4") ?? null;
+  const multiSttMergePrompt = () =>
+    getSetting("multi_stt_merge_prompt") ?? null;
 
-  const [draftName, setDraftName] = useState("");
-  const [draftText, setDraftText] = useState("");
-
-  // Track which extra models are loaded in memory, plus per-model
-  // loading/unloading spinners so the UI reflects in-flight operations.
-  const [loadedExtraModels, setLoadedExtraModels] = useState<Set<string>>(
-    new Set(),
+  const [draftName, setDraftName] = createSignal("");
+  const [draftText, setDraftText] = createSignal("");
+  const [loadedExtraModels, setLoadedExtraModels] = createSignal(
+    new Set<string>(),
   );
-  const [loadingModelIds, setLoadingModelIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [unloadingModelIds, setUnloadingModelIds] = useState<Set<string>>(
-    new Set(),
+  const [loadingModelIds, setLoadingModelIds] = createSignal(new Set<string>());
+  const [unloadingModelIds, setUnloadingModelIds] = createSignal(
+    new Set<string>(),
   );
 
   const fetchLoadedExtraModels = async () => {
@@ -155,111 +152,110 @@ export const MultiSttSettings: React.FC = () => {
     }
   };
 
-  // Sync loaded extra-model state with the backend on mount and react to
-  // load/unload events emitted by the transcription manager.
-  useEffect(() => {
-    fetchLoadedExtraModels();
-
-    const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
-      const { event_type, model_id } = event.payload;
-      if (event_type === "multi_stt_model_loaded" && model_id) {
-        setLoadedExtraModels((prev) => {
-          const next = new Set(prev);
-          next.add(model_id);
-          return next;
-        });
-      } else if (event_type === "multi_stt_model_unloaded" && model_id) {
-        setLoadedExtraModels((prev) => {
-          const next = new Set(prev);
-          next.delete(model_id);
-          return next;
-        });
-      }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, []);
-
-  // Filter out primary model + already-selected models for model 2/3/4 dropdowns
-  const downloadedModels = models.filter(
-    (m: ModelInfo) => m.is_downloaded || m.is_custom,
+  createEffect(
+    () => undefined,
+    () => {
+      fetchLoadedExtraModels();
+      const unlisten = listen<ModelStateEvent>(
+        "model-state-changed",
+        (event) => {
+          const { event_type, model_id } = event.payload;
+          if (event_type === "multi_stt_model_loaded" && model_id) {
+            setLoadedExtraModels((prev) => {
+              const next = new Set(prev);
+              next.add(model_id);
+              return next;
+            });
+          } else if (event_type === "multi_stt_model_unloaded" && model_id) {
+            setLoadedExtraModels((prev) => {
+              const next = new Set(prev);
+              next.delete(model_id);
+              return next;
+            });
+          }
+        },
+      );
+      return () => {
+        unlisten.then((fn) => fn());
+      };
+    },
   );
-  const primaryModelId = currentModel;
 
-  const modelOptionsForSlot2 = downloadedModels
-    .filter(
-      (m: ModelInfo) =>
-        m.id !== primaryModelId &&
-        m.id !== multiSttModel3 &&
-        m.id !== multiSttModel4,
-    )
-    .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
+  const downloadedModels = createMemo(() =>
+    models().filter((m) => m.is_downloaded || m.is_custom),
+  );
+  const primaryModelId = () => currentModel();
 
-  const modelOptionsForSlot3 = downloadedModels
-    .filter(
-      (m: ModelInfo) =>
-        m.id !== primaryModelId &&
-        m.id !== multiSttModel2 &&
-        m.id !== multiSttModel4,
-    )
-    .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
+  const modelOptionsForSlot2 = createMemo(() =>
+    downloadedModels()
+      .filter(
+        (m) =>
+          m.id !== primaryModelId() &&
+          m.id !== multiSttModel3() &&
+          m.id !== multiSttModel4(),
+      )
+      .map((m) => ({ value: m.id, label: m.name })),
+  );
+  const modelOptionsForSlot3 = createMemo(() =>
+    downloadedModels()
+      .filter(
+        (m) =>
+          m.id !== primaryModelId() &&
+          m.id !== multiSttModel2() &&
+          m.id !== multiSttModel4(),
+      )
+      .map((m) => ({ value: m.id, label: m.name })),
+  );
+  const modelOptionsForSlot4 = createMemo(() =>
+    downloadedModels()
+      .filter(
+        (m) =>
+          m.id !== primaryModelId() &&
+          m.id !== multiSttModel2() &&
+          m.id !== multiSttModel3(),
+      )
+      .map((m) => ({ value: m.id, label: m.name })),
+  );
 
-  const modelOptionsForSlot4 = downloadedModels
-    .filter(
-      (m: ModelInfo) =>
-        m.id !== primaryModelId &&
-        m.id !== multiSttModel2 &&
-        m.id !== multiSttModel3,
-    )
-    .map((m: ModelInfo) => ({ value: m.id, label: m.name }));
+  const model2Info = createMemo(() => {
+    const id = multiSttModel2();
+    return id ? downloadedModels().find((m) => m.id === id) : undefined;
+  });
+  const model3Info = createMemo(() => {
+    const id = multiSttModel3();
+    return id ? downloadedModels().find((m) => m.id === id) : undefined;
+  });
+  const model4Info = createMemo(() => {
+    const id = multiSttModel4();
+    return id ? downloadedModels().find((m) => m.id === id) : undefined;
+  });
 
-  const model2Info = multiSttModel2
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel2)
-    : undefined;
+  createEffect(
+    () => multiSttMergePrompt(),
+    (prompt) => {
+      if (prompt) {
+        setDraftName(prompt.name || "");
+        setDraftText(prompt.prompt || "");
+      } else {
+        setDraftName("");
+        setDraftText("");
+      }
+    },
+  );
 
-  const model3Info = multiSttModel3
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)
-    : undefined;
-
-  const model4Info = multiSttModel4
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel4)
-    : undefined;
-
-  // Initialize draft from existing merge prompt. Keyed on the saved values
-  // (not the object identity) so an externally-changed prompt syncs in without
-  // clobbering an in-progress draft.
-  useEffect(() => {
-    if (multiSttMergePrompt) {
-      setDraftName(multiSttMergePrompt.name || "");
-      setDraftText(multiSttMergePrompt.prompt || "");
-    } else {
-      setDraftName("");
-      setDraftText("");
-    }
-  }, [multiSttMergePrompt?.name, multiSttMergePrompt?.prompt]);
-
-  const handleModel2Select = (value: string | null) => {
+  const handleModel2Select = (value: string | null) =>
     updateSetting("multi_stt_model_2", value || null);
-  };
-
-  const handleModel3Select = (value: string | null) => {
+  const handleModel3Select = (value: string | null) =>
     updateSetting("multi_stt_model_3", value || null);
-  };
-
-  const handleModel4Select = (value: string | null) => {
+  const handleModel4Select = (value: string | null) =>
     updateSetting("multi_stt_model_4", value || null);
-  };
 
   const handleSaveMergePrompt = () => {
-    if (!draftName.trim() || !draftText.trim()) {
-      return;
-    }
-
+    if (!draftName().trim() || !draftText().trim()) return;
     updateSetting("multi_stt_merge_prompt", {
       id: "multi_stt_merge_prompt",
-      name: draftName.trim(),
-      prompt: draftText.trim(),
+      name: draftName().trim(),
+      prompt: draftText().trim(),
     });
   };
 
@@ -269,7 +265,8 @@ export const MultiSttSettings: React.FC = () => {
     setDraftText("");
   };
 
-  const handleUnloadModel = async (modelId: string) => {
+  const handleUnloadModel = async (modelId: string | null) => {
+    if (!modelId) return;
     setUnloadingModelIds((prev) => new Set([...prev, modelId]));
     try {
       const result = await commands.unloadExtraModel(modelId);
@@ -296,7 +293,8 @@ export const MultiSttSettings: React.FC = () => {
     }
   };
 
-  const handleLoadModel = async (modelId: string) => {
+  const handleLoadModel = async (modelId: string | null) => {
+    if (!modelId) return;
     setLoadingModelIds((prev) => new Set([...prev, modelId]));
     try {
       const result = await commands.loadExtraModel(modelId);
@@ -324,40 +322,36 @@ export const MultiSttSettings: React.FC = () => {
   };
 
   const isExtraModelLoaded = (modelId: string | null): boolean =>
-    modelId != null && loadedExtraModels.has(modelId);
-
+    modelId != null && loadedExtraModels().has(modelId);
   const isModelLoading = (modelId: string | null): boolean =>
-    modelId != null && loadingModelIds.has(modelId);
-
+    modelId != null && loadingModelIds().has(modelId);
   const isModelUnloading = (modelId: string | null): boolean =>
-    modelId != null && unloadingModelIds.has(modelId);
+    modelId != null && unloadingModelIds().has(modelId);
 
-  const primaryModelName = primaryModelId
-    ? downloadedModels.find((m: ModelInfo) => m.id === primaryModelId)?.name ||
-      primaryModelId
-    : t("multiStt.models.noPrimaryModel");
-
-  const selectedModel2Name = multiSttModel2
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel2)?.name ||
-      multiSttModel2
-    : null;
-
-  const selectedModel3Name = multiSttModel3
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel3)?.name ||
-      multiSttModel3
-    : null;
-
-  const selectedModel4Name = multiSttModel4
-    ? downloadedModels.find((m: ModelInfo) => m.id === multiSttModel4)?.name ||
-      multiSttModel4
-    : null;
+  const primaryModelName = createMemo(() => {
+    const id = primaryModelId();
+    return id
+      ? downloadedModels().find((m) => m.id === id)?.name || id
+      : t("multiStt.models.noPrimaryModel");
+  });
+  const selectedModel2Name = createMemo(() => {
+    const id = multiSttModel2();
+    return id ? downloadedModels().find((m) => m.id === id)?.name || id : null;
+  });
+  const selectedModel3Name = createMemo(() => {
+    const id = multiSttModel3();
+    return id ? downloadedModels().find((m) => m.id === id)?.name || id : null;
+  });
+  const selectedModel4Name = createMemo(() => {
+    const id = multiSttModel4();
+    return id ? downloadedModels().find((m) => m.id === id)?.name || id : null;
+  });
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      {/* Toggle */}
+    <div class="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("multiStt.enabled.label")}>
         <ToggleSwitch
-          checked={multiSttEnabled}
+          checked={multiSttEnabled()}
           onChange={(enabled) => updateSetting("multi_stt_enabled", enabled)}
           isUpdating={isUpdating("multi_stt_enabled")}
           label={t("multiStt.enabled.label")}
@@ -367,9 +361,8 @@ export const MultiSttSettings: React.FC = () => {
         />
       </SettingsGroup>
 
-      {multiSttEnabled && (
+      {multiSttEnabled() && (
         <>
-          {/* Hotkey */}
           <SettingsGroup title={t("multiStt.shortcut.title")}>
             <ShortcutInput
               shortcutId="multi_stt_transcribe"
@@ -378,22 +371,18 @@ export const MultiSttSettings: React.FC = () => {
             />
           </SettingsGroup>
 
-          {/* Model Selection */}
           <SettingsGroup title={t("multiStt.models.title")}>
-            <div className="space-y-4">
-              {/* Primary Model Info */}
-              <div className="p-3 bg-mid-gray/5 rounded-md border border-mid-gray/20 opacity-70">
-                <p className="text-sm font-medium text-text/80">
-                  {t("multiStt.status.primary")}: {primaryModelName}
+            <div class="space-y-4">
+              <div class="p-3 bg-mid-gray/5 rounded-md border border-mid-gray/20 opacity-70">
+                <p class="text-sm font-medium text-text/80">
+                  {t("multiStt.status.primary")}: {primaryModelName()}
                 </p>
-                <p className="text-xs text-mid-gray/60 mt-1">
+                <p class="text-xs text-mid-gray/60 mt-1">
                   {t("multiStt.models.primaryModel", {
-                    model: primaryModelName,
+                    model: primaryModelName(),
                   })}
                 </p>
               </div>
-
-              {/* Model 2 Selection */}
               <SettingContainer
                 title={t("multiStt.models.model2")}
                 description={t("multiStt.models.model2Description")}
@@ -401,35 +390,35 @@ export const MultiSttSettings: React.FC = () => {
                 layout="horizontal"
                 grouped={true}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div class="flex items-center gap-2 min-w-0">
                   <Dropdown
-                    selectedValue={multiSttModel2}
-                    options={modelOptionsForSlot2}
+                    selectedValue={multiSttModel2()}
+                    options={modelOptionsForSlot2()}
                     onSelect={(value) => handleModel2Select(value)}
                     placeholder={t("multiStt.models.notSelected")}
-                    disabled={modelOptionsForSlot2.length === 0}
-                    className="flex-1 min-w-0"
+                    disabled={modelOptionsForSlot2().length === 0}
+                    class="flex-1 min-w-0"
                   />
-                  {multiSttModel2 && (
+                  {multiSttModel2() && (
                     <>
                       <span
-                        className={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel2) ? "text-green-500" : "text-mid-gray/50"}`}
+                        class={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel2()) ? "text-green-500" : "text-mid-gray/50"}`}
                       >
-                        {isExtraModelLoaded(multiSttModel2)
+                        {isExtraModelLoaded(multiSttModel2())
                           ? t("multiStt.models.loaded")
                           : t("multiStt.models.notLoaded")}
                       </span>
-                      {isExtraModelLoaded(multiSttModel2) ? (
+                      {isExtraModelLoaded(multiSttModel2()) ? (
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleUnloadModel(multiSttModel2)}
+                          onClick={() => handleUnloadModel(multiSttModel2())}
                           disabled={
-                            isModelUnloading(multiSttModel2) ||
-                            isModelLoading(multiSttModel2)
+                            isModelUnloading(multiSttModel2()) ||
+                            isModelLoading(multiSttModel2())
                           }
                         >
-                          {isModelUnloading(multiSttModel2)
+                          {isModelUnloading(multiSttModel2())
                             ? t("multiStt.models.unloadingModel")
                             : t("multiStt.models.unloadModel")}
                         </Button>
@@ -437,13 +426,13 @@ export const MultiSttSettings: React.FC = () => {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleLoadModel(multiSttModel2)}
+                          onClick={() => handleLoadModel(multiSttModel2())}
                           disabled={
-                            isModelLoading(multiSttModel2) ||
-                            isModelUnloading(multiSttModel2)
+                            isModelLoading(multiSttModel2()) ||
+                            isModelUnloading(multiSttModel2())
                           }
                         >
-                          {isModelLoading(multiSttModel2)
+                          {isModelLoading(multiSttModel2())
                             ? t("multiStt.models.loadingModel")
                             : t("multiStt.models.loadModel")}
                         </Button>
@@ -460,11 +449,11 @@ export const MultiSttSettings: React.FC = () => {
                 </div>
                 <PerModelLanguageSelector
                   slot={2}
-                  modelId={multiSttModel2}
-                  modelInfo={model2Info}
+                  modelId={multiSttModel2()}
+                  modelInfo={model2Info()}
                 />
-                {multiSttModel2 && model2Info?.supports_translation && (
-                  <div className="flex items-center gap-2 mt-1 ml-1">
+                {multiSttModel2() && model2Info()?.supports_translation && (
+                  <div class="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
                       checked={
                         (getSetting(
@@ -483,8 +472,7 @@ export const MultiSttSettings: React.FC = () => {
                   </div>
                 )}
               </SettingContainer>
-
-              {/* Model 3 Selection */}
+              {/* Model 3 and 4 selections follow the same pattern as Model 2 */}
               <SettingContainer
                 title={t("multiStt.models.model3")}
                 description={t("multiStt.models.model3Description")}
@@ -492,35 +480,35 @@ export const MultiSttSettings: React.FC = () => {
                 layout="horizontal"
                 grouped={true}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div class="flex items-center gap-2 min-w-0">
                   <Dropdown
-                    selectedValue={multiSttModel3}
-                    options={modelOptionsForSlot3}
+                    selectedValue={multiSttModel3()}
+                    options={modelOptionsForSlot3()}
                     onSelect={(value) => handleModel3Select(value)}
                     placeholder={t("multiStt.models.notSelected")}
-                    disabled={modelOptionsForSlot3.length === 0}
-                    className="flex-1 min-w-0"
+                    disabled={modelOptionsForSlot3().length === 0}
+                    class="flex-1 min-w-0"
                   />
-                  {multiSttModel3 && (
+                  {multiSttModel3() && (
                     <>
                       <span
-                        className={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel3) ? "text-green-500" : "text-mid-gray/50"}`}
+                        class={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel3()) ? "text-green-500" : "text-mid-gray/50"}`}
                       >
-                        {isExtraModelLoaded(multiSttModel3)
+                        {isExtraModelLoaded(multiSttModel3())
                           ? t("multiStt.models.loaded")
                           : t("multiStt.models.notLoaded")}
                       </span>
-                      {isExtraModelLoaded(multiSttModel3) ? (
+                      {isExtraModelLoaded(multiSttModel3()) ? (
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleUnloadModel(multiSttModel3)}
+                          onClick={() => handleUnloadModel(multiSttModel3())}
                           disabled={
-                            isModelUnloading(multiSttModel3) ||
-                            isModelLoading(multiSttModel3)
+                            isModelUnloading(multiSttModel3()) ||
+                            isModelLoading(multiSttModel3())
                           }
                         >
-                          {isModelUnloading(multiSttModel3)
+                          {isModelUnloading(multiSttModel3())
                             ? t("multiStt.models.unloadingModel")
                             : t("multiStt.models.unloadModel")}
                         </Button>
@@ -528,13 +516,13 @@ export const MultiSttSettings: React.FC = () => {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleLoadModel(multiSttModel3)}
+                          onClick={() => handleLoadModel(multiSttModel3())}
                           disabled={
-                            isModelLoading(multiSttModel3) ||
-                            isModelUnloading(multiSttModel3)
+                            isModelLoading(multiSttModel3()) ||
+                            isModelUnloading(multiSttModel3())
                           }
                         >
-                          {isModelLoading(multiSttModel3)
+                          {isModelLoading(multiSttModel3())
                             ? t("multiStt.models.loadingModel")
                             : t("multiStt.models.loadModel")}
                         </Button>
@@ -551,11 +539,11 @@ export const MultiSttSettings: React.FC = () => {
                 </div>
                 <PerModelLanguageSelector
                   slot={3}
-                  modelId={multiSttModel3}
-                  modelInfo={model3Info}
+                  modelId={multiSttModel3()}
+                  modelInfo={model3Info()}
                 />
-                {multiSttModel3 && model3Info?.supports_translation && (
-                  <div className="flex items-center gap-2 mt-1 ml-1">
+                {multiSttModel3() && model3Info()?.supports_translation && (
+                  <div class="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
                       checked={
                         (getSetting(
@@ -574,8 +562,6 @@ export const MultiSttSettings: React.FC = () => {
                   </div>
                 )}
               </SettingContainer>
-
-              {/* Model 4 Selection */}
               <SettingContainer
                 title={t("multiStt.models.model4")}
                 description={t("multiStt.models.model4Description")}
@@ -583,35 +569,35 @@ export const MultiSttSettings: React.FC = () => {
                 layout="horizontal"
                 grouped={true}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div class="flex items-center gap-2 min-w-0">
                   <Dropdown
-                    selectedValue={multiSttModel4}
-                    options={modelOptionsForSlot4}
+                    selectedValue={multiSttModel4()}
+                    options={modelOptionsForSlot4()}
                     onSelect={(value) => handleModel4Select(value)}
                     placeholder={t("multiStt.models.notSelected")}
-                    disabled={modelOptionsForSlot4.length === 0}
-                    className="flex-1 min-w-0"
+                    disabled={modelOptionsForSlot4().length === 0}
+                    class="flex-1 min-w-0"
                   />
-                  {multiSttModel4 && (
+                  {multiSttModel4() && (
                     <>
                       <span
-                        className={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel4) ? "text-green-500" : "text-mid-gray/50"}`}
+                        class={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel4()) ? "text-green-500" : "text-mid-gray/50"}`}
                       >
-                        {isExtraModelLoaded(multiSttModel4)
+                        {isExtraModelLoaded(multiSttModel4())
                           ? t("multiStt.models.loaded")
                           : t("multiStt.models.notLoaded")}
                       </span>
-                      {isExtraModelLoaded(multiSttModel4) ? (
+                      {isExtraModelLoaded(multiSttModel4()) ? (
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleUnloadModel(multiSttModel4)}
+                          onClick={() => handleUnloadModel(multiSttModel4())}
                           disabled={
-                            isModelUnloading(multiSttModel4) ||
-                            isModelLoading(multiSttModel4)
+                            isModelUnloading(multiSttModel4()) ||
+                            isModelLoading(multiSttModel4())
                           }
                         >
-                          {isModelUnloading(multiSttModel4)
+                          {isModelUnloading(multiSttModel4())
                             ? t("multiStt.models.unloadingModel")
                             : t("multiStt.models.unloadModel")}
                         </Button>
@@ -619,13 +605,13 @@ export const MultiSttSettings: React.FC = () => {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => handleLoadModel(multiSttModel4)}
+                          onClick={() => handleLoadModel(multiSttModel4())}
                           disabled={
-                            isModelLoading(multiSttModel4) ||
-                            isModelUnloading(multiSttModel4)
+                            isModelLoading(multiSttModel4()) ||
+                            isModelUnloading(multiSttModel4())
                           }
                         >
-                          {isModelLoading(multiSttModel4)
+                          {isModelLoading(multiSttModel4())
                             ? t("multiStt.models.loadingModel")
                             : t("multiStt.models.loadModel")}
                         </Button>
@@ -642,11 +628,11 @@ export const MultiSttSettings: React.FC = () => {
                 </div>
                 <PerModelLanguageSelector
                   slot={4}
-                  modelId={multiSttModel4}
-                  modelInfo={model4Info}
+                  modelId={multiSttModel4()}
+                  modelInfo={model4Info()}
                 />
-                {multiSttModel4 && model4Info?.supports_translation && (
-                  <div className="flex items-center gap-2 mt-1 ml-1">
+                {multiSttModel4() && model4Info()?.supports_translation && (
+                  <div class="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
                       checked={
                         (getSetting(
@@ -668,7 +654,6 @@ export const MultiSttSettings: React.FC = () => {
             </div>
           </SettingsGroup>
 
-          {/* Keep Extra Models Loaded */}
           <SettingsGroup title={t("multiStt.keepModelsLoaded.label")}>
             <ToggleSwitch
               checked={
@@ -686,7 +671,6 @@ export const MultiSttSettings: React.FC = () => {
             />
           </SettingsGroup>
 
-          {/* Performance Mode */}
           <SettingsGroup title={t("multiStt.performanceMode.title")}>
             <ToggleSwitch
               checked={
@@ -707,7 +691,7 @@ export const MultiSttSettings: React.FC = () => {
           {((getSetting("multi_stt_performance_mode_enabled") as boolean) ??
           false) ? (
             <SettingsGroup title={t("multiStt.performanceMode.title")}>
-              <div className="space-y-3">
+              <div class="space-y-3">
                 <ToggleSwitch
                   checked={
                     (getSetting(
@@ -730,7 +714,6 @@ export const MultiSttSettings: React.FC = () => {
                   descriptionMode="tooltip"
                   grouped={true}
                 />
-
                 <SettingContainer
                   title={t("multiStt.performanceMode.fullPowerLabel")}
                   description={t(
@@ -742,7 +725,6 @@ export const MultiSttSettings: React.FC = () => {
                 >
                   <KeyComboInput settingKey="multi_stt_performance_mode_full_power_shortcut" />
                 </SettingContainer>
-
                 <SettingContainer
                   title={t("multiStt.performanceMode.normalModeLabel")}
                   description={t(
@@ -758,7 +740,6 @@ export const MultiSttSettings: React.FC = () => {
             </SettingsGroup>
           ) : null}
 
-          {/* Merge Prompt */}
           <SettingsGroup title={t("multiStt.mergePrompt.title")}>
             <SettingContainer
               title={t("multiStt.mergePrompt.description")}
@@ -772,55 +753,51 @@ export const MultiSttSettings: React.FC = () => {
               layout="stacked"
               grouped={true}
             >
-              <div className="space-y-3">
-                <div className="space-y-2 flex flex-col">
-                  <label className="text-sm font-semibold">
+              <div class="space-y-3">
+                <div class="space-y-2 flex flex-col">
+                  <label class="text-sm font-semibold">
                     {t("multiStt.mergePrompt.promptName")}
                   </label>
                   <Input
                     type="text"
-                    value={draftName}
-                    onChange={(e) => setDraftName(e.target.value)}
+                    value={draftName()}
+                    onInput={(e) => setDraftName(e.target.value)}
                     placeholder={t(
                       "multiStt.mergePrompt.promptNamePlaceholder",
                     )}
                     variant="compact"
                   />
                 </div>
-
-                <div className="space-y-2 flex flex-col">
-                  <label className="text-sm font-semibold">
+                <div class="space-y-2 flex flex-col">
+                  <label class="text-sm font-semibold">
                     {t("multiStt.mergePrompt.promptLabel")}
                   </label>
                   <Textarea
-                    value={draftText}
-                    onChange={(e) => setDraftText(e.target.value)}
+                    value={draftText()}
+                    onInput={(e) => setDraftText(e.target.value)}
                     placeholder={t("multiStt.mergePrompt.promptPlaceholder")}
                   />
-                  <p className="text-xs text-mid-gray/70">
-                    <Trans
-                      i18nKey="multiStt.mergePrompt.promptTip"
-                      components={{ code: <code /> }}
-                      values={{
+                  <p class="text-xs text-mid-gray/70">
+                    <TranslatedMarkup
+                      text={t("multiStt.mergePrompt.promptTip", {
                         output: "${output}",
                         output2: "${output2}",
                         output3: "${output3}",
                         output4: "${output4}",
-                      }}
+                      })}
                     />
                   </p>
                 </div>
-
-                <div className="flex gap-2 pt-2">
+                <div class="flex gap-2 pt-2">
                   <Button
                     onClick={handleSaveMergePrompt}
                     variant="primary"
                     size="md"
-                    disabled={!draftName.trim() || !draftText.trim()}
+                    disabled={!draftName().trim() || !draftText().trim()}
                   >
                     {t("multiStt.mergePrompt.savePrompt")}
                   </Button>
-                  {multiSttMergePrompt && (
+                  {multiSttMergePrompt() && (
                     <Button
                       onClick={handleClearMergePrompt}
                       variant="secondary"
@@ -830,21 +807,17 @@ export const MultiSttSettings: React.FC = () => {
                     </Button>
                   )}
                 </div>
-
-                {!multiSttMergePrompt && (
+                {!multiSttMergePrompt() && (
                   <Alert variant="info" contained>
-                    <p className="text-sm">
-                      {t("multiStt.mergePrompt.noPrompt")}
-                    </p>
+                    <p class="text-sm">{t("multiStt.mergePrompt.noPrompt")}</p>
                   </Alert>
                 )}
               </div>
             </SettingContainer>
           </SettingsGroup>
 
-          {/* Experimental: the streaming model becomes the live 1st model */}
           <SettingsGroup title={t("multiStt.streamingFirst.title")}>
-            <div className="space-y-3">
+            <div class="space-y-3">
               <ToggleSwitch
                 checked={
                   (getSetting(
@@ -860,7 +833,6 @@ export const MultiSttSettings: React.FC = () => {
                 descriptionMode="tooltip"
                 grouped={false}
               />
-
               {((getSetting("multi_stt_streaming_first_enabled") as boolean) ??
                 false) && (
                 <>
@@ -888,10 +860,6 @@ export const MultiSttSettings: React.FC = () => {
                     }
                     disabled={isUpdating("multi_stt_streaming_pause_ms")}
                   />
-
-                  {/* What the extras re-read at each close: how many already
-                      closed chunks are sent in front of the one being merged,
-                      so a long session never re-decodes itself. */}
                   <Slider
                     value={
                       (getSetting(
@@ -925,84 +893,77 @@ export const MultiSttSettings: React.FC = () => {
                     }
                     disabled={isUpdating("multi_stt_streaming_context_chunks")}
                   />
-
-                  {/* The 1st slot is the streaming model's own live text here,
-                      so a merge prompt is what turns the rough text into the
-                      merged one — without it the mode has nothing to do. */}
                   <Alert variant="info" contained>
-                    <p className="text-sm">
-                      {t("multiStt.streamingFirst.note")}
-                    </p>
+                    <p class="text-sm">{t("multiStt.streamingFirst.note")}</p>
                   </Alert>
                 </>
               )}
             </div>
           </SettingsGroup>
 
-          {/* Status Summary */}
           <SettingsGroup title={t("multiStt.status.title")}>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm">
-                  {t("multiStt.status.primary")}: {primaryModelName}
+            <div class="space-y-2">
+              <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+                <span class="w-2 h-2 rounded-full bg-green-500" />
+                <span class="text-sm">
+                  {t("multiStt.status.primary")}: {primaryModelName()}
                 </span>
               </div>
-              {selectedModel2Name && (
-                <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+              {selectedModel2Name() && (
+                <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
                   <span
-                    className={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel2) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                    class={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel2()) ? "bg-green-500" : "bg-mid-gray/50"}`}
                   />
-                  <span className="text-sm">
-                    {t("multiStt.status.secondary")}: {selectedModel2Name}
+                  <span class="text-sm">
+                    {t("multiStt.status.secondary")}: {selectedModel2Name()}
                   </span>
                   <span
-                    className={`text-xs ${isExtraModelLoaded(multiSttModel2) ? "text-green-500" : "text-mid-gray/50"}`}
+                    class={`text-xs ${isExtraModelLoaded(multiSttModel2()) ? "text-green-500" : "text-mid-gray/50"}`}
                   >
-                    {isExtraModelLoaded(multiSttModel2)
+                    {isExtraModelLoaded(multiSttModel2())
                       ? t("multiStt.models.loaded")
                       : t("multiStt.models.notLoaded")}
                   </span>
                 </div>
               )}
-              {selectedModel3Name && (
-                <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+              {selectedModel3Name() && (
+                <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
                   <span
-                    className={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel3) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                    class={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel3()) ? "bg-green-500" : "bg-mid-gray/50"}`}
                   />
-                  <span className="text-sm">
-                    {t("multiStt.status.tertiary")}: {selectedModel3Name}
+                  <span class="text-sm">
+                    {t("multiStt.status.tertiary")}: {selectedModel3Name()}
                   </span>
                   <span
-                    className={`text-xs ${isExtraModelLoaded(multiSttModel3) ? "text-green-500" : "text-mid-gray/50"}`}
+                    class={`text-xs ${isExtraModelLoaded(multiSttModel3()) ? "text-green-500" : "text-mid-gray/50"}`}
                   >
-                    {isExtraModelLoaded(multiSttModel3)
+                    {isExtraModelLoaded(multiSttModel3())
                       ? t("multiStt.models.loaded")
                       : t("multiStt.models.notLoaded")}
                   </span>
                 </div>
               )}
-              {selectedModel4Name && (
-                <div className="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+              {selectedModel4Name() && (
+                <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
                   <span
-                    className={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel4) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                    class={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel4()) ? "bg-green-500" : "bg-mid-gray/50"}`}
                   />
-                  <span className="text-sm">
-                    {t("multiStt.status.quaternary")}: {selectedModel4Name}
+                  <span class="text-sm">
+                    {t("multiStt.status.quaternary")}: {selectedModel4Name()}
                   </span>
                   <span
-                    className={`text-xs ${isExtraModelLoaded(multiSttModel4) ? "text-green-500" : "text-mid-gray/50"}`}
+                    class={`text-xs ${isExtraModelLoaded(multiSttModel4()) ? "text-green-500" : "text-mid-gray/50"}`}
                   >
-                    {isExtraModelLoaded(multiSttModel4)
+                    {isExtraModelLoaded(multiSttModel4())
                       ? t("multiStt.models.loaded")
                       : t("multiStt.models.notLoaded")}
                   </span>
                 </div>
               )}
-              {!selectedModel2Name &&
-                !selectedModel3Name &&
-                !selectedModel4Name && (
-                  <p className="text-sm text-mid-gray/60">
+              {!selectedModel2Name() &&
+                !selectedModel3Name() &&
+                !selectedModel4Name() && (
+                  <p class="text-sm text-mid-gray/60">
                     {t("multiStt.status.noModels")}
                   </p>
                 )}

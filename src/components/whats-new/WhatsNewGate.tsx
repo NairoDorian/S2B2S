@@ -1,72 +1,75 @@
-import React, { useEffect, useRef, useState } from "react";
+import { createSignal, createEffect } from "solid-js";
+
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettings } from "../../hooks/useSettings";
 import { findReleaseNoteToShow } from "./releaseNotes";
 import type { ReleaseNote } from "./releaseNotes";
 import { WhatsNewModal } from "./WhatsNewModal";
 
-export const WhatsNewGate: React.FC = () => {
+export const WhatsNewGate = () => {
   const { settings, isLoading, updateSetting } = useSettings();
-  const [note, setNote] = useState<ReleaseNote | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const dismissedVersionRef = useRef<string | null>(null);
+  const [note, setNote] = createSignal<ReleaseNote | null>(null);
+  const [isOpen, setIsOpen] = createSignal(false);
+  let dismissedVersionRef: string | null = null;
 
-  useEffect(() => {
-    if (isLoading || !settings || !settings.show_whats_new_on_update) {
-      setIsOpen(false);
-      setNote(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadReleaseNote = async () => {
-      try {
-        const currentVersion = await getVersion();
-        if (cancelled) return;
-
-        const releaseNote = findReleaseNoteToShow({
-          currentVersion,
-          lastSeenVersion: settings.whats_new_last_seen_version ?? "",
-        });
-
-        if (
-          !releaseNote ||
-          dismissedVersionRef.current === releaseNote.version
-        ) {
-          setIsOpen(false);
-          setNote(null);
-          return;
-        }
-
-        setNote(releaseNote);
-        setIsOpen(true);
-      } catch (error) {
-        console.error("Failed to load release notes:", error);
+  createEffect(
+    () => undefined,
+    () => {
+      const currentSettings = settings();
+      if (
+        isLoading() ||
+        !currentSettings ||
+        !currentSettings.show_whats_new_on_update
+      ) {
+        setIsOpen(false);
+        setNote(null);
+        return;
       }
-    };
 
-    void loadReleaseNote();
+      let cancelled = false;
 
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isLoading,
-    settings,
-    settings?.show_whats_new_on_update,
-    settings?.whats_new_last_seen_version,
-  ]);
+      const loadReleaseNote = async () => {
+        try {
+          const currentVersion = await getVersion();
+          if (cancelled) return;
+
+          const releaseNote = findReleaseNoteToShow({
+            currentVersion,
+            lastSeenVersion: currentSettings.whats_new_last_seen_version ?? "",
+          });
+
+          if (!releaseNote || dismissedVersionRef === releaseNote.version) {
+            setIsOpen(false);
+            setNote(null);
+            return;
+          }
+
+          setNote(releaseNote);
+          setIsOpen(true);
+        } catch (error) {
+          console.error("Failed to load release notes:", error);
+        }
+      };
+
+      void loadReleaseNote();
+
+      return () => {
+        cancelled = true;
+      };
+    },
+  );
 
   const dismiss = () => {
-    if (!note) return;
+    const current = note();
+    if (!current) return;
 
-    dismissedVersionRef.current = note.version;
+    dismissedVersionRef = current.version;
     setIsOpen(false);
-    void updateSetting("whats_new_last_seen_version", note.version);
+    void updateSetting("whats_new_last_seen_version", current.version);
   };
 
-  if (!note) return null;
+  const current = note();
+  if (!current) return null;
 
-  return <WhatsNewModal note={note} open={isOpen} onDismiss={dismiss} />;
+  return <WhatsNewModal note={current} open={isOpen()} onDismiss={dismiss} />;
 };

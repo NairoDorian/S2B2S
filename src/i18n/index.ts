@@ -1,5 +1,4 @@
 import i18n, { type BackendModule } from "i18next";
-import { initReactI18next } from "react-i18next";
 import { locale } from "@tauri-apps/plugin-os";
 import { LANGUAGE_METADATA } from "./languages";
 import { commands } from "@/bindings";
@@ -119,24 +118,23 @@ export const getSupportedLanguage = (
 // settings below. Only the initial language's bundle is loaded here.
 // `changeLanguage` loads its target before it switches, so the UI never
 // renders raw keys in between.
-const initialized = i18n
-  .use(lazyLocaleBackend)
-  .use(initReactI18next)
-  .init({
-    lng: "en",
-    fallbackLng: "en",
-    interpolation: {
-      escapeValue: false, // React already escapes values
-      // `{{app}}` is available in every string without each key having to pass
-      // it. A locale that names the product — "Start with {{app}}", "{{app}}
-      // needs some permissions to work properly" — therefore survives a rename
-      // untouched, and 25 files never have to be edited for one new word.
-      defaultVariables: { app: APP_NAME },
-    },
-    react: {
-      useSuspense: false, // Disable suspense for SSR compatibility
-    },
-  });
+//
+// No plugin is installed: `initReactI18next` was here to give `react-i18next`'s
+// hooks an instance, and `useTranslation.tsx` reads this module directly
+// (Phase 1 of docs/PLAN_SOLIDJS_2.md). Nothing else about the setup changed,
+// including the non-eager locale glob above.
+const initialized = i18n.use(lazyLocaleBackend).init({
+  lng: "en",
+  fallbackLng: "en",
+  interpolation: {
+    escapeValue: false, // React already escapes values
+    // `{{app}}` is available in every string without each key having to pass
+    // it. A locale that names the product — "Start with {{app}}", "{{app}}
+    // needs some permissions to work properly" — therefore survives a rename
+    // untouched, and 25 files never have to be edited for one new word.
+    defaultVariables: { app: APP_NAME },
+  },
+});
 
 // Sync language from app settings
 export const syncLanguageFromSettings = async () => {

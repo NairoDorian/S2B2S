@@ -1,40 +1,42 @@
 import { APP_NAME } from "@/lib/appIdentity";
 import BrandMark from "./BrandMark";
+import type { JSX } from "@solidjs/web";
 
-/**
- * The mark beside the product name — the lockup used wherever the app
- * introduces itself (the sidebar header, the onboarding screens).
- *
- * The name is read from `APP_NAME`, which `scripts/app-meta.ts` generates, so
- * renaming the product renames this text too. That is the whole reason the
- * wordmark is typeset rather than drawn: a hand-drawn wordmark is the one
- * asset a rename cannot regenerate, and it is the reason the old wordmark had
- * to be replaced by hand.
- */
-const BrandLockup = ({
-  /** Size of the mark in pixels; the text scales with it. */
-  size = 24,
-  /** Longest the lockup may render, in pixels. The text truncates past it. */
-  maxWidth,
-  className,
-}: {
+interface BrandLockupProps {
   size?: number;
   maxWidth?: number | string;
-  className?: string;
-}) => (
-  <span
-    className={`inline-flex items-center gap-2 select-none ${className ?? ""}`}
-    style={maxWidth === undefined ? undefined : { maxWidth }}
-  >
-    <BrandMark size={size} className="shrink-0" />
+  class?: string;
+}
+
+const BrandLockup = (props: BrandLockupProps): JSX.Element => {
+  const size = () => props.size ?? 24;
+
+  return (
     <span
-      className="font-semibold tracking-[0.18em] text-text whitespace-nowrap truncate"
-      // Half the mark, rounded: the text sits optically centred against it.
-      style={{ fontSize: Math.round(size * 0.62), lineHeight: 1 }}
+      class={`inline-flex items-center gap-2 select-none ${props.class ?? ""}`}
+      style={
+        props.maxWidth === undefined
+          ? undefined
+          : {
+              "max-width":
+                typeof props.maxWidth === "number"
+                  ? `${props.maxWidth}px`
+                  : props.maxWidth,
+            }
+      }
     >
-      {APP_NAME}
+      <BrandMark size={size()} class="shrink-0" />
+      <span
+        class="font-semibold tracking-[0.18em] text-text whitespace-nowrap truncate"
+        style={{
+          "font-size": `${Math.round(size() * 0.62)}px`,
+          "line-height": 1,
+        }}
+      >
+        {APP_NAME}
+      </span>
     </span>
-  </span>
-);
+  );
+};
 
 export default BrandLockup;

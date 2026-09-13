@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createSolidStore } from "@/lib/solidStore";
 import {
   commands,
   events,
@@ -48,7 +48,7 @@ interface LiveModeStore {
   closeViewer: () => void;
 }
 
-export const useLiveModeStore = create<LiveModeStore>()((set, get) => ({
+const liveModeState = createSolidStore<LiveModeStore>((set, get) => ({
   status: IDLE_STATUS,
   stable: "",
   live: "",
@@ -122,3 +122,7 @@ export const useLiveModeStore = create<LiveModeStore>()((set, get) => ({
 
   closeViewer: () => set({ viewing: null, viewingText: "" }),
 }));
+
+export function useLiveModeStore() {
+  return liveModeState;
+}

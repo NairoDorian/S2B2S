@@ -1,6 +1,5 @@
-import { create } from "zustand";
-import { subscribeWithSelector } from "zustand/middleware";
 import { listen } from "@tauri-apps/api/event";
+import { createSolidStore } from "@/lib/solidStore";
 import type {
   AppSettings as Settings,
   AudioDevice,
@@ -288,19 +287,19 @@ const settingUpdaters: {
   mic_idle_timeout_value: (value) =>
     commands.changeMicIdleTimeoutSettings(
       value as number,
-      useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
-      useSettingsStore.getState().settings?.mic_idle_infinite ?? false,
+      settingsState.settings?.mic_idle_timeout_unit ?? "seconds",
+      settingsState.settings?.mic_idle_infinite ?? false,
     ),
   mic_idle_timeout_unit: (value) =>
     commands.changeMicIdleTimeoutSettings(
-      useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30,
+      settingsState.settings?.mic_idle_timeout_value ?? 30,
       value as MicIdleTimeoutUnit,
-      useSettingsStore.getState().settings?.mic_idle_infinite ?? false,
+      settingsState.settings?.mic_idle_infinite ?? false,
     ),
   mic_idle_infinite: (value) =>
     commands.changeMicIdleTimeoutSettings(
-      useSettingsStore.getState().settings?.mic_idle_timeout_value ?? 30,
-      useSettingsStore.getState().settings?.mic_idle_timeout_unit ?? "seconds",
+      settingsState.settings?.mic_idle_timeout_value ?? 30,
+      settingsState.settings?.mic_idle_timeout_unit ?? "seconds",
       value as boolean,
     ),
   // The detector is rebuilt from the new threshold; a rejected rebuild
@@ -326,490 +325,491 @@ const settingUpdaters: {
     ),
 };
 
-export const useSettingsStore = create<SettingsStore>()(
-  subscribeWithSelector((set, get) => ({
-    settings: null,
-    defaultSettings: null,
-    isLoading: true,
-    isUpdating: {},
-    audioDevices: [],
-    outputDevices: [],
-    customSounds: { start: false, stop: false },
-    postProcessModelOptions: {},
-    updateChecksLocked: null,
+const settingsState = createSolidStore<SettingsStore>((set, get) => ({
+  settings: null,
+  defaultSettings: null,
+  isLoading: true,
+  isUpdating: {},
+  audioDevices: [],
+  outputDevices: [],
+  customSounds: { start: false, stop: false },
+  postProcessModelOptions: {},
+  updateChecksLocked: null,
 
-    // Internal setters
-    setSettings: (settings) => set({ settings }),
-    setDefaultSettings: (defaultSettings) => set({ defaultSettings }),
-    setLoading: (isLoading) => set({ isLoading }),
-    setUpdating: (key, updating) =>
-      set((state) => ({
-        isUpdating: { ...state.isUpdating, [key]: updating },
-      })),
-    setAudioDevices: (audioDevices) => set({ audioDevices }),
-    setOutputDevices: (outputDevices) => set({ outputDevices }),
-    setCustomSounds: (customSounds) => set({ customSounds }),
+  // Internal setters
+  setSettings: (settings) => set({ settings }),
+  setDefaultSettings: (defaultSettings) => set({ defaultSettings }),
+  setLoading: (isLoading) => set({ isLoading }),
+  setUpdating: (key, updating) =>
+    set((state) => ({
+      isUpdating: { ...state.isUpdating, [key]: updating },
+    })),
+  setAudioDevices: (audioDevices) => set({ audioDevices }),
+  setOutputDevices: (outputDevices) => set({ outputDevices }),
+  setCustomSounds: (customSounds) => set({ customSounds }),
 
-    // Getters
-    getSetting: (key) => get().settings?.[key],
-    isUpdatingKey: (key) => get().isUpdating[key] || false,
+  // Getters
+  getSetting: (key) => get().settings?.[key],
+  isUpdatingKey: (key) => get().isUpdating[key] || false,
 
-    // Load settings from store
-    refreshSettings: async () => {
-      try {
-        const result = await commands.getAppSettings();
-        if (result.status === "ok") {
-          const settings = result.data;
-          const normalizedSettings: Settings = {
-            ...settings,
-            always_on_microphone: settings.always_on_microphone ?? false,
-            selected_microphone: settings.selected_microphone ?? "Default",
-            clamshell_microphone: settings.clamshell_microphone ?? "Default",
-            selected_output_device:
-              settings.selected_output_device ?? "Default",
-          };
-          set({ settings: normalizedSettings, isLoading: false });
-        } else {
-          console.error("Failed to load settings:", result.error);
-          set({ isLoading: false });
-        }
-      } catch (error) {
-        console.error("Failed to load settings:", error);
+  // Load settings from store
+  refreshSettings: async () => {
+    try {
+      const result = await commands.getAppSettings();
+      if (result.status === "ok") {
+        const settings = result.data;
+        const normalizedSettings: Settings = {
+          ...settings,
+          always_on_microphone: settings.always_on_microphone ?? false,
+          selected_microphone: settings.selected_microphone ?? "Default",
+          clamshell_microphone: settings.clamshell_microphone ?? "Default",
+          selected_output_device: settings.selected_output_device ?? "Default",
+        };
+        set({ settings: normalizedSettings, isLoading: false });
+      } else {
+        console.error("Failed to load settings:", result.error);
         set({ isLoading: false });
       }
-    },
+    } catch (error) {
+      console.error("Failed to load settings:", error);
+      set({ isLoading: false });
+    }
+  },
 
-    // Load audio devices
-    refreshAudioDevices: async () => {
-      try {
-        const result = await commands.getAvailableMicrophones();
-        if (result.status === "ok") {
-          const devicesWithDefault = [
-            DEFAULT_AUDIO_DEVICE,
-            ...result.data.filter(
-              (d) => d.name !== "Default" && d.name !== "default",
-            ),
-          ];
-          set({ audioDevices: devicesWithDefault });
-        } else {
-          set({ audioDevices: [DEFAULT_AUDIO_DEVICE] });
-        }
-      } catch (error) {
-        console.error("Failed to load audio devices:", error);
+  // Load audio devices
+  refreshAudioDevices: async () => {
+    try {
+      const result = await commands.getAvailableMicrophones();
+      if (result.status === "ok") {
+        const devicesWithDefault = [
+          DEFAULT_AUDIO_DEVICE,
+          ...result.data.filter(
+            (d) => d.name !== "Default" && d.name !== "default",
+          ),
+        ];
+        set({ audioDevices: devicesWithDefault });
+      } else {
         set({ audioDevices: [DEFAULT_AUDIO_DEVICE] });
       }
-    },
+    } catch (error) {
+      console.error("Failed to load audio devices:", error);
+      set({ audioDevices: [DEFAULT_AUDIO_DEVICE] });
+    }
+  },
 
-    // Load output devices
-    refreshOutputDevices: async () => {
-      try {
-        const result = await commands.getAvailableOutputDevices();
-        if (result.status === "ok") {
-          const devicesWithDefault = [
-            DEFAULT_AUDIO_DEVICE,
-            ...result.data.filter(
-              (d) => d.name !== "Default" && d.name !== "default",
-            ),
-          ];
-          set({ outputDevices: devicesWithDefault });
-        } else {
-          set({ outputDevices: [DEFAULT_AUDIO_DEVICE] });
-        }
-      } catch (error) {
-        console.error("Failed to load output devices:", error);
+  // Load output devices
+  refreshOutputDevices: async () => {
+    try {
+      const result = await commands.getAvailableOutputDevices();
+      if (result.status === "ok") {
+        const devicesWithDefault = [
+          DEFAULT_AUDIO_DEVICE,
+          ...result.data.filter(
+            (d) => d.name !== "Default" && d.name !== "default",
+          ),
+        ];
+        set({ outputDevices: devicesWithDefault });
+      } else {
         set({ outputDevices: [DEFAULT_AUDIO_DEVICE] });
       }
-    },
+    } catch (error) {
+      console.error("Failed to load output devices:", error);
+      set({ outputDevices: [DEFAULT_AUDIO_DEVICE] });
+    }
+  },
 
-    // Play a test sound
-    playTestSound: async (soundType: "start" | "stop") => {
-      try {
-        await commands.playTestSound(soundType);
-      } catch (error) {
-        console.error(`Failed to play test sound (${soundType}):`, error);
+  // Play a test sound
+  playTestSound: async (soundType: "start" | "stop") => {
+    try {
+      await commands.playTestSound(soundType);
+    } catch (error) {
+      console.error(`Failed to play test sound (${soundType}):`, error);
+    }
+  },
+
+  checkCustomSounds: async () => {
+    try {
+      const sounds = await commands.checkCustomSounds();
+      get().setCustomSounds(sounds);
+    } catch (error) {
+      console.error("Failed to check custom sounds:", error);
+    }
+  },
+
+  // Update a specific setting
+  updateSetting: async <K extends keyof Settings>(
+    key: K,
+    value: Settings[K],
+  ) => {
+    const { settings, setUpdating } = get();
+    const updateKey = String(key);
+    const originalValue = settings?.[key];
+
+    setUpdating(updateKey, true);
+
+    try {
+      set((state) => ({
+        settings: state.settings ? { ...state.settings, [key]: value } : null,
+      }));
+
+      const updater = settingUpdaters[key];
+      if (updater) {
+        await updater(value);
+      } else if (key !== "bindings" && key !== "selected_model") {
+        console.warn(`No handler for setting: ${String(key)}`);
       }
-    },
-
-    checkCustomSounds: async () => {
-      try {
-        const sounds = await commands.checkCustomSounds();
-        get().setCustomSounds(sounds);
-      } catch (error) {
-        console.error("Failed to check custom sounds:", error);
+    } catch (error) {
+      console.error(`Failed to update setting ${String(key)}:`, error);
+      if (settings) {
+        set({ settings: { ...settings, [key]: originalValue } });
       }
-    },
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-    // Update a specific setting
-    updateSetting: async <K extends keyof Settings>(
-      key: K,
-      value: Settings[K],
-    ) => {
-      const { settings, setUpdating } = get();
-      const updateKey = String(key);
-      const originalValue = settings?.[key];
-
-      setUpdating(updateKey, true);
-
-      try {
-        set((state) => ({
-          settings: state.settings ? { ...state.settings, [key]: value } : null,
-        }));
-
-        const updater = settingUpdaters[key];
-        if (updater) {
-          await updater(value);
-        } else if (key !== "bindings" && key !== "selected_model") {
-          console.warn(`No handler for setting: ${String(key)}`);
-        }
-      } catch (error) {
-        console.error(`Failed to update setting ${String(key)}:`, error);
-        if (settings) {
-          set({ settings: { ...settings, [key]: originalValue } });
-        }
-      } finally {
-        setUpdating(updateKey, false);
+  // Reset a setting to its default value
+  resetSetting: async (key) => {
+    const { defaultSettings } = get();
+    if (defaultSettings) {
+      const defaultValue = defaultSettings[key];
+      if (defaultValue !== undefined) {
+        await get().updateSetting(key, defaultValue as any);
       }
-    },
+    }
+  },
 
-    // Reset a setting to its default value
-    resetSetting: async (key) => {
-      const { defaultSettings } = get();
-      if (defaultSettings) {
-        const defaultValue = defaultSettings[key];
-        if (defaultValue !== undefined) {
-          await get().updateSetting(key, defaultValue as any);
-        }
-      }
-    },
+  // Set native streaming latency preset for a specific model
+  setLatencyPreset: async (modelId, preset) => {
+    const { settings } = get();
+    const currentPresets = settings?.native_streaming_latency_presets ?? {};
+    const originalPreset = currentPresets[modelId];
 
-    // Set native streaming latency preset for a specific model
-    setLatencyPreset: async (modelId, preset) => {
-      const { settings } = get();
-      const currentPresets = settings?.native_streaming_latency_presets ?? {};
-      const originalPreset = currentPresets[modelId];
+    set((state) => ({
+      settings: state.settings
+        ? {
+            ...state.settings,
+            native_streaming_latency_presets: {
+              ...state.settings.native_streaming_latency_presets,
+              [modelId]: preset,
+            },
+          }
+        : null,
+    }));
 
+    const result = await commands.changeNativeStreamingLatencyPresetSetting(
+      modelId,
+      preset,
+    );
+    if (result.status === "error") {
       set((state) => ({
         settings: state.settings
           ? {
               ...state.settings,
               native_streaming_latency_presets: {
                 ...state.settings.native_streaming_latency_presets,
-                [modelId]: preset,
+                [modelId]: originalPreset,
               },
             }
           : null,
       }));
+      console.error("Failed to set latency preset:", result.error);
+    }
+  },
 
-      const result = await commands.changeNativeStreamingLatencyPresetSetting(
-        modelId,
-        preset,
-      );
+  // Update a specific binding
+  updateBinding: async (id, binding) => {
+    const { settings, setUpdating } = get();
+    const updateKey = `binding_${id}`;
+    const originalBinding = settings?.bindings?.[id]?.current_binding;
+
+    setUpdating(updateKey, true);
+
+    try {
+      // Optimistic update
+      set((state) => {
+        const settings = withBindingValue(state.settings, id, binding);
+        return settings ? { settings } : {};
+      });
+
+      const result = await commands.changeBinding(id, binding);
+
+      // Check if the command executed successfully
       if (result.status === "error") {
-        set((state) => ({
-          settings: state.settings
-            ? {
-                ...state.settings,
-                native_streaming_latency_presets: {
-                  ...state.settings.native_streaming_latency_presets,
-                  [modelId]: originalPreset,
-                },
-              }
-            : null,
-        }));
-        console.error("Failed to set latency preset:", result.error);
+        throw new Error(result.error);
       }
-    },
 
-    // Update a specific binding
-    updateBinding: async (id, binding) => {
-      const { settings, setUpdating } = get();
-      const updateKey = `binding_${id}`;
-      const originalBinding = settings?.bindings?.[id]?.current_binding;
+      // Check if the binding change was successful
+      if (!result.data.success) {
+        throw new Error(result.data.error || "Failed to update binding");
+      }
+    } catch (error) {
+      console.error(`Failed to update binding ${id}:`, error);
 
-      setUpdating(updateKey, true);
-
-      try {
-        // Optimistic update
+      // Rollback on error
+      if (originalBinding) {
         set((state) => {
-          const settings = withBindingValue(state.settings, id, binding);
+          const settings = withBindingValue(
+            state.settings,
+            id,
+            originalBinding,
+          );
           return settings ? { settings } : {};
         });
-
-        const result = await commands.changeBinding(id, binding);
-
-        // Check if the command executed successfully
-        if (result.status === "error") {
-          throw new Error(result.error);
-        }
-
-        // Check if the binding change was successful
-        if (!result.data.success) {
-          throw new Error(result.data.error || "Failed to update binding");
-        }
-      } catch (error) {
-        console.error(`Failed to update binding ${id}:`, error);
-
-        // Rollback on error
-        if (originalBinding) {
-          set((state) => {
-            const settings = withBindingValue(
-              state.settings,
-              id,
-              originalBinding,
-            );
-            return settings ? { settings } : {};
-          });
-        }
-
-        // Re-throw to let the caller know it failed
-        throw error;
-      } finally {
-        setUpdating(updateKey, false);
       }
-    },
 
-    // Reset a specific binding
-    resetBinding: async (id) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `binding_${id}`;
+      // Re-throw to let the caller know it failed
+      throw error;
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-      setUpdating(updateKey, true);
+  // Reset a specific binding
+  resetBinding: async (id) => {
+    const { setUpdating, refreshSettings } = get();
+    const updateKey = `binding_${id}`;
 
-      try {
-        await commands.resetBinding(id);
-        await refreshSettings();
-      } catch (error) {
-        console.error(`Failed to reset binding ${id}:`, error);
-      } finally {
-        setUpdating(updateKey, false);
-      }
-    },
+    setUpdating(updateKey, true);
 
-    setPostProcessProvider: async (providerId) => {
-      const {
-        settings,
-        setUpdating,
-        refreshSettings,
-        setPostProcessModelOptions,
-      } = get();
-      const updateKey = "post_process_provider_id";
-      const previousId = settings?.post_process_provider_id ?? null;
+    try {
+      await commands.resetBinding(id);
+      await refreshSettings();
+    } catch (error) {
+      console.error(`Failed to reset binding ${id}:`, error);
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-      setUpdating(updateKey, true);
+  setPostProcessProvider: async (providerId) => {
+    const {
+      settings,
+      setUpdating,
+      refreshSettings,
+      setPostProcessModelOptions,
+    } = get();
+    const updateKey = "post_process_provider_id";
+    const previousId = settings?.post_process_provider_id ?? null;
 
-      if (settings) {
+    setUpdating(updateKey, true);
+
+    if (settings) {
+      set((state) => ({
+        settings: state.settings
+          ? { ...state.settings, post_process_provider_id: providerId }
+          : null,
+      }));
+    }
+
+    // Clear cached model options for the new provider so the dropdown
+    // doesn't show stale models from a previous fetch or base_url.
+    setPostProcessModelOptions(providerId, []);
+
+    try {
+      await commands.setPostProcessProvider(providerId);
+      await refreshSettings();
+    } catch (error) {
+      console.error("Failed to set post-process provider:", error);
+      if (previousId !== null) {
         set((state) => ({
           settings: state.settings
-            ? { ...state.settings, post_process_provider_id: providerId }
+            ? { ...state.settings, post_process_provider_id: previousId }
             : null,
         }));
       }
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-      // Clear cached model options for the new provider so the dropdown
-      // doesn't show stale models from a previous fetch or base_url.
-      setPostProcessModelOptions(providerId, []);
+  // Generic updater for post-processing provider settings
+  updatePostProcessSetting: async (
+    settingType: "base_url" | "api_key" | "model",
+    providerId: string,
+    value: string,
+  ) => {
+    const { setUpdating, refreshSettings } = get();
+    const updateKey = `post_process_${settingType}:${providerId}`;
 
-      try {
-        await commands.setPostProcessProvider(providerId);
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to set post-process provider:", error);
-        if (previousId !== null) {
-          set((state) => ({
-            settings: state.settings
-              ? { ...state.settings, post_process_provider_id: previousId }
-              : null,
-          }));
-        }
-      } finally {
-        setUpdating(updateKey, false);
+    setUpdating(updateKey, true);
+
+    try {
+      if (settingType === "base_url") {
+        await commands.changePostProcessBaseUrlSetting(providerId, value);
+      } else if (settingType === "api_key") {
+        await commands.changePostProcessApiKeySetting(providerId, value);
+      } else if (settingType === "model") {
+        await commands.changePostProcessModelSetting(providerId, value);
       }
-    },
+      await refreshSettings();
+    } catch (error) {
+      console.error(
+        `Failed to update post-process ${settingType.replace("_", " ")}:`,
+        error,
+      );
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-    // Generic updater for post-processing provider settings
-    updatePostProcessSetting: async (
-      settingType: "base_url" | "api_key" | "model",
-      providerId: string,
-      value: string,
-    ) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `post_process_${settingType}:${providerId}`;
+  updatePostProcessBaseUrl: async (providerId, baseUrl) => {
+    const { setUpdating, refreshSettings } = get();
+    const updateKey = `post_process_base_url:${providerId}`;
 
-      setUpdating(updateKey, true);
+    setUpdating(updateKey, true);
 
-      try {
-        if (settingType === "base_url") {
-          await commands.changePostProcessBaseUrlSetting(providerId, value);
-        } else if (settingType === "api_key") {
-          await commands.changePostProcessApiKeySetting(providerId, value);
-        } else if (settingType === "model") {
-          await commands.changePostProcessModelSetting(providerId, value);
-        }
-        await refreshSettings();
-      } catch (error) {
-        console.error(
-          `Failed to update post-process ${settingType.replace("_", " ")}:`,
-          error,
-        );
-      } finally {
-        setUpdating(updateKey, false);
+    try {
+      // Persist the new base URL first.
+      const urlResult = await commands.changePostProcessBaseUrlSetting(
+        providerId,
+        baseUrl,
+      );
+      if (urlResult.status === "error") {
+        console.error("Failed to persist base URL:", urlResult.error);
+        return;
       }
-    },
 
-    updatePostProcessBaseUrl: async (providerId, baseUrl) => {
-      const { setUpdating, refreshSettings } = get();
-      const updateKey = `post_process_base_url:${providerId}`;
-
-      setUpdating(updateKey, true);
-
-      try {
-        // Persist the new base URL first.
-        const urlResult = await commands.changePostProcessBaseUrlSetting(
-          providerId,
-          baseUrl,
-        );
-        if (urlResult.status === "error") {
-          console.error("Failed to persist base URL:", urlResult.error);
-          return;
-        }
-
-        // Reset the stored model since the previous value is almost certainly
-        // invalid for the new endpoint (e.g. switching Custom from Groq to
-        // Cerebras). Only proceed if the reset succeeds.
-        const modelResult = await commands.changePostProcessModelSetting(
-          providerId,
-          "",
-        );
-        if (modelResult.status === "error") {
-          console.error("Failed to reset model setting:", modelResult.error);
-          return;
-        }
-
-        // Clear cached model options only after both backend writes succeed.
-        set((state) => ({
-          postProcessModelOptions: {
-            ...state.postProcessModelOptions,
-            [providerId]: [],
-          },
-        }));
-
-        // Single refresh after both backend writes.
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to update post-process base URL:", error);
-      } finally {
-        setUpdating(updateKey, false);
+      // Reset the stored model since the previous value is almost certainly
+      // invalid for the new endpoint (e.g. switching Custom from Groq to
+      // Cerebras). Only proceed if the reset succeeds.
+      const modelResult = await commands.changePostProcessModelSetting(
+        providerId,
+        "",
+      );
+      if (modelResult.status === "error") {
+        console.error("Failed to reset model setting:", modelResult.error);
+        return;
       }
-    },
 
-    updatePostProcessApiKey: async (providerId, apiKey) => {
-      // Clear cached models when API key changes - user should click refresh after
+      // Clear cached model options only after both backend writes succeed.
       set((state) => ({
         postProcessModelOptions: {
           ...state.postProcessModelOptions,
           [providerId]: [],
         },
       }));
-      return get().updatePostProcessSetting("api_key", providerId, apiKey);
-    },
 
-    updatePostProcessModel: async (providerId, model) => {
-      return get().updatePostProcessSetting("model", providerId, model);
-    },
+      // Single refresh after both backend writes.
+      await refreshSettings();
+    } catch (error) {
+      console.error("Failed to update post-process base URL:", error);
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-    fetchPostProcessModels: async (providerId) => {
-      const updateKey = `post_process_models_fetch:${providerId}`;
-      const { setUpdating, setPostProcessModelOptions } = get();
+  updatePostProcessApiKey: async (providerId, apiKey) => {
+    // Clear cached models when API key changes - user should click refresh after
+    set((state) => ({
+      postProcessModelOptions: {
+        ...state.postProcessModelOptions,
+        [providerId]: [],
+      },
+    }));
+    return get().updatePostProcessSetting("api_key", providerId, apiKey);
+  },
 
-      setUpdating(updateKey, true);
+  updatePostProcessModel: async (providerId, model) => {
+    return get().updatePostProcessSetting("model", providerId, model);
+  },
 
-      try {
-        // Call Tauri backend command instead of fetch
-        const result = await commands.fetchPostProcessModels(providerId);
-        if (result.status === "ok") {
-          setPostProcessModelOptions(providerId, result.data);
-          return result.data;
-        } else {
-          console.error("Failed to fetch models:", result.error);
-          return [];
-        }
-      } catch (error) {
-        console.error("Failed to fetch models:", error);
-        // Don't cache empty array on error - let user retry
+  fetchPostProcessModels: async (providerId) => {
+    const updateKey = `post_process_models_fetch:${providerId}`;
+    const { setUpdating, setPostProcessModelOptions } = get();
+
+    setUpdating(updateKey, true);
+
+    try {
+      // Call Tauri backend command instead of fetch
+      const result = await commands.fetchPostProcessModels(providerId);
+      if (result.status === "ok") {
+        setPostProcessModelOptions(providerId, result.data);
+        return result.data;
+      } else {
+        console.error("Failed to fetch models:", result.error);
         return [];
-      } finally {
-        setUpdating(updateKey, false);
       }
-    },
+    } catch (error) {
+      console.error("Failed to fetch models:", error);
+      // Don't cache empty array on error - let user retry
+      return [];
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
 
-    setPostProcessModelOptions: (providerId, models) =>
-      set((state) => ({
-        postProcessModelOptions: {
-          ...state.postProcessModelOptions,
-          [providerId]: models,
-        },
-      })),
+  setPostProcessModelOptions: (providerId, models) =>
+    set((state) => ({
+      postProcessModelOptions: {
+        ...state.postProcessModelOptions,
+        [providerId]: models,
+      },
+    })),
 
-    // Load default settings from Rust
-    loadDefaultSettings: async () => {
-      try {
-        const result = await commands.getDefaultSettings();
-        if (result.status === "ok") {
-          set({ defaultSettings: result.data });
-        } else {
-          console.error("Failed to load default settings:", result.error);
-        }
-      } catch (error) {
-        console.error("Failed to load default settings:", error);
+  // Load default settings from Rust
+  loadDefaultSettings: async () => {
+    try {
+      const result = await commands.getDefaultSettings();
+      if (result.status === "ok") {
+        set({ defaultSettings: result.data });
+      } else {
+        console.error("Failed to load default settings:", result.error);
       }
-    },
+    } catch (error) {
+      console.error("Failed to load default settings:", error);
+    }
+  },
 
-    // Check whether update checks are locked by system configuration
-    // (the updater-disable environment flag, set by the Nix package; its full
-    // name is `ENV_PREFIX` + `DISABLE_UPDATER` in lib/appIdentity.ts)
-    loadUpdateChecksLocked: async () => {
-      try {
-        const locked = await commands.isUpdateChecksLocked();
-        set({ updateChecksLocked: locked });
-      } catch (error) {
-        console.error("Failed to check update checks lock state:", error);
-        // Fail open: an unknown lock state means "not locked", otherwise the
-        // update checker waits for it forever and checks never start.
-        set({ updateChecksLocked: false });
+  // Check whether update checks are locked by system configuration
+  // (the updater-disable environment flag, set by the Nix package; its full
+  // name is `ENV_PREFIX` + `DISABLE_UPDATER` in lib/appIdentity.ts)
+  loadUpdateChecksLocked: async () => {
+    try {
+      const locked = await commands.isUpdateChecksLocked();
+      set({ updateChecksLocked: locked });
+    } catch (error) {
+      console.error("Failed to check update checks lock state:", error);
+      // Fail open: an unknown lock state means "not locked", otherwise the
+      // update checker waits for it forever and checks never start.
+      set({ updateChecksLocked: false });
+    }
+  },
+
+  // Initialize everything
+  initialize: async () => {
+    const {
+      refreshSettings,
+      checkCustomSounds,
+      loadDefaultSettings,
+      loadUpdateChecksLocked,
+    } = get();
+
+    // Note: Audio devices are NOT refreshed here. The frontend (App.tsx)
+    // is responsible for calling refreshAudioDevices/refreshOutputDevices
+    // after onboarding completes. This avoids triggering permission dialogs
+    // on macOS before the user is ready.
+    await Promise.all([
+      loadDefaultSettings(),
+      refreshSettings(),
+      checkCustomSounds(),
+      loadUpdateChecksLocked(),
+    ]);
+
+    // Re-fetch settings when the backend changes them (e.g. language
+    // reset during model switch). The backend is the source of truth.
+    listen("model-state-changed", () => {
+      get().refreshSettings();
+    });
+    listen<{ setting?: string }>("settings-changed", (event) => {
+      get().refreshSettings();
+      if (event.payload.setting === "selected_microphone") {
+        get().refreshAudioDevices();
       }
-    },
+    });
+  },
+}));
 
-    // Initialize everything
-    initialize: async () => {
-      const {
-        refreshSettings,
-        checkCustomSounds,
-        loadDefaultSettings,
-        loadUpdateChecksLocked,
-      } = get();
-
-      // Note: Audio devices are NOT refreshed here. The frontend (App.tsx)
-      // is responsible for calling refreshAudioDevices/refreshOutputDevices
-      // after onboarding completes. This avoids triggering permission dialogs
-      // on macOS before the user is ready.
-      await Promise.all([
-        loadDefaultSettings(),
-        refreshSettings(),
-        checkCustomSounds(),
-        loadUpdateChecksLocked(),
-      ]);
-
-      // Re-fetch settings when the backend changes them (e.g. language
-      // reset during model switch). The backend is the source of truth.
-      listen("model-state-changed", () => {
-        get().refreshSettings();
-      });
-      listen<{ setting?: string }>("settings-changed", (event) => {
-        get().refreshSettings();
-        if (event.payload.setting === "selected_microphone") {
-          get().refreshAudioDevices();
-        }
-      });
-    },
-  })),
-);
+export function useSettingsStore() {
+  return settingsState;
+}

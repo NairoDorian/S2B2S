@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -12,27 +11,31 @@ import { ThemeSelector } from "../ThemeSelector";
 import { AccentColorSelector } from "../AccentColorSelector";
 import { LogDirectory } from "../debug";
 import { REPO_URL } from "@/lib/appIdentity";
+import { createSignal, createEffect } from "solid-js";
 
-export const AboutSettings: React.FC = () => {
+export const AboutSettings = () => {
   const { t } = useTranslation();
-  const [version, setVersion] = useState("");
+  const [version, setVersion] = createSignal("");
 
-  useEffect(() => {
-    const fetchVersion = async () => {
-      try {
-        const appVersion = await getVersion();
-        setVersion(appVersion);
-      } catch (error) {
-        console.error("Failed to get app version:", error);
-        setVersion("");
-      }
-    };
+  createEffect(
+    () => undefined,
+    () => {
+      const fetchVersion = async () => {
+        try {
+          const appVersion = await getVersion();
+          setVersion(appVersion);
+        } catch (error) {
+          console.error("Failed to get app version:", error);
+          setVersion("");
+        }
+      };
 
-    fetchVersion();
-  }, []);
+      fetchVersion();
+    },
+  );
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div class="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.about.title")}>
         <AppLanguageSelector descriptionMode="tooltip" grouped={true} />
         <ThemeSelector descriptionMode="tooltip" grouped={true} />
@@ -42,10 +45,8 @@ export const AboutSettings: React.FC = () => {
           description={t("settings.about.version.description")}
           grouped={true}
         >
-          {/* Nothing at all until the version resolves — `v` on its own would
-              be worse than an empty slot for the one frame it takes. */}
-          <span className="text-sm font-mono">
-            {version ? `v${version}` : null}
+          <span class="text-sm font-mono">
+            {version() ? `v${version()}` : null}
           </span>
         </SettingContainer>
 
@@ -76,7 +77,7 @@ export const AboutSettings: React.FC = () => {
           grouped={true}
           layout="stacked"
         >
-          <div className="text-sm text-mid-gray">
+          <div class="text-sm text-mid-gray">
             {t("settings.about.acknowledgments.handy.details")}
           </div>
         </SettingContainer>
@@ -86,7 +87,7 @@ export const AboutSettings: React.FC = () => {
           grouped={true}
           layout="stacked"
         >
-          <div className="text-sm text-mid-gray">
+          <div class="text-sm text-mid-gray">
             {t("settings.about.acknowledgments.ggml.details")}
           </div>
         </SettingContainer>
@@ -96,7 +97,7 @@ export const AboutSettings: React.FC = () => {
           grouped={true}
           layout="stacked"
         >
-          <div className="text-sm text-mid-gray">
+          <div class="text-sm text-mid-gray">
             {t("settings.about.acknowledgments.rnnoise.details")}
           </div>
         </SettingContainer>

@@ -69,13 +69,35 @@ pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
 pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
     let tauri_log_level: tauri_plugin_log::LogLevel = level.into();
     let log_level: log::Level = tauri_log_level.into();
+
+    let mut settings = get_settings(&app);
+    let previous = settings.log_level;
+
+    // Say so *before* the atomic moves, at `info`. This is the one command that
+    // can silence the log, and once the level is `warn` or `error` an info
+    // record is gone — so a transition reported after the store would be
+    // invisible in exactly the case worth recording. A downgrade with no record
+    // anywhere is how a store reaches `info` with nothing in the log to say who
+    // set it, which is what made the "logs got quieter" report take a file-log
+    // archaeology session to explain. The asymmetry is deliberate: a downgrade
+    // is the dangerous direction and this catches it, while an upgrade is
+    // self-announcing (the log fills up) and may legitimately be filtered by the
+    // near-silent level it is leaving.
+    if previous != level {
+        log::info!(
+            "Log level {:?} -> {:?}, set from the settings UI; file log now {}",
+            previous,
+            level,
+            log_level.to_level_filter(),
+        );
+    }
+
     // Update the file log level atomic so the filter picks up the new level
     crate::FILE_LOG_LEVEL.store(
         log_level.to_level_filter() as u8,
         std::sync::atomic::Ordering::Relaxed,
     );
 
-    let mut settings = get_settings(&app);
     settings.log_level = level;
     write_settings(&app, settings);
 

@@ -1,5 +1,5 @@
-import { type FC, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createEffect, createSignal } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { useSettings } from "../../hooks/useSettings";
@@ -11,13 +11,6 @@ interface AccelerationSelectorProps {
   grouped?: boolean;
 }
 
-/**
- * transcribe.cpp dropdown encodes accelerator + device in a single value:
- *   "auto"       → accelerator=auto, gpu_device=null
- *   "cpu"        → accelerator=cpu,  gpu_device=null
- *   "gpu"        → accelerator=gpu, auto GPU selection
- *   "gpu:<id>"   → accelerator=gpu, stable opaque device identity
- */
 function encodeTranscribeValue(
   accelerator: TranscribeAcceleratorSetting,
   gpuDevice: string | null,
@@ -40,48 +33,48 @@ function decodeTranscribeValue(value: string): {
   return { accelerator: "auto", gpuDevice: null };
 }
 
-export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}) => {
+export const AccelerationSelector = (props: AccelerationSelectorProps) => {
+  const { descriptionMode = "tooltip", grouped = false } = props;
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
 
-  const [transcribeOptions, setTranscribeOptions] = useState<DropdownOption[]>(
-    [],
-  );
+  const [transcribeOptions, setTranscribeOptions] = createSignal<
+    DropdownOption[]
+  >([]);
 
-  useEffect(() => {
-    commands.getAvailableAccelerators().then((available) => {
-      // Build combined transcribe.cpp options: Auto, [GPU devices...], CPU
-      const opts: DropdownOption[] = [];
-      if (available.transcribe.includes("auto")) {
-        opts.push({
-          value: "auto",
-          label: t("settings.advanced.acceleration.gpuDevice.auto"),
-        });
-      }
-
-      if (available.transcribe.includes("gpu")) {
-        opts.push({ value: "gpu", label: "GPU" });
-        for (const dev of available.gpu_devices) {
-          const vramLabel =
-            dev.total_vram_mb >= 1024
-              ? `${(dev.total_vram_mb / 1024).toFixed(1)} GB`
-              : `${dev.total_vram_mb} MB`;
+  createEffect(
+    () => undefined,
+    () => {
+      commands.getAvailableAccelerators().then((available) => {
+        const opts: DropdownOption[] = [];
+        if (available.transcribe.includes("auto")) {
           opts.push({
-            value: `gpu:${dev.id}`,
-            label: `${dev.name} (${vramLabel})`,
+            value: "auto",
+            label: t("settings.advanced.acceleration.gpuDevice.auto"),
           });
         }
-      }
 
-      if (available.transcribe.includes("cpu")) {
-        opts.push({ value: "cpu", label: "CPU" });
-      }
-      setTranscribeOptions(opts);
-    });
-  }, [t]);
+        if (available.transcribe.includes("gpu")) {
+          opts.push({ value: "gpu", label: "GPU" });
+          for (const dev of available.gpu_devices) {
+            const vramLabel =
+              dev.total_vram_mb >= 1024
+                ? `${(dev.total_vram_mb / 1024).toFixed(1)} GB`
+                : `${dev.total_vram_mb} MB`;
+            opts.push({
+              value: `gpu:${dev.id}`,
+              label: `${dev.name} (${vramLabel})`,
+            });
+          }
+        }
+
+        if (available.transcribe.includes("cpu")) {
+          opts.push({ value: "cpu", label: "CPU" });
+        }
+        setTranscribeOptions(opts);
+      });
+    },
+  );
 
   const currentAccelerator = getSetting("transcribe_accelerator") ?? "auto";
   const currentGpuDevice = getSetting("transcribe_gpu_device") ?? null;
@@ -89,14 +82,14 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
     currentAccelerator as TranscribeAcceleratorSetting,
     currentGpuDevice as string | null,
   );
-  const displayedTranscribe = transcribeOptions.some(
+  const displayedTranscribe = transcribeOptions().some(
     (option) => option.value === currentTranscribe,
   )
     ? currentTranscribe
     : currentAccelerator === "gpu" &&
-        transcribeOptions.some((option) => option.value === "gpu")
+        transcribeOptions().some((option) => option.value === "gpu")
       ? "gpu"
-      : (transcribeOptions[0]?.value ?? null);
+      : (transcribeOptions()[0]?.value ?? null);
 
   const handleTranscribeChange = async (value: string) => {
     const { accelerator, gpuDevice } = decodeTranscribeValue(value);
@@ -113,7 +106,7 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
       layout="horizontal"
     >
       <Dropdown
-        options={transcribeOptions}
+        options={transcribeOptions()}
         selectedValue={displayedTranscribe}
         onSelect={handleTranscribeChange}
         disabled={

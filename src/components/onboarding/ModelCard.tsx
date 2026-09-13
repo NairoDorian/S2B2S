@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import {
   AudioLines,
   Check,
@@ -9,7 +8,7 @@ import {
   Languages,
   Loader2,
   Trash2,
-} from "lucide-react";
+} from "@/components/icons/lucide";
 import type { ModelInfo } from "@/bindings";
 import { formatModelSize } from "../../lib/utils/format";
 import {
@@ -24,7 +23,6 @@ import Badge from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { useSettingsStore } from "@/stores/settingsStore";
 
-// Get display text for model's language support
 const getLanguageDisplayText = (
   supportedLanguages: string[],
   t: (key: string, options?: Record<string, unknown>) => string,
@@ -40,12 +38,9 @@ const getLanguageDisplayText = (
   });
 };
 
-// Legacy = a blob (Url-sourced) .bin/ONNX model, kept runnable but no longer the
-// advertised download (catalog GGUFs supersede it).
 export const isLegacySource = (model: ModelInfo): boolean =>
   typeof model.source === "object" && "Url" in model.source;
 
-// Extract a GGUF quantization label from a filename, if present (e.g. "Q8_0").
 const getQuantLabel = (filename: string): string | null => {
   const match = filename.match(
     /[._-](IQ\d+_\w+|Q\d+(?:_\w+)?|F16|BF16|F32)\.gguf$/i,
@@ -66,40 +61,36 @@ interface ModelCardProps {
   variant?: "default" | "featured";
   status?: ModelCardStatus;
   disabled?: boolean;
-  className?: string;
+  class?: string;
   onSelect: (modelId: string) => void;
   onDownload?: (modelId: string) => void;
   onDelete?: (modelId: string) => void;
   onCancel?: (modelId: string) => void;
   downloadProgress?: number;
-  downloadSpeed?: number; // MB/s
+  downloadSpeed?: number;
   showRecommended?: boolean;
 }
 
-const ModelCard: React.FC<ModelCardProps> = ({
-  model,
-  variant = "default",
-  status = "downloadable",
-  disabled = false,
-  className = "",
-  onSelect,
-  onDownload,
-  onDelete,
-  onCancel,
-  downloadProgress,
-  downloadSpeed,
-  showRecommended = true,
-}) => {
+const ModelCard = (props: ModelCardProps) => {
+  const {
+    model,
+    variant = "default",
+    status = "downloadable",
+    disabled = false,
+    class: className = "",
+    onSelect,
+    onDownload,
+    onDelete,
+    onCancel,
+    downloadProgress,
+    downloadSpeed,
+    showRecommended = true,
+  } = props;
   const { t } = useTranslation();
-  const debugMode = useSettingsStore(
-    (state) => state.settings?.debug_mode ?? false,
-  );
+  const debugMode = useSettingsStore().settings?.debug_mode ?? false;
   const isFeatured = variant === "featured";
-  // The active model is already loaded — re-selecting it just reloads it for no
-  // gain, so it is deliberately not clickable.
   const isClickable = status === "available" || status === "downloadable";
 
-  // Get translated model name and description
   const displayName = getTranslatedModelName(model, t);
   const displayDescription = getTranslatedModelDescription(model, t);
   const showModelSize =
@@ -138,7 +129,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
     }
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = (e: MouseEvent) => {
     e.stopPropagation();
     onDelete?.(model.id);
   };
@@ -150,8 +141,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
         if (e.key === "Enter" && isClickable) handleClick();
       }}
       role={isClickable ? "button" : undefined}
-      tabIndex={isClickable ? 0 : undefined}
-      className={[
+      tabindex={isClickable ? 0 : undefined}
+      class={[
         baseClasses,
         getVariantClasses(),
         getInteractiveClasses(),
@@ -160,12 +151,11 @@ const ModelCard: React.FC<ModelCardProps> = ({
         .filter(Boolean)
         .join(" ")}
     >
-      {/* Top section: name/description + score bars */}
-      <div className="flex justify-between items-center w-full">
-        <div className="flex flex-col items-start flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
+      <div class="flex justify-between items-center w-full">
+        <div class="flex flex-col items-start flex-1 min-w-0">
+          <div class="flex items-center gap-3 flex-wrap">
             <h3
-              className={`text-base font-semibold text-text ${isClickable ? "group-hover:text-accent" : ""} transition-colors`}
+              class={`text-base font-semibold text-text ${isClickable ? "group-hover:text-accent" : ""} transition-colors`}
             >
               {displayName}
             </h3>
@@ -174,7 +164,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             )}
             {status === "active" && (
               <Badge variant="primary">
-                <Check className="w-3 h-3 mr-1" />
+                <Check class="w-3 h-3 mr-1" />
                 {t("modelSelector.active")}
               </Badge>
             )}
@@ -186,36 +176,36 @@ const ModelCard: React.FC<ModelCardProps> = ({
             )}
             {status === "switching" && (
               <Badge variant="secondary">
-                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                <Loader2 class="w-3 h-3 mr-1 animate-spin" />
                 {t("modelSelector.switching")}
               </Badge>
             )}
           </div>
-          <p className="text-text/60 text-sm leading-relaxed">
+          <p class="text-text/60 text-sm leading-relaxed">
             {displayDescription}
           </p>
         </div>
         {(model.accuracy_score! > 0 || model.speed_score! > 0) && (
-          <div className="hidden sm:flex items-center ms-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-text/60 w-24 text-end">
+          <div class="hidden sm:flex items-center ms-4">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <p class="text-xs text-text/60 w-24 text-end">
                   {t("onboarding.modelCard.accuracy")}
                 </p>
-                <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+                <div class="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-accent rounded-full"
+                    class="h-full bg-accent rounded-full"
                     style={{ width: `${model.accuracy_score! * 100}%` }}
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-text/60 w-24 text-end">
+              <div class="flex items-center gap-2">
+                <p class="text-xs text-text/60 w-24 text-end">
                   {t("onboarding.modelCard.speed")}
                 </p>
-                <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+                <div class="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-accent rounded-full"
+                    class="h-full bg-accent rounded-full"
                     style={{ width: `${model.speed_score! * 100}%` }}
                   />
                 </div>
@@ -225,51 +215,50 @@ const ModelCard: React.FC<ModelCardProps> = ({
         )}
       </div>
 
-      <hr className="w-full border-mid-gray/20" />
+      <hr class="w-full border-mid-gray/20" />
 
-      {/* Bottom row: tags + action buttons (full width) */}
-      <div className="flex items-center gap-3 w-full -mb-0.5 mt-0.5 h-5">
+      <div class="flex items-center gap-3 w-full -mb-0.5 mt-0.5 h-5">
         {capabilityLanguages.length > 0 && (
           <div
-            className="flex items-center gap-1 text-xs text-text/50"
+            class="flex items-center gap-1 text-xs text-text/50"
             title={
               capabilityLanguages.length === 1
                 ? t("modelSelector.capabilities.singleLanguage")
                 : t("modelSelector.capabilities.languageSelection")
             }
           >
-            <Globe className="w-3.5 h-3.5" />
+            <Globe class="w-3.5 h-3.5" />
             <span>{getLanguageDisplayText(model.supported_languages, t)}</span>
           </div>
         )}
         {model.supports_translation && (
           <div
-            className="flex items-center gap-1 text-xs text-text/50"
+            class="flex items-center gap-1 text-xs text-text/50"
             title={t("modelSelector.capabilities.translation")}
           >
-            <Languages className="w-3.5 h-3.5" />
+            <Languages class="w-3.5 h-3.5" />
             <span>{t("modelSelector.capabilities.translate")}</span>
           </div>
         )}
         {model.supports_streaming && (
           <div
-            className="flex items-center gap-1 text-xs text-text/50"
+            class="flex items-center gap-1 text-xs text-text/50"
             title={t("modelSelector.capabilities.streaming")}
           >
-            <AudioLines className="w-3.5 h-3.5" />
+            <AudioLines class="w-3.5 h-3.5" />
             <span>{t("modelSelector.streaming")}</span>
           </div>
         )}
         {showModelSize && (
-          <span className="flex items-center gap-1.5 ms-auto text-xs text-text/50">
+          <span class="flex items-center gap-1.5 ms-auto text-xs text-text/50">
             {status === "downloadable" ? (
-              <Download className="w-3.5 h-3.5" />
+              <Download class="w-3.5 h-3.5" />
             ) : (
-              <HardDrive className="w-3.5 h-3.5" />
+              <HardDrive class="w-3.5 h-3.5" />
             )}
             <span>{formattedModelSize}</span>
             {debugMode && quantLabel && (
-              <span className="text-text/40">{quantLabel}</span>
+              <span class="text-text/40">{quantLabel}</span>
             )}
           </span>
         )}
@@ -279,32 +268,31 @@ const ModelCard: React.FC<ModelCardProps> = ({
             size="sm"
             onClick={handleDelete}
             title={t("modelSelector.deleteModel", { modelName: displayName })}
-            className="flex items-center gap-1.5 text-accent/85 hover:text-accent hover:bg-accent/10"
+            class="flex items-center gap-1.5 text-accent/85 hover:text-accent hover:bg-accent/10"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 class="w-3.5 h-3.5" />
             <span>{t("common.delete")}</span>
           </Button>
         )}
       </div>
 
-      {/* Download progress */}
       {status === "downloading" && downloadProgress !== undefined && (
-        <div className="w-full mt-3">
-          <div className="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+        <div class="w-full mt-3">
+          <div class="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
             <div
-              className="h-full bg-accent rounded-full transition-all duration-300"
+              class="h-full bg-accent rounded-full transition-all duration-300"
               style={{ width: `${downloadProgress}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-xs mt-1">
-            <span className="text-text/50">
+          <div class="flex items-center justify-between text-xs mt-1">
+            <span class="text-text/50">
               {t("modelSelector.downloading", {
                 percentage: Math.round(downloadProgress),
               })}
             </span>
-            <div className="flex items-center gap-2">
+            <div class="flex items-center gap-2">
               {downloadSpeed !== undefined && downloadSpeed > 0 && (
-                <span className="tabular-nums text-text/50">
+                <span class="tabular-nums text-text/50">
                   {t("common.downloadSpeed", {
                     speed: downloadSpeed.toFixed(1),
                   })}
@@ -329,11 +317,11 @@ const ModelCard: React.FC<ModelCardProps> = ({
         </div>
       )}
       {status === "verifying" && (
-        <div className="w-full mt-3">
-          <div className="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
-            <div className="h-full bg-accent rounded-full animate-pulse w-full" />
+        <div class="w-full mt-3">
+          <div class="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+            <div class="h-full bg-accent rounded-full animate-pulse w-full" />
           </div>
-          <p className="text-xs text-text/50 mt-1">
+          <p class="text-xs text-text/50 mt-1">
             {t("modelSelector.verifyingGeneric")}
           </p>
         </div>

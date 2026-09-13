@@ -1,45 +1,40 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Slider } from "../../ui/Slider";
 import { useSettings } from "../../../hooks/useSettings";
-
-type PasteDelayKey = "paste_delay_ms" | "paste_delay_after_ms";
 
 interface PasteDelayProps {
   descriptionMode?: "tooltip" | "inline";
   grouped?: boolean;
-  settingKey?: PasteDelayKey;
+  settingKey?: "paste_delay_ms" | "paste_delay_after_ms";
   labelKey?: string;
   descriptionKey?: string;
 }
 
-export const PasteDelay: React.FC<PasteDelayProps> = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-  settingKey = "paste_delay_ms",
-  labelKey = "settings.debug.pasteDelay.title",
-  descriptionKey = "settings.debug.pasteDelay.description",
-}) => {
+export const PasteDelay = (props: PasteDelayProps) => {
   const { t } = useTranslation();
   const { settings, updateSetting, resetSetting, isUpdating } = useSettings();
 
+  const settingKey = () => props.settingKey ?? "paste_delay_ms";
+
   const handleDelayChange = (value: number) => {
-    updateSetting(settingKey, value);
+    updateSetting(settingKey(), value);
   };
 
   return (
     <Slider
-      value={settings?.[settingKey] ?? 60}
+      value={settings()?.[settingKey()] ?? 60}
       onChange={handleDelayChange}
-      onReset={() => resetSetting(settingKey)}
-      isResetting={isUpdating(settingKey)}
+      onReset={() => resetSetting(settingKey())}
+      isResetting={isUpdating(settingKey())}
       min={1}
       max={5000}
       step={1}
-      label={t(labelKey)}
-      description={t(descriptionKey)}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      label={t(props.labelKey ?? "settings.debug.pasteDelay.title")}
+      description={t(
+        props.descriptionKey ?? "settings.debug.pasteDelay.description",
+      )}
+      descriptionMode={props.descriptionMode}
+      grouped={props.grouped}
       formatValue={(v) => `${v}ms`}
     />
   );

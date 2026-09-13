@@ -1,11 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, createMemo, For } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import {
@@ -19,8 +13,7 @@ import {
   RefreshCw,
   Square,
   X,
-} from "lucide-react";
-
+} from "@/components/icons/lucide";
 import {
   commands,
   type LiveModePhase,
@@ -76,52 +69,61 @@ const PHASE_CLASSES: Record<LiveModePhase, string> = {
   error: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
-export const LiveModeSettings: React.FC = () => {
+export const LiveModeSettings = () => {
   const { t, i18n } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const { currentModel, getModelInfo } = useModelStore();
+  const modelStore = useModelStore();
   const store = useLiveModeStore();
-  const [copied, setCopied] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const previewRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = createSignal(false);
+  const [now, setNow] = createSignal(Date.now());
+  let previewRef: HTMLDivElement | undefined;
 
-  const options = useMemo<Required<LiveModeSettingsType>>(
-    () => ({ ...DEFAULTS, ...getSetting("live_mode") }),
-    [getSetting],
+  const options = createMemo<Required<LiveModeSettingsType>>(() => ({
+    ...DEFAULTS,
+    ...getSetting("live_mode"),
+  }));
+
+  const saveOptions = (patch: Partial<LiveModeSettingsType>) =>
+    updateSetting("live_mode", { ...options(), ...patch });
+
+  createEffect(
+    () => undefined,
+    () => {
+      void store.initialize();
+    },
   );
-  const saveOptions = useCallback(
-    (patch: Partial<LiveModeSettingsType>) =>
-      updateSetting("live_mode", { ...options, ...patch }),
-    [options, updateSetting],
+
+  const active = () => isLiveActive(store.status);
+  const phase = () => store.status.phase;
+
+  createEffect(
+    () => active(),
+    (isActive) => {
+      if (!isActive) return;
+      const id = setInterval(() => setNow(Date.now()), 500);
+      return () => clearInterval(id);
+    },
   );
 
-  useEffect(() => {
-    void store.initialize();
-  }, [store.initialize]);
+  createEffect(
+    () => [store.stable, store.live, active()],
+    () => {
+      const el = previewRef;
+      if (el && active()) el.scrollTop = el.scrollHeight;
+    },
+  );
 
-  const active = isLiveActive(store.status);
-  const phase = store.status.phase;
+  const modelInfo = createMemo(() => {
+    const id = modelStore.currentModel;
+    const models = modelStore.models;
+    return id ? models.find((model) => model.id === id) : undefined;
+  });
+  const modelSupportsStreaming = () => modelInfo()?.supports_streaming ?? false;
+  const modelLabel = () => modelInfo()?.name ?? modelStore.currentModel;
 
-  // Smooth elapsed clock while a session runs.
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(id);
-  }, [active]);
-
-  // Keep the preview pinned to the newest text.
-  useEffect(() => {
-    const el = previewRef.current;
-    if (el && active) el.scrollTop = el.scrollHeight;
-  }, [store.stable, store.live, active]);
-
-  const modelInfo = currentModel ? getModelInfo(currentModel) : undefined;
-  const modelSupportsStreaming = modelInfo?.supports_streaming ?? false;
-  const modelLabel = modelInfo?.name ?? currentModel;
-
-  const elapsedMs =
-    active && store.status.started_at_ms != null
-      ? Math.max(0, now - store.status.started_at_ms)
+  const elapsedMs = () =>
+    active() && store.status.started_at_ms != null
+      ? Math.max(0, now() - store.status.started_at_ms)
       : (store.status.elapsed_ms ?? 0);
 
   const start = async () => {
@@ -138,13 +140,12 @@ export const LiveModeSettings: React.FC = () => {
     if (result.status === "error") toast.error(result.error);
   };
 
-  const previewText = store.viewing
-    ? store.viewingText
-    : `${store.stable}${store.live}`;
+  const previewText = () =>
+    store.viewing ? store.viewingText : `${store.stable}${store.live}`;
   const copy = async () => {
-    if (!previewText) return;
+    if (!previewText()) return;
     try {
-      await navigator.clipboard.writeText(previewText);
+      await navigator.clipboard.writeText(previewText());
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (error) {
@@ -158,122 +159,113 @@ export const LiveModeSettings: React.FC = () => {
     void saveOptions({ output_dir: selection });
   };
 
-  const formatOptions = useMemo<DropdownOption[]>(
-    () => [
-      { value: "txt", label: t("settings.liveMode.format.txt") },
-      { value: "md", label: t("settings.liveMode.format.md") },
-    ],
-    [t],
-  );
-  const granularityOptions = useMemo<DropdownOption[]>(
-    () => [
-      {
-        value: "character",
-        label: t("settings.liveMode.granularity.options.character.label"),
-        description: t(
-          "settings.liveMode.granularity.options.character.description",
-        ),
-      },
-      {
-        value: "word",
-        label: t("settings.liveMode.granularity.options.word.label"),
-        description: t(
-          "settings.liveMode.granularity.options.word.description",
-        ),
-      },
-    ],
-    [t],
-  );
+  const formatOptions = createMemo<DropdownOption[]>(() => [
+    { value: "txt", label: t("settings.liveMode.format.txt") },
+    { value: "md", label: t("settings.liveMode.format.md") },
+  ]);
+  const granularityOptions = createMemo<DropdownOption[]>(() => [
+    {
+      value: "character",
+      label: t("settings.liveMode.granularity.options.character.label"),
+      description: t(
+        "settings.liveMode.granularity.options.character.description",
+      ),
+    },
+    {
+      value: "word",
+      label: t("settings.liveMode.granularity.options.word.label"),
+      description: t("settings.liveMode.granularity.options.word.description"),
+    },
+  ]);
 
-  const transcriptPath = store.viewing
-    ? store.viewing.transcript_path
-    : store.status.transcript_path;
-  const sessionDir = store.viewing
-    ? store.viewing.dir
-    : store.status.session_dir;
+  const transcriptPath = () =>
+    store.viewing
+      ? store.viewing.transcript_path
+      : store.status.transcript_path;
+  const sessionDir = () =>
+    store.viewing ? store.viewing.dir : store.status.session_dir;
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6 pb-8">
+    <div class="max-w-3xl w-full mx-auto space-y-6 pb-8">
       <SettingsGroup
         title={t("settings.liveMode.title")}
         description={t("settings.liveMode.description")}
       >
-        <div className="p-3 space-y-3">
-          {!modelSupportsStreaming && (
+        <div class="p-3 space-y-3">
+          {!modelSupportsStreaming() && (
             <Alert variant="warning">
-              {currentModel
+              {modelStore.currentModel
                 ? t("settings.liveMode.model.notStreaming", {
-                    model: modelLabel,
+                    model: modelLabel(),
                   })
                 : t("settings.liveMode.model.none")}
             </Alert>
           )}
-          {phase === "error" && store.status.error && (
+          {phase() === "error" && store.status.error && (
             <Alert variant="error">{store.status.error}</Alert>
           )}
-
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-mid-gray/20 bg-background p-3">
+          <div class="flex flex-wrap items-center gap-3 rounded-lg border border-mid-gray/20 bg-background p-3">
             <div
-              className={`p-3 rounded-full ${active ? "bg-green-500/15" : "bg-mid-gray/10"}`}
+              class={`p-3 rounded-full ${active() ? "bg-green-500/15" : "bg-mid-gray/10"}`}
             >
-              {phase === "listening" ? (
-                <Mic className="w-6 h-6 text-green-500 animate-pulse" />
-              ) : active ? (
-                <Loader2 className="w-6 h-6 text-accent animate-spin" />
+              {phase() === "listening" ? (
+                <Mic class="w-6 h-6 text-green-500 animate-pulse" />
+              ) : active() ? (
+                <Loader2 class="w-6 h-6 text-accent animate-spin" />
               ) : (
-                <Radio className="w-6 h-6 text-mid-gray" />
+                <Radio class="w-6 h-6 text-mid-gray" />
               )}
             </div>
-            <div className="flex-1 min-w-[180px]">
-              <div className="flex items-center gap-2">
+            <div class="flex-1 min-w-[180px]">
+              <div class="flex items-center gap-2">
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${PHASE_CLASSES[phase]}`}
+                  class={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${PHASE_CLASSES[phase()]}`}
                 >
-                  {t(`settings.liveMode.status.${phase}`)}
+                  {t(`settings.liveMode.status.${phase()}`)}
                 </span>
-                {modelLabel && (
-                  <span className="text-xs text-mid-gray truncate">
-                    {t("settings.liveMode.model.label", { model: modelLabel })}
+                {modelLabel() && (
+                  <span class="text-xs text-mid-gray truncate">
+                    {t("settings.liveMode.model.label", {
+                      model: modelLabel(),
+                    })}
                   </span>
                 )}
               </div>
-              <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <dl class="mt-2 grid grid-cols-3 gap-2 text-xs">
                 <div>
-                  <dt className="text-mid-gray">
+                  <dt class="text-mid-gray">
                     {t("settings.liveMode.stats.elapsed")}
                   </dt>
-                  <dd className="font-mono text-sm">
-                    {formatClock(elapsedMs)}
-                  </dd>
+                  <dd class="font-mono text-sm">{formatClock(elapsedMs())}</dd>
                 </div>
                 <div>
-                  <dt className="text-mid-gray">
+                  <dt class="text-mid-gray">
                     {t("settings.liveMode.stats.chunk", {
                       index: store.status.chunk_index,
                     })}
                   </dt>
-                  <dd className="font-mono text-sm">
+                  <dd class="font-mono text-sm">
                     {formatClock(store.status.current_chunk_ms ?? 0)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-mid-gray">
+                  <dt class="text-mid-gray">
                     {t("settings.liveMode.stats.speech")}
                   </dt>
-                  <dd className="font-mono text-sm">
+                  <dd class="font-mono text-sm">
                     {formatClock(store.status.current_chunk_speech_ms ?? 0)}
                   </dd>
                 </div>
               </dl>
             </div>
-            {active ? (
+            {active() ? (
               <Button
                 variant="danger"
                 onClick={stop}
-                disabled={phase === "stopping"}
+                disabled={phase() === "stopping"}
               >
-                <span className="inline-flex items-center gap-1.5">
-                  <Square className="w-4 h-4" />
+                <span class="inline-flex items-center gap-1.5">
+                  <Square class="w-4 h-4" />
                   {t("settings.liveMode.stop")}
                 </span>
               </Button>
@@ -281,10 +273,10 @@ export const LiveModeSettings: React.FC = () => {
               <Button
                 variant="primary"
                 onClick={start}
-                disabled={!modelSupportsStreaming}
+                disabled={!modelSupportsStreaming()}
               >
-                <span className="inline-flex items-center gap-1.5">
-                  <Mic className="w-4 h-4" />
+                <span class="inline-flex items-center gap-1.5">
+                  <Mic class="w-4 h-4" />
                   {t("settings.liveMode.start")}
                 </span>
               </Button>
@@ -294,10 +286,10 @@ export const LiveModeSettings: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.liveMode.transcript.title")}>
-        <div className="p-3 space-y-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-mid-gray">
+        <div class="p-3 space-y-2">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-mid-gray">
             {store.viewing ? (
-              <span className="inline-flex items-center gap-1">
+              <span class="inline-flex items-center gap-1">
                 {t("settings.liveMode.transcript.viewing", {
                   name: store.viewing.name,
                 })}
@@ -308,111 +300,109 @@ export const LiveModeSettings: React.FC = () => {
                   aria-label={t("settings.liveMode.transcript.closeViewer")}
                   title={t("settings.liveMode.transcript.closeViewer")}
                 >
-                  <X className="w-3 h-3" />
+                  <X class="w-3 h-3" />
                 </Button>
               </span>
             ) : (
               <span
-                className="font-mono truncate max-w-full"
-                title={transcriptPath ?? undefined}
+                class="font-mono truncate max-w-full"
+                title={transcriptPath() ?? undefined}
               >
-                {transcriptPath ?? t("settings.liveMode.transcript.noFile")}
+                {transcriptPath() ?? t("settings.liveMode.transcript.noFile")}
               </span>
             )}
-            <div className="flex-1" />
+            <div class="flex-1" />
             <Button
               variant="ghost"
               size="sm"
               onClick={copy}
-              disabled={!previewText}
+              disabled={!previewText()}
             >
-              {copied ? (
-                <span className="inline-flex items-center gap-1">
-                  <Check className="w-3 h-3" />
+              {copied() ? (
+                <span class="inline-flex items-center gap-1">
+                  <Check class="w-3 h-3" />
                   {t("settings.liveMode.transcript.copied")}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1">
-                  <Copy className="w-3 h-3" />
+                <span class="inline-flex items-center gap-1">
+                  <Copy class="w-3 h-3" />
                   {t("settings.liveMode.transcript.copy")}
                 </span>
               )}
             </Button>
-            {sessionDir && (
+            {sessionDir() && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => reveal(sessionDir)}
+                onClick={() => {
+                  const dir = sessionDir();
+                  if (dir) void reveal(dir);
+                }}
               >
-                <span className="inline-flex items-center gap-1">
-                  <ExternalLink className="w-3 h-3" />
+                <span class="inline-flex items-center gap-1">
+                  <ExternalLink class="w-3 h-3" />
                   {t("settings.liveMode.transcript.reveal")}
                 </span>
               </Button>
             )}
           </div>
-
           <div
-            ref={previewRef}
-            className="h-64 overflow-y-auto rounded-lg border border-mid-gray/20 bg-background p-3 text-sm leading-relaxed whitespace-pre-wrap break-words font-mono"
+            ref={(el) => {
+              previewRef = el;
+            }}
+            class="h-64 overflow-y-auto rounded-lg border border-mid-gray/20 bg-background p-3 text-sm leading-relaxed whitespace-pre-wrap break-words font-mono"
           >
-            {previewText ? (
+            {previewText() ? (
               store.viewing ? (
                 store.viewingText
               ) : (
                 <>
                   {store.stable}
-                  {store.live && (
-                    <span className="text-accent">{store.live}</span>
-                  )}
-                  {phase === "listening" && (
-                    <span className="text-accent animate-pulse">{"▍"}</span>
+                  {store.live && <span class="text-accent">{store.live}</span>}
+                  {phase() === "listening" && (
+                    <span class="text-accent animate-pulse">{"▍"}</span>
                   )}
                 </>
               )
             ) : (
-              <span className="text-mid-gray/70">
+              <span class="text-mid-gray/70">
                 {t("settings.liveMode.transcript.empty")}
               </span>
             )}
           </div>
-
           {!store.viewing && store.status.chunks.length > 0 && (
-            <details className="text-xs">
-              <summary className="cursor-pointer text-mid-gray">
+            <details class="text-xs">
+              <summary class="cursor-pointer text-mid-gray">
                 {t("settings.liveMode.chunks.title", {
                   count: store.status.chunks.length,
                 })}
               </summary>
-              <ul className="mt-2 max-h-40 overflow-y-auto rounded-md border border-mid-gray/20 divide-y divide-mid-gray/15">
-                {store.status.chunks.map((chunk) => (
-                  <li
-                    key={chunk.index}
-                    className="flex items-center gap-3 px-3 py-1.5"
-                  >
-                    <span className="font-mono w-10 shrink-0">
-                      {`#${chunk.index}`}
-                    </span>
-                    <span className="flex-1 truncate text-mid-gray">
-                      {t("settings.liveMode.chunks.item", {
-                        duration: formatClock(chunk.duration_ms ?? 0),
-                        size: formatBytes(chunk.bytes ?? 0),
-                        chars: chunk.text_chars,
-                      })}
-                    </span>
-                    {chunk.path && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => reveal(chunk.path as string)}
-                        aria-label={t("settings.liveMode.transcript.reveal")}
-                        title={t("settings.liveMode.transcript.reveal")}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                      </Button>
-                    )}
-                  </li>
-                ))}
+              <ul class="mt-2 max-h-40 overflow-y-auto rounded-md border border-mid-gray/20 divide-y divide-mid-gray/15">
+                <For each={store.status.chunks}>
+                  {(chunk) => (
+                    <li class="flex items-center gap-3 px-3 py-1.5">
+                      <span class="font-mono w-10 shrink-0">{`#${chunk.index}`}</span>
+                      <span class="flex-1 truncate text-mid-gray">
+                        {t("settings.liveMode.chunks.item", {
+                          duration: formatClock(chunk.duration_ms ?? 0),
+                          size: formatBytes(chunk.bytes ?? 0),
+                          chars: chunk.text_chars,
+                        })}
+                      </span>
+                      {chunk.path && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => reveal(chunk.path as string)}
+                          aria-label={t("settings.liveMode.transcript.reveal")}
+                          title={t("settings.liveMode.transcript.reveal")}
+                        >
+                          <ExternalLink class="w-3 h-3" />
+                        </Button>
+                      )}
+                    </li>
+                  )}
+                </For>
               </ul>
             </details>
           )}
@@ -427,12 +417,14 @@ export const LiveModeSettings: React.FC = () => {
           grouped
           layout="stacked"
         >
-          <div className="flex flex-wrap items-center gap-2 w-full">
+          <div class="flex flex-wrap items-center gap-2 w-full">
             <span
-              className="flex-1 min-w-0 text-xs font-mono truncate px-2 py-1.5 rounded-md bg-background border border-mid-gray/20"
-              title={options.output_dir ?? store.defaultOutputDir ?? undefined}
+              class="flex-1 min-w-0 text-xs font-mono truncate px-2 py-1.5 rounded-md bg-background border border-mid-gray/20"
+              title={
+                options().output_dir ?? store.defaultOutputDir ?? undefined
+              }
             >
-              {options.output_dir ??
+              {options().output_dir ??
                 store.defaultOutputDir ??
                 t("settings.liveMode.outputFolder.default")}
             </span>
@@ -440,28 +432,27 @@ export const LiveModeSettings: React.FC = () => {
               variant="secondary"
               size="sm"
               onClick={pickOutputFolder}
-              disabled={active}
+              disabled={active()}
             >
-              <span className="inline-flex items-center gap-1.5">
-                <FolderOpen className="w-4 h-4" />
+              <span class="inline-flex items-center gap-1.5">
+                <FolderOpen class="w-4 h-4" />
                 {t("settings.liveMode.outputFolder.choose")}
               </span>
             </Button>
-            {options.output_dir && (
+            {options().output_dir && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => saveOptions({ output_dir: null })}
-                disabled={active}
+                disabled={active()}
               >
                 {t("settings.liveMode.outputFolder.reset")}
               </Button>
             )}
           </div>
         </SettingContainer>
-
         <Slider
-          value={options.chunk_minutes}
+          value={options().chunk_minutes}
           onChange={(value) =>
             saveOptions({ chunk_minutes: Math.round(value) })
           }
@@ -478,9 +469,8 @@ export const LiveModeSettings: React.FC = () => {
             })
           }
           onReset={() => saveOptions({ chunk_minutes: DEFAULTS.chunk_minutes })}
-          disabled={active || isUpdating("live_mode")}
+          disabled={active() || isUpdating("live_mode")}
         />
-
         <SettingContainer
           title={t("settings.liveMode.format.title")}
           description={t("settings.liveMode.format.description")}
@@ -489,17 +479,16 @@ export const LiveModeSettings: React.FC = () => {
           layout="horizontal"
         >
           <Dropdown
-            options={formatOptions}
-            selectedValue={options.transcript_format}
+            options={formatOptions()}
+            selectedValue={options().transcript_format}
             onSelect={(value) =>
               saveOptions({
                 transcript_format: value as TranscriptOutputFormat,
               })
             }
-            disabled={active}
+            disabled={active()}
           />
         </SettingContainer>
-
         <SettingContainer
           title={t("settings.liveMode.granularity.title")}
           description={t("settings.liveMode.granularity.description")}
@@ -508,33 +497,32 @@ export const LiveModeSettings: React.FC = () => {
           layout="horizontal"
         >
           <Dropdown
-            options={granularityOptions}
-            selectedValue={options.granularity}
+            options={granularityOptions()}
+            selectedValue={options().granularity}
             onSelect={(value) =>
               saveOptions({ granularity: value as LiveTranscriptGranularity })
             }
-            disabled={active}
-            className="min-w-[200px]"
+            disabled={active()}
+            class="min-w-[200px]"
           />
         </SettingContainer>
-
         <ToggleSwitch
-          checked={options.save_audio}
+          checked={options().save_audio}
           onChange={(checked) => saveOptions({ save_audio: checked })}
           isUpdating={isUpdating("live_mode")}
-          disabled={active}
+          disabled={active()}
           label={t("settings.liveMode.saveAudio.label")}
           description={t("settings.liveMode.saveAudio.description")}
           descriptionMode="tooltip"
           grouped
         />
         <ToggleSwitch
-          checked={options.prefer_silence_boundary}
+          checked={options().prefer_silence_boundary}
           onChange={(checked) =>
             saveOptions({ prefer_silence_boundary: checked })
           }
           isUpdating={isUpdating("live_mode")}
-          disabled={active}
+          disabled={active()}
           label={t("settings.liveMode.silenceBoundary.label")}
           description={t("settings.liveMode.silenceBoundary.description")}
           descriptionMode="tooltip"
@@ -546,70 +534,69 @@ export const LiveModeSettings: React.FC = () => {
         title={t("settings.liveMode.sessions.title")}
         description={t("settings.liveMode.sessions.description")}
       >
-        <div className="p-3 space-y-2">
-          <div className="flex items-center justify-end">
+        <div class="p-3 space-y-2">
+          <div class="flex items-center justify-end">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => void store.refreshSessions()}
             >
-              <span className="inline-flex items-center gap-1">
-                <RefreshCw className="w-3 h-3" />
+              <span class="inline-flex items-center gap-1">
+                <RefreshCw class="w-3 h-3" />
                 {t("settings.liveMode.sessions.refresh")}
               </span>
             </Button>
           </div>
           {store.sessions.length === 0 ? (
-            <p className="text-xs text-mid-gray/70 px-1">
+            <p class="text-xs text-mid-gray/70 px-1">
               {t("settings.liveMode.sessions.empty")}
             </p>
           ) : (
-            <ul className="rounded-lg border border-mid-gray/20 bg-background divide-y divide-mid-gray/15 max-h-64 overflow-y-auto">
-              {store.sessions.map((session: LiveSessionInfo) => {
-                const isCurrent =
-                  active && session.dir === store.status.session_dir;
-                return (
-                  <li
-                    key={session.dir}
-                    className="flex items-center gap-3 px-3 py-2"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" title={session.dir}>
-                        {session.name}
-                      </p>
-                      <p className="text-xs text-mid-gray truncate">
-                        {t("settings.liveMode.sessions.item", {
-                          date: formatDateTime(
-                            String(session.modified_ms ?? 0),
-                            i18n.language,
-                          ),
-                          chunks: session.chunk_count,
-                          size: formatBytes(session.transcript_bytes ?? 0),
-                        })}
-                      </p>
-                    </div>
-                    {!isCurrent && session.transcript_path && (
+            <ul class="rounded-lg border border-mid-gray/20 bg-background divide-y divide-mid-gray/15 max-h-64 overflow-y-auto">
+              <For each={store.sessions}>
+                {(session: LiveSessionInfo) => {
+                  const isCurrent = () =>
+                    active() && session.dir === store.status.session_dir;
+                  return (
+                    <li class="flex items-center gap-3 px-3 py-2">
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm truncate" title={session.dir}>
+                          {session.name}
+                        </p>
+                        <p class="text-xs text-mid-gray truncate">
+                          {t("settings.liveMode.sessions.item", {
+                            date: formatDateTime(
+                              String(session.modified_ms ?? 0),
+                              i18n.language,
+                            ),
+                            chunks: session.chunk_count,
+                            size: formatBytes(session.transcript_bytes ?? 0),
+                          })}
+                        </p>
+                      </div>
+                      {!isCurrent() && session.transcript_path && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void store.viewSession(session)}
+                          disabled={active()}
+                        >
+                          {t("settings.liveMode.sessions.view")}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => void store.viewSession(session)}
-                        disabled={active}
+                        onClick={() => reveal(session.dir)}
+                        aria-label={t("settings.liveMode.transcript.reveal")}
+                        title={t("settings.liveMode.transcript.reveal")}
                       >
-                        {t("settings.liveMode.sessions.view")}
+                        <ExternalLink class="w-3 h-3" />
                       </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => reveal(session.dir)}
-                      aria-label={t("settings.liveMode.transcript.reveal")}
-                      title={t("settings.liveMode.transcript.reveal")}
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                    </Button>
-                  </li>
-                );
-              })}
+                    </li>
+                  );
+                }}
+              </For>
             </ul>
           )}
         </div>

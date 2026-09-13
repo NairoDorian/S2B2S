@@ -1,35 +1,20 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Errored } from "solid-js";
+import type { JSX } from "@solidjs/web";
 
 interface ErrorBoundaryProps {
-  children: ReactNode;
+  children: JSX.Element;
   context: string;
 }
 
-interface ErrorBoundaryState {
-  failed: boolean;
-}
-
-/** Prevents a non-critical UI subtree from blanking the entire app. */
-export class ErrorBoundary extends Component<
-  ErrorBoundaryProps,
-  ErrorBoundaryState
-> {
-  state: ErrorBoundaryState = { failed: false };
-
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error(
-      `Error rendering ${this.props.context}:`,
-      error,
-      info.componentStack,
-    );
-  }
-
-  render(): ReactNode {
-    if (this.state.failed) return null;
-    return this.props.children;
-  }
-}
+export const ErrorBoundary = (props: ErrorBoundaryProps) => {
+  return (
+    <Errored
+      fallback={(error) => {
+        console.error(`Error rendering ${props.context}:`, error());
+        return null;
+      }}
+    >
+      {props.children}
+    </Errored>
+  );
+};

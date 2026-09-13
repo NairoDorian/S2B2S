@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Dropdown, type DropdownOption } from "../../ui/Dropdown";
 import { useSettings } from "../../../hooks/useSettings";
@@ -18,16 +17,16 @@ interface LogLevelSelectorProps {
   grouped?: boolean;
 }
 
-export const LogLevelSelector: React.FC<LogLevelSelectorProps> = ({
+export const LogLevelSelector = ({
   descriptionMode = "tooltip",
   grouped = false,
-}) => {
+}: LogLevelSelectorProps) => {
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
-  const currentLevel = settings?.log_level ?? "debug";
+  const currentLevel = () => settings()?.log_level ?? "debug";
 
   const handleSelect = async (value: string) => {
-    if (value === currentLevel) return;
+    if (value === currentLevel()) return;
 
     try {
       await updateSetting("log_level", value as LogLevel);
@@ -46,9 +45,9 @@ export const LogLevelSelector: React.FC<LogLevelSelectorProps> = ({
     >
       <Dropdown
         options={LOG_LEVEL_OPTIONS}
-        selectedValue={currentLevel}
+        selectedValue={currentLevel()}
         onSelect={handleSelect}
-        disabled={!settings || isUpdating("log_level")}
+        disabled={!settings() || isUpdating("log_level")}
       />
     </SettingContainer>
   );

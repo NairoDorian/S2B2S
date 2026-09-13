@@ -1,7 +1,7 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import type { JSX } from "@solidjs/web";
 
 interface NoiseSuppressionProps {
   descriptionMode?: "tooltip" | "inline";
@@ -13,23 +13,19 @@ interface NoiseSuppressionProps {
  * Toggling applies on the next captured chunk, so the live VAD test below
  * shows the difference immediately.
  */
-export const NoiseSuppression: React.FC<NoiseSuppressionProps> = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}) => {
+export const NoiseSuppression = (props: NoiseSuppressionProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const enabled = getSetting("denoise_enabled") ?? false;
 
   return (
     <ToggleSwitch
-      checked={enabled}
+      checked={getSetting("denoise_enabled") ?? false}
       onChange={(enabled) => updateSetting("denoise_enabled", enabled)}
       isUpdating={isUpdating("denoise_enabled")}
       label={t("settings.advanced.noiseSuppression.title")}
       description={t("settings.advanced.noiseSuppression.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode}
+      grouped={props.grouped}
     />
   );
 };

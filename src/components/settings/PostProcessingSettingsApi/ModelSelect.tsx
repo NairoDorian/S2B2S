@@ -1,6 +1,7 @@
-import React from "react";
+import { useTranslation } from "@/i18n/useTranslation";
 import type { ModelOption } from "./types";
 import { Select } from "../../ui/Select";
+import type { JSX } from "@solidjs/web";
 
 type ModelSelectProps = {
   value: string;
@@ -14,42 +15,41 @@ type ModelSelectProps = {
   className?: string;
 };
 
-export const ModelSelect: React.FC<ModelSelectProps> = React.memo(
-  ({
-    value,
-    options,
-    disabled,
-    placeholder,
-    isLoading,
-    onSelect,
-    onCreate,
-    onBlur,
-    className = "flex-1 min-w-[360px]",
-  }) => {
-    const handleCreate = (inputValue: string) => {
-      const trimmed = inputValue.trim();
-      if (!trimmed) return;
-      onCreate(trimmed);
-    };
+export const ModelSelect = ({
+  value,
+  options,
+  disabled,
+  placeholder,
+  isLoading,
+  onSelect,
+  onCreate,
+  onBlur,
+  className = "flex-1 min-w-[360px]",
+}: ModelSelectProps): JSX.Element => {
+  const { t } = useTranslation();
 
-    const computedClassName = `text-sm ${className}`;
+  const handleCreate = (inputValue: string) => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
+    onCreate(trimmed);
+  };
 
-    return (
-      <Select
-        className={computedClassName}
-        value={value || null}
-        options={options}
-        onChange={(selected) => onSelect(selected ?? "")}
-        onCreateOption={handleCreate}
-        onBlur={onBlur}
-        placeholder={placeholder}
-        disabled={disabled}
-        isLoading={isLoading}
-        isCreatable
-        formatCreateLabel={(input) => `Use "${input}"`}
-      />
-    );
-  },
-);
+  const computedClassName = `text-sm ${className}`;
 
-ModelSelect.displayName = "ModelSelect";
+  return (
+    <Select
+      class={computedClassName}
+      value={value || null}
+      options={options}
+      onChange={(selected) => onSelect(selected ?? "")}
+      onCreateOption={handleCreate}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      disabled={disabled}
+      isLoading={isLoading}
+      isCreatable
+      formatCreateLabel={(input) => `Use "${input}"`}
+      ariaLabel={t("settings.postProcessing.api.model.title")}
+    />
+  );
+};

@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createSolidStore } from "@/lib/solidStore";
 import {
   commands,
   events,
@@ -100,7 +100,7 @@ interface LiveFftStore {
   clearFrame: () => void;
 }
 
-export const useLiveFftStore = create<LiveFftStore>()((set, get) => ({
+const liveFftState = createSolidStore<LiveFftStore>((set, get) => ({
   status: IDLE_FFT_STATUS,
   initialized: false,
   frozen: false,
@@ -149,3 +149,15 @@ export const useLiveFftStore = create<LiveFftStore>()((set, get) => ({
     latestFrame = null;
   },
 }));
+
+export function useLiveFftStore() {
+  return liveFftState;
+}
+
+export const initialize = () => useLiveFftStore().initialize();
+export const start = () => useLiveFftStore().start();
+export const stop = () => useLiveFftStore().stop();
+export const reset = () => useLiveFftStore().reset();
+export const setFrozen = (frozen: boolean) =>
+  useLiveFftStore().setFrozen(frozen);
+export const clearFrame = () => useLiveFftStore().clearFrame();

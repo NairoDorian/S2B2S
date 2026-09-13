@@ -1,11 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, createMemo } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import type { OverlayScopeStyle } from "@/bindings";
 import { SettingContainer, SettingsGroup, ToggleSwitch } from "@/components/ui";
 import { Button } from "@/components/ui/Button";
@@ -18,7 +12,7 @@ import {
   resolveOverlayScope,
   type ResolvedOverlayScope,
 } from "@/lib/overlayScope";
-import { useNavigationStore } from "@/stores/navigationStore";
+import { setSection } from "@/stores/navigationStore";
 import { ParamSlider } from "../live-fft/ParamSlider";
 
 /** Slider drags coalesce into one write (and one overlay re-place). */
@@ -32,66 +26,63 @@ const P = "settings.overlay.scope";
  * The analysis behind the spectrum (scale, window, EQ, weighting, dB, update
  * rate) is the Live FFT page's; this group only shapes the display.
  */
-export const OverlayScopeGroup: React.FC = () => {
+export const OverlayScopeGroup = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
-  const setSection = useNavigationStore((s) => s.setSection);
 
-  const stored = getSetting("overlay_scope");
-  const options = useMemo(() => resolveOverlayScope(stored), [stored]);
+  const options = createMemo(() =>
+    resolveOverlayScope(getSetting("overlay_scope")),
+  );
 
   // Local mirror so a slider drag feels immediate; writes are coalesced.
-  const [draft, setDraft] = useState<ResolvedOverlayScope>(options);
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  const saveTimer = useRef<number | null>(null);
-  useEffect(() => {
-    if (saveTimer.current === null) setDraft(options);
-  }, [options]);
-
-  const save = useCallback(
-    (patch: Partial<ResolvedOverlayScope>) => {
-      const next = { ...draftRef.current, ...patch };
-      // Keep the fade inside the window as the window shrinks.
-      next.wave_taper_samples = Math.min(
-        next.wave_taper_samples,
-        Math.floor(next.wave_samples / 2),
-      );
-      setDraft(next);
-      draftRef.current = next;
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        saveTimer.current = null;
-        void updateSetting("overlay_scope", draftRef.current);
-      }, SAVE_DEBOUNCE_MS);
+  const [draft, setDraft] = createSignal<ResolvedOverlayScope>(options());
+  let saveTimer: number | null = null;
+  createEffect(
+    () => options(),
+    (opts) => {
+      if (saveTimer === null) setDraft(opts);
     },
-    [updateSetting],
   );
-  useEffect(
-    () => () => {
-      if (saveTimer.current !== null) {
-        window.clearTimeout(saveTimer.current);
-        void updateSetting("overlay_scope", draftRef.current);
-      }
+
+  const save = (patch: Partial<ResolvedOverlayScope>) => {
+    const next = { ...draft(), ...patch };
+    // Keep the fade inside the window as the window shrinks.
+    next.wave_taper_samples = Math.min(
+      next.wave_taper_samples,
+      Math.floor(next.wave_samples / 2),
+    );
+    setDraft(next);
+    if (saveTimer !== null) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = null;
+      void updateSetting("overlay_scope", draft());
+    }, SAVE_DEBOUNCE_MS);
+  };
+  createEffect(
+    () => undefined,
+    () => {
+      return () => {
+        if (saveTimer !== null) {
+          window.clearTimeout(saveTimer);
+          void updateSetting("overlay_scope", draft());
+        }
+      };
     },
-    [updateSetting],
   );
 
   const busy = isUpdating("overlay_scope");
-  const styleOptions = useMemo<DropdownOption[]>(
-    () =>
-      OVERLAY_SCOPE_STYLES.map((style) => ({
-        value: style,
-        label: t(`${P}.style.options.${style}`),
-      })),
-    [t],
+  const styleOptions = createMemo<DropdownOption[]>(() =>
+    OVERLAY_SCOPE_STYLES.map((style) => ({
+      value: style,
+      label: t(`${P}.style.options.${style}`),
+    })),
   );
-  const anyView = draft.show_spectrum || draft.show_wave;
+  const anyView = draft().show_spectrum || draft().show_wave;
 
   return (
     <SettingsGroup title={t(`${P}.title`)} description={t(`${P}.description`)}>
       <ToggleSwitch
-        checked={draft.show_spectrum}
+        checked={draft().show_spectrum}
         onChange={(checked) => save({ show_spectrum: checked })}
         isUpdating={busy}
         label={t(`${P}.showSpectrum.label`)}
@@ -99,7 +90,7 @@ export const OverlayScopeGroup: React.FC = () => {
         descriptionMode="tooltip"
         grouped
       />
-      {draft.show_spectrum && (
+      {draft().show_spectrum && (
         <>
           <SettingContainer
             title={t(`${P}.style.label`)}
@@ -108,8 +99,8 @@ export const OverlayScopeGroup: React.FC = () => {
             grouped
           >
             <Dropdown
-              options={styleOptions}
-              selectedValue={draft.spectrum_style}
+              options={styleOptions()}
+              selectedValue={draft().spectrum_style}
               onSelect={(value) =>
                 save({ spectrum_style: value as OverlayScopeStyle })
               }
@@ -117,7 +108,7 @@ export const OverlayScopeGroup: React.FC = () => {
             />
           </SettingContainer>
           <ToggleSwitch
-            checked={draft.spectrum_mirror}
+            checked={draft().spectrum_mirror}
             onChange={(checked) => save({ spectrum_mirror: checked })}
             isUpdating={busy}
             label={t(`${P}.mirror.label`)}
@@ -126,7 +117,7 @@ export const OverlayScopeGroup: React.FC = () => {
             grouped
           />
           <ToggleSwitch
-            checked={draft.peak_hold}
+            checked={draft().peak_hold}
             onChange={(checked) => save({ peak_hold: checked })}
             isUpdating={busy}
             label={t(`${P}.peakHold.label`)}
@@ -137,7 +128,7 @@ export const OverlayScopeGroup: React.FC = () => {
         </>
       )}
       <ToggleSwitch
-        checked={draft.show_wave}
+        checked={draft().show_wave}
         onChange={(checked) => save({ show_wave: checked })}
         isUpdating={busy}
         label={t(`${P}.showWave.label`)}
@@ -145,12 +136,12 @@ export const OverlayScopeGroup: React.FC = () => {
         descriptionMode="tooltip"
         grouped
       />
-      {draft.show_wave && (
+      {draft().show_wave && (
         <>
           <ParamSlider
             label={t(`${P}.waveSamples.label`)}
             description={t(`${P}.waveSamples.description`)}
-            value={draft.wave_samples}
+            value={draft().wave_samples}
             min={OVERLAY_SCOPE_LIMITS.waveSamples.min}
             max={OVERLAY_SCOPE_LIMITS.waveSamples.max}
             step={1}
@@ -162,21 +153,21 @@ export const OverlayScopeGroup: React.FC = () => {
           <ParamSlider
             label={t(`${P}.waveTaper.label`)}
             description={t(`${P}.waveTaper.description`)}
-            value={draft.wave_taper_samples}
+            value={draft().wave_taper_samples}
             min={0}
-            max={Math.floor(draft.wave_samples / 2)}
+            max={Math.floor(draft().wave_samples / 2)}
             step={1}
             integer
             defaultValue={Math.min(
               OVERLAY_SCOPE_DEFAULTS.wave_taper_samples,
-              Math.floor(draft.wave_samples / 2),
+              Math.floor(draft().wave_samples / 2),
             )}
             onChange={(v) => save({ wave_taper_samples: Math.round(v) })}
           />
           <ParamSlider
             label={t(`${P}.gainFloor.label`)}
             description={t(`${P}.gainFloor.description`)}
-            value={draft.wave_gain_floor}
+            value={draft().wave_gain_floor}
             min={OVERLAY_SCOPE_LIMITS.waveGainFloor.min}
             max={OVERLAY_SCOPE_LIMITS.waveGainFloor.max}
             step={0.001}
@@ -192,7 +183,7 @@ export const OverlayScopeGroup: React.FC = () => {
           <ParamSlider
             label={t(`${P}.viewWidth.label`)}
             description={t(`${P}.viewWidth.description`)}
-            value={draft.view_width}
+            value={draft().view_width}
             min={OVERLAY_SCOPE_LIMITS.viewWidth.min}
             max={OVERLAY_SCOPE_LIMITS.viewWidth.max}
             step={1}
@@ -204,7 +195,7 @@ export const OverlayScopeGroup: React.FC = () => {
           <ParamSlider
             label={t(`${P}.viewHeight.label`)}
             description={t(`${P}.viewHeight.description`)}
-            value={draft.view_height}
+            value={draft().view_height}
             min={OVERLAY_SCOPE_LIMITS.viewHeight.min}
             max={OVERLAY_SCOPE_LIMITS.viewHeight.max}
             step={1}
@@ -215,8 +206,8 @@ export const OverlayScopeGroup: React.FC = () => {
           />
         </>
       )}
-      <div className="px-3 pb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-text/60">{t(`${P}.analysisNote`)}</p>
+      <div class="px-3 pb-3 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-xs text-text/60">{t(`${P}.analysisNote`)}</p>
         <Button
           variant="secondary"
           size="sm"

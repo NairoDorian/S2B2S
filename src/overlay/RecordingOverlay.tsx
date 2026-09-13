@@ -1,6 +1,31 @@
+/** @jsxImportSource @solidjs/web */
+// ^ This file is Solid; see the note in `main.tsx` for why the pragma is
+// per-file rather than tree-wide.
+//
+// Phase 2 of docs/PLAN_SOLIDJS_2.md made this Solid, and the port is shaped by
+// three things Solid does differently from React — each one a place where the
+// mechanical translation would have been wrong:
+//
+// - **The component body runs once.** Every value derived from state is a
+//   function (see `hasText`, `quiet`, `wpm`), never a `const`, and every one of
+//   them is read *inside a JSX binding* rather than at the top of a helper. A
+//   read at a helper's top level would make the calling expression depend on it
+//   and rebuild that whole subtree — which for `Waveform` means recreating
+//   `OverlayScope`'s canvases and restarting its poll loop on every speech
+//   transition.
+// - **Effects split tracking from the work.** `createEffect(compute, apply)`
+//   discovers its dependencies from what the *compute* reads, so React's
+//   dependency array becomes the compute's return value. The apply is then free
+//   to touch the DOM and write state; the diagnostics name it "the effect
+//   phase", and it is the sanctioned place for a write.
+// - **A ref is called once and never nulled.** `capEl` below is a plain
+//   variable, and it is deliberately not guarded the way a React ref would be:
+//   it is only ever assigned, and the effects that read it ask the DOM what is
+//   on screen rather than asking whether it was unmounted.
+import { createEffect, createSignal, onSettled, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { listen } from "@tauri-apps/api/event";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { currentLanguage, useTranslation } from "@/i18n/useTranslationSolid";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
@@ -9,7 +34,7 @@ import type {
   StreamTextEvent,
   StreamWorkKind,
 } from "@/bindings";
-import i18n, { syncLanguageFromSettings } from "@/i18n";
+import { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { OverlayScope } from "./OverlayScope";
 import {
@@ -25,8 +50,7 @@ type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
 // spaces, so splitting on whitespace would score a whole Japanese sentence as
 // one word; counting each character instead matches the characters-per-minute
 // convention those languages actually use.
-const CJK_CHARS =
-  /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/gu;
+const CJK_CHARS = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/gu;
 
 const countWords = (text: string): number => {
   const ideographs = text.match(CJK_CHARS)?.length ?? 0;
@@ -46,94 +70,92 @@ const WPM_MIN_WORDS = 3;
 // step itself supplies the slack for borders and padding rounding.
 const TEXT_HEIGHT_STEP_PX = 24;
 
-const RecordingOverlay: React.FC = () => {
+const RecordingOverlay = () => {
   const { t } = useTranslation();
-  const [isVisible, setIsVisible] = useState(false);
-  const [state, setState] = useState<OverlayState>("recording");
+  const [isVisible, setIsVisible] = createSignal(false);
+  const [state, setState] = createSignal<OverlayState>("recording");
   // `Stream::play()` returning does not mean hardware callbacks are flowing.
   // Stay visually in an arming state until the backend processes the first
   // actual microphone sample chunk.
-  const [captureReady, setCaptureReady] = useState(false);
+  const [captureReady, setCaptureReady] = createSignal(false);
   // Poll rate of the miniature analyser: the Live FFT page's update rate,
   // read with the other overlay settings on every show.
-  const [scopeRate, setScopeRate] = useState(30);
+  const [scopeRate, setScopeRate] = createSignal(30);
   // The picture settings (`overlay_scope`): views, style, waveform window,
   // size. Read with the other overlay settings on every show; the geometry
   // is published as CSS variables before the card becomes visible.
-  const [scopeConfig, setScopeConfig] = useState<ResolvedOverlayScope>(
+  const [scopeConfig, setScopeConfig] = createSignal<ResolvedOverlayScope>(
     OVERLAY_SCOPE_DEFAULTS,
   );
-  const [streamText, setStreamText] = useState<StreamTextEvent>({
+  const [streamText, setStreamText] = createSignal<StreamTextEvent>({
     committed: "",
     tentative: "",
   });
-  const [phase, setPhase] = useState<StreamPhase>("listening");
-  const [workKind, setWorkKind] = useState<StreamWorkKind>("transcribing");
-  const [elapsed, setElapsed] = useState(0);
+  const [phase, setPhase] = createSignal<StreamPhase>("listening");
+  const [workKind, setWorkKind] = createSignal<StreamWorkKind>("transcribing");
+  const [elapsed, setElapsed] = createSignal(0);
   // Speech statistics, driven by the backend VAD (see SpeechActivityEvent).
   // `speechMs` counts only time the user was actually talking, so dividing the
   // transcribed word count by it gives a speaking rate rather than a
   // recording-length average.
-  const [statsEnabled, setStatsEnabled] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [speechMs, setSpeechMs] = useState(0);
-  const [wordCount, setWordCount] = useState(0);
+  const [statsEnabled, setStatsEnabled] = createSignal(false);
+  const [speaking, setSpeaking] = createSignal(false);
+  const [speechMs, setSpeechMs] = createSignal(0);
+  const [wordCount, setWordCount] = createSignal(0);
   // Bumped on each new streaming session so the Live card remounts fresh (replays
   // the pop-in, and never animates in from the previous panel's open size).
-  const [session, setSession] = useState(0);
+  const [session, setSession] = createSignal(0);
   // Overlay placement (top vs bottom of the screen). The Live panel grows downward
   // from a top overlay (oldest line under the pill) and upward from a bottom one.
-  const [position, setPosition] = useState<"top" | "bottom">("bottom");
+  const [position, setPosition] = createSignal<"top" | "bottom">("bottom");
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
-  const [overflowing, setOverflowing] = useState(false);
+  const [overflowing, setOverflowing] = createSignal(false);
   // Experimental Multi-STT streaming mode: the text on screen is the whole
   // session's, composed chunk by chunk, so the card grows with it instead of
   // hiding the earlier chunks behind the fade. `textCap` is the backend's answer
   // to a height report — the same number it sized the window with, past which
   // this card scrolls back (see `overlay_stream_text_height`).
-  const [wholeSession, setWholeSession] = useState(false);
-  const [failedChunks, setFailedChunks] = useState(0);
-  const [textCap, setTextCap] = useState<number | null>(null);
-  const reportedHeightRef = useRef(-1);
+  const [wholeSession, setWholeSession] = createSignal(false);
+  const [failedChunks, setFailedChunks] = createSignal(0);
+  const [textCap, setTextCap] = createSignal<number | null>(null);
 
-  // Live-text scroll-back: the text region "sticks" to the newest line while the
-  // user is at the bottom; if they scroll up to read history, auto-follow pauses
-  // until they scroll back down.
-  const capRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
-  const direction = getLanguageDirection(i18n.language);
+  // The mutable boxes React kept in refs. A Solid component body runs once and
+  // has no re-render, so these are just variables — and none of them needs a
+  // `.current` mirror to be readable from a callback, which is what those
+  // `propsRef`/`stateRef` boxes in the React tree existed for. They are not
+  // reactive on purpose: nothing renders from them, they only carry state
+  // between a timer tick and the next read.
+  let reportedHeight = -1;
+  let capEl: HTMLDivElement | undefined;
+  let pinned = true;
+  let directMode = false;
+  let directSpeed = 30;
+  let targetText: StreamTextEvent = { committed: "", tentative: "" };
+  let displayedText: StreamTextEvent = { committed: "", tentative: "" };
+  let typewriterTimer: ReturnType<typeof setInterval> | null = null;
 
-  const directModeRef = useRef(false);
-  const directSpeedRef = useRef(30);
-  const targetTextRef = useRef<StreamTextEvent>({
-    committed: "",
-    tentative: "",
-  });
-  const displayedTextRef = useRef<StreamTextEvent>({
-    committed: "",
-    tentative: "",
-  });
-  const typewriterTimerRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  // The writing direction has to follow the language, so it is an accessor:
+  // `currentLanguage` is a signal, and reading it inside the JSX `dir` binding
+  // is what subscribes the attribute to a language change.
+  const direction = () => getLanguageDirection(currentLanguage());
 
   const stopTypewriter = () => {
-    if (typewriterTimerRef.current !== null) {
-      clearInterval(typewriterTimerRef.current);
-      typewriterTimerRef.current = null;
+    if (typewriterTimer !== null) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
     }
   };
 
   const flushTypewriter = () => {
     stopTypewriter();
-    displayedTextRef.current = { ...targetTextRef.current };
-    setStreamText({ ...targetTextRef.current });
+    displayedText = { ...targetText };
+    setStreamText({ ...targetText });
   };
 
   const stepTypewriter = () => {
-    const target = targetTextRef.current;
-    const current = displayedTextRef.current;
+    const target = targetText;
+    const current = displayedText;
 
     if (
       current.committed === target.committed &&
@@ -145,10 +167,7 @@ const RecordingOverlay: React.FC = () => {
 
     let nextCommitted = current.committed;
     let nextTentative = current.tentative;
-    const threshold = Math.max(
-      15,
-      Math.round((directSpeedRef.current || 50) * 0.6),
-    );
+    const threshold = Math.max(15, Math.round((directSpeed || 50) * 0.6));
 
     if (current.committed !== target.committed) {
       if (target.committed.startsWith(current.committed)) {
@@ -191,22 +210,24 @@ const RecordingOverlay: React.FC = () => {
       }
     }
 
-    displayedTextRef.current = {
-      committed: nextCommitted,
-      tentative: nextTentative,
-    };
+    displayedText = { committed: nextCommitted, tentative: nextTentative };
     setStreamText({ committed: nextCommitted, tentative: nextTentative });
   };
 
   const startTypewriterIfNeeded = () => {
-    if (typewriterTimerRef.current === null) {
-      const speed = directSpeedRef.current || 30;
+    if (typewriterTimer === null) {
+      const speed = directSpeed || 30;
       const intervalMs = Math.max(8, Math.min(100, Math.round(1000 / speed)));
-      typewriterTimerRef.current = setInterval(stepTypewriter, intervalMs);
+      typewriterTimer = setInterval(stepTypewriter, intervalMs);
     }
   };
 
-  useEffect(() => {
+  // `onSettled` is Solid's `onMount`, and it is where this belongs rather than in
+  // an effect: it registers listeners once and returns their teardown. Every
+  // write below happens either in a listener callback or in a promise
+  // continuation — both outside any owner — so none of them trips the
+  // owned-scope write guard the way a write in this setup body would.
+  onSettled(() => {
     const setupEventListeners = async () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
         const overlayState = event.payload as OverlayState;
@@ -216,8 +237,8 @@ const RecordingOverlay: React.FC = () => {
         if (overlayState === "recording" || overlayState === "streaming") {
           setCaptureReady(false);
           stopTypewriter();
-          targetTextRef.current = { committed: "", tentative: "" };
-          displayedTextRef.current = { committed: "", tentative: "" };
+          targetText = { committed: "", tentative: "" };
+          displayedText = { committed: "", tentative: "" };
           setStreamText({ committed: "", tentative: "" });
           setSpeaking(false);
           setSpeechMs(0);
@@ -227,7 +248,7 @@ const RecordingOverlay: React.FC = () => {
           setWholeSession(false);
           setFailedChunks(0);
           setTextCap(null);
-          reportedHeightRef.current = -1;
+          reportedHeight = -1;
         }
 
         await syncLanguageFromSettings();
@@ -239,8 +260,8 @@ const RecordingOverlay: React.FC = () => {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
             );
-            directModeRef.current = settings.data.overlay_direct_mode ?? false;
-            directSpeedRef.current = settings.data.overlay_direct_speed ?? 30;
+            directMode = settings.data.overlay_direct_mode ?? false;
+            directSpeed = settings.data.overlay_direct_speed ?? 30;
             setStatsEnabled(settings.data.overlay_speech_stats ?? true);
             setScopeRate(settings.data.live_fft?.update_rate_hz ?? 30);
             const scope = resolveOverlayScope(settings.data.overlay_scope);
@@ -272,7 +293,7 @@ const RecordingOverlay: React.FC = () => {
       });
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
-        targetTextRef.current = event.payload;
+        targetText = event.payload;
         // Count from the backend text, not the typewriter's partial reveal, so
         // direct mode cannot make the speaking rate read artificially low. This
         // runs even in the minimal overlay, which never renders the text but
@@ -295,9 +316,9 @@ const RecordingOverlay: React.FC = () => {
         // block: the typewriter could only retype its way back to every
         // correction, one to three characters per tick. It stays the rule for
         // normal dictation, which is what the setting is for.
-        if (!directModeRef.current || event.payload.whole_session) {
+        if (!directMode || event.payload.whole_session) {
           stopTypewriter();
-          displayedTextRef.current = event.payload;
+          displayedText = event.payload;
           setStreamText(event.payload);
         } else {
           startTypewriterIfNeeded();
@@ -331,9 +352,11 @@ const RecordingOverlay: React.FC = () => {
       };
     };
 
-    // Keep the unlisten handles: under React StrictMode (dev) the effect runs
-    // twice, and without cleanup every event got two handlers — two session
-    // bumps per show and two typewriter intervals in direct mode.
+    // The unlisten handles only exist once the awaits above resolve, so the
+    // teardown cannot be the handle set itself: a component disposed during that
+    // gap has to unlisten the moment the handles arrive, or the listeners
+    // outlive it. React needed this guard for StrictMode's double-invoke too;
+    // StrictMode is gone, the gap is not.
     let disposed = false;
     let cleanup: (() => void) | undefined;
     setupEventListeners().then((fn) => {
@@ -361,63 +384,82 @@ const RecordingOverlay: React.FC = () => {
       disposed = true;
       cleanup?.();
     };
-  }, []);
+  });
 
   // Elapsed capture timer starts only once microphone samples are flowing.
-  useEffect(() => {
-    if (state !== "streaming" || !isVisible || !captureReady) return;
-    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(id);
-  }, [state, isVisible, captureReady]);
+  // The compute reads exactly the three values React listed in its dependency
+  // array, which is how an effect learns what to re-run on; the apply returns its
+  // own teardown, so re-running replaces the interval rather than stacking one.
+  createEffect(
+    () => [state(), isVisible(), captureReady()] as const,
+    ([current, visible, ready]) => {
+      if (current !== "streaming" || !visible || !ready) return;
+      const id = setInterval(() => {
+        setElapsed((e) => e + 1);
+      }, 1000);
+      return () => clearInterval(id);
+    },
+  );
 
   // Stick to the bottom as text streams in — but only while pinned, so a user who
   // has scrolled up to read history isn't yanked back down by the next chunk.
-  useLayoutEffect(() => {
-    const el = capRef.current;
-    if (!el) return;
-    // Fade the top edge only once text actually overflows the cap.
-    setOverflowing(el.scrollHeight > el.clientHeight + 1);
-    if (pinnedRef.current) el.scrollTop = el.scrollHeight;
-  }, [streamText]);
+  // An effect rather than a render effect: Solid applies effects after the DOM
+  // updates of the same flush, and that flush is a microtask, so this still runs
+  // before the browser paints. The apply writes `overflowing` — the effect phase
+  // is the sanctioned place for that.
+  createEffect(
+    () => streamText(),
+    () => {
+      const el = capEl;
+      if (!el) return;
+      // Fade the top edge only once text actually overflows the cap.
+      setOverflowing(el.scrollHeight > el.clientHeight + 1);
+      if (pinned) el.scrollTop = el.scrollHeight;
+    },
+  );
 
   // Grow the card with the session's text (experimental Multi-STT streaming mode)
   // and read back the height it may reach before scrolling. Measured after layout
   // so the report matches what is on screen, and rounded up to a step so this is
   // one call per line of text; the backend clamps to its own monitor-based cap and
   // returns that clamp, which is what bounds this card too.
-  useLayoutEffect(() => {
-    if (!wholeSession) return;
-    const el = capRef.current;
-    if (!el) return;
-    const stepped =
-      Math.ceil(el.scrollHeight / TEXT_HEIGHT_STEP_PX) * TEXT_HEIGHT_STEP_PX;
-    if (stepped === reportedHeightRef.current) return;
-    reportedHeightRef.current = stepped;
-    commands
-      .overlayStreamTextHeight(stepped)
-      .then((max) => {
-        // 0 means the backend has no streaming card on screen (the overlay is
-        // fading out): keep the cap we already have rather than collapsing.
-        if (typeof max === "number" && max > 0) setTextCap(max);
-      })
-      .catch(() => {
-        // No cap from the backend: the card keeps the default and scrolls.
-      });
-  }, [streamText, wholeSession]);
+  createEffect(
+    () => [streamText(), wholeSession()] as const, // React's [streamText, wholeSession]
+    ([, whole]) => {
+      if (!whole) return;
+      const el = capEl;
+      if (!el) return;
+      const stepped =
+        Math.ceil(el.scrollHeight / TEXT_HEIGHT_STEP_PX) * TEXT_HEIGHT_STEP_PX;
+      if (stepped === reportedHeight) return;
+      reportedHeight = stepped;
+      commands
+        .overlayStreamTextHeight(stepped)
+        .then((max) => {
+          // 0 means the backend has no streaming card on screen (the overlay is
+          // fading out): keep the cap we already have rather than collapsing.
+          if (typeof max === "number" && max > 0) setTextCap(max);
+        })
+        .catch(() => {
+          // No cap from the backend: the card keeps the default and scrolls.
+        });
+    },
+  );
 
   // Each fresh streaming session starts pinned to the bottom, fade cleared.
-  useEffect(() => {
-    pinnedRef.current = true;
-    setOverflowing(false);
-  }, [session]);
-
-  if (!isVisible) return null;
+  createEffect(
+    () => session(),
+    () => {
+      pinned = true;
+      setOverflowing(false);
+    },
+  );
 
   // Re-pin when the user is within ~a line of the bottom; unpin otherwise.
   const handleStreamScroll = () => {
-    const el = capRef.current;
+    const el = capEl;
     if (!el) return;
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
+    pinned = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
   };
 
   const fmtTime = (s: number) =>
@@ -426,44 +468,64 @@ const RecordingOverlay: React.FC = () => {
   // Speech stats ride along in both overlay forms. Rendered from the moment the
   // card appears rather than waiting for the first sample, so the Live card
   // steps its width once (pill -> panel) instead of twice.
-  const showStats = statsEnabled;
+  const showStats = () => statsEnabled();
   // "Nobody is talking right now." The arming case (microphone not started yet)
   // is handled separately below and takes visual precedence.
-  const quiet = showStats && !speaking;
-  const wpm =
-    speechMs >= WPM_MIN_SPEECH_MS && wordCount >= WPM_MIN_WORDS
-      ? Math.round(wordCount / (speechMs / 60000))
+  const quiet = () => showStats() && !speaking();
+  const wpm = () =>
+    speechMs() >= WPM_MIN_SPEECH_MS && wordCount() >= WPM_MIN_WORDS
+      ? Math.round(wordCount() / (speechMs() / 60000))
       : null;
 
-  // ---- Shared building blocks (one visual language for every overlay form) ----
-  // The miniature analyser: an area spectrum and the last 4096 samples as a
-  // line, both computed with the Live FFT page's settings (OverlayScope).
-  const waveform =
-    scopeConfig.show_spectrum || scopeConfig.show_wave ? (
-      <div
-        className={`swave ${captureReady ? "ready" : "arming"} ${quiet ? "quiet" : ""}`}
-      >
-        <OverlayScope
-          rateHz={scopeRate}
-          ready={captureReady}
-          quiet={quiet}
-          config={scopeConfig}
-        />
-      </div>
+  const hasText = () =>
+    streamText().committed.length > 0 || streamText().tentative.length > 0;
+  const working = () => phase() === "working";
+  // Keep the panel open whenever there's text — even while finalizing — so the
+  // transcript stays put under a working spinner instead of collapsing and
+  // squishing the text mid-stream. Only fall back to the small working pill
+  // when there was no text to preserve.
+  const open = () => hasText();
+  const collapsed = () => working() && !hasText();
+
+  // A chunk whose merge failed shows the extras' outputs concatenated — still
+  // the session's text, just not the cleaned version. It is marked here rather
+  // than in the text: with DirectStreaming the text is typed into the user's
+  // document, and a marker inside it would be typed too.
+  const failBadge = () =>
+    failedChunks() > 0 ? (
+      <span class="sfail" title={t("overlay.chunkFailedHint")}>
+        {t("overlay.chunkFailed", { count: failedChunks() })}
+      </span>
     ) : null;
 
-  const cancelBtn = (
+  // React keyed the card on `session` so a new streaming session remounted it,
+  // replaying the pop-in. The Solid counterpart is a keyed `<Show>`, with one
+  // wrinkle: `session` starts at 0, which `Show` reads as absent, so the key is
+  // wrapped in a fresh object whose identity changes exactly when `session` does.
+  const sessionKey = () => ({ session: session() });
+
+  // ---- Shared building blocks (one visual language for every overlay form) ----
+  // These are components rather than element constants for a reason that is not
+  // stylistic: React's `const cancelBtn = <button …/>` is a *description*, but a
+  // Solid JSX expression is already a DOM node. Reusing one node in two places
+  // would move it, not copy it. As components they are built where they are used,
+  // and their props are read lazily, so a read inside one of them subscribes only
+  // the binding that needs it.
+
+  const CancelButton = () => (
     <button
-      className="sx"
+      class="sx"
       aria-label="cancel"
       onClick={() => commands.cancelOperation()}
     >
       <svg viewBox="0 0 16 16" aria-hidden="true">
+        {/* SVG presentation attributes are named as the DOM spells them —
+            kebab-case, like the style object's CSS names. */}
         <path
           d="M4 4 L12 12 M12 4 L4 12"
           stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
+          stroke-width="1.6"
+          stroke-linecap="round"
         />
       </svg>
     </button>
@@ -471,17 +533,15 @@ const RecordingOverlay: React.FC = () => {
 
   // Speech-only clock and running words-per-minute. The clock freezes on
   // silence, which is the whole point — it measures talking, not recording.
-  const statsCluster = (
-    <span className={`sstats ${quiet ? "quiet" : ""}`}>
-      <span className="sstat-speech">
-        {fmtTime(Math.floor(speechMs / 1000))}
-      </span>
-      <span className="sstat-sep" aria-hidden="true" />
-      <span className="sstat-wpm">
-        {wpm === null ? (
-          <span className="sstat-pending">{"—"}</span>
+  const StatsCluster = () => (
+    <span class={["sstats", { quiet: quiet() }]}>
+      <span class="sstat-speech">{fmtTime(Math.floor(speechMs() / 1000))}</span>
+      <span class="sstat-sep" aria-hidden="true" />
+      <span class="sstat-wpm">
+        {wpm() === null ? (
+          <span class="sstat-pending">{"—"}</span>
         ) : (
-          `${wpm} ${t("overlay.wpm")}`
+          `${wpm()} ${t("overlay.wpm")}`
         )}
       </span>
     </span>
@@ -489,11 +549,36 @@ const RecordingOverlay: React.FC = () => {
 
   // The numeric readouts, in reading order: total elapsed, then the speech
   // clock and rate.
-  const readouts = (showTimer: boolean) => (
+  const Readouts = (props: { showTimer: boolean }) => (
     <>
-      {showTimer && <span className="stimer">{fmtTime(elapsed)}</span>}
-      {showStats && statsCluster}
+      <Show when={props.showTimer}>
+        <span class="stimer">{fmtTime(elapsed())}</span>
+      </Show>
+      <Show when={showStats()}>
+        <StatsCluster />
+      </Show>
     </>
+  );
+
+  // The miniature analyser: an area spectrum and the last 4096 samples as a
+  // line, both computed with the Live FFT page's settings (OverlayScope).
+  const Waveform = () => (
+    <Show when={scopeConfig().show_spectrum || scopeConfig().show_wave}>
+      <div
+        class={[
+          "swave",
+          captureReady() ? "ready" : "arming",
+          { quiet: quiet() },
+        ]}
+      >
+        <OverlayScope
+          rateHz={scopeRate()}
+          ready={captureReady()}
+          quiet={quiet()}
+          config={scopeConfig()}
+        />
+      </div>
+    </Show>
   );
 
   // Without stats: dot (left) | waveform (center) | timer + cancel (right),
@@ -504,134 +589,169 @@ const RecordingOverlay: React.FC = () => {
   // readouts in the right-hand cluster instead would put every pixel of slack
   // between the waveform and the numbers — separating things that belong
   // together, by a gap that grows with the card.
-  const listeningRow = (
-    showTimer: boolean,
-    showCancel: boolean,
-    badge: React.ReactNode = null,
-  ) => (
-    <div className={`sbase ${showStats ? "has-stats" : ""}`}>
-      <div className="sbase-l">
+  const ListeningRow = (props: {
+    showTimer: boolean;
+    showCancel: boolean;
+    badge?: JSX.Element;
+  }) => (
+    <div class={["sbase", { "has-stats": showStats() }]}>
+      <div class="sbase-l">
         <span
-          className={`sdot ${
-            !captureReady ? "arming" : quiet ? "silent" : "ready"
-          }`}
+          class={[
+            "sdot",
+            !captureReady() ? "arming" : quiet() ? "silent" : "ready",
+          ]}
         />
       </div>
-      {waveform}
-      {showStats && <div className="smeta">{readouts(showTimer)}</div>}
-      <div className="sbase-r">
-        {!showStats && readouts(showTimer)}
-        {badge}
-        {showCancel && cancelBtn}
+      <Waveform />
+      <Show when={showStats()}>
+        <div class="smeta">
+          <Readouts showTimer={props.showTimer} />
+        </div>
+      </Show>
+      <div class="sbase-r">
+        <Show when={!showStats()}>
+          <Readouts showTimer={props.showTimer} />
+        </Show>
+        {props.badge}
+        <Show when={props.showCancel}>
+          <CancelButton />
+        </Show>
       </div>
     </div>
   );
 
   // spinner (left) | label (center) | cancel (right) — same 3-zone grid as the
   // listening row, so the label is centered.
-  const workingRow = (label: string, showCancel: boolean) => (
-    <div className="sbase">
-      <div className="sbase-l">
-        <span className="sspinner" />
+  const WorkingRow = (props: { label: string; showCancel: boolean }) => (
+    <div class="sbase">
+      <div class="sbase-l">
+        <span class="sspinner" />
       </div>
-      <span className="swork-label">{label}</span>
-      <div className="sbase-r">{showCancel && cancelBtn}</div>
+      <span class="swork-label">{props.label}</span>
+      <div class="sbase-r">
+        <Show when={props.showCancel}>
+          <CancelButton />
+        </Show>
+      </div>
     </div>
   );
 
+  const workLabel = () =>
+    state() === "processing"
+      ? t("overlay.processing")
+      : t("overlay.transcribing");
+
   // ---- Live overlay: a pill that sculpts open into a panel ----
-  if (state === "streaming") {
-    const hasText =
-      streamText.committed.length > 0 || streamText.tentative.length > 0;
-    const working = phase === "working";
-    // Keep the panel open whenever there's text — even while finalizing — so the
-    // transcript stays put under a working spinner instead of collapsing and
-    // squishing the text mid-stream. Only fall back to the small working pill
-    // when there was no text to preserve.
-    const open = hasText;
-    const collapsed = working && !hasText;
-
-    // A chunk whose merge failed shows the extras' outputs concatenated — still
-    // the session's text, just not the cleaned version. It is marked here rather
-    // than in the text: with DirectStreaming the text is typed into the user's
-    // document, and a marker inside it would be typed too.
-    const failBadge =
-      failedChunks > 0 ? (
-        <span className="sfail" title={t("overlay.chunkFailedHint")}>
-          {t("overlay.chunkFailed", { count: failedChunks })}
-        </span>
-      ) : null;
-
-    return (
-      <div
-        dir={direction}
-        className={`ov-stage ${position}`}
-        style={
-          textCap === null
-            ? undefined
-            : ({ "--ov-cap-max-h": `${textCap}px` } as React.CSSProperties)
-        }
-      >
+  const LiveCard = () => (
+    <div
+      dir={direction()}
+      class={["ov-stage", position()]}
+      style={
+        textCap() === null ? undefined : { "--ov-cap-max-h": `${textCap()}px` }
+      }
+    >
+      <Show when={sessionKey()} keyed>
+        {/* `leaving` mirrors React's class list; the card only exists while the
+            overlay is visible, so it is always false in practice. */}
         <div
-          key={session}
-          className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
-            showStats && !open && !collapsed ? "has-stats" : ""
-          } ${isVisible ? "" : "leaving"}`}
+          class={[
+            "scard",
+            {
+              open: open(),
+              working: collapsed(),
+              "has-stats": showStats() && !open() && !collapsed(),
+              leaving: !isVisible(),
+            },
+          ]}
         >
-          <div className="stext">
-            <div className="stext-clip">
+          <div class="stext">
+            <div class="stext-clip">
               <div
-                className={`stext-cap ${overflowing ? "overflowing" : ""}`}
-                ref={capRef}
+                class={["stext-cap", { overflowing: overflowing() }]}
+                ref={(el: HTMLDivElement) => {
+                  capEl = el;
+                }}
                 onScroll={handleStreamScroll}
               >
                 <p>
-                  <span className="committed">
-                    {streamText.committed ? streamText.committed + " " : ""}
+                  <span class="committed">
+                    {streamText().committed ? streamText().committed + " " : ""}
                   </span>
-                  <span className="tentative">{streamText.tentative}</span>
+                  <span class="tentative">{streamText().tentative}</span>
                   {/* Drop the blinking caret once finalizing — it's no longer
                       capturing, and a static spinner conveys the work. */}
-                  {!working && <span className="scaret" />}
+                  <Show when={!working()}>
+                    <span class="scaret" />
+                  </Show>
                 </p>
               </div>
             </div>
           </div>
-          {working
-            ? workingRow(
-                workKind === "polishing"
+          <Show
+            when={working()}
+            fallback={
+              <ListeningRow
+                showTimer={open()}
+                showCancel={true}
+                badge={failBadge()}
+              />
+            }
+          >
+            <WorkingRow
+              label={
+                workKind() === "polishing"
                   ? t("overlay.processing")
-                  : t("overlay.transcribing"),
-                true,
-              )
-            : listeningRow(open, true, failBadge)}
+                  : t("overlay.transcribing")
+              }
+              showCancel={true}
+            />
+          </Show>
         </div>
-      </div>
-    );
-  }
+      </Show>
+    </div>
+  );
 
   // ---- Minimal overlay: exactly one row at a time — waveform (recording), or a
   // spinner + label (transcribing / processing). Never both. The pill animates its
   // width between them; the cancel button is in both rows so it stays put.
-  const working = state === "transcribing" || state === "processing";
-  const workLabel =
-    state === "processing"
-      ? t("overlay.processing")
-      : t("overlay.transcribing");
-
-  return (
+  const MinimalCard = () => (
     <div
-      dir={direction}
-      className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      dir={direction()}
+      class={["ov-stage", position(), "ov-fade", { show: isVisible() }]}
     >
       <div
-        className={`scard compact ${working && isVisible ? "cworking" : ""} ${
-          showStats && !working ? "has-stats" : ""
-        }`}
+        class={[
+          "scard",
+          "compact",
+          {
+            cworking:
+              state() !== "streaming" && state() !== "recording" && isVisible(),
+            "has-stats":
+              showStats() &&
+              (state() === "streaming" || state() === "recording"),
+          },
+        ]}
       >
-        {working ? workingRow(workLabel, true) : listeningRow(false, true)}
+        <Show
+          when={state() === "transcribing" || state() === "processing"}
+          fallback={<ListeningRow showTimer={false} showCancel={true} />}
+        >
+          <WorkingRow label={workLabel()} showCancel={true} />
+        </Show>
       </div>
     </div>
+  );
+
+  // `show` on the stage and `leaving` on the card are both constant while the
+  // branch is mounted (React returned `null` rather than rendering an invisible
+  // card), so they are kept as literal classes rather than as dead expressions.
+  return (
+    <Show when={isVisible()}>
+      <Show when={state() === "streaming"} fallback={<MinimalCard />}>
+        <LiveCard />
+      </Show>
+    </Show>
   );
 };
 

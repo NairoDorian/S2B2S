@@ -1,5 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import {
+  createSignal,
+  createEffect,
+  onCleanup,
+  For,
+  Component,
+  ValidComponent,
+} from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import {
   BarChart3,
   Cog,
@@ -17,7 +24,7 @@ import {
   PictureInPicture2,
   PanelLeftClose,
   PanelLeftOpen,
-} from "lucide-react";
+} from "@/components/icons/lucide";
 import BrandLockup from "./icons/BrandLockup";
 import BrandMark from "./icons/BrandMark";
 import { readPref, writePref } from "@/lib/appIdentity";
@@ -42,20 +49,24 @@ import {
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
-interface IconProps {
-  width?: number | string;
-  height?: number | string;
-  size?: number | string;
-  className?: string;
-  [key: string]: any;
-}
-
 interface SectionConfig {
   labelKey: string;
-  icon: React.ComponentType<IconProps>;
-  component: React.ComponentType;
-  enabled: (settings: any) => boolean;
+  icon: Component<any>;
+  component: ValidComponent;
+  enabled: (settings: unknown) => boolean;
 }
+
+interface SidebarProps {
+  activeSection: SidebarSection;
+  onSectionChange: (section: SidebarSection) => void;
+}
+
+const DEFAULT_WIDTH = 208;
+const MIN_WIDTH = 160;
+const MAX_WIDTH = 360;
+const COLLAPSED_WIDTH = 56;
+const WIDTH_PREF = "sidebar.width";
+const COLLAPSED_PREF = "sidebar.collapsed";
 
 export const SECTIONS_CONFIG = {
   general: {
@@ -128,14 +139,14 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.postProcessing",
     icon: Sparkles,
     component: PostProcessingSettings,
-    enabled: (settings) => settings?.post_process_enabled ?? false,
+    enabled: (settings: unknown) =>
+      (settings as { post_process_enabled?: boolean })?.post_process_enabled ??
+      false,
   },
   debug: {
     labelKey: "sidebar.debug",
     icon: FlaskConical,
     component: DebugSettings,
-    // Always listed: the diagnostics (toast history, logs, live VAD/keyboard
-    // checks) are useful outside debug mode too.
     enabled: () => true,
   },
   help: {
@@ -152,165 +163,147 @@ export const SECTIONS_CONFIG = {
   },
 } as const satisfies Record<string, SectionConfig>;
 
-interface SidebarProps {
-  activeSection: SidebarSection;
-  onSectionChange: (section: SidebarSection) => void;
-}
-
-const DEFAULT_WIDTH = 208;
-const MIN_WIDTH = 160;
-const MAX_WIDTH = 360;
-/** Icon-only width: 24 px icon + padding + the active edge. */
-const COLLAPSED_WIDTH = 56;
-/** Preference suffixes, resolved by `readPref` / `writePref`. */
-const WIDTH_PREF = "sidebar.width";
-const COLLAPSED_PREF = "sidebar.collapsed";
-
-/**
- * Left navigation. Resizable by dragging its right edge (160–360 px),
- * collapsible to an icon rail, and the entry list scrolls when the window
- * is shorter than the list. Width and collapsed state persist per machine.
- */
-export const Sidebar: React.FC<SidebarProps> = ({
-  activeSection,
-  onSectionChange,
-}) => {
+export function Sidebar(props: SidebarProps) {
   const { t } = useTranslation();
   const { settings } = useSettings();
-  const [collapsed, setCollapsed] = useState(
+  const [collapsed, setCollapsed] = createSignal(
     () => readPref(COLLAPSED_PREF) === "true",
   );
-  const [width, setWidth] = useState(() => {
+  const [width, setWidth] = createSignal(() => {
     const saved = Number(readPref(WIDTH_PREF));
     return Number.isFinite(saved) && saved >= MIN_WIDTH
       ? Math.min(MAX_WIDTH, saved)
       : DEFAULT_WIDTH;
   });
-  const [resizing, setResizing] = useState(false);
-  const dragStartX = useRef(0);
-  const dragStartWidth = useRef(DEFAULT_WIDTH);
+  const [resizing, setResizing] = createSignal(false);
+  let dragStartX = 0;
+  let dragStartWidth = DEFAULT_WIDTH;
 
-  const availableSections = Object.entries(SECTIONS_CONFIG)
-    .filter(([, config]) => config.enabled(settings))
-    .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
+  // A function, not a value: `settings` is an accessor now, and a section's
+  // visibility (Post Process is gated on `post_process_enabled`) has to follow
+  // it. Reading `settings()` inside keeps this reactive at the `For` call site.
+  const availableSections = () =>
+    Object.entries(SECTIONS_CONFIG)
+      .filter(([, config]) => config.enabled(settings()))
+      .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
-  const toggleCollapsed = useCallback(() => {
+  const toggleCollapsed = () => {
     setCollapsed((prev) => {
       writePref(COLLAPSED_PREF, String(!prev));
       return !prev;
     });
-  }, []);
+  };
 
-  const onResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      if (collapsed) return;
-      setResizing(true);
-      dragStartX.current = e.clientX;
-      dragStartWidth.current = width;
-      e.preventDefault();
+  const onResizeStart = (e: MouseEvent) => {
+    if (collapsed()) return;
+    setResizing(true);
+    dragStartX = e.clientX;
+    dragStartWidth = width();
+    e.preventDefault();
+  };
+
+  createEffect(
+    () => undefined,
+    () => {
+      if (!resizing()) return;
+      const onMove = (e: MouseEvent) => {
+        const next = dragStartWidth + (e.clientX - dragStartX);
+        setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
+      };
+      const onUp = () => {
+        setResizing(false);
+        setWidth((w) => {
+          writePref(WIDTH_PREF, String(w));
+          return w;
+        });
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      onCleanup(() => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      });
     },
-    [collapsed, width],
   );
 
-  useEffect(() => {
-    if (!resizing) return;
-    const onMove = (e: MouseEvent) => {
-      const next = dragStartWidth.current + (e.clientX - dragStartX.current);
-      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
-    };
-    const onUp = () => {
-      setResizing(false);
-      setWidth((w) => {
-        writePref(WIDTH_PREF, String(w));
-        return w;
-      });
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [resizing]);
-
-  const effectiveWidth = collapsed ? COLLAPSED_WIDTH : width;
-  const collapseLabel = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
+  const effectiveWidth = () => (collapsed() ? COLLAPSED_WIDTH : width());
+  const collapseLabel = () =>
+    collapsed() ? t("sidebar.expand") : t("sidebar.collapse");
 
   return (
     <div
-      className="relative flex flex-col h-full shrink-0 border-e border-mid-gray/20 select-none"
+      class="relative flex flex-col h-full shrink-0 border-e border-mid-gray/20 select-none"
       style={{
-        width: effectiveWidth,
-        transition: resizing ? "none" : "width 150ms ease-out",
+        width: `${effectiveWidth()}px`,
+        transition: resizing() ? "none" : "width 150ms ease-out",
       }}
     >
-      <div className="flex items-center justify-center shrink-0 px-2 h-16 border-b border-mid-gray/20">
-        {collapsed ? (
+      <div class="flex items-center justify-center shrink-0 px-2 h-16 border-b border-mid-gray/20">
+        {collapsed() ? (
           <BrandMark size={28} />
         ) : (
-          <BrandLockup size={26} maxWidth={Math.max(60, width - 40)} />
+          <BrandLockup size={26} maxWidth={Math.max(60, width() - 40)} />
         )}
       </div>
 
-      {/* Scrolls when the window is shorter than the list. */}
-      <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-1 py-2 px-2">
-        {availableSections.map((section) => {
-          const Icon = section.icon;
-          const isActive = activeSection === section.id;
-          const label = t(section.labelKey);
-          return (
-            <button
-              type="button"
-              key={section.id}
-              title={label}
-              aria-current={isActive ? "page" : undefined}
-              className={`flex gap-2 items-center p-2 w-full border-s-2 cursor-pointer transition-colors text-start ${
-                collapsed ? "justify-center" : ""
-              } ${
-                isActive
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-transparent hover:bg-mid-gray/15 hover:opacity-100 opacity-80"
-              }`}
-              onClick={() => onSectionChange(section.id)}
-            >
-              <Icon width={24} height={24} className="shrink-0" />
-              {!collapsed && (
-                <span className="text-sm font-medium truncate">{label}</span>
-              )}
-            </button>
-          );
-        })}
+      <nav class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-1 py-2 px-2">
+        <For each={availableSections()}>
+          {(section) => {
+            const Icon = section.icon;
+            const isActive = () => props.activeSection === section.id;
+            return (
+              <button
+                type="button"
+                aria-current={isActive() ? "page" : undefined}
+                class={`flex gap-2 items-center p-2 w-full border-s-2 cursor-pointer transition-colors text-start ${
+                  collapsed() ? "justify-center" : ""
+                } ${
+                  isActive()
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-transparent hover:bg-mid-gray/15 hover:opacity-100 opacity-80"
+                }`}
+                onClick={() => props.onSectionChange(section.id)}
+              >
+                <Icon width={24} height={24} class="shrink-0" />
+                {!collapsed() && (
+                  <span class="text-sm font-medium truncate">
+                    {t(section.labelKey)}
+                  </span>
+                )}
+              </button>
+            );
+          }}
+        </For>
       </nav>
 
       <button
         type="button"
         onClick={toggleCollapsed}
-        title={collapseLabel}
-        aria-label={collapseLabel}
-        className="shrink-0 flex items-center justify-center gap-2 h-9 border-t border-mid-gray/20 text-text/50 hover:text-text hover:bg-mid-gray/15 cursor-pointer"
+        title={collapseLabel()}
+        aria-label={collapseLabel()}
+        class="shrink-0 flex items-center justify-center gap-2 h-9 border-t border-mid-gray/20 text-text/50 hover:text-text hover:bg-mid-gray/15 cursor-pointer"
       >
-        {collapsed ? (
-          <PanelLeftOpen className="w-4 h-4" />
+        {collapsed() ? (
+          <PanelLeftOpen class="w-4 h-4" />
         ) : (
           <>
-            <PanelLeftClose className="w-4 h-4" />
-            <span className="text-xs">{t("sidebar.collapse")}</span>
+            <PanelLeftClose class="w-4 h-4" />
+            <span class="text-xs">{t("sidebar.collapse")}</span>
           </>
         )}
       </button>
 
-      {/* Resize handle on the right edge */}
-      {!collapsed && (
+      {!collapsed() && (
         <div
           role="separator"
           aria-orientation="vertical"
           aria-label={t("sidebar.resize")}
           onMouseDown={onResizeStart}
-          className={`absolute top-0 -end-0.5 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 transition-colors ${
-            resizing ? "bg-accent/60" : ""
+          class={`absolute top-0 -end-0.5 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 transition-colors ${
+            resizing() ? "bg-accent/60" : ""
           }`}
         />
       )}
     </div>
   );
-};
+}

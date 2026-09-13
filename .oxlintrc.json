@@ -2,21 +2,6 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "jsPlugins": ["eslint-plugin-i18next"],
   "rules": {
-    "i18next/no-literal-string": [
-      "error",
-      {
-        "markupOnly": true,
-        "ignoreAttribute": [
-          "className",
-          "style",
-          "type",
-          "id",
-          "name",
-          "key",
-          "data-*",
-          "aria-*"
-        ]
-      }
-    ]
+    "i18next/no-literal-string": ["error", { "mode": "jsx-text-only" }]
   }
 }

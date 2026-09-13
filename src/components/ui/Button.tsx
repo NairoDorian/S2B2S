@@ -1,6 +1,7 @@
-import React from "react";
+import type { JSX } from "@solidjs/web";
+import { omit } from "solid-js";
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?:
     | "primary"
     | "primary-soft"
@@ -12,26 +13,21 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "sm" | "md" | "lg";
 }
 
-export const Button: React.FC<ButtonProps> = ({
-  children,
-  className = "",
-  variant = "primary",
-  size = "md",
-  ...props
-}) => {
+export const Button = (props: ButtonProps) => {
+  const rest = omit(props, "variant", "size", "class", "children");
+  const variant = () => props.variant ?? "primary";
+  const size = () => props.size ?? "md";
+
   const baseClasses =
     "font-medium rounded-lg border focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
 
-  const variantClasses = {
+  const variantClasses: Record<string, string> = {
     primary:
       "text-white bg-background-ui border-background-ui hover:bg-background-ui/80 hover:border-background-ui/80 focus:ring-1 focus:ring-background-ui",
     "primary-soft":
       "text-text bg-accent/20 border-transparent hover:bg-accent/30 focus:ring-1 focus:ring-accent",
     secondary:
       "bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-accent focus:outline-none",
-    // Secondary's neutral resting look, but hover/focus use the semantic
-    // --color-warning token (theme.css) instead of the gold accent — for
-    // buttons sitting on warning surfaces like SecureInputWarning
     warning:
       "text-text bg-mid-gray/10 border-mid-gray/20 hover:bg-warning/15 hover:border-warning focus:ring-1 focus:ring-warning",
     danger:
@@ -42,7 +38,7 @@ export const Button: React.FC<ButtonProps> = ({
       "text-current border-transparent hover:bg-mid-gray/10 hover:border-accent focus:bg-mid-gray/20",
   };
 
-  const sizeClasses = {
+  const sizeClasses: Record<string, string> = {
     sm: "px-2 py-1 text-xs",
     md: "px-4 py-[5px] text-sm",
     lg: "px-4 py-2 text-base",
@@ -50,10 +46,15 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
-      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
-      {...props}
+      {...rest}
+      class={[
+        baseClasses,
+        variantClasses[variant()],
+        sizeClasses[size()],
+        props.class ?? "",
+      ]}
     >
-      {children}
+      {props.children}
     </button>
   );
 };

@@ -1,4 +1,7 @@
-import React, { useEffect, useRef } from "react";
+/** @jsxImportSource @solidjs/web */
+// ^ This file is Solid; see the note in `main.tsx` for why the pragma is
+// per-file rather than tree-wide.
+import { createEffect, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { FftLoudnessMode } from "@/bindings";
 import {
@@ -16,6 +19,14 @@ import type { ResolvedOverlayScope } from "@/lib/overlayScope";
 // Overlay settings page) decides which views are drawn, the spectrum style,
 // mirroring, peak hold, the waveform window and its display gain. This file
 // only maps values to pixels.
+//
+// Phase 2 of docs/PLAN_SOLIDJS_2.md made this Solid. Everything below the poll
+// loop is framework-free and ports verbatim — the decode, the geometry, the
+// canvas maths — because `live_fft/scope.rs`'s
+// `scope_bins_equal_the_page_pipeline_for_the_same_settings` asserts the bins
+// match the Live FFT page's, and the overlay's half of that contract is the
+// `Float32Array` view mapping in `decode`. What changed is the loop's
+// lifecycle, not its arithmetic.
 
 /** Header words of a frame (live_fft::scope::encode_scope_frame). */
 const HEADER_WORDS = 8;
@@ -128,24 +139,34 @@ interface OverlayScopeProps {
   config: ResolvedOverlayScope;
 }
 
-export const OverlayScope: React.FC<OverlayScopeProps> = ({
-  rateHz,
-  ready,
-  quiet,
-  config,
-}) => {
-  const spectrumRef = useRef<HTMLCanvasElement>(null);
-  const waveRef = useRef<HTMLCanvasElement>(null);
-  const propsRef = useRef({ ready, quiet, config });
-  propsRef.current = { ready, quiet, config };
-  const { show_spectrum: showSpectrum, show_wave: showWave } = config;
+export function OverlayScope(props: OverlayScopeProps) {
+  // Callback refs, not `useRef` boxes: a Solid `ref` is called once with the
+  // element and never again — `RefCallback<T>` returns `void`, so there is no
+  // unmount call to null these the way React's ref objects are nulled. Nothing
+  // below depends on that: the guards ask the config what is being drawn (see
+  // the early return in the effect), and a handle left pointing at a detached
+  // canvas only ever paints into a canvas nobody can see.
+  let spectrum: HTMLCanvasElement | undefined;
+  let wave: HTMLCanvasElement | undefined;
 
-  useEffect(() => {
-    const spectrum = spectrumRef.current;
-    const wave = waveRef.current;
+  // React's dependency array becomes the effect's compute phase, and the memo's
+  // own equality gate is what makes it behave like one: a re-render that hands
+  // down a new-but-equal `config` object re-runs the compute but not the apply,
+  // so the loop is not torn down — and its ceiling, peak-hold and column state
+  // not reset — by a parent update that changed nothing. (An effect with a bare
+  // compute would re-run: `createEffect` applies no equality gate of its own.)
+  const pollKey = createMemo(
+    () =>
+      `${props.rateHz}:${props.config.show_spectrum}:${props.config.show_wave}`,
+  );
+
+  createEffect(pollKey, () => {
     const sctx = spectrum?.getContext("2d") ?? null;
     const wctx = wave?.getContext("2d") ?? null;
-    if (!sctx && !wctx) return;
+    // Both views off: nothing to draw, so nothing to poll for. The React
+    // version reached this through two nulled refs; with refs that are never
+    // nulled the question is asked of the setting that put the canvases there.
+    if (!props.config.show_spectrum && !props.config.show_wave) return;
 
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -154,22 +175,21 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
     let colors = readColors();
     let colorsAt = 0;
     let ceiling = 1e-6;
-    let waveCeiling = propsRef.current.config.wave_gain_floor;
+    let waveCeiling = props.config.wave_gain_floor;
     let units = new Float32Array(0);
     let columns = new Float32Array(0);
     let held = new Float32Array(0);
     let heldSeq = -1;
     let columnsHeld = new Float32Array(0);
-    const period = Math.max(16, Math.round(1000 / Math.max(1, rateHz)));
+    const period = Math.max(16, Math.round(1000 / Math.max(1, props.rateHz)));
 
     const paintSpectrum = (frame: ScopeFrame | null) => {
       if (!spectrum || !sctx) return;
       const { w, h } = prepare(spectrum, sctx);
-      const p = propsRef.current;
-      const color = p.quiet ? colors.muted : colors.accent;
-      const g = geometry(h, p.config.spectrum_mirror);
+      const color = props.quiet ? colors.muted : colors.accent;
+      const g = geometry(h, props.config.spectrum_mirror);
       const baseline = Math.round(g.base) + 0.5;
-      if (!frame || !p.ready) {
+      if (!frame || !props.ready) {
         sctx.globalAlpha = 0.35;
         sctx.strokeStyle = color;
         sctx.lineWidth = 1;
@@ -217,7 +237,7 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
         n > cols ? maxPerColumn(held, cols, columnsHeld) : held;
       const count = values.length;
       const colW = w / count;
-      const mirror = p.config.spectrum_mirror;
+      const mirror = props.config.spectrum_mirror;
 
       const tracePath = (edge: (v: number) => number) => {
         sctx.beginPath();
@@ -229,7 +249,7 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
         }
       };
 
-      if (p.config.spectrum_style === "bars") {
+      if (props.config.spectrum_style === "bars") {
         sctx.fillStyle = color;
         const gap = colW > 3 ? 1 : 0;
         for (let i = 0; i < count; i++) {
@@ -242,7 +262,7 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
         }
         sctx.globalAlpha = 1;
       } else {
-        if (p.config.spectrum_style === "area") {
+        if (props.config.spectrum_style === "area") {
           // Upright: the trace closed down to the baseline. Mirrored: the
           // band between the trace and its reflection.
           sctx.beginPath();
@@ -273,7 +293,7 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
         }
       }
 
-      if (p.config.peak_hold) {
+      if (props.config.peak_hold) {
         sctx.fillStyle = color;
         sctx.globalAlpha = 0.7;
         const markW = Math.max(1, colW - 1);
@@ -291,13 +311,12 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
     const paintWave = (frame: ScopeFrame | null) => {
       if (!wave || !wctx) return;
       const { w, h } = prepare(wave, wctx);
-      const p = propsRef.current;
-      const color = p.quiet ? colors.muted : colors.accent;
+      const color = props.quiet ? colors.muted : colors.accent;
       const mid = h / 2;
       wctx.strokeStyle = color;
       wctx.lineWidth = 1;
       wctx.lineJoin = "round";
-      if (!frame || !p.ready || frame.wave.length < 2) {
+      if (!frame || !props.ready || frame.wave.length < 2) {
         wctx.globalAlpha = 0.35;
         wctx.beginPath();
         wctx.moveTo(0, mid + 0.5);
@@ -318,7 +337,7 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
       waveCeiling = Math.max(
         peak,
         waveCeiling * WAVE_CEILING_DECAY,
-        p.config.wave_gain_floor,
+        props.config.wave_gain_floor,
       );
       const gain = (mid - 1) / waveCeiling;
       const step = w / (n - 1);
@@ -349,9 +368,8 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
           if (disposed) return;
           const frame = decode(buffer);
           const live = frame?.active ? frame : null;
-          const p = propsRef.current;
-          const c = p.config;
-          const key = `${live?.seq ?? -1}:${p.ready}:${p.quiet}:${c.spectrum_style}:${c.spectrum_mirror}:${c.peak_hold}:${c.wave_gain_floor}`;
+          const c = props.config;
+          const key = `${live?.seq ?? -1}:${props.ready}:${props.quiet}:${c.spectrum_style}:${c.spectrum_mirror}:${c.peak_hold}:${c.wave_gain_floor}`;
           if (key !== paintedKey) {
             paintedKey = key;
             paint(live);
@@ -368,20 +386,31 @@ export const OverlayScope: React.FC<OverlayScopeProps> = ({
     paint(null);
     tick();
 
+    // Returned, not registered with `onCleanup`: in Solid 2 the effect's
+    // apply returns its own teardown, and it is the only way to tie it to this
+    // run of the loop rather than to the component.
     return () => {
       disposed = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [rateHz, showSpectrum, showWave]);
+  });
 
   return (
     <>
-      {showSpectrum && (
-        <canvas ref={spectrumRef} className="sscope sscope-fft" />
+      {props.config.show_spectrum && (
+        <canvas
+          class="sscope sscope-fft"
+          ref={(el: HTMLCanvasElement) => (spectrum = el)}
+        />
       )}
-      {showWave && <canvas ref={waveRef} className="sscope sscope-wave" />}
+      {props.config.show_wave && (
+        <canvas
+          class="sscope sscope-wave"
+          ref={(el: HTMLCanvasElement) => (wave = el)}
+        />
+      )}
     </>
   );
-};
+}
 
 export default OverlayScope;

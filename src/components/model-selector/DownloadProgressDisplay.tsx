@@ -1,5 +1,6 @@
-import React from "react";
-import { ProgressBar, ProgressData } from "../shared";
+import { Show } from "solid-js";
+import { ProgressBar } from "../shared";
+import type { JSX } from "@solidjs/web";
 
 interface DownloadProgress {
   model_id: string;
@@ -7,46 +8,39 @@ interface DownloadProgress {
   total: number;
   percentage: number;
 }
-
 interface DownloadStats {
   startTime: number;
   lastUpdate: number;
   totalDownloaded: number;
   speed: number;
 }
-
 interface DownloadProgressDisplayProps {
   downloadProgress: Record<string, DownloadProgress>;
   downloadStats: Record<string, DownloadStats>;
-  className?: string;
+  class?: string;
 }
 
-const DownloadProgressDisplay: React.FC<DownloadProgressDisplayProps> = ({
-  downloadProgress,
-  downloadStats,
-  className = "",
-}) => {
-  const progressValues = Object.values(downloadProgress);
-  if (progressValues.length === 0) {
-    return null;
-  }
-
-  const progressData: ProgressData[] = progressValues.map((progress) => {
-    const stats = downloadStats[progress.model_id];
-    return {
-      id: progress.model_id,
+const DownloadProgressDisplay = (
+  props: DownloadProgressDisplayProps,
+): JSX.Element | null => {
+  // Live reads: download progress updates continuously, so a body-level
+  // snapshot of the maps would freeze the bar at its first value.
+  const progressData = () =>
+    Object.entries(props.downloadProgress).map(([id, progress]) => ({
+      id: progress.model_id || id,
       percentage: progress.percentage,
-      speed: stats?.speed,
-    };
-  });
+      speed: props.downloadStats[progress.model_id]?.speed,
+    }));
 
   return (
-    <ProgressBar
-      progress={progressData}
-      className={className}
-      showSpeed={progressValues.length === 1}
-      size="medium"
-    />
+    <Show when={progressData().length > 0}>
+      <ProgressBar
+        progress={progressData()}
+        class={props.class ?? ""}
+        showSpeed={progressData().length === 1}
+        size="medium"
+      />
+    </Show>
   );
 };
 

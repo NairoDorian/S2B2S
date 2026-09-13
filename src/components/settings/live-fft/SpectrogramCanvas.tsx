@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { createEffect } from "solid-js";
 import type { FftLoudnessMode } from "@/bindings";
 import { getLatestFrame } from "@/stores/liveFftStore";
 import {
@@ -17,30 +17,22 @@ interface SpectrogramCanvasProps {
   dbRange: number;
   colormap: ColormapKind;
   running: boolean;
-  className?: string;
+  class?: string;
 }
 
-/** Rows of history kept in the offscreen image. */
 const ROWS = 240;
-/** Widest offscreen row; more bins are max-reduced into it. */
 const MAX_COLUMNS = 2048;
 const PAD_LEFT = 36;
 const PAD_RIGHT = 8;
 const CEILING_DECAY = 0.995;
 
-/**
- * Scrolling waterfall under the analyser: one row per frame, newest at
- * the bottom, drawn into an offscreen canvas that is scrolled by one pixel
- * per frame and stretched onto the visible one.
- */
-export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
-  ({ axisHz, mode, dbRange, colormap, running, className = "" }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const propsRef = useRef({ axisHz, mode, dbRange, colormap, running });
-    propsRef.current = { axisHz, mode, dbRange, colormap, running };
+export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
+  let canvasRef: HTMLCanvasElement | undefined;
 
-    useEffect(() => {
-      const canvas = canvasRef.current;
+  createEffect(
+    () => undefined,
+    () => {
+      const canvas = canvasRef;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -70,7 +62,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
 
       const ensureLut = () => {
         const accent = cssColor("--color-accent", "#1FE0FF");
-        const kind = propsRef.current.colormap;
+        const kind = props.colormap;
         if (kind !== lutKind || accent !== lutAccent) {
           lut = buildColormap(kind, accent);
           lutKind = kind;
@@ -81,7 +73,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
       const pushFrame = (bins: Float32Array) => {
         const n = bins.length;
         if (n === 0) return;
-        const p = propsRef.current;
+        const p = props;
         const cols = Math.min(n, MAX_COLUMNS);
         if (off.width !== cols) {
           off.width = cols;
@@ -108,8 +100,6 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
           data[x * 4 + 2] = lut[idx * 3 + 2];
           data[x * 4 + 3] = 255;
         }
-        // Scroll the history up one row (drawing a canvas onto itself is
-        // specified to copy first), then append the new row at the bottom.
         offCtx.drawImage(off, 0, -1);
         offCtx.putImageData(row, 0, ROWS - 1);
       };
@@ -133,7 +123,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
         ctx.globalAlpha = 0.5;
         ctx.fillText("now", plotX - 4, h - 7);
         ctx.fillText(`−${ROWS}`, plotX - 4, 7);
-        for (const tick of frequencyTicks(propsRef.current.axisHz)) {
+        for (const tick of frequencyTicks(props.axisHz)) {
           const x = Math.round(plotX + plotW * tick.x) + 0.5;
           ctx.globalAlpha = 0.18;
           ctx.beginPath();
@@ -169,7 +159,7 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
           colorsAt = now;
           dirty = true;
         }
-        const frame = propsRef.current.running ? getLatestFrame() : null;
+        const frame = props.running ? getLatestFrame() : null;
         const seq = frame?.seq ?? -1;
         if (frame && seq !== drawnSeq) {
           ensureLut();
@@ -187,10 +177,13 @@ export const SpectrogramCanvas: React.FC<SpectrogramCanvasProps> = React.memo(
         cancelAnimationFrame(raf);
         observer.disconnect();
       };
-    }, []);
+    },
+  );
 
-    return <canvas ref={canvasRef} className={`block w-full ${className}`} />;
-  },
-);
-
-SpectrogramCanvas.displayName = "SpectrogramCanvas";
+  return (
+    <canvas
+      ref={(el) => (canvasRef = el)}
+      class={`block w-full ${props.class ?? ""}`}
+    />
+  );
+};

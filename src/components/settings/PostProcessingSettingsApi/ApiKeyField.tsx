@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import { createSignal, createEffect } from "solid-js";
 import { Input } from "../../ui/Input";
+import type { JSX } from "@solidjs/web";
 
 interface ApiKeyFieldProps {
   value: string;
@@ -9,28 +10,32 @@ interface ApiKeyFieldProps {
   className?: string;
 }
 
-export const ApiKeyField: React.FC<ApiKeyFieldProps> = React.memo(
-  ({ value, onBlur, disabled, placeholder, className = "" }) => {
-    const [localValue, setLocalValue] = useState(value);
+export const ApiKeyField = ({
+  value,
+  onBlur,
+  disabled,
+  placeholder,
+  className = "",
+}: ApiKeyFieldProps): JSX.Element => {
+  const [localValue, setLocalValue] = createSignal(value);
 
-    // Sync with prop changes
-    React.useEffect(() => {
+  createEffect(
+    () => undefined,
+    () => {
       setLocalValue(value);
-    }, [value]);
+    },
+  );
 
-    return (
-      <Input
-        type="password"
-        value={localValue}
-        onChange={(event) => setLocalValue(event.target.value)}
-        onBlur={() => onBlur(localValue)}
-        placeholder={placeholder}
-        variant="compact"
-        disabled={disabled}
-        className={`flex-1 min-w-[320px] ${className}`}
-      />
-    );
-  },
-);
-
-ApiKeyField.displayName = "ApiKeyField";
+  return (
+    <Input
+      type="password"
+      value={localValue()}
+      onInput={(e) => setLocalValue(e.target.value)}
+      onBlur={() => onBlur(localValue())}
+      placeholder={placeholder}
+      variant="compact"
+      disabled={disabled}
+      class={`flex-1 min-w-[320px] ${className}`}
+    />
+  );
+};

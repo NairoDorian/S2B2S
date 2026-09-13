@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
 import { ResetButton } from "../ui/ResetButton";
@@ -10,6 +10,7 @@ import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SECURE_INPUT_HELP_URL } from "../SecureInputWarning";
+import type { JSX } from "@solidjs/web";
 
 interface NativeKeysShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -25,52 +26,39 @@ interface NativeKeysEvent {
   hotkey_string: string;
 }
 
-export const NativeKeysShortcutInput: React.FC<
-  NativeKeysShortcutInputProps
-> = ({
+export const NativeKeysShortcutInput = ({
   descriptionMode = "tooltip",
   grouped = false,
   shortcutId,
   disabled = false,
-}) => {
+}: NativeKeysShortcutInputProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateBinding, resetBinding, isUpdating, isLoading } =
     useSettings();
-  const [isRecording, setIsRecording] = useState(false);
-  const [currentKeys, setCurrentKeys] = useState<string>("");
-  const [originalBinding, setOriginalBinding] = useState<string>("");
-  const shortcutRef = useRef<HTMLDivElement | null>(null);
-  const unlistenRef = useRef<(() => void) | null>(null);
-  // Use a ref to track currentKeys for the event handler (avoids stale closure)
-  const currentKeysRef = useRef<string>("");
-  // Track keyed vs modifier-only captures separately so a combo commits only
-  // on its key's release and a modifier-only shortcut only once every
-  // modifier is released. Committing on the *first* release (the old
-  // behavior) silently saved just the modifier whenever the key event never
-  // arrived — e.g. while macOS Secure Input is active (issue #1578).
-  const keyedShortcutRef = useRef<string>("");
-  const modifierOnlyShortcutRef = useRef<string>("");
+  const [isRecording, setIsRecording] = createSignal(false);
+  const [currentKeys, setCurrentKeys] = createSignal<string>("");
+  const [originalBinding, setOriginalBinding] = createSignal<string>("");
+  let shortcutRef: HTMLDivElement | null = null;
+  let unlistenRef: (() => void) | null = null;
+  let keyedShortcutRef = "";
+  let modifierOnlyShortcutRef = "";
   const osType = useOsType();
 
   const bindings = getSetting("bindings") || {};
 
-  // Handle cancellation
-  const cancelRecording = useCallback(async () => {
-    if (!isRecording) return;
+  const cancelRecording = async () => {
+    if (!isRecording()) return;
 
-    // Stop listening for backend events
-    if (unlistenRef.current) {
-      unlistenRef.current();
-      unlistenRef.current = null;
+    if (unlistenRef) {
+      unlistenRef();
+      unlistenRef = null;
     }
 
-    // Stop backend recording
     await commands.stopNativeKeysRecording().catch(console.error);
 
-    // Restore original binding
-    if (originalBinding) {
+    if (originalBinding()) {
       try {
-        await updateBinding(shortcutId, originalBinding);
+        await updateBinding(shortcutId, originalBinding());
       } catch (error) {
         console.error("Failed to restore original binding:", error);
         toast.error(t("settings.general.shortcut.errors.restore"));
@@ -79,147 +67,118 @@ export const NativeKeysShortcutInput: React.FC<
 
     setIsRecording(false);
     setCurrentKeys("");
-    currentKeysRef.current = "";
-    keyedShortcutRef.current = "";
-    modifierOnlyShortcutRef.current = "";
+    keyedShortcutRef = "";
+    modifierOnlyShortcutRef = "";
     setOriginalBinding("");
-  }, [isRecording, originalBinding, shortcutId, updateBinding, t]);
+  };
 
-  // Set up the listener for the native keyboard backend's events
-  useEffect(() => {
-    if (!isRecording) return;
+  createEffect(
+    () => undefined,
+    () => {
+      if (!isRecording()) return;
 
-    let cleanup = false;
+      let cleanup = false;
 
-    const setupListener = async () => {
-      // Listen for key events from backend
-      const commitAndStop = async (keysToCommit: string) => {
-        try {
-          await updateBinding(shortcutId, keysToCommit);
-        } catch (error) {
-          console.error("Failed to change binding:", error);
-          toast.error(
-            t("settings.general.shortcut.errors.set", {
-              error: String(error),
-            }),
-          );
+      const setupListener = async () => {
+        const commitAndStop = async (keysToCommit: string) => {
+          try {
+            await updateBinding(shortcutId, keysToCommit);
+          } catch (error) {
+            console.error("Failed to change binding:", error);
+            toast.error(
+              t("settings.general.shortcut.errors.set", {
+                error: String(error),
+              }),
+            );
 
-          // Reset to original binding on error
-          if (originalBinding) {
-            try {
-              await updateBinding(shortcutId, originalBinding);
-            } catch (resetError) {
-              console.error("Failed to reset binding:", resetError);
-              toast.error(t("settings.general.shortcut.errors.reset"));
+            if (originalBinding()) {
+              try {
+                await updateBinding(shortcutId, originalBinding());
+              } catch (resetError) {
+                console.error("Failed to reset binding:", resetError);
+                toast.error(t("settings.general.shortcut.errors.reset"));
+              }
             }
           }
-        }
 
-        // Stop recording
-        if (unlistenRef.current) {
-          unlistenRef.current();
-          unlistenRef.current = null;
-        }
-        await commands.stopNativeKeysRecording().catch(console.error);
-        setIsRecording(false);
-        setCurrentKeys("");
-        currentKeysRef.current = "";
-        keyedShortcutRef.current = "";
-        modifierOnlyShortcutRef.current = "";
-        setOriginalBinding("");
+          if (unlistenRef) {
+            unlistenRef();
+            unlistenRef = null;
+          }
+          await commands.stopNativeKeysRecording().catch(console.error);
+          setIsRecording(false);
+          setCurrentKeys("");
+          keyedShortcutRef = "";
+          modifierOnlyShortcutRef = "";
+          setOriginalBinding("");
+        };
+
+        const unlisten = await listen<NativeKeysEvent>(
+          "native-keys-event",
+          async (event) => {
+            if (cleanup) return;
+
+            const { hotkey_string, is_key_down, key } = event.payload;
+
+            if (is_key_down && hotkey_string) {
+              if (key) {
+                keyedShortcutRef = hotkey_string;
+              } else {
+                modifierOnlyShortcutRef = hotkey_string;
+              }
+              setCurrentKeys(hotkey_string);
+            } else if (!is_key_down && key) {
+              const keysToCommit = keyedShortcutRef || hotkey_string;
+              if (keysToCommit) {
+                await commitAndStop(keysToCommit);
+              }
+            } else if (
+              !is_key_down &&
+              keyedShortcutRef &&
+              modifierOnlyShortcutRef
+            ) {
+              await commitAndStop(modifierOnlyShortcutRef);
+            }
+          },
+        );
+
+        unlistenRef = unlisten;
       };
 
-      const unlisten = await listen<NativeKeysEvent>(
-        "native-keys-event",
-        async (event) => {
-          if (cleanup) return;
+      setupListener();
 
-          const { hotkey_string, is_key_down, key, modifiers } = event.payload;
+      return () => {
+        cleanup = true;
+        if (unlistenRef) {
+          unlistenRef();
+          unlistenRef = null;
+        }
+        commands.stopNativeKeysRecording().catch(console.error);
+      };
+    },
+  );
 
-          if (is_key_down && hotkey_string) {
-            // Update both state (for display) and refs (for release handler)
-            if (key) {
-              keyedShortcutRef.current = hotkey_string;
-            } else {
-              modifierOnlyShortcutRef.current = hotkey_string;
-            }
-            currentKeysRef.current = hotkey_string;
-            setCurrentKeys(hotkey_string);
-          } else if (!is_key_down && key) {
-            // The main key was released — commit the keyed combo. The release
-            // event's hotkey_string still contains the key, so it works even
-            // if the key-down was somehow missed. Never fall back to a
-            // modifier-only capture here: that's how bindings used to get
-            // silently overwritten with just the modifier (issue #1578).
-            const keysToCommit = keyedShortcutRef.current || hotkey_string;
-            if (keysToCommit) {
-              await commitAndStop(keysToCommit);
-            }
-          } else if (
-            !is_key_down &&
-            !key &&
-            modifiers.length === 0 &&
-            !keyedShortcutRef.current &&
-            modifierOnlyShortcutRef.current
-          ) {
-            // Every modifier released without a main key ever going down —
-            // commit as a modifier-only shortcut
-            await commitAndStop(modifierOnlyShortcutRef.current);
-          }
-        },
-      );
+  createEffect(
+    () => undefined,
+    () => {
+      if (!isRecording()) return;
 
-      unlistenRef.current = unlisten;
-    };
+      const handleClickOutside = (e: MouseEvent) => {
+        if (shortcutRef && !shortcutRef.contains(e.target as Node)) {
+          cancelRecording();
+        }
+      };
 
-    setupListener();
+      window.addEventListener("click", handleClickOutside);
+      return () => window.removeEventListener("click", handleClickOutside);
+    },
+  );
 
-    return () => {
-      cleanup = true;
-      if (unlistenRef.current) {
-        unlistenRef.current();
-        unlistenRef.current = null;
-      }
-      // Stop backend recording on unmount to prevent orphaned recording loops
-      commands.stopNativeKeysRecording().catch(console.error);
-    };
-  }, [
-    isRecording,
-    shortcutId,
-    originalBinding,
-    updateBinding,
-    cancelRecording,
-    t,
-  ]);
-
-  // Handle click outside
-  useEffect(() => {
-    if (!isRecording) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        shortcutRef.current &&
-        !shortcutRef.current.contains(e.target as Node)
-      ) {
-        cancelRecording();
-      }
-    };
-
-    window.addEventListener("click", handleClickOutside);
-    return () => window.removeEventListener("click", handleClickOutside);
-  }, [isRecording, cancelRecording]);
-
-  // Start recording a new shortcut
   const startRecording = async () => {
-    if (isRecording) return;
+    if (isRecording()) return;
 
-    // Store the original binding to restore if canceled
     setOriginalBinding(bindings[shortcutId]?.current_binding || "");
 
-    // Start backend recording. The backend refuses while macOS Secure Input
-    // is active (the recorder's listener would receive no key events and
-    // capture just the modifier) — it also flips the warning banner on, so
-    // the toast points at a visible explanation.
     try {
       const result = await commands.startNativeKeysRecording(shortcutId);
       if (result.status === "error") {
@@ -241,9 +200,8 @@ export const NativeKeysShortcutInput: React.FC<
       }
       setIsRecording(true);
       setCurrentKeys("");
-      currentKeysRef.current = "";
-      keyedShortcutRef.current = "";
-      modifierOnlyShortcutRef.current = "";
+      keyedShortcutRef = "";
+      modifierOnlyShortcutRef = "";
     } catch (error) {
       console.error("Failed to start recording:", error);
       toast.error(
@@ -252,14 +210,12 @@ export const NativeKeysShortcutInput: React.FC<
     }
   };
 
-  // Format the current shortcut keys being recorded
   const formatCurrentKeys = (): string => {
-    if (!currentKeys) return t("settings.general.shortcut.pressKeys");
-    return formatKeyCombination(currentKeys, osType);
+    if (!currentKeys()) return t("settings.general.shortcut.pressKeys");
+    return formatKeyCombination(currentKeys(), osType);
   };
 
-  // If still loading, show loading state
-  if (isLoading) {
+  if (isLoading()) {
     return (
       <SettingContainer
         title={t("settings.general.shortcut.title")}
@@ -267,14 +223,13 @@ export const NativeKeysShortcutInput: React.FC<
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-mid-gray">
+        <div class="text-sm text-mid-gray">
           {t("settings.general.shortcut.loading")}
         </div>
       </SettingContainer>
     );
   }
 
-  // If no bindings are loaded, show empty state
   if (Object.keys(bindings).length === 0) {
     return (
       <SettingContainer
@@ -283,7 +238,7 @@ export const NativeKeysShortcutInput: React.FC<
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-mid-gray">
+        <div class="text-sm text-mid-gray">
           {t("settings.general.shortcut.none")}
         </div>
       </SettingContainer>
@@ -299,14 +254,13 @@ export const NativeKeysShortcutInput: React.FC<
         descriptionMode={descriptionMode}
         grouped={grouped}
       >
-        <div className="text-sm text-mid-gray">
+        <div class="text-sm text-mid-gray">
           {t("settings.general.shortcut.none")}
         </div>
       </SettingContainer>
     );
   }
 
-  // Get translated name and description for the binding
   const translatedName = t(
     `settings.general.shortcut.bindings.${shortcutId}.name`,
     binding.name,
@@ -325,17 +279,17 @@ export const NativeKeysShortcutInput: React.FC<
       disabled={disabled}
       layout="horizontal"
     >
-      <div className="flex items-center space-x-1">
-        {isRecording ? (
+      <div class="flex items-center space-x-1">
+        {isRecording() ? (
           <div
-            ref={shortcutRef}
-            className="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
+            ref={(el) => (shortcutRef = el)}
+            class="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
           >
             {formatCurrentKeys()}
           </div>
         ) : (
           <div
-            className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent"
+            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent"
             onClick={startRecording}
           >
             {formatKeyCombination(binding.current_binding, osType)}

@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import type { SidebarSection } from "@/components/Sidebar";
+import { createSolidStore } from "@/lib/solidStore";
 
 /**
  * Which settings page is shown, plus the hand-off slot the Help page reads
@@ -16,7 +16,7 @@ interface NavigationStore {
   consumePendingHelpAnchor: () => void;
 }
 
-export const useNavigationStore = create<NavigationStore>((set) => ({
+const navigationState = createSolidStore<NavigationStore>((set) => ({
   section: "general",
   pendingHelpAnchor: null,
   setSection: (section) => set({ section }),
@@ -24,3 +24,19 @@ export const useNavigationStore = create<NavigationStore>((set) => ({
     set({ section: "help", pendingHelpAnchor: anchor ?? null }),
   consumePendingHelpAnchor: () => set({ pendingHelpAnchor: null }),
 }));
+
+export function useNavigationStore() {
+  return navigationState;
+}
+
+export const setSection = (section: SidebarSection) => {
+  navigationState.setSection(section);
+};
+
+export const openHelp = (anchor?: string) => {
+  navigationState.openHelp(anchor);
+};
+
+export const consumePendingHelpAnchor = () => {
+  navigationState.consumePendingHelpAnchor();
+};

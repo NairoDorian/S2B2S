@@ -1,17 +1,39 @@
-import { isValidElement, type ReactNode } from "react";
-import { toast as sonnerToast, type ExternalToast } from "sonner";
 import {
-  type SessionToastLevel,
-  useSessionToastStore,
-} from "@/stores/sessionToastStore";
+  type ToastContent,
+  type ToastLevel,
+  type ToastOptions,
+  show,
+  dismiss,
+} from "@/stores/toastStore";
+import { type SessionToastLevel, addToast } from "@/stores/sessionToastStore";
 
-type ToastMessage = Parameters<typeof sonnerToast.error>[0];
-type ToastResult = ReturnType<typeof sonnerToast.error>;
+type ToastNode =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | ToastNode[]
+  | { props: Record<string, unknown> };
 
-const resolveToastNode = (node: ToastMessage | undefined): ReactNode =>
+/** A toast's message: text, markup, or a function returning either. */
+type ToastMessage = ToastNode | (() => ToastNode);
+/** The handle a toast returns. Nothing keeps one today; the API keeps it. */
+type ToastResult = number;
+
+const resolveToastNode = (node: ToastMessage | undefined): ToastNode =>
   typeof node === "function" ? node() : node;
 
-const getNodeText = (node: ReactNode): string | undefined => {
+const isValidElement = (
+  node: unknown,
+): node is { props: Record<string, unknown> } =>
+  typeof node === "object" &&
+  node !== null &&
+  "props" in node &&
+  typeof (node as Record<string, unknown>).props === "object";
+
+/** The message as plain text, for the Debug page's list of past toasts. */
+const getNodeText = (node: ToastNode): string | undefined => {
   if (typeof node === "string" || typeof node === "number") {
     return String(node);
   }
@@ -20,57 +42,62 @@ const getNodeText = (node: ReactNode): string | undefined => {
     return text.length > 0 ? text.join("") : undefined;
   }
   if (isValidElement(node)) {
-    const props = node.props as { children?: ReactNode; "aria-label"?: string };
+    const props = node.props as { children?: ToastNode; "aria-label"?: string };
     return getNodeText(props.children) ?? props["aria-label"];
   }
   return undefined;
 };
 
-const getActionLabel = (
-  action: ExternalToast["action"],
-): string | undefined => {
-  if (!action || typeof action !== "object" || isValidElement(action)) {
-    return undefined;
-  }
-  if (!("label" in action)) return undefined;
-  return getNodeText((action as { label?: ReactNode }).label);
-};
+const resolve = (
+  message: ToastMessage,
+  options?: ToastOptions,
+): ToastContent => ({
+  message: getNodeText(resolveToastNode(message)) ?? "",
+  description: getNodeText(resolveToastNode(options?.description)),
+  action: options?.action,
+});
+
+const showToast = (level: ToastLevel, content: ToastContent): ToastResult =>
+  show(level, content);
 
 const showTrackedToast = (
   level: SessionToastLevel,
-  message: ToastMessage,
-  options?: ExternalToast,
+  content: ToastContent,
 ): ToastResult => {
-  const resolvedMessage = resolveToastNode(message);
-  const resolvedDescription = resolveToastNode(options?.description);
-  const liveOptions =
-    typeof options?.description === "function"
-      ? { ...options, description: resolvedDescription }
-      : options;
+  const toastId = showToast(level, content);
 
-  const toastId = sonnerToast[level](resolvedMessage, liveOptions);
-
-  useSessionToastStore.getState().addToast({
+  addToast({
     level,
-    message: getNodeText(resolvedMessage) ?? "",
-    description: getNodeText(resolvedDescription),
-    actionLabel: getActionLabel(options?.action),
+    message: getNodeText(content.message) ?? "",
+    description: getNodeText(content.description),
+    actionLabel: content.action ? getNodeText(content.action.label) : undefined,
   });
 
   return toastId;
 };
 
-const passthroughToast = ((...args: Parameters<typeof sonnerToast>) =>
-  sonnerToast(...args)) as typeof sonnerToast;
-
 /**
- * Drop-in replacement for sonner's `toast`: the whole API is passed through,
- * but `error` and `warning` are also recorded in `useSessionToastStore` so the
- * Debug page can list them after they auto-dismissed. Ported from AIVORelay.
+ * Drop-in replacement for sonner's `toast`: the same levels and the same
+ * `{ description, action }` options, but rendered by the app's own
+ * `components/ui/Toaster.tsx`. `error` and `warning` are also recorded in
+ * `useSessionToastStore` so the Debug page can list them after they
+ * auto-dismissed. Ported from AIVORelay.
+ *
+ * A bare `toast(...)` — sonner's untyped default — is an `info` here, since
+ * that is what it renders as.
  */
-export const sessionToast = Object.assign(passthroughToast, sonnerToast, {
-  error: (message: ToastMessage, options?: ExternalToast) =>
-    showTrackedToast("error", message, options),
-  warning: (message: ToastMessage, options?: ExternalToast) =>
-    showTrackedToast("warning", message, options),
-});
+export const sessionToast = Object.assign(
+  (message: ToastMessage, options?: ToastOptions) =>
+    showToast("info", resolve(message, options)),
+  {
+    success: (message: ToastMessage, options?: ToastOptions) =>
+      showToast("success", resolve(message, options)),
+    info: (message: ToastMessage, options?: ToastOptions) =>
+      showToast("info", resolve(message, options)),
+    error: (message: ToastMessage, options?: ToastOptions) =>
+      showTrackedToast("error", resolve(message, options)),
+    warning: (message: ToastMessage, options?: ToastOptions) =>
+      showTrackedToast("warning", resolve(message, options)),
+    dismiss: (id: number) => dismiss(id),
+  },
+);

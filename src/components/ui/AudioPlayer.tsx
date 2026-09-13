@@ -1,20 +1,18 @@
-import React, {
+import {
   createContext,
-  useCallback,
   useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { Play, Pause } from "lucide-react";
+  createSignal,
+  createEffect,
+  createMemo,
+  onCleanup,
+} from "solid-js";
+import { Play, Pause } from "@/components/icons/lucide";
+import type { JSX } from "@solidjs/web";
 
 interface AudioPlayerProps {
-  /** Audio source URL. If not provided, onLoadRequest must be provided. */
   src?: string;
-  /** Called when play is clicked and no src is loaded yet. Should return the audio URL. */
   onLoadRequest?: () => Promise<string | null>;
-  className?: string;
+  class?: string;
   autoPlay?: boolean;
 }
 
@@ -26,208 +24,198 @@ interface AudioPlayerGroupContextValue {
 const AudioPlayerGroupContext =
   createContext<AudioPlayerGroupContextValue | null>(null);
 
-export const AudioPlayerGroup: React.FC<React.PropsWithChildren> = ({
-  children,
-}) => {
-  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
-  const value = useMemo<AudioPlayerGroupContextValue>(
-    () => ({
-      requestPlayback: (audio) => {
-        if (activeAudioRef.current !== audio) activeAudioRef.current?.pause();
-        activeAudioRef.current = audio;
-      },
-      releasePlayback: (audio) => {
-        if (activeAudioRef.current === audio) activeAudioRef.current = null;
-      },
-    }),
-    [],
-  );
+export const AudioPlayerGroup = (props: {
+  children?: JSX.Element;
+}): JSX.Element => {
+  let activeAudioRef: HTMLAudioElement | null = null;
+  const value = createMemo<AudioPlayerGroupContextValue>(() => ({
+    requestPlayback: (audio) => {
+      if (activeAudioRef !== audio) activeAudioRef?.pause();
+      activeAudioRef = audio;
+    },
+    releasePlayback: (audio) => {
+      if (activeAudioRef === audio) activeAudioRef = null;
+    },
+  }));
 
   return (
-    <AudioPlayerGroupContext.Provider value={value}>
-      {children}
-    </AudioPlayerGroupContext.Provider>
+    <AudioPlayerGroupContext value={value()}>
+      {props.children}
+    </AudioPlayerGroupContext>
   );
 };
 
-export const AudioPlayer: React.FC<AudioPlayerProps> = ({
-  src: initialSrc,
-  onLoadRequest,
-  className = "",
-  autoPlay = false,
-}) => {
+export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
+  const {
+    src: initialSrc,
+    onLoadRequest,
+    class: className = "",
+    autoPlay = false,
+  } = props;
   const group = useContext(AudioPlayerGroupContext);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(initialSrc ?? null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = createSignal(false);
+  const [duration, setDuration] = createSignal(0);
+  const [currentTime, setCurrentTime] = createSignal(0);
+  const [isDragging, setIsDragging] = createSignal(false);
+  const [loadedSrc, setLoadedSrc] = createSignal<string | null>(
+    initialSrc ?? null,
+  );
+  const [isLoading, setIsLoading] = createSignal(false);
 
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const src = loadedSrc;
-  const animationRef = useRef<number | undefined>(undefined);
-  const dragTimeRef = useRef<number>(0);
+  let audioRef!: HTMLAudioElement;
+  const src = loadedSrc();
+  let animationRef: number | undefined = undefined;
+  let dragTimeRef: number = 0;
 
-  // Use refs to avoid stale closures in animation loop
-  const isPlayingRef = useRef(false);
-  const isDraggingRef = useRef(false);
+  let isPlayingRef: boolean = false;
+  let isDraggingRef: boolean = false;
 
-  // Keep refs in sync with state
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
+  createEffect(
+    () => undefined,
+    () => {
+      isPlayingRef = isPlaying();
+    },
+  );
+  createEffect(
+    () => undefined,
+    () => {
+      isDraggingRef = isDragging();
+    },
+  );
 
-  useEffect(() => {
-    isDraggingRef.current = isDragging;
-  }, [isDragging]);
-
-  // Stable animation loop with no dependencies
-  const tick = useCallback(() => {
-    if (audioRef.current && !isDraggingRef.current) {
-      const time = audioRef.current.currentTime;
+  const tick = () => {
+    if (audioRef && !isDraggingRef) {
+      const time = audioRef.currentTime;
       setCurrentTime(time);
     }
-
-    if (isPlayingRef.current) {
-      animationRef.current = requestAnimationFrame(tick);
+    if (isPlayingRef) {
+      animationRef = requestAnimationFrame(tick);
     }
-  }, []); // Empty dependency array is key!
+  };
 
-  // Manage animation loop lifecycle
-  useEffect(() => {
-    if (isPlaying && !isDragging) {
-      // Only start if not already running
-      if (!animationRef.current) {
-        animationRef.current = requestAnimationFrame(tick);
+  createEffect(
+    () => undefined,
+    () => {
+      if (isPlaying() && !isDragging()) {
+        if (!animationRef) animationRef = requestAnimationFrame(tick);
+      } else {
+        if (animationRef) {
+          cancelAnimationFrame(animationRef);
+          animationRef = undefined;
+        }
       }
-    } else {
-      // Stop animation loop
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-        animationRef.current = undefined;
-      }
-    }
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-        animationRef.current = undefined;
-      }
-    };
-  }, [isPlaying, isDragging, tick]);
-
-  // Audio event handlers
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const handleLoadedMetadata = () => {
-      setDuration(audio.duration || 0);
-      setCurrentTime(0);
-    };
-
-    const handleEnded = () => {
-      group?.releasePlayback(audio);
-      setIsPlaying(false);
-      setCurrentTime(audio.duration || 0);
-    };
-
-    const handlePlay = () => {
-      group?.requestPlayback(audio);
-      setIsPlaying(true);
-    };
-    const handlePause = () => {
-      group?.releasePlayback(audio);
-      setIsPlaying(false);
-    };
-
-    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
-    audio.addEventListener("ended", handleEnded);
-    audio.addEventListener("play", handlePlay);
-    audio.addEventListener("pause", handlePause);
-
-    return () => {
-      group?.releasePlayback(audio);
-      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
-      audio.removeEventListener("ended", handleEnded);
-      audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener("pause", handlePause);
-    };
-  }, [group]);
-
-  // Auto-play when src becomes available (via onLoadRequest or autoPlay prop)
-  const prevLoadedSrc = useRef<string | null>(null);
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    // Play when loadedSrc changes from null to a value (lazy load case)
-    if (loadedSrc && !prevLoadedSrc.current && onLoadRequest) {
-      audio.play().catch((error) => {
-        console.error("Auto-play failed:", error);
+      onCleanup(() => {
+        if (animationRef) {
+          cancelAnimationFrame(animationRef);
+          animationRef = undefined;
+        }
       });
-    }
-    // Or when autoPlay is set with initial src
-    else if (autoPlay && initialSrc && !prevLoadedSrc.current) {
-      audio.play().catch((error) => {
-        console.error("Auto-play failed:", error);
-      });
-    }
+    },
+  );
 
-    prevLoadedSrc.current = loadedSrc;
-  }, [loadedSrc, autoPlay, initialSrc, onLoadRequest]);
-
-  // Global drag handlers
-  const handleMouseUp = useCallback(() => {
-    if (isDragging) {
-      setIsDragging(false);
-      if (audioRef.current) {
-        audioRef.current.currentTime = dragTimeRef.current;
-        setCurrentTime(dragTimeRef.current);
-      }
-    }
-  }, [isDragging]);
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener("mouseup", handleMouseUp);
-      document.addEventListener("touchend", handleMouseUp);
-
-      return () => {
-        document.removeEventListener("mouseup", handleMouseUp);
-        document.removeEventListener("touchend", handleMouseUp);
+  createEffect(
+    () => undefined,
+    () => {
+      const audio = audioRef;
+      if (!audio) return;
+      const handleLoadedMetadata = () => {
+        setDuration(audio.duration || 0);
+        setCurrentTime(0);
       };
-    }
-  }, [isDragging, handleMouseUp]);
+      const handleEnded = () => {
+        group?.releasePlayback(audio);
+        setIsPlaying(false);
+        setCurrentTime(audio.duration || 0);
+      };
+      const handlePlay = () => {
+        group?.requestPlayback(audio);
+        setIsPlaying(true);
+      };
+      const handlePause = () => {
+        group?.releasePlayback(audio);
+        setIsPlaying(false);
+      };
 
-  // Cleanup blob URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (loadedSrc?.startsWith("blob:")) {
-        URL.revokeObjectURL(loadedSrc);
+      audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.addEventListener("ended", handleEnded);
+      audio.addEventListener("play", handlePlay);
+      audio.addEventListener("pause", handlePause);
+      onCleanup(() => {
+        group?.releasePlayback(audio);
+        audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+        audio.removeEventListener("ended", handleEnded);
+        audio.removeEventListener("play", handlePlay);
+        audio.removeEventListener("pause", handlePause);
+      });
+    },
+  );
+
+  let prevLoadedSrc: string | null = null;
+  createEffect(
+    () => undefined,
+    () => {
+      const audio = audioRef;
+      if (!audio) return;
+      if (loadedSrc() && !prevLoadedSrc && onLoadRequest) {
+        audio.play().catch((error) => {
+          console.error("Auto-play failed:", error);
+        });
+      } else if (autoPlay && initialSrc && !prevLoadedSrc) {
+        audio.play().catch((error) => {
+          console.error("Auto-play failed:", error);
+        });
       }
-    };
-  }, [loadedSrc]);
+      prevLoadedSrc = loadedSrc();
+    },
+  );
+
+  const handleMouseUp = () => {
+    if (isDragging()) {
+      setIsDragging(false);
+      if (audioRef) {
+        audioRef.currentTime = dragTimeRef;
+        setCurrentTime(dragTimeRef);
+      }
+    }
+  };
+
+  createEffect(
+    () => undefined,
+    () => {
+      if (isDragging()) {
+        document.addEventListener("mouseup", handleMouseUp);
+        document.addEventListener("touchend", handleMouseUp);
+        onCleanup(() => {
+          document.removeEventListener("mouseup", handleMouseUp);
+          document.removeEventListener("touchend", handleMouseUp);
+        });
+      }
+    },
+  );
+
+  createEffect(
+    () => undefined,
+    () => {
+      onCleanup(() => {
+        const url = loadedSrc();
+        if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      });
+    },
+  );
 
   const togglePlay = async () => {
-    const audio = audioRef.current;
+    const audio = audioRef;
     if (!audio) return;
-    if (isLoading) return;
-
+    if (isLoading()) return;
     try {
-      if (isPlaying) {
+      if (isPlaying()) {
         audio.pause();
       } else {
-        // If no src loaded yet, request it
         if (!src && onLoadRequest) {
           setIsLoading(true);
           const newSrc = await onLoadRequest();
           setIsLoading(false);
-          if (newSrc) {
-            setLoadedSrc(newSrc);
-            // Playback will be triggered by the useEffect watching loadedSrc
-          }
+          if (newSrc) setLoadedSrc(newSrc);
         } else if (src) {
           await audio.play();
         }
@@ -237,84 +225,73 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTime = parseFloat(e.target.value);
-    dragTimeRef.current = newTime;
+  const handleSeek = (e: Event) => {
+    const newTime = parseFloat((e.target as HTMLInputElement).value);
+    dragTimeRef = newTime;
     setCurrentTime(newTime);
-
-    if (!isDragging && audioRef.current) {
-      audioRef.current.currentTime = newTime;
-    }
+    if (!isDragging() && audioRef) audioRef.currentTime = newTime;
   };
 
-  const handleSliderMouseDown = () => {
-    setIsDragging(true);
-  };
-
-  const handleSliderTouchStart = () => {
-    setIsDragging(true);
-  };
+  const handleSliderMouseDown = () => setIsDragging(true);
+  const handleSliderTouchStart = () => setIsDragging(true);
 
   const formatTime = (time: number): string => {
     if (!isFinite(time)) return "0:00";
-
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  // Fix playhead positioning with better edge case handling
   const getProgressPercent = (): number => {
-    if (duration <= 0) return 0;
-
-    // Handle the end case - if we're within 0.1 seconds of the end, show 100%
-    if (duration - currentTime < 0.1) return 100;
-
-    const percent = (currentTime / duration) * 100;
+    if (duration() <= 0) return 0;
+    if (duration() - currentTime() < 0.1) return 100;
+    const percent = (currentTime() / duration()) * 100;
     return Math.min(100, Math.max(0, percent));
   };
 
   const progressPercent = getProgressPercent();
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
-      <audio ref={audioRef} src={src ?? undefined} preload="metadata" />
-
+    <div class={`flex items-center gap-3 ${className}`}>
+      <audio
+        ref={(el) => {
+          audioRef = el;
+        }}
+        src={src ?? undefined}
+        preload="metadata"
+      />
       <button
         onClick={togglePlay}
-        disabled={isLoading}
-        className="transition-colors cursor-pointer text-text hover:text-accent disabled:opacity-50"
-        aria-label={isPlaying ? "Pause" : "Play"}
+        disabled={isLoading()}
+        class="transition-colors cursor-pointer text-text hover:text-accent disabled:opacity-50"
+        aria-label={isPlaying() ? "Pause" : "Play"}
       >
-        {isPlaying ? (
+        {isPlaying() ? (
           <Pause width={20} height={20} fill="currentColor" />
         ) : (
           <Play width={20} height={20} fill="currentColor" />
         )}
       </button>
-
-      <div className="flex-1 flex items-center gap-2">
-        <span className="text-xs text-text/60 min-w-[30px] tabular-nums">
-          {formatTime(currentTime)}
+      <div class="flex-1 flex items-center gap-2">
+        <span class="text-xs text-text/60 min-w-[30px] tabular-nums">
+          {formatTime(currentTime())}
         </span>
-
         <input
           type="range"
           min="0"
-          max={duration || 0}
+          max={duration() || 0}
           step="0.01"
-          value={currentTime}
-          onChange={handleSeek}
+          value={currentTime()}
+          onInput={handleSeek}
           onMouseDown={handleSliderMouseDown}
           onTouchStart={handleSliderTouchStart}
-          className={`flex-1 h-1 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent ${progressPercent >= 99.5 ? "[&::-webkit-slider-thumb]:translate-x-0.5 [&::-moz-range-thumb]:translate-x-0.5" : ""}`}
+          class={`flex-1 h-1 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent ${progressPercent >= 99.5 ? "[&::-webkit-slider-thumb]:translate-x-0.5 [&::-moz-range-thumb]:translate-x-0.5" : ""}`}
           style={{
             background: `linear-gradient(to right, var(--color-accent) 0%, var(--color-accent) ${progressPercent}%, rgba(128, 128, 128, 0.2) ${progressPercent}%, rgba(128, 128, 128, 0.2) 100%)`,
           }}
         />
-
-        <span className="text-xs text-text/60 min-w-[30px] tabular-nums">
-          {formatTime(duration)}
+        <span class="text-xs text-text/60 min-w-[30px] tabular-nums">
+          {formatTime(duration())}
         </span>
       </div>
     </div>

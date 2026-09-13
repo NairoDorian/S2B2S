@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, Show } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { commands } from "@/bindings";
 import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { VadMeter, VadStatusChip, useVadFrames } from "./VadMeter";
+import type { JSX } from "@solidjs/web";
 
 interface VadLiveTestProps {
   descriptionMode?: "tooltip" | "inline";
@@ -23,113 +24,110 @@ const DEFAULT_THRESHOLD = 0.5;
  * the backend swaps the threshold in place on the next frame. The meter
  * itself (`VadMeter`) is shared with the Live FFT page.
  */
-export const VadLiveTest: React.FC<VadLiveTestProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
-    const { t } = useTranslation();
-    const { getSetting, updateSetting, isUpdating } = useSettings();
+export const VadLiveTest = ({
+  descriptionMode = "tooltip",
+  grouped = false,
+}: VadLiveTestProps): JSX.Element => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
 
-    const vadEnabled = getSetting("vad_enabled") ?? true;
-    const threshold = getSetting("vad_threshold_earshot") ?? DEFAULT_THRESHOLD;
-    const denoise = getSetting("denoise_enabled") ?? false;
+  const vadEnabled = () => getSetting("vad_enabled") ?? true;
+  const threshold = () =>
+    getSetting("vad_threshold_earshot") ?? DEFAULT_THRESHOLD;
+  const denoise = () => getSetting("denoise_enabled") ?? false;
 
-    const [running, setRunning] = useState(false);
-    const [starting, setStarting] = useState(false);
-    const runningRef = useRef(false);
-    runningRef.current = running;
-    // Per-frame reports while the test runs; `stalled` flags a backend that
-    // ended it without us (cancel hotkey, safety timeout).
-    const frames = useVadFrames(running);
+  const [running, setRunning] = createSignal(false);
+  const [starting, setStarting] = createSignal(false);
+  const frames = useVadFrames(running);
 
-    const stop = useCallback(async () => {
-      setRunning(false);
-      const result = await commands.stopVadTest();
-      if (result.status === "error") {
-        toast.error(result.error);
-      }
-    }, []);
+  const stop = async () => {
+    setRunning(false);
+    const result = await commands.stopVadTest();
+    if (result.status === "error") {
+      toast.error(result.error);
+    }
+  };
 
-    const start = useCallback(async () => {
-      setStarting(true);
-      const result = await commands.startVadTest();
-      setStarting(false);
-      if (result.status === "error") {
-        toast.error(
-          t("settings.advanced.vadLiveTest.errorStart", {
-            error: result.error,
-          }),
-        );
-        return;
-      }
-      setRunning(true);
-    }, [t]);
+  const start = async () => {
+    setStarting(true);
+    const result = await commands.startVadTest();
+    setStarting(false);
+    if (result.status === "error") {
+      toast.error(
+        t("settings.advanced.vadLiveTest.errorStart", {
+          error: result.error,
+        }),
+      );
+      return;
+    }
+    setRunning(true);
+  };
 
-    // Never leave the microphone open when the page goes away.
-    useEffect(
-      () => () => {
-        if (runningRef.current) void commands.stopVadTest();
-      },
-      [],
-    );
+  createEffect(
+    () => undefined,
+    () => {
+      return () => {
+        if (running()) void commands.stopVadTest();
+      };
+    },
+  );
 
-    if (!vadEnabled) return null;
-
-    return (
+  return (
+    <Show when={vadEnabled()}>
       <SettingContainer
         title={t("settings.advanced.vadLiveTest.title")}
         description={t("settings.advanced.vadLiveTest.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
-        layout={running ? "stacked" : "horizontal"}
+        layout={running() ? "stacked" : "horizontal"}
       >
-        <div className="w-full flex flex-col gap-3">
-          <div className="flex items-center gap-3 justify-end">
-            {running && <VadStatusChip frames={frames} />}
+        <div class="w-full flex flex-col gap-3">
+          <div class="flex items-center gap-3 justify-end">
+            {running() && <VadStatusChip frames={frames} />}
             <Button
-              variant={running ? "danger-ghost" : "secondary"}
+              variant={running() ? "danger-ghost" : "secondary"}
               size="sm"
-              onClick={running ? stop : start}
-              disabled={starting}
+              onClick={running() ? stop : start}
+              disabled={starting()}
             >
-              {running
+              {running()
                 ? t("settings.advanced.vadLiveTest.stop")
                 : t("settings.advanced.vadLiveTest.start")}
             </Button>
           </div>
 
-          {running && (
-            <VadMeter frames={frames} threshold={threshold}>
+          {running() && (
+            <VadMeter frames={frames} threshold={threshold()}>
               {/* Noise suppression applies on the next chunk, so flipping it
                   here changes the score and level bars immediately. */}
-              <div className="flex items-center justify-between gap-3 text-xs text-text/70">
+              <div class="flex items-center justify-between gap-3 text-xs text-text/70">
                 <span>
                   {t("settings.advanced.vadLiveTest.noiseSuppression")}
                 </span>
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={denoise}
+                  aria-checked={denoise() ? "true" : "false"}
                   disabled={isUpdating("denoise_enabled")}
-                  onClick={() => updateSetting("denoise_enabled", !denoise)}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50 ${
-                    denoise
+                  onClick={() => updateSetting("denoise_enabled", !denoise())}
+                  class={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50 ${
+                    denoise()
                       ? "bg-accent/20 text-text border-accent/40"
                       : "bg-mid-gray/10 text-text/60 border-mid-gray/20"
                   }`}
                 >
-                  {denoise
+                  {denoise()
                     ? t("settings.advanced.vadLiveTest.noiseSuppressionOn")
                     : t("settings.advanced.vadLiveTest.noiseSuppressionOff")}
                 </button>
               </div>
-              <p className="text-xs text-text/50">
+              <p class="text-xs text-text/50">
                 {t("settings.advanced.vadLiveTest.hint")}
               </p>
             </VadMeter>
           )}
         </div>
       </SettingContainer>
-    );
-  },
-);
-
-VadLiveTest.displayName = "VadLiveTest";
+    </Show>
+  );
+};

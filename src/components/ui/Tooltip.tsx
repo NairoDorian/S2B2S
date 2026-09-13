@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createSignal, createEffect } from "solid-js";
+import type { JSX } from "@solidjs/web";
+import { Portal } from "@solidjs/web";
 
 type TooltipPosition = "top" | "bottom";
 
@@ -11,9 +12,9 @@ interface TooltipCoords {
 }
 
 interface TooltipProps {
-  targetRef: React.RefObject<HTMLElement | null>;
+  targetRef: { current: HTMLElement | null };
   position?: TooltipPosition;
-  children: React.ReactNode;
+  children: JSX.Element;
 }
 
 const TOOLTIP_WIDTH = 200;
@@ -22,24 +23,22 @@ const GAP = 8;
 const ARROW_MARGIN = 12;
 const DEFAULT_HEIGHT = 60;
 
-export const Tooltip: React.FC<TooltipProps> = ({
-  targetRef,
-  position = "top",
-  children,
-}) => {
-  const [coords, setCoords] = useState<TooltipCoords | null>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
+export const Tooltip = (props: TooltipProps): JSX.Element => {
+  const [coords, setCoords] = createSignal<TooltipCoords | null>(null);
+  let tooltipRef: HTMLDivElement | null = null;
 
-  const updatePosition = useCallback(() => {
+  const updatePosition = () => {
+    const targetRef = props.targetRef;
     if (!targetRef.current) return;
 
     const targetRect = targetRef.current.getBoundingClientRect();
-    const tooltipHeight = tooltipRef.current?.offsetHeight || DEFAULT_HEIGHT;
+    const tooltipHeight = tooltipRef?.offsetHeight || DEFAULT_HEIGHT;
 
-    let actualPosition = position;
+    const preferred = props.position ?? "top";
+    let actualPosition = preferred;
     let top: number;
 
-    if (position === "top") {
+    if (preferred === "top") {
       const spaceAbove = targetRect.top - tooltipHeight - GAP;
       if (spaceAbove < VIEWPORT_PADDING) {
         actualPosition = "bottom";
@@ -73,42 +72,37 @@ export const Tooltip: React.FC<TooltipProps> = ({
     );
 
     setCoords({ top, left, arrowLeft, actualPosition });
-  }, [targetRef, position]);
+  };
 
-  useEffect(() => {
-    updatePosition();
+  createEffect(
+    () => undefined,
+    () => {
+      updatePosition();
+    },
+  );
 
-    window.addEventListener("scroll", updatePosition, true);
-    window.addEventListener("resize", updatePosition);
-
-    return () => {
-      window.removeEventListener("scroll", updatePosition, true);
-      window.removeEventListener("resize", updatePosition);
-    };
-  }, [updatePosition]);
-
-  const arrowClasses =
-    coords?.actualPosition === "top" ? "top-full" : "bottom-full rotate-180";
-
-  return createPortal(
-    <div
-      ref={tooltipRef}
-      style={{
-        position: "fixed",
-        top: coords?.top ?? -9999,
-        left: coords?.left ?? -9999,
-        width: TOOLTIP_WIDTH,
-        zIndex: 9999,
-        opacity: coords ? 1 : 0,
-      }}
-      className="px-3 py-2 bg-background border border-mid-gray/80 rounded-lg shadow-lg whitespace-normal transition-opacity duration-150"
-    >
-      {children}
+  return (
+    <Portal mount={document.body}>
       <div
-        style={{ left: coords?.arrowLeft ?? 0 }}
-        className={`absolute ${arrowClasses} transform -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-mid-gray/80`}
-      />
-    </div>,
-    document.body,
+        ref={(el) => {
+          tooltipRef = el;
+        }}
+        style={{
+          position: "fixed",
+          top: `${coords()?.top ?? -9999}px`,
+          left: `${coords()?.left ?? -9999}px`,
+          width: `${TOOLTIP_WIDTH}px`,
+          "z-index": 9999,
+          opacity: coords() ? 1 : 0,
+        }}
+        class="px-3 py-2 bg-background border border-mid-gray/80 rounded-lg shadow-lg whitespace-normal transition-opacity duration-150"
+      >
+        {props.children}
+        <div
+          style={{ left: `${coords()?.arrowLeft ?? 0}px` }}
+          class={`absolute ${coords()?.actualPosition === "top" ? "top-full" : "bottom-full rotate-180"} transform -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-mid-gray/80`}
+        />
+      </div>
+    </Portal>
   );
 };

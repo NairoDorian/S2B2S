@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Slider } from "../../ui/Slider";
 import { useSettings } from "../../../hooks/useSettings";
 
@@ -8,10 +7,7 @@ interface RecordingBufferProps {
   grouped?: boolean;
 }
 
-export const RecordingBuffer: React.FC<RecordingBufferProps> = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}) => {
+export const RecordingBuffer = (props: RecordingBufferProps) => {
   const { t } = useTranslation();
   const { settings, updateSetting, resetSetting, isUpdating } = useSettings();
 
@@ -21,7 +17,7 @@ export const RecordingBuffer: React.FC<RecordingBufferProps> = ({
 
   return (
     <Slider
-      value={settings?.extra_recording_buffer_ms ?? 0}
+      value={settings()?.extra_recording_buffer_ms ?? 0}
       onChange={handleBufferChange}
       onReset={() => resetSetting("extra_recording_buffer_ms")}
       isResetting={isUpdating("extra_recording_buffer_ms")}
@@ -30,8 +26,8 @@ export const RecordingBuffer: React.FC<RecordingBufferProps> = ({
       step={50}
       label={t("settings.debug.recordingBuffer.title")}
       description={t("settings.debug.recordingBuffer.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode}
+      grouped={props.grouped}
       formatValue={(v) => `${v}ms`}
     />
   );

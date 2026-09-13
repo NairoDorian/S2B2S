@@ -1,23 +1,20 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { For } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
+import { Check } from "@/components/icons/lucide";
 import type { NativeStreamingLatencyPreset } from "@/bindings";
+import type { JSX } from "@solidjs/web";
 
-/** Slowest-to-fastest is the mental model users have; list fastest first. */
 export const LATENCY_PRESET_ORDER: NativeStreamingLatencyPreset[] = [
   "fastest",
   "fast",
   "balanced",
   "accurate",
 ];
-
-/** The default when a model has no stored preset. */
 export const DEFAULT_LATENCY_PRESET: NativeStreamingLatencyPreset = "accurate";
 
 export const latencyPresetLabelKey = (
   preset: NativeStreamingLatencyPreset,
 ): string => `modelSelector.latencySelector.${preset}`;
-
 export const latencyPresetDescriptionKey = (
   preset: NativeStreamingLatencyPreset,
 ): string => `modelSelector.latencySelector.descriptions.${preset}`;
@@ -27,55 +24,42 @@ interface LatencyPanelProps {
   onSelect: (preset: NativeStreamingLatencyPreset) => void;
 }
 
-/**
- * Streaming-latency picker, shown from the status bar for models that expose a
- * native streaming latency extension.
- *
- * Each preset carries its trade-off inline, so the choice can be made without
- * remembering what "balanced" meant last time.
- */
-export const LatencyPanel: React.FC<LatencyPanelProps> = ({
-  selected,
-  onSelect,
-}) => {
+export const LatencyPanel = (props: LatencyPanelProps): JSX.Element => {
+  const { selected, onSelect } = props;
   const { t } = useTranslation();
 
   return (
-    <ul role="radiogroup" className="py-1">
-      {LATENCY_PRESET_ORDER.map((preset) => {
-        const isSelected = preset === selected;
-        return (
-          <li key={preset}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={isSelected}
-              onClick={() => onSelect(preset)}
-              className={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors ${
-                isSelected ? "bg-accent/10" : "hover:bg-mid-gray/10"
-              }`}
-            >
-              <Check
-                className={`mt-0.5 h-3 w-3 shrink-0 ${
-                  isSelected ? "text-accent" : "text-transparent"
-                }`}
-              />
-              <span className="min-w-0">
-                <span
-                  className={`block font-medium ${
-                    isSelected ? "text-accent" : "text-text/85"
-                  }`}
-                >
-                  {t(latencyPresetLabelKey(preset))}
+    <ul role="radiogroup" class="py-1">
+      <For each={LATENCY_PRESET_ORDER}>
+        {(preset) => {
+          const isSelected = preset === selected;
+          return (
+            <li>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={isSelected ? "true" : "false"}
+                onClick={() => onSelect(preset)}
+                class={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors ${isSelected ? "bg-accent/10" : "hover:bg-mid-gray/10"}`}
+              >
+                <Check
+                  class={`mt-0.5 h-3 w-3 shrink-0 ${isSelected ? "text-accent" : "text-transparent"}`}
+                />
+                <span class="min-w-0">
+                  <span
+                    class={`block font-medium ${isSelected ? "text-accent" : "text-text/85"}`}
+                  >
+                    {t(latencyPresetLabelKey(preset))}
+                  </span>
+                  <span class="block text-[11px] leading-snug text-text/45">
+                    {t(latencyPresetDescriptionKey(preset))}
+                  </span>
                 </span>
-                <span className="block text-[11px] leading-snug text-text/45">
-                  {t(latencyPresetDescriptionKey(preset))}
-                </span>
-              </span>
-            </button>
-          </li>
-        );
-      })}
+              </button>
+            </li>
+          );
+        }}
+      </For>
     </ul>
   );
 };

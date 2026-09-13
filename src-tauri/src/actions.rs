@@ -1317,6 +1317,16 @@ pub(crate) async fn multi_stt_merge_transcriptions(
         "Multi-STT merge prompt prepared, length: {} chars",
         prompt.len()
     );
+    // One line per model's answer for the same audio. These are what the merge
+    // reconciles, so they are the first thing to read when the merged text comes
+    // back wrong, short, or repeating — and an empty slot is invisible in a
+    // prompt length, which is exactly how a chunk merged against nothing.
+    for (index, text) in [output1, output2, output3, output4].iter().enumerate() {
+        crate::utils::log_multiline(
+            &format!("Multi-STT slot {} (model {})", index + 1, index + 1),
+            text,
+        );
+    }
 
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
@@ -1368,6 +1378,11 @@ pub(crate) async fn multi_stt_merge_transcriptions(
                     cleaned_text.len(),
                     raw_content.len()
                 );
+                // The text the app will actually paste, after the <think> strip
+                // and the trim. It is logged separately from the raw response
+                // because the two differ exactly when sanitising changed
+                // something, which is otherwise invisible.
+                crate::utils::log_multiline("Multi-STT merged text (as pasted)", &cleaned_text);
                 Some(MultiSttMergeOutcome {
                     cleaned_text,
                     raw_text: raw_content,
@@ -1753,21 +1768,35 @@ impl ShortcutAction for MultiSttAction {
             };
 
             let stream_outcome = if stream_tracked.is_some() {
-                let stream_finish_start = Instant::now();
-                let outcome = tauri::async_runtime::spawn_blocking(|| {
-                    crate::multi_stt_stream::finish(crate::multi_stt_stream::FINISH_TIMEOUT)
-                })
-                .await
-                .ok()
-                .flatten();
-                if outcome.is_none() {
+                // A session that retired itself mid-recording — the primary's
+                // committed text was not tracking its audio, so its chunks could
+                // not be merged against their own text — is gone by the time the
+                // recording stops, and the warning it logged when it stopped is
+                // the reason. Asking the empty slot for a result would come back
+                // with the same `None` and a misleading timeout message.
+                if !crate::multi_stt_stream::is_active() {
                     warn!(
-                        "Multi-STT streaming: the session did not return a result after {:?}; \
-                         falling back to the batch path",
-                        stream_finish_start.elapsed()
+                        "Multi-STT streaming: the coordinator stopped before the recording did; \
+                         falling back to the batch path"
                     );
+                    None
+                } else {
+                    let stream_finish_start = Instant::now();
+                    let outcome = tauri::async_runtime::spawn_blocking(|| {
+                        crate::multi_stt_stream::finish(crate::multi_stt_stream::FINISH_TIMEOUT)
+                    })
+                    .await
+                    .ok()
+                    .flatten();
+                    if outcome.is_none() {
+                        warn!(
+                            "Multi-STT streaming: the session did not return a result after {:?}; \
+                             falling back to the batch path",
+                            stream_finish_start.elapsed()
+                        );
+                    }
+                    outcome
                 }
-                outcome
             } else {
                 None
             };

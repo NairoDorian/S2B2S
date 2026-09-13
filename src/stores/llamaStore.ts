@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createSolidStore } from "@/lib/solidStore";
 import {
   commands,
   events,
@@ -48,7 +48,7 @@ interface LlamaStore {
   removeInstalled: (dir: string) => Promise<void>;
 }
 
-export const useLlamaStore = create<LlamaStore>()((set, get) => ({
+const llamaState = createSolidStore<LlamaStore>((set, get) => ({
   state: null,
   logs: [],
   releases: [],
@@ -183,3 +183,24 @@ export const useLlamaStore = create<LlamaStore>()((set, get) => ({
     await get().refreshInstalled();
   },
 }));
+
+export function useLlamaStore() {
+  return llamaState;
+}
+
+export const initialize = () => useLlamaStore().initialize();
+export const refreshState = () => useLlamaStore().refreshState();
+export const refreshLogs = () => useLlamaStore().refreshLogs();
+export const refreshInstalled = () => useLlamaStore().refreshInstalled();
+export const refreshPreview = () => useLlamaStore().refreshPreview();
+export const fetchReleases = (channel: string, force: boolean) =>
+  useLlamaStore().fetchReleases(channel, force);
+export const start = () => useLlamaStore().start();
+export const stop = () => useLlamaStore().stop();
+export const restart = () => useLlamaStore().restart();
+export const install = (tag: string, backend: string, includeCudart: boolean) =>
+  useLlamaStore().install(tag, backend, includeCudart);
+export const removeCudaRuntime = (dir: string) =>
+  useLlamaStore().removeCudaRuntime(dir);
+export const removeInstalled = (dir: string) =>
+  useLlamaStore().removeInstalled(dir);

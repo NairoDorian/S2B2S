@@ -140,8 +140,9 @@ const EXEMPTIONS: Exemption[] = [
   },
   {
     file: "src/bindings.ts",
-    allow: /handy_keys/,
-    reason: "Generated from the Rust enum; the wire value above.",
+    allow: /handy[_-]keys/,
+    reason:
+      'Generated from the Rust enum, so it carries both spellings the settings.rs exemptions above already carry: the frozen `"handy_keys"` wire value, and the sentence naming the upstream `handy-keys` crate.',
   },
 
   // --- someone else's identifiers -------------------------------------------
@@ -244,6 +245,12 @@ const EXEMPTIONS: Exemption[] = [
     file: "src/content/release-notes/0.9.6.md",
     allow: /[Hh]andy/,
     reason: "Records which upstream release this fork's 0.9.6 tracked.",
+  },
+  {
+    file: "src/components/whats-new/markdown.test.ts",
+    allow: /handy-computer\/transcribe\.cpp/,
+    reason:
+      "Asserts the parser against the real 0.9.0 release note, whose transcribe.cpp link is already exempted above — the test pins the exemption's content, it does not name the product.",
   },
   {
     file: "CHANGELOG.md",

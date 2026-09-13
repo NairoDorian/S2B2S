@@ -1221,7 +1221,16 @@ export type KeyboardDiagnosticReport = {
 	duration_ms: number,
 };
 
-export type KeyboardImplementation = "tauri" | "handy_keys";
+export type KeyboardImplementation = "tauri" | 
+/**
+ *  The native backend (`shortcut::native_keys`, on the `handy-keys` crate).
+ * 
+ *  The serialized value stays `"handy_keys"` and must not follow a rename:
+ *  it is already written into every user's `settings_store.json`, and a new
+ *  spelling would read as "unknown variant" and drop the setting. The
+ *  `rename` below is the frozen wire value, not a name.
+ */
+"handy_keys";
 
 export type LLMPrompt = {
 	id: string,

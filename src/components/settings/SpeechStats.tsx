@@ -1,8 +1,9 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { Show } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Slider } from "../ui/Slider";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import type { JSX } from "@solidjs/web";
 
 interface SpeechStatsProps {
   descriptionMode?: "tooltip" | "inline";
@@ -19,33 +20,28 @@ interface SpeechStatsProps {
  * last before the speech timer stops counting), which is why the detector's
  * own threshold stays on the Advanced page.
  */
-export const SpeechStats: React.FC<SpeechStatsProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
-    const { t } = useTranslation();
-    const { getSetting, updateSetting, isUpdating } = useSettings();
+export const SpeechStats = (props: SpeechStatsProps): JSX.Element => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
 
-    const enabled = getSetting("overlay_speech_stats") ?? true;
-    const pauseHold = getSetting("speech_pause_hold_ms") ?? 500;
-    // Nothing to measure into when the overlay is hidden.
-    const overlayHidden = getSetting("overlay_style") === "none";
-
-    if (overlayHidden) return null;
-
-    return (
+  // Everything reads live: the toggle, the slider's value, and the
+  // overlay-hidden guard all follow the setting as it changes.
+  return (
+    <Show when={getSetting("overlay_style") !== "none"}>
       <>
         <ToggleSwitch
-          checked={enabled}
+          checked={getSetting("overlay_speech_stats") ?? true}
           onChange={(value) => updateSetting("overlay_speech_stats", value)}
           isUpdating={isUpdating("overlay_speech_stats")}
           label={t("settings.advanced.speechStats.title")}
           description={t("settings.advanced.speechStats.description")}
-          descriptionMode={descriptionMode}
-          grouped={grouped}
+          descriptionMode={props.descriptionMode}
+          grouped={props.grouped}
         />
 
-        {enabled && (
+        <Show when={getSetting("overlay_speech_stats") ?? true}>
           <Slider
-            value={pauseHold}
+            value={getSetting("speech_pause_hold_ms") ?? 500}
             onChange={(value) =>
               updateSetting("speech_pause_hold_ms", Math.round(value))
             }
@@ -56,14 +52,14 @@ export const SpeechStats: React.FC<SpeechStatsProps> = React.memo(
             description={t(
               "settings.advanced.speechStats.pauseHold.description",
             )}
-            descriptionMode={descriptionMode}
-            grouped={grouped}
+            descriptionMode={props.descriptionMode}
+            grouped={props.grouped}
             formatValue={(v) => `${Math.round(v)} ms`}
             onReset={() => updateSetting("speech_pause_hold_ms", 500)}
             disabled={isUpdating("speech_pause_hold_ms")}
           />
-        )}
+        </Show>
       </>
-    );
-  },
-);
+    </Show>
+  );
+};

@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, createEffect, createMemo, For } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ResetButton } from "../ui/ResetButton";
 import { useSettings } from "../../hooks/useSettings";
@@ -9,31 +9,28 @@ import {
   SELECTABLE_LANGUAGES,
   supportsLanguageCode,
 } from "../../lib/constants/languages";
+import type { JSX } from "@solidjs/web";
 
 interface LanguageSelectorProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   supportedLanguages?: string[];
-  // Whether the model can auto-detect language. Gates the "Auto" option:
-  // must-pick models (no detection) omit it and force a concrete choice.
   supportsLanguageDetection?: boolean;
 }
 
-export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
+export const LanguageSelector = ({
   descriptionMode = "tooltip",
   grouped = false,
   supportedLanguages,
   supportsLanguageDetection = true,
-}) => {
+}: LanguageSelectorProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [isOpen, setIsOpen] = createSignal(false);
+  const [searchQuery, setSearchQuery] = createSignal("");
+  let dropdownRef: HTMLDivElement | null = null;
+  let searchInputRef: HTMLInputElement | null = null;
 
-  // The persisted *intent* (auto | code). What's actually used/shown is the
-  // effective value resolved against the current model's capabilities.
   const intent = getSetting("selected_language") || "auto";
   const selectedLanguage = effectiveLanguage(
     intent,
@@ -41,30 +38,33 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
     supportsLanguageDetection,
   );
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-        setSearchQuery("");
+  createEffect(
+    () => undefined,
+    () => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef && !dropdownRef.contains(event.target as Node)) {
+          setIsOpen(false);
+          setSearchQuery("");
+        }
+      };
+
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    },
+  );
+
+  createEffect(
+    () => isOpen(),
+    (open) => {
+      if (open && searchInputRef) {
+        searchInputRef.focus();
       }
-    };
+    },
+  );
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  }, [isOpen]);
-
-  const availableLanguages = useMemo(() => {
+  const availableLanguages = createMemo(() => {
     if (!supportedLanguages || supportedLanguages.length === 0)
       return SELECTABLE_LANGUAGES;
     return SELECTABLE_LANGUAGES.filter((lang) =>
@@ -72,14 +72,12 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
         ? supportsLanguageDetection
         : supportsLanguageCode(supportedLanguages, lang.value),
     );
-  }, [supportedLanguages, supportsLanguageDetection]);
+  });
 
-  const filteredLanguages = useMemo(
-    () =>
-      availableLanguages.filter((language) =>
-        language.label.toLowerCase().includes(searchQuery.toLowerCase()),
-      ),
-    [searchQuery, availableLanguages],
+  const filteredLanguages = createMemo(() =>
+    availableLanguages().filter((language) =>
+      language.label.toLowerCase().includes(searchQuery().toLowerCase()),
+    ),
   );
 
   const selectedLanguageName =
@@ -97,17 +95,16 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
 
   const handleToggle = () => {
     if (isUpdating("selected_language")) return;
-    setIsOpen(!isOpen);
+    setIsOpen(!isOpen());
   };
 
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(event.target.value);
+  const handleSearchChange = (event: Event) => {
+    setSearchQuery((event.target as HTMLInputElement).value);
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && filteredLanguages.length > 0) {
-      // Select first filtered language on Enter
-      handleLanguageSelect(filteredLanguages[0].value);
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Enter" && filteredLanguages().length > 0) {
+      handleLanguageSelect(filteredLanguages()[0].value);
     } else if (event.key === "Escape") {
       setIsOpen(false);
       setSearchQuery("");
@@ -121,11 +118,16 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
       descriptionMode={descriptionMode}
       grouped={grouped}
     >
-      <div className="flex items-center space-x-1">
-        <div className="relative" ref={dropdownRef}>
+      <div class="flex items-center space-x-1">
+        <div
+          class="relative"
+          ref={(ref) => {
+            dropdownRef = ref;
+          }}
+        >
           <button
             type="button"
-            className={`px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded min-w-[200px] text-start flex items-center justify-between transition-all duration-150 ${
+            class={`px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded min-w-[200px] text-start flex items-center justify-between transition-all duration-150 ${
               isUpdating("selected_language")
                 ? "opacity-50 cursor-not-allowed"
                 : "hover:bg-accent/10 cursor-pointer hover:border-accent"
@@ -133,61 +135,66 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
             onClick={handleToggle}
             disabled={isUpdating("selected_language")}
           >
-            <span className="truncate">{selectedLanguageName}</span>
+            <span class="truncate">{selectedLanguageName}</span>
             <svg
-              className={`w-4 h-4 ms-2 transition-transform duration-200 ${
-                isOpen ? "transform rotate-180" : ""
+              class={`w-4 h-4 ms-2 transition-transform duration-200 ${
+                isOpen() ? "transform rotate-180" : ""
               }`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
               <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width={2}
                 d="M19 9l-7 7-7-7"
               />
             </svg>
           </button>
 
-          {isOpen && !isUpdating("selected_language") && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-mid-gray/80 rounded shadow-lg z-50 max-h-60 overflow-hidden">
-              {/* Search input */}
-              <div className="p-2 border-b border-mid-gray/80">
+          {isOpen() && !isUpdating("selected_language") && (
+            <div class="absolute top-full left-0 right-0 mt-1 bg-background border border-mid-gray/80 rounded shadow-lg z-50 max-h-60 overflow-hidden">
+              <div class="p-2 border-b border-mid-gray/80">
                 <input
-                  ref={searchInputRef}
+                  ref={(ref) => {
+                    searchInputRef = ref;
+                  }}
                   type="text"
-                  value={searchQuery}
-                  onChange={handleSearchChange}
+                  value={searchQuery()}
+                  onInput={handleSearchChange}
                   onKeyDown={handleKeyDown}
                   placeholder={t("settings.general.language.searchPlaceholder")}
-                  className="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
+                  class="w-full px-2 py-1 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
                 />
               </div>
 
-              <div className="max-h-48 overflow-y-auto">
-                {filteredLanguages.length === 0 ? (
-                  <div className="px-2 py-2 text-sm text-mid-gray text-center">
+              <div class="max-h-48 overflow-y-auto">
+                {filteredLanguages().length === 0 ? (
+                  <div class="px-2 py-2 text-sm text-mid-gray text-center">
                     {t("settings.general.language.noResults")}
                   </div>
                 ) : (
-                  filteredLanguages.map((language) => (
-                    <button
-                      key={language.value}
-                      type="button"
-                      className={`w-full px-2 py-1 text-sm text-start hover:bg-accent/10 transition-colors duration-150 ${
-                        selectedLanguage === language.value
-                          ? "bg-accent/20 text-accent font-semibold"
-                          : ""
-                      }`}
-                      onClick={() => handleLanguageSelect(language.value)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="truncate">{language.label}</span>
-                      </div>
-                    </button>
-                  ))
+                  <For
+                    each={filteredLanguages()}
+                    keyed={(language) => language.value}
+                  >
+                    {(language) => (
+                      <button
+                        type="button"
+                        class={`w-full px-2 py-1 text-sm text-start hover:bg-accent/10 transition-colors duration-150 ${
+                          selectedLanguage === language().value
+                            ? "bg-accent/20 text-accent font-semibold"
+                            : ""
+                        }`}
+                        onClick={() => handleLanguageSelect(language().value)}
+                      >
+                        <div class="flex items-center justify-between">
+                          <span class="truncate">{language().label}</span>
+                        </div>
+                      </button>
+                    )}
+                  </For>
                 )}
               </div>
             </div>
@@ -199,8 +206,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
         />
       </div>
       {isUpdating("selected_language") && (
-        <div className="absolute inset-0 bg-mid-gray/10 rounded flex items-center justify-center">
-          <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+        <div class="absolute inset-0 bg-mid-gray/10 rounded flex items-center justify-center">
+          <div class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
         </div>
       )}
     </SettingContainer>

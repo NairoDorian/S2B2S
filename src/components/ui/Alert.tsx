@@ -1,14 +1,19 @@
-import React from "react";
-import { AlertCircle, AlertTriangle, Info, CheckCircle } from "lucide-react";
+import { Dynamic } from "@solidjs/web";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  CheckCircle,
+} from "@/components/icons/lucide";
+import type { JSX } from "@solidjs/web";
 
 type AlertVariant = "error" | "warning" | "info" | "success";
 
 interface AlertProps {
   variant?: AlertVariant;
-  /** When true, removes rounded corners for use inside containers */
   contained?: boolean;
-  children: React.ReactNode;
-  className?: string;
+  children: JSX.Element;
+  class?: string;
 }
 
 const variantStyles: Record<
@@ -37,28 +42,30 @@ const variantStyles: Record<
   },
 };
 
-const variantIcons: Record<AlertVariant, React.ElementType> = {
+const variantIcons: Record<
+  AlertVariant,
+  (props: { class?: string }) => JSX.Element
+> = {
   error: AlertCircle,
   warning: AlertTriangle,
   info: Info,
   success: CheckCircle,
 };
 
-export const Alert: React.FC<AlertProps> = ({
-  variant = "error",
-  contained = false,
-  children,
-  className = "",
-}) => {
-  const styles = variantStyles[variant];
-  const Icon = variantIcons[variant];
+export const Alert = (props: AlertProps): JSX.Element => {
+  const variant = () => props.variant ?? "error";
+  const styles = () => variantStyles[variant()];
+  const className = () => props.class ?? "";
 
   return (
     <div
-      className={`flex items-start gap-3 p-4 ${styles.container} ${contained ? "" : "rounded-lg"} ${className}`}
+      class={`flex items-start gap-3 p-4 ${styles().container} ${props.contained ? "" : "rounded-lg"} ${className()}`}
     >
-      <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${styles.icon}`} />
-      <p className={`text-sm ${styles.text}`}>{children}</p>
+      <Dynamic
+        component={variantIcons[variant()]}
+        class={`w-5 h-5 shrink-0 mt-0.5 ${styles().icon}`}
+      />
+      <p class={`text-sm ${styles().text}`}>{props.children}</p>
     </div>
   );
 };

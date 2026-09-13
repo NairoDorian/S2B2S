@@ -1,8 +1,8 @@
-import React from "react";
 import { useSettings } from "../../hooks/useSettings";
 import { GlobalShortcutInput } from "./GlobalShortcutInput";
 import { NativeKeysShortcutInput } from "./NativeKeysShortcutInput";
 import { getShortcutAnchorId } from "@/lib/hotkeyGuide";
+import type { JSX } from "@solidjs/web";
 
 interface ShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -21,7 +21,7 @@ interface ShortcutInputProps {
  * The wrapper carries a stable `shortcut-<id>` element id so the hotkey
  * sidebar and Help links can scroll to and highlight this control.
  */
-export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
+export const ShortcutInput = (props: ShortcutInputProps): JSX.Element => {
   const { getSetting } = useSettings();
   const keyboardImplementation = getSetting("keyboard_implementation");
 
@@ -36,8 +36,8 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
   return (
     <div
       id={getShortcutAnchorId(props.shortcutId)}
-      tabIndex={-1}
-      className="settings-anchor rounded-lg focus:outline-none"
+      tabindex={-1}
+      class="settings-anchor rounded-lg focus:outline-none"
     >
       {input}
     </div>

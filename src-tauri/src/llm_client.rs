@@ -1,5 +1,6 @@
 use crate::app_identity;
 use crate::settings::PostProcessProvider;
+use crate::utils::log_multiline;
 use log::{debug, error, info};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, REFERER, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -409,6 +410,27 @@ pub async fn send_chat_completion_with_schema(
         reasoning,
     };
 
+    // What was asked, in full. A request logged as a length cannot be compared
+    // with the answer, and comparing the two is the only way to tell a merge
+    // that dropped a slot from one that was handed an empty one.
+    debug!(
+        "Chat completion request: model '{}', {} message(s), {} chars total, started",
+        model,
+        request_body.messages.len(),
+        request_body
+            .messages
+            .iter()
+            .map(|m| m.content.len())
+            .sum::<usize>()
+    );
+    for message in &request_body.messages {
+        log_multiline(
+            &format!("Chat completion request [{}]", message.role),
+            &message.content,
+        );
+    }
+
+    let started = std::time::Instant::now();
     let mut response = client
         .post(&url)
         .json(&request_body)
@@ -417,9 +439,10 @@ pub async fn send_chat_completion_with_schema(
         .map_err(|e| report_reqwest_error("HTTP request failed", &e))?;
     let mut status = response.status();
     debug!(
-        "Chat completion response received with status {} over {:?} from {}",
+        "Chat completion response received with status {} over {:?} in {} ms from {}",
         status,
         response.version(),
+        started.elapsed().as_millis(),
         sanitized_url(response.url())
     );
 
@@ -478,10 +501,26 @@ pub async fn send_chat_completion_with_schema(
         .await
         .map_err(|e| report_reqwest_error("Failed to parse API response", &e))?;
 
-    Ok(completion
+    let content = completion
         .choices
         .first()
-        .and_then(|choice| choice.message.content.clone()))
+        .and_then(|choice| choice.message.content.clone());
+    match &content {
+        Some(text) => log_multiline(
+            &format!(
+                "Chat completion response ({} ms total, model '{}')",
+                started.elapsed().as_millis(),
+                model
+            ),
+            text,
+        ),
+        None => debug!(
+            "Chat completion response carried no content ({} choice(s), {} ms total)",
+            completion.choices.len(),
+            started.elapsed().as_millis()
+        ),
+    }
+    Ok(content)
 }
 
 /// Fetch available models from an OpenAI-compatible API

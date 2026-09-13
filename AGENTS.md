@@ -32,24 +32,78 @@ throttled and gated, resources stay warm, child processes run detached on a
 supervisor thread, meters sample on one thread). State the cost of any new
 thread, poll or dependency in the commit message.
 
+## Logging
+
+The whole stack — the three targets, their filters, the console stream rule and
+the ways it has silently gone quiet — is in [docs/LOGGING.md](docs/LOGGING.md).
+Read it before changing a level, a filter or a target. Two things worth knowing
+without opening it:
+
+- **A dev build's terminal is verbose on purpose.** This app's own records run at
+  `Trace`, dependencies at `Debug`, whatever the Log Level setting says; the
+  setting governs the **file** log (and the release console). `RUST_LOG`
+  overrides both.
+- **"There are no logs" is a three-way check,** and the app now prints the answer
+  to all three at startup at `info`: which store it read, whether it had a
+  terminal to write to, and the resolved level. They are in
+  `%LOCALAPPDATA%/<identifier>/logs/<basename>.log` even when the console shows
+  nothing — that file is the ground truth, because the console's problems cannot
+  hide from a target with no terminal in the loop.
+
 ## The pre-commit routine
 
 **Run `bun run precommit` before every commit.** It is the gate, and it is one
 command:
 
 ```bash
-bun run hooks:install   # once per clone: points git at .githooks/
-bun run precommit       # identity → translations → lint → typecheck → format → repomix
-bun run precommit:full  # the same, plus clippy and the Rust test suite
+bun run hooks:install      # once per clone: points git at .githooks/
+bun run precommit          # identity → translations → lint → typecheck → unit checks → format → repomix
+bun run precommit:full     # the same, plus clippy and the Rust test suite
+bun run precommit:routine  # dependencies to newest, then precommit:full — run by hand
 ```
 
 `bun run precommit` runs, in order: `meta:sync` (regenerate the identity
 mirrors), `meta:check` (they are in sync), `check:identity` (no stale product
-name anywhere), `check:translations`, `lint`, `typecheck`, `format:check`, and
-the repomix pack. `precommit:full` adds `lint:backend` (clippy) and
+name anywhere), `check:translations`, `lint`, `typecheck`, `test:unit` (the
+standalone assert checks — `*.test.ts` under `src/`, each run by `bun` in its
+own process), `format:check`, and the repomix pack. `precommit:full` adds `lint:backend` (clippy) and
 `test:backend` (cargo test). The hook deliberately does **not** run clippy and
 the Rust suite by default — a ten-minute hook is a hook everyone bypasses with
 `--no-verify`; run `precommit:full` before a release or a PR.
+
+### The routine, in order
+
+The gate is not the routine. The routine is what you run before a commit, and
+the gate is what git then enforces:
+
+```bash
+bun run update             # 1. rtk → latest, EVERY dep to its newest PRERELEASE, then repomix
+bun run precommit:full     # 2. the gate, plus clippy and the Rust suite
+git commit                 # 3. the hook runs `bun run precommit` on the staged tree
+```
+
+**Step 1 always goes to prerelease, for every dependency, Solid included.**
+`--prerelease` is baked into `bun run update` and into `precommit:routine`, so
+there is no way to run the routine and get a stable-only update — a "newest
+published" that skips prereleases would not be tracking the newest of anything.
+This is not a detail: for part of the stack the newest is _only ever_ a
+prerelease, so a stable-only update would silently hold those packages back.
+`solid-js`'s `latest` dist-tag is still the 1.x major; the entire Solid 2
+toolchain (`solid-js@2.0.0-rc.8`, `@solidjs/web@2.0.0-rc.8`,
+`@solidjs/vite-plugin@3.0.0-next.43`) exists only on prerelease lines, as does
+`typescript`'s dev build. See `update-deps.ts`'s `NPM_LINE_PINNED` for the two
+packages where that has to be resolved from one named dist-tag rather than
+"newest tag wins".
+
+Step 1 is **manual and deliberately not in the hook.** It reaches two
+registries, rewrites four lockfiles, and runs its own validation as part of the
+run: `tsc -b`, then a Vite production build, then `cargo check`. That validation
+is the point. The tempting shortcut is to run the update inside the hook without
+it and let the gate's `typecheck` stand in, but that is a smaller proof (no
+production build, clippy instead of cargo check) applied to the change that most
+needs the larger one. `update-deps` therefore has no early-exit flag: a lockfile
+that resolves is not a lockfile that builds. `bun run precommit:routine` is steps
+1 and 2 as one command, and is the intended way to run them.
 
 **Keeping everything current is part of the routine:**
 
@@ -62,9 +116,17 @@ bun run repomix:check   # fail if the pack is older than the newest tracked file
 ```
 
 `update-deps` **always** takes `--prerelease` in this project: the point is to
-track the newest published version of every dependency, so the next release is
-tested against what is actually newest. `bun run update` chains all three in the
-right order and is what to run before starting release work.
+track the newest published version of every dependency — prereleases included,
+Solid included — so the next release is tested against what is actually newest.
+A few packages cannot be resolved by "newest published" alone and are held
+deliberately, with the reason printed in the report: **`NPM_LINE_PINNED`** holds
+a package to one prerelease _line_ resolved from one dist-tag (`solid-js`,
+`@solidjs/web` and `@solidjs/vite-plugin` follow `next`, because `latest` for all
+three is either the previous major or a downgrade), and the ceilings —
+`NPM_MAJOR_LOCKED_PREFIXES` for `@tauri-apps/*`, whose `@tauri-apps/api`
+publishes a 3.x alpha against a Tauri 2 backend, and `CARGO_MAJOR_LOCKED` for
+crates that cannot move without breaking a sibling pin — cap a bump at the
+version already installed.
 
 **`rtk` is used for every shell command**, with one exception: `bun` commands
 are never proxied (`rtk bun …` is not supported). So `rtk git …`, `rtk cargo …`,
@@ -102,6 +164,7 @@ bun run preview    # Preview built frontend
 
 ```bash
 bun run typecheck         # tsc -b
+bun run test:unit         # the standalone assert checks (`*.test.ts` under src/, run by bun)
 bun run lint              # oxlint (loads eslint-plugin-i18next through jsPlugins)
 bun run lint:fix          # oxlint with auto-fix
 bun run format            # Prettier + cargo fmt
@@ -360,7 +423,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   there is no `components/overlay/`
 - `lib/types/events.ts` - Shared TypeScript event payload types;
   `lib/utils/{color,theme,keyboard,format,rtl,modelTranslation}.ts`,
-  `lib/constants/languages.ts`, `lib/compat.ts`
+  `lib/constants/languages.ts`
 
 ### Key Architecture Patterns
 
@@ -846,7 +909,9 @@ What the mode is for, in one sentence: **live streaming transcription that gets
 more accurate as you speak, without the GPU work growing with the session.**
 The user watches the text form and then watches it being corrected, at every
 pause, for as long as they keep talking — and the corrections are already in the
-text by the time they stop.
+text by the time they stop. The reasoning behind this section, including the
+close-gate defect described below, is in
+[docs/MULTI_STT_STREAMING.md](docs/MULTI_STT_STREAMING.md).
 
 - **Two things compose, and only two: the live stream and the sliding window.**
   The primary model streams as it always did — that is what is on screen, and it
@@ -876,6 +941,24 @@ text by the time they stop.
   valve rather than a policy: someone who talks for a minute without pausing
   still gets merged, and neither a chunk nor a merge window can grow without
   bound. Nothing else closes a chunk — never a length, never a character.
+  The one thing a break waits for is the chunk's **own text**: a merge is a
+  _replacement_, so a chunk merged before its last words exist is merged against
+  an empty slot 1 and hands those words to its successor — the same speech
+  twice. Two conditions must hold, and they are independent (see
+  `break_outcome`). The family must have **decoded** the chunk's audio:
+  `input_received_ms − audio_committed_ms` within `STREAM_DRAIN_TOLERANCE_MS`
+  (500 ms). And it must have **published** the text for it: `Chunk::live`
+  non-empty. The first is a drain hint rather than a text cursor —
+  `transcribe.h` says as much and Parakeet derives it from `mel_frames_consumed`
+  — so an exact zero is unreachable while a stream runs; 500 ms is safe because
+  a break is silence, and a sequential decoder's un-decoded audio is a _suffix_
+  of what it was fed, short enough to lie inside that silence. The second is not
+  implied by the first: a family that decodes eagerly and commits late drains
+  completely with its text still owed. A break waits up to `TEXT_CATCHUP_GRACE`
+  (2.5 s, a constant) for both, which is cheap because a pause is silence by
+  definition. A break still owed either when the grace runs out does not close a
+  chunk: the session retires itself (see Fallbacks), because waiting longer
+  cannot produce text the model has not written.
 - **The audio sent to the extras is a window, never the session.** Feeding the
   extras everything since the recording began is what makes the mode useless on
   a long session: each break would re-decode the whole dictation, so the cost
@@ -926,9 +1009,12 @@ text by the time they stop.
   without the silence the VAD dropped. A session holds it by _token_ (`begin` /
   `end` / `is_current`), so a coordinator that outlives its recording cannot
   swallow the next one's audio. Off: one relaxed atomic load per frame.
-  `audio_committed_ms` is read at each close only to _report_ how far behind the
-  stream's committed text is (the `chunk n closed` log line); it never cuts
-  anything, so a mis-timed hint cannot shift a seam.
+  `audio_committed_ms` is a **drain hint**, not a cursor into the committed
+  text: it reports how much audio the family has decoded, and the close gate
+  reads `input_received_ms − audio_committed_ms` against
+  `STREAM_DRAIN_TOLERANCE_MS` to decide whether a break may close (see above).
+  It never cuts audio — a chunk's boundaries are its own `begin`/`end` timestamps,
+  so a mis-timed hint cannot shift a seam.
 - **Retained audio, and the memory bound.** A closed chunk keeps its audio while
   it can still be a merge's context — the next `context_chunks` closes — and
   while a retry of its own merge is pending, and is freed after that
@@ -995,8 +1081,18 @@ text by the time they stop.
 - **Fallbacks**: no streaming-capable primary model, no merge prompt, or a
   stream that never starts (`StreamFinalization::NeverStarted`) → the
   coordinator is dropped and the recording takes the normal Multi-STT batch
-  path. Cancel cancels the coordinator: nothing more is typed, nothing is
-  pasted, no history row.
+  path. So does a session that **retires itself mid-recording**: when a break is
+  still owed the chunk's own text after `TEXT_CATCHUP_GRACE` — either because the
+  stream has not drained the chunk's audio or because it has not published the
+  text for it — the mode's premise is dead for that session, and a chunk closed
+  then would show the same speech twice. The
+  coordinator stops (the overlay falls back to the primary's own live text, via
+  one last publish that drops the composed preview), the recording keeps running
+  and the batch path transcribes and merges the whole session at stop, exactly
+  as it does when the mode is off. Both cases are logged, with the characters
+  still owed, the audio left un-drained, and the grace that produced them.
+  Cancel cancels the coordinator: nothing more is typed, nothing is pasted, no
+  history row.
 
 Cost: one 50 ms thread per recording in this mode; on the audio path one mutex
 lock and one memcpy per 16 ms frame (≈62/s) while it is armed, nothing while it

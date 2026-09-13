@@ -1,5 +1,10 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
+/** @jsxImportSource @solidjs/web */
+// ^ This is the overlay's whole opt-in to Solid. `tsconfig.json` keeps
+// `jsxImportSource: "react"` as the tree-wide default because the settings
+// window is still React (Phase 3 inverts that and deletes these pragmas); a
+// file that opts out declares it here, and `vite.config.ts` routes the same
+// directory to the Solid compiler.
+import { render } from "@solidjs/web";
 import { listen } from "@tauri-apps/api/event";
 import RecordingOverlay from "./RecordingOverlay";
 import {
@@ -30,9 +35,11 @@ listen<string>("accent-color-changed", (event) =>
 // Translations load lazily (one chunk per language); wait for the initial
 // one so the first paint carries no raw keys.
 i18nReady.then(() => {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <RecordingOverlay />
-    </React.StrictMode>,
+  // No `StrictMode` wrapper: Solid has no counterpart, and the double-invoke
+  // behaviour the React overlay had to defend against with an unlisten guard
+  // (RecordingOverlay's listener effect) does not exist here.
+  render(
+    () => <RecordingOverlay />,
+    document.getElementById("root") as HTMLElement,
   );
 });

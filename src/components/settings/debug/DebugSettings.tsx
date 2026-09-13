@@ -1,5 +1,4 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { WordCorrectionThreshold } from "./WordCorrectionThreshold";
 import { LogLevelSelector } from "./LogLevelSelector";
 import { LiveLogViewer } from "./LiveLogViewer";
@@ -22,16 +21,14 @@ import {
 } from "./OnboardingPreview";
 
 interface DebugSettingsProps {
-  onPreviewOnboarding?: (step: OnboardingPreviewStep) => void;
+  onPreviewOnboarding: (step: OnboardingPreviewStep) => void;
 }
 
-export const DebugSettings: React.FC<DebugSettingsProps> = ({
-  onPreviewOnboarding,
-}) => {
+export const DebugSettings = ({ onPreviewOnboarding }: DebugSettingsProps) => {
   const { t } = useTranslation();
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div class="max-w-3xl w-full mx-auto space-y-6">
       <SessionToastHistory />
       <SettingsGroup title={t("settings.debug.title")}>
         <InterfaceScale descriptionMode="tooltip" grouped={true} />

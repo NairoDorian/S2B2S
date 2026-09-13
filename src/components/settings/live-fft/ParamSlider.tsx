@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { RotateCcw } from "lucide-react";
+import { createSignal, createEffect } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
+import { RotateCcw } from "@/components/icons/lucide";
 import { SettingContainer } from "@/components/ui/SettingContainer";
 
 interface ParamSliderProps {
@@ -11,12 +11,10 @@ interface ParamSliderProps {
   max: number;
   step: number;
   onChange: (value: number) => void;
-  /** Slider travels logarithmically (frequencies); needs `min > 0`. */
   log?: boolean;
   integer?: boolean;
   unit?: string;
   disabled?: boolean;
-  /** Shown as a reset button when the value differs from it. */
   defaultValue?: number;
   format?: (value: number) => string;
 }
@@ -31,101 +29,100 @@ const fromPos = (p: number, min: number, max: number, log: boolean): number => {
   return min + (max - min) * p;
 };
 
-/**
- * A slider with a typed number field next to it, for the dense parameter
- * pages of the Live FFT analyser: large ranges (window samples, cutoff
- * frequencies) stay precise, and frequencies travel logarithmically.
- */
-export const ParamSlider: React.FC<ParamSliderProps> = ({
-  label,
-  description,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  log = false,
-  integer = false,
-  unit,
-  disabled = false,
-  defaultValue,
-  format,
-}) => {
+export const ParamSlider = (props: ParamSliderProps) => {
   const { t } = useTranslation();
-  const [text, setText] = useState(String(value));
-  useEffect(() => {
-    setText(integer ? String(Math.round(value)) : String(value));
-  }, [value, integer]);
+  const log = () => props.log ?? false;
+  const integer = () => props.integer ?? false;
+  const disabled = () => props.disabled ?? false;
+  const [text, setText] = createSignal(String(props.value));
+  createEffect(
+    () => props.value,
+    (value) => {
+      setText(integer() ? String(Math.round(value)) : String(value));
+    },
+  );
 
   const clamp = (v: number): number => {
-    let next = Math.min(max, Math.max(min, v));
-    if (integer) next = Math.round(next);
-    else if (!log) next = Math.round(next / step) * step;
+    let next = Math.min(props.max, Math.max(props.min, v));
+    if (integer()) next = Math.round(next);
+    else if (!log()) next = Math.round(next / props.step) * props.step;
     return Number(next.toPrecision(7));
   };
 
   const commitText = () => {
-    const parsed = Number(text);
-    if (Number.isFinite(parsed)) onChange(clamp(parsed));
-    else setText(String(value));
+    const parsed = Number(text());
+    if (Number.isFinite(parsed)) props.onChange(clamp(parsed));
+    else setText(String(props.value));
   };
 
-  const pos = toPos(Math.min(max, Math.max(min, value)), min, max, log);
-  const showReset = defaultValue !== undefined && defaultValue !== value;
+  const pos = () =>
+    toPos(
+      Math.min(props.max, Math.max(props.min, props.value)),
+      props.min,
+      props.max,
+      log(),
+    );
+  const showReset = () =>
+    props.defaultValue !== undefined && props.defaultValue !== props.value;
 
   return (
     <SettingContainer
-      title={label}
-      description={description}
+      title={props.label}
+      description={props.description}
       descriptionMode="tooltip"
       grouped
       layout="horizontal"
-      disabled={disabled}
+      disabled={disabled()}
     >
-      <div className="flex items-center gap-2 w-full max-w-[320px] ms-auto">
+      <div class="flex items-center gap-2 w-full max-w-[320px] ms-auto">
         <input
           type="range"
           min={0}
           max={1000}
           step={1}
-          value={Math.round(pos * 1000)}
-          disabled={disabled}
-          onChange={(e) => {
-            const p = Number(e.target.value) / 1000;
-            onChange(clamp(fromPos(p, min, max, log)));
+          value={Math.round(pos() * 1000)}
+          disabled={disabled()}
+          onInput={(e) => {
+            const p = Number(e.currentTarget.value) / 1000;
+            props.onChange(clamp(fromPos(p, props.min, props.max, log())));
           }}
-          className="flex-1 min-w-[90px] accent-accent cursor-pointer disabled:cursor-not-allowed"
+          class="flex-1 min-w-[90px] accent-accent cursor-pointer disabled:cursor-not-allowed"
         />
         <input
           type="text"
-          inputMode="decimal"
-          value={text}
-          disabled={disabled}
-          onChange={(e) => setText(e.target.value)}
+          inputmode="decimal"
+          value={text()}
+          disabled={disabled()}
+          onInput={(e) => {
+            setText(e.currentTarget.value);
+          }}
           onBlur={commitText}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               commitText();
-              (e.target as HTMLInputElement).blur();
+              e.currentTarget.blur();
             }
           }}
-          aria-label={label}
-          className="w-[76px] shrink-0 rounded-md border border-mid-gray/20 bg-background px-2 py-1 text-xs font-mono text-end focus:outline-none focus:border-accent disabled:opacity-50"
+          aria-label={props.label}
+          class="w-[76px] shrink-0 rounded-md border border-mid-gray/20 bg-background px-2 py-1 text-xs font-mono text-end focus:outline-none focus:border-accent disabled:opacity-50"
         />
-        <span className="w-8 shrink-0 text-[11px] text-mid-gray truncate">
-          {format ? format(value) : (unit ?? "")}
+        <span class="w-8 shrink-0 text-[11px] text-mid-gray truncate">
+          {props.format ? props.format(props.value) : (props.unit ?? "")}
         </span>
         <button
           type="button"
-          onClick={() => defaultValue !== undefined && onChange(defaultValue)}
-          disabled={disabled || !showReset}
+          onClick={() =>
+            props.defaultValue !== undefined &&
+            props.onChange(props.defaultValue)
+          }
+          disabled={disabled() || !showReset()}
           title={t("settings.liveFft.resetValue")}
           aria-label={t("settings.liveFft.resetValue")}
-          className={`shrink-0 p-1 rounded-md text-mid-gray hover:text-text hover:bg-mid-gray/15 cursor-pointer disabled:cursor-default ${
-            showReset ? "opacity-100" : "opacity-0 pointer-events-none"
+          class={`shrink-0 p-1 rounded-md text-mid-gray hover:text-text hover:bg-mid-gray/15 cursor-pointer disabled:cursor-default ${
+            showReset() ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
         >
-          <RotateCcw className="w-3 h-3" />
+          <RotateCcw class="w-3 h-3" />
         </button>
       </div>
     </SettingContainer>

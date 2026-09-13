@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import { createSignal, createEffect, Show } from "solid-js";
 import { Tooltip } from "./Tooltip";
+import type { JSX } from "@solidjs/web";
 
 interface SettingContainerProps {
   title: string;
   description: string;
-  children: React.ReactNode;
+  children: JSX.Element;
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   layout?: "horizontal" | "stacked";
@@ -12,183 +13,152 @@ interface SettingContainerProps {
   tooltipPosition?: "top" | "bottom";
 }
 
-export const SettingContainer: React.FC<SettingContainerProps> = ({
-  title,
-  description,
-  children,
-  descriptionMode = "tooltip",
-  grouped = false,
-  layout = "horizontal",
-  disabled = false,
-  tooltipPosition = "top",
-}) => {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const tooltipRef = useRef<HTMLDivElement>(null);
+export const SettingContainer = (props: SettingContainerProps): JSX.Element => {
+  const [showTooltip, setShowTooltip] = createSignal(false);
+  let tooltipRef: HTMLDivElement | null = null;
 
-  // Handle click outside to close tooltip
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        tooltipRef.current &&
-        !tooltipRef.current.contains(event.target as Node)
-      ) {
-        setShowTooltip(false);
-      }
-    };
-
-    if (showTooltip) {
+  // The compute tracks `showTooltip`; the apply only touches the DOM and
+  // returns its own teardown, so a re-run replaces the listener instead of
+  // stacking one (Solid 2: cleanup is returned, not registered with
+  // `onCleanup` inside).
+  createEffect(
+    () => showTooltip(),
+    (show) => {
+      if (!show) return;
+      const handleClickOutside = (event: MouseEvent) => {
+        if (tooltipRef && !tooltipRef.contains(event.target as Node)) {
+          setShowTooltip(false);
+        }
+      };
       document.addEventListener("mousedown", handleClickOutside);
       return () =>
         document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showTooltip]);
+    },
+  );
 
   const toggleTooltip = () => {
-    setShowTooltip(!showTooltip);
+    setShowTooltip(!showTooltip());
   };
 
-  const containerClasses = grouped
-    ? "px-4 p-2"
-    : "px-4 p-2 rounded-lg border border-mid-gray/20";
+  // Accessors, not destructured locals: a component body runs once, so a
+  // destructured prop is a mount-time snapshot and the row would never follow
+  // a settings or layout change.
+  const grouped = () => props.grouped ?? false;
+  const disabled = () => props.disabled ?? false;
+  const stacked = () => (props.layout ?? "horizontal") === "stacked";
+  const tooltipMode = () => (props.descriptionMode ?? "tooltip") === "tooltip";
 
-  if (layout === "stacked") {
-    if (descriptionMode === "tooltip") {
-      return (
-        <div className={containerClasses}>
-          <div className="flex items-center gap-2 mb-2">
-            <h3
-              className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
-            >
-              {title}
-            </h3>
-            <div
-              ref={tooltipRef}
-              className="relative"
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-              onClick={toggleTooltip}
-            >
-              <svg
-                className="w-4 h-4 text-mid-gray cursor-help hover:text-accent transition-colors duration-200 select-none"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-label="More information"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleTooltip();
-                  }
-                }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {showTooltip && (
-                <Tooltip targetRef={tooltipRef} position="top">
-                  <p className="text-sm text-center leading-relaxed">
-                    {description}
-                  </p>
-                </Tooltip>
-              )}
-            </div>
-          </div>
-          <div className="w-full">{children}</div>
-        </div>
-      );
-    }
+  const containerClasses = () =>
+    grouped() ? "px-4 p-2" : "px-4 p-2 rounded-lg border border-mid-gray/20";
 
-    return (
-      <div className={containerClasses}>
-        <div className="mb-2">
-          <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
-            {title}
-          </h3>
-          <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
-            {description}
-          </p>
-        </div>
-        <div className="w-full">{children}</div>
+  const horizontalContainerClasses = () =>
+    grouped()
+      ? "flex items-center justify-between min-h-12 px-4 p-2"
+      : "flex items-center justify-between min-h-12 px-4 p-2 rounded-lg border border-mid-gray/20";
+
+  const Title = () => (
+    <h3 class={`text-sm font-medium ${disabled() ? "opacity-50" : ""}`}>
+      {props.title}
+    </h3>
+  );
+
+  // The description text of inline mode; the info icon of tooltip mode.
+  const DescriptionOrIcon = () => (
+    <Show
+      when={tooltipMode()}
+      fallback={
+        <p class={`text-sm ${disabled() ? "opacity-50" : ""}`}>
+          {props.description}
+        </p>
+      }
+    >
+      <div
+        ref={(el) => {
+          tooltipRef = el;
+        }}
+        class="relative"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        onClick={toggleTooltip}
+      >
+        <svg
+          class="w-4 h-4 text-mid-gray cursor-help hover:text-accent transition-colors duration-200 select-none"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-label="More information"
+          role="button"
+          tabindex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleTooltip();
+            }
+          }}
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width={2}
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+        {showTooltip() && (
+          <Tooltip
+            targetRef={{ current: tooltipRef }}
+            position={props.tooltipPosition ?? "top"}
+          >
+            <p class="text-sm text-center leading-relaxed">
+              {props.description}
+            </p>
+          </Tooltip>
+        )}
       </div>
-    );
-  }
-
-  // Horizontal layout (default)
-  const horizontalContainerClasses = grouped
-    ? "flex items-center justify-between min-h-12 px-4 p-2"
-    : "flex items-center justify-between min-h-12 px-4 p-2 rounded-lg border border-mid-gray/20";
-
-  if (descriptionMode === "tooltip") {
-    return (
-      <div className={horizontalContainerClasses}>
-        <div className="max-w-2/3">
-          <div className="flex items-center gap-2">
-            <h3
-              className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}
-            >
-              {title}
-            </h3>
-            <div
-              ref={tooltipRef}
-              className="relative"
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-              onClick={toggleTooltip}
-            >
-              <svg
-                className="w-4 h-4 text-mid-gray cursor-help hover:text-accent transition-colors duration-200 select-none"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-label="More information"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleTooltip();
-                  }
-                }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {showTooltip && (
-                <Tooltip targetRef={tooltipRef} position={tooltipPosition}>
-                  <p className="text-sm text-center leading-relaxed">
-                    {description}
-                  </p>
-                </Tooltip>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="relative">{children}</div>
-      </div>
-    );
-  }
+    </Show>
+  );
 
   return (
-    <div className={horizontalContainerClasses}>
-      <div className="max-w-2/3">
-        <h3 className={`text-sm font-medium ${disabled ? "opacity-50" : ""}`}>
-          {title}
-        </h3>
-        <p className={`text-sm ${disabled ? "opacity-50" : ""}`}>
-          {description}
-        </p>
+    <Show
+      when={stacked()}
+      fallback={
+        <div class={horizontalContainerClasses()}>
+          <div class="max-w-2/3">
+            <Show
+              when={tooltipMode()}
+              fallback={
+                <>
+                  <Title />
+                  <DescriptionOrIcon />
+                </>
+              }
+            >
+              <div class="flex items-center gap-2">
+                <Title />
+                <DescriptionOrIcon />
+              </div>
+            </Show>
+          </div>
+          <div class="relative">{props.children}</div>
+        </div>
+      }
+    >
+      <div class={containerClasses()}>
+        <Show
+          when={tooltipMode()}
+          fallback={
+            <div class="mb-2">
+              <Title />
+              <DescriptionOrIcon />
+            </div>
+          }
+        >
+          <div class="flex items-center gap-2 mb-2">
+            <Title />
+            <DescriptionOrIcon />
+          </div>
+        </Show>
+        <div class="w-full">{props.children}</div>
       </div>
-      <div className="relative">{children}</div>
-    </div>
+    </Show>
   );
 };

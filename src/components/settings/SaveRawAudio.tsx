@@ -1,32 +1,26 @@
-import React from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation } from "@/i18n/useTranslation";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
+import type { JSX } from "@solidjs/web";
 
 interface SaveRawAudioProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
 }
 
-export const SaveRawAudio: React.FC<SaveRawAudioProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
-    const { t } = useTranslation();
-    const { getSetting, updateSetting, isUpdating } = useSettings();
+export const SaveRawAudio = (props: SaveRawAudioProps): JSX.Element => {
+  const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
 
-    const enabled = getSetting("save_raw_audio") ?? false;
-
-    return (
-      <ToggleSwitch
-        checked={enabled}
-        onChange={(enabled) => updateSetting("save_raw_audio", enabled)}
-        isUpdating={isUpdating("save_raw_audio")}
-        label={t("settings.advanced.saveRawAudio.label")}
-        description={t("settings.advanced.saveRawAudio.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      />
-    );
-  },
-);
-
-SaveRawAudio.displayName = "SaveRawAudio";
+  return (
+    <ToggleSwitch
+      checked={getSetting("save_raw_audio") ?? false}
+      onChange={(enabled) => updateSetting("save_raw_audio", enabled)}
+      isUpdating={isUpdating("save_raw_audio")}
+      label={t("settings.advanced.saveRawAudio.label")}
+      description={t("settings.advanced.saveRawAudio.description")}
+      descriptionMode={props.descriptionMode}
+      grouped={props.grouped}
+    />
+  );
+};

@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createStore } from "solid-js";
 
 export type SessionToastLevel = "error" | "warning";
 
@@ -13,34 +13,44 @@ export interface SessionToastRecord {
 
 type NewSessionToast = Omit<SessionToastRecord, "id" | "shownAt">;
 
-interface SessionToastStore {
+interface SessionToastStoreData {
   toasts: SessionToastRecord[];
   showErrors: boolean;
   showWarnings: boolean;
-  addToast: (toast: NewSessionToast) => void;
-  setShowErrors: (showErrors: boolean) => void;
-  setShowWarnings: (showWarnings: boolean) => void;
 }
 
 const MAX_RECORDS = 200;
 let nextToastId = 1;
 
-/**
- * Every error/warning toast shown this session, so one that auto-dismissed
- * while the user was looking elsewhere can still be read on the Debug page.
- * Deliberately in-memory only: it resets with the app.
- */
-export const useSessionToastStore = create<SessionToastStore>((set) => ({
-  toasts: [],
-  showErrors: true,
-  showWarnings: true,
-  addToast: (toast) =>
-    set((state) => ({
-      toasts: [
-        ...state.toasts.slice(-(MAX_RECORDS - 1)),
-        { ...toast, id: nextToastId++, shownAt: Date.now() },
-      ],
-    })),
-  setShowErrors: (showErrors) => set({ showErrors }),
-  setShowWarnings: (showWarnings) => set({ showWarnings }),
-}));
+const [sessionToastStore, setSessionToastStore] =
+  createStore<SessionToastStoreData>({
+    toasts: [] as SessionToastRecord[],
+    showErrors: true,
+    showWarnings: true,
+  });
+
+export const addToast = (toast: NewSessionToast) => {
+  setSessionToastStore((state) => {
+    state.toasts = [
+      ...state.toasts.slice(-(MAX_RECORDS - 1)),
+      { ...toast, id: nextToastId++, shownAt: Date.now() },
+    ];
+  });
+};
+
+export const setShowErrors = (showErrors: boolean) => {
+  setSessionToastStore((state) => ({ ...state, showErrors }));
+};
+
+export const setShowWarnings = (showWarnings: boolean) => {
+  setSessionToastStore((state) => ({ ...state, showWarnings }));
+};
+
+export const useSessionToastStore = () => sessionToastStore;
+
+useSessionToastStore.getState = () => ({
+  ...sessionToastStore,
+  addToast,
+  setShowErrors,
+  setShowWarnings,
+});

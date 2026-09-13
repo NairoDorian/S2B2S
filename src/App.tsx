@@ -1,13 +1,15 @@
 import {
-  useEffect,
-  useLayoutEffect,
-  useState,
-  useRef,
-  type ReactNode,
-} from "react";
-import { Toaster } from "sonner";
+  createSignal,
+  createEffect,
+  onCleanup,
+  onSettled,
+  Switch,
+  Match,
+  Show,
+} from "solid-js";
+import { Toaster } from "@/components/ui/Toaster";
 import { sessionToast as toast } from "@/lib/sessionToast";
-import { useTranslation } from "react-i18next";
+import { useTranslation, currentLanguage } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import {
@@ -28,18 +30,18 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { HotkeySidebar } from "./components/hotkey-sidebar";
 import { QuickHelp } from "./components/settings/QuickHelp";
-import { useNavigationStore } from "./stores/navigationStore";
+import { useNavigationStore, setSection } from "@/stores/navigationStore";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
-import { useSettingsStore } from "./stores/settingsStore";
 import { commands, events } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 import { applyUiScale } from "@/lib/utils/theme";
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
-// Stable identity so preview effects do not re-run due to callback changes.
 const NOOP = () => {};
+
+let hasCompletedPostOnboardingInit = false;
 
 const renderSettingsContent = (
   section: SidebarSection,
@@ -55,196 +57,205 @@ const renderSettingsContent = (
 };
 
 function App() {
-  const { t, i18n } = useTranslation();
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
-    null,
-  );
+  const { t } = useTranslation();
+  const [onboardingStep, setOnboardingStep] =
+    createSignal<OnboardingStep | null>(null);
   const [onboardingPreview, setOnboardingPreview] =
-    useState<OnboardingPreviewStep | null>(null);
-  // Track if this is a returning user who just needs to grant permissions
-  // (vs a new user who needs full onboarding including model selection)
-  const [isReturningUser, setIsReturningUser] = useState(false);
-  const currentSection = useNavigationStore((state) => state.section);
-  const setCurrentSection = useNavigationStore((state) => state.setSection);
-  const { settings, updateSetting } = useSettings();
-  const direction = getLanguageDirection(i18n.language);
-  // Interface scale follows the setting live (Debug → Interface scale).
-  const uiScale = settings?.ui_scale ?? null;
-  useEffect(() => {
-    if (uiScale !== null) applyUiScale(uiScale);
-  }, [uiScale]);
-  const refreshAudioDevices = useSettingsStore(
-    (state) => state.refreshAudioDevices,
-  );
-  const refreshOutputDevices = useSettingsStore(
-    (state) => state.refreshOutputDevices,
-  );
-  const hasCompletedPostOnboardingInit = useRef(false);
-  const isShowingOnboarding =
-    onboardingPreview !== null ||
-    onboardingStep === "accessibility" ||
-    onboardingStep === "model";
+    createSignal<OnboardingPreviewStep | null>(null);
+  const [isReturningUser, setIsReturningUser] = createSignal(false);
+  const currentSection = () => useNavigationStore().section;
+  const { settings, updateSetting, refreshAudioDevices, refreshOutputDevices } =
+    useSettings();
+  const direction = () => getLanguageDirection(currentLanguage());
+  const uiScale = () => settings()?.ui_scale ?? null;
 
-  // Classic scrollbars consume layout space. Reserve a matching gutter on the
-  // opposite edge while onboarding is visible so its content stays centered in
-  // the physical window. Overlay scrollbars ignore scrollbar-gutter.
-  useLayoutEffect(() => {
-    const attribute = "data-onboarding-active";
-    document.documentElement.toggleAttribute(attribute, isShowingOnboarding);
-    return () => document.documentElement.removeAttribute(attribute);
-  }, [isShowingOnboarding]);
+  createEffect(
+    () => uiScale(),
+    (scale) => {
+      if (scale !== null) applyUiScale(scale);
+    },
+  );
+  const isShowingOnboarding = () =>
+    onboardingPreview() !== null ||
+    onboardingStep() === "accessibility" ||
+    onboardingStep() === "model";
 
-  useEffect(() => {
+  createEffect(
+    () => isShowingOnboarding(),
+    (showing) => {
+      document.documentElement.toggleAttribute(
+        "data-onboarding-active",
+        showing,
+      );
+    },
+  );
+
+  onSettled(() => {
     checkOnboardingStatus();
-  }, []);
+  });
 
-  // Initialize RTL direction when language changes
-  useEffect(() => {
-    initializeRTL(i18n.language);
-  }, [i18n.language]);
+  createEffect(
+    () => currentLanguage(),
+    (language) => {
+      initializeRTL(language);
+    },
+  );
 
-  // Initialize Enigo, shortcuts, and refresh audio devices when main app loads
-  useEffect(() => {
-    if (onboardingStep === "done" && !hasCompletedPostOnboardingInit.current) {
-      hasCompletedPostOnboardingInit.current = true;
-      Promise.all([
-        commands.initializeEnigo(),
-        commands.initializeShortcuts(),
-      ]).catch((e) => {
-        console.warn("Failed to initialize:", e);
-      });
-      refreshAudioDevices();
-      refreshOutputDevices();
-    }
-  }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
-
-  // Handle keyboard shortcuts for debug mode toggle
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for Ctrl+Shift+D (Windows/Linux) or Cmd+Shift+D (macOS)
-      const isDebugShortcut =
-        event.shiftKey &&
-        event.key.toLowerCase() === "d" &&
-        (event.ctrlKey || event.metaKey);
-
-      if (isDebugShortcut) {
-        event.preventDefault();
-        const currentDebugMode = settings?.debug_mode ?? false;
-        updateSetting("debug_mode", !currentDebugMode);
-      }
-    };
-
-    // Add event listener when component mounts
-    document.addEventListener("keydown", handleKeyDown);
-
-    // Cleanup event listener when component unmounts
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [settings?.debug_mode, updateSetting]);
-
-  // Listen for recording errors from the backend and show a toast
-  useEffect(() => {
-    const unlisten = listen<RecordingErrorEvent>("recording-error", (event) => {
-      const { error_type, detail } = event.payload;
-
-      if (error_type === "microphone_permission_denied") {
-        const currentPlatform = platform();
-        const platformKey = `errors.micPermissionDenied.${currentPlatform}`;
-        const description = t(platformKey, {
-          defaultValue: t("errors.micPermissionDenied.generic"),
+  // Tracked on `onboardingStep`, not run once: this used to fire at mount, when
+  // the step is still `null`, so the Enigo/shortcut init and the device refresh
+  // never ran at all.
+  createEffect(
+    () => onboardingStep(),
+    (step) => {
+      if (step === "done" && !hasCompletedPostOnboardingInit) {
+        hasCompletedPostOnboardingInit = true;
+        Promise.all([
+          commands.initializeEnigo(),
+          commands.initializeShortcuts(),
+        ]).catch((e) => {
+          console.warn("Failed to initialize:", e);
         });
-        toast.error(t("errors.micPermissionDeniedTitle"), { description });
-      } else if (error_type === "no_input_device") {
-        toast.error(t("errors.noInputDeviceTitle"), {
-          description: t("errors.noInputDevice"),
+        refreshAudioDevices();
+        refreshOutputDevices();
+      }
+    },
+  );
+
+  createEffect(
+    () => undefined,
+    () => {
+      const handleKeyDown = (event: KeyboardEvent) => {
+        const isDebugShortcut =
+          event.shiftKey &&
+          event.key.toLowerCase() === "d" &&
+          (event.ctrlKey || event.metaKey);
+
+        if (isDebugShortcut) {
+          event.preventDefault();
+          const currentDebugMode = settings()?.debug_mode ?? false;
+          updateSetting("debug_mode", !currentDebugMode);
+        }
+      };
+
+      document.addEventListener("keydown", handleKeyDown);
+      onCleanup(() => {
+        document.removeEventListener("keydown", handleKeyDown);
+      });
+    },
+  );
+
+  createEffect(
+    () => currentLanguage(),
+    () => {
+      const unlisten = listen<RecordingErrorEvent>(
+        "recording-error",
+        (event) => {
+          const { error_type, detail } = event.payload;
+
+          if (error_type === "microphone_permission_denied") {
+            const currentPlatform = platform();
+            const platformKey = `errors.micPermissionDenied.${currentPlatform}`;
+            const description = t(platformKey, {
+              defaultValue: t("errors.micPermissionDenied.generic"),
+            });
+            toast.error(t("errors.micPermissionDeniedTitle"), { description });
+          } else if (error_type === "no_input_device") {
+            toast.error(t("errors.noInputDeviceTitle"), {
+              description: t("errors.noInputDevice"),
+            });
+          } else {
+            toast.error(
+              t("errors.recordingFailed", { error: detail ?? "Unknown error" }),
+            );
+          }
+        },
+      );
+      onCleanup(() => {
+        unlisten.then((fn) => fn());
+      });
+    },
+  );
+
+  createEffect(
+    () => currentLanguage(),
+    () => {
+      const unlisten = listen("paste-error", () => {
+        toast.error(t("errors.pasteFailedTitle"), {
+          description: t("errors.pasteFailed"),
         });
-      } else {
-        toast.error(
-          t("errors.recordingFailed", { error: detail ?? "Unknown error" }),
-        );
-      }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
-
-  // Listen for paste failures and show a toast.
-  // The technical error detail is written to the log file on the Rust side
-  // (see actions.rs `error!("Failed to paste transcription: ...")`),
-  // so we show a localized, user-friendly message here instead of the raw error.
-  useEffect(() => {
-    const unlisten = listen("paste-error", () => {
-      toast.error(t("errors.pasteFailedTitle"), {
-        description: t("errors.pasteFailed"),
       });
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
-
-  // Listen for transcription failures and show a toast.
-  // The payload is the backend error message (also written to the log file).
-  useEffect(() => {
-    const unlisten = listen<string>("transcription-error", (event) => {
-      toast.error(t("errors.transcriptionFailedTitle"), {
-        description: event.payload,
+      onCleanup(() => {
+        unlisten.then((fn) => fn());
       });
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
+    },
+  );
 
-  // Listen for model loading failures and show a toast
-  useEffect(() => {
-    const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
-      if (event.payload.event_type === "loading_failed") {
-        toast.error(
-          t("errors.modelLoadFailed", {
-            model:
-              event.payload.model_name || t("errors.modelLoadFailedUnknown"),
+  createEffect(
+    () => currentLanguage(),
+    () => {
+      const unlisten = listen<string>("transcription-error", (event) => {
+        toast.error(t("errors.transcriptionFailedTitle"), {
+          description: event.payload,
+        });
+      });
+      onCleanup(() => {
+        unlisten.then((fn) => fn());
+      });
+    },
+  );
+
+  createEffect(
+    () => currentLanguage(),
+    () => {
+      const unlisten = listen<ModelStateEvent>(
+        "model-state-changed",
+        (event) => {
+          if (event.payload.event_type === "loading_failed") {
+            toast.error(
+              t("errors.modelLoadFailed", {
+                model:
+                  event.payload.model_name ||
+                  t("errors.modelLoadFailedUnknown"),
+              }),
+              {
+                description: event.payload.error,
+              },
+            );
+          }
+          if (event.payload.event_type === "multi_stt_model_load_failed") {
+            toast.error(
+              t("errors.modelLoadFailed", {
+                model:
+                  event.payload.model_id || t("errors.modelLoadFailedUnknown"),
+              }),
+              {
+                description: event.payload.error,
+              },
+            );
+          }
+        },
+      );
+      onCleanup(() => {
+        unlisten.then((fn) => fn());
+      });
+    },
+  );
+
+  createEffect(
+    () => currentLanguage(),
+    () => {
+      const unlisten = events.multiSttStreamChunkFailedEvent.listen((event) => {
+        toast.warning(t("multiStt.streamingFirst.chunkFailedTitle"), {
+          description: t("multiStt.streamingFirst.chunkFailedToast", {
+            chunk: event.payload.chunk,
           }),
-          {
-            description: event.payload.error,
-          },
-        );
-      }
-      if (event.payload.event_type === "multi_stt_model_load_failed") {
-        toast.error(
-          t("errors.modelLoadFailed", {
-            model: event.payload.model_id || t("errors.modelLoadFailedUnknown"),
-          }),
-          {
-            description: event.payload.error,
-          },
-        );
-      }
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
-
-  // The experimental Multi-STT streaming mode raises this when a chunk's merge
-  // fails. The chunk's text is still there — the extras' outputs side by side,
-  // marked in the overlay — and the next pause retries it, so this is a warning
-  // and not an error. The backend emits it only when the number of failed
-  // chunks grows, so a retry that fails again does not repeat the toast.
-  useEffect(() => {
-    const unlisten = events.multiSttStreamChunkFailedEvent.listen((event) => {
-      toast.warning(t("multiStt.streamingFirst.chunkFailedTitle"), {
-        description: t("multiStt.streamingFirst.chunkFailedToast", {
-          chunk: event.payload.chunk,
-        }),
+        });
       });
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [t]);
+      onCleanup(() => {
+        unlisten.then((fn) => fn());
+      });
+    },
+  );
 
   const revealMainWindowForPermissions = async () => {
     try {
@@ -263,7 +274,6 @@ function App() {
       const currentPlatform = platform();
 
       if (hasCompletedOnboarding) {
-        // Returning user - check if they need to grant permissions first
         setIsReturningUser(true);
 
         if (currentPlatform === "macos") {
@@ -279,7 +289,6 @@ function App() {
             }
           } catch (e) {
             console.warn("Failed to check macOS permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
           }
         }
 
@@ -297,13 +306,11 @@ function App() {
             }
           } catch (e) {
             console.warn("Failed to check Windows microphone permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
           }
         }
 
         setOnboardingStep("done");
       } else {
-        // New user - start full onboarding
         setIsReturningUser(false);
         setOnboardingStep("accessibility");
       }
@@ -314,112 +321,77 @@ function App() {
   };
 
   const handleAccessibilityComplete = () => {
-    // Returning users already have models, skip to main app
-    // New users need to select a model
-    setOnboardingStep(isReturningUser ? "done" : "model");
+    setOnboardingStep(isReturningUser() ? "done" : "model");
   };
 
   const handleModelSelected = () => {
-    // Transition to main app - user has started a download
     setOnboardingStep("done");
   };
 
-  // Rendered once around every step below (including onboarding) so
-  // toast.error() calls surface to the user. sonner renders via a portal, so
-  // its position in the tree doesn't affect layout. Without this, errors during
-  // onboarding (e.g. a model download failing because the model host is
-  // unreachable) are silently swallowed and the wizard just appears to "blink".
-  const toaster = (
-    <Toaster
-      theme="system"
-      toastOptions={{
-        unstyled: true,
-        classNames: {
-          toast:
-            "bg-background border border-mid-gray/20 rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 text-sm",
-          title: "font-medium",
-          description: "text-mid-gray",
-          actionButton:
-            "px-2 py-1 text-xs font-medium rounded-lg border bg-mid-gray/10 border-mid-gray/20 hover:bg-background-ui/30 hover:border-accent cursor-pointer whitespace-nowrap",
-        },
-      }}
-    />
-  );
+  const toaster = <Toaster />;
 
-  // Still checking onboarding status
-  if (onboardingStep === null) {
-    return null;
-  }
-
-  // Select the content for the current step. The Toaster is rendered once, in a
-  // stable wrapper around this node, so crossing between onboarding steps and
-  // the main app never remounts it (which would drop any in-flight toast).
-  let content: ReactNode;
-  if (onboardingPreview) {
-    // Render previews in the same top-level slot as real onboarding. Keeping
-    // the settings layout unmounted ensures viewport overflow behaves exactly
-    // as it does during first-run onboarding.
-    content = (
-      <>
-        {onboardingPreview === "accessibility" ? (
-          <AccessibilityOnboarding onComplete={NOOP} preview />
-        ) : (
-          <Onboarding onModelSelected={NOOP} preview />
-        )}
-        <button
-          type="button"
-          onClick={() => setOnboardingPreview(null)}
-          className="fixed top-4 end-4 z-50 rounded-lg border border-mid-gray/20 bg-background px-4 py-2 text-sm font-medium text-text shadow-lg hover:bg-background-ui/30 cursor-pointer"
-        >
-          {t("settings.debug.onboardingPreview.exitButton")}
-        </button>
-      </>
-    );
-  } else if (onboardingStep === "accessibility") {
-    content = (
-      <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
-    );
-  } else if (onboardingStep === "model") {
-    content = <Onboarding onModelSelected={handleModelSelected} />;
-  } else {
-    content = (
-      <div
-        dir={direction}
-        className="h-screen flex flex-col select-none cursor-default"
-      >
-        <ErrorBoundary context="What's New">
-          <WhatsNewGate />
-        </ErrorBoundary>
-        {/* Main content area that takes remaining space */}
-        <div className="flex-1 flex overflow-hidden">
-          <Sidebar
-            activeSection={currentSection}
-            onSectionChange={setCurrentSection}
-          />
-          {/* Scrollable content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto">
-              {/* Extra end padding keeps the top-right shortcuts launcher off the content. */}
-              <div className="flex flex-col items-center p-4 pe-14 gap-4">
-                <AccessibilityPermissions />
-                <SecureInputWarning />
-                <QuickHelp activeSection={currentSection} />
-                {renderSettingsContent(currentSection, setOnboardingPreview)}
-              </div>
-            </div>
-          </div>
-          <HotkeySidebar />
-        </div>
-        {/* Fixed footer at bottom */}
-        <Footer />
-      </div>
-    );
-  }
-
+  // A `Switch` rather than an `if/else` chain assigning to a local: a Solid
+  // component body runs once, so `let content; if (step() === null) …` would
+  // snapshot the pre-load `null` and never render the shell. `Match` re-reads
+  // its `when` reactively, so the window appears as soon as onboarding status
+  // resolves.
   return (
     <>
       {toaster}
-      {content}
+      <Switch>
+        <Match when={onboardingStep() !== null && onboardingPreview() !== null}>
+          <Show
+            when={onboardingPreview() === "accessibility"}
+            fallback={<Onboarding onModelSelected={NOOP} preview />}
+          >
+            <AccessibilityOnboarding onComplete={NOOP} preview />
+          </Show>
+          <button
+            type="button"
+            onClick={() => setOnboardingPreview(null)}
+            class="fixed top-4 end-4 z-50 rounded-lg border border-mid-gray/20 bg-background px-4 py-2 text-sm font-medium text-text shadow-lg hover:bg-background-ui/30 cursor-pointer"
+          >
+            {t("settings.debug.onboardingPreview.exitButton")}
+          </button>
+        </Match>
+        <Match when={onboardingStep() === "accessibility"}>
+          <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />
+        </Match>
+        <Match when={onboardingStep() === "model"}>
+          <Onboarding onModelSelected={handleModelSelected} />
+        </Match>
+        <Match when={onboardingStep() === "done"}>
+          <div
+            dir={direction()}
+            class="h-screen flex flex-col select-none cursor-default"
+          >
+            <ErrorBoundary context="What's New">
+              <WhatsNewGate />
+            </ErrorBoundary>
+            <div class="flex-1 flex overflow-hidden">
+              <Sidebar
+                activeSection={currentSection()}
+                onSectionChange={setSection}
+              />
+              <div class="flex-1 flex flex-col overflow-hidden">
+                <div class="flex-1 overflow-y-auto">
+                  <div class="flex flex-col items-center p-4 pe-14 gap-4">
+                    <AccessibilityPermissions />
+                    <SecureInputWarning />
+                    <QuickHelp activeSection={currentSection()} />
+                    {renderSettingsContent(
+                      currentSection(),
+                      setOnboardingPreview,
+                    )}
+                  </div>
+                </div>
+              </div>
+              <HotkeySidebar />
+            </div>
+            <Footer />
+          </div>
+        </Match>
+      </Switch>
     </>
   );
 }

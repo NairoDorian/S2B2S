@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { createSignal, Show } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { Button } from "../../ui/Button";
 import { SettingContainer } from "../../ui/SettingContainer";
@@ -12,13 +12,13 @@ interface WhatsNewPreviewProps {
   grouped?: boolean;
 }
 
-export const WhatsNewPreview: React.FC<WhatsNewPreviewProps> = ({
+export const WhatsNewPreview = ({
   descriptionMode = "tooltip",
   grouped = false,
-}) => {
+}: WhatsNewPreviewProps) => {
   const { t } = useTranslation();
-  const [note, setNote] = useState<ReleaseNote | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [note, setNote] = createSignal<ReleaseNote | null>(null);
+  const [isLoading, setIsLoading] = createSignal(false);
 
   const preview = () => {
     setIsLoading(true);
@@ -52,19 +52,21 @@ export const WhatsNewPreview: React.FC<WhatsNewPreviewProps> = ({
           variant="secondary"
           size="md"
           onClick={preview}
-          disabled={isLoading}
+          disabled={isLoading()}
         >
           {t("settings.debug.whatsNewPreview.button")}
         </Button>
       </SettingContainer>
 
-      {note && (
-        <WhatsNewModal
-          note={note}
-          open={true}
-          onDismiss={() => setNote(null)}
-        />
-      )}
+      <Show when={note()}>
+        {(releaseNote) => (
+          <WhatsNewModal
+            note={releaseNote()}
+            open={true}
+            onDismiss={() => setNote(null)}
+          />
+        )}
+      </Show>
     </>
   );
 };

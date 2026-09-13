@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createSolidStore } from "@/lib/solidStore";
 import {
   commands,
   events,
@@ -96,7 +96,7 @@ const applyEvent = (
  * page) because the job keeps running in the backend while the user browses
  * other pages; the event listener is installed once and survives unmounts.
  */
-export const useFileTranscriptionStore = create<FileTranscriptionStore>()(
+const fileTranscriptionState = createSolidStore<FileTranscriptionStore>(
   (set, get) => ({
     items: [],
     running: false,
@@ -182,3 +182,7 @@ export const useFileTranscriptionStore = create<FileTranscriptionStore>()(
     },
   }),
 );
+
+export function useFileTranscriptionStore() {
+  return fileTranscriptionState;
+}
