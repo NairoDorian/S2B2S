@@ -17,7 +17,9 @@ export const ModelUnloadTimeoutSetting = (
   const { t } = useTranslation();
   const { settings, getSetting, updateSetting } = useSettings();
 
-  const timeoutOptions = [
+  // Built lazily for the same reason as everywhere else: `t` reads the
+  // language signal, and a body-level array would freeze on language change.
+  const timeoutOptions = () => [
     {
       value: "never",
       label: t("settings.advanced.modelUnload.options.never"),
@@ -48,8 +50,8 @@ export const ModelUnloadTimeoutSetting = (
     },
   ];
 
-  const debugTimeoutOptions = [
-    ...timeoutOptions,
+  const debugTimeoutOptions = () => [
+    ...timeoutOptions(),
     {
       value: "sec15",
       label: t("settings.advanced.modelUnload.options.sec15"),
@@ -69,8 +71,8 @@ export const ModelUnloadTimeoutSetting = (
 
   const options = createMemo(() => {
     return settings()?.debug_mode === true
-      ? debugTimeoutOptions
-      : timeoutOptions;
+      ? debugTimeoutOptions()
+      : timeoutOptions();
   });
 
   return (

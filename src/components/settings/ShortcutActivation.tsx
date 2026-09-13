@@ -16,7 +16,9 @@ export const ShortcutActivationSetting = (
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
 
-  const options = [
+  // Built lazily: each label calls `t`, which reads the language signal — a
+  // body-level array would read it untracked and freeze on language change.
+  const options = () => [
     {
       value: "hold_or_toggle",
       label: t("settings.general.shortcutActivation.options.holdOrToggle"),
@@ -46,7 +48,7 @@ export const ShortcutActivationSetting = (
       grouped={props.grouped}
     >
       <Dropdown
-        options={options}
+        options={options()}
         menuClassName="right-0 w-80 max-w-[calc(100vw-2rem)]"
         selectedValue={
           (getSetting("shortcut_activation") ||

@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, onCleanup } from "solid-js";
+import { createSignal, createEffect, For } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
 
@@ -25,19 +25,22 @@ export const Dropdown = (props: DropdownProps): JSX.Element => {
   const [isOpen, setIsOpen] = createSignal(false);
   let dropdownRef: HTMLDivElement | null = null;
 
+  // The compute tracks `isOpen`; the apply owns the outside-click listener
+  // and returns its teardown, so closing removes it. (Reading `isOpen()` in
+  // the apply is untracked: the listener would register once and never go
+  // away, and every mount would warn STRICT_READ_UNTRACKED.)
   createEffect(
-    () => undefined,
-    () => {
-      if (!isOpen()) return;
+    () => isOpen(),
+    (open) => {
+      if (!open) return;
       const handleClickOutside = (event: MouseEvent) => {
         if (dropdownRef && !dropdownRef.contains(event.target as Node)) {
           setIsOpen(false);
         }
       };
       document.addEventListener("mousedown", handleClickOutside);
-      onCleanup(() =>
-        document.removeEventListener("mousedown", handleClickOutside),
-      );
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     },
   );
 

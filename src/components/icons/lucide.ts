@@ -44,7 +44,7 @@
  *   IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-import { createEffect } from "solid-js";
+import { createEffect, untrack } from "solid-js";
 import type { JSX } from "@solidjs/web";
 
 /** `<tag, attrs>` pairs, exactly as lucide stores them. */
@@ -135,7 +135,18 @@ function createIcon(
   node: readonly IconNode[],
 ): LucideIcon {
   const Icon: LucideIcon = (props) => {
-    const { class: callerClass, width, height, ...rest } = props;
+    // One-time snapshot for the imperative build below (explicit via
+    // untrack); the effects underneath keep `class` and the size live after
+    // it, which is where the dynamic values actually flow.
+    const {
+      class: callerClass,
+      width,
+      height,
+      rest,
+    } = untrack(() => {
+      const { class: c, width: w, height: h, ...r } = props;
+      return { class: c, width: w, height: h, rest: r };
+    });
     // `lucide lucide-<name> lucide-<alias>… <caller's>`, exactly as lucide's
     // mergeClasses builds it. The alias classes look redundant and are not:
     // they are part of the package's public styling contract, so a stylesheet

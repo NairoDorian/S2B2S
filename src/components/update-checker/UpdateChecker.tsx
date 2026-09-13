@@ -16,7 +16,6 @@ interface UpdateCheckerProps {
 }
 
 const UpdateChecker = (props: UpdateCheckerProps) => {
-  const { class: className = "" } = props;
   const { t } = useTranslation();
   const [isChecking, setIsChecking] = createSignal(false);
   const [updateAvailable, setUpdateAvailable] = createSignal(false);
@@ -29,9 +28,11 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
     createSignal<string>(RELEASES_URL);
 
   const { settings, isLoading, updateChecksLocked } = useSettings();
-  const settingsLoaded =
+  // Accessors: these gate the effect below and the footer's status text, and
+  // both must follow the settings as they load and change.
+  const settingsLoaded = () =>
     !isLoading() && settings() !== null && updateChecksLocked() !== null;
-  const updateChecksEnabled =
+  const updateChecksEnabled = () =>
     (settings()?.update_checks_enabled ?? false) &&
     updateChecksLocked() === false;
 
@@ -40,12 +41,14 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
   let downloadedBytesRef = 0;
   let contentLengthRef = 0;
 
+  // The compute tracks the two gates; the apply owns the check and the
+  // manual-check listener, and returns their teardown.
   createEffect(
-    () => undefined,
-    () => {
-      if (!settingsLoaded) return;
+    () => [settingsLoaded(), updateChecksEnabled()] as const,
+    ([loaded, enabled]) => {
+      if (!loaded) return;
 
-      if (!updateChecksEnabled) {
+      if (!enabled) {
         if (upToDateTimeoutRef) {
           clearTimeout(upToDateTimeoutRef);
         }
@@ -71,7 +74,7 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
   );
 
   const checkForUpdates = async () => {
-    if (!updateChecksEnabled || isChecking()) return;
+    if (!updateChecksEnabled() || isChecking()) return;
 
     try {
       setIsChecking(true);
@@ -105,13 +108,13 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
   };
 
   const handleManualUpdateCheck = () => {
-    if (!updateChecksEnabled) return;
+    if (!updateChecksEnabled()) return;
     isManualCheckRef = true;
     checkForUpdates();
   };
 
   const installUpdate = async () => {
-    if (!updateChecksEnabled) return;
+    if (!updateChecksEnabled()) return;
 
     const portable = await commands.isPortable();
     if (portable) {
@@ -159,7 +162,7 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
   };
 
   const getUpdateStatusText = () => {
-    if (!updateChecksEnabled) {
+    if (!updateChecksEnabled()) {
       return t("footer.updateCheckingDisabled");
     }
     if (isInstalling()) {
@@ -178,20 +181,21 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
   };
 
   const getUpdateStatusAction = () => {
-    if (!updateChecksEnabled) return undefined;
+    if (!updateChecksEnabled()) return undefined;
     if (updateAvailable() && !isInstalling()) return installUpdate;
     if (!isChecking() && !isInstalling() && !updateAvailable())
       return handleManualUpdateCheck;
     return undefined;
   };
 
-  const isUpdateDisabled =
-    !updateChecksEnabled || isChecking() || isInstalling();
-  const isUpdateClickable =
-    !isUpdateDisabled &&
+  // Read in the JSX bindings, which re-run on every state change.
+  const isUpdateDisabled = () =>
+    !updateChecksEnabled() || isChecking() || isInstalling();
+  const isUpdateClickable = () =>
+    !isUpdateDisabled() &&
     (updateAvailable() || (!isChecking() && !showUpToDate()));
 
-  const hasDirectInstaller = portableInstallerUrl() !== RELEASES_URL;
+  const hasDirectInstaller = () => portableInstallerUrl() !== RELEASES_URL;
 
   return (
     <>
@@ -202,7 +206,7 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
               {t("footer.portableUpdateTitle")}
             </h2>
             <p class="text-sm text-text/70">
-              {hasDirectInstaller
+              {hasDirectInstaller()
                 ? t("footer.portableUpdateMessage")
                 : t("footer.portableUpdateBrowseMessage")}
             </p>
@@ -220,7 +224,7 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
                   setShowPortableUpdateDialog(false);
                 }}
               >
-                {hasDirectInstaller
+                {hasDirectInstaller()
                   ? t("footer.portableUpdateButton")
                   : t("footer.portableUpdateBrowseButton")}
               </button>
@@ -228,11 +232,11 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
           </div>
         </div>
       )}
-      <div class={`flex items-center gap-3 ${className}`}>
-        {isUpdateClickable ? (
+      <div class={`flex items-center gap-3 ${props.class ?? ""}`}>
+        {isUpdateClickable() ? (
           <button
             onClick={getUpdateStatusAction()}
-            disabled={isUpdateDisabled}
+            disabled={isUpdateDisabled()}
             class={`transition-colors disabled:opacity-50 tabular-nums ${
               updateAvailable()
                 ? "text-accent hover:text-accent/80 font-medium"
@@ -244,7 +248,6 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
         ) : (
           <span class="text-text/60 tabular-nums">{getUpdateStatusText()}</span>
         )}
-
         {isInstalling() &&
           downloadProgress() > 0 &&
           downloadProgress() < 100 && (

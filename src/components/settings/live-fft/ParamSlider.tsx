@@ -1,4 +1,4 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, untrack } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { RotateCcw } from "@/components/icons/lucide";
 import { SettingContainer } from "@/components/ui/SettingContainer";
@@ -34,7 +34,9 @@ export const ParamSlider = (props: ParamSliderProps) => {
   const log = () => props.log ?? false;
   const integer = () => props.integer ?? false;
   const disabled = () => props.disabled ?? false;
-  const [text, setText] = createSignal(String(props.value));
+  // The text field seeds from the prop once (explicit snapshot); the effect
+  // below keeps it in step with the value from then on.
+  const [text, setText] = createSignal(untrack(() => String(props.value)));
   createEffect(
     () => props.value,
     (value) => {

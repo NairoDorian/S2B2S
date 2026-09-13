@@ -71,10 +71,11 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     setOpenPanel(openPanel() === panel ? null : panel);
   };
 
+  // The compute tracks the store read; the apply only issues the command and
+  // writes signals.
   createEffect(
-    () => undefined,
-    () => {
-      const current = modelStore.currentModel;
+    () => modelStore.currentModel,
+    (current) => {
       if (!current) {
         setModelStatus("none");
         return;
@@ -148,10 +149,10 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           }, 500);
         },
       );
-      onCleanup(() => {
+      return () => {
         modelStateUnlisten.then((fn) => fn());
         downloadCompleteUnlisten.then((fn) => fn());
-      });
+      };
     },
   );
 
@@ -168,10 +169,10 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       };
       document.addEventListener("mousedown", handlePointerDown);
       document.addEventListener("keydown", handleKeyDown);
-      onCleanup(() => {
+      return () => {
         document.removeEventListener("mousedown", handlePointerDown);
         document.removeEventListener("keydown", handleKeyDown);
-      });
+      };
     },
   );
 
@@ -187,20 +188,24 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
         if (cancelled) return;
         setQuantVariants(result.status === "ok" ? (result.data ?? null) : null);
       });
-      onCleanup(() => {
+      return () => {
         cancelled = true;
-      });
+      };
     },
   );
 
-  const currentModelInfo = modelStore.models.find(
-    (m) => m.id === displayModelId(),
+  // Memos, not body reads: the body runs once, so these would freeze at
+  // whatever the store held on mount.
+  const currentModelInfo = createMemo(() =>
+    modelStore.models.find((m) => m.id === displayModelId()),
   );
-  const latencyKind = currentModelInfo?.native_streaming_latency_kind;
-  const currentPreset: NativeStreamingLatencyPreset =
-    settingsStore.settings?.native_streaming_latency_presets?.[
-      displayModelId() ?? ""
-    ] ?? DEFAULT_LATENCY_PRESET;
+  const latencyKind = () => currentModelInfo()?.native_streaming_latency_kind;
+  const currentPreset = createMemo(
+    (): NativeStreamingLatencyPreset =>
+      settingsStore.settings?.native_streaming_latency_presets?.[
+        displayModelId() ?? ""
+      ] ?? DEFAULT_LATENCY_PRESET,
+  );
 
   const downloadPercentages = createMemo(() => {
     const map: Record<string, number> = {};
@@ -210,8 +215,8 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     return map;
   });
 
-  const currentVariant = quantVariants()?.find(
-    (variant) => variant.model_id === displayModelId(),
+  const currentVariant = createMemo(() =>
+    quantVariants()?.find((variant) => variant.model_id === displayModelId()),
   );
 
   const downloadedVariantCount = createMemo(
@@ -307,28 +312,36 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       }
     }
     switch (modelStatus()) {
-      case "ready":
-        return currentModelInfo
-          ? getTranslatedModelName(currentModelInfo, t)
+      case "ready": {
+        const info = currentModelInfo();
+        return info
+          ? getTranslatedModelName(info, t)
           : t("modelSelector.modelReady");
-      case "loading":
-        return currentModelInfo
+      }
+      case "loading": {
+        const info = currentModelInfo();
+        return info
           ? t("modelSelector.loading", {
-              modelName: getTranslatedModelName(currentModelInfo, t),
+              modelName: getTranslatedModelName(info, t),
             })
           : t("modelSelector.loadingGeneric");
+      }
       case "error":
         return modelError() || t("modelSelector.modelError");
-      case "unloaded":
-        return currentModelInfo
-          ? getTranslatedModelName(currentModelInfo, t)
+      case "unloaded": {
+        const info = currentModelInfo();
+        return info
+          ? getTranslatedModelName(info, t)
           : t("modelSelector.modelUnloaded");
+      }
       case "none":
         return t("modelSelector.noModelDownloadRequired");
-      default:
-        return currentModelInfo
-          ? getTranslatedModelName(currentModelInfo, t)
+      default: {
+        const info = currentModelInfo();
+        return info
+          ? getTranslatedModelName(info, t)
           : t("modelSelector.modelUnloaded");
+      }
     }
   };
 
@@ -339,17 +352,23 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     return modelStatus();
   };
 
-  const referenceRecording = benchmark.referenceRecording();
-  const canBenchmark =
-    !!displayModelId() && !!referenceRecording && downloadedVariantCount() > 0;
+  const referenceRecording = () => benchmark.referenceRecording();
+  const canBenchmark = () =>
+    !!displayModelId() &&
+    !!referenceRecording() &&
+    downloadedVariantCount() > 0;
 
-  const quantSubtitle = referenceRecording
-    ? t("modelSelector.benchmark.reference", {
-        when: new Date(
-          (referenceRecording.timestamp ?? 0) * 1000,
-        ).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }),
-      })
-    : t("modelSelector.benchmark.noRecording");
+  const quantSubtitle = () => {
+    const recording = referenceRecording();
+    return recording
+      ? t("modelSelector.benchmark.reference", {
+          when: new Date((recording.timestamp ?? 0) * 1000).toLocaleString(
+            undefined,
+            { dateStyle: "short", timeStyle: "short" },
+          ),
+        })
+      : t("modelSelector.benchmark.noRecording");
+  };
 
   return (
     <div
@@ -379,21 +398,22 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           onToggle={() => togglePanel("quant")}
           label={t("modelSelector.quantPicker.pillLabel", {
             quant:
-              currentVariant?.quant ?? t("modelSelector.quantPicker.title"),
+              currentVariant()?.quant ?? t("modelSelector.quantPicker.title"),
           })}
           title={t("modelSelector.quantPicker.title")}
-          subtitle={quantSubtitle}
+          subtitle={quantSubtitle()}
           trigger={
             <>
               {benchmark.isBusy ? (
                 <LoaderCircle class="h-3 w-3 shrink-0 animate-spin text-text/50" />
               ) : (
                 <span
-                  class={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(currentVariant?.quant ?? "")}`}
+                  class={`h-2 w-2 shrink-0 rounded-full ${getQuantColor(currentVariant()?.quant ?? "")}`}
                 />
               )}
               <span class="max-w-20 truncate">
-                {currentVariant?.quant ?? t("modelSelector.quantPicker.title")}
+                {currentVariant()?.quant ??
+                  t("modelSelector.quantPicker.title")}
               </span>
             </>
           }
@@ -403,7 +423,7 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
               onClick={() =>
                 displayModelId() && void benchmark.runAll(displayModelId())
               }
-              disabled={!canBenchmark || benchmark.isBusy}
+              disabled={!canBenchmark() || benchmark.isBusy}
               title={t("modelSelector.benchmark.method", {
                 runs: DEFAULT_TIMED_RUNS,
               })}
@@ -448,7 +468,7 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           open={openPanel() === "latency"}
           onToggle={() => togglePanel("latency")}
           label={t("modelSelector.latencySelector.pillLabel", {
-            preset: t(latencyPresetLabelKey(currentPreset)),
+            preset: t(latencyPresetLabelKey(currentPreset())),
           })}
           title={t("modelSelector.latencySelector.title")}
           widthClass="w-[min(17rem,calc(100vw-2rem))]"
@@ -456,13 +476,13 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
             <>
               <Gauge class="h-3 w-3 shrink-0 text-text/50" />
               <span class="max-w-24 truncate">
-                {t(latencyPresetLabelKey(currentPreset))}
+                {t(latencyPresetLabelKey(currentPreset()))}
               </span>
             </>
           }
         >
           <LatencyPanel
-            selected={currentPreset}
+            selected={currentPreset()}
             onSelect={handleLatencyPresetSelect}
           />
         </StatusBarPopover>
