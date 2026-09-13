@@ -165,6 +165,16 @@ fn build_console_filter() -> ConsoleFilter {
     }
 }
 
+/// Dependency targets whose own logging drowns the app's records out: the
+/// migration runner dumps whole SQL schemas (multi-line `CREATE TABLE` /
+/// `ALTER TABLE` blocks) at debug, and sqlx logs every prepared statement at
+/// info. Both are capped at `warn` on every target unless the record is a
+/// warning or worse — the schema still shows when a migration actually fails.
+fn dependency_target_allowed(target: &str, level: log::Level) -> bool {
+    let noisy = matches!(target, "rusqlite_migration" | "sqlx" | "sqlx::query");
+    !noisy || level <= log::Level::Warn
+}
+
 /// The stream the console target writes to: **stdout** for the interactive app,
 /// **stderr** for the headless one-shots.
 ///
@@ -1118,7 +1128,10 @@ pub fn run(cli_args: CliArgs) {
                     // stderr; see `console_stream_kind`.
                     Target::new(console_stream_kind(headless_mode)).filter({
                         let console_filter = console_filter.clone();
-                        move |metadata| console_filter.enabled(metadata)
+                        move |metadata| {
+                            console_filter.enabled(metadata)
+                                && dependency_target_allowed(metadata.target(), metadata.level())
+                        }
                     }),
                     // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic)
                     Target::new(if let Some(data_dir) = portable::data_dir() {
@@ -1134,6 +1147,7 @@ pub fn run(cli_args: CliArgs) {
                     .filter(|metadata| {
                         let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
                         metadata.level() <= level_filter_from_u8(file_level)
+                            && dependency_target_allowed(metadata.target(), metadata.level())
                     }),
                     // Stream logs to the webview (via the `log://log` event) so the
                     // debug panel's live log viewer can show them in real time. Only
@@ -1143,6 +1157,7 @@ pub fn run(cli_args: CliArgs) {
                         WEBVIEW_LOG_STREAMING.load(Ordering::Relaxed)
                             && metadata.level()
                                 <= level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed))
+                            && dependency_target_allowed(metadata.target(), metadata.level())
                     }),
                 ])
                 .build(),

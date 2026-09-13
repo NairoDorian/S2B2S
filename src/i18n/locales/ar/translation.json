@@ -1179,7 +1179,27 @@
           "description": "Height of the views; above 22 px the control row grows to fit."
         },
         "analysisNote": "Scale, window, EQ, weighting, dB range, ballistics and update rate are the Live FFT page's settings.",
-        "openLiveFft": "Open Live FFT"
+        "openLiveFft": "Open Live FFT",
+        "showCircular": {
+          "label": "Circular spectrum",
+          "description": "A third view beside the spectrum and the waveform: the analyser's bins mirrored about their centre, wrapped around a circle and rotated four times into a seamless loop — an outer ring at radius 1+s and an inner ring at 1-s that breathe with the signal."
+        },
+        "circularBars": {
+          "label": "Radial bars",
+          "description": "Draw radial bars between the inner and outer ring instead of the two loops as lines."
+        },
+        "circularBins": {
+          "label": "Circular bins",
+          "description": "How many display bins the loop has (12–240). The analyser's bins are peak-pooled down to this many, so fewer means chunkier bars."
+        },
+        "circularGain": {
+          "label": "Circular gain",
+          "description": "Fixed display gain of the loop: the bins are scaled by this and clamped — never normalised dynamically, so the ring breathes with the signal instead of always filling."
+        },
+        "circularFloor": {
+          "label": "Circular floor",
+          "description": "Bars below this fraction of full scale are not drawn. Raise it until the room's ambient tone stops painting the ring — without a floor the loop reads as a filled disc."
+        }
       },
       "preview": {
         "title": "Preview",

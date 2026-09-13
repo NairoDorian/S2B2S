@@ -91,15 +91,22 @@ const parseFileLine = (raw: string): LogLine => {
   };
 };
 
-const liveLineFrom = (payload: LogEventPayload, id: number): LogLine => {
-  const time = formatTime(new Date());
+// Live records arrive with the app's log format already applied, so the
+// message carries the file line's own `[date][time][target][LEVEL]` prefix —
+// parse it back out instead of stacking a second timestamp on top. Returns
+// null for records with no usable message: they are never rendered, so a
+// malformed payload cannot fill the console with "undefined" lines.
+const liveLineFrom = (payload: LogEventPayload, id: number): LogLine | null => {
+  if (payload == null || payload.message == null) return null;
+  const parsed = parseFileLine(String(payload.message));
+  if (parsed.message.trim() === "") return null;
   return {
     id,
-    tag: LIVE_LEVEL_TO_TAG[payload.level] ?? "INF",
-    time,
-    message: payload.message,
+    tag: LIVE_LEVEL_TO_TAG[payload.level] ?? parsed.tag,
+    time: parsed.time || formatTime(new Date()),
+    message: parsed.message,
     live: true,
-    raw: `[${time}] ${payload.message}`,
+    raw: parsed.raw,
   };
 };
 
@@ -168,6 +175,7 @@ export const LiveLogViewer = (props: LiveLogViewerProps) => {
     () => {
       const unlisten = listen<LogEventPayload>("log://log", (event) => {
         const line = liveLineFrom(event.payload, idCounter++);
+        if (!line) return;
         if (pausedRef) {
           // Pausing freezes the view, not the collection: lines buffer (and
           // the buffer is bounded) until resume replays them.

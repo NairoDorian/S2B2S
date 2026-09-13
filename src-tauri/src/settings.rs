@@ -779,6 +779,12 @@ pub const MIN_OVERLAY_VIEW_WIDTH: u32 = 32;
 pub const MAX_OVERLAY_VIEW_WIDTH: u32 = 160;
 pub const MIN_OVERLAY_VIEW_HEIGHT: u32 = 14;
 pub const MAX_OVERLAY_VIEW_HEIGHT: u32 = 48;
+pub const MIN_OVERLAY_CIRCULAR_BINS: u32 = 12;
+pub const MAX_OVERLAY_CIRCULAR_BINS: u32 = 240;
+pub const MIN_OVERLAY_CIRCULAR_GAIN: f32 = 0.05;
+pub const MAX_OVERLAY_CIRCULAR_GAIN: f32 = 8.0;
+pub const MIN_OVERLAY_CIRCULAR_FLOOR: f32 = 0.0;
+pub const MAX_OVERLAY_CIRCULAR_FLOOR: f32 = 0.9;
 
 /// The picture the recording overlay draws of the microphone (see
 /// `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
@@ -810,6 +816,28 @@ pub struct OverlayScopeSettings {
     pub view_width: u32,
     /// Height of the views in logical pixels (14…48).
     pub view_height: u32,
+    /// Draw the circular-spectrum view: a third view beside the linear
+    /// spectrum and the waveform. The bins are mirrored about their centre
+    /// and joined end-to-end (`[s, reversed(s)]`, symmetric by
+    /// construction), the two paths ±s are offset by +1 around a unit
+    /// circle, and the quarter arc is rotated four times into a seamless
+    /// closed loop — an outer ring at radius 1+s and an inner ring at 1-s.
+    pub show_circular: bool,
+    /// Circular style: radial bars between the inner and outer loop, or the
+    /// two loops drawn as lines.
+    pub circular_bars: bool,
+    /// Display bins of the circular loop (12…240). The pipeline's bins are
+    /// peak-pooled down to this many, so fewer bins means chunkier bars.
+    pub circular_bins: u32,
+    /// Fixed display gain of the circular loop (0.05…8). The pooled bins are
+    /// multiplied by this and clamped to 0…1 — deliberately a fixed scale,
+    /// not a dynamic normalisation, so the loop's size breathes with the
+    /// signal instead of always filling the ring.
+    pub circular_gain: f32,
+    /// Floor of the circular loop as a fraction of full scale (0…0.9). Bars
+    /// below it are not drawn: without a floor the ambient room tone paints
+    /// the whole ring and the loop reads as a filled disc.
+    pub circular_floor: f32,
 }
 
 impl Default for OverlayScopeSettings {
@@ -825,6 +853,11 @@ impl Default for OverlayScopeSettings {
             wave_gain_floor: 0.02,
             view_width: 48,
             view_height: 22,
+            show_circular: false,
+            circular_bars: true,
+            circular_bins: 48,
+            circular_gain: 2.0,
+            circular_floor: 0.4,
         }
     }
 }
@@ -847,6 +880,21 @@ impl OverlayScopeSettings {
         self.view_height = self
             .view_height
             .clamp(MIN_OVERLAY_VIEW_HEIGHT, MAX_OVERLAY_VIEW_HEIGHT);
+        self.circular_bins = self
+            .circular_bins
+            .clamp(MIN_OVERLAY_CIRCULAR_BINS, MAX_OVERLAY_CIRCULAR_BINS);
+        self.circular_gain = if self.circular_gain.is_finite() {
+            self.circular_gain
+                .clamp(MIN_OVERLAY_CIRCULAR_GAIN, MAX_OVERLAY_CIRCULAR_GAIN)
+        } else {
+            d.circular_gain
+        };
+        self.circular_floor = if self.circular_floor.is_finite() {
+            self.circular_floor
+                .clamp(MIN_OVERLAY_CIRCULAR_FLOOR, MAX_OVERLAY_CIRCULAR_FLOOR)
+        } else {
+            d.circular_floor
+        };
         self
     }
 
@@ -854,7 +902,9 @@ impl OverlayScopeSettings {
     /// between them and the 8 px trailing padding; zero without views.
     /// `overlayScopeBlockWidth` in `src/lib/overlayScope.ts` is the same sum.
     pub fn block_width_px(&self) -> u32 {
-        let views = u32::from(self.show_spectrum) + u32::from(self.show_wave);
+        let views = u32::from(self.show_spectrum)
+            + u32::from(self.show_wave)
+            + u32::from(self.show_circular);
         if views == 0 {
             0
         } else {

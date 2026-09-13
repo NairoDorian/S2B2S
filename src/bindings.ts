@@ -157,16 +157,14 @@ export const commands = {
 	/**  Stop the live VAD test and discard its audio. */
 	stopVadTest: () => typedError<null, string>(__TAURI_INVOKE("stop_vad_test")),
 	/**
-	 * Start the overlay preview from Settings → Overlay: a real recording of the
-	 * primary model (streaming live text when it can), whose only output is the
-	 * overlay itself — nothing is typed or pasted, and the audio is discarded.
-	 * Runs until `stop_overlay_preview`, the cancel hotkey, or the safety cap.
+	 *  Start the overlay preview from Settings → Overlay: a real recording of the
+	 *  primary model (streaming live text when it can), whose only output is the
+	 *  overlay itself — nothing is typed or pasted, and the audio is discarded.
+	 *  Runs until `stop_overlay_preview`, the cancel hotkey, or the safety cap.
 	 */
-	startOverlayPreview: () =>
-		typedError<null, string>(__TAURI_INVOKE("start_overlay_preview")),
-	/** Stop the overlay preview and discard everything it held. */
-	stopOverlayPreview: () =>
-		typedError<null, string>(__TAURI_INVOKE("stop_overlay_preview")),
+	startOverlayPreview: () => typedError<null, string>(__TAURI_INVOKE("start_overlay_preview")),
+	/**  Stop the overlay preview and discard everything it held. */
+	stopOverlayPreview: () => typedError<null, string>(__TAURI_INVOKE("stop_overlay_preview")),
 	getLlamaServerState: () => __TAURI_INVOKE<LlamaServerStateEvent>("get_llama_server_state"),
 	getLlamaServerLogs: () => __TAURI_INVOKE<string[]>("get_llama_server_logs"),
 	startLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("start_llama_server")),
@@ -238,19 +236,19 @@ export const commands = {
 	getDefaultSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_default_settings")),
 	getLogDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_log_dir_path")),
 	/**
-	 * The last `limit` lines of the log file, oldest first.
-	 *
-	 * The debug panel's live log viewer polls this as its ground truth: the
-	 * `log://log` webview stream only carries records emitted while a listener is
-	 * attached, so without the file the panel's history would depend entirely on
-	 * when the page happened to be open. The tail read is capped at 512 KiB —
-	 * plenty for any realistic line count at ~100 bytes a line, and it keeps a
-	 * 500 MB rotated log from being read whole.
+	 *  The last `limit` lines of the log file, oldest first.
+	 * 
+	 *  The debug panel's live log viewer polls this as its ground truth: the
+	 *  `log://log` webview stream only carries records emitted while a listener is
+	 *  attached, so without the file the panel's history would depend entirely on
+	 *  when the page happened to be open. The tail read is capped at 512 KiB —
+	 *  plenty for any realistic line count at ~100 bytes a line, and it keeps a
+	 *  500 MB rotated log from being read whole.
 	 */
 	getRecentLogs: (limit: number) => typedError<string, string>(__TAURI_INVOKE("get_recent_logs", { limit })),
 	/**
-	 * Truncate the log file. Explicit user action only — the panel itself never
-	 * clears what it shows on its own.
+	 *  Truncate the log file. Explicit user action only — the panel itself never
+	 *  clears what it shows on its own.
 	 */
 	clearLogs: () => typedError<null, string>(__TAURI_INVOKE("clear_logs")),
 	setLogLevel: (level: LogLevel) => typedError<null, string>(__TAURI_INVOKE("set_log_level", { level })),
@@ -1742,6 +1740,38 @@ export type OverlayScopeSettings = {
 	view_width?: number,
 	/**  Height of the views in logical pixels (14…48). */
 	view_height?: number,
+	/**
+	 *  Draw the circular-spectrum view: a third view beside the linear
+	 *  spectrum and the waveform. The bins are mirrored about their centre
+	 *  and joined end-to-end (`[s, reversed(s)]`, symmetric by
+	 *  construction), the two paths ±s are offset by +1 around a unit
+	 *  circle, and the quarter arc is rotated four times into a seamless
+	 *  closed loop — an outer ring at radius 1+s and an inner ring at 1-s.
+	 */
+	show_circular?: boolean,
+	/**
+	 *  Circular style: radial bars between the inner and outer loop, or the
+	 *  two loops drawn as lines.
+	 */
+	circular_bars?: boolean,
+	/**
+	 *  Display bins of the circular loop (12…240). The pipeline's bins are
+	 *  peak-pooled down to this many, so fewer bins means chunkier bars.
+	 */
+	circular_bins?: number,
+	/**
+	 *  Fixed display gain of the circular loop (0.05…8). The pooled bins are
+	 *  multiplied by this and clamped to 0…1 — deliberately a fixed scale,
+	 *  not a dynamic normalisation, so the loop's size breathes with the
+	 *  signal instead of always filling the ring.
+	 */
+	circular_gain?: number | null,
+	/**
+	 *  Floor of the circular loop as a fraction of full scale (0…0.9). Bars
+	 *  below it are not drawn: without a floor the ambient room tone paints
+	 *  the whole ring and the loop reads as a filled disc.
+	 */
+	circular_floor?: number | null,
 };
 
 /**  How the recording overlay's spectrum is drawn. */

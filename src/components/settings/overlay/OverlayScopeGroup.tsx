@@ -77,7 +77,8 @@ export const OverlayScopeGroup = () => {
       label: t(`${P}.style.options.${style}`),
     })),
   );
-  const anyView = draft().show_spectrum || draft().show_wave;
+  const anyView =
+    draft().show_spectrum || draft().show_wave || draft().show_circular;
 
   return (
     <SettingsGroup title={t(`${P}.title`)} description={t(`${P}.description`)}>
@@ -136,6 +137,63 @@ export const OverlayScopeGroup = () => {
         descriptionMode="tooltip"
         grouped
       />
+      <ToggleSwitch
+        checked={draft().show_circular}
+        onChange={(checked) => save({ show_circular: checked })}
+        isUpdating={busy}
+        label={t(`${P}.showCircular.label`)}
+        description={t(`${P}.showCircular.description`)}
+        descriptionMode="tooltip"
+        grouped
+      />
+      {draft().show_circular && (
+        <>
+          <ToggleSwitch
+            checked={draft().circular_bars}
+            onChange={(checked) => save({ circular_bars: checked })}
+            isUpdating={busy}
+            label={t(`${P}.circularBars.label`)}
+            description={t(`${P}.circularBars.description`)}
+            descriptionMode="tooltip"
+            grouped
+          />
+          <ParamSlider
+            label={t(`${P}.circularBins.label`)}
+            description={t(`${P}.circularBins.description`)}
+            value={draft().circular_bins}
+            min={OVERLAY_SCOPE_LIMITS.circularBins.min}
+            max={OVERLAY_SCOPE_LIMITS.circularBins.max}
+            step={1}
+            log
+            integer
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_bins}
+            onChange={(v) => save({ circular_bins: Math.round(v) })}
+          />
+          <ParamSlider
+            label={t(`${P}.circularGain.label`)}
+            description={t(`${P}.circularGain.description`)}
+            value={draft().circular_gain}
+            min={OVERLAY_SCOPE_LIMITS.circularGain.min}
+            max={OVERLAY_SCOPE_LIMITS.circularGain.max}
+            step={0.05}
+            log
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_gain}
+            format={(v) => `${v.toFixed(2)}×`}
+            onChange={(v) => save({ circular_gain: v })}
+          />
+          <ParamSlider
+            label={t(`${P}.circularFloor.label`)}
+            description={t(`${P}.circularFloor.description`)}
+            value={draft().circular_floor}
+            min={OVERLAY_SCOPE_LIMITS.circularFloor.min}
+            max={OVERLAY_SCOPE_LIMITS.circularFloor.max}
+            step={0.01}
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_floor}
+            format={(v) => `${Math.round(v * 100)}%`}
+            onChange={(v) => save({ circular_floor: v })}
+          />
+        </>
+      )}
       {draft().show_wave && (
         <>
           <ParamSlider

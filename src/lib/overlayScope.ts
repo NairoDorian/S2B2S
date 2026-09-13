@@ -20,6 +20,11 @@ export const OVERLAY_SCOPE_DEFAULTS: ResolvedOverlayScope = {
   wave_gain_floor: 0.02,
   view_width: 48,
   view_height: 22,
+  show_circular: false,
+  circular_bars: true,
+  circular_bins: 48,
+  circular_gain: 2.0,
+  circular_floor: 0.4,
 };
 
 export const OVERLAY_SCOPE_LIMITS = {
@@ -27,6 +32,9 @@ export const OVERLAY_SCOPE_LIMITS = {
   waveGainFloor: { min: 0.001, max: 0.5 },
   viewWidth: { min: 32, max: 160 },
   viewHeight: { min: 14, max: 48 },
+  circularBins: { min: 12, max: 240 },
+  circularGain: { min: 0.05, max: 8 },
+  circularFloor: { min: 0, max: 0.9 },
 } as const;
 
 export const OVERLAY_SCOPE_STYLES: OverlayScopeStyle[] = [
@@ -58,7 +66,10 @@ const BLOCK_PADDING = 8;
  * native window the same way.
  */
 export function overlayScopeBlockWidth(cfg: ResolvedOverlayScope): number {
-  const views = (cfg.show_spectrum ? 1 : 0) + (cfg.show_wave ? 1 : 0);
+  const views =
+    (cfg.show_spectrum ? 1 : 0) +
+    (cfg.show_wave ? 1 : 0) +
+    (cfg.show_circular ? 1 : 0);
   if (views === 0) return 0;
   return views * cfg.view_width + VIEW_GAP * (views - 1) + BLOCK_PADDING;
 }
