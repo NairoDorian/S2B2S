@@ -24,7 +24,11 @@ export const OVERLAY_SCOPE_DEFAULTS: ResolvedOverlayScope = {
   circular_bars: true,
   circular_bins: 48,
   circular_gain: 2.0,
-  circular_floor: 0.4,
+  circular_floor: 0.15,
+  circular_size: 64,
+  circular_background: false,
+  spectrum_scale: 100,
+  wave_scale: 100,
 };
 
 export const OVERLAY_SCOPE_LIMITS = {
@@ -35,6 +39,8 @@ export const OVERLAY_SCOPE_LIMITS = {
   circularBins: { min: 12, max: 240 },
   circularGain: { min: 0.05, max: 8 },
   circularFloor: { min: 0, max: 0.9 },
+  circularSize: { min: 32, max: 400 },
+  viewScale: { min: 50, max: 400 },
 } as const;
 
 export const OVERLAY_SCOPE_STYLES: OverlayScopeStyle[] = [
@@ -59,19 +65,49 @@ export function resolveOverlayScope(
 const VIEW_GAP = 6;
 const BLOCK_PADDING = 8;
 
+/** Width of the linear spectrum view: base width × scale, in px. */
+export function spectrumViewW(cfg: ResolvedOverlayScope): number {
+  return Math.round((cfg.view_width * cfg.spectrum_scale) / 100);
+}
+
+/** Height of the linear spectrum view: base height × scale, in px. */
+export function spectrumViewH(cfg: ResolvedOverlayScope): number {
+  return Math.round((cfg.view_height * cfg.spectrum_scale) / 100);
+}
+
+/** Width of the waveform view: base width × scale, in px. */
+export function waveViewW(cfg: ResolvedOverlayScope): number {
+  return Math.round((cfg.view_width * cfg.wave_scale) / 100);
+}
+
+/** Height of the waveform view: base height × scale, in px. */
+export function waveViewH(cfg: ResolvedOverlayScope): number {
+  return Math.round((cfg.view_height * cfg.wave_scale) / 100);
+}
+
 /**
- * Width of the scope block inside the pill: the views, the gap between them
- * and the trailing padding. Zero when no view is shown. Mirrors
- * `OverlayScopeSettings::block_width_px` in settings.rs, which sizes the
- * native window the same way.
+ * Width of the scope block inside the pill: the views at their scaled widths,
+ * the gap between them and the trailing padding. Zero when no view is shown.
+ * Mirrors `OverlayScopeSettings::block_width_px` in settings.rs, which sizes
+ * the native window the same way.
  */
 export function overlayScopeBlockWidth(cfg: ResolvedOverlayScope): number {
-  const views =
-    (cfg.show_spectrum ? 1 : 0) +
-    (cfg.show_wave ? 1 : 0) +
-    (cfg.show_circular ? 1 : 0);
+  let views = 0;
+  let w = 0;
+  if (cfg.show_spectrum) {
+    views += 1;
+    w += spectrumViewW(cfg);
+  }
+  if (cfg.show_wave) {
+    views += 1;
+    w += waveViewW(cfg);
+  }
+  if (cfg.show_circular && !cfg.circular_background) {
+    views += 1;
+    w += cfg.circular_size;
+  }
   if (views === 0) return 0;
-  return views * cfg.view_width + VIEW_GAP * (views - 1) + BLOCK_PADDING;
+  return w + VIEW_GAP * (views - 1) + BLOCK_PADDING;
 }
 
 /*
@@ -89,8 +125,22 @@ const STATS_BASE_W = 198;
 const BASE_ROW_H = 40;
 const ROW_PADDING_H = 18;
 
+/**
+ * Height the visible views need: the pill's row grows to the tallest one.
+ * Mirrors `OverlayScopeSettings::view_height_px` in settings.rs.
+ */
+export function overlayScopeViewHeight(cfg: ResolvedOverlayScope): number {
+  let h = 0;
+  if (cfg.show_spectrum) h = Math.max(h, spectrumViewH(cfg));
+  if (cfg.show_wave) h = Math.max(h, waveViewH(cfg));
+  if (cfg.show_circular && !cfg.circular_background) {
+    h = Math.max(h, cfg.circular_size);
+  }
+  return h;
+}
+
 export function overlayRowHeight(cfg: ResolvedOverlayScope): number {
-  return Math.max(BASE_ROW_H, cfg.view_height + ROW_PADDING_H);
+  return Math.max(BASE_ROW_H, overlayScopeViewHeight(cfg) + ROW_PADDING_H);
 }
 
 /**

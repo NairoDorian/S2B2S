@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo } from "solid-js";
+import { createSignal, createEffect, createMemo, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { OverlayScopeStyle } from "@/bindings";
 import { SettingContainer, SettingsGroup, ToggleSwitch } from "@/components/ui";
@@ -126,6 +126,18 @@ export const OverlayScopeGroup = () => {
             descriptionMode="tooltip"
             grouped
           />
+          <ParamSlider
+            label={t(`${P}.spectrumScale.label`)}
+            description={t(`${P}.spectrumScale.description`)}
+            value={draft().spectrum_scale}
+            min={OVERLAY_SCOPE_LIMITS.viewScale.min}
+            max={OVERLAY_SCOPE_LIMITS.viewScale.max}
+            step={5}
+            integer
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.spectrum_scale}
+            format={(v) => `${Math.round(v)}%`}
+            onChange={(v) => save({ spectrum_scale: Math.round(v) })}
+          />
         </>
       )}
       <ToggleSwitch
@@ -137,6 +149,60 @@ export const OverlayScopeGroup = () => {
         descriptionMode="tooltip"
         grouped
       />
+      {draft().show_wave && (
+        <>
+          <ParamSlider
+            label={t(`${P}.waveScale.label`)}
+            description={t(`${P}.waveScale.description`)}
+            value={draft().wave_scale}
+            min={OVERLAY_SCOPE_LIMITS.viewScale.min}
+            max={OVERLAY_SCOPE_LIMITS.viewScale.max}
+            step={5}
+            integer
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_scale}
+            format={(v) => `${Math.round(v)}%`}
+            onChange={(v) => save({ wave_scale: Math.round(v) })}
+          />
+          <ParamSlider
+            label={t(`${P}.waveSamples.label`)}
+            description={t(`${P}.waveSamples.description`)}
+            value={draft().wave_samples}
+            min={OVERLAY_SCOPE_LIMITS.waveSamples.min}
+            max={OVERLAY_SCOPE_LIMITS.waveSamples.max}
+            step={1}
+            log
+            integer
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_samples}
+            onChange={(v) => save({ wave_samples: Math.round(v) })}
+          />
+          <ParamSlider
+            label={t(`${P}.waveTaper.label`)}
+            description={t(`${P}.waveTaper.description`)}
+            value={draft().wave_taper_samples}
+            min={0}
+            max={Math.floor(draft().wave_samples / 2)}
+            step={1}
+            integer
+            defaultValue={Math.min(
+              OVERLAY_SCOPE_DEFAULTS.wave_taper_samples,
+              Math.floor(draft().wave_samples / 2),
+            )}
+            onChange={(v) => save({ wave_taper_samples: Math.round(v) })}
+          />
+          <ParamSlider
+            label={t(`${P}.gainFloor.label`)}
+            description={t(`${P}.gainFloor.description`)}
+            value={draft().wave_gain_floor}
+            min={OVERLAY_SCOPE_LIMITS.waveGainFloor.min}
+            max={OVERLAY_SCOPE_LIMITS.waveGainFloor.max}
+            step={0.001}
+            log
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_gain_floor}
+            format={(v) => `${(20 * Math.log10(v)).toFixed(0)} dBFS`}
+            onChange={(v) => save({ wave_gain_floor: v })}
+          />
+        </>
+      )}
       <ToggleSwitch
         checked={draft().show_circular}
         onChange={(checked) => save({ show_circular: checked })}
@@ -148,6 +214,30 @@ export const OverlayScopeGroup = () => {
       />
       {draft().show_circular && (
         <>
+          <ToggleSwitch
+            checked={draft().circular_background}
+            onChange={(checked) => save({ circular_background: checked })}
+            isUpdating={busy}
+            label={t(`${P}.circularBackground.label`)}
+            description={t(`${P}.circularBackground.description`)}
+            descriptionMode="tooltip"
+            grouped
+          />
+          <Show when={!draft().circular_background}>
+            <ParamSlider
+              label={t(`${P}.circularSize.label`)}
+              description={t(`${P}.circularSize.description`)}
+              value={draft().circular_size}
+              min={OVERLAY_SCOPE_LIMITS.circularSize.min}
+              max={OVERLAY_SCOPE_LIMITS.circularSize.max}
+              step={2}
+              log
+              integer
+              unit="px"
+              defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_size}
+              onChange={(v) => save({ circular_size: Math.round(v) })}
+            />
+          </Show>
           <ToggleSwitch
             checked={draft().circular_bars}
             onChange={(checked) => save({ circular_bars: checked })}
@@ -191,48 +281,6 @@ export const OverlayScopeGroup = () => {
             defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_floor}
             format={(v) => `${Math.round(v * 100)}%`}
             onChange={(v) => save({ circular_floor: v })}
-          />
-        </>
-      )}
-      {draft().show_wave && (
-        <>
-          <ParamSlider
-            label={t(`${P}.waveSamples.label`)}
-            description={t(`${P}.waveSamples.description`)}
-            value={draft().wave_samples}
-            min={OVERLAY_SCOPE_LIMITS.waveSamples.min}
-            max={OVERLAY_SCOPE_LIMITS.waveSamples.max}
-            step={1}
-            log
-            integer
-            defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_samples}
-            onChange={(v) => save({ wave_samples: Math.round(v) })}
-          />
-          <ParamSlider
-            label={t(`${P}.waveTaper.label`)}
-            description={t(`${P}.waveTaper.description`)}
-            value={draft().wave_taper_samples}
-            min={0}
-            max={Math.floor(draft().wave_samples / 2)}
-            step={1}
-            integer
-            defaultValue={Math.min(
-              OVERLAY_SCOPE_DEFAULTS.wave_taper_samples,
-              Math.floor(draft().wave_samples / 2),
-            )}
-            onChange={(v) => save({ wave_taper_samples: Math.round(v) })}
-          />
-          <ParamSlider
-            label={t(`${P}.gainFloor.label`)}
-            description={t(`${P}.gainFloor.description`)}
-            value={draft().wave_gain_floor}
-            min={OVERLAY_SCOPE_LIMITS.waveGainFloor.min}
-            max={OVERLAY_SCOPE_LIMITS.waveGainFloor.max}
-            step={0.001}
-            log
-            defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_gain_floor}
-            format={(v) => `${(20 * Math.log10(v)).toFixed(0)} dBFS`}
-            onChange={(v) => save({ wave_gain_floor: v })}
           />
         </>
       )}

@@ -801,7 +801,9 @@ static OVERLAY_SCOPE_VIEW_H: AtomicU32 = AtomicU32::new(22);
 /// `change_overlay_scope_settings`.
 pub fn update_overlay_scope_cache(scope: &OverlayScopeSettings) {
     OVERLAY_SCOPE_BLOCK_PX.store(scope.block_width_px(), Ordering::Relaxed);
-    OVERLAY_SCOPE_VIEW_H.store(scope.view_height, Ordering::Relaxed);
+    // The derived height, not the raw `view_height`: the per-view scale
+    // parameters and the circular view's own size can grow the row past it.
+    OVERLAY_SCOPE_VIEW_H.store(scope.view_height_px(), Ordering::Relaxed);
 }
 
 /// Extra height (logical px) the streaming overlay's transcript needs beyond its

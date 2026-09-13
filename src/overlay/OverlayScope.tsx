@@ -11,6 +11,12 @@ import {
   type ValueScale,
 } from "@/components/settings/live-fft/liveFftMath";
 import type { ResolvedOverlayScope } from "@/lib/overlayScope";
+import {
+  spectrumViewH,
+  spectrumViewW,
+  waveViewH,
+  waveViewW,
+} from "@/lib/overlayScope";
 
 // The recording overlay's miniature analyser: a spectrum and a line of the
 // last N samples, both drawn from the same `overlay_scope_frame` poll. The
@@ -137,6 +143,12 @@ interface OverlayScopeProps {
   quiet: boolean;
   /** `overlay_scope`: which views, how they are drawn and sized. */
   config: ResolvedOverlayScope;
+  /**
+   * Background variant: one full-window canvas behind the card that draws
+   * only the circular spectrum. A mount-time constant — each usage site
+   * passes a literal, so the body-level read here is a stable snapshot.
+   */
+  background?: boolean;
 }
 
 export function OverlayScope(props: OverlayScopeProps) {
@@ -156,24 +168,26 @@ export function OverlayScope(props: OverlayScopeProps) {
   // so the loop is not torn down — and its ceiling, peak-hold and column state
   // not reset — by a parent update that changed nothing. (An effect with a bare
   // compute would re-run: `createEffect` applies no equality gate of its own.)
-  const pollKey = createMemo(
-    () =>
-      `${props.rateHz}:${props.config.show_spectrum}:${props.config.show_wave}:${props.config.show_circular}`,
-  );
+  const pollKey = createMemo(() => {
+    const c = props.config;
+    const circBlock = c.show_circular && !c.circular_background;
+    return `${props.background ? "bg" : "block"}:${props.rateHz}:${
+      c.show_spectrum
+    }:${c.show_wave}:${circBlock}`;
+  });
 
   createEffect(pollKey, () => {
-    const sctx = spectrum?.getContext("2d") ?? null;
-    const wctx = wave?.getContext("2d") ?? null;
-    const cctx = circular?.getContext("2d") ?? null;
+    const bg = props.background;
+    const sctx = bg ? null : (spectrum?.getContext("2d") ?? null);
+    const wctx = bg ? null : (wave?.getContext("2d") ?? null);
+    const cctx =
+      bg || (circular && props.config.show_circular)
+        ? (circular?.getContext("2d") ?? null)
+        : null;
     // All views off: nothing to draw, so nothing to poll for. The React
     // version reached this through two nulled refs; with refs that are never
     // nulled the question is asked of the setting that put the canvases there.
-    if (
-      !props.config.show_spectrum &&
-      !props.config.show_wave &&
-      !props.config.show_circular
-    )
-      return;
+    if (!sctx && !wctx && !cctx) return;
 
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -183,13 +197,41 @@ export function OverlayScope(props: OverlayScopeProps) {
     let colorsAt = 0;
     let ceiling = 1e-6;
     let waveCeiling = props.config.wave_gain_floor;
-    let units = new Float32Array(0);
     let columns = new Float32Array(0);
     let held = new Float32Array(0);
     let heldSeq = -1;
     let columnsHeld = new Float32Array(0);
     let circPooled = new Float32Array(0);
     const period = Math.max(16, Math.round(1000 / Math.max(1, props.rateHz)));
+
+    // The 0…1 units every view draws from, computed once per frame. The
+    // circular view shares this — it must move exactly like the linear
+    // spectrum does — and shapes it with its own fixed floor and gain. (Its
+    // earlier version scaled the pipeline's raw magnitudes directly: in the
+    // linear loudness mode those are huge, so every bar clamped to full and
+    // the ring never moved.)
+    let units = new Float32Array(0);
+    let unitsSeq = -1;
+    const frameUnits = (frame: ScopeFrame): Float32Array => {
+      const bins = frame.bins;
+      const n = bins.length;
+      if (units.length !== n) units = new Float32Array(n);
+      if (frame.seq === unitsSeq) return units;
+      unitsSeq = frame.seq;
+      const scale: ValueScale = {
+        mode: frame.mode,
+        dbRange: frame.dbRange,
+        ceiling,
+      };
+      if (frame.mode === "off") {
+        let max = 0;
+        for (let i = 0; i < n; i++) if (bins[i] > max) max = bins[i];
+        ceiling = Math.max(max, ceiling * CEILING_DECAY, 1e-6);
+        scale.ceiling = ceiling;
+      }
+      for (let i = 0; i < n; i++) units[i] = valueToUnit(bins[i], scale);
+      return units;
+    };
 
     const paintSpectrum = (frame: ScopeFrame | null) => {
       if (!spectrum || !sctx) return;
@@ -208,21 +250,8 @@ export function OverlayScope(props: OverlayScopeProps) {
         sctx.globalAlpha = 1;
         return;
       }
-      const bins = frame.bins;
-      const n = bins.length;
-      if (units.length !== n) units = new Float32Array(n);
-      const scale: ValueScale = {
-        mode: frame.mode,
-        dbRange: frame.dbRange,
-        ceiling,
-      };
-      if (frame.mode === "off") {
-        let max = 0;
-        for (let i = 0; i < n; i++) if (bins[i] > max) max = bins[i];
-        ceiling = Math.max(max, ceiling * CEILING_DECAY, 1e-6);
-        scale.ceiling = ceiling;
-      }
-      for (let i = 0; i < n; i++) units[i] = valueToUnit(bins[i], scale);
+      const units = frameUnits(frame);
+      const n = units.length;
       // Peak hold advances once per new frame, like the page's.
       if (held.length !== n) {
         held = new Float32Array(n);
@@ -316,30 +345,37 @@ export function OverlayScope(props: OverlayScopeProps) {
       }
     };
 
-    // The circular spectrum: the pipeline's bins peak-pooled to
-    // `circular_bins`, mirrored about their centre and joined end-to-end
-    // (`[p, reversed(p)]` — symmetric by construction), the two paths ±p
-    // offset by +1 around a unit circle, the quarter arc rotated four times
-    // into a seamless closed loop. Outer ring at radius 1+p, inner ring at
-    // 1-p. The gain is deliberately a fixed scale — no dynamic
-    // normalisation — so the loop breathes with the signal instead of
-    // always filling the ring.
-    const paintCircular = (frame: ScopeFrame | null) => {
-      if (!circular || !cctx) return;
-      const { w, h } = prepare(circular, cctx);
+    // The circular spectrum, per the construction: the pooled bins are
+    // mirrored about their centre and joined end-to-end (`[p, reversed(p)]`
+    // — symmetric by construction), spread along ONE QUARTER of a circle as
+    // the ±p paths offset by +1 (radius 1+p outer, 1-p inner), and that
+    // quarter is rotated 90° four times into the seamless closed loop —
+    // four repeats of the spectrum per revolution. The gain is a fixed
+    // scale — no dynamic normalisation — so the loop breathes with the
+    // signal instead of always filling the ring.
+    const paintCircular = (
+      canvasEl: HTMLCanvasElement | undefined,
+      ctx: CanvasRenderingContext2D | null,
+      frame: ScopeFrame | null,
+    ) => {
+      if (!canvasEl || !ctx) return;
+      const { w, h } = prepare(canvasEl, ctx);
       const color = props.quiet ? colors.muted : colors.accent;
       const cx = w / 2;
       const cy = h / 2;
-      // Unit-circle scale: the loudest possible loop (1+1) still fits the box.
-      const S = (Math.min(w, h) / 2 - 1) / 2;
+      // Unit-circle scale. Block view: the loudest possible loop (1+1) fits
+      // the box. Background: the ring may span the whole window.
+      const S = props.background
+        ? Math.min(w, h) / 2 - 2
+        : (Math.min(w, h) / 2 - 1) / 2;
       const baseRing = () => {
-        cctx.globalAlpha = 0.35;
-        cctx.strokeStyle = color;
-        cctx.lineWidth = 1;
-        cctx.beginPath();
-        cctx.arc(cx, cy, S, 0, Math.PI * 2);
-        cctx.stroke();
-        cctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, S, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       };
       if (!frame || !props.ready) {
         baseRing();
@@ -349,91 +385,82 @@ export function OverlayScope(props: OverlayScopeProps) {
       const cfg = props.config;
       const p = Math.max(1, Math.round(cfg.circular_bins));
       if (circPooled.length !== p) circPooled = new Float32Array(p);
-      const scale: ValueScale = {
-        mode: frame.mode,
-        dbRange: frame.dbRange,
-        ceiling: 1,
-      };
-      // Peak-pool the pipeline's bins down to the display count: each display
-      // bin is the max of its bucket, so fewer bins means chunkier bars
-      // rather than a lossy decimation.
-      const bucket = frame.bins.length / p;
+      // Peak-pool the shared per-frame units (the exact values the linear
+      // spectrum draws) down to the display count: each display bin is the
+      // max of its bucket, so fewer bins means chunkier bars rather than a
+      // lossy decimation.
+      const units = frameUnits(frame);
+      const bucket = units.length / p;
       for (let b = 0; b < p; b++) {
         const i0 = Math.floor(b * bucket);
         const i1 = Math.min(
-          frame.bins.length,
+          units.length,
           Math.max(i0 + 1, Math.floor((b + 1) * bucket)),
         );
         let m = 0;
         for (let i = i0; i < i1; i++) {
-          if (frame.bins[i] > m) m = frame.bins[i];
+          if (units[i] > m) m = units[i];
         }
-        let v: number;
-        if (frame.mode === "off") {
-          // Raw magnitudes: the fixed gain IS the scale. The linear view's
-          // auto-ceiling is deliberately not used here — it would normalise
-          // dynamically and the ring would always fill.
-          v = m;
-        } else {
-          // dB modes are already fixed against 0 dBFS.
-          v = valueToUnit(m, scale);
-        }
-        v = v < 0 ? 0 : v > 1 ? 1 : v;
         // The floor gates the ring BEFORE the gain, so the two tune
-        // independently: the floor is a threshold in signal units (without
+        // independently: the floor is a threshold in shared units (without
         // it the ambient room tone paints every angle and the loop reads as
-        // a filled disc), the gain amplifies only what survives it — fixed
-        // scaling, never a dynamic normalisation.
-        v =
-          v <= cfg.circular_floor
+        // a filled disc), the gain amplifies only what survives it — a fixed
+        // display multiplier, never a dynamic normalisation.
+        const v =
+          m <= cfg.circular_floor
             ? 0
-            : (v - cfg.circular_floor) / (1 - cfg.circular_floor);
+            : (m - cfg.circular_floor) / (1 - cfg.circular_floor);
         circPooled[b] = Math.min(1, v * cfg.circular_gain);
       }
 
       const D = p * 2;
-      // combined[k]: the joined [p, reversed(p)] signal, so the loop is
-      // symmetric about its centre and the four 90° rotations of the quarter
-      // arc join without a seam.
-      const combinedAt = (k: number) => circPooled[k < p ? k : D - 1 - k];
-      const angleAt = (k: number) => (2 * Math.PI * k) / D - Math.PI / 2;
+      // combined[i]: the joined [p, reversed(p)] mirrored signal.
+      const combinedAt = (i: number) => circPooled[i < p ? i : D - 1 - i];
+      // The WHOLE mirrored signal is spread along one quarter (D points over
+      // 90°), and that quarter is rotated four times — STEPS = 4·D points
+      // around the full circle, four repeats of the spectrum per revolution.
+      // The symmetry of the mirrored signal is what makes the quarters join
+      // without a seam: a quarter ends on pooled[0] and the next begins on
+      // pooled[0], at the same angle.
+      const STEPS = D * 4;
+      const angleAt = (k: number) => (k / STEPS) * Math.PI * 2 - Math.PI / 2;
 
       if (cfg.circular_bars) {
-        cctx.strokeStyle = color;
-        cctx.lineCap = "round";
-        cctx.lineWidth = Math.max(1, (2 * Math.PI * S) / D - 1);
-        for (let k = 0; k < D; k++) {
-          const c = combinedAt(k);
+        ctx.strokeStyle = color;
+        ctx.lineCap = "round";
+        ctx.lineWidth = Math.max(1, (2 * Math.PI * S) / STEPS - 1);
+        for (let k = 0; k < STEPS; k++) {
+          const c = combinedAt(k % D);
           if (c <= 0) continue;
           const th = angleAt(k);
           const co = Math.cos(th);
           const si = Math.sin(th);
-          cctx.globalAlpha = 0.35 + 0.65 * c;
-          cctx.beginPath();
-          cctx.moveTo(cx + co * S * (1 - c), cy + si * S * (1 - c));
-          cctx.lineTo(cx + co * S * (1 + c), cy + si * S * (1 + c));
-          cctx.stroke();
+          ctx.globalAlpha = 0.35 + 0.65 * c;
+          ctx.beginPath();
+          ctx.moveTo(cx + co * S * (1 - c), cy + si * S * (1 - c));
+          ctx.lineTo(cx + co * S * (1 + c), cy + si * S * (1 + c));
+          ctx.stroke();
         }
-        cctx.globalAlpha = 1;
+        ctx.globalAlpha = 1;
       } else {
         // The two loops as lines: inner (1-p) first, dimmer; outer (1+p) on top.
         const loop = (sign: number, alpha: number) => {
-          cctx.globalAlpha = alpha;
-          cctx.strokeStyle = color;
-          cctx.lineWidth = 1;
-          cctx.lineJoin = "round";
-          cctx.beginPath();
-          for (let k = 0; k < D; k++) {
-            const r = S * (1 + sign * combinedAt(k));
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          for (let k = 0; k < STEPS; k++) {
+            const r = S * (1 + sign * combinedAt(k % D));
             const th = angleAt(k);
             const x = cx + Math.cos(th) * r;
             const y = cy + Math.sin(th) * r;
-            if (k === 0) cctx.moveTo(x, y);
-            else cctx.lineTo(x, y);
+            if (k === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
           }
-          cctx.closePath();
-          cctx.stroke();
-          cctx.globalAlpha = 1;
+          ctx.closePath();
+          ctx.stroke();
+          ctx.globalAlpha = 1;
         };
         loop(-1, 0.55);
         loop(1, 1);
@@ -487,9 +514,15 @@ export function OverlayScope(props: OverlayScopeProps) {
         colors = readColors();
         colorsAt = now;
       }
+      if (props.background) {
+        paintCircular(circular, cctx, frame);
+        return;
+      }
       paintSpectrum(frame);
       paintWave(frame);
-      paintCircular(frame);
+      if (props.config.show_circular && !props.config.circular_background) {
+        paintCircular(circular, cctx, frame);
+      }
     };
 
     const tick = async () => {
@@ -528,23 +561,45 @@ export function OverlayScope(props: OverlayScopeProps) {
     };
   });
 
+  // Background variant: one fixed, full-window canvas behind the card.
+  if (props.background) {
+    return (
+      <canvas
+        class="sscope sscope-bg"
+        ref={(el: HTMLCanvasElement) => (circular = el)}
+      />
+    );
+  }
+
   return (
     <>
       {props.config.show_spectrum && (
         <canvas
           class="sscope sscope-fft"
+          style={{
+            width: `${spectrumViewW(props.config)}px`,
+            height: `${spectrumViewH(props.config)}px`,
+          }}
           ref={(el: HTMLCanvasElement) => (spectrum = el)}
         />
       )}
       {props.config.show_wave && (
         <canvas
           class="sscope sscope-wave"
+          style={{
+            width: `${waveViewW(props.config)}px`,
+            height: `${waveViewH(props.config)}px`,
+          }}
           ref={(el: HTMLCanvasElement) => (wave = el)}
         />
       )}
-      {props.config.show_circular && (
+      {props.config.show_circular && !props.config.circular_background && (
         <canvas
           class="sscope sscope-circular"
+          style={{
+            width: `${props.config.circular_size}px`,
+            height: `${props.config.circular_size}px`,
+          }}
           ref={(el: HTMLCanvasElement) => (circular = el)}
         />
       )}

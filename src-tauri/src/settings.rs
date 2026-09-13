@@ -785,6 +785,10 @@ pub const MIN_OVERLAY_CIRCULAR_GAIN: f32 = 0.05;
 pub const MAX_OVERLAY_CIRCULAR_GAIN: f32 = 8.0;
 pub const MIN_OVERLAY_CIRCULAR_FLOOR: f32 = 0.0;
 pub const MAX_OVERLAY_CIRCULAR_FLOOR: f32 = 0.9;
+pub const MIN_OVERLAY_CIRCULAR_SIZE: u32 = 32;
+pub const MAX_OVERLAY_CIRCULAR_SIZE: u32 = 400;
+pub const MIN_OVERLAY_VIEW_SCALE: u32 = 50;
+pub const MAX_OVERLAY_VIEW_SCALE: u32 = 400;
 
 /// The picture the recording overlay draws of the microphone (see
 /// `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
@@ -838,6 +842,16 @@ pub struct OverlayScopeSettings {
     /// below it are not drawn: without a floor the ambient room tone paints
     /// the whole ring and the loop reads as a filled disc.
     pub circular_floor: f32,
+    /// Side of the square circular-spectrum view, in logical pixels
+    /// (32…400).
+    pub circular_size: u32,
+    /// Draw the circular spectrum as a full-window background layer behind
+    /// the card instead of as its own view in the block.
+    pub circular_background: bool,
+    /// Linear spectrum view scale, percent of its base size (50…400).
+    pub spectrum_scale: u32,
+    /// Waveform view scale, percent of its base size (50…400).
+    pub wave_scale: u32,
 }
 
 impl Default for OverlayScopeSettings {
@@ -857,7 +871,11 @@ impl Default for OverlayScopeSettings {
             circular_bars: true,
             circular_bins: 48,
             circular_gain: 2.0,
-            circular_floor: 0.4,
+            circular_floor: 0.15,
+            circular_size: 64,
+            circular_background: false,
+            spectrum_scale: 100,
+            wave_scale: 100,
         }
     }
 }
@@ -895,20 +913,68 @@ impl OverlayScopeSettings {
         } else {
             d.circular_floor
         };
+        self.circular_size = self
+            .circular_size
+            .clamp(MIN_OVERLAY_CIRCULAR_SIZE, MAX_OVERLAY_CIRCULAR_SIZE);
+        self.spectrum_scale = self
+            .spectrum_scale
+            .clamp(MIN_OVERLAY_VIEW_SCALE, MAX_OVERLAY_VIEW_SCALE);
+        self.wave_scale = self
+            .wave_scale
+            .clamp(MIN_OVERLAY_VIEW_SCALE, MAX_OVERLAY_VIEW_SCALE);
         self
     }
 
-    /// Width of the scope block inside the pill: the views, the 6 px gap
-    /// between them and the 8 px trailing padding; zero without views.
-    /// `overlayScopeBlockWidth` in `src/lib/overlayScope.ts` is the same sum.
+    /// Width of the linear spectrum view: its base width times the scale.
+    pub fn spectrum_view_w(&self) -> u32 {
+        self.view_width * self.spectrum_scale / 100
+    }
+
+    /// Width of the waveform view: its base width times the scale.
+    pub fn wave_view_w(&self) -> u32 {
+        self.view_width * self.wave_scale / 100
+    }
+
+    /// Height the scope views need: the tallest visible view. The pill's row
+    /// grows to fit it. The background circular layer is not counted — it is
+    /// an absolute layer over the window, not a block view.
+    pub fn view_height_px(&self) -> u32 {
+        let mut h = 0u32;
+        if self.show_spectrum {
+            h = h.max(self.view_height * self.spectrum_scale / 100);
+        }
+        if self.show_wave {
+            h = h.max(self.view_height * self.wave_scale / 100);
+        }
+        if self.show_circular && !self.circular_background {
+            h = h.max(self.circular_size);
+        }
+        h
+    }
+
+    /// Width of the scope block inside the pill: the views at their scaled
+    /// widths, the 6 px gap between them and the 8 px trailing padding; zero
+    /// without views. `overlayScopeBlockWidth` in `src/lib/overlayScope.ts`
+    /// is the same sum.
     pub fn block_width_px(&self) -> u32 {
-        let views = u32::from(self.show_spectrum)
-            + u32::from(self.show_wave)
-            + u32::from(self.show_circular);
+        let mut views = 0u32;
+        let mut w = 0u32;
+        if self.show_spectrum {
+            views += 1;
+            w += self.spectrum_view_w();
+        }
+        if self.show_wave {
+            views += 1;
+            w += self.wave_view_w();
+        }
+        if self.show_circular && !self.circular_background {
+            views += 1;
+            w += self.circular_size;
+        }
         if views == 0 {
             0
         } else {
-            views * self.view_width + 6 * (views - 1) + 8
+            w + 6 * (views - 1) + 8
         }
     }
 }

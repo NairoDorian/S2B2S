@@ -1772,6 +1772,20 @@ export type OverlayScopeSettings = {
 	 *  the whole ring and the loop reads as a filled disc.
 	 */
 	circular_floor?: number | null,
+	/**
+	 *  Side of the square circular-spectrum view, in logical pixels
+	 *  (32…400).
+	 */
+	circular_size?: number,
+	/**
+	 *  Draw the circular spectrum as a full-window background layer behind
+	 *  the card instead of as its own view in the block.
+	 */
+	circular_background?: boolean,
+	/**  Linear spectrum view scale, percent of its base size (50…400). */
+	spectrum_scale?: number,
+	/**  Waveform view scale, percent of its base size (50…400). */
+	wave_scale?: number,
 };
 
 /**  How the recording overlay's spectrum is drawn. */

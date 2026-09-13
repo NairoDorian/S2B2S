@@ -748,6 +748,20 @@ const RecordingOverlay = () => {
   // card), so they are kept as literal classes rather than as dead expressions.
   return (
     <Show when={isVisible()}>
+      <Show
+        when={scopeConfig().show_circular && scopeConfig().circular_background}
+      >
+        {/* The circular spectrum as a full-window background layer behind the
+            card. Its own OverlayScope instance: it polls the same frame
+            command, but draws only the circular view, across the window. */}
+        <OverlayScope
+          rateHz={scopeRate()}
+          ready={captureReady()}
+          quiet={quiet()}
+          config={scopeConfig()}
+          background
+        />
+      </Show>
       <Show when={state() === "streaming"} fallback={<MinimalCard />}>
         <LiveCard />
       </Show>

@@ -1158,6 +1158,22 @@
           "label": "Circular floor",
           "description": "Bars below this fraction of full scale are not drawn. Raise it until the room's ambient tone stops painting the ring — without a floor the loop reads as a filled disc."
         },
+        "circularSize": {
+          "label": "Circular size",
+          "description": "Side of the square circular-spectrum view, in pixels. Make it much larger than the other views — the window grows to fit."
+        },
+        "circularBackground": {
+          "label": "Full-window background",
+          "description": "Draw the circular spectrum behind the whole overlay window, as a background layer under the card, instead of as its own view."
+        },
+        "spectrumScale": {
+          "label": "Spectrum size",
+          "description": "Scales the linear spectrum view up or down, in percent of its base size. The overlay window grows to fit."
+        },
+        "waveScale": {
+          "label": "Waveform size",
+          "description": "Scales the raw-audio waveform view up or down, in percent of its base size. The overlay window grows to fit."
+        },
         "title": "Analyser",
         "description": "The picture of the microphone the overlay draws while you record: a spectrum and a trace of the raw audio, both computed with the Live FFT page's analysis settings.",
         "showSpectrum": {

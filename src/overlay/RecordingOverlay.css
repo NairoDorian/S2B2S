@@ -491,6 +491,16 @@
   flex: none;
   transition: opacity 180ms ease;
 }
+/* The circular-spectrum background layer: the whole overlay window, behind the
+   card. DOM order (background canvas first, stage after) does the stacking;
+   pointer-events none keeps it from intercepting the card's clicks. */
+.sscope.sscope-bg {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 /* Silence: the traces stay live (room tone should still register) but drop to
    the neutral colour, so speech vs. silence reads at a glance from the corner
    of the eye. The colour itself is picked by the canvas from --s-muted. */
