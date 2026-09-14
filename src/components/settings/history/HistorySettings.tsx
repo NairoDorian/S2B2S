@@ -8,6 +8,7 @@ import {
   ChevronUp,
   Copy,
   Cpu,
+  FilePlus,
   FileText,
   FolderOpen,
   Layers,
@@ -645,6 +646,26 @@ const HistoryEntryComponent = ({
     setTimeout(() => setShowCopied(false), 2000);
   };
 
+  // File the displayed text (polished when that tab is active) as a new note
+  // in the Recall vault; the recording stays where it is and is referenced
+  // by file name, never copied.
+  const handleSaveToRecall = async () => {
+    const text = textToDisplay();
+    if (!text || !text.trim()) return;
+    const result = await commands.recallSaveTranscription(
+      text,
+      entry.title || null,
+      entry.model_id ?? null,
+      entry.file_name || null,
+      [],
+    );
+    if (result.status === "error") {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(t("settings.history.savedToRecall"));
+  };
+
   const handleDeleteEntry = async () => {
     try {
       await deleteAudio(entry.id);
@@ -915,6 +936,15 @@ const HistoryEntryComponent = ({
                   : ""
               }
             />
+          </IconButton>
+
+          {/* File as a note in the Recall vault */}
+          <IconButton
+            onClick={handleSaveToRecall}
+            disabled={retrying() !== null || !hasTranscription}
+            title={t("settings.history.saveToRecall")}
+          >
+            <FilePlus width={15} height={15} />
           </IconButton>
 
           <IconButton

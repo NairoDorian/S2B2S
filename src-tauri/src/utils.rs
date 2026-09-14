@@ -174,6 +174,10 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // the generic teardown below re-does the shared parts harmlessly.
     let _ = crate::overlay_preview::stop(app);
 
+    // Recall's dictate-to-editor session likewise: the cancel hotkey discards
+    // the take rather than transcribing it.
+    let _ = crate::recall::dictate::cancel(app);
+
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);
 

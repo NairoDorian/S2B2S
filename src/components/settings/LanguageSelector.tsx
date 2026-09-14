@@ -189,6 +189,9 @@ export const LanguageSelector = ({
                         }`}
                         onClick={() => handleLanguageSelect(language().value)}
                       >
+                        <span class="sr-only">
+                          {t("settings.general.language.title")}
+                        </span>
                         <div class="flex items-center justify-between">
                           <span class="truncate">{language().label}</span>
                         </div>

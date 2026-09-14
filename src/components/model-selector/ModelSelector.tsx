@@ -1,10 +1,4 @@
-import {
-  createSignal,
-  createEffect,
-  createMemo,
-  Show,
-  onCleanup,
-} from "solid-js";
+import { createSignal, createEffect, createMemo, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { Gauge, LoaderCircle, Zap } from "@/components/icons/lucide";
@@ -404,7 +398,7 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           subtitle={quantSubtitle()}
           trigger={
             <>
-              {benchmark.isBusy ? (
+              {benchmark.isBusy() ? (
                 <LoaderCircle class="h-3 w-3 shrink-0 animate-spin text-text/50" />
               ) : (
                 <span
@@ -423,7 +417,7 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
               onClick={() =>
                 displayModelId() && void benchmark.runAll(displayModelId())
               }
-              disabled={!canBenchmark() || benchmark.isBusy}
+              disabled={!canBenchmark() || benchmark.isBusy()}
               title={t("modelSelector.benchmark.method", {
                 runs: DEFAULT_TIMED_RUNS,
               })}

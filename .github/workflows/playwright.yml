@@ -1,6 +1,15 @@
 name: "Playwright"
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "bun.lock"
+      - "playwright.config.*"
+      - "tests/**"
+      - "vite.config.ts"
   pull_request:
     paths:
       - "src/**"
@@ -8,6 +17,7 @@ on:
       - "bun.lock"
       - "playwright.config.*"
       - "tests/**"
+      - "vite.config.ts"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -27,7 +37,9 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: bunx playwright install chromium
+        # --with-deps: the ubuntu image covers most system libraries, but not
+        # all of chromium's; without it a missing lib fails the run opaquely.
+        run: bunx playwright install --with-deps chromium
 
       - name: Run Playwright tests
         run: bun run test:playwright

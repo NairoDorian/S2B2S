@@ -611,7 +611,11 @@ impl ShortcutAction for TranscribeAction {
         };
         // With post-processing the live stream is a preview only (see
         // `live_stream_is_preview_only`): no live typing, Live overlay forced.
-        let preview_only = live_stream_is_preview_only(&settings, self.post_process);
+        // Recall insertion mode is preview-only too — the final text is
+        // inserted at the note's caret, so typing the stream into the
+        // focused app would put it there twice.
+        let preview_only = live_stream_is_preview_only(&settings, self.post_process)
+            || crate::recall::insertion::is_armed();
         let statistics_manager = app.state::<Arc<StatisticsManager>>();
         let statistics = statistics_manager.begin_normal_run(&binding_id);
         if model_supports_streaming {
@@ -1008,6 +1012,29 @@ impl ShortcutAction for TranscribeAction {
                         attempt.complete_post_processing();
                         attempt.finish(StatisticsRunStatus::Success);
                         statistics.finish(StatisticsRunStatus::Success);
+
+                        // Recall insertion mode: the Recall editor is armed,
+                        // so this transcription belongs to the note at the
+                        // caret — the text goes to the webview, nothing is
+                        // pasted, no history row, no recording file. The
+                        // vault, not History, is the destination.
+                        if crate::recall::insertion::is_armed() {
+                            let recording_path = hm.recordings_dir().join(&file_name);
+                            crate::recall::insertion::absorb_recording(
+                                &ah,
+                                &recording_path,
+                                wav_saved,
+                            );
+                            if let Err(e) = crate::recall::insertion::emit_insert(
+                                &ah,
+                                processed.final_text.clone(),
+                            ) {
+                                error!("Failed to emit recall insert event: {e}");
+                            }
+                            utils::hide_recording_overlay(&ah);
+                            set_tray_state(&ah, TrayIconState::Idle);
+                            return;
+                        }
 
                         // Save to history if WAV was saved
                         if wav_saved {
@@ -2455,6 +2482,32 @@ impl ShortcutAction for MultiSttAction {
                 .as_deref()
                 .unwrap_or("none")
                 .to_string();
+
+            // Recall insertion mode: the merged text belongs to the note at
+            // the caret, not to History. No paste, no history row, no
+            // recording file — and the performance-mode power restore still
+            // fires, exactly as the ordinary paths do.
+            if crate::recall::insertion::is_armed() {
+                crate::recall::insertion::absorb_recording(&ah, &wav_path, wav_saved);
+                if let Err(e) = crate::recall::insertion::emit_insert(&ah, merged) {
+                    error!("Failed to emit recall insert event: {e}");
+                }
+                utils::hide_recording_overlay(&ah);
+                set_tray_state(&ah, TrayIconState::Idle);
+                if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
+                    let normal_shortcut = normal_settings
+                        .multi_stt_performance_mode_normal_shortcut
+                        .clone();
+                    let ah_for_normal = ah.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::clipboard::simulate_key_combination(
+                            &ah_for_normal,
+                            &normal_shortcut,
+                        );
+                    });
+                }
+                return;
+            }
 
             let multi_transcript = format_multi_stt_history_transcript(
                 &model_1_id,

@@ -1,7 +1,20 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "jsPlugins": ["eslint-plugin-i18next"],
+  "plugins": ["typescript", "unicorn", "oxc", "jsx-a11y"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
   "rules": {
-    "i18next/no-literal-string": ["error", { "mode": "jsx-text-only" }]
+    "i18next/no-literal-string": ["error", { "mode": "jsx-text-only" }],
+    "jsx-a11y/no-static-element-interactions": "warn",
+    "jsx-a11y/click-events-have-key-events": "warn",
+    "jsx-a11y/prefer-tag-over-role": "warn",
+    "jsx-a11y/no-noninteractive-element-interactions": "warn",
+    "jsx-a11y/interactive-supports-focus": "warn",
+    "jsx-a11y/control-has-associated-label": "warn",
+    "jsx-a11y/media-has-caption": "off"
   }
 }

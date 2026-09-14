@@ -26,3 +26,8 @@ peer = true
 # SIGKILL all descendant Bun processes. Prevents orphaned Vite dev servers
 # from lingering after `tauri dev` crashes. Works on Linux, macOS, Windows.
 noOrphans = true
+
+[test]
+# `bun test` (the `test:unit` script) discovers `*.test.ts` under src/ only.
+# Playwright's tests/*.spec.ts live outside src/ and are not JS unit tests.
+root = "src"

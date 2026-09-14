@@ -1,4 +1,4 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, onSettled, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { type } from "@tauri-apps/plugin-os";
 import {
@@ -7,11 +7,6 @@ import {
 } from "tauri-plugin-macos-permissions-api";
 
 type PermissionState = "request" | "verify" | "granted";
-
-interface ButtonConfig {
-  text: string;
-  class: string;
-}
 
 const AccessibilityPermissions = () => {
   const { t } = useTranslation();
@@ -42,54 +37,58 @@ const AccessibilityPermissions = () => {
     }
   };
 
-  createEffect(
-    () => undefined,
-    () => {
-      if (!isMacOS) return;
+  onSettled(() => {
+    if (!isMacOS) return;
 
-      const initialSetup = async (): Promise<void> => {
-        const hasPermissions: boolean = await checkPermissions();
-        setHasAccessibility(hasPermissions);
-        setPermissionState(hasPermissions ? "granted" : "request");
-      };
+    const initialSetup = async (): Promise<void> => {
+      const hasPermissions: boolean = await checkPermissions();
+      setHasAccessibility(hasPermissions);
+      setPermissionState(hasPermissions ? "granted" : "request");
+    };
 
-      initialSetup();
-    },
-  );
+    void initialSetup();
+  });
 
-  if (!isMacOS || hasAccessibility()) {
-    return null;
-  }
-
-  const buttonConfig: Record<PermissionState, ButtonConfig | null> = {
-    request: {
-      text: t("accessibility.openSettings"),
-      class:
-        "px-2 py-1 text-sm font-semibold bg-mid-gray/10 border  border-mid-gray/80 hover:bg-accent/10 rounded cursor-pointer hover:border-accent",
-    },
-    verify: {
-      text: t("accessibility.openSettings"),
-      class:
-        "bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-1 px-3 rounded-md text-sm flex items-center justify-center cursor-pointer",
-    },
-    granted: null,
+  // The button's text and style must be read reactively: permissionState()
+  // moves between request/verify/granted as the async checks resolve, and a
+  // body-level snapshot would freeze the label at whatever state mount saw.
+  const buttonConfig = () => {
+    switch (permissionState()) {
+      case "request":
+        return {
+          text: t("accessibility.openSettings"),
+          class:
+            "px-2 py-1 text-sm font-semibold bg-mid-gray/10 border  border-mid-gray/80 hover:bg-accent/10 rounded cursor-pointer hover:border-accent",
+        };
+      case "verify":
+        return {
+          text: t("accessibility.openSettings"),
+          class:
+            "bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-1 px-3 rounded-md text-sm flex items-center justify-center cursor-pointer",
+        };
+      case "granted":
+        return null;
+    }
   };
 
-  const config = buttonConfig[permissionState()] as ButtonConfig;
-
   return (
-    <div class="p-4 w-full rounded-lg border border-mid-gray">
-      <div class="flex justify-between items-center gap-2">
-        <div class="">
-          <p class="text-sm font-medium">
-            {t("accessibility.permissionsDescription")}
-          </p>
+    <Show when={isMacOS && !hasAccessibility()}>
+      <div class="p-4 w-full rounded-lg border border-mid-gray">
+        <div class="flex justify-between items-center gap-2">
+          <div class="">
+            <p class="text-sm font-medium">
+              {t("accessibility.permissionsDescription")}
+            </p>
+          </div>
+          <button
+            onClick={handleButtonClick}
+            class={`min-h-10 ${buttonConfig()?.class ?? ""}`}
+          >
+            {buttonConfig()?.text}
+          </button>
         </div>
-        <button onClick={handleButtonClick} class={`min-h-10 ${config.class}`}>
-          {config.text}
-        </button>
       </div>
-    </div>
+    </Show>
   );
 };
 

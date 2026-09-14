@@ -64,7 +64,7 @@ export const TextDisplay = (props: TextDisplayProps): JSX.Element => {
         {copyable && value && (
           <button
             onClick={handleCopy}
-            class="flex items-center justify-center px-2 py-1 w-12 min-h-8 text-xs font-semibold bg-mid-gray/10 hover:bg-accent/10 border border-mid-gray/80 hover:border-accent hover:text-accent rounded-md transition-all duration-150 flex-shrink-0 cursor-pointer"
+            class="flex items-center justify-center px-2 py-1 w-12 min-h-8 text-xs font-semibold bg-mid-gray/10 hover:bg-accent/10 border border-mid-gray/80 hover:border-accent hover:text-accent rounded-md transition-all duration-150 shrink-0 cursor-pointer"
             title="Copy to clipboard"
           >
             {showCopied() ? (

@@ -434,6 +434,47 @@ export const commands = {
 	liveModeListSessions: () => typedError<LiveSessionInfo[], string>(__TAURI_INVOKE("live_mode_list_sessions")),
 	/**  The folder used when no output folder is configured, for display. */
 	liveModeDefaultOutputDir: () => typedError<string, string>(__TAURI_INVOKE("live_mode_default_output_dir")),
+	changeRecallSettings: (settings: RecallSettings) => typedError<null, string>(__TAURI_INVOKE("change_recall_settings", { settings })),
+	recallVaultInfo: () => typedError<RecallVaultInfo, string>(__TAURI_INVOKE("recall_vault_info")),
+	/**  The folder used when none is configured, for display. */
+	recallDefaultVaultDir: () => typedError<string, string>(__TAURI_INVOKE("recall_default_vault_dir")),
+	recallListNotes: () => typedError<RecallNoteMeta[], string>(__TAURI_INVOKE("recall_list_notes")),
+	recallReadNote: (id: string) => typedError<RecallNoteContent, string>(__TAURI_INVOKE("recall_read_note", { id })),
+	recallCreateNote: (title: string, tags: string[]) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_create_note", { title, tags })),
+	recallWriteNote: (id: string, title: string, tags: string[], body: string) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_write_note", { id, title, tags, body })),
+	recallDeleteNote: (id: string) => typedError<null, string>(__TAURI_INVOKE("recall_delete_note", { id })),
+	/**
+	 *  File a transcription (or post-processed text) as a new note — the
+	 *  "Save to Recall" action on a history entry. The recording is referenced
+	 *  by its history file name, never copied.
+	 */
+	recallSaveTranscription: (text: string, title: string | null, source: string | null, audioFile: string | null, tags: string[]) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_save_transcription", { text, title, source, audioFile, tags })),
+	recallOpenVaultFolder: () => typedError<null, string>(__TAURI_INVOKE("recall_open_vault_folder")),
+	/**  Start a dictate recording: audio accumulates, nothing is typed or pasted. */
+	recallDictateStart: () => typedError<null, string>(__TAURI_INVOKE("recall_dictate_start")),
+	/**
+	 *  Stop the dictate recording and transcribe it. The text comes back to the
+	 *  caller — the page inserts it at the editor's caret.
+	 */
+	recallDictateStop: () => typedError<string, string>(__TAURI_INVOKE("recall_dictate_stop")),
+	/**  Cancel the dictate recording and discard the take. */
+	recallDictateCancel: () => typedError<null, string>(__TAURI_INVOKE("recall_dictate_cancel")),
+	recallSetInsertionMode: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("recall_set_insertion_mode", { enabled })),
+	recallEncryptionStatus: () => typedError<RecallEncryptionStatus, string>(__TAURI_INVOKE("recall_encryption_status")),
+	/**
+	 *  Turn encryption on: passphrase → key file + every note becomes `.rcl`.
+	 *  A plaintext backup is written and reported in the reply.
+	 */
+	recallEnableEncryption: (passphrase: string) => typedError<EnableReport, string>(__TAURI_INVOKE("recall_enable_encryption", { passphrase })),
+	/**  Verify the passphrase and hold the key in memory until locked or exit. */
+	recallUnlockVault: (passphrase: string) => typedError<null, string>(__TAURI_INVOKE("recall_unlock_vault", { passphrase })),
+	/**  Drop the in-memory key. Notes stay encrypted on disk. */
+	recallLockVault: () => typedError<null, string>(__TAURI_INVOKE("recall_lock_vault")),
+	/**
+	 *  Turn encryption off: verify the passphrase, decrypt every note back to
+	 *  plain Markdown, remove the key file, lock the session.
+	 */
+	recallDisableEncryption: (passphrase: string) => typedError<number, string>(__TAURI_INVOKE("recall_disable_encryption", { passphrase })),
 	/**
 	 *  Persist the page's parameters and hand them to the running analysis,
 	 *  which applies them on its next frame. A threading-mode change restarts
@@ -476,6 +517,7 @@ export const events = {
 	llamaDownloadEvent: makeEvent<LlamaDownloadEvent>("llama-download-event"),
 	llamaServerStateEvent: makeEvent<LlamaServerStateEvent>("llama-server-state-event"),
 	multiSttStreamChunkFailedEvent: makeEvent<MultiSttStreamChunkFailedEvent>("multi-stt-stream-chunk-failed-event"),
+	recallInsertTextEvent: makeEvent<RecallInsertTextEvent>("recall-insert-text-event"),
 	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
 	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
 	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
@@ -487,7 +529,7 @@ export const events = {
 /* Types */
 /**
  *  The container-level `serde(default)` (backed by the `Default` impl below)
- *  guarantees every field — including ones added in the future — falls back to
+ *  guarantees every field â€” including ones added in the future â€” falls back to
  *  its `get_default_settings()` value when missing from a stored settings
  *  object, so a partial store can never fail the whole load (#1619).
  *  Field-level defaults below take precedence where present.
@@ -496,7 +538,7 @@ export type AppSettings = AppSettings_Serialize | AppSettings_Deserialize;
 
 /**
  *  The container-level `serde(default)` (backed by the `Default` impl below)
- *  guarantees every field — including ones added in the future — falls back to
+ *  guarantees every field â€” including ones added in the future â€” falls back to
  *  its `get_default_settings()` value when missing from a stored settings
  *  object, so a partial store can never fail the whole load (#1619).
  *  Field-level defaults below take precedence where present.
@@ -534,7 +576,7 @@ export type AppSettings_Deserialize = {
 	 *  The app version whose What's New the user has already seen. Fresh installs
 	 *  default to the current version (nothing is "new" to them). Existing users
 	 *  upgrading from before this key existed are blanked by the migration so they
-	 *  see the current release's notes — see `apply_settings_migrations`.
+	 *  see the current release's notes â€” see `apply_settings_migrations`.
 	 */
 	whats_new_last_seen_version?: string,
 	selected_model?: string,
@@ -577,7 +619,7 @@ export type AppSettings_Deserialize = {
 	theme?: Theme,
 	custom_accent_color?: string | null,
 	/**
-	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
+	 *  Zoom of the settings window (0.7â€“1.6, 1.0 = native), for screens whose
 	 *  OS scaling makes the UI too small or too large. Applied as CSS zoom.
 	 */
 	ui_scale?: number | null,
@@ -610,17 +652,17 @@ export type AppSettings_Deserialize = {
 	 *  RNNoise noise suppression on the microphone path, before the VAD and
 	 *  the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
 	 *  adds a little latency and can make some voices sound processed; the
-	 *  live VAD test in Settings → Advanced shows its effect.
+	 *  live VAD test in Settings â†’ Advanced shows its effect.
 	 */
 	denoise_enabled?: boolean,
 	/**
-	 *  RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
+	 *  RNNoise wet/dry mix (0â€“1): 1 = the suppressor's output, 0 = the input
 	 *  untouched.
 	 */
 	denoise_strength?: number | null,
 	/**
 	 *  RNNoise's own speech probability below which the suppressor mutes
-	 *  the frame (0–1); 0 turns the gate off.
+	 *  the frame (0â€“1); 0 turns the gate off.
 	 */
 	denoise_vad_threshold?: number | null,
 	/**
@@ -628,12 +670,12 @@ export type AppSettings_Deserialize = {
 	 *  threshold, in milliseconds.
 	 */
 	denoise_vad_grace_ms?: number,
-	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
+	/**  Speech-probability threshold of the Earshot detector (0.05â€“0.95). */
 	vad_threshold_earshot?: number | null,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
-	 *  not gated on this — that follows model capability. Migrated from the old
-	 *  `overlay_position` (position `none` → style `None`).
+	 *  not gated on this â€” that follows model capability. Migrated from the old
+	 *  `overlay_position` (position `none` â†’ style `None`).
 	 */
 	overlay_style?: OverlayStyle,
 	/**
@@ -688,7 +730,7 @@ export type AppSettings_Deserialize = {
 	multi_stt_streaming_first_enabled?: boolean,
 	/**
 	 *  How long the speaker has to pause before the chunk being spoken closes
-	 *  and is merged — what divides the session into chunks (100–10000 ms).
+	 *  and is merged â€” what divides the session into chunks (100â€“10000 ms).
 	 *  Same test Live Mode uses for its silence boundary.
 	 */
 	multi_stt_streaming_pause_ms?: number,
@@ -710,6 +752,8 @@ export type AppSettings_Deserialize = {
 	file_transcription?: FileTranscriptionSettings,
 	/**  "Live Mode" page (fork feature). */
 	live_mode?: LiveModeSettings,
+	/**  "Recall" page (fork feature): the note vault. */
+	recall?: RecallSettings,
 	/**  "Live FFT" page (fork feature). */
 	live_fft?: LiveFftSettings,
 	/**
@@ -723,7 +767,7 @@ export type AppSettings_Deserialize = {
 
 /**
  *  The container-level `serde(default)` (backed by the `Default` impl below)
- *  guarantees every field — including ones added in the future — falls back to
+ *  guarantees every field â€” including ones added in the future â€” falls back to
  *  its `get_default_settings()` value when missing from a stored settings
  *  object, so a partial store can never fail the whole load (#1619).
  *  Field-level defaults below take precedence where present.
@@ -761,7 +805,7 @@ export type AppSettings_Serialize = {
 	 *  The app version whose What's New the user has already seen. Fresh installs
 	 *  default to the current version (nothing is "new" to them). Existing users
 	 *  upgrading from before this key existed are blanked by the migration so they
-	 *  see the current release's notes — see `apply_settings_migrations`.
+	 *  see the current release's notes â€” see `apply_settings_migrations`.
 	 */
 	whats_new_last_seen_version: string,
 	selected_model: string,
@@ -804,7 +848,7 @@ export type AppSettings_Serialize = {
 	theme: Theme,
 	custom_accent_color: string | null,
 	/**
-	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
+	 *  Zoom of the settings window (0.7â€“1.6, 1.0 = native), for screens whose
 	 *  OS scaling makes the UI too small or too large. Applied as CSS zoom.
 	 */
 	ui_scale: number | null,
@@ -837,17 +881,17 @@ export type AppSettings_Serialize = {
 	 *  RNNoise noise suppression on the microphone path, before the VAD and
 	 *  the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
 	 *  adds a little latency and can make some voices sound processed; the
-	 *  live VAD test in Settings → Advanced shows its effect.
+	 *  live VAD test in Settings â†’ Advanced shows its effect.
 	 */
 	denoise_enabled: boolean,
 	/**
-	 *  RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
+	 *  RNNoise wet/dry mix (0â€“1): 1 = the suppressor's output, 0 = the input
 	 *  untouched.
 	 */
 	denoise_strength: number | null,
 	/**
 	 *  RNNoise's own speech probability below which the suppressor mutes
-	 *  the frame (0–1); 0 turns the gate off.
+	 *  the frame (0â€“1); 0 turns the gate off.
 	 */
 	denoise_vad_threshold: number | null,
 	/**
@@ -855,12 +899,12 @@ export type AppSettings_Serialize = {
 	 *  threshold, in milliseconds.
 	 */
 	denoise_vad_grace_ms: number,
-	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
+	/**  Speech-probability threshold of the Earshot detector (0.05â€“0.95). */
 	vad_threshold_earshot: number | null,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
-	 *  not gated on this — that follows model capability. Migrated from the old
-	 *  `overlay_position` (position `none` → style `None`).
+	 *  not gated on this â€” that follows model capability. Migrated from the old
+	 *  `overlay_position` (position `none` â†’ style `None`).
 	 */
 	overlay_style: OverlayStyle,
 	/**
@@ -915,7 +959,7 @@ export type AppSettings_Serialize = {
 	multi_stt_streaming_first_enabled: boolean,
 	/**
 	 *  How long the speaker has to pause before the chunk being spoken closes
-	 *  and is merged — what divides the session into chunks (100–10000 ms).
+	 *  and is merged â€” what divides the session into chunks (100â€“10000 ms).
 	 *  Same test Live Mode uses for its silence boundary.
 	 */
 	multi_stt_streaming_pause_ms: number,
@@ -937,6 +981,8 @@ export type AppSettings_Serialize = {
 	file_transcription: FileTranscriptionSettings,
 	/**  "Live Mode" page (fork feature). */
 	live_mode: LiveModeSettings,
+	/**  "Recall" page (fork feature): the note vault. */
+	recall: RecallSettings,
 	/**  "Live FFT" page (fork feature). */
 	live_fft: LiveFftSettings,
 	/**
@@ -1036,6 +1082,16 @@ export type DurationMetricSummary = {
 	maximum_ms: number | null,
 };
 
+/**  What [`enable`] reports back to the UI. */
+export type EnableReport = {
+	notes_encrypted: number,
+	/**
+	 *  Where the one-time plaintext backup was written — the UI shows it so
+	 *  the user can delete it once the encrypted vault checks out.
+	 */
+	backup_dir: string,
+};
+
 export type FftBallisticsMode = 
 /**  Per-frame smoothing coefficients (0 = follow instantly). */
 "coefficient" | 
@@ -1055,7 +1111,7 @@ export type FftLoudnessMode =
 "off" | 
 /**  Decibels relative to the reference. */
 "db" | 
-/**  Decibels mapped onto 0…1 over `db_range`. */
+/**  Decibels mapped onto 0â€¦1 over `db_range`. */
 "db_normalized";
 
 export type FftMagnitudeNorm = 
@@ -1072,7 +1128,7 @@ export type FftScale = "log" | "mel" | "erb" | "bark" | "chroma" | "linear" |
 /**  Which signal the Live FFT page analyses. */
 export type FftSource = 
 /**
- *  The microphone at its native rate, before noise suppression — the
+ *  The microphone at its native rate, before noise suppression â€” the
  *  full bandwidth the device delivers (24 kHz at 48 kHz).
  */
 "microphone" | 
@@ -1156,14 +1212,14 @@ export type FileTranscriptionSettings = {
 	 */
 	output_dir?: string | null,
 	output_format?: TranscriptOutputFormat,
-	/**  Replace an existing transcript instead of appending `-2`, `-3`, …. */
+	/**  Replace an existing transcript instead of appending `-2`, `-3`, â€¦. */
 	overwrite_existing?: boolean,
 	/**  When a folder is added, also queue audio files from its sub-folders. */
 	include_subfolders?: boolean,
 	/**
 	 *  Long recordings are decoded in segments of at most this many minutes,
 	 *  cut at the quietest point near the boundary, so one file never holds
-	 *  the engine (or memory) for an hour at a time. 1–60.
+	 *  the engine (or memory) for an hour at a time. 1â€“60.
 	 */
 	max_segment_minutes?: number,
 };
@@ -1300,7 +1356,7 @@ export type LiveFftSettings = {
 	warp_interpolation?: FftWarpInterp,
 	/**  Highest frequency on the axis; clamped to Nyquist at run time. */
 	display_max_hz?: number | null,
-	/**  Size of the warped spectrum handed to the page (32…8192). */
+	/**  Size of the warped spectrum handed to the page (32â€¦8192). */
 	output_bins?: number,
 	/**  0 = linear grid, 1 = fully perceptual. */
 	warp_blend?: number | null,
@@ -1324,7 +1380,7 @@ export type LiveFftSettings = {
 	low_gain_db?: number | null,
 	low_cutoff_hz?: number | null,
 	eq_q?: number | null,
-	/**  Wet/dry blend of the EQ (0…5). */
+	/**  Wet/dry blend of the EQ (0â€¦5). */
 	eq_amount?: number | null,
 	window_type?: FftWindowType,
 	kaiser_beta?: number | null,
@@ -1336,9 +1392,9 @@ export type LiveFftSettings = {
 	db_range?: number | null,
 	ballistics_enabled?: boolean,
 	ballistics_mode?: FftBallisticsMode,
-	/**  Per-frame attack coefficient (0…0.99). */
+	/**  Per-frame attack coefficient (0â€¦0.99). */
 	attack?: number | null,
-	/**  Per-frame release coefficient (0…0.99). */
+	/**  Per-frame release coefficient (0â€¦0.99). */
 	release?: number | null,
 	attack_ms?: number | null,
 	release_ms?: number | null,
@@ -1347,7 +1403,7 @@ export type LiveFftSettings = {
 	 *  audio consumer thread (off).
 	 */
 	async_analysis?: boolean,
-	/**  Spectrum frames per second sent to the page (5…60). */
+	/**  Spectrum frames per second sent to the page (5â€¦60). */
 	update_rate_hz?: number,
 	/**
 	 *  Run the speech detector on the analysed session and report its
@@ -1412,7 +1468,7 @@ export type LiveModeSettings = {
 	 *  `<app data>/live_mode`.
 	 */
 	output_dir?: string | null,
-	/**  Target length of one audio chunk / transcript segment in minutes. 1–60. */
+	/**  Target length of one audio chunk / transcript segment in minutes. 1â€“60. */
 	chunk_minutes?: number,
 	transcript_format?: TranscriptOutputFormat,
 	granularity?: LiveTranscriptGranularity,
@@ -1582,7 +1638,7 @@ export type LlamaSettings = {
 	 */
 	custom_args?: string | null,
 	/**
-	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
+	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3â€“4 % on short
 	 *  prompts in the S2B2S benchmarks).
 	 */
 	attn_rot_disable?: boolean,
@@ -1692,7 +1748,7 @@ export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cac
  *  User-facing latency preset for native streaming models (Parakeet Buffered,
  *  Nemotron cache-aware). Stored per-model-id in
  *  [`AppSettings::native_streaming_latency_presets`]. `Accurate` is the default
- *  (runtime default — no stream extension attached), so it is the unit value.
+ *  (runtime default â€” no stream extension attached), so it is the unit value.
  */
 export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "accurate";
 
@@ -1724,29 +1780,30 @@ export type OverlayScopeSettings = {
 	 *  Live FFT page's peak hold.
 	 */
 	peak_hold?: boolean,
-	/**  Samples of raw audio the waveform view covers (256…16384). */
+	/**  Samples of raw audio the waveform view covers (256â€¦16384). */
 	wave_samples?: number,
 	/**
 	 *  Raised-cosine fade at each end of that window, in samples
-	 *  (0…half the window), so the trace starts and ends at zero.
+	 *  (0â€¦half the window), so the trace starts and ends at zero.
 	 */
 	wave_taper_samples?: number,
 	/**
 	 *  Auto-gain floor of the waveform as a full-scale fraction: quieter
-	 *  signals are not blown up to full height (0.001…0.5).
+	 *  signals are not blown up to full height (0.001â€¦0.5).
 	 */
 	wave_gain_floor?: number | null,
-	/**  Width of each view in logical pixels (32…160). */
+	/**  Width of each view in logical pixels (32â€¦160). */
 	view_width?: number,
-	/**  Height of the views in logical pixels (14…48). */
+	/**  Height of the views in logical pixels (14â€¦48). */
 	view_height?: number,
 	/**
 	 *  Draw the circular-spectrum view: a third view beside the linear
-	 *  spectrum and the waveform. The bins are mirrored about their centre
-	 *  and joined end-to-end (`[s, reversed(s)]`, symmetric by
-	 *  construction), the two paths ±s are offset by +1 around a unit
-	 *  circle, and the quarter arc is rotated four times into a seamless
-	 *  closed loop — an outer ring at radius 1+s and an inner ring at 1-s.
+	 *  spectrum and the waveform. The bins are combined with their own
+	 *  inversion â€” appended and prepended â€” and the two symmetric signals
+	 *  are added into the input signal (the cross-sum of each bin with its
+	 *  mirror partner, halved into display units). The two branches ride at
+	 *  radius 1+s and 1-s around a full 2Ï€ sweep, the whole figure rotated
+	 *  90Â° so the seam straddles the right of the ring.
 	 */
 	show_circular?: boolean,
 	/**
@@ -1755,26 +1812,26 @@ export type OverlayScopeSettings = {
 	 */
 	circular_bars?: boolean,
 	/**
-	 *  Display bins of the circular loop (12…240). The pipeline's bins are
+	 *  Display bins of the circular loop (12â€¦240). The pipeline's bins are
 	 *  peak-pooled down to this many, so fewer bins means chunkier bars.
 	 */
 	circular_bins?: number,
 	/**
-	 *  Fixed display gain of the circular loop (0.05…8). The pooled bins are
-	 *  multiplied by this and clamped to 0…1 — deliberately a fixed scale,
+	 *  Fixed display gain of the circular loop (0.05â€¦8). The pooled bins are
+	 *  multiplied by this and clamped to 0â€¦1 â€” deliberately a fixed scale,
 	 *  not a dynamic normalisation, so the loop's size breathes with the
 	 *  signal instead of always filling the ring.
 	 */
 	circular_gain?: number | null,
 	/**
-	 *  Floor of the circular loop as a fraction of full scale (0…0.9). Bars
+	 *  Floor of the circular loop as a fraction of full scale (0â€¦0.9). Bars
 	 *  below it are not drawn: without a floor the ambient room tone paints
 	 *  the whole ring and the loop reads as a filled disc.
 	 */
 	circular_floor?: number | null,
 	/**
 	 *  Side of the square circular-spectrum view, in logical pixels
-	 *  (32…400).
+	 *  (32â€¦400).
 	 */
 	circular_size?: number,
 	/**
@@ -1782,9 +1839,9 @@ export type OverlayScopeSettings = {
 	 *  the card instead of as its own view in the block.
 	 */
 	circular_background?: boolean,
-	/**  Linear spectrum view scale, percent of its base size (50…400). */
+	/**  Linear spectrum view scale, percent of its base size (50â€¦400). */
 	spectrum_scale?: number,
-	/**  Waveform view scale, percent of its base size (50…400). */
+	/**  Waveform view scale, percent of its base size (50â€¦400). */
 	wave_scale?: number,
 };
 
@@ -1828,6 +1885,66 @@ export type QuantVariant = {
 	model_id: string,
 	size_mb: number,
 	is_default: boolean,
+};
+
+/**  The vault's encryption state, as the page's toggle renders it. */
+export type RecallEncryptionStatus = {
+	/**  `vault.json` exists — the notes on disk are ciphertext. */
+	enabled: boolean,
+	/**  The session holds the derived key. */
+	unlocked: boolean,
+};
+
+/**  A note opened for reading or editing: metadata plus the Markdown body. */
+export type RecallNoteContent = {
+	meta: RecallNoteMeta,
+	body: string,
+};
+
+/**  One note's metadata as the UI lists it. */
+export type RecallNoteMeta = {
+	/**  Stable file identity: the `.md` file's stem under `notes/`. */
+	id: string,
+	title: string,
+	/**  Epoch milliseconds. */
+	created_ms: number,
+	/**  Epoch milliseconds. */
+	updated_ms: number,
+	tags: string[],
+	word_count: number,
+	/**  What produced the note: a model id, `"dictation"`, `"manual"`, … */
+	source: string | null,
+	/**
+	 *  Recording file name in `audio/` (or a history file name) the note
+	 *  was spoken from, if any.
+	 */
+	audio_file: string | null,
+};
+
+/**
+ *  Settings of the "Recall" page (fork feature): the note vault. Grouped
+ *  into one struct so the page persists through a single command.
+ */
+export type RecallSettings = {
+	/**
+	 *  Folder the vault lives in. `None` means the default
+	 *  `<app data>/recall`.
+	 */
+	output_dir?: string | null,
+};
+
+/**  What the vault looks like on disk right now. */
+export type RecallVaultInfo = {
+	root: string,
+	note_count: number,
+	audio_count: number,
+};
+
+/**
+ *  Final text for the Recall editor's caret. Replaces the paste step.
+ */
+export type RecallInsertTextEvent = {
+	text: string,
 };
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";

@@ -29,11 +29,19 @@ dist-ssr
 .claude/
 .cclaude/
 .commandcode/
+.workbuddy-ai/
+.crush/
+
+# Local scratch: one-off migration/file-writer scripts and probes, never
+# referenced by anything in the repository
+/test_write.txt
+/write_batch*.js
+/write_llama.js
+/check-stash.mjs
 
 /target/
 src-tauri/transcribe-libs/
 recording_*
-.crush/
 
 # TypeScript build info (tsc -b project references)
 *.tsbuildinfo
@@ -42,6 +50,9 @@ recording_*
 playwright-report/
 test-results/
 blob-report/
+
+# Mirrored upstream stack documentation (regenerate with `bun run docs:fetch`)
+docs/vendor/
 
 .direnv
 .envrc

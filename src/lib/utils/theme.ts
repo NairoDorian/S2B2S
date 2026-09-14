@@ -33,10 +33,34 @@ const isTheme = (value: unknown): value is Theme =>
   value === "system" || value === "light" || value === "dark";
 
 /** Apply a theme to the document root and remember it for the next launch. */
+const OS_DARK_QUERY = "(prefers-color-scheme: dark)";
+
+/** Resolve `system` to an explicit `data-theme` from the OS setting. */
+const applySystemTheme = (): void => {
+  document.documentElement.dataset.theme = window.matchMedia(OS_DARK_QUERY)
+    .matches
+    ? "dark"
+    : "light";
+};
+
+/** The OS dark-mode listener, installed once for the `system` theme. */
+let systemThemeQuery: MediaQueryList | null = null;
+
 export const applyTheme = (theme: Theme): void => {
   const root = document.documentElement;
   if (theme === "system") {
-    delete root.dataset.theme;
+    // `system` resolves to an explicit attribute rather than removing the
+    // override: the Tailwind `dark:` variant keys on `[data-theme="dark"]`
+    // (App.css @custom-variant), and an absent attribute would leave every
+    // `dark:` utility stuck on the OS media query — wrong whenever the app
+    // runs on an OS whose scheme disagrees with the palette a user expects.
+    // The resolved attribute selects the same palette the media query would,
+    // so nothing changes visually; a live listener keeps it tracking the OS.
+    applySystemTheme();
+    if (!systemThemeQuery) {
+      systemThemeQuery = window.matchMedia(OS_DARK_QUERY);
+      systemThemeQuery.addEventListener("change", applySystemTheme);
+    }
   } else {
     root.dataset.theme = theme;
   }

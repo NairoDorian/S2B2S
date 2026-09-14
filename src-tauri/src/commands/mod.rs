@@ -5,6 +5,7 @@ pub mod live_fft;
 pub mod live_mode;
 pub mod llama;
 pub mod models;
+pub mod recall;
 pub mod statistics;
 pub mod system;
 pub mod transcription;

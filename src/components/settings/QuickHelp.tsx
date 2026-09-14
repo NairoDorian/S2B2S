@@ -13,6 +13,7 @@ const QUICK_HELP: Partial<
 > = {
   general: { copyKey: "quickHelp.general", anchor: "help-transcription" },
   history: { copyKey: "quickHelp.history", anchor: "help-history" },
+  recall: { copyKey: "quickHelp.recall", anchor: "help-history" },
   statistics: { copyKey: "quickHelp.statistics", anchor: "help-history" },
   models: { copyKey: "quickHelp.models", anchor: "help-models" },
   multiStt: { copyKey: "quickHelp.multiStt", anchor: "help-multi-stt" },

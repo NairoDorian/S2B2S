@@ -22,6 +22,7 @@
       "src-tauri/src/catalog/catalog.json",
       "src/i18n/locales/*/translation.json",
       "src/content/release-notes/*.md",
+      "docs/vendor/**",
       "bun.lock",
       "src-tauri/Cargo.lock",
       ".nix/bun.nix"

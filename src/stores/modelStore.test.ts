@@ -1,3 +1,4 @@
+/// <reference types="bun-types/test-globals" />
 // Standalone assert check (no JS unit-test runner in this repo). Run with:
 //   bun src/stores/modelStore.test.ts
 //
@@ -24,6 +25,13 @@
 // The event listeners are deliberately not covered: they are registered inside
 // `initialize()`, which calls `listen()` from `@tauri-apps/api/event`, and the
 // events they handle are exercised end-to-end by the Playwright suite instead.
+//
+// About the `[SERVER_WRITE]` diagnostic bun's console prints for these tests:
+// that is Solid 2's server-side write guard, and it fires because this file
+// runs in bun, where there is no `window` and Solid classifies the runtime as
+// a server render. In the app the store lives in a client webview — a real
+// client root — and the guard stays quiet. The writes themselves are the
+// store's normal production path, exercised here directly; nothing to fix.
 import assert from "node:assert";
 import type { ModelInfo } from "@/bindings";
 import { commands } from "@/bindings";
@@ -60,7 +68,7 @@ const model = (id: string, is_downloading = false) =>
 const plain = <T extends object>(value: T): T => ({ ...value });
 
 // ---- 1. the backend merge: add what it reports, keep what has progress ----
-{
+test("loadModels merge: add what the backend reports, keep what has progress", async () => {
   store.setModels([]);
   store.setDownloadingModels({ kept: true, stale: true });
   store.setDownloadProgress({ kept: progressFor("kept") });
@@ -95,11 +103,10 @@ const plain = <T extends object>(value: T): T => ({ ...value });
     statsBefore,
     "an untouched map keeps its identity across a merge",
   );
-  console.log("ok 1 — loadModels merge");
-}
+});
 
 // ---- 2. a no-op write is not a new reference ------------------------------
-{
+test("no-op writes keep identity", async () => {
   store.setDownloadingModels({ a: true });
   store.setVerifyingModels({ b: true });
 
@@ -122,11 +129,10 @@ const plain = <T extends object>(value: T): T => ({ ...value });
     verifyingBefore,
     "the merge does not touch `verifyingModels` at all",
   );
-  console.log("ok 2 — no-op writes keep identity");
-}
+});
 
 // ---- 3. downloadModel seeds both maps, and a failure clears them ----------
-{
+test("downloadModel seeds both maps, and a failure clears them", async () => {
   store.setDownloadingModels({ other: true });
   store.setVerifyingModels({ other: true });
   store.setDownloadProgress({ other: progressFor("other") });
@@ -172,11 +178,10 @@ const plain = <T extends object>(value: T): T => ({ ...value });
     "the failure path leaves a verification the backend is still running " +
       "alone — the cleanup is called without `verifying` there",
   );
-  console.log("ok 3 — downloadModel seeds and cleans up");
-}
+});
 
 // ---- 4. cancelDownload clears the model and keeps the rest ----------------
-{
+test("cancelDownload clears the model and keeps the rest", async () => {
   store.setDownloadingModels({ x: true, other: true });
   store.setVerifyingModels({ x: true, other: true });
   store.setDownloadProgress({
@@ -198,8 +203,7 @@ const plain = <T extends object>(value: T): T => ({ ...value });
     "cancelling one model leaves the others downloading",
   );
   assert.strictEqual(store.downloadStats.other.speed, 1);
-  console.log("ok 4 — cancelDownload");
-}
+});
 
 // ---- 5. clearing a model that was never downloading touches nothing -------
 //

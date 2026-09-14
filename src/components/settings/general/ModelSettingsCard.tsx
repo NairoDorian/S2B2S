@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { LanguageSelector } from "../LanguageSelector";
@@ -11,46 +12,52 @@ import {
 
 export const ModelSettingsCard = () => {
   const { t } = useTranslation();
-  const { currentModel, models } = useModelStore();
+  const modelStore = useModelStore();
 
-  const currentModelInfo = models.find((m: ModelInfo) => m.id === currentModel);
+  // All derived from the store inside functions and read in the JSX below:
+  // a body-level read would snapshot the empty mount-time store and the
+  // card could never appear once a model loads.
+  const currentModelInfo = () =>
+    modelStore.models.find((m: ModelInfo) => m.id === modelStore.currentModel);
 
-  const supportsLanguageSelection =
-    currentModelInfo?.supports_language_selection ?? false;
-  const capabilityLanguages = getUniqueCapabilityLanguages(
-    currentModelInfo?.supported_languages ?? [],
-  );
-  const supportsChineseOnlyScriptSelection =
-    capabilityLanguages.length === 1 &&
-    capabilityLanguages[0] === CHINESE_LANGUAGE_CODE;
-  const showLanguageSelector =
-    supportsLanguageSelection || supportsChineseOnlyScriptSelection;
-  const supportsTranslation = currentModelInfo?.supports_translation ?? false;
-  const hasAnySettings = showLanguageSelector || supportsTranslation;
-
-  if (!currentModel || !currentModelInfo || !hasAnySettings) {
-    return null;
-  }
+  const supportsLanguageSelection = () =>
+    currentModelInfo()?.supports_language_selection ?? false;
+  const capabilityLanguages = () =>
+    getUniqueCapabilityLanguages(currentModelInfo()?.supported_languages ?? []);
+  const supportsChineseOnlyScriptSelection = () =>
+    capabilityLanguages().length === 1 &&
+    capabilityLanguages()[0] === CHINESE_LANGUAGE_CODE;
+  const showLanguageSelector = () =>
+    supportsLanguageSelection() || supportsChineseOnlyScriptSelection();
+  const supportsTranslation = () =>
+    currentModelInfo()?.supports_translation ?? false;
+  const hasAnySettings = () => showLanguageSelector() || supportsTranslation();
 
   return (
-    <SettingsGroup
-      title={t("settings.modelSettings.title", {
-        model: currentModelInfo.name,
-      })}
+    <Show
+      when={
+        !!modelStore.currentModel && !!currentModelInfo() && hasAnySettings()
+      }
     >
-      {showLanguageSelector && (
-        <LanguageSelector
-          descriptionMode="tooltip"
-          grouped={true}
-          supportedLanguages={currentModelInfo.supported_languages}
-          supportsLanguageDetection={
-            currentModelInfo.supports_language_detection
-          }
-        />
-      )}
-      {supportsTranslation && (
-        <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
-      )}
-    </SettingsGroup>
+      <SettingsGroup
+        title={t("settings.modelSettings.title", {
+          model: currentModelInfo()!.name,
+        })}
+      >
+        {showLanguageSelector() && (
+          <LanguageSelector
+            descriptionMode="tooltip"
+            grouped={true}
+            supportedLanguages={currentModelInfo()!.supported_languages}
+            supportsLanguageDetection={
+              currentModelInfo()!.supports_language_detection
+            }
+          />
+        )}
+        {supportsTranslation() && (
+          <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
+        )}
+      </SettingsGroup>
+    </Show>
   );
 };

@@ -37,6 +37,7 @@ import type { Page } from "@playwright/test";
 const SECTIONS: { label: string; heading: string }[] = [
   { label: "General", heading: "General" },
   { label: "History", heading: "History" },
+  { label: "Recall", heading: "Recall" },
   { label: "Statistics", heading: "Transcription Statistics" },
   { label: "Models", heading: "Transcription Models" },
   { label: "Multi STT", heading: "Enable Multi STT" },
@@ -259,14 +260,11 @@ test.describe("settings window", () => {
 
     // Text from the English locale, which the fixture pins via `app_language`.
     //
-    // `.first()` because the dev build mounts under `React.StrictMode`, whose
-    // simulated unmount/remount does register this listener twice: measured,
-    // one emit here produces 2 `plugin:event|listen` and 1
-    // `plugin:event|unlisten` — the first binding is torn down and the second
-    // one answers. StrictMode is dev-only, has no Solid counterpart and is
-    // deleted in Phase 3, so the extra registration is an artefact of the dev
-    // entry point rather than of the app. What is under test is that the event
-    // reaches the UI at all.
+    // `.first()` as defence in depth: the tree mounts exactly once under
+    // Solid (no StrictMode — that was React's dev-only double render, gone
+    // since Phase 3), so a single emit produces one listener. Keeping
+    // `.first()` costs nothing and keeps the assertion about the event
+    // reaching the UI rather than about registration counts.
     await expect(page.getByText("No Microphone Found").first()).toBeVisible();
     expect(crashes).toEqual([]);
   });

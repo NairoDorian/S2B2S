@@ -27,7 +27,8 @@ bun run build:full             # Release build, full multi-arch CUDA matrix
 
 ```bash
 bun run precommit              # THE gate: meta:sync, meta:check, check:identity,
-                               # check:translations, lint, typecheck, format:check, repomix
+                               # check:translations, lint, typecheck, test:unit,
+                               # format:check, repomix
 bun run precommit:full         # the same plus clippy and the Rust test suite
 bun run hooks:install          # once per clone: point git at .githooks/
 ```
@@ -65,13 +66,15 @@ bun run update:rtk                               # update the RTK CLI (maintaine
 - Snake_case for functions and variables, PascalCase for types
 - Edition 2024 — `if let ... && let ...` chains are preferred over nested `if`s
 
-**TypeScript/React (Frontend):**
+**TypeScript/Solid (Frontend):**
 
-- Functional components with TypeScript interfaces
-- `useCallback` hooks for stable function references
-- Destructure props with defaults: `disabled = false`
+- Strict TypeScript, avoid `any` types
+- Solid 2 components: never destructure props in a component body (it runs
+  once — a destructured prop is a mount-time snapshot); read reactive values
+  inside JSX bindings, not in component bodies
+- Use the `createEffect(compute, apply)` returned-cleanup form; `Dynamic` for
+  reactively-switched components
 - Prefer interface aliases over type aliases for objects
-- React.FC for explicit component typing
 - PascalCase for components, camelCase for variables/functions
 - No literal strings in JSX — every user-facing string goes through i18next
   (`oxlint` fails the build otherwise); for literal data use an expression

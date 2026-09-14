@@ -143,6 +143,55 @@ export function overlayRowHeight(cfg: ResolvedOverlayScope): number {
   return Math.max(BASE_ROW_H, overlayScopeViewHeight(cfg) + ROW_PADDING_H);
 }
 
+// ---- Circular spectrum geometry -------------------------------------------
+//
+// The circular view's construction, in one place so the painter and the
+// tests assert the same math. From the pooled display bins `s` (one value
+// per display bin, 0…1 after floor and gain):
+//
+//   A = [s, reversed(s)]   the inversion appended to the original
+//   B = [reversed(s), s]   the inversion prepended to the original
+//   C = A + B              point-wise; the circular view's input signal
+//
+// C is the cross-sum of each bin with its mirror partner — a palindrome
+// that repeats twice around the ring — and it is halved back into the
+// 0…1 display units the two branches ride on: the positive branch at
+// radius 1 + C, the negative at radius 1 − C, so the loudest possible
+// loop (both branches at 2) still fits the view box. The whole figure is
+// rotated 90°, so the seam — where the two ends of A and B meet, both
+// drawing the cross-sum of bin 0 with its partner — straddles the RIGHT
+// of the ring (3 o'clock) half a step on either side, and the figure is
+// exactly mirror-symmetric about the horizontal axis.
+
+/** Points on the ring for a display-bin count: the summed signal's length. */
+export function circularPointCount(displayBins: number): number {
+  return displayBins * 2;
+}
+
+/**
+ * The ring angle of point k: a full 2π sweep, clockwise, rotated 90° from
+ * the old top-seam placement. The seam straddles the RIGHT of the ring —
+ * k = 0 half a step below 3 o'clock, the last point half a step above it —
+ * and the figure is exactly mirror-symmetric about the horizontal axis:
+ * the reflection of point k is point `points - 1 - k`, which by the
+ * cross-sum draws the same value.
+ */
+export function circularAngleAt(k: number, points: number): number {
+  return ((k + 0.5) / points) * Math.PI * 2;
+}
+
+/**
+ * The circular view's input signal at point k: A + B from the doc block
+ * above. For `k < n` this pairs bin k with its mirror partner; for the
+ * second half the pairing repeats — which is why the signal repeats twice
+ * around the ring. Halved into 0…1 display units.
+ */
+export function circularSignalAt(k: number, bins: ArrayLike<number>): number {
+  const n = bins.length;
+  const j = k < n ? k : k - n;
+  return (bins[j] + bins[n - 1 - j]) / 2;
+}
+
 /**
  * Publish the geometry as the CSS custom properties RecordingOverlay.css
  * reads, so the card and its animations follow the setting.

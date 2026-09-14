@@ -17,7 +17,8 @@ on:
       - ".oxlintrc*"
       - ".prettierrc*"
       - "tsconfig*"
-      - "tailwind.config.*"
+      - "vite.config.ts"
+      - "index.html"
       - "*.md"
   pull_request:
     paths:
@@ -34,7 +35,8 @@ on:
       - ".oxlintrc*"
       - ".prettierrc*"
       - "tsconfig*"
-      - "tailwind.config.*"
+      - "vite.config.ts"
+      - "index.html"
       - "*.md"
 
 concurrency:
@@ -75,6 +77,11 @@ jobs:
 
       - name: Run oxlint
         run: bun run lint
+
+      # The standalone assert checks (`src/**/*.test.ts`, run by bun). Mirrors
+      # the pre-commit gate: the hook is bypassable, so CI is the backstop.
+      - name: Run unit checks
+        run: bun run test:unit
 
       - name: Run prettier
         run: bun run format:check

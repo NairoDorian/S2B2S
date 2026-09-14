@@ -21,6 +21,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Recall — the local note vault (2026-09-14).** A new sidebar page and a
+  new kind of destination for the transcription pipeline: a plain folder
+  vault (`<app data>/recall`, user-selectable through the native folder
+  picker) holding one Markdown note per file under `notes/`, the recordings
+  that produced them under `audio/` (copied in, never referenced), and a
+  derived `index.json` tag cache that can be deleted and rebuilt at will.
+  There is no database: the folder _is_ the format, readable with any
+  editor and syncable with anything.
+  - **Editor with dictate-to-cursor.** The page hosts a Markdown viewer
+    (the app's own renderer) plus a text editor; its Dictate button records
+    the microphone exactly like a dictation and inserts the transcribed
+    (post-processed, when enabled) text exactly at the caret. Nothing is
+    pasted, no history row, no recording file — the note is the destination.
+  - **Vault-only hotkey routing.** While the editor's caret is live, the
+    transcription and Multi-STT hotkeys stop pasting and stop writing
+    History: the final/merged text is delivered to the caret as an internal
+    event, the take's WAV is moved out of the recordings folder into the
+    vault's `audio/` (encrypted with the vault when it is encrypted,
+    discarded rather than leaked when the vault is somehow locked), and live
+    direct-streaming typing is suppressed so the text cannot arrive twice.
+    Anywhere outside the armed editor the hotkeys behave exactly as before —
+    History stays the general log of STT use; the vault holds vault data
+    only.
+  - **"Save to Recall" on every History entry** files the displayed text
+    (the polished tab's text included) as a new note and copies the
+    recording into the vault.
+  - **Encryption, opt-in and fully reversible (suite `ZV1`).** Off by
+    default — a fresh vault is plain Markdown. Enable asks for a passphrase
+    (min 8 chars, typed twice), converts every note and recording to `.rcl`
+    ciphertext atomically (temp-write + rename), writes a one-time
+    plaintext backup to `vault/backup/<timestamp>/` and reports it; disable
+    demands the passphrase and decrypts every file back to byte-faithful
+    plaintext before removing the key material. Crypto: per-file random
+    256-bit content keys under XChaCha20-Poly1305, wrapped by an Argon2id
+    master key (64 MiB / t3 / p4, parameters stored versioned in
+    `vault.json` beside a verifier blob — never the passphrase, never the
+    key). The derived key lives in memory only while the vault is unlocked;
+    Lock, vault-folder change and app exit clear it. The plaintext
+    `index.json` does not survive the toggle (deleted on enable, rebuilt on
+    disable) — zero knowledge includes metadata. Multi-STT's
+    performance-mode power restore fires in the vault-only path exactly as
+    in the ordinary ones.
+
+### Fixed
+
+- **`bun run typecheck` was red for the bun test files (2026-09-14).** The
+  `*.test.ts` files under `src/` (migrated to `bun test` earlier) imported
+  `bun:test` with no type package installed, so `tsc -b` failed tree-wide.
+  `@types/bun` / `bun-types` are now dev dependencies, registered in
+  `tsconfig.json`'s `types`, with the test-globals reference where the bare
+  `test` global is used.
+
+- **Signed auto-updates (2026-09-14).** The fork now has its own updater
+  signing key pair. `bundle.createUpdaterArtifacts` is on, so every release
+  bundle is signed (`*.sig`) and tauri-action publishes the updater manifest
+  the in-app updater polls (`latest.json` at the configured endpoint). The
+  public key lives in `plugins.updater.pubkey`
+  (`src-tauri/tauri.conf.json`); the private key is a secret — CI reads it
+  from `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+  (both release workflows already pass `sign-binaries: true`), and local
+  `build:fast` / `build:full` pick it up from `~/.tauri/zer0.key` through
+  `scripts/tauri-runner.ts`. The in-app updater keeps its full
+  `check()` → `downloadAndInstall()` → relaunch flow; the updater plugin
+  verifies the signature before applying, so an unsigned or tampered artifact
+  can never install. See BUILD.md for the key-handling rules.
+- **Circular spectrum view in the recording overlay (2026-09-13).** A third
+  `overlay_scope` view draws the spectrum as a ring: the output bins are
+  mapped onto one quarter of the circle and that quarter is rotated four
+  times, so the picture closes on itself without a seam, per the
+  quarter-rotation construction. The view and the linear spectrum share one
+  per-frame computation and the fixed, user-set display gain — no dynamic
+  normalisation — and the view size is the user's, like the other views.
+- **Overlay live preview (2026-09-13).** The Overlay page can run a real
+  recording of the primary model to show the configured overlay style and
+  analyser with actual audio: the recording discards its samples, the stream
+  is cancelled rather than finalized, nothing is typed or pasted anywhere, a
+  safety cap ends it, and the page stops the preview on unmount — so it owns
+  the preview's lifetime. When the selected model supports streaming, the
+  preview demonstrates in streaming mode and shows the streamed text on the
+  overlay.
+- **Never-clearing log console (2026-09-13).** The Debug page's live log
+  keeps every line of the session instead of dropping history, with the
+  level filter owned by the console itself: ALL/ERR/WRN/INF/DBG/TRC chips
+  with live counts, no dropdown menu.
 - **Overlay settings page (2026-09-11).** A new sidebar page gathers the
   recording overlay's settings, which were spread over Advanced: style and
   position, direct typing of the live text and its speed, the speech
@@ -69,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   superseded incremental caches, all but the two newest builds of the app
   crate and installers of another version, and reports what it freed.
   Nothing current is touched, so builds are not slower afterwards.
-  `HANDY_NO_PRUNE=1` skips it.
+  `ZER0_NO_PRUNE=1` skips it.
 - **Miniature analyser in the recording overlay (2026-09-11).** The
   overlay's nine level bars are replaced by two small live views drawn
   from the Live FFT page's own pipeline and settings: an area spectrum
@@ -181,7 +265,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the 0.3 threshold and left at `max(threshold − 0.15, 0.01)`, as in the
   reference pipeline, which removes the frame-to-frame flapping a single
   threshold produced. `src-tauri/tests/vad_speech_clock_probe.rs` is an opt-in
-  regression check over a real recording (`HANDY_PROBE_WAV`). _Superseded on
+  regression check over a real recording (`ZER0_PROBE_WAV`). _Superseded on
   2026-09-10: Silero and `ort` were removed; Earshot keeps the hysteresis and
   the probe — see Changed / Removed._
 
@@ -264,11 +348,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   npm and Cargo dependencies with validation steps; `scripts/update-rtk.ts`
   updates the RTK CLI used by the maintainer's Claude Code hook.
 
-- **Review checkpoint docs.** `docs/CODE_REVIEW_2026-08-26.md` (full audit
-  findings, what was fixed, what remains) and `docs/KNOWN_ISSUES.md`.
+- **Open-issues doc.** `docs/KNOWN_ISSUES.md` — the open items, each verified
+  against the working tree, with the date of the last check. (The 2026-08-26
+  audit that fed its first version was deleted once its findings were fixed
+  or tracked here.)
 
 ### Changed
 
+- **The default LLM prompts are restored to the last Handy versions
+  (2026-09-14).** Both defaults are the prompts in use on 2026-09-12 (the
+  latest settings snapshot before the migration), recovered verbatim from the
+  session archives and byte-verified. The post-processing default ("Improve
+  Transcriptions") is the full consensus cleaner with the strict
+  numbers-to-digits and spoken-punctuation rules. The Multi-STT merge default
+  ("Merge and Clean") is the 4-transcript consensus prompt whose inputs carry
+  per-model word-error-rate labels and trust ordering — Transcription 1
+  "up to 8 % WER, trust last", Transcription 2 "1.3 % WER, trust 1st",
+  Transcription 3 "1.6 % WER, trust 2nd", Transcription 4 "1.9 % WER, trust
+  3rd" — plus the mix-all-four rule. Both live in `settings.rs`
+  (`default_post_process_prompts`, `default_multi_stt_merge_prompt`) and
+  existing stores were migrated to the single default per category.
+- **Frontend migrated from React 19 to Solid 2 (2026-09-13).** The whole
+  `src/` tree now runs on `solid-js@2.0.0-rc.8` with `@solidjs/web` and the
+  Solid vite plugin; React and every React-only library are gone from
+  `package.json`. The nine zustand stores became Solid stores with mutable
+  draft setters, `useEffect` sites became the `createEffect(compute, apply)`
+  returned-cleanup form, reactively-switched components use `Dynamic`, and
+  no component destructures its props in the body (the body runs once — a
+  destructured prop is a mount-time snapshot). Framework dev-mode
+  `STRICT_READ_UNTRACKED` warnings fell from 1,824 to double digits over the
+  cleanup.
 - **Windows installer: the desktop shortcut is opt-in.** The finish page's
   "Create desktop shortcut" box starts unchecked, and silent or passive
   installs (`/S`, `/P`) create one only with the new `/DESKTOP` switch. An
@@ -422,6 +531,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CUDA streaming corrupted audio at `att_right = 0` (2026-09-13).** The
+  `transcribe.cpp` fork pinned in `Cargo.lock` moved to `edaacaff`, which
+  fixes the attention mask the CUDA path computed when `att_right` is zero —
+  the streaming degenerate case. Bumped by
+  `scripts/check-transcribe-deps.ts`, which keeps the pin on the fork's
+  `main`.
 - **Microphone could not be reopened after a device hiccup on Windows**
   ("Cannot change thread mode after it is set", RPC_E_CHANGED_MODE): cpal
   0.18's virtual default-device handle activates through
@@ -444,8 +559,9 @@ build`, with or without a source change (four minutes in release). The
   both installers were written:
   `bundle.createUpdaterArtifacts` was on while `plugins.updater.pubkey` is
   upstream's key, for which this fork has no private key, so the updater
-  signing step could never succeed. It is now off; the MSI and NSIS
-  installers are unchanged and no `.sig` / updater manifest is produced.
+  signing step could never succeed. _Superseded on 2026-09-14: the fork now
+  has its own key pair (private at `~/.tauri/zer0.key`, public in
+  `plugins.updater.pubkey`) and the step is on again — see Added._
   `build.rs` also drops the `STATIC_VCRUNTIME=true` the released Tauri CLI
   still exports, which the `dev`-branch `tauri-build` deprecated in favour of
   `build.windows.staticVCRuntime` (same default), so that deprecation
@@ -562,12 +678,12 @@ build`, with or without a source change (four minutes in release). The
   paths** — when the recording produced no samples after a trigger-on-start
   full-power request, and when the paste could not be dispatched to the main
   thread.
-- New opt-in `tests/vad_backend_bench.rs` (`HANDY_BENCH_WAV_DIR=<dir>`) runs
+- New opt-in `tests/vad_backend_bench.rs` (`ZER0_BENCH_WAV_DIR=<dir>`) runs
   both VAD backends over real recordings and reports cost per frame, voiced
   fraction, kept seconds and frame agreement; `earshot` is pinned to
   `opt-level = 3` in the dev profile so the numbers are representative.
   _Deleted on 2026-09-10 with the second backend; the numbers it produced are
-  kept in AGENTS.md and `docs/PLAN_TRANSCRIBE_CPP_ONLY.md`._
+  kept in AGENTS.md._
 
 ### Removed
 

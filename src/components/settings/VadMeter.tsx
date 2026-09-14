@@ -133,7 +133,7 @@ export const VadMeter = (props: VadMeterProps) => {
         <span class="w-20 shrink-0">
           {t("settings.advanced.vadLiveTest.level")}
         </span>
-        <div class="relative flex-grow h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
+        <div class="relative grow h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
           <div
             class="h-full rounded-full bg-blue-400/70 transition-[width] duration-75"
             style={{ width: pct(level()) }}
@@ -156,7 +156,7 @@ export const VadMeter = (props: VadMeterProps) => {
           <span class="w-20 shrink-0">
             {t("settings.advanced.vadLiveTest.denoiseProb")}
           </span>
-          <div class="relative flex-grow h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
+          <div class="relative grow h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
             <div
               class="h-full rounded-full bg-violet-400/70 transition-[width] duration-75"
               style={{ width: pct(denoiseProb() ?? 0) }}

@@ -32,6 +32,16 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
+      # The same command the local precommit:full gate runs. Warnings are
+      # visible in the log but do not fail the job — the gate has not gated
+      # on clippy warnings, so CI staying advisory keeps the two in step
+      # until the existing set is cleaned up.
+      - name: Run clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets
+
       - name: Run Rust tests
         working-directory: src-tauri
-        run: cargo test
+        # --all-targets: the same target set the local gate runs
+        # (package.json's test:backend), so unit tests compile too.
+        run: cargo test --all-targets

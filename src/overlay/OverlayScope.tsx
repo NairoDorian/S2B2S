@@ -12,6 +12,9 @@ import {
 } from "@/components/settings/live-fft/liveFftMath";
 import type { ResolvedOverlayScope } from "@/lib/overlayScope";
 import {
+  circularAngleAt,
+  circularPointCount,
+  circularSignalAt,
   spectrumViewH,
   spectrumViewW,
   waveViewH,
@@ -210,13 +213,13 @@ export function OverlayScope(props: OverlayScopeProps) {
     // earlier version scaled the pipeline's raw magnitudes directly: in the
     // linear loudness mode those are huge, so every bar clamped to full and
     // the ring never moved.)
-    let units = new Float32Array(0);
+    let unitsCache = new Float32Array(0);
     let unitsSeq = -1;
     const frameUnits = (frame: ScopeFrame): Float32Array => {
       const bins = frame.bins;
       const n = bins.length;
-      if (units.length !== n) units = new Float32Array(n);
-      if (frame.seq === unitsSeq) return units;
+      if (unitsCache.length !== n) unitsCache = new Float32Array(n);
+      if (frame.seq === unitsSeq) return unitsCache;
       unitsSeq = frame.seq;
       const scale: ValueScale = {
         mode: frame.mode,
@@ -229,8 +232,8 @@ export function OverlayScope(props: OverlayScopeProps) {
         ceiling = Math.max(max, ceiling * CEILING_DECAY, 1e-6);
         scale.ceiling = ceiling;
       }
-      for (let i = 0; i < n; i++) units[i] = valueToUnit(bins[i], scale);
-      return units;
+      for (let i = 0; i < n; i++) unitsCache[i] = valueToUnit(bins[i], scale);
+      return unitsCache;
     };
 
     const paintSpectrum = (frame: ScopeFrame | null) => {
@@ -347,10 +350,12 @@ export function OverlayScope(props: OverlayScopeProps) {
 
     // The circular spectrum, per the construction: the pooled bins are
     // mirrored about their centre and joined end-to-end (`[p, reversed(p)]`
-    // — symmetric by construction), spread along ONE QUARTER of a circle as
-    // the ±p paths offset by +1 (radius 1+p outer, 1-p inner), and that
-    // quarter is rotated 90° four times into the seamless closed loop —
-    // four repeats of the spectrum per revolution. The gain is a fixed
+    // — symmetric by construction), and that ONE mirrored signal is laid
+    // over the WHOLE circle — D = 2·p points across a full 2π sweep,
+    // starting and ending at the top of the ring (12 o'clock), where the
+    // spectrum's low edge meets its mirrored tail. The mirrored signal's
+    // own symmetry is what closes the loop without a seam. The two paths
+    // ±p ride at radius 1+p (outer) and 1-p (inner). The gain is a fixed
     // scale — no dynamic normalisation — so the loop breathes with the
     // signal instead of always filling the ring.
     const paintCircular = (
@@ -413,24 +418,21 @@ export function OverlayScope(props: OverlayScopeProps) {
         circPooled[b] = Math.min(1, v * cfg.circular_gain);
       }
 
-      const D = p * 2;
-      // combined[i]: the joined [p, reversed(p)] mirrored signal.
-      const combinedAt = (i: number) => circPooled[i < p ? i : D - 1 - i];
-      // The WHOLE mirrored signal is spread along one quarter (D points over
-      // 90°), and that quarter is rotated four times — STEPS = 4·D points
-      // around the full circle, four repeats of the spectrum per revolution.
-      // The symmetry of the mirrored signal is what makes the quarters join
-      // without a seam: a quarter ends on pooled[0] and the next begins on
-      // pooled[0], at the same angle.
-      const STEPS = D * 4;
-      const angleAt = (k: number) => (k / STEPS) * Math.PI * 2 - Math.PI / 2;
+      const D = circularPointCount(p);
+      // combined[k]: the summed input signal — the original spectrum with
+      // its inversion appended, plus the original with its inversion
+      // prepended, added point-wise and halved into display units. The
+      // seam straddles the RIGHT of the ring (the 90° rotation); the two
+      // ±branches ride at radius 1 ± combined.
+      const combinedAt = (k: number) => circularSignalAt(k, circPooled);
+      const angleAt = (k: number) => circularAngleAt(k, D);
 
       if (cfg.circular_bars) {
         ctx.strokeStyle = color;
         ctx.lineCap = "round";
-        ctx.lineWidth = Math.max(1, (2 * Math.PI * S) / STEPS - 1);
-        for (let k = 0; k < STEPS; k++) {
-          const c = combinedAt(k % D);
+        ctx.lineWidth = Math.max(1, (2 * Math.PI * S) / D - 1);
+        for (let k = 0; k < D; k++) {
+          const c = combinedAt(k);
           if (c <= 0) continue;
           const th = angleAt(k);
           const co = Math.cos(th);
@@ -443,27 +445,40 @@ export function OverlayScope(props: OverlayScopeProps) {
         }
         ctx.globalAlpha = 1;
       } else {
-        // The two loops as lines: inner (1-p) first, dimmer; outer (1+p) on top.
-        const loop = (sign: number, alpha: number) => {
-          ctx.globalAlpha = alpha;
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 1;
-          ctx.lineJoin = "round";
+        // The two loops joined as lines — inner (1-p) dimmer, outer (1+p)
+        // on top — with a translucent band filling the ring between them,
+        // the circular counterpart of the linear spectrum's area style.
+        const radius = (k: number, sign: number) =>
+          S * (1 + sign * combinedAt(k));
+        const loopPath = (sign: number) => {
           ctx.beginPath();
-          for (let k = 0; k < STEPS; k++) {
-            const r = S * (1 + sign * combinedAt(k % D));
+          for (let k = 0; k < D; k++) {
             const th = angleAt(k);
-            const x = cx + Math.cos(th) * r;
-            const y = cy + Math.sin(th) * r;
+            const x = cx + Math.cos(th) * radius(k, sign);
+            const y = cy + Math.sin(th) * radius(k, sign);
             if (k === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
           ctx.closePath();
-          ctx.stroke();
-          ctx.globalAlpha = 1;
         };
-        loop(-1, 0.55);
-        loop(1, 1);
+        // Band between the loops: both subpaths in one even-odd fill, so
+        // the disc inside the inner ring stays empty.
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        loopPath(1);
+        loopPath(-1);
+        ctx.fill("evenodd");
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.lineJoin = "round";
+        loopPath(-1);
+        ctx.globalAlpha = 0.55;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        loopPath(1);
+        ctx.stroke();
       }
     };
 

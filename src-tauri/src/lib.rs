@@ -26,6 +26,7 @@ mod overlay;
 mod overlay_preview;
 mod paste_tx;
 pub mod portable;
+pub mod recall;
 mod secure_input;
 mod settings;
 mod shortcut;
@@ -1058,6 +1059,25 @@ pub fn run(cli_args: CliArgs) {
             commands::live_mode::live_mode_status,
             commands::live_mode::live_mode_list_sessions,
             commands::live_mode::live_mode_default_output_dir,
+            commands::recall::change_recall_settings,
+            commands::recall::recall_vault_info,
+            commands::recall::recall_default_vault_dir,
+            commands::recall::recall_list_notes,
+            commands::recall::recall_read_note,
+            commands::recall::recall_create_note,
+            commands::recall::recall_write_note,
+            commands::recall::recall_delete_note,
+            commands::recall::recall_save_transcription,
+            commands::recall::recall_open_vault_folder,
+            commands::recall::recall_dictate_start,
+            commands::recall::recall_dictate_stop,
+            commands::recall::recall_dictate_cancel,
+            commands::recall::recall_set_insertion_mode,
+            commands::recall::recall_encryption_status,
+            commands::recall::recall_enable_encryption,
+            commands::recall::recall_unlock_vault,
+            commands::recall::recall_lock_vault,
+            commands::recall::recall_disable_encryption,
             commands::live_fft::change_live_fft_settings,
             commands::live_fft::live_fft_start,
             commands::live_fft::live_fft_stop,
@@ -1082,6 +1102,7 @@ pub fn run(cli_args: CliArgs) {
             live_fft::LiveFftStateEvent,
             live_fft::LiveFftFrameEvent,
             multi_stt_stream::MultiSttStreamChunkFailedEvent,
+            recall::insertion::RecallInsertTextEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -1198,7 +1219,6 @@ pub fn run(cli_args: CliArgs) {
     #[allow(unused_mut)]
     let mut app = builder
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -1285,6 +1305,23 @@ pub fn run(cli_args: CliArgs) {
 
             if let Some(data_dir) = portable::data_dir() {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
+
+                // The asset protocol's static scope only knows `$APPDATA`, which
+                // Tauri resolves from the bundle identifier — not from the
+                // portable `Data/` directory beside the executable. Portable
+                // history playback (`convertFileSrc` on a recording's path)
+                // therefore needs the recordings directory allowed at runtime,
+                // per the asset-protocol docs' runtime-scope route. Non-portable
+                // installs need nothing: `$APPDATA/**/*` already covers them.
+                app.asset_protocol_scope()
+                    .allow_directory(data_dir.join("recordings"), false)
+                    .map_err(|e| {
+                        log::warn!(
+                            "portable mode: could not extend the asset protocol \
+                             scope to the recordings directory: {e}"
+                        )
+                    })
+                    .ok();
             }
 
             win_builder.build()?;

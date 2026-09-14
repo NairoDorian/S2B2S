@@ -217,6 +217,11 @@
     get_app_dir_path: "",
     get_log_dir_path: "",
     live_mode_default_output_dir: "",
+    recall_default_vault_dir: "",
+    recall_list_notes: [],
+    recall_vault_info: { root: "", note_count: 0, audio_count: 0 },
+    recall_encryption_status: { enabled: false, unlocked: false },
+    recall_set_insertion_mode: null,
     overlay_stream_text_height: 0,
   };
 

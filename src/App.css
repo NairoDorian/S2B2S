@@ -4,6 +4,14 @@
 @import "tailwindcss" source(".");
 @import "./styles/theme.css";
 
+/* The app's theme switch is `data-theme` on <html> (src/lib/utils/theme.ts),
+   not prefers-color-scheme: a forced Light/Dark must win over the OS setting.
+   Without this variant, `dark:` utilities follow the OS media query and
+   miscolor against the rest of the palette whenever the user overrides the
+   theme. `system` resolves to an explicit data-theme (see applyTheme), so the
+   variant tracks the OS there too. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /* Register the shared color tokens (src/styles/theme.css) as Tailwind
    utilities */
 @theme inline {

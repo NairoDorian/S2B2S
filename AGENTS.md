@@ -111,6 +111,8 @@ that resolves is not a lockfile that builds. `bun run precommit:routine` is step
 bun run update          # rtk → latest, deps with --prerelease, then repomix
 bun run update:rtk      # just the RTK CLI (tooling for the agent hook)
 bun run update-deps -- --prerelease
+bun run docs:fetch      # mirror the stack's own docs into docs/vendor/ and
+                        # report what changed upstream — see docs/STACK_WATCH.md
 bun run repomix         # regenerate repomix-output.xml (also in the gate)
 bun run repomix:check   # fail if the pack is older than the newest tracked file
 ```
@@ -202,7 +204,7 @@ For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
 ## Architecture Overview
 
-ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).
+ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + Solid 2 / TypeScript frontend — migrated from React on 2026-09-13; see the Solid 2 conventions under Code Style).
 
 ### Backend Structure (src-tauri/src/)
 
@@ -369,7 +371,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   wraps sonner and records error/warning toasts for the Debug page's
   `SessionToastHistory`; import it (as `toast`) instead of sonner in app
   code, so no error disappears unread
-- `components/` - React UI components:
+- `components/` - Solid UI components:
   - `settings/` - Settings UI, grouped by page (`general/`, `advanced/`,
     `models/`, `history/`, `statistics/`, `post-processing/`, `about/`, `debug/`) plus the
     individual setting components. Fork-added ones: `AccentColorSelector`,
@@ -413,8 +415,8 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   because both jobs keep running in the backend while the user browses other
   pages; each installs its typed event listeners once (`events.*.listen`)
 - `stores/liveFftStore.ts` - Live FFT session state. Spectrum frames stay
-  outside React state (a module-level holder the canvases read from their
-  animation loops), so a 60 Hz stream never re-renders the page
+  outside the reactive store (a module-level holder the canvases read from
+  their animation loops), so a 60 Hz stream never re-renders the page
 - `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta; written
   by `bun run tauri dev` in debug builds). When a command or settings field is
   added or removed, the file must be regenerated or hand-edited to match
@@ -1176,10 +1178,14 @@ For translation contribution guidelines, see [CONTRIBUTING_TRANSLATIONS.md](CONT
 - Handle errors explicitly (avoid unwrap in production)
 - Use descriptive names, add doc comments for public APIs
 
-**TypeScript/React:**
+**TypeScript/Solid:**
 
 - Strict TypeScript, avoid `any` types
-- Functional components with hooks
+- Solid 2 conventions: never destructure
+  props in a component body (it runs once — a destructured prop is a
+  mount-time snapshot); read reactive values inside JSX bindings, not in
+  component bodies; use the `createEffect(compute, apply)` returned-cleanup
+  form; `Dynamic` for reactively-switched components
 - Tailwind CSS for styling. `App.css` imports it with `source(".")` so only
   `src/` is scanned: Tailwind's automatic source detection walks the whole
   repository (gitignored `src-tauri/target` included) to build its watch
@@ -1219,7 +1225,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no code signing in this fork (`signCommand` removed from `tauri.conf.json`) and no updater artifacts (`createUpdaterArtifacts` off: the updater pubkey is upstream's, so there is no private key to sign with), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
+- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no Authenticode code signing (`signCommand` removed from `tauri.conf.json`) but **signed updater artifacts** (`createUpdaterArtifacts` on, the project's own minisign key: private at `~/.tauri/zer0.key`, public in `plugins.updater.pubkey`; CI injects it via the `TAURI_SIGNING_PRIVATE_KEY` secrets, the tauri runner reads the local file), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
 - **Linux**: CUDA acceleration (upstream: OpenBLAS + Vulkan), limited Wayland support, overlay uses GTK layer shell (disable with `ZER0_NO_GTK_LAYER_SHELL=1`)
 - **Nix/NixOS**: the Nix package sets `ZER0_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
 

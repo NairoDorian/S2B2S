@@ -1,7 +1,6 @@
 import {
   createSignal,
   createEffect,
-  onCleanup,
   For,
   Component,
   ValidComponent,
@@ -21,6 +20,7 @@ import {
   FileAudio,
   Radio,
   AudioLines,
+  FileText,
   PictureInPicture2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -45,6 +45,7 @@ import {
   OverlaySettings,
   HelpSettings,
   LlamaSettings,
+  RecallPage,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -79,6 +80,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  recall: {
+    labelKey: "sidebar.recall",
+    icon: FileText,
+    component: RecallPage,
     enabled: () => true,
   },
   statistics: {
@@ -163,6 +170,14 @@ export const SECTIONS_CONFIG = {
   },
 } as const satisfies Record<string, SectionConfig>;
 
+// Stable per-section entries built once: the visibility filter below hands
+// `<For>` the SAME objects on every settings change, so nav rows are never
+// disposed and rebuilt when a gate like `post_process_enabled` flips.
+const SECTION_ENTRIES = Object.entries(SECTIONS_CONFIG).map(([id, config]) => ({
+  id: id as SidebarSection,
+  config,
+}));
+
 export function Sidebar(props: SidebarProps) {
   const { t } = useTranslation();
   const { settings } = useSettings();
@@ -183,9 +198,7 @@ export function Sidebar(props: SidebarProps) {
   // visibility (Post Process is gated on `post_process_enabled`) has to follow
   // it. Reading `settings()` inside keeps this reactive at the `For` call site.
   const availableSections = () =>
-    Object.entries(SECTIONS_CONFIG)
-      .filter(([, config]) => config.enabled(settings()))
-      .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
+    SECTION_ENTRIES.filter((entry) => entry.config.enabled(settings()));
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -202,10 +215,15 @@ export function Sidebar(props: SidebarProps) {
     e.preventDefault();
   };
 
+  // Global mouse listeners while the drag is live. Keyed on the `resizing`
+  // signal in the compute phase: the listeners attach when a drag starts and
+  // the returned teardown removes them when it ends. (The previous
+  // mount-once form read `resizing()` in the untracked apply phase, saw
+  // `false`, and never attached — the sidebar could not be resized.)
   createEffect(
-    () => undefined,
-    () => {
-      if (!resizing()) return;
+    () => resizing(),
+    (resizing) => {
+      if (!resizing) return;
       const onMove = (e: MouseEvent) => {
         const next = dragStartWidth + (e.clientX - dragStartX);
         setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
@@ -219,10 +237,10 @@ export function Sidebar(props: SidebarProps) {
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
-      onCleanup(() => {
+      return () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
-      });
+      };
     },
   );
 
@@ -248,9 +266,12 @@ export function Sidebar(props: SidebarProps) {
 
       <nav class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-1 py-2 px-2">
         <For each={availableSections()}>
-          {(section) => {
-            const Icon = section.icon;
-            const isActive = () => props.activeSection === section.id;
+          {(entry) => {
+            // `entry` is one of the stable SECTION_ENTRIES objects, so these
+            // destructures are static per row — only `isActive()` is reactive.
+            const { id, config } = entry;
+            const Icon = config.icon;
+            const isActive = () => props.activeSection === id;
             return (
               <button
                 type="button"
@@ -262,12 +283,12 @@ export function Sidebar(props: SidebarProps) {
                     ? "border-accent bg-accent/10 text-accent"
                     : "border-transparent hover:bg-mid-gray/15 hover:opacity-100 opacity-80"
                 }`}
-                onClick={() => props.onSectionChange(section.id)}
+                onClick={() => props.onSectionChange(id)}
               >
                 <Icon width={24} height={24} class="shrink-0" />
                 {!collapsed() && (
                   <span class="text-sm font-medium truncate">
-                    {t(section.labelKey)}
+                    {t(config.labelKey)}
                   </span>
                 )}
               </button>

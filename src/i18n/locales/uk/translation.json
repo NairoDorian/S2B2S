@@ -15,6 +15,7 @@
     "advanced": "Розширені",
     "postProcessing": "Постобробка",
     "history": "Історія",
+    "recall": "Recall",
     "debug": "Дебаг",
     "about": "Інфо",
     "multiStt": "Multi STT",
@@ -581,6 +582,8 @@
       "empty": "Транскрипцій поки немає. Почніть запис, щоб створити історію!",
       "copyToClipboard": "Копіювати транскрипцію в буфер обміну",
       "save": "Зберегти транскрипцію",
+      "saveToRecall": "File as Recall note",
+      "savedToRecall": "Saved to Recall",
       "unsave": "Видалити зі збережених",
       "delete": "Видалити запис",
       "deleteError": "Не вдалося видалити запис. Спробуйте ще раз.",
@@ -1035,6 +1038,54 @@
         "emptyFolder": "That folder contains no supported audio files."
       }
     },
+    "recall": {
+      "title": "Recall",
+      "description": "Your local note vault: transcriptions, dictated notes and your own writing, filed as Markdown files you own.",
+      "vaultStats": "{{notes}} notes · {{audio}} audio files",
+      "newNote": "New note",
+      "openFolder": "Open vault folder",
+      "emptyTitle": "No notes yet",
+      "emptyHint": "Create a note, dictate one with the microphone, or file a transcription from History.",
+      "untitled": "Untitled",
+      "titlePlaceholder": "Title",
+      "tagsPlaceholder": "tags, comma separated",
+      "bodyPlaceholder": "Write, or press Dictate to speak into the note at the cursor.",
+      "edit": "Edit",
+      "preview": "Preview",
+      "save": "Save",
+      "delete": "Delete",
+      "confirmDelete": "Confirm delete?",
+      "dictate": "Dictate",
+      "stopDictation": "Stop",
+      "transcribing": "Transcribing…",
+      "words": "{{count}} words",
+      "enc": {
+        "title": "Encryption",
+        "description": "Encrypt every note with a passphrase (XChaCha20-Poly1305 + Argon2id). The passphrase never leaves this device and is never stored.",
+        "off": "Encryption is off — the vault is plain Markdown files.",
+        "enable": "Enable encryption",
+        "passphrase": "Passphrase",
+        "confirmPassphrase": "Repeat passphrase",
+        "passphraseHint": "At least 8 characters. There is no recovery: losing the passphrase means losing the notes.",
+        "mismatch": "The passphrases do not match.",
+        "tooShort": "Use at least 8 characters.",
+        "encrypting": "Encrypting…",
+        "encrypted": "Vault encrypted — {{count}} notes are now ciphertext. A plaintext backup was written to {{path}}; delete it once you have checked the encrypted vault.",
+        "on": "Notes are encrypted on disk.",
+        "lock": "Lock",
+        "lockedBadge": "Vault locked",
+        "lockedTitle": "Vault locked",
+        "lockedHint": "Enter the passphrase in the Encryption section below to read and edit the notes.",
+        "unlock": "Unlock",
+        "disable": "Disable encryption",
+        "disableHint": "Every note will be decrypted back to plain Markdown, and the key file removed. The vault is fully decrypted before encryption turns off.",
+        "disableConfirm": "Decrypt all notes",
+        "decrypted": "Vault decrypted — the notes are plain Markdown again.",
+        "location": "Vault folder",
+        "choose": "Choose folder…",
+        "useDefault": "Use default location"
+      }
+    },
     "liveMode": {
       "title": "Live Mode",
       "description": "Keep listening and record everything: the raw microphone signal is saved in chunked WAV files while the live transcription is written into a text file as you speak. Needs a streaming-capable model.",
@@ -1182,11 +1233,11 @@
         "openLiveFft": "Open Live FFT",
         "showCircular": {
           "label": "Circular spectrum",
-          "description": "A third view beside the spectrum and the waveform: the analyser's bins mirrored about their centre, wrapped around a circle and rotated four times into a seamless loop — an outer ring at radius 1+s and an inner ring at 1-s that breathe with the signal."
+          "description": "A third view beside the spectrum and the waveform: the analyser's bins, with their inversion appended and prepended, are added into one symmetric signal that wraps once around a full circle — two branches at radius 1+s and 1-s, the whole figure rotated 90° so the seam sits at the side of the ring."
         },
         "circularBars": {
           "label": "Radial bars",
-          "description": "Draw radial bars between the inner and outer ring instead of the two loops as lines."
+          "description": "Draw radial bars between the inner and outer ring instead of the two loops drawn as joined lines, with the band between them filled."
         },
         "circularBins": {
           "label": "Circular bins",
@@ -1860,6 +1911,7 @@
     "learnMore": "Learn more",
     "general": "Pick the shortcut you hold or tap to dictate, the microphone {{app}} listens to, and the sounds it plays.",
     "history": "Every transcription is kept here with its audio. Re-run it with another mode, copy it, or save the ones worth keeping.",
+    "recall": "A local vault of Markdown notes: dictate straight into the editor at the cursor, edit manually, or file transcriptions from History. The vault is a plain folder of files you own.",
     "statistics": "How much you dictate, how fast you speak, and how long transcription and post-processing take.",
     "models": "Download and switch the local speech model. Everything runs on this computer through transcribe.cpp; smaller models are faster, larger ones more accurate.",
     "multiStt": "Record once and transcribe with up to four models in parallel, then let a language model merge the outputs into one text.",

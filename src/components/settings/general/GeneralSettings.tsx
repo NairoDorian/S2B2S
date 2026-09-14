@@ -32,9 +32,9 @@ export const GeneralSettings = () => {
         <OutputDeviceSelector
           descriptionMode="tooltip"
           grouped={true}
-          disabled={!audioFeedbackEnabled}
+          disabled={!audioFeedbackEnabled()}
         />
-        <VolumeSlider disabled={!audioFeedbackEnabled} />
+        <VolumeSlider disabled={!audioFeedbackEnabled()} />
       </SettingsGroup>
     </div>
   );

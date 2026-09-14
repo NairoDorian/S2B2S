@@ -14,16 +14,14 @@ interface OnboardingProps {
 }
 
 const Onboarding = (props: OnboardingProps) => {
-  const { onModelSelected, preview = false } = props;
   const { t } = useTranslation();
   const modelStore = useModelStore();
-  const models = modelStore.models;
+  // Actions are stable functions and safe to take once; every reactive list
+  // (models, downloadingModels, …) is read through the store proxy inside
+  // memos and JSX below — a body-level read would snapshot the initial
+  // empty state and the picker would never populate.
   const downloadModel = modelStore.downloadModel;
   const selectModel = modelStore.selectModel;
-  const downloadingModels = modelStore.downloadingModels;
-  const verifyingModels = modelStore.verifyingModels;
-  const downloadProgress = modelStore.downloadProgress;
-  const downloadStats = modelStore.downloadStats;
   const cancelDownload = modelStore.cancelDownload;
   const [selectedModelId, setSelectedModelId] = createSignal<string | null>(
     null,
@@ -31,10 +29,10 @@ const Onboarding = (props: OnboardingProps) => {
   const [showAll, setShowAll] = createSignal(false);
   let hasStartedSelection = false;
 
-  const isBusy = selectedModelId() !== null;
+  const isBusy = () => selectedModelId() !== null;
 
   const curated = createMemo(() => {
-    const downloadable = models.filter(
+    const downloadable = modelStore.models.filter(
       (m: ModelInfo) => !m.is_downloaded && isLegacySource(m),
     );
     const recommended = downloadable.filter((m: ModelInfo) => m.is_recommended);
@@ -47,24 +45,34 @@ const Onboarding = (props: OnboardingProps) => {
     };
   });
 
-  const hasRecommended =
+  const hasRecommended = () =>
     curated().topPicks.length > 0 || curated().otherRecommended.length > 0;
-  const showRest = showAll() || !hasRecommended;
+  const showRest = () => showAll() || !hasRecommended();
 
+  // Auto-select a model the moment its download lands. Everything the
+  // decision reads is in the compute phase — it has to re-run when the
+  // selection changes and when the model's download/verify state flips,
+  // not once at mount when every store list is still empty.
   createEffect(
-    () => undefined,
-    () => {
+    () =>
+      ({
+        preview: props.preview ?? false,
+        id: selectedModelId(),
+        models: modelStore.models,
+        downloading: modelStore.downloadingModels,
+        verifying: modelStore.verifyingModels,
+      }) as const,
+    ({ preview, id, models, downloading, verifying }) => {
       if (preview) return;
 
-      const id = selectedModelId();
       if (!id) {
         hasStartedSelection = false;
         return;
       }
 
       const model = models.find((m) => m.id === id);
-      const stillDownloading = id in downloadingModels;
-      const stillVerifying = id in verifyingModels;
+      const stillDownloading = id in downloading;
+      const stillVerifying = id in verifying;
 
       if (
         model?.is_downloaded &&
@@ -76,7 +84,7 @@ const Onboarding = (props: OnboardingProps) => {
 
         selectModel(id).then((success) => {
           if (success) {
-            onModelSelected();
+            props.onModelSelected();
           } else {
             toast.error(t("onboarding.errors.selectModel"));
             hasStartedSelection = false;
@@ -88,7 +96,7 @@ const Onboarding = (props: OnboardingProps) => {
   );
 
   const handleDownloadModel = async (modelId: string) => {
-    if (preview) return;
+    if (props.preview) return;
 
     setSelectedModelId(modelId);
 
@@ -99,7 +107,7 @@ const Onboarding = (props: OnboardingProps) => {
   };
 
   const handleCancelDownload = async (modelId: string) => {
-    if (preview) return;
+    if (props.preview) return;
 
     const success = await cancelDownload(modelId);
     if (success) {
@@ -108,14 +116,14 @@ const Onboarding = (props: OnboardingProps) => {
   };
 
   const handleSelectExistingModel = (modelId: string) => {
-    if (preview) return;
+    if (props.preview) return;
 
     setSelectedModelId(modelId);
   };
 
   const getModelStatus = (modelId: string): ModelCardStatus => {
-    if (modelId in verifyingModels) return "verifying";
-    if (modelId in downloadingModels) return "downloading";
+    if (modelId in modelStore.verifyingModels) return "verifying";
+    if (modelId in modelStore.downloadingModels) return "downloading";
     return "downloadable";
   };
 
@@ -125,11 +133,11 @@ const Onboarding = (props: OnboardingProps) => {
   };
 
   const getModelDownloadProgress = (modelId: string): number | undefined => {
-    return downloadProgress[modelId]?.percentage;
+    return modelStore.downloadProgress[modelId]?.percentage;
   };
 
   const getModelDownloadSpeed = (modelId: string): number | undefined => {
-    return downloadStats[modelId]?.speed;
+    return modelStore.downloadStats[modelId]?.speed;
   };
 
   return (
@@ -143,7 +151,7 @@ const Onboarding = (props: OnboardingProps) => {
 
       <div class="max-w-[600px] w-full mx-auto text-center flex-1 flex flex-col min-h-0">
         <div class="space-y-6 pb-6">
-          {models.some((m: ModelInfo) => m.is_downloaded) && (
+          {modelStore.models.some((m: ModelInfo) => m.is_downloaded) && (
             <div class="space-y-3">
               <div class="text-left">
                 <h2 class="text-sm font-medium text-text/60">
@@ -151,14 +159,16 @@ const Onboarding = (props: OnboardingProps) => {
                 </h2>
               </div>
               <For
-                each={models.filter((m: ModelInfo) => m.is_downloaded)}
+                each={modelStore.models.filter(
+                  (m: ModelInfo) => m.is_downloaded,
+                )}
                 keyed={(model) => model.id}
               >
                 {(model) => (
                   <ModelCard
                     model={model()}
                     status={getExistingModelStatus(model().id)}
-                    disabled={isBusy}
+                    disabled={isBusy()}
                     onSelect={handleSelectExistingModel}
                     showRecommended={false}
                   />
@@ -181,7 +191,7 @@ const Onboarding = (props: OnboardingProps) => {
                     model={model()}
                     variant="featured"
                     status={getModelStatus(model().id)}
-                    disabled={isBusy}
+                    disabled={isBusy()}
                     onSelect={handleDownloadModel}
                     onDownload={handleDownloadModel}
                     onCancel={handleCancelDownload}
@@ -200,7 +210,7 @@ const Onboarding = (props: OnboardingProps) => {
                   <ModelCard
                     model={model()}
                     status={getModelStatus(model().id)}
-                    disabled={isBusy}
+                    disabled={isBusy()}
                     onSelect={handleDownloadModel}
                     onDownload={handleDownloadModel}
                     onCancel={handleCancelDownload}
@@ -211,7 +221,7 @@ const Onboarding = (props: OnboardingProps) => {
                 )}
               </For>
 
-              {hasRecommended && curated().rest.length > 0 && (
+              {hasRecommended() && curated().rest.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowAll((v) => !v)}
@@ -230,13 +240,13 @@ const Onboarding = (props: OnboardingProps) => {
                 </button>
               )}
 
-              {showRest && (
+              {showRest() && (
                 <For each={curated().rest} keyed={(model) => model.id}>
                   {(model) => (
                     <ModelCard
                       model={model()}
                       status={getModelStatus(model().id)}
-                      disabled={isBusy}
+                      disabled={isBusy()}
                       onSelect={handleDownloadModel}
                       onDownload={handleDownloadModel}
                       onCancel={handleCancelDownload}

@@ -113,6 +113,10 @@ const UpdateChecker = (props: UpdateCheckerProps) => {
     checkForUpdates();
   };
 
+  // Release builds sign updater artifacts (createUpdaterArtifacts is on and
+  // CI injects TAURI_SIGNING_PRIVATE_KEY), so the plugin's verified
+  // download-and-install path is the ordinary update route. Portable installs
+  // still self-update through the direct installer dialog instead.
   const installUpdate = async () => {
     if (!updateChecksEnabled()) return;
 

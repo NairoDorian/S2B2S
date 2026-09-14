@@ -6,6 +6,7 @@ import type {
   TranscribeAcceleratorSetting,
   FileTranscriptionSettings,
   LiveModeSettings,
+  RecallSettings,
   LlamaSettings,
   LLMPrompt,
   MicIdleTimeoutUnit,
@@ -317,6 +318,7 @@ const settingUpdaters: {
     ),
   live_mode: (value) =>
     commands.changeLiveModeSettings(value as LiveModeSettings),
+  recall: (value) => commands.changeRecallSettings(value as RecallSettings),
   live_fft: (value) =>
     commands.changeLiveFftSettings(value as NonNullable<Settings["live_fft"]>),
   overlay_scope: (value) =>
@@ -528,8 +530,8 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
     try {
       // Optimistic update
       set((state) => {
-        const settings = withBindingValue(state.settings, id, binding);
-        return settings ? { settings } : {};
+        const next = withBindingValue(state.settings, id, binding);
+        return next ? { settings: next } : {};
       });
 
       const result = await commands.changeBinding(id, binding);
@@ -549,12 +551,8 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
       // Rollback on error
       if (originalBinding) {
         set((state) => {
-          const settings = withBindingValue(
-            state.settings,
-            id,
-            originalBinding,
-          );
-          return settings ? { settings } : {};
+          const next = withBindingValue(state.settings, id, originalBinding);
+          return next ? { settings: next } : {};
         });
       }
 

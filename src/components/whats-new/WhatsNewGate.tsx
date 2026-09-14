@@ -1,4 +1,4 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, Show } from "solid-js";
 
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettings } from "../../hooks/useSettings";
@@ -12,12 +12,14 @@ export const WhatsNewGate = () => {
   const [isOpen, setIsOpen] = createSignal(false);
   let dismissedVersionRef: string | null = null;
 
+  // The compute phase is the dependency list: reading the settings there is
+  // what makes the gate re-evaluate once they load (they are null at mount)
+  // and on every later settings change.
   createEffect(
-    () => undefined,
-    () => {
-      const currentSettings = settings();
+    () => ({ settings: settings(), loading: isLoading() }) as const,
+    ({ settings: currentSettings, loading }) => {
       if (
-        isLoading() ||
+        loading ||
         !currentSettings ||
         !currentSettings.show_whats_new_on_update
       ) {
@@ -68,8 +70,11 @@ export const WhatsNewGate = () => {
     void updateSetting("whats_new_last_seen_version", current.version);
   };
 
-  const current = note();
-  if (!current) return null;
-
-  return <WhatsNewModal note={current} open={isOpen()} onDismiss={dismiss} />;
+  // Read inside the Show binding, not the body: a body-level `note()` would
+  // snapshot the initial null and the modal could never open.
+  return (
+    <Show when={note()}>
+      <WhatsNewModal note={note()!} open={isOpen()} onDismiss={dismiss} />
+    </Show>
+  );
 };

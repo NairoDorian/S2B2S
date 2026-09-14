@@ -24,7 +24,7 @@ ZER0 isn't trying to be the best speech-to-text app—it's trying to be the most
 
 1. **Press** a configurable keyboard shortcut: hold it to record and release to stop, or tap it to toggle recording on and off (Hold-only and Toggle-only modes are also available)
 2. **Speak** your words while the shortcut is active
-3. **Release** and ZER0 processes your speech using Whisper
+3. **Release** and ZER0 transcribes your speech with the model you selected — no cloud, no API keys
 4. **Get** your transcribed text pasted directly into whatever app you're using
 
 The process is entirely local:
@@ -56,6 +56,11 @@ This fork adds **Multi-STT** — run up to four speech-to-text models simultaneo
 
 ### Other Fork Additions
 
+- **Transcribe Files**: batch-transcribe audio files or whole folders to `.txt` / `.md`, cut into segments at quiet points, with plain, post-processed, Multi-STT and Multi-STT + post-processing modes
+- **Live Mode**: keep the microphone open indefinitely — session audio is saved as chunked WAV files and the live transcription is mirrored into a text file while you speak
+- **Live FFT**: a real-time spectrum analyser for the microphone (log / mel / ERB / bark scales, EQ, windows, A/C/468 weighting, ballistics, waterfall), plus a miniature analyser built into the recording overlay
+- **Local LLM (llama.cpp)**: download and supervise a local llama.cpp server from within the app for post-processing and Multi-STT merging — no API key needed
+- **Help page and shortcut cheat sheet**: every page links its settings to a searchable Help anchor, and a keyboard button in the window corner shows all assigned shortcuts
 - **Noise suppression (RNNoise)**: optional pure-Rust RNNoise on the microphone before voice detection and transcription, with a live VAD test next to the threshold slider to hear-and-see the difference
 - **transcribe.cpp only, pure-Rust VAD**: no ONNX Runtime, no `transcribe-rs`, no VAD model file. Voice activity detection is **Earshot** with threshold hysteresis (upstream's Silero wrapper spoke the v4 tensor interface against a v6 model and silently passed every frame through)
 - **Recordings with no speech are never decoded** (under 200 ms of measured speech) — no more hallucinated text pasted from silence
@@ -91,7 +96,7 @@ For detailed build instructions including platform-specific requirements, see [B
 
 ZER0 is built as a Tauri application combining:
 
-- **Frontend**: React + TypeScript with Tailwind CSS for the settings UI
+- **Frontend**: Solid 2 + TypeScript with Tailwind CSS for the settings UI (migrated from React on 2026-09-13)
 - **Backend**: Rust for system integration, audio processing, and ML inference
 - **Core Libraries**:
   - `transcribe-cpp`: Local speech recognition for every model (GGML/GGUF: Whisper family, Parakeet, Moonshine, Canary, …)
@@ -264,7 +269,7 @@ Without these tools, ZER0 falls back to enigo which may have limited compatibili
 
   `pkill` here simply delivers the signal—it does not terminate the process.
 
-  > **Behavior change:** older releases also accepted `SIGUSR1` for toggling transcription with post-processing. WebKitGTK — the webview engine embedded in Handy on Linux — uses SIGUSR1 internally to coordinate JavaScript garbage collection, so listening for it caused phantom recordings and interrupted dictations every few minutes (upstream issue #1660). Handy no longer listens for SIGUSR1 on Linux; the post-processing toggle is still available via `zer0 --toggle-post-process`. **Remove any `pkill -USR1` bindings**: the signal is now delivered straight to WebKit's internal handler and can crash the app.
+  > **Behavior change:** older releases also accepted `SIGUSR1` for toggling transcription with post-processing. WebKitGTK — the webview engine embedded in ZER0 on Linux — uses SIGUSR1 internally to coordinate JavaScript garbage collection, so listening for it caused phantom recordings and interrupted dictations every few minutes (upstream issue #1660). ZER0 no longer listens for SIGUSR1 on Linux; the post-processing toggle is still available via `zer0 --toggle-post-process`. **Remove any `pkill -USR1` bindings**: the signal is now delivered straight to WebKit's internal handler and can crash the app.
 
 **Overlay & Pasting Issues (Linux):**
 
@@ -297,78 +302,41 @@ The following are recommendations for running ZER0 on your own machine. If you d
 
 ## Roadmap & Active Development
 
-We're actively working on several features and improvements. Contributions and feedback are welcome!
+We're actively working on several features and improvements. Contributions and feedback are welcome! Engineering work that is open right now is tracked in [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 
 ### In Progress
-
-**Debug Logging:**
-
-- Adding debug logging to a file to help diagnose issues
 
 **macOS Keyboard Improvements:**
 
 - Support for Globe key as transcription trigger
-- A rewrite of global shortcut handling for MacOS, and potentially other OS's too.
-
-**Opt-in Analytics:**
-
-- Collect anonymous usage data to help improve ZER0
-- Privacy-first approach with clear opt-in
+- A rewrite of global shortcut handling for macOS, and potentially other OS's too.
 
 **Settings Refactoring:**
 
 - Cleanup and refactor settings system which is becoming bloated and messy
 - Implement better abstractions for settings management
 
-**Tauri Commands Cleanup:**
+Debug logging (file logs with a configurable level — see [docs/LOGGING.md](docs/LOGGING.md)) and typed Tauri command bindings (tauri-specta) have shipped; the ideas parked there are done.
 
-- Abstract and organize Tauri command patterns
-- Investigate tauri-specta for improved type safety and organization
+## Release Integrity
 
-## Verify Release Signatures
+ZER0's updater artifacts are **signed**. `createUpdaterArtifacts` is on, and
+every release bundle is signed with the project's own minisign key whose
+public half is `plugins.updater.pubkey` in
+[`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json). The in-app updater
+(`check()` → `downloadAndInstall()`) verifies that signature before
+installing, so an update is only applied when it was signed by this key.
 
-> **Note:** ZER0 does not produce updater artifacts or signatures — see the
-> signing notes in [BUILD.md](BUILD.md). This section documents the format the
-> upstream project's artifacts use, kept for anyone verifying one of those.
-
-ZER0 release artifacts are signed with Tauri's updater signature format. The public key is stored in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) under `plugins.updater.pubkey`.
-
-To verify a release manually, set `ARTIFACT` to the filename you downloaded, save the `pubkey` value from `src-tauri/tauri.conf.json` to `zer0.pub.b64`, then decode the public key and matching `.sig` file from base64 and verify the artifact with `minisign`:
-
-```bash
-# Replace with the file you downloaded
-ARTIFACT="ZER0_0.9.7_amd64.AppImage"
-
-python3 - "$ARTIFACT" <<'PY'
-import base64, pathlib, sys
-
-artifact = sys.argv[1]
-
-pub = pathlib.Path("zer0.pub.b64").read_text().strip()
-pathlib.Path("zer0.pub").write_bytes(base64.b64decode(pub))
-
-sig = pathlib.Path(f"{artifact}.sig").read_text().strip()
-pathlib.Path(f"{artifact}.minisig").write_bytes(base64.b64decode(sig))
-PY
-
-minisign -Vm "$ARTIFACT" \
-  -p zer0.pub \
-  -x "$ARTIFACT.minisig"
-```
-
-On success, `minisign` prints:
-
-```text
-Signature and comment signature verified
-```
-
-Do not use `gpg` for these `.sig` files.
+Release builds are not Authenticode-signed (no `signCommand`; see
+[BUILD.md](BUILD.md) for the signing setup, including where the private key
+lives and the `TAURI_SIGNING_PRIVATE_KEY` repository secret release CI
+reads).
 
 ## Troubleshooting
 
 ### Previous Clipboard Content Is Pasted Instead of the Transcription
 
-If the transcription is correct in **History** but Handy inserts text you copied earlier, see upstream issue #502. With the standard clipboard paste method, Handy restores your previous clipboard after a fixed delay. Under load, the receiving application may read the clipboard only after that restoration.
+If the transcription is correct in **History** but ZER0 inserts text you copied earlier, see upstream issue #502. With the standard clipboard paste method, ZER0 restores your previous clipboard after a fixed delay. Under load, the receiving application may read the clipboard only after that restoration.
 
 1. Open ZER0's settings window and press `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux) to reveal **Debug**.
 2. On **macOS and Windows**, try **Reliable Paste (Beta)** in Debug with a clipboard paste method selected. It uses clipboard read notifications to delay restoration instead of relying on the standard fixed delay. Test it in the application where the problem occurs; it is still experimental.

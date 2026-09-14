@@ -51,7 +51,7 @@ export const Slider = (props: SliderProps): JSX.Element => {
             value={props.value}
             onInput={handleChange}
             disabled={disabled()}
-            class="flex-grow h-2 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
+            class="grow h-2 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               background: `linear-gradient(to right, var(--color-background-ui) ${pct()}%, rgba(128, 128, 128, 0.2) ${pct()}%)`,
             }}

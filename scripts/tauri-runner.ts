@@ -40,7 +40,9 @@
 // — that is the trade, and it is why the resolved posture is printed on every
 // run rather than left implicit.
 
-import { resolve } from "path";
+import { existsSync, readFileSync } from "fs";
+import { resolve, join } from "path";
+import { homedir } from "os";
 import { checkTranscribeDeps } from "./check-transcribe-deps";
 import { appEnvFlag } from "./lib/env-flag";
 import { printReport, pruneTarget } from "./prune-target";
@@ -129,6 +131,21 @@ const posture: Posture = {
 process.env.TRANSCRIBE_MODEL_SET = posture.modelSet;
 if (posture.localGpu) {
   process.env.TRANSCRIBE_CUDA_ARCHITECTURES = "auto";
+}
+
+// Bundle builds sign the updater artifacts (`createUpdaterArtifacts` is on),
+// and the Tauri bundler refuses to produce them without the private key. CI
+// gets it from the TAURI_SIGNING_PRIVATE_KEY secret; locally, fall back to the
+// key the maintainer generated at `~/.tauri/zer0.key` so `build:fast` /
+// `build:full` sign without extra setup. Never logged, never copied anywhere.
+if (
+  process.env.TAURI_SIGNING_PRIVATE_KEY === undefined &&
+  process.env.TAURI_SIGNING_PRIVATE_KEY_PATH === undefined
+) {
+  const localKey = join(homedir(), ".tauri", "zer0.key");
+  if (existsSync(localKey)) {
+    process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(localKey, "utf-8");
+  }
 }
 
 const archCount = posture.modelSet === FULL_MODEL_SET ? 18 : 3;
