@@ -9485,8 +9485,10 @@ dependencies = [
  "tokio",
  "tokio-util",
  "transcribe-cpp",
+ "webview2-com",
  "whatlang",
  "windows 0.62.2",
+ "windows-core 0.61.2",
  "winreg 0.56.0",
  "zip 9.0.0-pre3",
 ]

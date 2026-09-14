@@ -114,6 +114,15 @@ tauri-plugin-single-instance = "^2.4.4"
 tauri-plugin-updater = "^2.11.0"
 
 [target.'cfg(windows)'.dependencies]
+# Used to reach ICoreWebView2Settings3 through the webview's controller
+# (disabling browser accelerator keys in the main window, upstream #1940).
+# Must match the version wry links against so the COM types are identical.
+webview2-com = "0.38"
+# The COM types above implement `Interface` from windows-core 0.61 (their
+# own pairing), not from the `windows` 0.62 crate this manifest also uses —
+# aliased so lib.rs can import the matching trait instance. 0.61.2 is
+# already in the tree through webview2-com; this adds no new crate.
+windows-core-061 = { package = "windows-core", version = "0.61.2" }
 windows = { version = "0.62.2", features = [
   "Win32_Media",
   "Win32_Media_Audio_Endpoints",
