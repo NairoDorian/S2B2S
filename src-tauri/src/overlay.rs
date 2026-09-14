@@ -194,38 +194,6 @@ fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool 
     false
 }
 
-/// Forces a window to be topmost using Win32 API (Windows only)
-/// This is more reliable than Tauri's set_always_on_top which can be overridden
-#[cfg(target_os = "windows")]
-fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
-    use windows::Win32::UI::WindowsAndMessaging::{
-        HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
-    };
-
-    // Clone because run_on_main_thread takes 'static
-    let overlay_clone = overlay_window.clone();
-
-    // Make sure the Win32 call happens on the UI thread
-    let _ = overlay_clone.clone().run_on_main_thread(move || {
-        if let Ok(hwnd) = overlay_clone.hwnd() {
-            unsafe {
-                // Force Z-order: make this window topmost without changing size/pos or stealing focus
-                // hwnd comes from tao (windows 0.61.3), cast to our windows 0.62.2 HWND
-                let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&hwnd);
-                let _ = SetWindowPos(
-                    hwnd,
-                    Some(HWND_TOPMOST),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                );
-            }
-        }
-    });
-}
-
 fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
     if let Some(mouse_location) = input::get_cursor_position(app_handle) {
         if let Ok(monitors) = app_handle.available_monitors() {
@@ -384,8 +352,11 @@ fn windows_overlay_bounds(
     (x, y, width, height)
 }
 
-/// Moves and sizes the overlay in one native SetWindowPos, bypassing tao's
-/// current-DPI logical conversion that mislands cross-monitor moves.
+/// Moves, sizes and re-asserts topmost in ONE native SetWindowPos, bypassing
+/// tao's current-DPI logical conversion that mislands cross-monitor moves.
+/// The atomic form matters: with separate place-then-topmost calls the
+/// window can briefly render with stale geometry or below the target z-order
+/// between them (AIVORelay's `apply_recording_overlay_geometry_native`).
 #[cfg(target_os = "windows")]
 fn place_windows_overlay(
     app_handle: &AppHandle,
@@ -393,7 +364,9 @@ fn place_windows_overlay(
     logical_width: f64,
     logical_height: f64,
 ) -> Result<(), String> {
-    use windows::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
+    };
 
     let monitor = get_monitor_with_cursor(app_handle)
         .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
@@ -416,7 +389,7 @@ fn place_windows_overlay(
         let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&hwnd);
         SetWindowPos(
             hwnd,
-            None,
+            Some(HWND_TOPMOST),
             x,
             y,
             width,
@@ -639,12 +612,10 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
             let _ = overlay_window.show();
             let show_elapsed = show_started.elapsed();
 
-            // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
-            #[cfg(target_os = "windows")]
-            force_overlay_topmost(&overlay_window);
-
             // Re-assert bounds after show(): the pre-show move crosses the DPI
-            // boundary, and tao's WM_DPICHANGED reflow clobbers the first placement.
+            // boundary, and tao's WM_DPICHANGED reflow clobbers the first
+            // placement. The re-place also re-asserts topmost — same atomic
+            // SetWindowPos, so no frame can appear between the two.
             #[cfg(target_os = "windows")]
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
                 log::error!("Failed to re-assert recording overlay position: {error}");
