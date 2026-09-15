@@ -21,27 +21,34 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = { version = "3.0.0-alpha.0", features = [] }
 serde_json = "1.0.151"
 serde = { version = "1.0.229", features = ["derive"] }
 
 [dependencies]
 once_cell = "1.21.4"
-tauri = { version = "2.11.5", features = [
+tauri = { version = "3.0.0-alpha.0", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
   'image-png',
 ] }
-tauri-plugin-log = "^2.9.1"
-tauri-plugin-opener = "^2.5.5"
-tauri-plugin-store = "2.4.4"
-tauri-plugin-os = "2.3.2"
-tauri-plugin-clipboard-manager = "^2.3.3"
-tauri-plugin-macos-permissions = "2.3.0"
-tauri-plugin-process = "2.3.1"
+# In Tauri 3 the runtime lives in a separate crate; `tauri::Builder::default()`
+# is generic over `tauri_runtime::Runtime` and defaults to the type-erased
+# `DynRuntime`. The Wry runtime type (`WryRuntime`) and the `Wry` runtime
+# initializer both live here. The crate is patched from the Tauri `v3` git
+# branch (see `[patch.crates-io]`); enabling `macos-private-api` mirrors the
+# same feature on the `tauri` crate so the macOS private-API window
+# functionality (transparent windows, full-screen enablement) is available.
+tauri-runtime-wry = { version = "3.0.0-alpha.0", features = ["macos-private-api"] }
+tauri-plugin-log = "3.0.0-alpha.0"
+tauri-plugin-opener = "3.0.0-alpha.0"
+tauri-plugin-store = "3.0.0-alpha.0"
+tauri-plugin-os = "3.0.0-alpha.0"
+tauri-plugin-clipboard-manager = "3.0.0-alpha.0"
+tauri-plugin-process = "3.0.0-alpha.0"
 rusqlite_migration = "2.6.0"
-tauri-plugin-fs = "^2.5.2"
+tauri-plugin-fs = "3.0.0-alpha.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 rdev = { git = "https://github.com/rustdesk-org/rdev" }
@@ -92,11 +99,12 @@ sha2 = "0.11.0"
 transcribe-cpp = { version = "*", default-features = false }
 handy-keys = "^0.3.4"
 ferrous-opencc = "0.4.0"
-clap = { version = "^4.6.6", features = ["derive"] }
-specta = "=2.0.0-rc.25"
-specta-typescript = "=0.0.12"
-tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
-tauri-plugin-dialog = "^2.7.3"
+clap = { version = "^4.6.7", features = ["derive"] }
+specta = "2.0.0-rc.26"
+specta-typescript = "0.0.13"
+tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
+tauri-plugin-macos-permissions = "2.3.0"
+tauri-plugin-dialog = "3.0.0-alpha.0"
 hf-hub = { git = "https://github.com/huggingface/hf-hub", branch = "main" }
 tokio-util = "^0.7.19"
 dirs = "^7.0.0"
@@ -108,22 +116,24 @@ rand = "0.10.2"
 signal-hook = "0.4.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-autostart = "2.5.1"
-tauri-plugin-global-shortcut = "2.3.2"
-tauri-plugin-single-instance = "^2.4.4"
-tauri-plugin-updater = "^2.11.0"
+tauri-plugin-autostart = "3.0.0-alpha.0"
+tauri-plugin-global-shortcut = "3.0.0-alpha.0"
+tauri-plugin-single-instance = "3.0.0-alpha.0"
+tauri-plugin-updater = "3.0.0-alpha.0"
 
 [target.'cfg(windows)'.dependencies]
 # Used to reach ICoreWebView2Settings3 through the webview's controller
 # (disabling browser accelerator keys in the main window, upstream #1940).
-# Must match the version wry links against so the COM types are identical.
-webview2-com = "0.38"
-# The COM types above implement `Interface` from windows-core 0.61 (their
-# own pairing), not from the `windows` 0.62 crate this manifest also uses —
-# aliased so lib.rs can import the matching trait instance. 0.61.2 is
-# already in the tree through webview2-com; this adds no new crate.
-windows-core-061 = { package = "windows-core", version = "0.61.2" }
-windows = { version = "0.62.2", features = [
+# Must match the version tauri-runtime-wry links against so the COM types
+# are identical — both depend on the same windows-core instance.
+webview2-com = "0.39"
+# windows-core 0.62 — same minor as what wry 0.57 + webview2-com 0.39 bring
+# in, so there is a single windows-core version in the graph and the
+# COM `Interface` trait resolves for both our imports and the controller().
+# (tauri itself still uses windows 0.61, which is a separate crate and
+# does not share COM types with our webview2-com interop.)
+windows-core = "0.62"
+windows = { version = "0.62", features = [
   "Win32_Media",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
@@ -137,6 +147,7 @@ windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_Security",
 ] }
 winreg = "0.56.0"
 
@@ -162,18 +173,13 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 transcribe-cpp = { version = "*", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 transcribe-cpp = { version = "*", default-features = false, features = ["metal"] }
-# Used by the receipt-sequenced ("reliable") paste path for lazy NSPasteboard
-# promises. Versions track what Tauri already pulls in.
 objc2 = "^0.6.4"
 objc2-foundation = "^0.3.2"
 objc2-app-kit = "^0.3.2"
 objc2-service-management = "0.3.2"
-# Used by the macos_monitor module in overlay.rs for frontmost-window detection.
-# Versions resolve to those already in Cargo.lock (transitive through tauri-nspanel).
-core-graphics = "0.22"
-core-foundation = "0.9"
+core-graphics = "^0.25.0"
+core-foundation = "^0.10.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
@@ -205,14 +211,24 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 [patch.crates-io]
 tao = { git = "https://github.com/tauri-apps/tao" }
 tao-macros = { git = "https://github.com/tauri-apps/tao" }
-tauri = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-codegen = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "dev" }
+# All tauri crates from the fork, which carries one commit on v3: bumping
+# tauri-runtime-wry's wry dependency from 0.56 to 0.57 (webview2-com 0.38→0.39,
+# windows 0.61→0.62). All other crates are identical to upstream.
+tauri = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-build = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-codegen = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-macros = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-runtime = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-runtime-wry = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-utils = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+tauri-specta = { git = "https://github.com/NairoDorian/tauri-specta-v3" }
+tauri-plugin-macos-permissions = { git = "https://github.com/NairoDorian/tauri-plugin-macos-permissions" }
 transcribe-cpp = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
+specta = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-macros = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-serde = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-typescript = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-util = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
 transcribe-cpp-sys = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }
 
 [dev-dependencies]

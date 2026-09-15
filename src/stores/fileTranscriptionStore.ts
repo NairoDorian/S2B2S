@@ -80,11 +80,11 @@ const applyEvent = (
       ? {
           ...item,
           status: event.status,
-          segment: event.segment,
-          segments: event.segments,
+          segment: event.segment ?? null,
+          segments: event.segments ?? null,
           text: event.text ?? item.text,
           outputPath: event.output_path ?? item.outputPath,
-          error: event.error,
+          error: event.error ?? null,
           audioSeconds: event.audio_seconds ?? item.audioSeconds,
           elapsedMs: event.elapsed_ms ?? item.elapsedMs,
         }

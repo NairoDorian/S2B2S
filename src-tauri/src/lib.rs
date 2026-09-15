@@ -51,7 +51,6 @@ use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use tauri::image::Image;
 pub use transcription_coordinator::TranscriptionCoordinator;
 
 use tauri::tray::TrayIconBuilder;
@@ -463,17 +462,27 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle, false);
 
     let mut tray_builder = TrayIconBuilder::new()
-        .icon(
-            Image::from_path(
-                app_handle
-                    .path()
-                    .resolve(initial_icon_path, tauri::path::BaseDirectory::Resource)
-                    .unwrap(),
-            )
-            .unwrap(),
-        )
         .tooltip(tray::tray_tooltip())
         .icon_as_template(true);
+
+    // The initial tray icon is loaded best-effort: a resolve or decode failure
+    // must not panic the app at startup. Ongoing icon updates go through
+    // `sync_tray_with` which already handles this with `load_tray_icon`.
+    match tray::load_tray_icon(
+        app_handle
+            .path()
+            .resolve(initial_icon_path, tauri::path::BaseDirectory::Resource),
+    ) {
+        Ok(icon) => {
+            tray_builder = tray_builder.icon(icon);
+        }
+        Err(err) => {
+            log::warn!(
+                "Failed to load initial tray icon '{}': {err}",
+                initial_icon_path
+            );
+        }
+    }
 
     // Windows notification-area convention: left click opens the app, right click
     // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
@@ -856,7 +865,7 @@ pub fn run(cli_args: CliArgs) {
     // variable to remember). See `console_level`.
     let console_filter = build_console_filter();
 
-    let specta_builder = Builder::<tauri::Wry>::new()
+    let specta_builder = Builder::<tauri::DynRuntime>::new()
         .dangerously_cast_bigints_to_number()
         .commands(collect_commands![
             shortcut::change_binding,
@@ -1120,13 +1129,13 @@ pub fn run(cli_args: CliArgs) {
     // which tauri-specta cannot type, so it is dispatched beside the typed
     // commands instead of through `collect_commands!`. The helper hands the
     // macro closure the signature it needs to infer the runtime type.
-    fn handler_for_wry<F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool>(f: F) -> F {
+    fn handler_for_runtime<F: Fn(tauri::ipc::Invoke<tauri::DynRuntime>) -> bool>(f: F) -> F {
         f
     }
-    let binary_handler = handler_for_wry(tauri::generate_handler![
+    let binary_handler = handler_for_runtime(tauri::generate_handler![
         commands::live_fft::overlay_scope_frame
     ]);
-    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| -> bool {
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::DynRuntime>| -> bool {
         if invoke.message.command() == "overlay_scope_frame" {
             binary_handler(invoke)
         } else {
@@ -1141,6 +1150,7 @@ pub fn run(cli_args: CliArgs) {
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
+        .runtime(tauri_runtime_wry::Wry::default())
         .device_event_filter(tauri::DeviceEventFilter::Always)
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -1341,14 +1351,19 @@ pub fn run(cli_args: CliArgs) {
             // lost.
             #[cfg(target_os = "windows")]
             {
-                let _ = main_window.with_webview(|webview| unsafe {
+                let main_window_label = main_window.label().to_string();
+                let _ = main_window.with_webview(move |webview| unsafe {
                     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    // The webview2 COM types implement `Interface` from the
-                    // windows-core 0.61 instance they were built against (the
-                    // one wry/tauri pair them with) — NOT our windows 0.62.
-                    // Import the trait from that instance or the cast fails
-                    // to resolve.
-                    use windows_core_061::Interface;
+                    // In Tauri 3 the app runs under the type-erased DynRuntime,
+                    // so `with_webview` hands us a PlatformWebview<DynRuntime>.
+                    // Downcast to the concrete wry Webview to reach `controller()`
+                    // and the WebView2 COM interfaces.
+                    use windows_core::Interface;
+
+                    let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else {
+                        log::warn!("Failed to downcast webview to wry runtime for '{}'", main_window_label);
+                        return;
+                    };
 
                     let result = webview
                         .controller()

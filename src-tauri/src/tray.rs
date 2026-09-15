@@ -442,7 +442,9 @@ fn apply_on_main(app: &AppHandle) {
     );
 }
 
-fn load_tray_icon(resolved_icon_path: tauri::Result<PathBuf>) -> tauri::Result<Image<'static>> {
+pub(crate) fn load_tray_icon(
+    resolved_icon_path: tauri::Result<PathBuf>,
+) -> tauri::Result<Image<'static>> {
     let resolved_icon_path = resolved_icon_path?;
     Image::from_path(&resolved_icon_path).map(Image::to_owned)
 }
@@ -467,7 +469,10 @@ fn version_label() -> String {
 /// to app state: everything it depends on is in `inputs`, plus the
 /// process-constant updater disable flag behind
 /// `update_checks_forced_disabled()`, which cannot change during a run.
-fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri::Wry>, String)> {
+fn build_menu(
+    app: &AppHandle,
+    inputs: &MenuInputs,
+) -> tauri::Result<(Menu<tauri::DynRuntime>, String)> {
     let strings = get_tray_translations(Some(inputs.locale.clone()));
 
     // Secure Input warning entry (macOS): clicking opens the settings window

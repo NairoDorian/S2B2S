@@ -5,8 +5,8 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
-	changeBinding: (id: string, binding: string) => typedError<BindingResponse, string>(__TAURI_INVOKE("change_binding", { id, binding })),
-	resetBinding: (id: string) => typedError<BindingResponse, string>(__TAURI_INVOKE("reset_binding", { id })),
+	changeBinding: (id: string, binding: string) => typedError<BindingResponse_Serialize, string>(__TAURI_INVOKE("change_binding", { id, binding })),
+	resetBinding: (id: string) => typedError<BindingResponse_Serialize, string>(__TAURI_INVOKE("reset_binding", { id })),
 	changeShortcutActivationSetting: (activation: ShortcutActivation) => typedError<null, string>(__TAURI_INVOKE("change_shortcut_activation_setting", { activation })),
 	changeHoldThresholdMsSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_hold_threshold_ms_setting", { ms })),
 	changeAudioFeedbackSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_audio_feedback_setting", { enabled })),
@@ -44,11 +44,7 @@ export const commands = {
 	changeMultiSttEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_enabled_setting", { enabled })),
 	changeMultiSttExtraModel: (slot: number, modelId: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model", { slot, modelId })),
 	changeMultiSttExtraModelLanguage: (slot: number, language: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_language", { slot, language })),
-	changeMultiSttMergePrompt: (prompt: {
-	id: string,
-	name: string,
-	prompt: string,
-} | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_prompt", { prompt })),
+	changeMultiSttMergePrompt: (prompt: LLMPrompt | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_prompt", { prompt })),
 	/**
 	 *  Experimental Multi-STT streaming-first mode: the primary model's live stream
 	 *  becomes the 1st output and chunk merges replace its rough text in place.
@@ -103,7 +99,7 @@ export const commands = {
 	 *  geometry the show path sizes the window with, hand the waveform window
 	 *  to the analyser and re-place a visible overlay.
 	 */
-	changeOverlayScopeSettings: (scope: OverlayScopeSettings) => typedError<null, string>(__TAURI_INVOKE("change_overlay_scope_settings", { scope })),
+	changeOverlayScopeSettings: (scope: OverlayScopeSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_overlay_scope_settings", { scope })),
 	/**
 	 *  Toggle RNNoise suppression. Persisted for future recorders and pushed to
 	 *  the live one, which switches paths on its next chunk.
@@ -145,8 +141,8 @@ export const commands = {
 	startNativeKeysRecording: (bindingId: string) => typedError<null, string>(__TAURI_INVOKE("start_native_keys_recording", { bindingId })),
 	/**  Stop key recording mode */
 	stopNativeKeysRecording: () => typedError<null, string>(__TAURI_INVOKE("stop_native_keys_recording")),
-	getSecureInputStatus: () => __TAURI_INVOKE<SecureInputStatus>("get_secure_input_status"),
-	runKeyboardDiagnostic: (durationSecs: number | null) => typedError<KeyboardDiagnosticReport, string>(__TAURI_INVOKE("run_keyboard_diagnostic", { durationSecs })),
+	getSecureInputStatus: () => __TAURI_INVOKE<SecureInputStatus_Serialize>("get_secure_input_status"),
+	runKeyboardDiagnostic: (durationSecs: number | null) => typedError<KeyboardDiagnosticReport_Serialize, string>(__TAURI_INVOKE("run_keyboard_diagnostic", { durationSecs })),
 	triggerUpdateCheck: () => typedError<null, string>(__TAURI_INVOKE("trigger_update_check")),
 	showMainWindowCommand: () => typedError<null, string>(__TAURI_INVOKE("show_main_window_command")),
 	cancelOperation: () => __TAURI_INVOKE<void>("cancel_operation"),
@@ -167,7 +163,7 @@ export const commands = {
 	startOverlayPreview: () => typedError<null, string>(__TAURI_INVOKE("start_overlay_preview")),
 	/**  Stop the overlay preview and discard everything it held. */
 	stopOverlayPreview: () => typedError<null, string>(__TAURI_INVOKE("stop_overlay_preview")),
-	getLlamaServerState: () => __TAURI_INVOKE<LlamaServerStateEvent>("get_llama_server_state"),
+	getLlamaServerState: () => __TAURI_INVOKE<LlamaServerStateEvent_Serialize>("get_llama_server_state"),
 	getLlamaServerLogs: () => __TAURI_INVOKE<string[]>("get_llama_server_logs"),
 	startLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("start_llama_server")),
 	stopLlamaServer: () => typedError<null, string>(__TAURI_INVOKE("stop_llama_server")),
@@ -176,18 +172,13 @@ export const commands = {
 	 *  Persist the llama settings. A running server keeps its current command
 	 *  line until it is restarted; the UI offers that explicitly.
 	 */
-	changeLlamaSettings: (settings: LlamaSettings) => typedError<null, string>(__TAURI_INVOKE("change_llama_settings", { settings })),
+	changeLlamaSettings: (settings: LlamaSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_llama_settings", { settings })),
 	/**  The command line the current settings would launch, for the page preview. */
 	getLlamaCommandPreview: () => typedError<string, string>(__TAURI_INVOKE("get_llama_command_preview")),
 	listGgufFiles: (dir: string) => __TAURI_INVOKE<GgufFile[]>("list_gguf_files", { dir }),
-	detectLlamaInstall: () => __TAURI_INVOKE<{
-	server_dir: string,
-	model_path: string | null,
-	draft_model_path: string | null,
-	mmproj_path: string | null,
-} | null>("detect_llama_install"),
+	detectLlamaInstall: () => __TAURI_INVOKE<LlamaDetectedInstall_Serialize | null>("detect_llama_install"),
 	applyLlamaToPostProcessing: () => typedError<null, string>(__TAURI_INVOKE("apply_llama_to_post_processing")),
-	fetchLlamaReleases: (channel: string, force: boolean) => typedError<LlamaRelease[], string>(__TAURI_INVOKE("fetch_llama_releases", { channel, force })),
+	fetchLlamaReleases: (channel: string, force: boolean) => typedError<LlamaRelease_Serialize[], string>(__TAURI_INVOKE("fetch_llama_releases", { channel, force })),
 	detectLlamaBackend: () => __TAURI_INVOKE<string>("detect_llama_backend"),
 	listInstalledLlamaServers: () => __TAURI_INVOKE<InstalledLlamaServer[]>("list_installed_llama_servers"),
 	/**
@@ -197,41 +188,14 @@ export const commands = {
 	installLlamaRelease: (tag: string, backend: string, includeCudart: boolean) => typedError<null, string>(__TAURI_INVOKE("install_llama_release", { tag, backend, includeCudart })),
 	removeInstalledLlamaServer: (dir: string) => typedError<null, string>(__TAURI_INVOKE("remove_installed_llama_server", { dir })),
 	/**  The installed CUDA toolkit whose runtime DLLs a CUDA build can use. */
-	detectCudaToolkit: () => __TAURI_INVOKE<{
-	/**
-	 *  Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
-	 *  CUDA 12 and older in `bin`).
-	 */
-	runtime_dir: string,
-	/**  Toolkit version as the installer names it (`13.3`), when known. */
-	version: string | null,
-	/**
-	 *  Whether `runtime_dir` is on the PATH the app was started with. When it is
-	 *  not, `LlamaServerManager::start` prepends it to the child's PATH.
-	 */
-	on_path: boolean,
-	/**
-	 *  Whether cuBLAS (`cublas64_*` + `cublasLt64_*`) sits next to cudart —
-	 *  llama.cpp's CUDA backend needs both.
-	 */
-	has_cublas: boolean,
-} | null>("detect_cuda_toolkit"),
+	detectCudaToolkit: () => __TAURI_INVOKE<CudaToolkitInfo_Serialize | null>("detect_cuda_toolkit"),
 	/**  Delete the bundled cudart/cuBLAS DLLs from an install; returns MB freed. */
 	removeBundledCudaRuntime: (dir: string) => typedError<number, string>(__TAURI_INVOKE("remove_bundled_cuda_runtime", { dir })),
 	/**
 	 *  The most recent sample, so a footer that mounts between ticks does not
 	 *  show empty meters for up to a second.
 	 */
-	getSystemStats: () => __TAURI_INVOKE<{
-	cpu_percent: number | null,
-	mem_used_mb: number,
-	mem_total_mb: number,
-	gpu_name: string | null,
-	gpu_percent: number | null,
-	vram_used_mb: number | null,
-	vram_total_mb: number | null,
-	gpu_temp_c: number | null,
-} | null>("get_system_stats"),
+	getSystemStats: () => __TAURI_INVOKE<SystemStatsEvent_Serialize | null>("get_system_stats"),
 	isUpdateChecksLocked: () => __TAURI_INVOKE<boolean>("is_update_checks_locked"),
 	getAppDirPath: () => typedError<string, string>(__TAURI_INVOKE("get_app_dir_path")),
 	getAppSettings: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("get_app_settings")),
@@ -275,35 +239,11 @@ export const commands = {
 	 *  This is idempotent - calling it multiple times is safe.
 	 */
 	initializeShortcuts: () => typedError<null, string>(__TAURI_INVOKE("initialize_shortcuts")),
-	getArchPlugins: () => typedError<ArchPluginInfo[], string>(__TAURI_INVOKE("get_arch_plugins")),
+	getArchPlugins: () => typedError<ArchPluginInfo_Serialize[], string>(__TAURI_INVOKE("get_arch_plugins")),
 	loadArchPlugin: (path: string) => typedError<null, string>(__TAURI_INVOKE("load_arch_plugin", { path })),
 	registerArchDir: (dir: string) => typedError<null, string>(__TAURI_INVOKE("register_arch_dir", { dir })),
-	getAvailableModels: () => typedError<ModelInfo[], string>(__TAURI_INVOKE("get_available_models")),
-	getModelInfo: (modelId: string) => typedError<{
-	id: string,
-	name: string,
-	description: string,
-	filename: string,
-	source: ModelSource,
-	size_mb: number,
-	is_downloaded: boolean,
-	is_downloading: boolean,
-	partial_size: number | null,
-	accuracy_score: number | null,
-	speed_score: number | null,
-	supports_translation: boolean,
-	is_recommended: boolean,
-	supported_languages: string[],
-	supports_language_selection: boolean,
-	is_custom: boolean,
-	supports_streaming: boolean,
-	supports_language_detection: boolean,
-	/**
-	 *  Which native streaming latency extension the model supports (if any).
-	 *  Populated for catalog streaming models; `None` for legacy/custom.
-	 */
-	native_streaming_latency_kind?: NativeStreamingLatencyKind | null,
-} | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
+	getAvailableModels: () => typedError<ModelInfo_Serialize[], string>(__TAURI_INVOKE("get_available_models")),
+	getModelInfo: (modelId: string) => typedError<ModelInfo_Serialize | null, string>(__TAURI_INVOKE("get_model_info", { modelId })),
 	downloadModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model", { modelId })),
 	downloadModelQuant: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model_quant", { modelId })),
 	getModelQuantVariants: (modelId: string) => typedError<QuantVariant[], string>(__TAURI_INVOKE("get_model_quant_variants", { modelId })),
@@ -357,12 +297,12 @@ export const commands = {
 	getMicrophoneChannels: (deviceName: string) => typedError<number, string>(__TAURI_INVOKE("get_microphone_channels", { deviceName })),
 	setSelectedChannel: (channel: number | null) => typedError<null, string>(__TAURI_INVOKE("set_selected_channel", { channel })),
 	setModelUnloadTimeout: (timeout: ModelUnloadTimeout) => __TAURI_INVOKE<void>("set_model_unload_timeout", { timeout }),
-	getModelLoadStatus: () => typedError<ModelLoadStatus, string>(__TAURI_INVOKE("get_model_load_status")),
+	getModelLoadStatus: () => typedError<ModelLoadStatus_Serialize, string>(__TAURI_INVOKE("get_model_load_status")),
 	unloadModelManually: () => typedError<null, string>(__TAURI_INVOKE("unload_model_manually")),
 	unloadExtraModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("unload_extra_model", { modelId })),
 	getExtraLoadedModels: () => typedError<string[], string>(__TAURI_INVOKE("get_extra_loaded_models")),
 	loadExtraModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("load_extra_model", { modelId })),
-	getHistoryEntries: (cursor: number | null, limit: number | null) => typedError<PaginatedHistory, string>(__TAURI_INVOKE("get_history_entries", { cursor, limit })),
+	getHistoryEntries: (cursor: number | null, limit: number | null) => typedError<PaginatedHistory_Serialize, string>(__TAURI_INVOKE("get_history_entries", { cursor, limit })),
 	toggleHistoryEntrySaved: (id: number) => typedError<null, string>(__TAURI_INVOKE("toggle_history_entry_saved", { id })),
 	getAudioFilePath: (fileName: string) => typedError<string, string>(__TAURI_INVOKE("get_audio_file_path", { fileName })),
 	deleteHistoryEntry: (id: number) => typedError<null, string>(__TAURI_INVOKE("delete_history_entry", { id })),
@@ -377,29 +317,8 @@ export const commands = {
 	 *  so the frontend can tell the user which recording will be used as the
 	 *  benchmark reference before starting the run.
 	 */
-	getLatestRecordingInfo: () => typedError<{
-	id: number,
-	file_name: string,
-	timestamp: number | null,
-	saved: boolean,
-	title: string,
-	transcription_text: string,
-	post_processed_text: string | null,
-	post_process_prompt: string | null,
-	post_process_requested: boolean,
-	model_id: string | null,
-	engine: string | null,
-	audio_duration_ms: number | null,
-	speech_duration_ms: number | null,
-	sample_rate_hz: number | null,
-	word_count: number | null,
-	transcription_latency_ms: number | null,
-	post_processing_latency_ms: number | null,
-	language: string | null,
-	mode: string | null,
-	extra_models: string[] | null,
-} | null, string>(__TAURI_INVOKE("get_latest_recording_info")),
-	getStatisticsSummary: (range: StatisticsRange) => typedError<StatisticsSummary, string>(__TAURI_INVOKE("get_statistics_summary", { range })),
+	getLatestRecordingInfo: () => typedError<HistoryEntry_Serialize | null, string>(__TAURI_INVOKE("get_latest_recording_info")),
+	getStatisticsSummary: (range: StatisticsRange) => typedError<StatisticsSummary_Serialize, string>(__TAURI_INVOKE("get_statistics_summary", { range })),
 	resetStatistics: () => typedError<null, string>(__TAURI_INVOKE("reset_statistics")),
 	/**
 	 *  Stub implementation for non-macOS platforms
@@ -413,11 +332,11 @@ export const commands = {
 	 *  while the live VAD test runs, with nothing to reopen or roll back.
 	 */
 	changeVadThresholdSetting: (threshold: number | null) => typedError<null, string>(__TAURI_INVOKE("change_vad_threshold_setting", { threshold })),
-	changeFileTranscriptionSettings: (settings: FileTranscriptionSettings) => typedError<null, string>(__TAURI_INVOKE("change_file_transcription_settings", { settings })),
+	changeFileTranscriptionSettings: (settings: FileTranscriptionSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_file_transcription_settings", { settings })),
 	listAudioFilesInFolder: (folder: string, includeSubfolders: boolean) => typedError<string[], string>(__TAURI_INVOKE("list_audio_files_in_folder", { folder, includeSubfolders })),
 	startFileTranscription: (paths: string[]) => typedError<number, string>(__TAURI_INVOKE("start_file_transcription", { paths })),
 	cancelFileTranscription: () => __TAURI_INVOKE<void>("cancel_file_transcription"),
-	getFileTranscriptionStatus: () => __TAURI_INVOKE<FileTranscriptionStatus>("get_file_transcription_status"),
+	getFileTranscriptionStatus: () => __TAURI_INVOKE<FileTranscriptionStatus_Serialize>("get_file_transcription_status"),
 	/**
 	 *  Show `path` in the OS file manager: folders are opened, files are revealed
 	 *  (selected) inside their folder.
@@ -428,22 +347,22 @@ export const commands = {
 	 *  rather than rejected so a partially written live transcript still shows.
 	 */
 	readTextFile: (path: string) => typedError<string, string>(__TAURI_INVOKE("read_text_file", { path })),
-	changeLiveModeSettings: (settings: LiveModeSettings) => typedError<null, string>(__TAURI_INVOKE("change_live_mode_settings", { settings })),
+	changeLiveModeSettings: (settings: LiveModeSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_live_mode_settings", { settings })),
 	liveModeStart: () => typedError<null, string>(__TAURI_INVOKE("live_mode_start")),
 	liveModeStop: () => typedError<null, string>(__TAURI_INVOKE("live_mode_stop")),
-	liveModeStatus: () => __TAURI_INVOKE<LiveModeStatus>("live_mode_status"),
+	liveModeStatus: () => __TAURI_INVOKE<LiveModeStatus_Serialize>("live_mode_status"),
 	/**  Past sessions under the configured output folder, newest first. */
-	liveModeListSessions: () => typedError<LiveSessionInfo[], string>(__TAURI_INVOKE("live_mode_list_sessions")),
+	liveModeListSessions: () => typedError<LiveSessionInfo_Serialize[], string>(__TAURI_INVOKE("live_mode_list_sessions")),
 	/**  The folder used when no output folder is configured, for display. */
 	liveModeDefaultOutputDir: () => typedError<string, string>(__TAURI_INVOKE("live_mode_default_output_dir")),
-	changeRecallSettings: (settings: RecallSettings) => typedError<null, string>(__TAURI_INVOKE("change_recall_settings", { settings })),
+	changeRecallSettings: (settings: RecallSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_recall_settings", { settings })),
 	recallVaultInfo: () => typedError<RecallVaultInfo, string>(__TAURI_INVOKE("recall_vault_info")),
 	/**  The folder used when none is configured, for display. */
 	recallDefaultVaultDir: () => typedError<string, string>(__TAURI_INVOKE("recall_default_vault_dir")),
-	recallListNotes: () => typedError<RecallNoteMeta[], string>(__TAURI_INVOKE("recall_list_notes")),
-	recallReadNote: (id: string) => typedError<RecallNoteContent, string>(__TAURI_INVOKE("recall_read_note", { id })),
-	recallCreateNote: (title: string, tags: string[]) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_create_note", { title, tags })),
-	recallWriteNote: (id: string, title: string, tags: string[], body: string) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_write_note", { id, title, tags, body })),
+	recallListNotes: () => typedError<RecallNoteMeta_Serialize[], string>(__TAURI_INVOKE("recall_list_notes")),
+	recallReadNote: (id: string) => typedError<RecallNoteContent_Serialize, string>(__TAURI_INVOKE("recall_read_note", { id })),
+	recallCreateNote: (title: string, tags: string[]) => typedError<RecallNoteMeta_Serialize, string>(__TAURI_INVOKE("recall_create_note", { title, tags })),
+	recallWriteNote: (id: string, title: string, tags: string[], body: string) => typedError<RecallNoteMeta_Serialize, string>(__TAURI_INVOKE("recall_write_note", { id, title, tags, body })),
 	recallDeleteNote: (id: string) => typedError<null, string>(__TAURI_INVOKE("recall_delete_note", { id })),
 	/**
 	 *  File a transcription (or post-processed text) as a new note — the
@@ -451,7 +370,7 @@ export const commands = {
 	 *  the vault's `audio/` folder (encrypted when the vault is), so the vault
 	 *  is self-contained.
 	 */
-	recallSaveTranscription: (text: string, title: string | null, source: string | null, audioFile: string | null, tags: string[]) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_save_transcription", { text, title, source, audioFile, tags })),
+	recallSaveTranscription: (text: string, title: string | null, source: string | null, audioFile: string | null, tags: string[]) => typedError<RecallNoteMeta_Serialize, string>(__TAURI_INVOKE("recall_save_transcription", { text, title, source, audioFile, tags })),
 	recallOpenVaultFolder: () => typedError<null, string>(__TAURI_INVOKE("recall_open_vault_folder")),
 	/**  Start a dictate recording: audio accumulates, nothing is typed or pasted. */
 	recallDictateStart: () => typedError<null, string>(__TAURI_INVOKE("recall_dictate_start")),
@@ -490,18 +409,18 @@ export const commands = {
 	 *  the session, which can reopen the microphone, so the hand-off runs on a
 	 *  blocking thread.
 	 */
-	changeLiveFftSettings: (settings: LiveFftSettings) => typedError<null, string>(__TAURI_INVOKE("change_live_fft_settings", { settings })),
+	changeLiveFftSettings: (settings: LiveFftSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_live_fft_settings", { settings })),
 	/**
 	 *  Start the analyser: opens the microphone (a device open can block, so
 	 *  this stays off the webview thread) and streams `LiveFftFrameEvent`s.
 	 */
 	liveFftStart: () => typedError<null, string>(__TAURI_INVOKE("live_fft_start")),
 	liveFftStop: () => typedError<null, string>(__TAURI_INVOKE("live_fft_stop")),
-	liveFftStatus: () => __TAURI_INVOKE<LiveFftStatus>("live_fft_status"),
+	liveFftStatus: () => __TAURI_INVOKE<LiveFftStatus_Serialize>("live_fft_status"),
 	/**  The page's Reset button: clears ballistics, AGC and EQ state. */
 	liveFftReset: () => __TAURI_INVOKE<void>("live_fft_reset"),
 	/**  The "Raw" preset: linear magnitude, frame-peak reference, no ballistics. */
-	liveFftRawDefaults: () => __TAURI_INVOKE<LiveFftSettings>("live_fft_raw_defaults"),
+	liveFftRawDefaults: () => __TAURI_INVOKE<LiveFftSettings_Serialize>("live_fft_raw_defaults"),
 	/**
 	 *  Report the streaming card's transcript height (logical px) and grow the native
 	 *  window to fit it. Returns the height the frontend may render before scrolling.
@@ -524,22 +443,22 @@ export const commands = {
 
 /** Events */
 export const events = {
-	fileTranscriptionEvent: makeEvent<FileTranscriptionEvent>("file-transcription-event"),
-	historyUpdatePayload: makeEvent<HistoryUpdatePayload>("history-update-payload"),
-	liveFftFrameEvent: makeEvent<LiveFftFrameEvent>("live-fft-frame-event"),
-	liveFftStateEvent: makeEvent<LiveFftStateEvent>("live-fft-state-event"),
-	liveModeStateEvent: makeEvent<LiveModeStateEvent>("live-mode-state-event"),
-	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent>("live-mode-transcript-event"),
-	llamaDownloadEvent: makeEvent<LlamaDownloadEvent>("llama-download-event"),
-	llamaServerStateEvent: makeEvent<LlamaServerStateEvent>("llama-server-state-event"),
-	multiSttStreamChunkFailedEvent: makeEvent<MultiSttStreamChunkFailedEvent>("multi-stt-stream-chunk-failed-event"),
-	recallInsertTextEvent: makeEvent<RecallInsertTextEvent>("recall-insert-text-event"),
-	speechActivityEvent: makeEvent<SpeechActivityEvent>("speech-activity-event"),
-	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent>("statistics-updated-event"),
-	streamPhaseEvent: makeEvent<StreamPhaseEvent_Deserialize>("stream-phase-event"),
-	streamTextEvent: makeEvent<StreamTextEvent_Deserialize>("stream-text-event"),
-	systemStatsEvent: makeEvent<SystemStatsEvent>("system-stats-event"),
-	vadTestEvent: makeEvent<VadTestEvent>("vad-test-event"),
+	fileTranscriptionEvent: makeEvent<FileTranscriptionEvent_Serialize, FileTranscriptionEvent_Deserialize>("file-transcription-event"),
+	historyUpdatePayload: makeEvent<HistoryUpdatePayload_Serialize, HistoryUpdatePayload_Deserialize>("history-update-payload"),
+	liveFftFrameEvent: makeEvent<LiveFftFrameEvent, LiveFftFrameEvent>("live-fft-frame-event"),
+	liveFftStateEvent: makeEvent<LiveFftStateEvent_Serialize, LiveFftStateEvent_Deserialize>("live-fft-state-event"),
+	liveModeStateEvent: makeEvent<LiveModeStateEvent_Serialize, LiveModeStateEvent_Deserialize>("live-mode-state-event"),
+	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent, LiveModeTranscriptEvent>("live-mode-transcript-event"),
+	llamaDownloadEvent: makeEvent<LlamaDownloadEvent_Serialize, LlamaDownloadEvent_Deserialize>("llama-download-event"),
+	llamaServerStateEvent: makeEvent<LlamaServerStateEvent_Serialize, LlamaServerStateEvent_Deserialize>("llama-server-state-event"),
+	multiSttStreamChunkFailedEvent: makeEvent<MultiSttStreamChunkFailedEvent, MultiSttStreamChunkFailedEvent>("multi-stt-stream-chunk-failed-event"),
+	recallInsertTextEvent: makeEvent<RecallInsertTextEvent, RecallInsertTextEvent>("recall-insert-text-event"),
+	speechActivityEvent: makeEvent<SpeechActivityEvent, SpeechActivityEvent>("speech-activity-event"),
+	statisticsUpdatedEvent: makeEvent<StatisticsUpdatedEvent, StatisticsUpdatedEvent>("statistics-updated-event"),
+	streamPhaseEvent: makeEvent<StreamPhaseEvent_Serialize, StreamPhaseEvent_Deserialize>("stream-phase-event"),
+	streamTextEvent: makeEvent<StreamTextEvent_Serialize, StreamTextEvent_Deserialize>("stream-text-event"),
+	systemStatsEvent: makeEvent<SystemStatsEvent_Serialize, SystemStatsEvent_Deserialize>("system-stats-event"),
+	vadTestEvent: makeEvent<VadTestEvent_Serialize, VadTestEvent_Deserialize>("vad-test-event"),
 };
 
 /* Types */
@@ -635,7 +554,7 @@ export type AppSettings_Deserialize = {
 	auto_submit_key?: AutoSubmitKey,
 	post_process_enabled?: boolean,
 	post_process_provider_id?: string,
-	post_process_providers?: PostProcessProvider[],
+	post_process_providers?: PostProcessProvider_Deserialize[],
 	post_process_api_keys?: SecretMap,
 	post_process_models?: { [key in string]: string },
 	post_process_prompts?: LLMPrompt[],
@@ -777,20 +696,20 @@ export type AppSettings_Deserialize = {
 	mic_idle_infinite?: boolean,
 	native_streaming_latency_presets?: { [key in string]: NativeStreamingLatencyPreset },
 	/**  "Transcribe Files" page (fork feature). */
-	file_transcription?: FileTranscriptionSettings,
+	file_transcription?: FileTranscriptionSettings_Deserialize,
 	/**  "Live Mode" page (fork feature). */
-	live_mode?: LiveModeSettings,
+	live_mode?: LiveModeSettings_Deserialize,
 	/**  "Recall" page (fork feature): the note vault. */
-	recall?: RecallSettings,
+	recall?: RecallSettings_Deserialize,
 	/**  "Live FFT" page (fork feature). */
-	live_fft?: LiveFftSettings,
+	live_fft?: LiveFftSettings_Deserialize,
 	/**
 	 *  The recording overlay's picture of the microphone (which views, style,
 	 *  waveform window, size); the analysis follows `live_fft`.
 	 */
-	overlay_scope?: OverlayScopeSettings,
+	overlay_scope?: OverlayScopeSettings_Deserialize,
 	/**  In-app llama.cpp server (fork feature). */
-	llama?: LlamaSettings,
+	llama?: LlamaSettings_Deserialize,
 };
 
 /**
@@ -876,7 +795,7 @@ export type AppSettings_Serialize = {
 	auto_submit_key: AutoSubmitKey,
 	post_process_enabled: boolean,
 	post_process_provider_id: string,
-	post_process_providers: PostProcessProvider[],
+	post_process_providers: PostProcessProvider_Serialize[],
 	post_process_api_keys: SecretMap,
 	post_process_models: { [key in string]: string },
 	post_process_prompts: LLMPrompt[],
@@ -1018,24 +937,39 @@ export type AppSettings_Serialize = {
 	mic_idle_infinite: boolean,
 	native_streaming_latency_presets: { [key in string]: NativeStreamingLatencyPreset },
 	/**  "Transcribe Files" page (fork feature). */
-	file_transcription: FileTranscriptionSettings,
+	file_transcription: FileTranscriptionSettings_Serialize,
 	/**  "Live Mode" page (fork feature). */
-	live_mode: LiveModeSettings,
+	live_mode: LiveModeSettings_Serialize,
 	/**  "Recall" page (fork feature): the note vault. */
-	recall: RecallSettings,
+	recall: RecallSettings_Serialize,
 	/**  "Live FFT" page (fork feature). */
-	live_fft: LiveFftSettings,
+	live_fft: LiveFftSettings_Serialize,
 	/**
 	 *  The recording overlay's picture of the microphone (which views, style,
 	 *  waveform window, size); the analysis follows `live_fft`.
 	 */
-	overlay_scope: OverlayScopeSettings,
+	overlay_scope: OverlayScopeSettings_Serialize,
 	/**  In-app llama.cpp server (fork feature). */
-	llama: LlamaSettings,
+	llama: LlamaSettings_Serialize,
 };
 
 /**  Metadata describing an architecture plugin module. */
-export type ArchPluginInfo = {
+export type ArchPluginInfo = ArchPluginInfo_Serialize | ArchPluginInfo_Deserialize;
+
+/**  Metadata describing an architecture plugin module. */
+export type ArchPluginInfo_Deserialize = {
+	/**  Architecture identifier (e.g. "parakeet", "granite", "qwen3_asr", "whisper"). */
+	name: string,
+	/**  Absolute filesystem path to the plugin module. */
+	path: string,
+	/**  Whether the app explicitly loaded this module (see `EXPLICITLY_LOADED`). */
+	is_loaded: boolean,
+	/**  File size in bytes. */
+	file_size_bytes?: number | null,
+};
+
+/**  Metadata describing an architecture plugin module. */
+export type ArchPluginInfo_Serialize = {
 	/**  Architecture identifier (e.g. "parakeet", "granite", "qwen3_asr", "whisper"). */
 	name: string,
 	/**  Absolute filesystem path to the plugin module. */
@@ -1078,7 +1012,15 @@ export type BenchmarkResult = {
 	is_default: boolean,
 };
 
-export type BindingResponse = {
+export type BindingResponse = BindingResponse_Serialize | BindingResponse_Deserialize;
+
+export type BindingResponse_Deserialize = {
+	success: boolean,
+	binding?: ShortcutBinding | null,
+	error?: string | null,
+};
+
+export type BindingResponse_Serialize = {
 	success: boolean,
 	binding: ShortcutBinding | null,
 	error: string | null,
@@ -1090,7 +1032,37 @@ export type ClipboardHandling = "dont_modify" | "copy_to_clipboard";
  *  A system CUDA toolkit whose runtime DLLs a CUDA build can load instead of
  *  the bundled `cudart` package.
  */
-export type CudaToolkitInfo = {
+export type CudaToolkitInfo = CudaToolkitInfo_Serialize | CudaToolkitInfo_Deserialize;
+
+/**
+ *  A system CUDA toolkit whose runtime DLLs a CUDA build can load instead of
+ *  the bundled `cudart` package.
+ */
+export type CudaToolkitInfo_Deserialize = {
+	/**
+	 *  Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
+	 *  CUDA 12 and older in `bin`).
+	 */
+	runtime_dir: string,
+	/**  Toolkit version as the installer names it (`13.3`), when known. */
+	version?: string | null,
+	/**
+	 *  Whether `runtime_dir` is on the PATH the app was started with. When it is
+	 *  not, `LlamaServerManager::start` prepends it to the child's PATH.
+	 */
+	on_path: boolean,
+	/**
+	 *  Whether cuBLAS (`cublas64_*` + `cublasLt64_*`) sits next to cudart —
+	 *  llama.cpp's CUDA backend needs both.
+	 */
+	has_cublas: boolean,
+};
+
+/**
+ *  A system CUDA toolkit whose runtime DLLs a CUDA build can load instead of
+ *  the bundled `cudart` package.
+ */
+export type CudaToolkitInfo_Serialize = {
 	/**
 	 *  Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
 	 *  CUDA 12 and older in `bin`).
@@ -1115,7 +1087,16 @@ export type CustomSounds = {
 	stop: boolean,
 };
 
-export type DurationMetricSummary = {
+export type DurationMetricSummary = DurationMetricSummary_Serialize | DurationMetricSummary_Deserialize;
+
+export type DurationMetricSummary_Deserialize = {
+	sample_count: number,
+	minimum_ms?: number | null,
+	average_ms?: number | null,
+	maximum_ms?: number | null,
+};
+
+export type DurationMetricSummary_Serialize = {
 	sample_count: number,
 	minimum_ms: number | null,
 	average_ms: number | null,
@@ -1209,7 +1190,36 @@ export type FileJobStatus = "queued" | "decoding" | "transcribing" | "merging" |
  *  `batch_finished = true` (with `index == total`) so the UI can leave its
  *  "running" state even if an individual event was missed.
  */
-export type FileTranscriptionEvent = {
+export type FileTranscriptionEvent = FileTranscriptionEvent_Serialize | FileTranscriptionEvent_Deserialize;
+
+/**
+ *  Progress of one file inside a job. The last event of a job carries
+ *  `batch_finished = true` (with `index == total`) so the UI can leave its
+ *  "running" state even if an individual event was missed.
+ */
+export type FileTranscriptionEvent_Deserialize = {
+	job_id: number,
+	/**  0-based position in the job (== `total` on the batch-finished event). */
+	index: number,
+	total: number,
+	path: string,
+	status: FileJobStatus,
+	segment?: number | null,
+	segments?: number | null,
+	text?: string | null,
+	output_path?: string | null,
+	error?: string | null,
+	audio_seconds?: number | null,
+	elapsed_ms?: number | null,
+	batch_finished: boolean,
+};
+
+/**
+ *  Progress of one file inside a job. The last event of a job carries
+ *  `batch_finished = true` (with `index == total`) so the UI can leave its
+ *  "running" state even if an individual event was missed.
+ */
+export type FileTranscriptionEvent_Serialize = {
 	job_id: number,
 	/**  0-based position in the job (== `total` on the batch-finished event). */
 	index: number,
@@ -1244,7 +1254,13 @@ export type FileTranscriptionMode =
  *  Settings of the "Transcribe Files" page. Grouped into one struct so the
  *  page persists through a single command instead of one per field.
  */
-export type FileTranscriptionSettings = {
+export type FileTranscriptionSettings = FileTranscriptionSettings_Serialize | FileTranscriptionSettings_Deserialize;
+
+/**
+ *  Settings of the "Transcribe Files" page. Grouped into one struct so the
+ *  page persists through a single command instead of one per field.
+ */
+export type FileTranscriptionSettings_Deserialize = {
 	mode?: FileTranscriptionMode,
 	/**
 	 *  Folder the transcripts are written to. `None` writes each transcript
@@ -1264,7 +1280,41 @@ export type FileTranscriptionSettings = {
 	max_segment_minutes?: number,
 };
 
-export type FileTranscriptionStatus = {
+/**
+ *  Settings of the "Transcribe Files" page. Grouped into one struct so the
+ *  page persists through a single command instead of one per field.
+ */
+export type FileTranscriptionSettings_Serialize = {
+	mode: FileTranscriptionMode,
+	/**
+	 *  Folder the transcripts are written to. `None` writes each transcript
+	 *  next to its source audio file.
+	 */
+	output_dir: string | null,
+	output_format: TranscriptOutputFormat,
+	/**  Replace an existing transcript instead of appending `-2`, `-3`, â€¦. */
+	overwrite_existing: boolean,
+	/**  When a folder is added, also queue audio files from its sub-folders. */
+	include_subfolders: boolean,
+	/**
+	 *  Long recordings are decoded in segments of at most this many minutes,
+	 *  cut at the quietest point near the boundary, so one file never holds
+	 *  the engine (or memory) for an hour at a time. 1â€“60.
+	 */
+	max_segment_minutes: number,
+};
+
+export type FileTranscriptionStatus = FileTranscriptionStatus_Serialize | FileTranscriptionStatus_Deserialize;
+
+export type FileTranscriptionStatus_Deserialize = {
+	running: boolean,
+	job_id: number,
+	total: number,
+	completed: number,
+	current_path?: string | null,
+};
+
+export type FileTranscriptionStatus_Serialize = {
 	running: boolean,
 	job_id: number,
 	total: number,
@@ -1287,7 +1337,32 @@ export type GpuDeviceOption = {
 	total_vram_mb: number,
 };
 
-export type HistoryEntry = {
+export type HistoryEntry = HistoryEntry_Serialize | HistoryEntry_Deserialize;
+
+export type HistoryEntry_Deserialize = {
+	id: number,
+	file_name: string,
+	timestamp: number | null,
+	saved: boolean,
+	title: string,
+	transcription_text: string,
+	post_processed_text?: string | null,
+	post_process_prompt?: string | null,
+	post_process_requested: boolean,
+	model_id?: string | null,
+	engine?: string | null,
+	audio_duration_ms?: number | null,
+	speech_duration_ms?: number | null,
+	sample_rate_hz?: number | null,
+	word_count?: number | null,
+	transcription_latency_ms?: number | null,
+	post_processing_latency_ms?: number | null,
+	language?: string | null,
+	mode?: string | null,
+	extra_models?: string[] | null,
+};
+
+export type HistoryEntry_Serialize = {
 	id: number,
 	file_name: string,
 	timestamp: number | null,
@@ -1310,7 +1385,11 @@ export type HistoryEntry = {
 	extra_models: string[] | null,
 };
 
-export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number } | { action: "cleared" };
+export type HistoryUpdatePayload = HistoryUpdatePayload_Serialize | HistoryUpdatePayload_Deserialize;
+
+export type HistoryUpdatePayload_Deserialize = { action: "added"; entry: HistoryEntry_Deserialize } | { action: "updated"; entry: HistoryEntry_Deserialize } | { action: "deleted"; id: number } | { action: "toggled"; id: number } | { action: "cleared" };
+
+export type HistoryUpdatePayload_Serialize = { action: "added"; entry: HistoryEntry_Serialize } | { action: "updated"; entry: HistoryEntry_Serialize } | { action: "deleted"; id: number } | { action: "toggled"; id: number } | { action: "cleared" };
 
 /**  Result of changing keyboard implementation */
 export type ImplementationChangeResult = {
@@ -1330,7 +1409,21 @@ export type InstalledLlamaServer = {
 	cuda_runtime_mb: number,
 };
 
-export type KeyboardDiagnosticReport = {
+export type KeyboardDiagnosticReport = KeyboardDiagnosticReport_Serialize | KeyboardDiagnosticReport_Deserialize;
+
+export type KeyboardDiagnosticReport_Deserialize = {
+	secure_input_enabled: boolean,
+	culprit_pid?: number | null,
+	culprit_name?: string | null,
+	/**  Counts only — key identity is deliberately never captured. */
+	key_down: number,
+	key_up: number,
+	flags_changed: number,
+	mouse: number,
+	duration_ms: number,
+};
+
+export type KeyboardDiagnosticReport_Serialize = {
 	secure_input_enabled: boolean,
 	culprit_pid: number | null,
 	culprit_name: string | null,
@@ -1359,7 +1452,17 @@ export type LLMPrompt = {
 	prompt: string,
 };
 
-export type LiveChunkInfo = {
+export type LiveChunkInfo = LiveChunkInfo_Serialize | LiveChunkInfo_Deserialize;
+
+export type LiveChunkInfo_Deserialize = {
+	index: number,
+	path?: string | null,
+	duration_ms: number | null,
+	bytes: number | null,
+	text_chars: number,
+};
+
+export type LiveChunkInfo_Serialize = {
 	index: number,
 	path: string | null,
 	duration_ms: number | null,
@@ -1390,7 +1493,16 @@ export type LiveFftPhase = "idle" | "starting" | "running" | "stopping" | "error
  *  or poll interval to configure, since rustfft plans are instant and the
  *  settings are pushed, not polled.
  */
-export type LiveFftSettings = {
+export type LiveFftSettings = LiveFftSettings_Serialize | LiveFftSettings_Deserialize;
+
+/**
+ *  Settings of the "Live FFT" page, grouped the way the page shows them
+ *  (Spectrum, EQ, Window & Weighting, Loudness & Ballistics, Performance).
+ *  `update_rate_hz` is the analysis frame rate; there is no planner policy
+ *  or poll interval to configure, since rustfft plans are instant and the
+ *  settings are pushed, not polled.
+ */
+export type LiveFftSettings_Deserialize = {
 	source?: FftSource,
 	scale?: FftScale,
 	warp_interpolation?: FftWarpInterp,
@@ -1454,13 +1566,128 @@ export type LiveFftSettings = {
 	show_vad?: boolean,
 };
 
+/**
+ *  Settings of the "Live FFT" page, grouped the way the page shows them
+ *  (Spectrum, EQ, Window & Weighting, Loudness & Ballistics, Performance).
+ *  `update_rate_hz` is the analysis frame rate; there is no planner policy
+ *  or poll interval to configure, since rustfft plans are instant and the
+ *  settings are pushed, not polled.
+ */
+export type LiveFftSettings_Serialize = {
+	source: FftSource,
+	scale: FftScale,
+	warp_interpolation: FftWarpInterp,
+	/**  Highest frequency on the axis; clamped to Nyquist at run time. */
+	display_max_hz: number | null,
+	/**  Size of the warped spectrum handed to the page (32â€¦8192). */
+	output_bins: number,
+	/**  0 = linear grid, 1 = fully perceptual. */
+	warp_blend: number | null,
+	/**  Lowest frequency of the Log / Melog grid. */
+	log_floor_hz: number | null,
+	window_length_mode: FftWindowLengthMode,
+	/**  Analysis window in samples (3175 = 72 ms at 44.1 kHz). */
+	window_samples: number,
+	/**  Analysis window in milliseconds, used when the mode says so. */
+	window_ms: number | null,
+	/**
+	 *  Zero-padded transform length; grown to the next power of two above
+	 *  the window when that is larger.
+	 */
+	fft_size: number,
+	eq_enabled: boolean,
+	high_shelf: boolean,
+	low_shelf: boolean,
+	high_gain_db: number | null,
+	high_cutoff_hz: number | null,
+	low_gain_db: number | null,
+	low_cutoff_hz: number | null,
+	eq_q: number | null,
+	/**  Wet/dry blend of the EQ (0â€¦5). */
+	eq_amount: number | null,
+	window_type: FftWindowType,
+	kaiser_beta: number | null,
+	weighting: FftWeighting,
+	magnitude_norm: FftMagnitudeNorm,
+	loudness_mode: FftLoudnessMode,
+	db_reference: FftDbReference,
+	/**  Floor of the dB display, in dB below the reference. */
+	db_range: number | null,
+	ballistics_enabled: boolean,
+	ballistics_mode: FftBallisticsMode,
+	/**  Per-frame attack coefficient (0â€¦0.99). */
+	attack: number | null,
+	/**  Per-frame release coefficient (0â€¦0.99). */
+	release: number | null,
+	attack_ms: number | null,
+	release_ms: number | null,
+	/**
+	 *  Run the transform on the analysis worker thread (on) or inline on the
+	 *  audio consumer thread (off).
+	 */
+	async_analysis: boolean,
+	/**  Spectrum frames per second sent to the page (5â€¦60). */
+	update_rate_hz: number,
+	/**
+	 *  Run the speech detector on the analysed session and report its
+	 *  per-frame verdicts to the page (`VadTestEvent`), so the threshold and
+	 *  noise suppression can be tuned against the spectrum. Changing it
+	 *  restarts a running session (the VAD policy is fixed per recording).
+	 */
+	show_vad: boolean,
+};
+
 /**  Emitted on every phase change and roughly once a second while running. */
-export type LiveFftStateEvent = {
-	status: LiveFftStatus,
+export type LiveFftStateEvent = LiveFftStateEvent_Serialize | LiveFftStateEvent_Deserialize;
+
+/**  Emitted on every phase change and roughly once a second while running. */
+export type LiveFftStateEvent_Deserialize = {
+	status: LiveFftStatus_Deserialize,
+};
+
+/**  Emitted on every phase change and roughly once a second while running. */
+export type LiveFftStateEvent_Serialize = {
+	status: LiveFftStatus_Serialize,
 };
 
 /**  Status snapshot — the telemetry rows the page shows. */
-export type LiveFftStatus = {
+export type LiveFftStatus = LiveFftStatus_Serialize | LiveFftStatus_Deserialize;
+
+/**  Status snapshot — the telemetry rows the page shows. */
+export type LiveFftStatus_Deserialize = {
+	phase: LiveFftPhase,
+	error?: string | null,
+	stop_reason?: LiveFftStopReason | null,
+	/**  Rate of the analysed signal (native microphone rate or 16 kHz). */
+	sample_rate: number,
+	fft_size: number,
+	window_samples: number,
+	linear_bins: number,
+	/**  Magnitude bins actually computed. */
+	magnitude_bins: number,
+	output_bins: number,
+	identity_warp: boolean,
+	/**  Magnitude of a full-scale sine under the current normalisation. */
+	full_scale_ref: number | null,
+	/**  Highest frequency on the axis after the Nyquist clamp. */
+	display_max_hz: number | null,
+	nyquist_hz: number | null,
+	update_rate_hz: number,
+	async_analysis: boolean,
+	/**  Frames analysed this session. */
+	frames: number,
+	/**  Samples the ring could not take (the worker fell behind). */
+	dropped_samples: number,
+	dsp_us_last: number | null,
+	dsp_us_avg: number | null,
+	dsp_us_max: number | null,
+	started_at_ms?: number | null,
+	/**  Frequency of every output bin (rebuilt with the warp tables). */
+	axis_hz: (number | null)[],
+};
+
+/**  Status snapshot — the telemetry rows the page shows. */
+export type LiveFftStatus_Serialize = {
 	phase: LiveFftPhase,
 	error: string | null,
 	stop_reason: LiveFftStopReason | null,
@@ -1502,7 +1729,10 @@ export type LiveFftStopReason =
 export type LiveModePhase = "idle" | "starting" | "listening" | "rotating" | "stopping" | "error";
 
 /**  Settings of the "Live Mode" page (continuous recording + live transcript). */
-export type LiveModeSettings = {
+export type LiveModeSettings = LiveModeSettings_Serialize | LiveModeSettings_Deserialize;
+
+/**  Settings of the "Live Mode" page (continuous recording + live transcript). */
+export type LiveModeSettings_Deserialize = {
 	/**
 	 *  Session folders are created under this directory. `None` uses
 	 *  `<app data>/live_mode`.
@@ -1521,22 +1751,76 @@ export type LiveModeSettings = {
 	prefer_silence_boundary?: boolean,
 };
 
+/**  Settings of the "Live Mode" page (continuous recording + live transcript). */
+export type LiveModeSettings_Serialize = {
+	/**
+	 *  Session folders are created under this directory. `None` uses
+	 *  `<app data>/live_mode`.
+	 */
+	output_dir: string | null,
+	/**  Target length of one audio chunk / transcript segment in minutes. 1â€“60. */
+	chunk_minutes: number,
+	transcript_format: TranscriptOutputFormat,
+	granularity: LiveTranscriptGranularity,
+	/**  Write the raw microphone signal to `chunk_NNNN.wav` files. */
+	save_audio: boolean,
+	/**
+	 *  Rotate chunks on the first pause once 80 % of `chunk_minutes` has
+	 *  elapsed, so a cut never lands mid-word.
+	 */
+	prefer_silence_boundary: boolean,
+};
+
 /**
  *  Emitted whenever the session status changes and roughly once a second
  *  while listening.
  */
-export type LiveModeStateEvent = {
-	status: LiveModeStatus,
+export type LiveModeStateEvent = LiveModeStateEvent_Serialize | LiveModeStateEvent_Deserialize;
+
+/**
+ *  Emitted whenever the session status changes and roughly once a second
+ *  while listening.
+ */
+export type LiveModeStateEvent_Deserialize = {
+	status: LiveModeStatus_Deserialize,
 };
 
-export type LiveModeStatus = {
+/**
+ *  Emitted whenever the session status changes and roughly once a second
+ *  while listening.
+ */
+export type LiveModeStateEvent_Serialize = {
+	status: LiveModeStatus_Serialize,
+};
+
+export type LiveModeStatus = LiveModeStatus_Serialize | LiveModeStatus_Deserialize;
+
+export type LiveModeStatus_Deserialize = {
+	phase: LiveModePhase,
+	session_dir?: string | null,
+	transcript_path?: string | null,
+	model_id?: string | null,
+	/**  Number of the chunk currently being recorded (1-based). */
+	chunk_index: number,
+	chunks: LiveChunkInfo_Deserialize[],
+	started_at_ms?: number | null,
+	elapsed_ms: number | null,
+	current_chunk_ms: number | null,
+	/**  Speech measured by the VAD in the current chunk. */
+	current_chunk_speech_ms: number | null,
+	/**  Bytes of committed transcript text. */
+	transcript_bytes: number | null,
+	error?: string | null,
+};
+
+export type LiveModeStatus_Serialize = {
 	phase: LiveModePhase,
 	session_dir: string | null,
 	transcript_path: string | null,
 	model_id: string | null,
 	/**  Number of the chunk currently being recorded (1-based). */
 	chunk_index: number,
-	chunks: LiveChunkInfo[],
+	chunks: LiveChunkInfo_Serialize[],
 	started_at_ms: number | null,
 	elapsed_ms: number | null,
 	current_chunk_ms: number | null,
@@ -1559,7 +1843,20 @@ export type LiveModeTranscriptEvent = {
 };
 
 /**  A past (or current) session folder, for the page's session list. */
-export type LiveSessionInfo = {
+export type LiveSessionInfo = LiveSessionInfo_Serialize | LiveSessionInfo_Deserialize;
+
+/**  A past (or current) session folder, for the page's session list. */
+export type LiveSessionInfo_Deserialize = {
+	dir: string,
+	name: string,
+	transcript_path?: string | null,
+	transcript_bytes: number | null,
+	chunk_count: number,
+	modified_ms: number | null,
+};
+
+/**  A past (or current) session folder, for the page's session list. */
+export type LiveSessionInfo_Serialize = {
 	dir: string,
 	name: string,
 	transcript_path: string | null,
@@ -1576,7 +1873,18 @@ export type LiveTranscriptGranularity =
 "word";
 
 /**  An existing llama.cpp install found outside the app's data dir. */
-export type LlamaDetectedInstall = {
+export type LlamaDetectedInstall = LlamaDetectedInstall_Serialize | LlamaDetectedInstall_Deserialize;
+
+/**  An existing llama.cpp install found outside the app's data dir. */
+export type LlamaDetectedInstall_Deserialize = {
+	server_dir: string,
+	model_path?: string | null,
+	draft_model_path?: string | null,
+	mmproj_path?: string | null,
+};
+
+/**  An existing llama.cpp install found outside the app's data dir. */
+export type LlamaDetectedInstall_Serialize = {
 	server_dir: string,
 	model_path: string | null,
 	draft_model_path: string | null,
@@ -1584,7 +1892,23 @@ export type LlamaDetectedInstall = {
 };
 
 /**  Progress of one install, from download start to done/error. */
-export type LlamaDownloadEvent = {
+export type LlamaDownloadEvent = LlamaDownloadEvent_Serialize | LlamaDownloadEvent_Deserialize;
+
+/**  Progress of one install, from download start to done/error. */
+export type LlamaDownloadEvent_Deserialize = {
+	tag: string,
+	backend: string,
+	/**  `downloading`, `extracting`, `done`, `error` */
+	phase: string,
+	downloaded_bytes: number | null,
+	total_bytes: number | null,
+	message?: string | null,
+	/**  Install folder, once `done`. */
+	dir?: string | null,
+};
+
+/**  Progress of one install, from download start to done/error. */
+export type LlamaDownloadEvent_Serialize = {
 	tag: string,
 	backend: string,
 	/**  `downloading`, `extracting`, `done`, `error` */
@@ -1596,7 +1920,30 @@ export type LlamaDownloadEvent = {
 	dir: string | null,
 };
 
-export type LlamaRelease = {
+export type LlamaRelease = LlamaRelease_Serialize | LlamaRelease_Deserialize;
+
+export type LlamaReleaseAsset = {
+	name: string,
+	size_bytes: number | null,
+	url: string,
+	/**  `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
+	backend: string,
+};
+
+export type LlamaRelease_Deserialize = {
+	tag: string,
+	name: string,
+	published_at: string,
+	prerelease: boolean,
+	/**  `b<number>` of this release or of the nightly it points to. */
+	build_number: number,
+	/**  Windows x64 binary assets (no cudart packages). */
+	assets: LlamaReleaseAsset[],
+	/**  For SemVer releases without binaries: the nightly tag that has them. */
+	backing_tag?: string | null,
+};
+
+export type LlamaRelease_Serialize = {
 	tag: string,
 	name: string,
 	published_at: string,
@@ -1609,16 +1956,29 @@ export type LlamaRelease = {
 	backing_tag: string | null,
 };
 
-export type LlamaReleaseAsset = {
-	name: string,
-	size_bytes: number | null,
-	url: string,
-	/**  `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
-	backend: string,
+/**  Snapshot of the supervised server. Also the payload of the state event. */
+export type LlamaServerStateEvent = LlamaServerStateEvent_Serialize | LlamaServerStateEvent_Deserialize;
+
+/**  Snapshot of the supervised server. Also the payload of the state event. */
+export type LlamaServerStateEvent_Deserialize = {
+	status: LlamaStatus,
+	/**  Human-readable reason for `Error`, or the last log line while starting. */
+	message?: string | null,
+	pid?: number | null,
+	port: number,
+	alias: string,
+	/**  File name of the loaded model. */
+	model?: string | null,
+	draft: boolean,
+	mmproj: boolean,
+	/**  Unix milliseconds when the server became ready. */
+	ready_since_ms?: number | null,
+	/**  Backend guessed from the server folder name (cuda / vulkan / cpu). */
+	backend?: string | null,
 };
 
 /**  Snapshot of the supervised server. Also the payload of the state event. */
-export type LlamaServerStateEvent = {
+export type LlamaServerStateEvent_Serialize = {
 	status: LlamaStatus,
 	/**  Human-readable reason for `Error`, or the last log line while starting. */
 	message: string | null,
@@ -1642,7 +2002,16 @@ export type LlamaServerStateEvent = {
  *  prompts (temp 0.05, top-p 0.35), reasoning off, alias
  *  `gemma-4-E2B-Q4-MTP`. See `llama_server::build_args`.
  */
-export type LlamaSettings = {
+export type LlamaSettings = LlamaSettings_Serialize | LlamaSettings_Deserialize;
+
+/**
+ *  The in-app llama.cpp server ("brain") behind post-processing and the
+ *  Multi-STT merge. Defaults reproduce `launch_server_E2B_Q4.ps1`: Gemma 4
+ *  E2B Q4 with its MTP draft, 8k context, sampling tuned for the merge/clean
+ *  prompts (temp 0.05, top-p 0.35), reasoning off, alias
+ *  `gemma-4-E2B-Q4-MTP`. See `llama_server::build_args`.
+ */
+export type LlamaSettings_Deserialize = {
 	/**
 	 *  Folder that contains `llama-server(.exe)`: an install made by the app
 	 *  (`<app data>/llama_cpp/<backend>-<tag>`) or any existing one.
@@ -1699,18 +2068,84 @@ export type LlamaSettings = {
 	include_cudart?: boolean,
 };
 
+/**
+ *  The in-app llama.cpp server ("brain") behind post-processing and the
+ *  Multi-STT merge. Defaults reproduce `launch_server_E2B_Q4.ps1`: Gemma 4
+ *  E2B Q4 with its MTP draft, 8k context, sampling tuned for the merge/clean
+ *  prompts (temp 0.05, top-p 0.35), reasoning off, alias
+ *  `gemma-4-E2B-Q4-MTP`. See `llama_server::build_args`.
+ */
+export type LlamaSettings_Serialize = {
+	/**
+	 *  Folder that contains `llama-server(.exe)`: an install made by the app
+	 *  (`<app data>/llama_cpp/<backend>-<tag>`) or any existing one.
+	 */
+	server_dir: string | null,
+	model_path: string | null,
+	/**  MTP / speculative draft model (`--model-draft`, `--spec-type draft-mtp`). */
+	draft_model_path: string | null,
+	mmproj_path: string | null,
+	/**  Load the mmproj (vision/audio). Off saves ~1 GB of VRAM for text use. */
+	mmproj_enabled: boolean,
+	port: number,
+	context_size: number,
+	/**  `-ngl`; -1 = all layers on the GPU. */
+	gpu_layers: number,
+	/**  `--threads`; -1 = let llama.cpp choose. */
+	threads: number,
+	flash_attn: boolean,
+	/**  `--reasoning on|off` (Gemma 4 thinking mode; off is much faster). */
+	reasoning: boolean,
+	temperature: number | null,
+	top_p: number | null,
+	top_k: number,
+	min_p: number | null,
+	spec_draft_n_max: number,
+	/**  `--alias`; also the model name the post-processing provider sends. */
+	alias: string,
+	/**  Appended verbatim to the generated arguments. */
+	extra_args: string,
+	/**
+	 *  When set, replaces the generated arguments entirely (everything after
+	 *  the executable).
+	 */
+	custom_args: string | null,
+	/**
+	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3â€“4 % on short
+	 *  prompts in the S2B2S benchmarks).
+	 */
+	attn_rot_disable: boolean,
+	/**  Start the server when the app starts. */
+	autostart: boolean,
+	/**  Start the server when a request targets it and it is not running. */
+	start_on_demand: boolean,
+	stop_on_exit: boolean,
+	/**  Preferred release asset: `auto`, `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`. */
+	backend: string,
+	/**  `latest`, `stable` or `nightly` for the release list. */
+	channel: string,
+	/**
+	 *  Also download the ~500 MB CUDA runtime package (cudart / cuBLAS) with
+	 *  a CUDA build. Off, like the download script without `-IncludeCudart`:
+	 *  a machine with the CUDA toolkit installed already has those DLLs.
+	 */
+	include_cudart: boolean,
+};
+
 export type LlamaStatus = "stopped" | "starting" | "ready" | "error";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
 export type MicIdleTimeoutUnit = "seconds" | "minutes";
 
-export type ModelInfo = {
+export type ModelInfo = ModelInfo_Serialize | ModelInfo_Deserialize;
+
+export type ModelInfo_Deserialize = {
 	id: string,
 	name: string,
 	description: string,
 	filename: string,
-	source: ModelSource,
+	source: ModelSource_Deserialize,
 	size_mb: number,
 	is_downloaded: boolean,
 	is_downloading: boolean,
@@ -1731,7 +2166,40 @@ export type ModelInfo = {
 	native_streaming_latency_kind?: NativeStreamingLatencyKind | null,
 };
 
-export type ModelLoadStatus = {
+export type ModelInfo_Serialize = {
+	id: string,
+	name: string,
+	description: string,
+	filename: string,
+	source: ModelSource_Serialize,
+	size_mb: number,
+	is_downloaded: boolean,
+	is_downloading: boolean,
+	partial_size: number | null,
+	accuracy_score: number | null,
+	speed_score: number | null,
+	supports_translation: boolean,
+	is_recommended: boolean,
+	supported_languages: string[],
+	supports_language_selection: boolean,
+	is_custom: boolean,
+	supports_streaming: boolean,
+	supports_language_detection: boolean,
+	/**
+	 *  Which native streaming latency extension the model supports (if any).
+	 *  Populated for catalog streaming models; `None` for legacy/custom.
+	 */
+	native_streaming_latency_kind: NativeStreamingLatencyKind | null,
+};
+
+export type ModelLoadStatus = ModelLoadStatus_Serialize | ModelLoadStatus_Deserialize;
+
+export type ModelLoadStatus_Deserialize = {
+	is_loaded: boolean,
+	current_model?: string | null,
+};
+
+export type ModelLoadStatus_Serialize = {
 	is_loaded: boolean,
 	current_model: string | null,
 };
@@ -1740,7 +2208,39 @@ export type ModelLoadStatus = {
  *  Where a model comes from and how the app obtains it — the routing discriminant
  *  for downloading and on-disk resolution.
  */
-export type ModelSource = 
+export type ModelSource = ModelSource_Serialize | ModelSource_Deserialize;
+
+/**
+ *  Where a model comes from and how the app obtains it — the routing discriminant
+ *  for downloading and on-disk resolution.
+ */
+export type ModelSource_Deserialize = 
+/**  Direct HTTP download from a URL (the catalog's own hosting). */
+({ Url: {
+	url: string,
+	/**  Expected SHA-256 for integrity verification; `None` skips it. */
+	sha256?: string | null,
+} }) & { HuggingFace?: never } | 
+/**
+ *  A file inside a Hugging Face Hub repo, fetched via hf-hub into the shared
+ *  HF cache (so other tools reuse it). The file within the repo is
+ *  [`ModelInfo::filename`].
+ */
+({ HuggingFace: {
+	repo_id: string,
+	revision: string,
+} }) & { Url?: never } | 
+/**
+ *  Already present on disk — a user-provided custom model, or one discovered
+ *  in a shared cache. Nothing to download.
+ */
+"Local";
+
+/**
+ *  Where a model comes from and how the app obtains it — the routing discriminant
+ *  for downloading and on-disk resolution.
+ */
+export type ModelSource_Serialize = 
 /**  Direct HTTP download from a URL (the catalog's own hosting). */
 ({ Url: {
 	url: string,
@@ -1804,7 +2304,15 @@ export type OverlayPosition_Serialize = "top" | "bottom";
  *  follows `live_fft`; this only shapes the display. Mirrored by
  *  `src/lib/overlayScope.ts`.
  */
-export type OverlayScopeSettings = {
+export type OverlayScopeSettings = OverlayScopeSettings_Serialize | OverlayScopeSettings_Deserialize;
+
+/**
+ *  The picture the recording overlay draws of the microphone (see
+ *  `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
+ *  follows `live_fft`; this only shapes the display. Mirrored by
+ *  `src/lib/overlayScope.ts`.
+ */
+export type OverlayScopeSettings_Deserialize = {
 	/**  Draw the spectrum view. */
 	show_spectrum?: boolean,
 	/**  Draw the waveform view. */
@@ -1915,6 +2423,123 @@ export type OverlayScopeSettings = {
 	circular_show_inner?: boolean,
 };
 
+/**
+ *  The picture the recording overlay draws of the microphone (see
+ *  `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
+ *  follows `live_fft`; this only shapes the display. Mirrored by
+ *  `src/lib/overlayScope.ts`.
+ */
+export type OverlayScopeSettings_Serialize = {
+	/**  Draw the spectrum view. */
+	show_spectrum: boolean,
+	/**  Draw the waveform view. */
+	show_wave: boolean,
+	spectrum_style: OverlayScopeStyle,
+	/**
+	 *  Draw the spectrum rising from the centre line with its negative
+	 *  mirrored below, so it reads like the centred waveform beside it.
+	 */
+	spectrum_mirror: boolean,
+	/**
+	 *  Keep a slowly falling marker at each column's recent peak, like the
+	 *  Live FFT page's peak hold.
+	 */
+	peak_hold: boolean,
+	/**  Samples of raw audio the waveform view covers (256â€¦16384). */
+	wave_samples: number,
+	/**
+	 *  Raised-cosine fade at each end of that window, in samples
+	 *  (0â€¦half the window), so the trace starts and ends at zero.
+	 */
+	wave_taper_samples: number,
+	/**
+	 *  Auto-gain floor of the waveform as a full-scale fraction: quieter
+	 *  signals are not blown up to full height (0.001â€¦0.5).
+	 */
+	wave_gain_floor: number | null,
+	/**  Width of each view in logical pixels (32â€¦160). */
+	view_width: number,
+	/**  Height of the views in logical pixels (14â€¦48). */
+	view_height: number,
+	/**
+	 *  Draw the circular-spectrum view: a third view beside the linear
+	 *  spectrum and the waveform. The bins are combined with their own
+	 *  inversion â€” appended and prepended â€” and the two symmetric signals
+	 *  are added into the input signal (the cross-sum of each bin with its
+	 *  mirror partner, halved into display units). The two branches ride at
+	 *  radius 1+s and 1-s around a full 2Ï€ sweep, the whole figure rotated
+	 *  90Â° so the seam straddles the right of the ring.
+	 */
+	show_circular: boolean,
+	/**
+	 *  Circular style: radial bars between the inner and outer loop, or the
+	 *  two loops drawn as lines.
+	 */
+	circular_bars: boolean,
+	/**
+	 *  Display bins of the circular loop (12â€¦240). The pipeline's bins are
+	 *  peak-pooled down to this many, so fewer bins means chunkier bars.
+	 */
+	circular_bins: number,
+	/**
+	 *  Fixed display gain of the circular loop (0.05â€¦8). The pooled bins are
+	 *  multiplied by this and clamped to 0â€¦1 â€” deliberately a fixed scale,
+	 *  not a dynamic normalisation, so the loop's size breathes with the
+	 *  signal instead of always filling the ring.
+	 */
+	circular_gain: number | null,
+	/**
+	 *  Floor of the circular loop as a fraction of full scale (0â€¦0.9). Bars
+	 *  below it are not drawn: without a floor the ambient room tone paints
+	 *  the whole ring and the loop reads as a filled disc.
+	 */
+	circular_floor: number | null,
+	/**
+	 *  Side of the square circular-spectrum view, in logical pixels
+	 *  (32â€¦400).
+	 */
+	circular_size: number,
+	/**
+	 *  Draw the circular spectrum as a full-window background layer behind
+	 *  the card instead of as its own view in the block.
+	 */
+	circular_background: boolean,
+	/**  Linear spectrum view scale, percent of its base size (50â€¦400). */
+	spectrum_scale: number,
+	/**  Waveform view scale, percent of its base size (50â€¦400). */
+	wave_scale: number,
+	/**
+	 *  Signal-intensity scale for the linear spectrum (0.1â€¦10). Multiplies the
+	 *  display units before drawing, so the spectrum reads taller without
+	 *  changing the view's pixel width.
+	 */
+	spectrum_signal_scale: number | null,
+	/**
+	 *  Signal-intensity scale for the raw-audio waveform (0.1â€¦10). Multiplies
+	 *  the sample values before drawing, so the trace swings taller without
+	 *  changing the view's pixel width.
+	 */
+	wave_signal_scale: number | null,
+	/**
+	 *  Signal-intensity scale for the circular spectrum (0.1â€¦10). Multiplies
+	 *  the pooled display units before drawing, so the ring breathes more
+	 *  dramatically without changing its pixel size.
+	 */
+	circular_signal_scale: number | null,
+	/**
+	 *  Draw the raw-audio waveform *inside* the circular spectrum â€” a centred
+	 *  horizontal trace from the ring's left edge to its right edge â€” instead
+	 *  of as its own view beside it.
+	 */
+	wave_inside_circular: boolean,
+	/**
+	 *  Draw the inner (negative-contracting) loop of the circular spectrum.
+	 *  When off, only the outer (positive-expanding) loop is shown. The outer
+	 *  line is always visible.
+	 */
+	circular_show_inner: boolean,
+};
+
 /**  How the recording overlay's spectrum is drawn. */
 export type OverlayScopeStyle = "area" | "line" | "bars";
 
@@ -1926,8 +2551,15 @@ export type OverlayScopeStyle = "area" | "line" | "bars";
  */
 export type OverlayStyle = "none" | "minimal" | "live";
 
-export type PaginatedHistory = {
-	entries: HistoryEntry[],
+export type PaginatedHistory = PaginatedHistory_Serialize | PaginatedHistory_Deserialize;
+
+export type PaginatedHistory_Deserialize = {
+	entries: HistoryEntry_Deserialize[],
+	has_more: boolean,
+};
+
+export type PaginatedHistory_Serialize = {
+	entries: HistoryEntry_Serialize[],
 	has_more: boolean,
 };
 
@@ -1935,13 +2567,24 @@ export type PasteMethod = "ctrl_v" | "direct" | "direct_streaming" | "none" | "s
 
 export type PermissionAccess = "allowed" | "denied" | "unknown";
 
-export type PostProcessProvider = {
+export type PostProcessProvider = PostProcessProvider_Serialize | PostProcessProvider_Deserialize;
+
+export type PostProcessProvider_Deserialize = {
 	id: string,
 	label: string,
 	base_url: string,
 	allow_base_url_edit?: boolean,
 	models_endpoint?: string | null,
 	supports_structured_output?: boolean,
+};
+
+export type PostProcessProvider_Serialize = {
+	id: string,
+	label: string,
+	base_url: string,
+	allow_base_url_edit: boolean,
+	models_endpoint: string | null,
+	supports_structured_output: boolean,
 };
 
 /**
@@ -1971,13 +2614,45 @@ export type RecallInsertTextEvent = {
 };
 
 /**  A note opened for reading or editing: metadata plus the Markdown body. */
-export type RecallNoteContent = {
-	meta: RecallNoteMeta,
+export type RecallNoteContent = RecallNoteContent_Serialize | RecallNoteContent_Deserialize;
+
+/**  A note opened for reading or editing: metadata plus the Markdown body. */
+export type RecallNoteContent_Deserialize = {
+	meta: RecallNoteMeta_Deserialize,
+	body: string,
+};
+
+/**  A note opened for reading or editing: metadata plus the Markdown body. */
+export type RecallNoteContent_Serialize = {
+	meta: RecallNoteMeta_Serialize,
 	body: string,
 };
 
 /**  One note's metadata as the UI lists it. */
-export type RecallNoteMeta = {
+export type RecallNoteMeta = RecallNoteMeta_Serialize | RecallNoteMeta_Deserialize;
+
+/**  One note's metadata as the UI lists it. */
+export type RecallNoteMeta_Deserialize = {
+	/**  Stable file identity: the `.md` file's stem under `notes/`. */
+	id: string,
+	title: string,
+	/**  Epoch milliseconds. */
+	created_ms: number,
+	/**  Epoch milliseconds. */
+	updated_ms: number,
+	tags: string[],
+	word_count: number,
+	/**  What produced the note: a model id, `"dictation"`, `"manual"`, … */
+	source?: string | null,
+	/**
+	 *  Recording file name in `audio/` (or a history file name) the note
+	 *  was spoken from, if any.
+	 */
+	audio_file?: string | null,
+};
+
+/**  One note's metadata as the UI lists it. */
+export type RecallNoteMeta_Serialize = {
 	/**  Stable file identity: the `.md` file's stem under `notes/`. */
 	id: string,
 	title: string,
@@ -2000,12 +2675,30 @@ export type RecallNoteMeta = {
  *  Settings of the "Recall" page (fork feature): the note vault. Grouped
  *  into one struct so the page persists through a single command.
  */
-export type RecallSettings = {
+export type RecallSettings = RecallSettings_Serialize | RecallSettings_Deserialize;
+
+/**
+ *  Settings of the "Recall" page (fork feature): the note vault. Grouped
+ *  into one struct so the page persists through a single command.
+ */
+export type RecallSettings_Deserialize = {
 	/**
 	 *  Folder the vault lives in. `None` means the default
 	 *  `<app data>/recall`.
 	 */
 	output_dir?: string | null,
+};
+
+/**
+ *  Settings of the "Recall" page (fork feature): the note vault. Grouped
+ *  into one struct so the page persists through a single command.
+ */
+export type RecallSettings_Serialize = {
+	/**
+	 *  Folder the vault lives in. `None` means the default
+	 *  `<app data>/recall`.
+	 */
+	output_dir: string | null,
 };
 
 /**  What the vault looks like on disk right now. */
@@ -2019,7 +2712,35 @@ export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "w
 
 export type SecretMap = { [key in string]: string };
 
-export type SecureInputStatus = {
+export type SecureInputStatus = SecureInputStatus_Serialize | SecureInputStatus_Deserialize;
+
+export type SecureInputStatus_Deserialize = {
+	/**  Secure input is currently enabled (live check) */
+	enabled: boolean,
+	/**
+	 *  Enabled continuously long enough to be considered stuck (not just a
+	 *  password field gaining momentary focus)
+	 */
+	sustained: boolean,
+	culprit_pid?: number | null,
+	culprit_name?: string | null,
+	/**  Carbon fallback registrations are currently active */
+	fallback_active: boolean,
+	/**  Binding ids shadow-registered with identical semantics */
+	covered_bindings: string[],
+	/**  Side-specific binding ids widened to match either side while shadowed */
+	degraded_bindings: string[],
+	/**  Binding ids that cannot fire at all (e.g. fn+key, registration failure) */
+	uncovered_bindings: string[],
+	/**
+	 *  The user tried to record a shortcut while secure input was active.
+	 *  Treated as user impact even when every binding is covered, so the
+	 *  warning banner appears and explains why recording refused.
+	 */
+	recorder_blocked: boolean,
+};
+
+export type SecureInputStatus_Serialize = {
 	/**  Secure input is currently enabled (live check) */
 	enabled: boolean,
 	/**
@@ -2094,7 +2815,22 @@ export type StatisticsRange = {
 	end_ms: number | null,
 };
 
-export type StatisticsSummary = {
+export type StatisticsSummary = StatisticsSummary_Serialize | StatisticsSummary_Deserialize;
+
+export type StatisticsSummary_Deserialize = {
+	range: StatisticsRange,
+	transcription_count: number,
+	total_words: number,
+	average_words?: number | null,
+	total_audio_duration_ms: number | null,
+	average_audio_duration_ms?: number | null,
+	approximate_words_per_minute?: number | null,
+	current_streak_days: number,
+	transcription_latency: DurationMetricSummary_Deserialize,
+	post_processing_latency: DurationMetricSummary_Deserialize,
+};
+
+export type StatisticsSummary_Serialize = {
 	range: StatisticsRange,
 	transcription_count: number,
 	total_words: number,
@@ -2103,8 +2839,8 @@ export type StatisticsSummary = {
 	average_audio_duration_ms: number | null,
 	approximate_words_per_minute: number | null,
 	current_streak_days: number,
-	transcription_latency: DurationMetricSummary,
-	post_processing_latency: DurationMetricSummary,
+	transcription_latency: DurationMetricSummary_Serialize,
+	post_processing_latency: DurationMetricSummary_Serialize,
 };
 
 export type StatisticsUpdatedEvent = null;
@@ -2127,14 +2863,14 @@ export type StreamPhaseEvent = StreamPhaseEvent_Serialize | StreamPhaseEvent_Des
 export type StreamPhaseEvent_Deserialize = {
 	phase: StreamPhase,
 	/**  Present only when `phase` is `Working`. */
-	kind: StreamWorkKind | null,
+	kind?: StreamWorkKind | null,
 };
 
 /**  Emitted to switch the streaming overlay to a working spinner. */
 export type StreamPhaseEvent_Serialize = {
 	phase: StreamPhase,
 	/**  Present only when `phase` is `Working`. */
-	kind?: StreamWorkKind | null,
+	kind?: StreamWorkKind,
 };
 
 /**
@@ -2160,7 +2896,7 @@ export type StreamTextEvent_Deserialize = {
 	 *  because with `DirectStreaming` that text is typed into the user's
 	 *  document and a marker would be typed with it.
 	 */
-	failed_chunks: number | null,
+	failed_chunks?: number | null,
 	/**
 	 *  Whether this text is the whole session's, composed chunk by chunk (the
 	 *  experimental Multi-STT streaming mode). The overlay uses it to grow its
@@ -2187,7 +2923,7 @@ export type StreamTextEvent_Serialize = {
 	 *  because with `DirectStreaming` that text is typed into the user's
 	 *  document and a marker would be typed with it.
 	 */
-	failed_chunks?: number | null,
+	failed_chunks?: number,
 	/**
 	 *  Whether this text is the whole session's, composed chunk by chunk (the
 	 *  experimental Multi-STT streaming mode). The overlay uses it to grow its
@@ -2201,7 +2937,20 @@ export type StreamTextEvent_Serialize = {
 /**  Semantic kind of "working" phase, used to localize the spinner label. */
 export type StreamWorkKind = "transcribing" | "polishing";
 
-export type SystemStatsEvent = {
+export type SystemStatsEvent = SystemStatsEvent_Serialize | SystemStatsEvent_Deserialize;
+
+export type SystemStatsEvent_Deserialize = {
+	cpu_percent: number | null,
+	mem_used_mb: number,
+	mem_total_mb: number,
+	gpu_name?: string | null,
+	gpu_percent?: number | null,
+	vram_used_mb?: number | null,
+	vram_total_mb?: number | null,
+	gpu_temp_c?: number | null,
+};
+
+export type SystemStatsEvent_Serialize = {
 	cpu_percent: number | null,
 	mem_used_mb: number,
 	mem_total_mb: number,
@@ -2230,7 +2979,38 @@ export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "x
  *  microphone frame. Emitted only while the Advanced page's test or the Live
  *  FFT page's voice-detection view runs, never during normal dictation.
  */
-export type VadTestEvent = {
+export type VadTestEvent = VadTestEvent_Serialize | VadTestEvent_Deserialize;
+
+/**
+ *  One update of the live VAD test: what the detector thought of the latest
+ *  microphone frame. Emitted only while the Advanced page's test or the Live
+ *  FFT page's voice-detection view runs, never during normal dictation.
+ */
+export type VadTestEvent_Deserialize = {
+	/**  Raw 0–1 speech score before hysteresis (`None` with VAD disabled). */
+	score?: number | null,
+	/**  Verdict after hysteresis — the threshold the slider sets. */
+	voiced: boolean,
+	/**
+	 *  Whether the frame reached the recording after smoothing (prefill /
+	 *  hangover), i.e. what a model would have heard.
+	 */
+	kept: boolean,
+	/**  Peak input level of the frame, 0–1. */
+	level: number | null,
+	/**
+	 *  RNNoise's own speech probability of the latest 10 ms frame while
+	 *  suppression is on; its gate threshold compares against it.
+	 */
+	denoise_prob?: number | null,
+};
+
+/**
+ *  One update of the live VAD test: what the detector thought of the latest
+ *  microphone frame. Emitted only while the Advanced page's test or the Live
+ *  FFT page's voice-detection view runs, never during normal dictation.
+ */
+export type VadTestEvent_Serialize = {
 	/**  Raw 0–1 speech score before hysteresis (`None` with VAD disabled). */
 	score: number | null,
 	/**  Verdict after hysteresis — the threshold the slider sets. */
@@ -2269,20 +3049,20 @@ async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; dat
 
 type EventEmit<T> = [T] extends [null] ? () => Promise<void> : (payload: T) => Promise<void>;
 
-function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deserialize?: (payload: any) => T) {
-    const mapEvent = (cb: __TAURI_EVENT.EventCallback<T>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
-    const mapPayload = (payload: T) => serialize ? serialize(payload) : payload;
+function makeEvent<TListen, TEmit = TListen>(name: string, serialize?: (payload: TEmit) => unknown, deserialize?: (payload: any) => TListen) {
+    const mapEvent = (cb: __TAURI_EVENT.EventCallback<TListen>) => (event: __TAURI_EVENT.Event<any>) => cb({ ...event, payload: deserialize ? deserialize(event.payload) : event.payload });
+    const mapPayload = (payload: TEmit) => serialize ? serialize(payload) : payload;
 
     const base = {
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => __TAURI_EVENT.once(name, mapEvent(cb)),
-        emit: ((payload: T) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
+        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.listen(name, mapEvent(cb)),
+        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => __TAURI_EVENT.once(name, mapEvent(cb)),
+        emit: ((payload: TEmit) => __TAURI_EVENT.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>
     };
 
     const fn = (target: import("@tauri-apps/api/webview").Webview | import("@tauri-apps/api/window").Window) => ({
-        listen: (cb: __TAURI_EVENT.EventCallback<T>) => target.listen(name, mapEvent(cb)),
-        once: (cb: __TAURI_EVENT.EventCallback<T>) => target.once(name, mapEvent(cb)),
-        emit: ((payload: T) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<T>
+        listen: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.listen(name, mapEvent(cb)),
+        once: (cb: __TAURI_EVENT.EventCallback<TListen>) => target.once(name, mapEvent(cb)),
+        emit: ((payload: TEmit) => target.emit(name, mapPayload(payload)) as unknown) as EventEmit<TEmit>
     });
 
     return Object.assign(fn, base);

@@ -124,6 +124,15 @@ const CARGO_MAJOR_LOCKED: ReadonlyMap<string, string> = new Map([
       "linux-only target section, so neither this script's cargo check nor " +
       "clippy on Windows compiles either one",
   ],
+  [
+    "webview2-com",
+    "webview2-com 0.39 pulls windows-core 0.62.2, but Tauri's git commit " +
+      "(dev branch) links webview2-com 0.38.2 which uses windows-core 0.61.2 " +
+      "via the windows-core-061 alias. Bumping webview2-com creates two " +
+      "incompatible windows_core versions and the ICoreWebView2Settings3 cast " +
+      "fails. The pin follows Tauri's linked version and moves only when Tauri " +
+      "moves to webview2-com 0.39.",
+  ],
 ]);
 
 /** One prerelease line a package is held to, and why. */

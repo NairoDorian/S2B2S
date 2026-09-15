@@ -33,7 +33,7 @@
 // client root — and the guard stays quiet. The writes themselves are the
 // store's normal production path, exercised here directly; nothing to fix.
 import assert from "node:assert";
-import type { ModelInfo } from "@/bindings";
+import type { ModelInfo_Serialize } from "@/bindings";
 import { commands } from "@/bindings";
 import {
   cancelDownload,
@@ -62,7 +62,7 @@ const statsFor = (id: string, speed = 1) => ({
 
 /** The store reads `id` and `is_downloading` on this path and nothing else. */
 const model = (id: string, is_downloading = false) =>
-  ({ id, is_downloading }) as unknown as ModelInfo;
+  ({ id, is_downloading }) as unknown as ModelInfo_Serialize;
 
 /** A plain snapshot of a store map, for `deepStrictEqual` against a literal. */
 const plain = <T extends object>(value: T): T => ({ ...value });

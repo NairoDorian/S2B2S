@@ -26,3 +26,4 @@ docs/vendor
 # Local AI-assistant / editor state (never source)
 .cclaude/
 .commandcode/
+$COMMANDCODE_SCRATCHPAD/

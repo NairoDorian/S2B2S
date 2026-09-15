@@ -6,7 +6,16 @@ pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
     let label = window.label().to_string();
     if let Err(err) = window.with_webview(move |webview| unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-        use windows_core_061::Interface;
+        use windows_core::Interface;
+
+        // In Tauri 3 the app runs under the type-erased `DynRuntime`, so
+        // `with_webview` hands us a `PlatformWebview<DynRuntime>` whose inner
+        // value is a `DynWebview`. Downcast to the concrete wry `Webview` to
+        // reach `controller()` and the WebView2 COM interfaces.
+        let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else {
+            log::warn!("Failed to downcast webview to wry runtime for '{}'", label);
+            return;
+        };
 
         let result = webview
             .controller()
