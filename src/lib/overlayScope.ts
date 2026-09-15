@@ -29,6 +29,11 @@ export const OVERLAY_SCOPE_DEFAULTS: ResolvedOverlayScope = {
   circular_background: false,
   spectrum_scale: 100,
   wave_scale: 100,
+  spectrum_signal_scale: 1.0,
+  wave_signal_scale: 1.0,
+  circular_signal_scale: 1.0,
+  wave_inside_circular: false,
+  circular_show_inner: true,
 };
 
 export const OVERLAY_SCOPE_LIMITS = {
@@ -41,6 +46,7 @@ export const OVERLAY_SCOPE_LIMITS = {
   circularFloor: { min: 0, max: 0.9 },
   circularSize: { min: 32, max: 400 },
   viewScale: { min: 50, max: 400 },
+  signalScale: { min: 0.1, max: 10 },
 } as const;
 
 export const OVERLAY_SCOPE_STYLES: OverlayScopeStyle[] = [
@@ -98,7 +104,11 @@ export function overlayScopeBlockWidth(cfg: ResolvedOverlayScope): number {
     views += 1;
     w += spectrumViewW(cfg);
   }
-  if (cfg.show_wave) {
+  // wave_inside_circular draws the waveform *inside* the ring — it takes no
+  // block space of its own.
+  const waveInside =
+    cfg.wave_inside_circular && cfg.show_circular && !cfg.circular_background;
+  if (cfg.show_wave && !waveInside) {
     views += 1;
     w += waveViewW(cfg);
   }
@@ -132,7 +142,11 @@ const ROW_PADDING_H = 18;
 export function overlayScopeViewHeight(cfg: ResolvedOverlayScope): number {
   let h = 0;
   if (cfg.show_spectrum) h = Math.max(h, spectrumViewH(cfg));
-  if (cfg.show_wave) h = Math.max(h, waveViewH(cfg));
+  if (
+    cfg.show_wave &&
+    !(cfg.wave_inside_circular && cfg.show_circular && !cfg.circular_background)
+  )
+    h = Math.max(h, waveViewH(cfg));
   if (cfg.show_circular && !cfg.circular_background) {
     h = Math.max(h, cfg.circular_size);
   }

@@ -757,12 +757,29 @@ pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Resu
         }
     };
     settings.overlay_position = parsed;
+    // Reset any manual position saved via the drag-grip so the new anchor
+    // takes effect rather than the remembered one overriding it.
+    settings.recording_overlay_use_manual_position = false;
+    settings.recording_overlay_has_saved_custom_position = false;
+    settings.recording_overlay_manual_position_uses_physical_px = false;
+    settings.recording_overlay_custom_x_px = 0;
+    settings.recording_overlay_custom_y_px = 0;
     settings::write_settings(&app, settings);
 
     // Whether the overlay shows at all is owned by overlay_style now; position
     // only ever toggles Top/Bottom, so the enabled cache is untouched here.
     // Update overlay position without recreating window
     crate::utils::update_overlay_position(&app);
+    // Tell the live overlay to drop any saved manual position too, so it
+    // doesn't re-apply the old anchor on its next show.
+    let _ = app.emit(
+        "overlay-position-changed",
+        if parsed == OverlayPosition::Top {
+            "top"
+        } else {
+            "bottom"
+        },
+    );
 
     Ok(())
 }
@@ -795,10 +812,36 @@ pub fn change_overlay_style_setting(app: AppHandle, style: String) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_overlay_window_fade_ms_setting(app: AppHandle, fade_ms: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.overlay_window_fade_ms = fade_ms.clamp(0, 2000);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_overlay_window_corner_radius_setting(
+    app: AppHandle,
+    radius: f32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let radius = radius.clamp(0.0, settings::OVERLAY_CORNER_RADIUS_MAX);
+    settings.overlay_window_corner_radius = radius;
+    settings::write_settings(&app, settings);
+    // Apply live to a running overlay preview — the frontend reads the rest
+    // from settings on show, but the CSS variable is only set at mount.
+    let _ = app.emit("overlay-corner-radius", radius);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_overlay_direct_mode_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.overlay_direct_mode = enabled;
     settings::write_settings(&app, settings);
+    let _ = app.emit("overlay-direct-mode", enabled);
     Ok(())
 }
 
@@ -806,8 +849,10 @@ pub fn change_overlay_direct_mode_setting(app: AppHandle, enabled: bool) -> Resu
 #[specta::specta]
 pub fn change_overlay_direct_speed_setting(app: AppHandle, speed: u32) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.overlay_direct_speed = speed.clamp(10, 60);
+    let speed = speed.clamp(10, 60);
+    settings.overlay_direct_speed = speed;
     settings::write_settings(&app, settings);
+    let _ = app.emit("overlay-direct-speed", speed);
     Ok(())
 }
 
@@ -825,6 +870,8 @@ pub fn change_overlay_speech_stats_setting(app: AppHandle, enabled: bool) -> Res
     // The stats live in the overlay's control row, so turning them on or off
     // changes how wide the card needs to be.
     crate::utils::update_overlay_position(&app);
+    // Toggle the running overlay's stats row live.
+    let _ = app.emit("overlay-speech-stats", enabled);
 
     Ok(())
 }
@@ -1770,9 +1817,13 @@ pub fn change_overlay_scope_settings(
     settings::write_settings(&app, current);
     crate::overlay::update_overlay_scope_cache(&scope);
     if let Some(fft) = app.try_state::<std::sync::Arc<crate::live_fft::LiveFftManager>>() {
-        fft.update_overlay_scope_settings(scope);
+        fft.update_overlay_scope_settings(scope.clone());
     }
     crate::utils::update_overlay_position(&app);
+    // The overlay frontend reads scope settings at show time only — push the
+    // new picture to a running preview so the card re-sizes and the analyser
+    // views re-render without a stop/start cycle.
+    let _ = app.emit("overlay-scope-changed", scope);
     Ok(())
 }
 

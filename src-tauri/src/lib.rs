@@ -36,6 +36,7 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod webview_hardening;
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -876,6 +877,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_overlay_style_setting,
             shortcut::change_overlay_direct_mode_setting,
             shortcut::change_overlay_direct_speed_setting,
+            shortcut::change_overlay_window_fade_ms_setting,
+            shortcut::change_overlay_window_corner_radius_setting,
             shortcut::change_overlay_speech_stats_setting,
             shortcut::change_speech_pause_hold_setting,
             shortcut::change_direct_streaming_speed_setting,
@@ -1085,6 +1088,8 @@ pub fn run(cli_args: CliArgs) {
             commands::live_fft::live_fft_reset,
             commands::live_fft::live_fft_raw_defaults,
             overlay::overlay_stream_text_height,
+            overlay::remember_recording_overlay_window_position,
+            overlay::reset_recording_overlay_manual_position,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

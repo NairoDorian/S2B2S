@@ -73,6 +73,9 @@
      the values here are the defaults for the first paint. */
   --ov-scope-w: 48px;
   --ov-scope-h: 22px;
+  /* Applied to .scard; set from settings.overlay_window_corner_radius
+     at overlay mount. 0 = sharp, up to 20px. */
+  --ov-corner-radius: 0px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -182,7 +185,7 @@
   /* Never wider than the window: an unaccounted content zoom degrades to a
      narrower card instead of clipping. 2px = our border (no border-box reset). */
   max-width: calc(100vw - 2px);
-  border-radius: 0;
+  border-radius: var(--ov-corner-radius);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -581,4 +584,50 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Drag grip — a subtle handle at the bottom-center of the overlay that lets the
+   user grab and reposition the window. Learned from AIVORelay's recording-overlay
+   position memory: clicking starts Tauri's native window dragging, and the
+   onMoved event persists the final position so the overlay stays where the user
+   put it. */
+.ov-drag-grip {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: grab;
+  -webkit-appearance: none;
+  appearance: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  z-index: 1;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.ov-drag-grip:active {
+  cursor: grabbing;
+}
+.ov-stage:hover .ov-drag-grip {
+  opacity: 0.6;
+}
+.ov-stage:hover .ov-drag-grip:hover {
+  opacity: 1;
+}
+.ov-drag-grip-dot {
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--s-faint);
+}
+.ov-drag-grip:active .ov-drag-grip-dot {
+  background: var(--s-muted);
 }

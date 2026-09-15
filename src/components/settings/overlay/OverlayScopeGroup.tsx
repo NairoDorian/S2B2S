@@ -138,6 +138,17 @@ export const OverlayScopeGroup = () => {
             format={(v) => `${Math.round(v)}%`}
             onChange={(v) => save({ spectrum_scale: Math.round(v) })}
           />
+          <ParamSlider
+            label={t(`${P}.spectrumSignalScale.label`)}
+            description={t(`${P}.spectrumSignalScale.description`)}
+            value={draft().spectrum_signal_scale}
+            min={OVERLAY_SCOPE_LIMITS.signalScale.min}
+            max={OVERLAY_SCOPE_LIMITS.signalScale.max}
+            step={0.1}
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.spectrum_signal_scale}
+            format={(v) => `${v.toFixed(1)}×`}
+            onChange={(v) => save({ spectrum_signal_scale: v })}
+          />
         </>
       )}
       <ToggleSwitch
@@ -200,6 +211,17 @@ export const OverlayScopeGroup = () => {
             defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_gain_floor}
             format={(v) => `${(20 * Math.log10(v)).toFixed(0)} dBFS`}
             onChange={(v) => save({ wave_gain_floor: v })}
+          />
+          <ParamSlider
+            label={t(`${P}.waveSignalScale.label`)}
+            description={t(`${P}.waveSignalScale.description`)}
+            value={draft().wave_signal_scale}
+            min={OVERLAY_SCOPE_LIMITS.signalScale.min}
+            max={OVERLAY_SCOPE_LIMITS.signalScale.max}
+            step={0.1}
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_signal_scale}
+            format={(v) => `${v.toFixed(1)}×`}
+            onChange={(v) => save({ wave_signal_scale: v })}
           />
         </>
       )}
@@ -281,6 +303,35 @@ export const OverlayScopeGroup = () => {
             defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_floor}
             format={(v) => `${Math.round(v * 100)}%`}
             onChange={(v) => save({ circular_floor: v })}
+          />
+          <ParamSlider
+            label={t(`${P}.circularSignalScale.label`)}
+            description={t(`${P}.circularSignalScale.description`)}
+            value={draft().circular_signal_scale}
+            min={OVERLAY_SCOPE_LIMITS.signalScale.min}
+            max={OVERLAY_SCOPE_LIMITS.signalScale.max}
+            step={0.1}
+            defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_signal_scale}
+            format={(v) => `${v.toFixed(1)}×`}
+            onChange={(v) => save({ circular_signal_scale: v })}
+          />
+          <ToggleSwitch
+            checked={draft().wave_inside_circular}
+            onChange={(checked) => save({ wave_inside_circular: checked })}
+            isUpdating={busy}
+            label={t(`${P}.waveInsideCircular.label`)}
+            description={t(`${P}.waveInsideCircular.description`)}
+            descriptionMode="tooltip"
+            grouped
+          />
+          <ToggleSwitch
+            checked={draft().circular_show_inner}
+            onChange={(checked) => save({ circular_show_inner: checked })}
+            isUpdating={busy}
+            label={t(`${P}.circularShowInner.label`)}
+            description={t(`${P}.circularShowInner.description`)}
+            descriptionMode="tooltip"
+            grouped
           />
         </>
       )}

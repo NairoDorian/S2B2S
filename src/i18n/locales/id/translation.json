@@ -1185,7 +1185,8 @@
       },
       "groups": {
         "appearance": "Appearance",
-        "stats": "Speech stats"
+        "stats": "Speech stats",
+        "window": "Window"
       },
       "hiddenNote": "The overlay is off. Choose Minimal or Live above to configure what it shows.",
       "scope": {
@@ -1273,7 +1274,43 @@
           "description": "Height of the views; above 22 px the control row grows to fit."
         },
         "analysisNote": "Scale, window, EQ, weighting, dB range, ballistics and update rate are the Live FFT page's settings.",
-        "openLiveFft": "Open Live FFT"
+        "openLiveFft": "Open Live FFT",
+        "circularSignalScale": {
+          "label": "Circular intensity",
+          "description": "Multiplies the circular spectrum's signal before drawing, so the ring breathes more dramatically without changing its pixel size. 1× is neutral; higher is more pronounced."
+        },
+        "spectrumSignalScale": {
+          "label": "Spectrum intensity",
+          "description": "Multiplies the spectrum's signal before drawing, so the bars/trace read taller without changing the view's pixel width. 1× is neutral; higher is louder-looking."
+        },
+        "waveSignalScale": {
+          "label": "Waveform intensity",
+          "description": "Multiplies the raw audio signal before drawing, so the trace swings taller without changing the view's pixel width. 1× is neutral; higher is taller."
+        },
+        "waveInsideCircular": {
+          "label": "Waveform inside ring",
+          "description": "Draw the raw-audio waveform as a horizontal trace inside the circular spectrum's ring, instead of as its own view beside it."
+        },
+        "circularShowInner": {
+          "label": "Show inner loop",
+          "description": "Draw the inner (negative-contracting) loop of the circular spectrum. When off, only the outer (positive-expanding) loop is visible."
+        }
+      },
+      "window": {
+        "fadeMs": {
+          "label": "Fade duration",
+          "description": "How long (ms) the overlay takes to fade out when hidden. Lower = snappier, higher = gentler. Set to 0 for instant hide."
+        },
+        "cornerRadius": {
+          "label": "Corner radius",
+          "description": "Rounds the corners of the overlay window, in CSS pixels. 0 = sharp corners."
+        },
+        "resetPosition": {
+          "label": "Reset position",
+          "description": "Reset the overlay to its default position, clearing any drag-grip repositioning."
+        },
+        "resetPositionButton": "Reset position",
+        "noManualPosition": "The overlay is at its default position"
       }
     },
     "liveFft": {
@@ -1771,7 +1808,8 @@
     "wpm": "wpm",
     "chunkFailed_one": "{{count}} chunk failed",
     "chunkFailed_other": "{{count}} chunks failed",
-    "chunkFailedHint": "The merge of this chunk failed, so its text is the models' outputs side by side. The next pause retries it."
+    "chunkFailedHint": "The merge of this chunk failed, so its text is the models' outputs side by side. The next pause retries it.",
+    "dragGripTooltip": "Drag to reposition the overlay"
   },
   "secureInput": {
     "blockedWithCulprit_one": "{{name}} mungkin memblokir 1 pintasan",

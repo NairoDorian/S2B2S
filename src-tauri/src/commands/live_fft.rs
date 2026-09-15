@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::live_fft::{LiveFftManager, LiveFftStatus};
 use crate::settings::{LiveFftSettings, get_settings, write_settings};
@@ -22,9 +22,15 @@ pub async fn change_live_fft_settings(
     current.live_fft = settings.clone();
     write_settings(&app, current);
     let manager = app.state::<Arc<LiveFftManager>>().inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.update_settings(settings))
+    let settings_for_manager = settings.clone();
+    tauri::async_runtime::spawn_blocking(move || manager.update_settings(settings_for_manager))
         .await
-        .map_err(|e| format!("live fft task join failed: {e}"))
+        .map_err(|e| format!("live fft task join failed: {e}"))?;
+    // The overlay's miniature analyser polls the same FFT manager — nudge a
+    // running overlay preview so it picks up the new analysis parameters
+    // (scale, warp, EQ, weighting, dB, ballistics) on its next frame.
+    let _ = app.emit("live-fft-settings", settings);
+    Ok(())
 }
 
 /// Start the analyser: opens the microphone (a device open can block, so

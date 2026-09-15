@@ -176,7 +176,7 @@ export function OverlayScope(props: OverlayScopeProps) {
     const circBlock = c.show_circular && !c.circular_background;
     return `${props.background ? "bg" : "block"}:${props.rateHz}:${
       c.show_spectrum
-    }:${c.show_wave}:${circBlock}`;
+    }:${c.show_wave}:${circBlock}:${c.wave_inside_circular}`;
   });
 
   createEffect(pollKey, () => {
@@ -275,15 +275,28 @@ export function OverlayScope(props: OverlayScopeProps) {
       const values = n > cols ? maxPerColumn(units, cols, columns) : units;
       const heldValues =
         n > cols ? maxPerColumn(held, cols, columnsHeld) : held;
-      const count = values.length;
+      // Apply the intensity scale to the display units. The scale multiplies
+      // the 0…1 signal before it is mapped to pixels, so the spectrum reads
+      // taller without changing the view's pixel width. Clamped back into
+      // display units so the gain-style alpha stays well-behaved.
+      const sigScale = props.config.spectrum_signal_scale;
+      const scaled = (v: number) => Math.min(1, v * sigScale);
+      const scaledValues = new Float32Array(values.length);
+      const scaledHeld = new Float32Array(heldValues.length);
+      for (let i = 0; i < values.length; i++)
+        scaledValues[i] = scaled(values[i]);
+      for (let i = 0; i < heldValues.length; i++)
+        scaledHeld[i] = scaled(heldValues[i]);
+
+      const count = scaledValues.length;
       const colW = w / count;
       const mirror = props.config.spectrum_mirror;
 
-      const tracePath = (edge: (v: number) => number) => {
+      const tracePath = (edge: (v: number) => number, vals: Float32Array) => {
         sctx.beginPath();
         for (let i = 0; i < count; i++) {
           const x = (i + 0.5) * colW;
-          const y = edge(values[i]);
+          const y = edge(vals[i]);
           if (i === 0) sctx.moveTo(x, y);
           else sctx.lineTo(x, y);
         }
@@ -293,11 +306,11 @@ export function OverlayScope(props: OverlayScopeProps) {
         sctx.fillStyle = color;
         const gap = colW > 3 ? 1 : 0;
         for (let i = 0; i < count; i++) {
-          const y0 = g.top(values[i]);
-          const y1 = g.bottom(values[i]);
+          const y0 = g.top(scaledValues[i]);
+          const y1 = g.bottom(scaledValues[i]);
           const barH = y1 - y0;
           if (barH <= 0) continue;
-          sctx.globalAlpha = 0.35 + 0.65 * values[i];
+          sctx.globalAlpha = 0.35 + 0.65 * scaledValues[i];
           sctx.fillRect(i * colW, y0, Math.max(1, colW - gap), barH);
         }
         sctx.globalAlpha = 1;
@@ -308,12 +321,12 @@ export function OverlayScope(props: OverlayScopeProps) {
           sctx.beginPath();
           sctx.moveTo(0, g.base);
           for (let i = 0; i < count; i++) {
-            sctx.lineTo((i + 0.5) * colW, g.top(values[i]));
+            sctx.lineTo((i + 0.5) * colW, g.top(scaledValues[i]));
           }
           sctx.lineTo(w, g.base);
           if (mirror) {
             for (let i = count - 1; i >= 0; i--) {
-              sctx.lineTo((i + 0.5) * colW, g.bottom(values[i]));
+              sctx.lineTo((i + 0.5) * colW, g.bottom(scaledValues[i]));
             }
           }
           sctx.closePath();
@@ -325,10 +338,10 @@ export function OverlayScope(props: OverlayScopeProps) {
         sctx.strokeStyle = color;
         sctx.lineWidth = 1;
         sctx.lineJoin = "round";
-        tracePath(g.top);
+        tracePath(g.top, scaledValues);
         sctx.stroke();
         if (mirror) {
-          tracePath(g.bottom);
+          tracePath(g.bottom, scaledValues);
           sctx.stroke();
         }
       }
@@ -339,9 +352,9 @@ export function OverlayScope(props: OverlayScopeProps) {
         const markW = Math.max(1, colW - 1);
         for (let i = 0; i < count; i++) {
           const x = i * colW;
-          sctx.fillRect(x, g.top(heldValues[i]) - 1, markW, 1.5);
+          sctx.fillRect(x, g.top(scaledHeld[i]) - 1, markW, 1.5);
           if (mirror) {
-            sctx.fillRect(x, g.bottom(heldValues[i]) - 0.5, markW, 1.5);
+            sctx.fillRect(x, g.bottom(scaledHeld[i]) - 0.5, markW, 1.5);
           }
         }
         sctx.globalAlpha = 1;
@@ -427,12 +440,19 @@ export function OverlayScope(props: OverlayScopeProps) {
       const combinedAt = (k: number) => circularSignalAt(k, circPooled);
       const angleAt = (k: number) => circularAngleAt(k, D);
 
+      const signalScale = cfg.circular_signal_scale;
+      // Apply the intensity scale to the pooled signal, then clamp back into
+      // 0…1 display units. A scale > 1 makes the ring breathe more
+      // dramatically; < 1 calms it. The view's pixel size is untouched.
+      const scaledCombinedAt = (k: number) =>
+        Math.min(1, Math.max(0, combinedAt(k) * signalScale));
+
       if (cfg.circular_bars) {
         ctx.strokeStyle = color;
         ctx.lineCap = "round";
         ctx.lineWidth = Math.max(1, (2 * Math.PI * S) / D - 1);
         for (let k = 0; k < D; k++) {
-          const c = combinedAt(k);
+          const c = scaledCombinedAt(k);
           if (c <= 0) continue;
           const th = angleAt(k);
           const co = Math.cos(th);
@@ -445,11 +465,11 @@ export function OverlayScope(props: OverlayScopeProps) {
         }
         ctx.globalAlpha = 1;
       } else {
-        // The two loops joined as lines — inner (1-p) dimmer, outer (1+p)
-        // on top — with a translucent band filling the ring between them,
-        // the circular counterpart of the linear spectrum's area style.
+        // The two loops drawn as lines only — inner (1-p) dimmer, outer
+        // (1+p) on top. No fill between them: the inside of the ring stays
+        // empty so only the two signal lines show against the card.
         const radius = (k: number, sign: number) =>
-          S * (1 + sign * combinedAt(k));
+          S * (1 + sign * scaledCombinedAt(k));
         const loopPath = (sign: number) => {
           ctx.beginPath();
           for (let k = 0; k < D; k++) {
@@ -461,24 +481,58 @@ export function OverlayScope(props: OverlayScopeProps) {
           }
           ctx.closePath();
         };
-        // Band between the loops: both subpaths in one even-odd fill, so
-        // the disc inside the inner ring stays empty.
-        ctx.globalAlpha = 0.22;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        loopPath(1);
-        loopPath(-1);
-        ctx.fill("evenodd");
-        ctx.globalAlpha = 1;
         ctx.strokeStyle = color;
         ctx.lineWidth = 1;
         ctx.lineJoin = "round";
-        loopPath(-1);
-        ctx.globalAlpha = 0.55;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        // Inner loop first (dimmer), then outer loop on top. When
+        // circular_show_inner is off only the outer loop is drawn — the
+        // inner (negative) line disappears, leaving just the ring's
+        // positive-expanding edge. The outer line is always visible.
+        if (cfg.circular_show_inner) {
+          loopPath(-1);
+          ctx.globalAlpha = 0.55;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
         loopPath(1);
         ctx.stroke();
+      }
+
+      // Waveform traced inside the ring: a centred horizontal line from the
+      // ring's left edge to its right edge, only when the toggle is on.
+      if (cfg.wave_inside_circular && frame) {
+        const samples = frame.wave;
+        const n = samples.length;
+        if (n >= 2) {
+          // Track the wave ceiling from the raw analyser samples — same
+          // source the linear waveform view reads — so the trace fills the
+          // ring's horizontal span for the loudest recent swing.
+          let peak = 0;
+          for (let i = 0; i < n; i++) {
+            const a = Math.abs(samples[i]);
+            if (a > peak) peak = a;
+          }
+          const waveCeil = Math.max(peak, cfg.wave_gain_floor);
+          // The ring's usable horizontal span: from inner-radius left edge to
+          // outer-radius right edge at the centre line. The inner radius is
+          // S * (1 - maxSignal); use the full diameter so the trace touches
+          // the ring's left and right extremes.
+          const innerR = S * 0.15; // keep the trace inside the loops
+          const span = S - innerR;
+          const gain = (span / waveCeil) * cfg.wave_signal_scale;
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = 0.85;
+          ctx.lineWidth = 1;
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          const step = (2 * span) / (n - 1);
+          ctx.moveTo(cx - span, cy - samples[0] * gain);
+          for (let i = 1; i < n; i++) {
+            ctx.lineTo(cx - span + i * step, cy - samples[i] * gain);
+          }
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
       }
     };
 
@@ -503,9 +557,12 @@ export function OverlayScope(props: OverlayScopeProps) {
       const n = samples.length;
       // Auto-gain: the trace fills the box for the loudest recent swing and
       // relaxes as the signal quiets, never amplifying below the floor.
+      // The intensity scale multiplies the raw samples before the peak search,
+      // so the trace swings taller without changing the view's pixel width.
+      const wScale = props.config.wave_signal_scale;
       let peak = 0;
       for (let i = 0; i < n; i++) {
-        const a = Math.abs(samples[i]);
+        const a = Math.abs(samples[i] * wScale);
         if (a > peak) peak = a;
       }
       waveCeiling = Math.max(
@@ -516,9 +573,9 @@ export function OverlayScope(props: OverlayScopeProps) {
       const gain = (mid - 1) / waveCeiling;
       const step = w / (n - 1);
       wctx.beginPath();
-      wctx.moveTo(0, mid - samples[0] * gain);
+      wctx.moveTo(0, mid - samples[0] * wScale * gain);
       for (let i = 1; i < n; i++) {
-        wctx.lineTo(i * step, mid - samples[i] * gain);
+        wctx.lineTo(i * step, mid - samples[i] * wScale * gain);
       }
       wctx.stroke();
     };
@@ -534,7 +591,16 @@ export function OverlayScope(props: OverlayScopeProps) {
         return;
       }
       paintSpectrum(frame);
-      paintWave(frame);
+      // When wave_inside_circular is on, the waveform is traced inside the
+      // ring by paintCircular — skip the standalone waveform view so they
+      // don't draw on top of each other.
+      const waveInside =
+        props.config.wave_inside_circular &&
+        props.config.show_circular &&
+        !props.config.circular_background;
+      if (!waveInside) {
+        paintWave(frame);
+      }
       if (props.config.show_circular && !props.config.circular_background) {
         paintCircular(circular, cctx, frame);
       }
@@ -550,7 +616,7 @@ export function OverlayScope(props: OverlayScopeProps) {
           const frame = decode(buffer);
           const live = frame?.active ? frame : null;
           const c = props.config;
-          const key = `${live?.seq ?? -1}:${props.ready}:${props.quiet}:${c.spectrum_style}:${c.spectrum_mirror}:${c.peak_hold}:${c.wave_gain_floor}:${c.show_circular}:${c.circular_bars}:${c.circular_bins}:${c.circular_gain}:${c.circular_floor}`;
+          const key = `${live?.seq ?? -1}:${props.ready}:${props.quiet}:${c.spectrum_style}:${c.spectrum_mirror}:${c.peak_hold}:${c.wave_gain_floor}:${c.spectrum_signal_scale}:${c.wave_signal_scale}:${c.circular_signal_scale}:${c.wave_inside_circular}:${c.circular_show_inner}:${c.show_circular}:${c.circular_bars}:${c.circular_bins}:${c.circular_gain}:${c.circular_floor}`;
           if (key !== paintedKey) {
             paintedKey = key;
             paint(live);
@@ -598,16 +664,21 @@ export function OverlayScope(props: OverlayScopeProps) {
           ref={(el: HTMLCanvasElement) => (spectrum = el)}
         />
       )}
-      {props.config.show_wave && (
-        <canvas
-          class="sscope sscope-wave"
-          style={{
-            width: `${waveViewW(props.config)}px`,
-            height: `${waveViewH(props.config)}px`,
-          }}
-          ref={(el: HTMLCanvasElement) => (wave = el)}
-        />
-      )}
+      {props.config.show_wave &&
+        !(
+          props.config.wave_inside_circular &&
+          props.config.show_circular &&
+          !props.config.circular_background
+        ) && (
+          <canvas
+            class="sscope sscope-wave"
+            style={{
+              width: `${waveViewW(props.config)}px`,
+              height: `${waveViewH(props.config)}px`,
+            }}
+            ref={(el: HTMLCanvasElement) => (wave = el)}
+          />
+        )}
       {props.config.show_circular && !props.config.circular_background && (
         <canvas
           class="sscope sscope-circular"

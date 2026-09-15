@@ -815,6 +815,8 @@ pub const MIN_OVERLAY_CIRCULAR_SIZE: u32 = 32;
 pub const MAX_OVERLAY_CIRCULAR_SIZE: u32 = 400;
 pub const MIN_OVERLAY_VIEW_SCALE: u32 = 50;
 pub const MAX_OVERLAY_VIEW_SCALE: u32 = 400;
+pub const MIN_OVERLAY_SIGNAL_SCALE: f32 = 0.1;
+pub const MAX_OVERLAY_SIGNAL_SCALE: f32 = 10.0;
 
 /// The picture the recording overlay draws of the microphone (see
 /// `live_fft::scope` and `overlay/OverlayScope.tsx`). The analysis behind it
@@ -879,6 +881,26 @@ pub struct OverlayScopeSettings {
     pub spectrum_scale: u32,
     /// Waveform view scale, percent of its base size (50â€¦400).
     pub wave_scale: u32,
+    /// Signal-intensity scale for the linear spectrum (0.1â€¦10). Multiplies the
+    /// display units before drawing, so the spectrum reads taller without
+    /// changing the view's pixel width.
+    pub spectrum_signal_scale: f32,
+    /// Signal-intensity scale for the raw-audio waveform (0.1â€¦10). Multiplies
+    /// the sample values before drawing, so the trace swings taller without
+    /// changing the view's pixel width.
+    pub wave_signal_scale: f32,
+    /// Signal-intensity scale for the circular spectrum (0.1â€¦10). Multiplies
+    /// the pooled display units before drawing, so the ring breathes more
+    /// dramatically without changing its pixel size.
+    pub circular_signal_scale: f32,
+    /// Draw the raw-audio waveform *inside* the circular spectrum â€” a centred
+    /// horizontal trace from the ring's left edge to its right edge â€” instead
+    /// of as its own view beside it.
+    pub wave_inside_circular: bool,
+    /// Draw the inner (negative-contracting) loop of the circular spectrum.
+    /// When off, only the outer (positive-expanding) loop is shown. The outer
+    /// line is always visible.
+    pub circular_show_inner: bool,
 }
 
 impl Default for OverlayScopeSettings {
@@ -903,6 +925,11 @@ impl Default for OverlayScopeSettings {
             circular_background: false,
             spectrum_scale: 100,
             wave_scale: 100,
+            spectrum_signal_scale: 1.0,
+            wave_signal_scale: 1.0,
+            circular_signal_scale: 1.0,
+            wave_inside_circular: false,
+            circular_show_inner: true,
         }
     }
 }
@@ -949,6 +976,24 @@ impl OverlayScopeSettings {
         self.wave_scale = self
             .wave_scale
             .clamp(MIN_OVERLAY_VIEW_SCALE, MAX_OVERLAY_VIEW_SCALE);
+        self.spectrum_signal_scale = if self.spectrum_signal_scale.is_finite() {
+            self.spectrum_signal_scale
+                .clamp(MIN_OVERLAY_SIGNAL_SCALE, MAX_OVERLAY_SIGNAL_SCALE)
+        } else {
+            d.spectrum_signal_scale
+        };
+        self.wave_signal_scale = if self.wave_signal_scale.is_finite() {
+            self.wave_signal_scale
+                .clamp(MIN_OVERLAY_SIGNAL_SCALE, MAX_OVERLAY_SIGNAL_SCALE)
+        } else {
+            d.wave_signal_scale
+        };
+        self.circular_signal_scale = if self.circular_signal_scale.is_finite() {
+            self.circular_signal_scale
+                .clamp(MIN_OVERLAY_SIGNAL_SCALE, MAX_OVERLAY_SIGNAL_SCALE)
+        } else {
+            d.circular_signal_scale
+        };
         self
     }
 
@@ -963,14 +1008,17 @@ impl OverlayScopeSettings {
     }
 
     /// Height the scope views need: the tallest visible view. The pill's row
-    /// grows to fit it. The background circular layer is not counted â€” it is
+    /// grows to fit it. The background circular layer is not counted — it is
     /// an absolute layer over the window, not a block view.
     pub fn view_height_px(&self) -> u32 {
         let mut h = 0u32;
         if self.show_spectrum {
             h = h.max(self.view_height * self.spectrum_scale / 100);
         }
-        if self.show_wave {
+        // wave_inside_circular draws inside the ring — no block height.
+        let wave_inside =
+            self.wave_inside_circular && self.show_circular && !self.circular_background;
+        if self.show_wave && !wave_inside {
             h = h.max(self.view_height * self.wave_scale / 100);
         }
         if self.show_circular && !self.circular_background {
@@ -990,7 +1038,10 @@ impl OverlayScopeSettings {
             views += 1;
             w += self.spectrum_view_w();
         }
-        if self.show_wave {
+        // wave_inside_circular draws inside the ring — no block width.
+        let wave_inside =
+            self.wave_inside_circular && self.show_circular && !self.circular_background;
+        if self.show_wave && !wave_inside {
             views += 1;
             w += self.wave_view_w();
         }
@@ -1267,6 +1318,23 @@ pub struct AppSettings {
     pub selected_language: String,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
+    /// When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
+    /// `recording_overlay_custom_y_px` instead of the auto Top/Bottom anchor.
+    /// Set by the drag-grip on the recording overlay and persists across restarts.
+    #[serde(default)]
+    pub recording_overlay_use_manual_position: bool,
+    #[serde(default)]
+    pub recording_overlay_has_saved_custom_position: bool,
+    #[serde(default)]
+    pub recording_overlay_manual_position_uses_physical_px: bool,
+    #[serde(default)]
+    pub recording_overlay_custom_x_px: i32,
+    #[serde(default)]
+    pub recording_overlay_custom_y_px: i32,
+    #[serde(default = "default_overlay_window_fade_ms")]
+    pub overlay_window_fade_ms: u32,
+    #[serde(default = "default_overlay_window_corner_radius")]
+    pub overlay_window_corner_radius: f32,
     #[serde(default = "default_debug_mode")]
     pub debug_mode: bool,
     #[serde(default = "default_log_level")]
@@ -1609,6 +1677,18 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::None;
     #[cfg(not(target_os = "linux"))]
     return OverlayStyle::Live;
+}
+
+fn default_overlay_window_fade_ms() -> u32 {
+    300
+}
+
+/// Clamp boundary for `overlay_window_corner_radius` — capped to keep the
+/// 280×50 overlay readable (half of 50 = 25).
+pub(crate) const OVERLAY_CORNER_RADIUS_MAX: f32 = 25.0;
+
+fn default_overlay_window_corner_radius() -> f32 {
+    0.0
 }
 
 fn default_overlay_direct_speed() -> u32 {
@@ -2020,6 +2100,13 @@ pub fn get_default_settings() -> AppSettings {
         translate_to_english: false,
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
+        recording_overlay_use_manual_position: false,
+        recording_overlay_has_saved_custom_position: false,
+        recording_overlay_manual_position_uses_physical_px: false,
+        recording_overlay_custom_x_px: 0,
+        recording_overlay_custom_y_px: 0,
+        overlay_window_fade_ms: default_overlay_window_fade_ms(),
+        overlay_window_corner_radius: default_overlay_window_corner_radius(),
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),

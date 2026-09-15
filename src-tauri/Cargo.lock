@@ -9421,6 +9421,8 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "clap",
+ "core-foundation 0.9.4",
+ "core-graphics 0.22.3",
  "cpal",
  "dirs 7.0.0",
  "earshot",

@@ -194,6 +194,128 @@ fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool 
     false
 }
 
+// --- macOS: CoreGraphics types for frontmost window detection ---
+#[cfg(target_os = "macos")]
+mod macos_monitor {
+    use core_foundation::{
+        base::{CFType, TCFType},
+        dictionary::CFDictionary,
+        number::CFNumber,
+        string::CFString,
+    };
+    use core_graphics::{
+        geometry::CGRect,
+        window::{
+            copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+            kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly,
+        },
+    };
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct LogicalRect {
+        pub x: f64,
+        pub y: f64,
+        pub width: f64,
+        pub height: f64,
+    }
+
+    /// Get the monitor containing the frontmost (key) non-desktop app window.
+    /// Returns None if no suitable window found (fallback to cursor).
+    pub fn get_monitor_with_focused_window(
+        app_handle: &tauri::AppHandle,
+    ) -> Option<tauri::Monitor> {
+        let window_infos = copy_window_info(
+            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+            kCGNullWindowID,
+        )?;
+
+        let layer_key = unsafe { CFString::wrap_under_get_rule(kCGWindowLayer) };
+        let bounds_key = unsafe { CFString::wrap_under_get_rule(kCGWindowBounds) };
+
+        for win_info_ref in window_infos.get_all_values() {
+            let win_info = unsafe {
+                CFDictionary::<CFString, CFType>::wrap_under_get_rule(
+                    win_info_ref as core_foundation::dictionary::CFDictionaryRef,
+                )
+            };
+
+            // Filter for normal app windows (layer == 0)
+            let layer = win_info
+                .find(&layer_key)
+                .and_then(|v| v.downcast::<CFNumber>())
+                .and_then(|v| v.to_i32());
+
+            if layer != Some(0) {
+                continue;
+            }
+
+            let bounds = win_info
+                .find(&bounds_key)
+                .and_then(|v| v.downcast::<CFDictionary>())
+                .and_then(|v| CGRect::from_dict_representation(&v));
+
+            let Some(bounds) = bounds else {
+                continue;
+            };
+
+            if bounds.size.width <= 1.0 || bounds.size.height <= 1.0 {
+                continue;
+            }
+
+            let rect = LogicalRect {
+                x: bounds.origin.x,
+                y: bounds.origin.y,
+                width: bounds.size.width,
+                height: bounds.size.height,
+            };
+
+            // Find monitor containing the window's center point
+            let center_x = rect.x + rect.width / 2.0;
+            let center_y = rect.y + rect.height / 2.0;
+
+            return get_monitor_containing_logical_point(app_handle, center_x, center_y);
+        }
+
+        None
+    }
+
+    fn get_monitor_containing_logical_point(
+        app_handle: &tauri::AppHandle,
+        x: f64,
+        y: f64,
+    ) -> Option<tauri::Monitor> {
+        if let Ok(monitors) = app_handle.available_monitors() {
+            for monitor in monitors {
+                let scale = monitor.scale_factor();
+                let pos = tauri::PhysicalPosition::new(
+                    (monitor.position().x as f64 / scale) as i32,
+                    (monitor.position().y as f64 / scale) as i32,
+                );
+                let size = tauri::PhysicalSize::new(
+                    (monitor.size().width as f64 / scale) as u32,
+                    (monitor.size().height as f64 / scale) as u32,
+                );
+                if is_point_within_monitor((x, y), &pos, &size) {
+                    return Some(monitor);
+                }
+            }
+        }
+        None
+    }
+
+    fn is_point_within_monitor(
+        point: (f64, f64),
+        monitor_pos: &tauri::PhysicalPosition<i32>,
+        monitor_size: &tauri::PhysicalSize<u32>,
+    ) -> bool {
+        let (px, py) = point;
+        px >= monitor_pos.x as f64
+            && px < (monitor_pos.x + monitor_size.width as i32) as f64
+            && py >= monitor_pos.y as f64
+            && py < (monitor_pos.y + monitor_size.height as i32) as f64
+    }
+}
+
 fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
     if let Some(mouse_location) = input::get_cursor_position(app_handle) {
         if let Ok(monitors) = app_handle.available_monitors() {
@@ -222,6 +344,15 @@ fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
                     }
                 }
             }
+        }
+    }
+
+    // On macOS, also try to get the monitor from the frontmost app window
+    // (more reliable than cursor when cursor is off-screen or on a different display).
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(monitor) = macos_monitor::get_monitor_with_focused_window(app_handle) {
+            return Some(monitor);
         }
     }
 
@@ -262,18 +393,56 @@ fn is_mouse_within_monitor(
 /// converts PhysicalPosition using the scale factor of the monitor the window
 /// is *currently* on, which is wrong when moving cross-monitor. Windows uses
 /// `place_windows_overlay` instead (no single logical space across mixed DPI).
+/// Finds the monitor whose physical-pixel bounds contain the given point,
+/// falling back to the cursor's monitor.
+fn get_monitor_for_physical_point(
+    app_handle: &AppHandle,
+    px: f64,
+    py: f64,
+) -> Option<tauri::Monitor> {
+    if let Ok(monitors) = app_handle.available_monitors() {
+        for monitor in monitors {
+            let pos = monitor.position();
+            let size = monitor.size();
+            if px >= pos.x as f64
+                && px < (pos.x + size.width as i32) as f64
+                && py >= pos.y as f64
+                && py < (pos.y + size.height as i32) as f64
+            {
+                return Some(monitor);
+            }
+        }
+    }
+    get_monitor_with_cursor(app_handle)
+}
+
 fn calculate_overlay_position(
     app_handle: &AppHandle,
     width: f64,
     height: f64,
 ) -> Option<(f64, f64)> {
+    let settings = settings::get_settings(app_handle);
+
+    // If a manual position has been saved via the drag-grip, return it
+    // converted to logical coordinates. The `onMoved` event in the overlay
+    // frontend reports physical pixels, so divide by the scale factor of the
+    // monitor the saved point falls on.
+    if settings.recording_overlay_use_manual_position
+        && settings.recording_overlay_has_saved_custom_position
+    {
+        let px = settings.recording_overlay_custom_x_px as f64;
+        let py = settings.recording_overlay_custom_y_px as f64;
+        let monitor = get_monitor_for_physical_point(app_handle, px, py)
+            .or_else(|| get_monitor_with_cursor(app_handle))?;
+        let scale = monitor.scale_factor();
+        return Some((px / scale, py / scale));
+    }
+
     let monitor = get_monitor_with_cursor(app_handle)?;
     let scale = monitor.scale_factor();
     let monitor_x = monitor.position().x as f64 / scale;
     let monitor_y = monitor.position().y as f64 / scale;
     let monitor_width = monitor.size().width as f64 / scale;
-
-    let settings = settings::get_settings(app_handle);
 
     let x = monitor_x + (monitor_width - width) / 2.0;
     let y = match settings.overlay_position {
@@ -368,18 +537,42 @@ fn place_windows_overlay(
         HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
     };
 
-    let monitor = get_monitor_with_cursor(app_handle)
-        .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
+    let settings = settings::get_settings(app_handle);
     let text_scale = windows_text_scale_factor();
-    let (x, y, width, height) = windows_overlay_bounds(
-        *monitor.position(),
-        *monitor.size(),
-        monitor.scale_factor(),
-        text_scale,
-        logical_width,
-        logical_height,
-        settings::get_settings(app_handle).overlay_position,
-    );
+
+    // If a manual position has been saved via the drag-grip, use those physical
+    // coordinates directly instead of computing from the cursor and overlay_position.
+    let (x, y, width, height, scale) = if settings.recording_overlay_use_manual_position
+        && settings.recording_overlay_has_saved_custom_position
+    {
+        let monitor = get_monitor_with_cursor(app_handle).ok_or_else(|| {
+            "failed to determine the monitor for manual overlay position".to_string()
+        })?;
+        let scale = monitor.scale_factor();
+        let width = (logical_width * scale * text_scale).round() as i32;
+        let height = (logical_height * scale * text_scale).round() as i32;
+        (
+            settings.recording_overlay_custom_x_px,
+            settings.recording_overlay_custom_y_px,
+            width,
+            height,
+            scale,
+        )
+    } else {
+        let monitor = get_monitor_with_cursor(app_handle)
+            .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
+        let scale = monitor.scale_factor();
+        let (x, y, w, h) = windows_overlay_bounds(
+            *monitor.position(),
+            *monitor.size(),
+            scale,
+            text_scale,
+            logical_width,
+            logical_height,
+            settings.overlay_position,
+        );
+        (x, y, w, h, scale)
+    };
     let hwnd = overlay_window
         .hwnd()
         .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
@@ -405,10 +598,44 @@ fn place_windows_overlay(
         y,
         width,
         height,
-        monitor.scale_factor(),
+        scale,
         text_scale
     );
     Ok(())
+}
+
+/// Forces a window to be topmost using the Win32 API (Windows only).
+/// More reliable than Tauri's `set_always_on_top` or the `HWND_TOPMOST` argument
+/// in `place_windows_overlay`, which `SWP_NOZORDER` silently drops — a window
+/// that was just shown or crossed a DPI boundary can lose its z-order slot and
+/// sink below other always-on-top windows. Adapted from AIVORelay's
+/// `apply_recording_overlay_geometry_native`.
+#[cfg(target_os = "windows")]
+fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
+    };
+
+    let overlay_clone = overlay_window.clone();
+    let _ = overlay_clone.clone().run_on_main_thread(move || {
+        if let Ok(raw_hwnd) = overlay_clone.hwnd() {
+            unsafe {
+                // hwnd comes from tao (windows 0.61.3), cast to our windows 0.62.2 HWND
+                let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&raw_hwnd);
+                // Force Z-order without SWP_NOZORDER so HWND_TOPMOST actually takes
+                // effect. Unlike place_windows_overlay this doesn't move or resize.
+                let _ = SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                );
+            }
+        }
+    });
 }
 
 /// Creates the recording overlay window and keeps it hidden by default
@@ -455,6 +682,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     #[allow(unused_variables)]
     match builder.build() {
         Ok(window) => {
+            crate::webview_hardening::disable_browser_accelerator_keys(&window);
             #[cfg(target_os = "linux")]
             {
                 // Try to initialize GTK layer shell, ignore errors if compositor doesn't support it
@@ -491,7 +719,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             .has_shadow(false)
             .transparent(true)
             .no_activate(true)
-            .corner_radius(0.0)
+            .corner_radius(settings::get_settings(app_handle).overlay_window_corner_radius)
             .style_mask(StyleMask::empty().borderless().nonactivating_panel())
             .with_window(|w| w.decorations(false).transparent(true).focusable(false))
             .collection_behavior(
@@ -502,6 +730,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             .build()
         {
             Ok(panel) => {
+                crate::webview_hardening::disable_browser_accelerator_keys(&panel);
                 panel.hide();
             }
             Err(e) => {
@@ -608,14 +837,38 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
             };
             let pos_calc_elapsed = pos_started.elapsed() - set_pos_elapsed;
 
+            // Show the window first (tao needs it mapped before SetWindowPos can
+            // reach its HWND on Windows).
+            let _ = overlay_window.show();
+
+            // On Windows, aggressively re-assert "topmost" in the native Z-order
+            // after showing. `place_windows_overlay` passes `SWP_NOZORDER`, which
+            // makes its `HWND_TOPMOST` argument a no-op, so this separate call —
+            // which does NOT set `SWP_NOZORDER` — is what actually enforces z-order.
+            #[cfg(target_os = "windows")]
+            force_overlay_topmost(&overlay_window);
+
+            // Re-assert bounds after show(): the pre-show move crosses the DPI
+            // boundary, and tao's `WM_DPICHANGED` reflow clobbers the first
+            // placement. The re-place also re-asserts topmost — same atomic
+            // SetWindowPos, so no frame can appear between the two.
+            #[cfg(target_os = "windows")]
+            if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
+                log::error!("Failed to re-assert recording overlay position: {error}");
+            }
+
             let show_started = std::time::Instant::now();
             let _ = overlay_window.show();
             let show_elapsed = show_started.elapsed();
 
+            // On Windows, aggressively re-assert "topmost" in the native Z-order
+            // after showing the second time.
+            #[cfg(target_os = "windows")]
+            force_overlay_topmost(&overlay_window);
+
             // Re-assert bounds after show(): the pre-show move crosses the DPI
-            // boundary, and tao's WM_DPICHANGED reflow clobbers the first
-            // placement. The re-place also re-asserts topmost — same atomic
-            // SetWindowPos, so no frame can appear between the two.
+            // boundary, and tao's `WM_DPICHANGED` reflow clobbers the first
+            // placement.
             #[cfg(target_os = "windows")]
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
                 log::error!("Failed to re-assert recording overlay position: {error}");
@@ -703,6 +956,10 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
                 log::error!("Failed to update recording overlay position: {error}");
             }
+            // Re-assert topmost — place_windows_overlay's SWP_NOZORDER drops
+            // its HWND_TOPMOST argument, so this is the call that actually
+            // enforces z-order when repositioning an already-visible overlay.
+            force_overlay_topmost(&overlay_window);
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -717,6 +974,40 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
             }
         }
     }
+}
+
+/// Remember the physical-pixel position of the overlay window after a drag-grip
+/// reposition, so the next recording shows up where the user left it.
+#[tauri::command]
+#[specta::specta]
+pub fn remember_recording_overlay_window_position(
+    app_handle: AppHandle,
+    x_px: i32,
+    y_px: i32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app_handle);
+    settings.recording_overlay_use_manual_position = true;
+    settings.recording_overlay_has_saved_custom_position = true;
+    settings.recording_overlay_manual_position_uses_physical_px = true;
+    settings.recording_overlay_custom_x_px = x_px.clamp(-100000, 100000);
+    settings.recording_overlay_custom_y_px = y_px.clamp(-100000, 100000);
+    settings::write_settings(&app_handle, settings);
+    Ok(())
+}
+
+/// Reset any saved drag-grip position back to the auto (Top/Bottom) anchor.
+#[tauri::command]
+#[specta::specta]
+pub fn reset_recording_overlay_manual_position(app_handle: AppHandle) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app_handle);
+    settings.recording_overlay_use_manual_position = false;
+    settings.recording_overlay_has_saved_custom_position = false;
+    settings.recording_overlay_manual_position_uses_physical_px = false;
+    settings.recording_overlay_custom_x_px = 0;
+    settings.recording_overlay_custom_y_px = 0;
+    settings::write_settings(&app_handle, settings);
+    crate::utils::update_overlay_position(&app_handle);
+    Ok(())
 }
 
 /// Hides the recording overlay window with fade-out animation
@@ -739,8 +1030,9 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         // Hide the window after a short delay to allow animation to complete,
         // unless a newer session has shown the overlay again by then.
         let window_clone = overlay_window.clone();
+        let fade_ms = settings::get_settings(&app_handle).overlay_window_fade_ms as u64;
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(300));
+            std::thread::sleep(std::time::Duration::from_millis(fade_ms));
             if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) != scheduled_at {
                 log::debug!("Skipping stale overlay hide: a newer session is showing the overlay");
                 return;

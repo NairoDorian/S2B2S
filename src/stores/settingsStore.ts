@@ -216,6 +216,10 @@ const settingUpdaters: {
     commands.changeOverlayDirectModeSetting(value as boolean),
   overlay_direct_speed: (value) =>
     commands.changeOverlayDirectSpeedSetting(value as number),
+  overlay_window_fade_ms: (value) =>
+    commands.changeOverlayWindowFadeMsSetting(value as number),
+  overlay_window_corner_radius: (value) =>
+    commands.changeOverlayWindowCornerRadiusSetting(value as number),
   direct_streaming_speed: (value) =>
     commands.changeDirectStreamingSpeedSetting(value as number),
   overlay_speech_stats: (value) =>

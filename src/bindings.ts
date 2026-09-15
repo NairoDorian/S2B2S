@@ -23,6 +23,8 @@ export const commands = {
 	changeOverlayStyleSetting: (style: string) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style })),
 	changeOverlayDirectModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled })),
 	changeOverlayDirectSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_speed_setting", { speed })),
+	changeOverlayWindowFadeMsSetting: (fadeMs: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_window_fade_ms_setting", { fadeMs })),
+	changeOverlayWindowCornerRadiusSetting: (radius: number | null) => typedError<null, string>(__TAURI_INVOKE("change_overlay_window_corner_radius_setting", { radius })),
 	changeOverlaySpeechStatsSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_speech_stats_setting", { enabled })),
 	changeSpeechPauseHoldSetting: (ms: number) => typedError<null, string>(__TAURI_INVOKE("change_speech_pause_hold_setting", { ms })),
 	changeDirectStreamingSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_direct_streaming_speed_setting", { speed })),
@@ -445,8 +447,9 @@ export const commands = {
 	recallDeleteNote: (id: string) => typedError<null, string>(__TAURI_INVOKE("recall_delete_note", { id })),
 	/**
 	 *  File a transcription (or post-processed text) as a new note — the
-	 *  "Save to Recall" action on a history entry. The recording is referenced
-	 *  by its history file name, never copied.
+	 *  "Save to Recall" action on a history entry. The recording is copied into
+	 *  the vault's `audio/` folder (encrypted when the vault is), so the vault
+	 *  is self-contained.
 	 */
 	recallSaveTranscription: (text: string, title: string | null, source: string | null, audioFile: string | null, tags: string[]) => typedError<RecallNoteMeta, string>(__TAURI_INVOKE("recall_save_transcription", { text, title, source, audioFile, tags })),
 	recallOpenVaultFolder: () => typedError<null, string>(__TAURI_INVOKE("recall_open_vault_folder")),
@@ -459,6 +462,12 @@ export const commands = {
 	recallDictateStop: () => typedError<string, string>(__TAURI_INVOKE("recall_dictate_stop")),
 	/**  Cancel the dictate recording and discard the take. */
 	recallDictateCancel: () => typedError<null, string>(__TAURI_INVOKE("recall_dictate_cancel")),
+	/**
+	 *  Arm/disarm Recall insertion mode: while armed, the transcription and
+	 *  Multi-STT hotkeys deliver their text to the Recall editor's caret
+	 *  instead of pasting and writing a History row. The page arms it when the
+	 *  editor has focus and disarms on blur.
+	 */
 	recallSetInsertionMode: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("recall_set_insertion_mode", { enabled })),
 	recallEncryptionStatus: () => typedError<RecallEncryptionStatus, string>(__TAURI_INVOKE("recall_encryption_status")),
 	/**
@@ -504,6 +513,13 @@ export const commands = {
 	 *  are one number.
 	 */
 	overlayStreamTextHeight: (heightPx: number) => __TAURI_INVOKE<number>("overlay_stream_text_height", { heightPx }),
+	/**
+	 *  Remember the physical-pixel position of the overlay window after a drag-grip
+	 *  reposition, so the next recording shows up where the user left it.
+	 */
+	rememberRecordingOverlayWindowPosition: (xPx: number, yPx: number) => typedError<null, string>(__TAURI_INVOKE("remember_recording_overlay_window_position", { xPx, yPx })),
+	/**  Reset any saved drag-grip position back to the auto (Top/Bottom) anchor. */
+	resetRecordingOverlayManualPosition: () => typedError<null, string>(__TAURI_INVOKE("reset_recording_overlay_manual_position")),
 };
 
 /** Events */
@@ -593,6 +609,18 @@ export type AppSettings_Deserialize = {
 	translate_to_english?: boolean,
 	selected_language?: string,
 	overlay_position?: OverlayPosition_Deserialize,
+	/**
+	 *  When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
+	 *  `recording_overlay_custom_y_px` instead of the auto Top/Bottom anchor.
+	 *  Set by the drag-grip on the recording overlay and persists across restarts.
+	 */
+	recording_overlay_use_manual_position?: boolean,
+	recording_overlay_has_saved_custom_position?: boolean,
+	recording_overlay_manual_position_uses_physical_px?: boolean,
+	recording_overlay_custom_x_px?: number,
+	recording_overlay_custom_y_px?: number,
+	overlay_window_fade_ms?: number,
+	overlay_window_corner_radius?: number | null,
 	debug_mode?: boolean,
 	log_level?: LogLevel,
 	custom_words?: string[],
@@ -822,6 +850,18 @@ export type AppSettings_Serialize = {
 	translate_to_english: boolean,
 	selected_language: string,
 	overlay_position: OverlayPosition_Serialize,
+	/**
+	 *  When true the overlay is placed at the saved `recording_overlay_custom_x_px` /
+	 *  `recording_overlay_custom_y_px` instead of the auto Top/Bottom anchor.
+	 *  Set by the drag-grip on the recording overlay and persists across restarts.
+	 */
+	recording_overlay_use_manual_position: boolean,
+	recording_overlay_has_saved_custom_position: boolean,
+	recording_overlay_manual_position_uses_physical_px: boolean,
+	recording_overlay_custom_x_px: number,
+	recording_overlay_custom_y_px: number,
+	overlay_window_fade_ms: number,
+	overlay_window_corner_radius: number | null,
 	debug_mode: boolean,
 	log_level: LogLevel,
 	custom_words: string[],
@@ -1843,6 +1883,36 @@ export type OverlayScopeSettings = {
 	spectrum_scale?: number,
 	/**  Waveform view scale, percent of its base size (50â€¦400). */
 	wave_scale?: number,
+	/**
+	 *  Signal-intensity scale for the linear spectrum (0.1â€¦10). Multiplies the
+	 *  display units before drawing, so the spectrum reads taller without
+	 *  changing the view's pixel width.
+	 */
+	spectrum_signal_scale?: number | null,
+	/**
+	 *  Signal-intensity scale for the raw-audio waveform (0.1â€¦10). Multiplies
+	 *  the sample values before drawing, so the trace swings taller without
+	 *  changing the view's pixel width.
+	 */
+	wave_signal_scale?: number | null,
+	/**
+	 *  Signal-intensity scale for the circular spectrum (0.1â€¦10). Multiplies
+	 *  the pooled display units before drawing, so the ring breathes more
+	 *  dramatically without changing its pixel size.
+	 */
+	circular_signal_scale?: number | null,
+	/**
+	 *  Draw the raw-audio waveform *inside* the circular spectrum â€” a centred
+	 *  horizontal trace from the ring's left edge to its right edge â€” instead
+	 *  of as its own view beside it.
+	 */
+	wave_inside_circular?: boolean,
+	/**
+	 *  Draw the inner (negative-contracting) loop of the circular spectrum.
+	 *  When off, only the outer (positive-expanding) loop is shown. The outer
+	 *  line is always visible.
+	 */
+	circular_show_inner?: boolean,
 };
 
 /**  How the recording overlay's spectrum is drawn. */
@@ -1895,6 +1965,11 @@ export type RecallEncryptionStatus = {
 	unlocked: boolean,
 };
 
+/**  Final text for the Recall editor's caret. Replaces the paste step. */
+export type RecallInsertTextEvent = {
+	text: string,
+};
+
 /**  A note opened for reading or editing: metadata plus the Markdown body. */
 export type RecallNoteContent = {
 	meta: RecallNoteMeta,
@@ -1938,13 +2013,6 @@ export type RecallVaultInfo = {
 	root: string,
 	note_count: number,
 	audio_count: number,
-};
-
-/**
- *  Final text for the Recall editor's caret. Replaces the paste step.
- */
-export type RecallInsertTextEvent = {
-	text: string,
 };
 
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days3" | "weeks2" | "months3";

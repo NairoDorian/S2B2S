@@ -5,6 +5,7 @@ import { sessionToast as toast } from "@/lib/sessionToast";
 import { SettingsGroup } from "@/components/ui";
 import { SettingContainer } from "@/components/ui/SettingContainer";
 import { Button } from "@/components/ui/Button";
+import { Slider } from "@/components/ui/Slider";
 import { useSettings } from "@/hooks/useSettings";
 import { ShowOverlay } from "../ShowOverlay";
 import { SpeechStats } from "../SpeechStats";
@@ -12,7 +13,7 @@ import { OverlayScopeGroup } from "./OverlayScopeGroup";
 
 export const OverlaySettings = () => {
   const { t } = useTranslation();
-  const { getSetting } = useSettings();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
   // Read inside the JSX: a body-level read would freeze at mount.
   const shown = () => (getSetting("overlay_style") ?? "live") !== "none";
 
@@ -79,6 +80,74 @@ export const OverlaySettings = () => {
 
       <SettingsGroup title={t("settings.overlay.groups.appearance")}>
         <ShowOverlay descriptionMode="tooltip" grouped />
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.overlay.groups.window")}>
+        <Slider
+          value={getSetting("overlay_window_fade_ms") ?? 300}
+          onChange={(next) =>
+            updateSetting("overlay_window_fade_ms", Math.round(next))
+          }
+          min={0}
+          max={2000}
+          step={50}
+          label={t("settings.overlay.window.fadeMs.label")}
+          description={t("settings.overlay.window.fadeMs.description")}
+          descriptionMode="tooltip"
+          grouped
+          formatValue={(v) => `${v}ms`}
+          onReset={() => updateSetting("overlay_window_fade_ms", 300)}
+          disabled={isUpdating("overlay_window_fade_ms")}
+        />
+        <Slider
+          value={getSetting("overlay_window_corner_radius") ?? 0}
+          onChange={(next) =>
+            updateSetting(
+              "overlay_window_corner_radius",
+              Math.round(next * 2) / 2,
+            )
+          }
+          min={0}
+          max={20}
+          step={0.5}
+          label={t("settings.overlay.window.cornerRadius.label")}
+          description={t("settings.overlay.window.cornerRadius.description")}
+          descriptionMode="tooltip"
+          grouped
+          formatValue={(v) => `${v}px`}
+          onReset={() => updateSetting("overlay_window_corner_radius", 0)}
+          disabled={isUpdating("overlay_window_corner_radius")}
+        />
+        <Show when={getSetting("recording_overlay_use_manual_position")}>
+          <SettingContainer
+            title={t("settings.overlay.window.resetPosition.label")}
+            description={t("settings.overlay.window.resetPosition.description")}
+            descriptionMode="inline"
+            grouped
+            layout="stacked"
+          >
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={async () => {
+                try {
+                  await commands.resetRecordingOverlayManualPosition();
+                } catch (error) {
+                  toast.error(String(error));
+                }
+              }}
+            >
+              {t("settings.overlay.window.resetPositionButton")}
+            </Button>
+          </SettingContainer>
+        </Show>
+        <Show
+          when={!(getSetting("recording_overlay_use_manual_position") ?? false)}
+        >
+          <p class="text-xs text-text/60 px-1">
+            {t("settings.overlay.window.noManualPosition")}
+          </p>
+        </Show>
       </SettingsGroup>
       <Show when={shown()}>
         <>

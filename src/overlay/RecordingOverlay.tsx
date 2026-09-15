@@ -25,6 +25,8 @@
 import { createEffect, createSignal, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { currentLanguage, useTranslation } from "@/i18n/useTranslationSolid";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
@@ -43,6 +45,7 @@ import {
   resolveOverlayScope,
   type ResolvedOverlayScope,
 } from "@/lib/overlayScope";
+import type { OverlayScopeSettings } from "@/bindings";
 
 type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
 
@@ -134,6 +137,32 @@ const RecordingOverlay = () => {
   let targetText: StreamTextEvent = { committed: "", tentative: "" };
   let displayedText: StreamTextEvent = { committed: "", tentative: "" };
   let typewriterTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Drag-grip state (see AIVORelay's recording-overlay position memory pattern).
+  // These are plain variables — not reactive — because nothing renders from them
+  // directly; they only carry state between pointer events and the onMoved listener.
+  const windowRef = getCurrentWindow();
+  let dragGripArmed = false;
+  let dragGripSawMove = false;
+  let dragGripLastPosition: { x: number; y: number } | null = null;
+  let dragGripSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  // Manual-drag fallback state — used when startDragging() fails (Windows
+  // non-focusable overlay window: WS_EX_NOACTIVATE blocks the native drag).
+  let manualDragActive = false;
+  let manualDragStart: {
+    clientX: number;
+    clientY: number;
+    winX: number;
+    winY: number;
+  } = {
+    clientX: 0,
+    clientY: 0,
+    winX: 0,
+    winY: 0,
+  };
+  let manualDragMoveHandler: ((e: PointerEvent) => void) | null = null;
+  let manualDragUpHandler: (() => void) | null = null;
+  let dragGripFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   // The writing direction has to follow the language, so it is an accessor:
   // `currentLanguage` is a signal, and reading it inside the JSX `dir` binding
@@ -341,6 +370,90 @@ const RecordingOverlay = () => {
         }
       });
 
+      // Track overlay moves so the drag-grip can save the final position once
+      // the user lets go. A debounced save avoids flooding the backend with
+      // updates while the window is still in motion.
+      const unlistenMoved = await windowRef.onMoved(({ payload }) => {
+        if (!dragGripArmed) return;
+        // Native drag is producing movement — cancel the manual-drag fallback
+        // timer so we don't double up with setPosition.
+        if (dragGripFallbackTimer !== null) {
+          clearTimeout(dragGripFallbackTimer);
+          dragGripFallbackTimer = null;
+        }
+        dragGripSawMove = true;
+        dragGripLastPosition = { x: payload.x, y: payload.y };
+        if (dragGripSaveTimer !== null) {
+          clearTimeout(dragGripSaveTimer);
+        }
+        dragGripSaveTimer = setTimeout(() => {
+          const positionToSave = dragGripLastPosition;
+          dragGripSaveTimer = null;
+          if (!positionToSave || !dragGripArmed) return;
+          saveOverlayPosition(
+            Math.round(positionToSave.x),
+            Math.round(positionToSave.y),
+          );
+        }, 500);
+      });
+
+      // Live corner-radius updates — the setting's backend handler emits this
+      // on every change, so a running overlay preview re-rounds its card
+      // without a stop/start cycle.
+      const unlistenRadius = await listen(
+        "overlay-corner-radius",
+        (event: { payload: number }) => {
+          document.documentElement.style.setProperty(
+            "--ov-corner-radius",
+            `${event.payload}px`,
+          );
+        },
+      );
+
+      // Live scope-picture updates — circular/linear spectrum toggles, size,
+      // style, mirror, waveform window. The backend already re-purposes the FFT
+      // manager; this refreshes the card's CSS geometry and the `<OverlayScope>`
+      // config so the preview re-renders in place.
+      const unlistenScope = await listen(
+        "overlay-scope-changed",
+        (event: { payload: OverlayScopeSettings }) => {
+          const resolved = resolveOverlayScope(event.payload);
+          applyOverlayScopeCss(resolved);
+          setScopeConfig(resolved);
+        },
+      );
+
+      // Live speech-stats toggle — show/hide the readout row in place.
+      const unlistenStats = await listen(
+        "overlay-speech-stats",
+        (event: { payload: boolean }) => {
+          setStatsEnabled(event.payload);
+        },
+      );
+
+      // Live direct-mode / direct-speed — re-arm the typewriter behavior.
+      const unlistenDirectMode = await listen(
+        "overlay-direct-mode",
+        (event: { payload: boolean }) => {
+          directMode = event.payload;
+        },
+      );
+      const unlistenDirectSpeed = await listen(
+        "overlay-direct-speed",
+        (event: { payload: number }) => {
+          directSpeed = event.payload;
+        },
+      );
+
+      // Live overlay-position change — drop any drag-grip offset so the card
+      // snaps back to the new anchor (Top/Bottom) without a restart.
+      const unlistenPos = await listen(
+        "overlay-position-changed",
+        (event: { payload: string }) => {
+          setPosition(event.payload === "top" ? "top" : "bottom");
+        },
+      );
+
       return () => {
         stopTypewriter();
         unlistenShow();
@@ -349,6 +462,13 @@ const RecordingOverlay = () => {
         unlistenStream();
         unlistenSpeech();
         unlistenPhase();
+        unlistenMoved();
+        unlistenRadius();
+        unlistenScope();
+        unlistenStats();
+        unlistenDirectMode();
+        unlistenDirectSpeed();
+        unlistenPos();
       };
     };
 
@@ -367,13 +487,19 @@ const RecordingOverlay = () => {
       }
     });
 
-    // Prime the stats setting before the first show, so the card opens at its
-    // final width instead of visibly growing once the settings read lands.
+    // Prime the stats setting and corner-radius CSS variable before the first
+    // show, so the card opens at its final width instead of visibly growing
+    // once the settings read lands.
     commands
       .getAppSettings()
       .then((settings) => {
         if (settings.status === "ok") {
           setStatsEnabled(settings.data.overlay_speech_stats ?? true);
+          const radius = settings.data.overlay_window_corner_radius ?? 0;
+          document.documentElement.style.setProperty(
+            "--ov-corner-radius",
+            `${radius}px`,
+          );
         }
       })
       .catch(() => {
@@ -464,6 +590,154 @@ const RecordingOverlay = () => {
 
   const fmtTime = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+  // Drag-grip handlers — allow the user to grab the overlay and reposition it,
+  // persisting the new position so it stays there across recordings (learned
+  // from AIVORelay's recording-overlay position memory).
+  const saveOverlayPosition = (xPx: number, yPx: number) => {
+    if (dragGripSaveTimer !== null) {
+      clearTimeout(dragGripSaveTimer);
+      dragGripSaveTimer = null;
+    }
+    commands.rememberRecordingOverlayWindowPosition(xPx, yPx).catch((error) => {
+      console.error("Failed to remember recording overlay position:", error);
+    });
+  };
+
+  const handleDragGripPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    dragGripArmed = true;
+    dragGripSawMove = false;
+    dragGripLastPosition = null;
+    manualDragActive = false;
+    if (dragGripSaveTimer !== null) {
+      clearTimeout(dragGripSaveTimer);
+      dragGripSaveTimer = null;
+    }
+    if (dragGripFallbackTimer !== null) {
+      clearTimeout(dragGripFallbackTimer);
+      dragGripFallbackTimer = null;
+    }
+    // Remove any leftover manual-drag listeners from a previous session.
+    if (manualDragMoveHandler) {
+      window.removeEventListener("pointermove", manualDragMoveHandler);
+      manualDragMoveHandler = null;
+    }
+    if (manualDragUpHandler) {
+      window.removeEventListener("pointerup", manualDragUpHandler);
+      manualDragUpHandler = null;
+    }
+
+    // Try native drag first. On some platforms (Windows with focusable(false)
+    // → WS_EX_NOACTIVATE) startDragging() either rejects or resolves without
+    // moving the window. A 50ms fallback timer detects the latter: if no
+    // onMoved event has fired by then, switch to manual dragging.
+    void windowRef.startDragging().then(
+      () => {
+        if (!dragGripArmed) return;
+        dragGripFallbackTimer = setTimeout(() => {
+          if (!dragGripSawMove && dragGripArmed) {
+            // Native drag didn't produce movement — go manual.
+            startManualDrag(event);
+          }
+        }, 50);
+      },
+      () => {
+        // Native drag rejected — go manual immediately.
+        startManualDrag(event);
+      },
+    );
+  };
+
+  /**
+   * Manual drag fallback: tracks pointermove on the global window and moves the
+   * overlay via setPosition() instead of the native drag loop. This works even
+   * when startDragging() can't activate the window (WS_EX_NOACTIVATE on Windows).
+   */
+  const startManualDrag = (event: PointerEvent) => {
+    void windowRef.outerPosition().then((pos) => {
+      if (!dragGripArmed) return;
+      manualDragActive = true;
+      manualDragStart = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        winX: pos.x,
+        winY: pos.y,
+      };
+    });
+
+    manualDragMoveHandler = (e: PointerEvent) => {
+      if (!manualDragActive) return;
+      const dx = e.clientX - manualDragStart.clientX;
+      const dy = e.clientY - manualDragStart.clientY;
+      void windowRef.setPosition(
+        new LogicalPosition(
+          manualDragStart.winX + dx,
+          manualDragStart.winY + dy,
+        ),
+      );
+      dragGripSawMove = true;
+    };
+
+    manualDragUpHandler = () => {
+      const wasMoved = dragGripSawMove;
+      manualDragActive = false;
+      if (manualDragMoveHandler) {
+        window.removeEventListener("pointermove", manualDragMoveHandler);
+        manualDragMoveHandler = null;
+      }
+      if (manualDragUpHandler) {
+        window.removeEventListener("pointerup", manualDragUpHandler);
+        manualDragUpHandler = null;
+      }
+      if (dragGripFallbackTimer !== null) {
+        clearTimeout(dragGripFallbackTimer);
+        dragGripFallbackTimer = null;
+      }
+      // For manual drag the onMoved event may not have fired for the final
+      // setPosition() call, so save the position directly.
+      if (wasMoved) {
+        void windowRef.outerPosition().then((pos) => {
+          void windowRef.scaleFactor().then((scale) => {
+            saveOverlayPosition(
+              Math.round(pos.x * scale),
+              Math.round(pos.y * scale),
+            );
+          });
+        });
+      }
+      dragGripArmed = false;
+      dragGripSawMove = false;
+      dragGripLastPosition = null;
+    };
+
+    window.addEventListener("pointermove", manualDragMoveHandler);
+    window.addEventListener("pointerup", manualDragUpHandler);
+  };
+
+  const handleDragGripPointerUp = () => {
+    // Manual drag cleanup is handled by the window-level pointerup listener
+    // (manualDragUpHandler), which saves the position directly. Returning
+    // early here prevents the native-drag save path from clobbering it.
+    if (manualDragActive || manualDragUpHandler !== null) {
+      return;
+    }
+
+    const positionToSave = dragGripSawMove ? dragGripLastPosition : null;
+    dragGripArmed = false;
+    dragGripSawMove = false;
+    dragGripLastPosition = null;
+
+    if (positionToSave) {
+      saveOverlayPosition(
+        Math.round(positionToSave.x),
+        Math.round(positionToSave.y),
+      );
+    }
+  };
 
   // Speech stats ride along in both overlay forms. Rendered from the moment the
   // card appears rather than waiting for the first sample, so the Live card
@@ -709,6 +983,7 @@ const RecordingOverlay = () => {
           </Show>
         </div>
       </Show>
+      <DragGrip />
     </div>
   );
 
@@ -740,7 +1015,28 @@ const RecordingOverlay = () => {
           <WorkingRow label={workLabel()} showCancel={true} />
         </Show>
       </div>
+      <DragGrip />
     </div>
+  );
+
+  // Drag grip — a tiny grab handle at the bottom of the overlay that lets the
+  // user reposition it. Clicking and dragging calls Tauri's startDragging()
+  // (native window move); releasing saves the physical position so it sticks.
+  // Always present so the feature is discoverable, learned from AIVORelay's
+  // recording-overlay position memory.
+  const DragGrip = () => (
+    <button
+      class="ov-drag-grip"
+      aria-label={t("overlay.dragGripTooltip")}
+      title={t("overlay.dragGripTooltip")}
+      onPointerDown={handleDragGripPointerDown}
+      onPointerUp={handleDragGripPointerUp}
+      onPointerCancel={handleDragGripPointerUp}
+    >
+      <span class="ov-drag-grip-dot" />
+      <span class="ov-drag-grip-dot" />
+      <span class="ov-drag-grip-dot" />
+    </button>
   );
 
   // `show` on the stage and `leaving` on the card are both constant while the
