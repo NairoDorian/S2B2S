@@ -26,6 +26,17 @@ interface PermissionsState {
   microphone: PermissionStatus;
 }
 
+const hasWindowsMicrophoneAccess = async (): Promise<boolean> => {
+  const microphoneStatus =
+    await commands.getWindowsMicrophonePermissionStatus();
+
+  if (!microphoneStatus.supported) {
+    return true;
+  }
+
+  return microphoneStatus.overall_access !== "denied";
+};
+
 const AccessibilityOnboarding = (props: AccessibilityOnboardingProps) => {
   const { onComplete, preview = false } = props;
   const { t } = useTranslation();
@@ -58,17 +69,6 @@ const AccessibilityOnboarding = (props: AccessibilityOnboardingProps) => {
   const completeOnboarding = async () => {
     await Promise.all([refreshAudioDevices(), refreshOutputDevices()]);
     timeoutRef = setTimeout(() => onComplete(), 300);
-  };
-
-  const hasWindowsMicrophoneAccess = async (): Promise<boolean> => {
-    const microphoneStatus =
-      await commands.getWindowsMicrophonePermissionStatus();
-
-    if (!microphoneStatus.supported) {
-      return true;
-    }
-
-    return microphoneStatus.overall_access !== "denied";
   };
 
   const startPolling = () => {

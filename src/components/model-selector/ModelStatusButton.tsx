@@ -16,28 +16,28 @@ type ModelStatus =
   | "unloaded"
   | "none";
 
-const ModelStatusButton = (props: ModelStatusButtonProps): JSX.Element => {
-  const getStatusColor = (status: ModelStatus): string => {
-    switch (status) {
-      case "ready":
-        return "bg-green-400";
-      case "loading":
-        return "bg-yellow-400 animate-pulse";
-      case "downloading":
-        return "bg-accent animate-pulse";
-      case "verifying":
-        return "bg-orange-400 animate-pulse";
-      case "error":
-        return "bg-red-400";
-      case "unloaded":
-        return "bg-mid-gray/60";
-      case "none":
-        return "bg-red-400";
-      default:
-        return "bg-mid-gray/60";
-    }
-  };
+const getStatusColor = (status: ModelStatus): string => {
+  switch (status) {
+    case "ready":
+      return "bg-green-400";
+    case "loading":
+      return "bg-yellow-400 animate-pulse";
+    case "downloading":
+      return "bg-accent animate-pulse";
+    case "verifying":
+      return "bg-orange-400 animate-pulse";
+    case "error":
+      return "bg-red-400";
+    case "unloaded":
+      return "bg-mid-gray/60";
+    case "none":
+      return "bg-red-400";
+    default:
+      return "bg-mid-gray/60";
+  }
+};
 
+const ModelStatusButton = (props: ModelStatusButtonProps): JSX.Element => {
   return (
     <button
       onClick={() => props.onClick()}

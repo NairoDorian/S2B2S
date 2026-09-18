@@ -28,17 +28,10 @@ const ModelDropdown = (props: ModelDropdownProps): JSX.Element => {
         <div>
           <For each={downloadedModels}>
             {(model) => (
-              <div
+              <button
+                type="button"
                 onClick={() => handleModelClick(model.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleModelClick(model.id);
-                  }
-                }}
-                tabindex={0}
-                role="button"
-                class={`w-full px-3 py-2 text-start hover:bg-mid-gray/10 transition-colors cursor-pointer focus:outline-none ${currentModelId === model.id ? "bg-accent/10 text-accent" : ""}`}
+                class={`w-full px-3 py-2 text-start hover:bg-mid-gray/10 transition-colors cursor-pointer focus:outline-none border-0 bg-transparent block ${currentModelId === model.id ? "bg-accent/10 text-accent" : ""}`}
               >
                 <div class="flex items-center justify-between">
                   <div>
@@ -65,7 +58,7 @@ const ModelDropdown = (props: ModelDropdownProps): JSX.Element => {
                     </div>
                   )}
                 </div>
-              </div>
+              </button>
             )}
           </For>
         </div>

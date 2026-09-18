@@ -34,6 +34,28 @@ const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
 const isLegacyModel = (model: ModelInfo): boolean =>
   typeof model.source === "object" && "Url" in model.source;
 
+const openPluginsFolder = async () => {
+  try {
+    const result = await commands.openPluginsFolder();
+    if (result.status !== "ok") {
+      throw new Error(String(result.error));
+    }
+  } catch (error) {
+    console.error("Failed to open plugins folder:", error);
+  }
+};
+
+const openModelsFolder = async () => {
+  try {
+    const result = await commands.openModelsFolder();
+    if (result.status !== "ok") {
+      throw new Error(String(result.error));
+    }
+  } catch (error) {
+    console.error("Failed to open models folder:", error);
+  }
+};
+
 export const ModelsSettings = () => {
   const { t } = useTranslation();
   const [switchingModelId, setSwitchingModelId] = createSignal<string | null>(
@@ -265,28 +287,6 @@ export const ModelsSettings = () => {
           count: externalPluginCount(),
         })
       : t("settings.models.openPluginsFolderEmpty");
-
-  const openPluginsFolder = async () => {
-    try {
-      const result = await commands.openPluginsFolder();
-      if (result.status !== "ok") {
-        throw new Error(String(result.error));
-      }
-    } catch (error) {
-      console.error("Failed to open plugins folder:", error);
-    }
-  };
-
-  const openModelsFolder = async () => {
-    try {
-      const result = await commands.openModelsFolder();
-      if (result.status !== "ok") {
-        throw new Error(String(result.error));
-      }
-    } catch (error) {
-      console.error("Failed to open models folder:", error);
-    }
-  };
 
   return (
     <Show

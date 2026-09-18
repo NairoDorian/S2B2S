@@ -62,10 +62,11 @@ export function parseHex(hex: string): RGB | null {
   return null;
 }
 
+const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+const toHexByte = (n: number) => clampByte(n).toString(16).padStart(2, "0");
+
 export function rgbToHex({ r, g, b }: RGB): string {
-  const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  const toHex = (n: number) => clamp(n).toString(16).padStart(2, "0");
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  return `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}`;
 }
 
 export function rgbToHsl({ r, g, b }: RGB): HSL {

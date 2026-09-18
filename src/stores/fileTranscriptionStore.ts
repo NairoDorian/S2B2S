@@ -39,9 +39,8 @@ export interface QueueItem {
   elapsedMs: number | null;
 }
 
-const TERMINAL: FileJobStatus[] = ["done", "failed", "cancelled"];
-export const isTerminalStatus = (status: FileJobStatus) =>
-  TERMINAL.includes(status);
+const TERMINAL = new Set<FileJobStatus>(["done", "failed", "cancelled"]);
+export const isTerminalStatus = (status: FileJobStatus) => TERMINAL.has(status);
 
 interface FileTranscriptionStore {
   items: QueueItem[];

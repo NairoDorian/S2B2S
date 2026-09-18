@@ -562,11 +562,7 @@ const LoadingState = () => {
   const { t } = useTranslation();
 
   return (
-    <div
-      class="flex min-h-64 flex-col items-center justify-center gap-3 text-center"
-      role="status"
-      aria-live="polite"
-    >
+    <output class="flex min-h-64 flex-col items-center justify-center gap-3 text-center block">
       <LoaderCircle
         class="h-7 w-7 animate-spin text-accent"
         aria-hidden="true"
@@ -579,7 +575,7 @@ const LoadingState = () => {
           {t("settings.statistics.states.loading.description")}
         </p>
       </div>
-    </div>
+    </output>
   );
 };
 

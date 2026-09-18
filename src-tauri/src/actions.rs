@@ -75,10 +75,10 @@ fn strip_invisible_chars(s: &str) -> String {
 /// instead of a separate field — without this the user would get the model's
 /// chain of thought pasted along with the cleaned transcription.
 fn strip_think_block(s: &str) -> &str {
-    if let Some(rest) = s.trim_start().strip_prefix("<think>") {
-        if let Some(end) = rest.find("</think>") {
-            return rest[end + "</think>".len()..].trim_start();
-        }
+    if let Some(rest) = s.trim_start().strip_prefix("<think>")
+        && let Some(end) = rest.find("</think>")
+    {
+        return rest[end + "</think>".len()..].trim_start();
     }
     s
 }
@@ -526,14 +526,13 @@ pub(crate) async fn process_transcription_output(
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
-            if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                if let Some(prompt) = settings
+            if let Some(prompt_id) = &settings.post_process_selected_prompt_id
+                && let Some(prompt) = settings
                     .post_process_prompts
                     .iter()
                     .find(|prompt| &prompt.id == prompt_id)
-                {
-                    post_process_prompt = Some(prompt.prompt.clone());
-                }
+            {
+                post_process_prompt = Some(prompt.prompt.clone());
             }
         }
     } else if final_text != transcription {
@@ -1136,12 +1135,11 @@ impl ShortcutAction for TranscribeAction {
                         // message is also in the app's log file via the line above.
                         let _ = ah.emit("transcription-error", err.to_string());
                         // Save entry with empty text so user can retry
-                        if wav_saved {
-                            if let Err(save_err) =
+                        if wav_saved
+                            && let Err(save_err) =
                                 hm.save_entry(file_name, String::new(), post_process, None, None)
-                            {
-                                error!("Failed to save failed history entry: {}", save_err);
-                            }
+                        {
+                            error!("Failed to save failed history entry: {}", save_err);
                         }
                         utils::hide_recording_overlay(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
@@ -1235,6 +1233,7 @@ pub struct MultiSttHistoryMetadata {
     pub final_merged_text: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn format_multi_stt_history_transcript(
     model1: &str,
     output1: &str,
@@ -1966,20 +1965,14 @@ impl ShortcutAction for MultiSttAction {
                 .as_ref()
                 .is_some_and(|id| !tm.is_extra_model_loaded(id));
 
-            if !need_load_2 {
-                if let Some(ref id) = extra_model_2 {
-                    info!("Multi-STT: extra model 2 '{}' already loaded, skipping", id);
-                }
+            if !need_load_2 && let Some(ref id) = extra_model_2 {
+                info!("Multi-STT: extra model 2 '{}' already loaded, skipping", id);
             }
-            if !need_load_3 {
-                if let Some(ref id) = extra_model_3 {
-                    info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
-                }
+            if !need_load_3 && let Some(ref id) = extra_model_3 {
+                info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
             }
-            if !need_load_4 {
-                if let Some(ref id) = extra_model_4 {
-                    info!("Multi-STT: extra model 4 '{}' already loaded, skipping", id);
-                }
+            if !need_load_4 && let Some(ref id) = extra_model_4 {
+                info!("Multi-STT: extra model 4 '{}' already loaded, skipping", id);
             }
 
             let tm_load_2 = Arc::clone(&tm);

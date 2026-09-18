@@ -114,6 +114,43 @@ const DeleteRecordingsButton = ({
 
 type HistoryFilter = "all" | "saved" | "multi_stt" | "post_processed";
 
+const retryHistoryEntry = async (id: number) => {
+  const result = await commands.retryHistoryEntryTranscription(id);
+  if (result.status !== "ok") {
+    throw new Error(String(result.error));
+  }
+};
+
+const postProcessHistoryEntry = async (id: number) => {
+  const result = await commands.postProcessHistoryEntry(id);
+  if (result.status !== "ok") {
+    throw new Error(String(result.error));
+  }
+};
+
+const multiSttHistoryEntry = async (id: number) => {
+  const result = await commands.multiSttHistoryEntry(id);
+  if (result.status !== "ok") {
+    throw new Error(String(result.error));
+  }
+};
+
+const openRecordingsFolder = async () => {
+  try {
+    const result = await commands.openRecordingsFolder();
+    if (result.status !== "ok") {
+      throw new Error(String(result.error));
+    }
+  } catch (error) {
+    console.error("Failed to open recordings folder:", error);
+  }
+};
+
+const formatDurationSec = (sec: number): string => {
+  const rounded = Math.round(sec * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
+};
+
 export const HistorySettings = () => {
   const { t } = useTranslation();
   const osType = useOsType();
@@ -298,38 +335,6 @@ export const HistorySettings = () => {
       toast.error(t("settings.history.deleteRecordingsError"));
     } finally {
       setIsDeleting(false);
-    }
-  };
-
-  const retryHistoryEntry = async (id: number) => {
-    const result = await commands.retryHistoryEntryTranscription(id);
-    if (result.status !== "ok") {
-      throw new Error(String(result.error));
-    }
-  };
-
-  const postProcessHistoryEntry = async (id: number) => {
-    const result = await commands.postProcessHistoryEntry(id);
-    if (result.status !== "ok") {
-      throw new Error(String(result.error));
-    }
-  };
-
-  const multiSttHistoryEntry = async (id: number) => {
-    const result = await commands.multiSttHistoryEntry(id);
-    if (result.status !== "ok") {
-      throw new Error(String(result.error));
-    }
-  };
-
-  const openRecordingsFolder = async () => {
-    try {
-      const result = await commands.openRecordingsFolder();
-      if (result.status !== "ok") {
-        throw new Error(String(result.error));
-      }
-    } catch (error) {
-      console.error("Failed to open recordings folder:", error);
     }
   };
 
@@ -731,7 +736,7 @@ const HistoryEntryComponent = ({
         getAudioUrl(entry.file_name).then((url) => {
           if (!url) return;
           const audio = new Audio(url);
-          audio.onloadedmetadata = () => {
+          audio.addEventListener("loadedmetadata", () => {
             if (
               audio.duration &&
               !isNaN(audio.duration) &&
@@ -739,7 +744,7 @@ const HistoryEntryComponent = ({
             ) {
               setLoadedAudioDurationSec(audio.duration);
             }
-          };
+          });
         });
       }
     },
@@ -817,11 +822,6 @@ const HistoryEntryComponent = ({
 
   const wpm = () => metrics().wpm;
   const speedRating = () => metrics().speedRating;
-
-  const formatDurationSec = (sec: number): string => {
-    const rounded = Math.round(sec * 10) / 10;
-    return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
-  };
 
   const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
 

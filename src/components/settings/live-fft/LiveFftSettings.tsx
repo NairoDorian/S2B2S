@@ -112,6 +112,21 @@ const PHASE_CLASSES: Record<LiveFftPhase, string> = {
 const formatUs = (us: number): string =>
   us >= 1000 ? `${(us / 1000).toFixed(2)} ms` : `${us.toFixed(0)} µs`;
 
+const opt = (
+  value: string,
+  label: string,
+  description?: string,
+): DropdownOption => ({
+  value,
+  label,
+  description,
+});
+
+const handleStop = async () => {
+  const error = await stop();
+  if (error) toast.error(error);
+};
+
 export const LiveFftSettings = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
@@ -205,10 +220,6 @@ export const LiveFftSettings = () => {
     const error = await start();
     if (error) toast.error(t("settings.liveFft.errors.start", { error }));
   };
-  const handleStop = async () => {
-    const error = await stop();
-    if (error) toast.error(error);
-  };
 
   const applyRaw = async () => {
     const defaults = await commands.liveFftRawDefaults();
@@ -224,15 +235,6 @@ export const LiveFftSettings = () => {
     silence: t("settings.liveFft.canvas.silence"),
   }));
 
-  const opt = (
-    value: string,
-    label: string,
-    description?: string,
-  ): DropdownOption => ({
-    value,
-    label,
-    description,
-  });
   const P = "settings.liveFft";
   const sourceOptions = createMemo<DropdownOption[]>(() => [
     opt(

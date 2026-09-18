@@ -134,8 +134,9 @@ const TAG_META: Record<Tag, { tagClass: string; msgClass: string }> = {
 
 const TAGS: readonly Tag[] = ["ERR", "WRN", "INF", "DBG", "TRC"];
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
 const formatTime = (date: Date): string => {
-  const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
     date.getSeconds(),
   )}`;

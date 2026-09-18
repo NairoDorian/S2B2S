@@ -79,7 +79,7 @@ exactly like Apple Silicon (transcribe.cpp with Metal).
   builds transcribe.cpp with the **`cuda`** feature on Windows x86_64
   (`src-tauri/Cargo.toml`), not upstream's Vulkan backend. `nvcc` must be on
   `PATH` and must support your MSVC version; `.cargo/config.toml` passes the
-  flags CUDA 13.3 needs with MSVC 2026 (`-std=c++17 -Xcompiler=/Zc:preprocessor`)
+  flags CUDA 13.4 needs with MSVC 2026 (`-std=c++17 -Xcompiler=/Zc:preprocessor`)
   and turns sccache off for the native build. `bun run build:fast` compiles
   kernels for the local GPU only (`TRANSCRIBE_CUDA_ARCHITECTURES=auto`);
   `bun run build:full` builds the full architecture matrix.

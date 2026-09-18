@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus */
 import {
   createSignal,
   createEffect,
@@ -310,7 +311,11 @@ export const Select = (props: SelectProps): JSX.Element => {
       class={`relative ${className()}`}
       onBlur={handleBlur}
     >
-      <div class={controlClass} onMouseDown={handleControlMouseDown}>
+      <div
+        role="presentation"
+        class={controlClass}
+        onMouseDown={handleControlMouseDown}
+      >
         <div class="relative min-w-0 flex-1 px-2.5 py-1.5">
           {inputValue() === "" && (
             <span
@@ -394,6 +399,7 @@ export const Select = (props: SelectProps): JSX.Element => {
 
       {isOpen() && (
         <div
+          role="presentation"
           onMouseDown={(event) => event.preventDefault()}
           class={`absolute inset-x-0 z-30 rounded border border-mid-gray/30 bg-background text-text shadow-[0_10px_30px_rgba(15,15,15,0.2)] ${placement() === "top" ? "bottom-full mb-1" : "top-full mt-1"}`}
         >

@@ -1044,7 +1044,7 @@ export type CudaToolkitInfo_Deserialize = {
 	 *  CUDA 12 and older in `bin`).
 	 */
 	runtime_dir: string,
-	/**  Toolkit version as the installer names it (`13.3`), when known. */
+	/**  Toolkit version as the installer names it (`13.4`), when known. */
 	version?: string | null,
 	/**
 	 *  Whether `runtime_dir` is on the PATH the app was started with. When it is
@@ -1068,7 +1068,7 @@ export type CudaToolkitInfo_Serialize = {
 	 *  CUDA 12 and older in `bin`).
 	 */
 	runtime_dir: string,
-	/**  Toolkit version as the installer names it (`13.3`), when known. */
+	/**  Toolkit version as the installer names it (`13.4`), when known. */
 	version: string | null,
 	/**
 	 *  Whether `runtime_dir` is on the PATH the app was started with. When it is
@@ -1926,7 +1926,7 @@ export type LlamaReleaseAsset = {
 	name: string,
 	size_bytes: number | null,
 	url: string,
-	/**  `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
+	/**  `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name. */
 	backend: string,
 };
 
@@ -2056,7 +2056,7 @@ export type LlamaSettings_Deserialize = {
 	/**  Start the server when a request targets it and it is not running. */
 	start_on_demand?: boolean,
 	stop_on_exit?: boolean,
-	/**  Preferred release asset: `auto`, `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`. */
+	/**  Preferred release asset: `auto`, `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`. */
 	backend?: string,
 	/**  `latest`, `stable` or `nightly` for the release list. */
 	channel?: string,
@@ -2120,7 +2120,7 @@ export type LlamaSettings_Serialize = {
 	/**  Start the server when a request targets it and it is not running. */
 	start_on_demand: boolean,
 	stop_on_exit: boolean,
-	/**  Preferred release asset: `auto`, `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`. */
+	/**  Preferred release asset: `auto`, `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`. */
 	backend: string,
 	/**  `latest`, `stable` or `nightly` for the release list. */
 	channel: string,

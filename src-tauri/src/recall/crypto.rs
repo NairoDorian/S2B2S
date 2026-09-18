@@ -335,10 +335,10 @@ fn note_ids_in(root: &Path, extension: &str) -> Result<Vec<String>, String> {
         .flatten()
     {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some(extension) {
-            if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
-                ids.push(id.to_string());
-            }
+        if path.extension().and_then(|e| e.to_str()) == Some(extension)
+            && let Some(id) = path.file_stem().and_then(|s| s.to_str())
+        {
+            ids.push(id.to_string());
         }
     }
     ids.sort();

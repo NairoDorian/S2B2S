@@ -83,6 +83,11 @@ const STATUS_CLASSES: Record<FileJobStatus, string> = {
 const isBusy = (status: FileJobStatus) =>
   !isTerminalStatus(status) && status !== "queued";
 
+const reveal = async (path: string) => {
+  const result = await commands.revealPathInFileManager(path);
+  if (result.status === "error") toast.error(result.error);
+};
+
 interface QueueRowProps {
   item: QueueItem;
   running: boolean;
@@ -103,11 +108,6 @@ const QueueRow = (props: QueueRowProps) => {
     } catch (error) {
       console.error("Copy failed:", error);
     }
-  };
-
-  const reveal = async (path: string) => {
-    const result = await commands.revealPathInFileManager(path);
-    if (result.status === "error") toast.error(result.error);
   };
 
   const meta = (): string[] => {
@@ -279,15 +279,22 @@ export const FileTranscriptionSettings = () => {
 
   const addDropped = async (paths: string[]) => {
     let added = 0;
+    const folderPromises: Promise<string[]>[] = [];
     for (const path of paths) {
       if (isSupportedAudioPath(path)) {
         added += store.addPaths([path]);
       } else {
-        const result = await commands.listAudioFilesInFolder(
-          path,
-          options().include_subfolders,
+        folderPromises.push(
+          commands
+            .listAudioFilesInFolder(path, options().include_subfolders)
+            .then((res) => (res.status === "ok" ? res.data : [])),
         );
-        if (result.status === "ok") added += store.addPaths(result.data);
+      }
+    }
+    if (folderPromises.length > 0) {
+      const folderResults = await Promise.all(folderPromises);
+      for (const files of folderResults) {
+        if (files.length > 0) added += store.addPaths(files);
       }
     }
     if (added === 0) {
@@ -403,18 +410,11 @@ export const FileTranscriptionSettings = () => {
         description={t("settings.fileTranscription.description")}
       >
         <div class="p-3 space-y-3">
-          <div
-            role="button"
-            tabindex={0}
+          <button
+            type="button"
             aria-label={t("settings.fileTranscription.dropZone.title")}
             onClick={pickFiles}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                void pickFiles();
-              }
-            }}
-            class={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${dragOver() ? "border-accent bg-accent/10" : "border-mid-gray/30 hover:border-accent/50 hover:bg-mid-gray/5"}`}
+            class={`w-full border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors bg-transparent block ${dragOver() ? "border-accent bg-accent/10" : "border-mid-gray/30 hover:border-accent/50 hover:bg-mid-gray/5"}`}
           >
             <div class="flex flex-col items-center gap-2">
               <div
@@ -432,7 +432,7 @@ export const FileTranscriptionSettings = () => {
                 {SUPPORTED_AUDIO_EXTENSIONS.join(" · ")}
               </p>
             </div>
-          </div>
+          </button>
           <div class="flex flex-wrap items-center gap-2">
             <Button
               variant="secondary"

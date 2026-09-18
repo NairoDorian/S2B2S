@@ -26,6 +26,14 @@ function Meter(props: { label: string; percent: number; title: string }) {
   );
 }
 
+const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
+const memPercent = (s: SystemStatsEvent) =>
+  s.mem_total_mb > 0 ? (s.mem_used_mb / s.mem_total_mb) * 100 : 0;
+const vramPercent = (s: SystemStatsEvent) =>
+  s.vram_total_mb && s.vram_total_mb > 0 && s.vram_used_mb != null
+    ? (s.vram_used_mb / s.vram_total_mb) * 100
+    : null;
+
 function SystemMeters() {
   const { t } = useTranslation();
   const [stats, setStats] = createSignal<SystemStatsEvent | null>(null);
@@ -53,17 +61,6 @@ function SystemMeters() {
       };
     },
   );
-
-  // All reads are inside the JSX: the component body runs once, so a body
-  // read of `stats()` would snapshot null at mount and the meters would
-  // never render — let alone update.
-  const gb = (mb: number) => `${(mb / 1024).toFixed(1)} GB`;
-  const memPercent = (s: SystemStatsEvent) =>
-    s.mem_total_mb > 0 ? (s.mem_used_mb / s.mem_total_mb) * 100 : 0;
-  const vramPercent = (s: SystemStatsEvent) =>
-    s.vram_total_mb && s.vram_total_mb > 0 && s.vram_used_mb != null
-      ? (s.vram_used_mb / s.vram_total_mb) * 100
-      : null;
 
   return (
     <Show when={stats()}>

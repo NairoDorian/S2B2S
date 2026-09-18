@@ -33,7 +33,7 @@ pub struct LlamaReleaseAsset {
     pub name: String,
     pub size_bytes: f64,
     pub url: String,
-    /// `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name.
+    /// `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`, … parsed from the name.
     pub backend: String,
 }
 
@@ -111,7 +111,7 @@ fn client() -> reqwest::Client {
 
 fn build_number(release: &GhRelease) -> u32 {
     let from = |s: &str| -> Option<u32> {
-        let idx = s.find(|c: char| c == 'b')?;
+        let idx = s.find('b')?;
         let digits: String = s[idx + 1..]
             .chars()
             .take_while(|c| c.is_ascii_digit())
@@ -125,12 +125,11 @@ fn build_number(release: &GhRelease) -> u32 {
     {
         return n;
     }
-    if let Some(body) = &release.body {
-        if let Some(pos) = body.find("releases/tag/b") {
-            if let Some(n) = from(&body[pos + "releases/tag/".len()..]) {
-                return n;
-            }
-        }
+    if let Some(body) = &release.body
+        && let Some(pos) = body.find("releases/tag/b")
+        && let Some(n) = from(&body[pos + "releases/tag/".len()..])
+    {
+        return n;
     }
     release.name.as_deref().and_then(from).unwrap_or(0)
 }
@@ -141,7 +140,7 @@ fn parse_backend(asset_name: &str) -> Option<String> {
         return None;
     }
     let after = lower.split("-bin-win-").nth(1)?;
-    // e.g. "cuda-13.3-x64.zip", "vulkan-x64.zip", "cpu-x64.zip"
+    // e.g. "cuda-13.4-x64.zip", "vulkan-x64.zip", "cpu-x64.zip"
     let backend = after.trim_end_matches(".zip").trim_end_matches("-x64");
     if backend.contains("arm64") {
         return None;
@@ -244,9 +243,9 @@ pub async fn fetch_releases(channel: &str, force: bool) -> Result<Vec<LlamaRelea
         }
         "nightly" => {
             releases.retain(|r| r.tag.starts_with('b'));
-            releases.sort_by(|a, b| b.build_number.cmp(&a.build_number));
+            releases.sort_by_key(|r| std::cmp::Reverse(r.build_number));
         }
-        _ => releases.sort_by(|a, b| b.build_number.cmp(&a.build_number)),
+        _ => releases.sort_by_key(|r| std::cmp::Reverse(r.build_number)),
     }
     Ok(releases)
 }
@@ -270,7 +269,7 @@ async fn fetch_release_by_tag(tag: &str) -> Result<LlamaRelease, String> {
 /// The asset to install for `backend`, with the script's fallback order.
 pub fn pick_asset<'a>(release: &'a LlamaRelease, backend: &str) -> Option<&'a LlamaReleaseAsset> {
     let order: Vec<&str> = match backend {
-        "cuda-13.3" => vec!["cuda-13.3", "cuda-", "vulkan", "cpu"],
+        "cuda-13.4" => vec!["cuda-13.4", "cuda-", "vulkan", "cpu"],
         "cuda-12.4" => vec!["cuda-12.4", "cuda-", "vulkan", "cpu"],
         "vulkan" => vec!["vulkan", "cpu"],
         "cpu" => vec!["cpu"],
@@ -290,7 +289,7 @@ pub fn pick_asset<'a>(release: &'a LlamaRelease, backend: &str) -> Option<&'a Ll
     None
 }
 
-/// `cuda-13.3` / `cuda-12.4` from `nvidia-smi`, else `cpu`. Cached.
+/// `cuda-13.4` / `cuda-12.4` from `nvidia-smi`, else `cpu`. Cached.
 pub fn detect_backend() -> String {
     static DETECTED: Mutex<Option<String>> = Mutex::new(None);
     if let Some(b) = DETECTED.lock().unwrap().clone() {
@@ -314,7 +313,7 @@ fn detect_backend_uncached() -> String {
     let text = String::from_utf8_lossy(&output.stdout);
     let Some(pos) = text.find("CUDA Version:") else {
         return if output.status.success() {
-            "cuda-13.3".into()
+            "cuda-13.4".into()
         } else {
             "cpu".into()
         };
@@ -327,8 +326,8 @@ fn detect_backend_uncached() -> String {
     let mut parts = version.split('.');
     let major: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
     let minor: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-    if major > 13 || (major == 13 && minor >= 3) {
-        "cuda-13.3".into()
+    if major > 13 || (major == 13 && minor >= 4) {
+        "cuda-13.4".into()
     } else if major >= 12 {
         "cuda-12.4".into()
     } else {
@@ -432,12 +431,14 @@ pub async fn install(
     result
 }
 
+type ProgressEmitter<'a> = &'a (dyn Fn(&str, f64, f64, Option<String>, Option<String>) + Sync);
+
 async fn install_inner(
     app: &AppHandle,
     tag: &str,
     backend: &str,
     include_cudart: bool,
-    emit: &(dyn Fn(&str, f64, f64, Option<String>, Option<String>) + Sync),
+    emit: ProgressEmitter<'_>,
 ) -> Result<InstalledLlamaServer, String> {
     // Resolve the release that actually carries binaries.
     let mut release = fetch_release_by_tag(tag).await?;
@@ -449,14 +450,13 @@ async fn install_inner(
                     release.tag
                 );
                 let mut resolved = None;
-                if let Ok(response) = client().get(&url).send().await {
-                    if let Ok(response) = response.error_for_status() {
-                        if let Ok(text) = response.text().await {
-                            let text = text.trim().to_string();
-                            if !text.is_empty() {
-                                resolved = Some(text);
-                            }
-                        }
+                if let Ok(response) = client().get(&url).send().await
+                    && let Ok(response) = response.error_for_status()
+                    && let Ok(text) = response.text().await
+                {
+                    let text = text.trim().to_string();
+                    if !text.is_empty() {
+                        resolved = Some(text);
                     }
                 }
                 resolved
@@ -565,7 +565,7 @@ async fn download_with_progress(
     url: &str,
     dest: &Path,
     expected_total: f64,
-    emit: &(dyn Fn(&str, f64, f64, Option<String>, Option<String>) + Sync),
+    emit: ProgressEmitter<'_>,
 ) -> Result<(), String> {
     let response = client()
         .get(url)
@@ -677,7 +677,7 @@ pub struct CudaToolkitInfo {
     /// Folder that holds `cudart64_*.dll` (CUDA 13 keeps it in `bin\x64`,
     /// CUDA 12 and older in `bin`).
     pub runtime_dir: String,
-    /// Toolkit version as the installer names it (`13.3`), when known.
+    /// Toolkit version as the installer names it (`13.4`), when known.
     pub version: Option<String>,
     /// Whether `runtime_dir` is on the PATH the app was started with. When it is
     /// not, `LlamaServerManager::start` prepends it to the child's PATH.
@@ -711,7 +711,7 @@ fn dir_has_cublas(dir: &Path) -> bool {
     (has("cublas64_") && has("cublaslt64_")) || (has("libcublas.so") && has("libcublaslt.so"))
 }
 
-/// `v13.3` / `CUDA\v12.8` → `13.3`; the `CUDA_PATH_V13_3` env name → `13.3`.
+/// `v13.4` / `CUDA\v12.8` → `13.4`; the `CUDA_PATH_V13_4` env name → `13.4`.
 fn cuda_version_from_dir(dir: &Path) -> Option<String> {
     dir.ancestors().find_map(|p| {
         let name = p.file_name()?.to_string_lossy();
@@ -866,8 +866,8 @@ mod tests {
 
     #[test]
     fn cuda_version_is_read_from_the_toolkit_folder_name() {
-        let p = Path::new(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3\bin\x64");
-        assert_eq!(cuda_version_from_dir(p).as_deref(), Some("13.3"));
+        let p = Path::new(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.4\bin\x64");
+        assert_eq!(cuda_version_from_dir(p).as_deref(), Some("13.4"));
         let p = Path::new(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin");
         assert_eq!(cuda_version_from_dir(p).as_deref(), Some("12.8"));
         assert_eq!(cuda_version_from_dir(Path::new(r"C:\tools\cuda\bin")), None);
@@ -878,8 +878,8 @@ mod tests {
     #[test]
     fn same_dir_ignores_case_separators_and_trailing_slashes() {
         assert!(same_dir(
-            Path::new(r"C:\CUDA\v13.3\bin\x64\"),
-            Path::new("c:/cuda/v13.3/BIN/x64")
+            Path::new(r"C:\CUDA\v13.4\bin\x64\"),
+            Path::new("c:/cuda/v13.4/BIN/x64")
         ));
         assert!(!same_dir(
             Path::new(r"C:\CUDA\bin"),
@@ -941,8 +941,8 @@ mod tests {
     #[test]
     fn parses_windows_asset_backends() {
         assert_eq!(
-            parse_backend("llama-b10630-bin-win-cuda-13.3-x64.zip").as_deref(),
-            Some("cuda-13.3")
+            parse_backend("llama-b10630-bin-win-cuda-13.4-x64.zip").as_deref(),
+            Some("cuda-13.4")
         );
         assert_eq!(
             parse_backend("llama-b10630-bin-win-vulkan-x64.zip").as_deref(),
@@ -953,11 +953,11 @@ mod tests {
             Some("cpu")
         );
         assert_eq!(
-            parse_backend("cudart-llama-bin-win-cuda-13.3-x64.zip"),
+            parse_backend("cudart-llama-bin-win-cuda-13.4-x64.zip"),
             None
         );
         assert_eq!(
-            parse_backend("llama-b10630-bin-win-cuda-13.3-arm64.zip"),
+            parse_backend("llama-b10630-bin-win-cuda-13.4-arm64.zip"),
             None
         );
         assert_eq!(parse_backend("llama-b10630-bin-ubuntu-x64.tar.gz"), None);
@@ -981,7 +981,7 @@ mod tests {
             backing_tag: None,
         };
         assert_eq!(
-            pick_asset(&release, "cuda-13.3").unwrap().backend,
+            pick_asset(&release, "cuda-13.4").unwrap().backend,
             "cuda-12.4"
         );
         assert_eq!(

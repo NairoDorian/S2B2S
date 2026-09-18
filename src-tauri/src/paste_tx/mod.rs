@@ -105,16 +105,15 @@ impl TxState {
     /// Records a read receipt, logging the first one that counts as evidence.
     pub fn record_receipt(&mut self, at: Instant) {
         self.receipts.push(at);
-        if !self.logged_receipt {
-            if let Some(injected) = self.injected_at {
-                if at >= injected {
-                    self.logged_receipt = true;
-                    log::info!(
-                        "[reliable-paste] clipboard read {}ms after chord",
-                        at.duration_since(injected).as_millis()
-                    );
-                }
-            }
+        if !self.logged_receipt
+            && let Some(injected) = self.injected_at
+            && at >= injected
+        {
+            self.logged_receipt = true;
+            log::info!(
+                "[reliable-paste] clipboard read {}ms after chord",
+                at.duration_since(injected).as_millis()
+            );
         }
     }
 
@@ -140,10 +139,10 @@ pub(crate) fn evaluate(state: &TxState, now: Instant) -> WaitDecision {
     if state.ownership_lost || state.cancelled {
         return WaitDecision::Finish;
     }
-    if let Some(last) = state.last_receipt_after_injection() {
-        if now.duration_since(last) >= QUIET_PERIOD {
-            return WaitDecision::Finish;
-        }
+    if let Some(last) = state.last_receipt_after_injection()
+        && now.duration_since(last) >= QUIET_PERIOD
+    {
+        return WaitDecision::Finish;
     }
     let deadline = if state.injection_failed {
         FAILED_INJECTION_TIMEOUT

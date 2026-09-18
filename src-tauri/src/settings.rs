@@ -434,18 +434,12 @@ impl FileTranscriptionSettings {
 
 /// Settings of the "Recall" page (fork feature): the note vault. Grouped
 /// into one struct so the page persists through a single command.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, Type)]
 #[serde(default)]
 pub struct RecallSettings {
     /// Folder the vault lives in. `None` means the default
     /// `<app data>/recall`.
     pub output_dir: Option<String>,
-}
-
-impl Default for RecallSettings {
-    fn default() -> Self {
-        Self { output_dir: None }
-    }
 }
 
 impl RecallSettings {
@@ -504,7 +498,7 @@ pub struct LlamaSettings {
     /// Start the server when a request targets it and it is not running.
     pub start_on_demand: bool,
     pub stop_on_exit: bool,
-    /// Preferred release asset: `auto`, `cuda-13.3`, `cuda-12.4`, `vulkan`, `cpu`.
+    /// Preferred release asset: `auto`, `cuda-13.4`, `cuda-12.4`, `vulkan`, `cpu`.
     pub backend: String,
     /// `latest`, `stable` or `nightly` for the release list.
     pub channel: String,
@@ -595,7 +589,7 @@ impl LlamaSettings {
         } else {
             alias.into()
         };
-        if !["auto", "cuda-13.3", "cuda-12.4", "vulkan", "cpu"].contains(&self.backend.as_str()) {
+        if !["auto", "cuda-13.4", "cuda-12.4", "vulkan", "cpu"].contains(&self.backend.as_str()) {
             self.backend = "auto".into();
         }
         if !["latest", "stable", "nightly"].contains(&self.channel.as_str()) {
@@ -2358,15 +2352,15 @@ fn apply_settings_migrations(
     // absent): the retired `push_to_talk` bool maps onto the two legacy modes so
     // upgrading users keep exactly the behavior they had. Only fresh installs
     // get the hold-or-toggle default.
-    if settings_value.get("shortcut_activation").is_none() {
-        if let Some(push_to_talk) = settings_value.get("push_to_talk").and_then(|v| v.as_bool()) {
-            settings.shortcut_activation = if push_to_talk {
-                ShortcutActivation::PushToTalk
-            } else {
-                ShortcutActivation::Toggle
-            };
-            updated = true;
-        }
+    if settings_value.get("shortcut_activation").is_none()
+        && let Some(push_to_talk) = settings_value.get("push_to_talk").and_then(|v| v.as_bool())
+    {
+        settings.shortcut_activation = if push_to_talk {
+            ShortcutActivation::PushToTalk
+        } else {
+            ShortcutActivation::Toggle
+        };
+        updated = true;
     }
 
     let stored_schema_version = settings_value
@@ -2420,15 +2414,15 @@ fn apply_settings_migrations(
     // but no shortcut is registered until the user explicitly sets one.
     if stored_schema_version < 3 {
         for binding_id in ["transcribe", "multi_stt_transcribe"] {
-            if let Some(binding) = settings.bindings.get_mut(binding_id) {
-                if !binding.current_binding.is_empty() {
-                    debug!(
-                        "Schema 3 migration: clearing default binding for '{}'",
-                        binding_id
-                    );
-                    binding.current_binding = String::new();
-                    updated = true;
-                }
+            if let Some(binding) = settings.bindings.get_mut(binding_id)
+                && !binding.current_binding.is_empty()
+            {
+                debug!(
+                    "Schema 3 migration: clearing default binding for '{}'",
+                    binding_id
+                );
+                binding.current_binding = String::new();
+                updated = true;
             }
         }
         settings.settings_schema_version = 3;
@@ -2443,15 +2437,15 @@ fn apply_settings_migrations(
     // on top of schema 3, then stamps the version to 4.
     if stored_schema_version < 4 {
         for binding_id in ["transcribe", "multi_stt_transcribe"] {
-            if let Some(binding) = settings.bindings.get_mut(binding_id) {
-                if !binding.current_binding.is_empty() {
-                    debug!(
-                        "Schema 4 migration: clearing leftover binding for '{}'",
-                        binding_id
-                    );
-                    binding.current_binding = String::new();
-                    updated = true;
-                }
+            if let Some(binding) = settings.bindings.get_mut(binding_id)
+                && !binding.current_binding.is_empty()
+            {
+                debug!(
+                    "Schema 4 migration: clearing leftover binding for '{}'",
+                    binding_id
+                );
+                binding.current_binding = String::new();
+                updated = true;
             }
         }
         settings.settings_schema_version = 4;
@@ -2600,10 +2594,7 @@ pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
 
 pub fn get_stored_binding(app: &AppHandle, id: &str) -> ShortcutBinding {
     let bindings = get_bindings(app);
-
-    let binding = bindings.get(id).unwrap().clone();
-
-    binding
+    bindings.get(id).unwrap().clone()
 }
 
 pub fn get_history_limit(app: &AppHandle) -> u32 {

@@ -73,6 +73,42 @@ const WPM_MIN_WORDS = 3;
 // step itself supplies the slack for borders and padding rounding.
 const TEXT_HEIGHT_STEP_PX = 24;
 
+const direction = () => getLanguageDirection(currentLanguage());
+
+const fmtTime = (s: number) =>
+  `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+const CancelButton = () => (
+  <button
+    class="sx"
+    aria-label="cancel"
+    onClick={() => commands.cancelOperation()}
+  >
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M4 4 L12 12 M12 4 L4 12"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+      />
+    </svg>
+  </button>
+);
+
+const WorkingRow = (props: { label: string; showCancel: boolean }) => (
+  <div class="sbase">
+    <div class="sbase-l">
+      <span class="sspinner" />
+    </div>
+    <span class="swork-label">{props.label}</span>
+    <div class="sbase-r">
+      <Show when={props.showCancel}>
+        <CancelButton />
+      </Show>
+    </div>
+  </div>
+);
+
 const RecordingOverlay = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = createSignal(false);
@@ -163,11 +199,6 @@ const RecordingOverlay = () => {
   let manualDragMoveHandler: ((e: PointerEvent) => void) | null = null;
   let manualDragUpHandler: (() => void) | null = null;
   let dragGripFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // The writing direction has to follow the language, so it is an accessor:
-  // `currentLanguage` is a signal, and reading it inside the JSX `dir` binding
-  // is what subscribes the attribute to a language change.
-  const direction = () => getLanguageDirection(currentLanguage());
 
   const stopTypewriter = () => {
     if (typewriterTimer !== null) {
@@ -588,9 +619,6 @@ const RecordingOverlay = () => {
     pinned = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
   };
 
-  const fmtTime = (s: number) =>
-    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
   // Drag-grip handlers — allow the user to grab the overlay and reposition it,
   // persisting the new position so it stays there across recordings (learned
   // from AIVORelay's recording-overlay position memory).
@@ -786,25 +814,6 @@ const RecordingOverlay = () => {
   // and their props are read lazily, so a read inside one of them subscribes only
   // the binding that needs it.
 
-  const CancelButton = () => (
-    <button
-      class="sx"
-      aria-label="cancel"
-      onClick={() => commands.cancelOperation()}
-    >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        {/* SVG presentation attributes are named as the DOM spells them —
-            kebab-case, like the style object's CSS names. */}
-        <path
-          d="M4 4 L12 12 M12 4 L4 12"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-        />
-      </svg>
-    </button>
-  );
-
   // Speech-only clock and running words-per-minute. The clock freezes on
   // silence, which is the whole point — it measures talking, not recording.
   const StatsCluster = () => (
@@ -888,22 +897,6 @@ const RecordingOverlay = () => {
           <Readouts showTimer={props.showTimer} />
         </Show>
         {props.badge}
-        <Show when={props.showCancel}>
-          <CancelButton />
-        </Show>
-      </div>
-    </div>
-  );
-
-  // spinner (left) | label (center) | cancel (right) — same 3-zone grid as the
-  // listening row, so the label is centered.
-  const WorkingRow = (props: { label: string; showCancel: boolean }) => (
-    <div class="sbase">
-      <div class="sbase-l">
-        <span class="sspinner" />
-      </div>
-      <span class="swork-label">{props.label}</span>
-      <div class="sbase-r">
         <Show when={props.showCancel}>
           <CancelButton />
         </Show>

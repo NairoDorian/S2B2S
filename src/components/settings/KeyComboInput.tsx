@@ -13,7 +13,7 @@ import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import type { JSX } from "@solidjs/web";
 
-const MODIFIERS = [
+const MODIFIERS = new Set([
   "ctrl",
   "control",
   "shift",
@@ -25,7 +25,7 @@ const MODIFIERS = [
   "super",
   "win",
   "windows",
-];
+]);
 
 interface KeyComboInputProps {
   settingKey: StringSettingKey;
@@ -92,22 +92,20 @@ export const KeyComboInput = ({
 
         const updatedKeyPressed = keyPressed().filter((k) => k !== key);
         if (updatedKeyPressed.length === 0 && recordedKeys().length > 0) {
-          const sortedKeys = recordedKeys()
-            .slice()
-            .sort((a, b) => {
-              const aIsMod = MODIFIERS.includes(a.toLowerCase());
-              const bIsMod = MODIFIERS.includes(b.toLowerCase());
-              if (aIsMod && !bIsMod) return -1;
-              if (!aIsMod && bIsMod) return 1;
-              return 0;
-            });
+          const sortedKeys = recordedKeys().toSorted((a, b) => {
+            const aIsMod = MODIFIERS.has(a.toLowerCase());
+            const bIsMod = MODIFIERS.has(b.toLowerCase());
+            if (aIsMod && !bIsMod) return -1;
+            if (!aIsMod && bIsMod) return 1;
+            return 0;
+          });
           const newShortcut = sortedKeys.join("+");
 
           const unsupported = sortedKeys.filter(
             (k) => !isSimulatableKey(k.toLowerCase()),
           );
           const hasNonModifier = sortedKeys.some(
-            (k) => !MODIFIERS.includes(k.toLowerCase()),
+            (k) => !MODIFIERS.has(k.toLowerCase()),
           );
           if (unsupported.length > 0 || !hasNonModifier) {
             toast.error(
@@ -202,8 +200,9 @@ export const KeyComboInput = ({
       }}
       class={`flex items-center gap-2 ${grouped ? "" : "py-2"}`}
     >
-      <div
-        class={`px-3 py-1.5 text-sm font-mono font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent transition-colors min-w-[200px] ${
+      <button
+        type="button"
+        class={`px-3 py-1.5 text-sm font-mono font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent transition-colors min-w-[200px] text-start ${
           editing() ? "border-accent bg-accent/30" : ""
         } ${isUpdating(settingKey) ? "opacity-50" : ""}`}
         onClick={editing() ? undefined : startEditing}
@@ -214,7 +213,7 @@ export const KeyComboInput = ({
           : displayValue
             ? formatKeyCombination(displayValue, osType)
             : ""}
-      </div>
+      </button>
       {!editing() && (
         <ResetButton onClick={handleReset} disabled={isUpdating(settingKey)} />
       )}

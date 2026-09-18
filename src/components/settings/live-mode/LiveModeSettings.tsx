@@ -69,6 +69,11 @@ const PHASE_CLASSES: Record<LiveModePhase, string> = {
   error: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
+const reveal = async (path: string) => {
+  const result = await commands.revealPathInFileManager(path);
+  if (result.status === "error") toast.error(result.error);
+};
+
 export const LiveModeSettings = () => {
   const { t, i18n } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
@@ -133,11 +138,6 @@ export const LiveModeSettings = () => {
   const stop = async () => {
     const error = await store.stop();
     if (error) toast.error(error);
-  };
-
-  const reveal = async (path: string) => {
-    const result = await commands.revealPathInFileManager(path);
-    if (result.status === "error") toast.error(result.error);
   };
 
   const previewText = () =>

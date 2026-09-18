@@ -28,7 +28,7 @@ export const SessionToastHistory = () => {
           (toast.level === "error" && store.showErrors) ||
           (toast.level === "warning" && store.showWarnings),
       )
-      .reverse(),
+      .toReversed(),
   );
 
   const dateTimeFormatter = createMemo(

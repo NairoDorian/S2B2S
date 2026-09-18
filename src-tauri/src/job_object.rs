@@ -52,7 +52,7 @@ pub fn register(child: &std::process::Child) {
     });
 
     if let Some(job) = job {
-        let process = HANDLE(child.as_raw_handle() as *mut core::ffi::c_void);
+        let process = HANDLE(child.as_raw_handle());
         if let Err(e) = unsafe { AssignProcessToJobObject(job.0, process) } {
             log::warn!("AssignProcessToJobObject failed: {e}");
         }

@@ -1,18 +1,18 @@
 // scripts/check-transcribe-deps.ts
 //
-// Checks if the transcribe-cpp / transcribe-cpp-sys git dependencies
-// (from https://github.com/NairoDorian/transcribe.cpp, branch=main, applied via
-// [patch.crates-io] in src-tauri/Cargo.toml) are pinned to the latest remote
-// commit. If the remote branch tip differs from the commit locked in
-// Cargo.lock, runs `cargo update` to pull the latest — so the next
-// `bun run tauri dev` catches upstream changes to the transcribe.cpp fork
-// without a manual bump.
+// Checks if our git fork dependencies:
+//   1. transcribe-cpp / transcribe-cpp-sys (https://github.com/NairoDorian/transcribe.cpp, branch=main)
+//   2. tauri / tauri-* (https://github.com/NairoDorian/tauri-fork, branch=v3)
+// are pinned to the latest remote commit. If the remote branch tip differs from
+// the commit locked in Cargo.lock, runs `cargo update` to pull the latest —
+// so every `bun run tauri dev` catches upstream changes to the forks without
+// manual bumping or hardcoding specific commit SHAs.
 //
 // How it works:
-//   1. Reads the commit hash pinned in src-tauri/Cargo.lock
-//   2. Fetches the remote HEAD for refs/heads/main via `git ls-remote`
-//   3. If they differ, runs `cargo update -p transcribe-cpp -p transcribe-cpp-sys`
-//   4. If they match, nothing to do
+//   1. Reads the commit hashes pinned in src-tauri/Cargo.lock
+//   2. Fetches the remote HEAD for the tracking branches via `git ls-remote`
+//   3. If any differs, runs `cargo update -p <package>` for that dependency
+//   4. If they match, reports up to date
 //
 // When it runs:
 //   - Automatically before every `bun run tauri` / `build:fast` / `build:full`
@@ -30,8 +30,6 @@ import { resolve, join } from "path";
 const root = resolve(import.meta.dirname, "..");
 const cargoLockPath = join(root, "src-tauri", "Cargo.lock");
 
-const REPO_URL = "https://github.com/NairoDorian/transcribe.cpp";
-const BRANCH = "main";
 const TAG = "[check-transcribe-deps]";
 
 export type CheckOutcome =
@@ -40,90 +38,129 @@ export type CheckOutcome =
   | "updated"
   | "update-failed";
 
-/**
- * Compare the locked transcribe.cpp commit with the remote branch tip and run
- * `cargo update` when the remote is ahead. Never throws.
- */
-export function checkTranscribeDeps(): CheckOutcome {
-  // 1. Read the commit pinned in Cargo.lock for transcribe-cpp.
+interface GitDep {
+  name: string;
+  repoUrl: string;
+  branch: string;
+  packages: string[];
+}
+
+const TRACKED_GIT_DEPS: GitDep[] = [
+  {
+    name: "transcribe-cpp",
+    repoUrl: "https://github.com/NairoDorian/transcribe.cpp",
+    branch: "main",
+    packages: ["transcribe-cpp", "transcribe-cpp-sys"],
+  },
+  {
+    name: "tauri-fork",
+    repoUrl: "https://github.com/NairoDorian/tauri-fork",
+    branch: "v3",
+    packages: ["tauri"],
+  },
+];
+
+function checkSingleDep(dep: GitDep): CheckOutcome {
   let lockContent: string;
   try {
     lockContent = readFileSync(cargoLockPath, "utf-8");
   } catch {
-    console.warn(`${TAG} Could not read Cargo.lock — skipping check.`);
+    console.warn(
+      `${TAG} Could not read Cargo.lock — skipping check for ${dep.name}.`,
+    );
     return "skipped";
   }
 
-  // Cargo.lock source line format:
-  //   source = "git+https://github.com/NairoDorian/transcribe.cpp?branch=main#<40-hex-sha>"
-  const escapedUrl = REPO_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedUrl = dep.repoUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const sourceRe = new RegExp(
-    `git\\+${escapedUrl}\\?branch=${BRANCH}#([0-9a-f]{40})`,
+    `git\\+${escapedUrl}\\?branch=${dep.branch}#([0-9a-f]{40})`,
   );
   const lockMatch = lockContent.match(sourceRe);
   if (!lockMatch) {
-    console.log(`${TAG} transcribe-cpp not found in Cargo.lock — skipping.`);
+    console.log(`${TAG} ${dep.name} not found in Cargo.lock — skipping.`);
     return "skipped";
   }
   const localCommit = lockMatch[1];
 
-  // 2. Fetch the remote HEAD for the branch via `git ls-remote`.
   const lsResult = Bun.spawnSync(
-    ["git", "ls-remote", REPO_URL, `refs/heads/${BRANCH}`],
+    ["git", "ls-remote", dep.repoUrl, `refs/heads/${dep.branch}`],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
 
   if (lsResult.exitCode !== 0) {
     const stderr = lsResult.stderr.toString().trim();
     console.warn(
-      `${TAG} git ls-remote failed (${stderr || "offline?"}). ` +
+      `${TAG} git ls-remote failed for ${dep.name} (${stderr || "offline?"}). ` +
         "Proceeding with cached Cargo.lock.",
     );
     return "skipped";
   }
 
   const remoteOutput = lsResult.stdout.toString().trim();
-  // Expected format: <40-hex-sha>\trefs/heads/main
   const remoteCommit = remoteOutput.split("\t")[0]?.trim();
   if (!remoteCommit) {
-    console.warn(`${TAG} Could not parse remote ref — skipping.`);
+    console.warn(
+      `${TAG} Could not parse remote ref for ${dep.name} — skipping.`,
+    );
     return "skipped";
   }
 
-  // 3. Compare. If different, `cargo update` to pull the latest.
   if (localCommit === remoteCommit) {
     console.log(
-      `${TAG} Up to date (commit ${localCommit.slice(0, 12)}). No update needed.`,
+      `${TAG} ${dep.name}: Up to date (commit ${localCommit.slice(0, 12)}). No update needed.`,
     );
     return "up-to-date";
   }
 
   console.log(
-    `${TAG} Remote ${BRANCH} (${remoteCommit.slice(0, 12)}) ` +
+    `${TAG} ${dep.name}: Remote ${dep.branch} (${remoteCommit.slice(0, 12)}) ` +
       `is ahead of local lock (${localCommit.slice(0, 12)}). Updating Cargo.lock...`,
   );
 
-  const updateResult = Bun.spawnSync(
-    ["cargo", "update", "-p", "transcribe-cpp", "-p", "transcribe-cpp-sys"],
-    {
-      cwd: join(root, "src-tauri"),
-      stdio: ["inherit", "inherit", "inherit"],
-    },
-  );
+  const updateArgs = [
+    "cargo",
+    "update",
+    ...dep.packages.flatMap((p) => ["-p", p]),
+  ];
+  const updateResult = Bun.spawnSync(updateArgs, {
+    cwd: join(root, "src-tauri"),
+    stdio: ["inherit", "inherit", "inherit"],
+  });
 
   if (updateResult.exitCode !== 0) {
     console.warn(
-      `${TAG} cargo update failed. Proceeding with existing lock — ` +
-        "run 'cargo update -p transcribe-cpp -p transcribe-cpp-sys' manually.",
+      `${TAG} cargo update failed for ${dep.name}. Proceeding with existing lock — ` +
+        `run '${updateArgs.join(" ")}' manually.`,
     );
     return "update-failed";
   }
 
   console.log(
-    `${TAG} Cargo.lock updated. The build will compile the new commit.`,
+    `${TAG} ${dep.name}: Cargo.lock updated. The build will compile the new commit.`,
   );
   return "updated";
 }
+
+/**
+ * Compare locked git dependencies with their remote branch tips and run
+ * `cargo update` when any remote branch is ahead. Never throws.
+ */
+export function checkTranscribeDeps(): CheckOutcome {
+  let anyUpdated = false;
+  let anyFailed = false;
+
+  for (const dep of TRACKED_GIT_DEPS) {
+    const outcome = checkSingleDep(dep);
+    if (outcome === "updated") anyUpdated = true;
+    if (outcome === "update-failed") anyFailed = true;
+  }
+
+  if (anyFailed) return "update-failed";
+  if (anyUpdated) return "updated";
+  return "up-to-date";
+}
+
+export const checkGitDeps = checkTranscribeDeps;
 
 if (import.meta.main) {
   checkTranscribeDeps();

@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/no-static-element-interactions */
 import { useTranslation } from "@/i18n/useTranslation";
 import {
   AudioLines,
@@ -134,9 +135,11 @@ const ModelCard = (props: ModelCardProps) => {
     onDelete?.(model.id);
   };
 
+  // ModelCard is conditionally interactive (when not downloaded/downloading); inner buttons handle secondary actions.
+  // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
   return (
     <div
-      onClick={handleClick}
+      onClick={isClickable ? handleClick : undefined}
       onKeyDown={(e) => {
         if (e.key === "Enter" && isClickable) handleClick();
       }}

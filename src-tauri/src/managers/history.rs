@@ -354,13 +354,14 @@ impl HistoryManager {
                                 let mut voiced = 0;
                                 let total = samples_16k.len()
                                     / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
+                                #[allow(clippy::chunks_exact_to_as_chunks)]
                                 for chunk in samples_16k.chunks_exact(
                                     crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
                                 ) {
-                                    if let Ok(frame) = vad.push_frame(chunk) {
-                                        if frame.is_speech() {
-                                            voiced += 1;
-                                        }
+                                    if let Ok(frame) = vad.push_frame(chunk)
+                                        && frame.is_speech()
+                                    {
+                                        voiced += 1;
                                     }
                                 }
                                 if total > 0 && voiced > 0 {
@@ -748,10 +749,10 @@ impl HistoryManager {
             }
         }
 
-        if deleted_count > 0 {
-            if let Err(e) = conn.execute("VACUUM", []) {
-                error!("Failed to VACUUM database after deleting entries: {}", e);
-            }
+        if deleted_count > 0
+            && let Err(e) = conn.execute("VACUUM", [])
+        {
+            error!("Failed to VACUUM database after deleting entries: {}", e);
         }
 
         Ok(deleted_count)
@@ -848,10 +849,8 @@ impl HistoryManager {
                      LIMIT ?2"
                 );
                 let mut stmt = conn.prepare(&query)?;
-                let result = stmt
-                    .query_map(params![cursor_id, fetch_count], Self::map_history_entry)?
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                result
+                stmt.query_map(params![cursor_id, fetch_count], Self::map_history_entry)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
             }
             (None, Some(lim)) => {
                 let fetch_count = (lim + 1) as i32;
@@ -862,10 +861,8 @@ impl HistoryManager {
                      LIMIT ?1"
                 );
                 let mut stmt = conn.prepare(&query)?;
-                let result = stmt
-                    .query_map(params![fetch_count], Self::map_history_entry)?
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                result
+                stmt.query_map(params![fetch_count], Self::map_history_entry)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
             }
             (_, None) => {
                 let query = format!(
@@ -874,10 +871,8 @@ impl HistoryManager {
                      ORDER BY id DESC"
                 );
                 let mut stmt = conn.prepare(&query)?;
-                let result = stmt
-                    .query_map([], Self::map_history_entry)?
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                result
+                stmt.query_map([], Self::map_history_entry)?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
             }
         };
 
@@ -971,11 +966,11 @@ impl HistoryManager {
         if let Some(entry) = self.get_entry_by_id(id).await? {
             // Delete the audio file first
             let file_path = self.get_audio_file_path(&entry.file_name);
-            if file_path.exists() {
-                if let Err(e) = fs::remove_file(&file_path) {
-                    error!("Failed to delete audio file {}: {}", entry.file_name, e);
-                    // Continue with database deletion even if file deletion fails
-                }
+            if file_path.exists()
+                && let Err(e) = fs::remove_file(&file_path)
+            {
+                error!("Failed to delete audio file {}: {}", entry.file_name, e);
+                // Continue with database deletion even if file deletion fails
             }
         }
 

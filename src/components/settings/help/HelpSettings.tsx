@@ -45,18 +45,19 @@ const ALL_ENTRIES: readonly HelpEntryDefinition[] = HELP_SECTIONS.flatMap(
  * from the AIVORelay fork's Help page; the copy is this fork's. Search runs
  * over the translated title and summary, so it follows the app language.
  */
+const pendingHelpAnchor = () => useNavigationStore().pendingHelpAnchor;
+
+const scrollToAnchor = (anchor: string) => {
+  const heading = document.getElementById(anchor);
+  if (heading) scrollAndFocusAnchor(heading);
+};
+
 export const HelpSettings = () => {
   const { t } = useTranslation();
-  const pendingHelpAnchor = () => useNavigationStore().pendingHelpAnchor;
   const [query, setQuery] = createSignal("");
   const [copyStatus, setCopyStatus] = createSignal<"idle" | "copied" | "error">(
     "idle",
   );
-
-  const scrollToAnchor = (anchor: string) => {
-    const heading = document.getElementById(anchor);
-    if (heading) scrollAndFocusAnchor(heading);
-  };
 
   // A QuickHelp banner or the hotkey sidebar opened Help at a section.
   createEffect(

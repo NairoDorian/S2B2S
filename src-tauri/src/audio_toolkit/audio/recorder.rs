@@ -612,7 +612,7 @@ impl AudioRecorder {
                         .unwrap()
                         .as_ref()
                         .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
-                        .map(|(_, cfg)| cfg.clone());
+                        .map(|(_, cfg)| *cfg);
                     let config_was_cached = cached_config.is_some();
                     let config = match cached_config {
                         Some(cfg) => cfg,
@@ -876,7 +876,7 @@ impl AudioRecorder {
         }
 
         let stream = device.build_input_stream(
-            config.clone().into(),
+            (*config).into(),
             move |data: &[T], _: &_| {
                 AudioRecorder::write_input_to_ring(
                     data,
@@ -1101,10 +1101,10 @@ fn handle_frame(
         true
     };
 
-    if let Some(activity) = speech_clock.tick(voiced) {
-        if let Some(cb) = speech_cb {
-            cb(activity);
-        }
+    if let Some(activity) = speech_clock.tick(voiced)
+        && let Some(cb) = speech_cb
+    {
+        cb(activity);
     }
 
     if let Some(cb) = vad_frame_cb {
@@ -1337,12 +1337,12 @@ impl CaptureProcessor {
         }
         self.denoise_active = self.denoise_enabled.load(Ordering::Relaxed);
         self.speech_clock.reset(u64::from(pause_hold_ms));
-        if policy != VadPolicy::Disabled {
-            if let Some(cfg) = &self.vad {
-                let mut detector = cfg.detector.lock().unwrap();
-                detector.set_hangover_frames(cfg.hangover_for(policy));
-                detector.reset();
-            }
+        if policy != VadPolicy::Disabled
+            && let Some(cfg) = &self.vad
+        {
+            let mut detector = cfg.detector.lock().unwrap();
+            detector.set_hangover_frames(cfg.hangover_for(policy));
+            detector.reset();
         }
     }
 
@@ -1552,21 +1552,21 @@ impl CaptureProcessor {
             _ => self.frame_resampler.finish(|frame| on_frame(frame, None)),
         }
 
-        if vad_policy != VadPolicy::Disabled {
-            if let Some(cfg) = &self.vad {
-                let report = cfg.detector.lock().unwrap().tail_report();
-                if let Some(report) = report {
-                    log::debug!(
-                        "VAD at stop: withheld tail {} frames (~{}ms, {} voiced), in_speech={}, onset_counter={}, hangover_counter={}",
-                        report.withheld_frames,
-                        report.withheld_frames * cfg.frame_samples * 1000
-                            / constants::WHISPER_SAMPLE_RATE as usize,
-                        report.withheld_voiced_frames,
-                        report.in_speech,
-                        report.onset_counter,
-                        report.hangover_counter
-                    );
-                }
+        if vad_policy != VadPolicy::Disabled
+            && let Some(cfg) = &self.vad
+        {
+            let report = cfg.detector.lock().unwrap().tail_report();
+            if let Some(report) = report {
+                log::debug!(
+                    "VAD at stop: withheld tail {} frames (~{}ms, {} voiced), in_speech={}, onset_counter={}, hangover_counter={}",
+                    report.withheld_frames,
+                    report.withheld_frames * cfg.frame_samples * 1000
+                        / constants::WHISPER_SAMPLE_RATE as usize,
+                    report.withheld_voiced_frames,
+                    report.in_speech,
+                    report.onset_counter,
+                    report.hangover_counter
+                );
             }
         }
 

@@ -173,10 +173,10 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
     {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Err(e) = register_shortcut(&app_clone, cancel_binding) {
-                    error!("Failed to register cancel shortcut: {}", e);
-                }
+            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned()
+                && let Err(e) = register_shortcut(&app_clone, cancel_binding)
+            {
+                error!("Failed to register cancel shortcut: {}", e);
             }
         });
     }

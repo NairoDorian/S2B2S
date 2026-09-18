@@ -43,6 +43,17 @@ const NOOP = () => {};
 
 let hasCompletedPostOnboardingInit = false;
 
+const currentSection = () => useNavigationStore().section;
+const direction = () => getLanguageDirection(currentLanguage());
+
+const revealMainWindowForPermissions = async () => {
+  try {
+    await commands.showMainWindowCommand();
+  } catch (e) {
+    console.warn("Failed to show main window for permission onboarding:", e);
+  }
+};
+
 const renderSettingsContent = (
   section: SidebarSection,
   onPreviewOnboarding: (step: OnboardingPreviewStep) => void,
@@ -63,10 +74,8 @@ function App() {
   const [onboardingPreview, setOnboardingPreview] =
     createSignal<OnboardingPreviewStep | null>(null);
   const [isReturningUser, setIsReturningUser] = createSignal(false);
-  const currentSection = () => useNavigationStore().section;
   const { settings, updateSetting, refreshAudioDevices, refreshOutputDevices } =
     useSettings();
-  const direction = () => getLanguageDirection(currentLanguage());
   const uiScale = () => settings()?.ui_scale ?? null;
 
   createEffect(
@@ -256,14 +265,6 @@ function App() {
       });
     },
   );
-
-  const revealMainWindowForPermissions = async () => {
-    try {
-      await commands.showMainWindowCommand();
-    } catch (e) {
-      console.warn("Failed to show main window for permission onboarding:", e);
-    }
-  };
 
   const checkOnboardingStatus = async () => {
     try {

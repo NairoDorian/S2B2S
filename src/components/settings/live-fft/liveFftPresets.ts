@@ -1,3 +1,4 @@
+/* oxlint-disable oxc/approx-constant */
 import type { LiveFftSettings } from "@/bindings";
 
 /**

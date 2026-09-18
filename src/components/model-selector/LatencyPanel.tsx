@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { For } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { Check } from "@/components/icons/lucide";

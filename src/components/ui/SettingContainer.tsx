@@ -76,33 +76,31 @@ export const SettingContainer = (props: SettingContainerProps): JSX.Element => {
         ref={(el) => {
           tooltipRef = el;
         }}
-        class="relative"
+        class="relative inline-flex items-center"
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
-        onClick={toggleTooltip}
       >
-        <svg
-          class="w-4 h-4 text-mid-gray cursor-help hover:text-accent transition-colors duration-200 select-none"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+        <button
+          type="button"
+          onClick={toggleTooltip}
+          class="text-mid-gray cursor-help hover:text-accent transition-colors duration-200 select-none p-0 border-0 bg-transparent flex items-center justify-center"
           aria-label="More information"
-          role="button"
-          tabindex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleTooltip();
-            }
-          }}
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width={2}
-            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width={2}
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        </button>
         {showTooltip() && (
           <Tooltip
             targetRef={{ current: tooltipRef }}

@@ -251,30 +251,30 @@ fn parse_note(id: &str, raw: &str, file_updated_ms: i64) -> RecallNoteContent {
     let mut audio_file: Option<String> = None;
     let mut body = raw;
 
-    if let Some(rest) = raw.strip_prefix("---\n") {
-        if let Some(end) = rest.find("\n---") {
-            let block = &rest[..end];
-            body = rest[end + 4..].trim_start_matches('\n');
-            for line in block.lines() {
-                let Some((key, value)) = line.split_once(':') else {
-                    continue;
-                };
-                let value = value.trim().trim_matches('"');
-                match key.trim() {
-                    KEY_TITLE => title = value.to_string(),
-                    KEY_CREATED => created_ms = value.parse().ok(),
-                    KEY_UPDATED => updated_ms = value.parse().ok(),
-                    KEY_TAGS => {
-                        tags = value
-                            .split(',')
-                            .map(|t| t.trim().to_string())
-                            .filter(|t| !t.is_empty())
-                            .collect();
-                    }
-                    KEY_SOURCE => source = Some(value.to_string()),
-                    KEY_AUDIO => audio_file = Some(value.to_string()),
-                    _ => {}
+    if let Some(rest) = raw.strip_prefix("---\n")
+        && let Some(end) = rest.find("\n---")
+    {
+        let block = &rest[..end];
+        body = rest[end + 4..].trim_start_matches('\n');
+        for line in block.lines() {
+            let Some((key, value)) = line.split_once(':') else {
+                continue;
+            };
+            let value = value.trim().trim_matches('"');
+            match key.trim() {
+                KEY_TITLE => title = value.to_string(),
+                KEY_CREATED => created_ms = value.parse().ok(),
+                KEY_UPDATED => updated_ms = value.parse().ok(),
+                KEY_TAGS => {
+                    tags = value
+                        .split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect();
                 }
+                KEY_SOURCE => source = Some(value.to_string()),
+                KEY_AUDIO => audio_file = Some(value.to_string()),
+                _ => {}
             }
         }
     }

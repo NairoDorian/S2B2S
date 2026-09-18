@@ -75,7 +75,7 @@ export const findReleaseNoteToShow = ({
         !hasValidLastSeenVersion ||
         compareVersions(note.version, lastSeenVersion) > 0,
     )
-    .sort((a, b) => compareVersions(b.version, a.version))[0];
+    .toSorted((a, b) => compareVersions(b.version, a.version))[0];
 
   if (!candidate) return null;
 
@@ -83,8 +83,8 @@ export const findReleaseNoteToShow = ({
 };
 
 export const findLatestReleaseNote = (): ReleaseNote | null => {
-  const candidate = Array.from(releaseNotesByVersion.values()).sort((a, b) =>
-    compareVersions(b.version, a.version),
+  const candidate = Array.from(releaseNotesByVersion.values()).toSorted(
+    (a, b) => compareVersions(b.version, a.version),
   )[0];
 
   if (!candidate) return null;

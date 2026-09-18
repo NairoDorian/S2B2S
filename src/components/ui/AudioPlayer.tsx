@@ -46,6 +46,13 @@ export const AudioPlayerGroup = (props: {
   );
 };
 
+const formatTime = (time: number): string => {
+  if (!isFinite(time)) return "0:00";
+  const minutes = Math.floor(time / 60);
+  const seconds = Math.floor(time % 60);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+};
+
 export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
   const group = useContext(AudioPlayerGroupContext);
   const [isPlaying, setIsPlaying] = createSignal(false);
@@ -222,13 +229,6 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
 
   const handleSliderMouseDown = () => setIsDragging(true);
   const handleSliderTouchStart = () => setIsDragging(true);
-
-  const formatTime = (time: number): string => {
-    if (!isFinite(time)) return "0:00";
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  };
 
   const getProgressPercent = (): number => {
     if (duration() <= 0) return 0;

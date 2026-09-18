@@ -198,10 +198,10 @@ unsafe extern "system" fn paste_wnd_proc(
             LRESULT(0)
         }
         WM_DESTROYCLIPBOARD => {
-            if !shared.is_null() {
-                if let Ok(mut st) = (&*shared).state.lock() {
-                    st.ownership_lost = true;
-                }
+            if !shared.is_null()
+                && let Ok(mut st) = (&*shared).state.lock()
+            {
+                st.ownership_lost = true;
             }
             LRESULT(0)
         }
@@ -307,10 +307,10 @@ unsafe fn restore_snapshot(shared: &WinTxShared) {
             }
         }
     }
-    if let Ok(mut bitmap) = shared.saved_bitmap.lock() {
-        if let Some(raw) = bitmap.take() {
-            let _ = SetClipboardData(CF_BITMAP.0 as u32, Some(HANDLE(raw as *mut _)));
-        }
+    if let Ok(mut bitmap) = shared.saved_bitmap.lock()
+        && let Some(raw) = bitmap.take()
+    {
+        let _ = SetClipboardData(CF_BITMAP.0 as u32, Some(HANDLE(raw as *mut _)));
     }
     let _ = CloseClipboard();
     info!("[reliable-paste] restored previous clipboard");
@@ -327,14 +327,12 @@ unsafe fn snapshot_clipboard(hwnd: HWND, shared: &WinTxShared) -> Result<(), Str
         }
         if format == CF_BITMAP.0 as u32 {
             // GDI object, not global memory: duplicate the handle instead.
-            if let Ok(handle) = GetClipboardData(CF_BITMAP.0 as u32) {
-                if let Ok(copy) =
+            if let Ok(handle) = GetClipboardData(CF_BITMAP.0 as u32)
+                && let Ok(copy) =
                     CopyImage(handle, IMAGE_BITMAP_TYPE, 0, 0, LR_CREATEDIBSECTION_FLAG)
-                {
-                    if let Ok(mut slot) = shared.saved_bitmap.lock() {
-                        *slot = Some(copy.0 as usize);
-                    }
-                }
+                && let Ok(mut slot) = shared.saved_bitmap.lock()
+            {
+                *slot = Some(copy.0 as usize);
             }
             continue;
         }
@@ -423,10 +421,10 @@ unsafe fn publish_formats() -> Result<(), String> {
     // thread error must be cleared first so a stale value from an earlier
     // call can't masquerade as one.
     SetLastError(ERROR_SUCCESS);
-    if let Err(e) = SetClipboardData(CF_UNICODETEXT.0 as u32, None) {
-        if e.code().is_err() {
-            return Err(format!("SetClipboardData failed: {e}"));
-        }
+    if let Err(e) = SetClipboardData(CF_UNICODETEXT.0 as u32, None)
+        && e.code().is_err()
+    {
+        return Err(format!("SetClipboardData failed: {e}"));
     }
     Ok(())
 }
@@ -492,7 +490,7 @@ fn on_timer(_hwnd: HWND, shared: &WinTxShared) {
     if let Ok(mut slot) = PENDING.lock() {
         let is_us = slot
             .as_ref()
-            .map(|pending| Arc::as_ptr(pending) as *const WinTxShared == shared as *const _)
+            .map(|pending| std::ptr::eq(Arc::as_ptr(pending), shared))
             .unwrap_or(false);
         if is_us {
             *slot = None;

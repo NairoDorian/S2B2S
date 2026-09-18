@@ -53,9 +53,18 @@ const lazyLocaleBackend: BackendModule = {
   },
 };
 
+export interface SupportedLanguage {
+  code: string;
+  name: string;
+  nativeName: string;
+  priority?: number;
+}
+
 // Build supported languages list from discovered locales + metadata
-export const SUPPORTED_LANGUAGES = Object.keys(localeLoaders)
-  .map((code) => {
+export const SUPPORTED_LANGUAGES: SupportedLanguage[] = Object.keys(
+  localeLoaders,
+)
+  .map((code): SupportedLanguage => {
     const meta = LANGUAGE_METADATA[code];
     if (!meta) {
       console.warn(`Missing metadata for locale "${code}" in languages.ts`);
@@ -68,7 +77,7 @@ export const SUPPORTED_LANGUAGES = Object.keys(localeLoaders)
       priority: meta.priority,
     };
   })
-  .sort((a, b) => {
+  .toSorted((a, b) => {
     // Sort by priority first (lower = higher), then alphabetically
     if (a.priority !== undefined && b.priority !== undefined) {
       return a.priority - b.priority;

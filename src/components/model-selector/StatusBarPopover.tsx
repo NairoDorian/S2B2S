@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { Show } from "solid-js";
 import { ChevronDown } from "@/components/icons/lucide";
 import type { JSX } from "@solidjs/web";

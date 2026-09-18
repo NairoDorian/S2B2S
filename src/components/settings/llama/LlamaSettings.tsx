@@ -27,7 +27,7 @@ import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { For } from "solid-js";
 import { Show } from "solid-js";
 
-const BACKENDS = ["auto", "cuda-13.3", "cuda-12.4", "vulkan", "cpu"] as const;
+const BACKENDS = ["auto", "cuda-13.4", "cuda-12.4", "vulkan", "cpu"] as const;
 const CHANNELS = ["latest", "stable", "nightly"] as const;
 const LOG_POLL_MS = 1000;
 

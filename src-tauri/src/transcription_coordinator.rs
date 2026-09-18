@@ -306,14 +306,14 @@ impl CoordinatorState {
             // inputs for a different binding are ignored — the same rule as a
             // different binding pressed while recording — rather than silently
             // replacing the remembered press and breaking its parity.
-            if let Some(pending) = &self.pending_press {
-                if pending.binding_id != input.binding_id {
-                    debug!(
-                        "Ignoring input for '{}': '{}' is already pending",
-                        input.binding_id, pending.binding_id
-                    );
-                    return None;
-                }
+            if let Some(pending) = &self.pending_press
+                && pending.binding_id != input.binding_id
+            {
+                debug!(
+                    "Ignoring input for '{}': '{}' is already pending",
+                    input.binding_id, pending.binding_id
+                );
+                return None;
             }
             let remembered = self.pending_press.as_ref().map(|p| p.remembered());
             match classify_busy_input(input.is_pressed, input.mode, remembered) {

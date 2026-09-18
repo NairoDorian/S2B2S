@@ -288,12 +288,13 @@ export const NativeKeysShortcutInput = ({
             {formatCurrentKeys()}
           </div>
         ) : (
-          <div
-            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent"
+          <button
+            type="button"
+            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent text-start"
             onClick={startRecording}
           >
             {formatKeyCombination(binding.current_binding, osType)}
-          </div>
+          </button>
         )}
         <ResetButton
           onClick={() => resetBinding(shortcutId)}

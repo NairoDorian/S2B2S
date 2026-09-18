@@ -820,18 +820,17 @@ pub fn build_args(settings: &LlamaSettings) -> Result<Vec<String>, String> {
             settings.spec_draft_n_max.to_string(),
         ]);
     }
-    if settings.mmproj_enabled {
-        if let Some(mmproj) = settings
+    if settings.mmproj_enabled
+        && let Some(mmproj) = settings
             .mmproj_path
             .as_deref()
             .map(str::trim)
             .filter(|p| !p.is_empty())
-        {
-            if !Path::new(mmproj).is_file() {
-                return Err(format!("mmproj file not found: {mmproj}"));
-            }
-            args.extend(["--mmproj".into(), mmproj.into()]);
+    {
+        if !Path::new(mmproj).is_file() {
+            return Err(format!("mmproj file not found: {mmproj}"));
         }
+        args.extend(["--mmproj".into(), mmproj.into()]);
     }
     args.extend(["--alias".into(), settings.alias.clone(), "--metrics".into()]);
     args.extend(split_args(&settings.extra_args));

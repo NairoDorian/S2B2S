@@ -419,7 +419,10 @@ fn create_audio_recorder(
                 if VAD_REPORT_FLAGS.load(Ordering::Relaxed) == 0 {
                     return;
                 }
-                if counter.fetch_add(1, Ordering::Relaxed) % VAD_TEST_REPORT_EVERY != 0 {
+                if !counter
+                    .fetch_add(1, Ordering::Relaxed)
+                    .is_multiple_of(VAD_TEST_REPORT_EVERY)
+                {
                     return;
                 }
                 let _ = VadTestEvent {
@@ -614,14 +617,14 @@ impl AudioRecordingManager {
 
         // Cache hit: skip the full enumeration. A stale device (unplugged)
         // fails at open, where the caller invalidates and retries fresh.
-        if let Some((cached_name, device)) = self.cached_device.lock().unwrap().as_ref() {
-            if *cached_name == device_name {
-                debug!("device resolve: cache hit for '{}'", device_name);
-                return MicrophoneResolution {
-                    device: Some(device.clone()),
-                    unavailable_selected_microphone: None,
-                };
-            }
+        if let Some((cached_name, device)) = self.cached_device.lock().unwrap().as_ref()
+            && *cached_name == device_name
+        {
+            debug!("device resolve: cache hit for '{}'", device_name);
+            return MicrophoneResolution {
+                device: Some(device.clone()),
+                unavailable_selected_microphone: None,
+            };
         }
 
         // Only report a selected microphone as unavailable when enumeration
@@ -840,17 +843,17 @@ impl AudioRecordingManager {
 
         let open_started = Instant::now();
         let mut recorder_opt = self.recorder.lock().unwrap();
-        if let Some(rec) = recorder_opt.as_mut() {
-            if let Err(first_err) = rec.open(resolution.device.clone()) {
-                // A cached device or config may have gone stale (unplugged,
-                // rate/format changed). Re-resolve from a fresh enumeration and
-                // retry once before surfacing the error.
-                warn!("Recorder open failed ({first_err}); re-resolving device and retrying once");
-                self.invalidate_device_cache();
-                resolution = self.resolve_microphone_device(&settings);
-                rec.open(resolution.device.clone())
-                    .map_err(|e| anyhow::anyhow!("Failed to open recorder: {}", e))?;
-            }
+        if let Some(rec) = recorder_opt.as_mut()
+            && let Err(first_err) = rec.open(resolution.device.clone())
+        {
+            // A cached device or config may have gone stale (unplugged,
+            // rate/format changed). Re-resolve from a fresh enumeration and
+            // retry once before surfacing the error.
+            warn!("Recorder open failed ({first_err}); re-resolving device and retrying once");
+            self.invalidate_device_cache();
+            resolution = self.resolve_microphone_device(&settings);
+            rec.open(resolution.device.clone())
+                .map_err(|e| anyhow::anyhow!("Failed to open recorder: {}", e))?;
         }
         debug!(
             "mic stream breakdown: device_resolve={:?} vad_ensure={:?} open={:?}",
@@ -1177,13 +1180,11 @@ impl AudioRecordingManager {
         if let Some(recorder) = self.recorder.lock().unwrap().as_mut() {
             recorder.set_selected_channel(selected_channel);
         }
-        if was_open {
-            if let Err(error) = self.start_microphone_stream() {
-                if let Some(recorder) = self.recorder.lock().unwrap().as_mut() {
-                    recorder.set_selected_channel(previous_channel);
-                }
-                return Err(error);
+        if was_open && let Err(error) = self.start_microphone_stream() {
+            if let Some(recorder) = self.recorder.lock().unwrap().as_mut() {
+                recorder.set_selected_channel(previous_channel);
             }
+            return Err(error);
         }
         drop(state);
         Ok(())

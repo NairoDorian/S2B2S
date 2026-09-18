@@ -373,10 +373,10 @@ impl Drop for NativeKeysState {
         }
 
         // Wait for the manager thread to finish
-        if let Ok(mut handle) = self.thread_handle.lock() {
-            if let Some(h) = handle.take() {
-                let _ = h.join();
-            }
+        if let Ok(mut handle) = self.thread_handle.lock()
+            && let Some(h) = handle.take()
+        {
+            let _ = h.join();
         }
     }
 }
@@ -470,12 +470,11 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
     {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Some(state) = app_clone.try_state::<NativeKeysState>() {
-                    if let Err(e) = state.register(&cancel_binding) {
-                        error!("Failed to register cancel shortcut: {}", e);
-                    }
-                }
+            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned()
+                && let Some(state) = app_clone.try_state::<NativeKeysState>()
+                && let Err(e) = state.register(&cancel_binding)
+            {
+                error!("Failed to register cancel shortcut: {}", e);
             }
         });
     }
@@ -493,10 +492,10 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
     {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Some(state) = app_clone.try_state::<NativeKeysState>() {
-                    let _ = state.unregister(&cancel_binding);
-                }
+            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned()
+                && let Some(state) = app_clone.try_state::<NativeKeysState>()
+            {
+                let _ = state.unregister(&cancel_binding);
             }
         });
     }

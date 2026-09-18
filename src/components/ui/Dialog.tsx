@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { createEffect, createUniqueId, Show } from "solid-js";
 import { X } from "@/components/icons/lucide";
 import type { JSX } from "@solidjs/web";
@@ -143,6 +144,7 @@ export const Dialog = (props: DialogProps): JSX.Element => {
     <Show when={props.open}>
       <Portal mount={document.body}>
         <div
+          role="presentation"
           class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
           onMouseDown={handleBackdropMouseDown}
         >

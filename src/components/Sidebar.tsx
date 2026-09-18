@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-interactions */
 import {
   createSignal,
   createEffect,
@@ -222,8 +223,8 @@ export function Sidebar(props: SidebarProps) {
   // `false`, and never attached — the sidebar could not be resized.)
   createEffect(
     () => resizing(),
-    (resizing) => {
-      if (!resizing) return;
+    (isResizing) => {
+      if (!isResizing) return;
       const onMove = (e: MouseEvent) => {
         const next = dragStartWidth + (e.clientX - dragStartX);
         setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
@@ -319,7 +320,18 @@ export function Sidebar(props: SidebarProps) {
           role="separator"
           aria-orientation="vertical"
           aria-label={t("sidebar.resize")}
+          aria-valuenow={width()}
+          aria-valuemin={MIN_WIDTH}
+          aria-valuemax={MAX_WIDTH}
+          tabindex={0}
           onMouseDown={onResizeStart}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              setWidth((w) => Math.max(MIN_WIDTH, w - 10));
+            } else if (e.key === "ArrowRight") {
+              setWidth((w) => Math.min(MAX_WIDTH, w + 10));
+            }
+          }}
           class={`absolute top-0 -end-0.5 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 transition-colors ${
             resizing() ? "bg-accent/60" : ""
           }`}

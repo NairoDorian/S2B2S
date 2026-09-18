@@ -232,18 +232,18 @@ pub fn change_binding(
 
     // If this is the cancel binding, just update the settings and return
     // It's managed dynamically, so we don't register/unregister here
-    if id == "cancel" {
-        if let Some(mut b) = settings.bindings.get(&id).cloned() {
-            b.current_binding = binding;
-            settings.bindings.insert(id.clone(), b.clone());
-            settings::write_settings(&app, settings);
-            crate::secure_input::reconcile_fallback(&app);
-            return Ok(BindingResponse {
-                success: true,
-                binding: Some(b.clone()),
-                error: None,
-            });
-        }
+    if id == "cancel"
+        && let Some(mut b) = settings.bindings.get(&id).cloned()
+    {
+        b.current_binding = binding;
+        settings.bindings.insert(id.clone(), b.clone());
+        settings::write_settings(&app, settings);
+        crate::secure_input::reconcile_fallback(&app);
+        return Ok(BindingResponse {
+            success: true,
+            binding: Some(b.clone()),
+            error: None,
+        });
     }
 
     // Unregister the existing binding
@@ -717,10 +717,10 @@ pub fn apply_window_theme(app: &AppHandle, theme: Theme) {
         Theme::Light => Some(tauri::Theme::Light),
         Theme::Dark => Some(tauri::Theme::Dark),
     };
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(e) = window.set_theme(window_theme) {
-            warn!("Failed to apply window theme: {}", e);
-        }
+    if let Some(window) = app.get_webview_window("main")
+        && let Err(e) = window.set_theme(window_theme)
+    {
+        warn!("Failed to apply window theme: {}", e);
     }
 }
 
@@ -1288,26 +1288,26 @@ pub fn change_multi_stt_extra_model(
             ));
         }
     };
-    if let Some(ref old_id) = old_model {
-        if model_id.as_deref() != Some(old_id.as_str()) {
-            let tm =
-                app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
-            // Unconditional: if the engine is leased out to an in-flight
-            // transcription it is not in the map yet, and `unload_extra_model`
-            // records a pending request that drops it on return instead of
-            // letting it be re-inserted into a slot nothing references.
-            info!(
-                "Multi-STT: unloading extra model in slot {} ('{}') before switching to '{}'",
-                slot,
-                old_id,
-                model_id.as_deref().unwrap_or("none")
+    if let Some(ref old_id) = old_model
+        && model_id.as_deref() != Some(old_id.as_str())
+    {
+        let tm =
+            app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
+        // Unconditional: if the engine is leased out to an in-flight
+        // transcription it is not in the map yet, and `unload_extra_model`
+        // records a pending request that drops it on return instead of
+        // letting it be re-inserted into a slot nothing references.
+        info!(
+            "Multi-STT: unloading extra model in slot {} ('{}') before switching to '{}'",
+            slot,
+            old_id,
+            model_id.as_deref().unwrap_or("none")
+        );
+        if let Err(e) = tm.unload_extra_model(old_id) {
+            warn!(
+                "Multi-STT: failed to unload extra model '{}' in slot {}: {}",
+                old_id, slot, e
             );
-            if let Err(e) = tm.unload_extra_model(old_id) {
-                warn!(
-                    "Multi-STT: failed to unload extra model '{}' in slot {}: {}",
-                    old_id, slot, e
-                );
-            }
         }
     }
 

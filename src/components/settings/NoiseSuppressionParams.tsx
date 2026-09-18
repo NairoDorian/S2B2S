@@ -20,6 +20,8 @@ const P = "settings.advanced.noiseSuppressionParams";
  * the grace period that keeps word endings. Each applies on the next frame,
  * mid-recording included, so the live meters show the change at once.
  */
+const percent = (v: number) => `${Math.round(v * 100)}%`;
+
 export const NoiseSuppressionParams = (
   props: NoiseSuppressionParamsProps,
 ): JSX.Element => {
@@ -27,7 +29,6 @@ export const NoiseSuppressionParams = (
   const { getSetting, updateSetting, isUpdating } = useSettings();
   // All setting reads live in the JSX bindings: the sliders follow the
   // settings as they change, including the enable-gate.
-  const percent = (v: number) => `${Math.round(v * 100)}%`;
 
   return (
     <>

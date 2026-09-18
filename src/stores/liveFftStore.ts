@@ -158,6 +158,6 @@ export const initialize = () => useLiveFftStore().initialize();
 export const start = () => useLiveFftStore().start();
 export const stop = () => useLiveFftStore().stop();
 export const reset = () => useLiveFftStore().reset();
-export const setFrozen = (frozen: boolean) =>
-  useLiveFftStore().setFrozen(frozen);
+export const setFrozen = (nextFrozen: boolean) =>
+  useLiveFftStore().setFrozen(nextFrozen);
 export const clearFrame = () => useLiveFftStore().clearFrame();

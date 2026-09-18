@@ -2,10 +2,8 @@ use super::{VadFrame, VadTailReport, VoiceActivityDetector};
 use anyhow::Result;
 use std::collections::VecDeque;
 
-/// One pre-roll buffer slot. `emitted` and `voiced` exist only to power the
-/// end-of-recording `tail_report()` diagnostic; they never affect emission.
-struct BufferedFrame {
-    samples: Vec<f32>,
+#[derive(Clone, Copy, Default)]
+struct BufferedSlot {
     emitted: bool,
     voiced: bool,
 }
@@ -16,7 +14,14 @@ pub struct SmoothedVad {
     hangover_frames: usize,
     onset_frames: usize,
 
-    frame_buffer: VecDeque<BufferedFrame>,
+    // Zero-allocation circular ring buffer for pre-roll
+    capacity_frames: usize,
+    slot_samples: usize,
+    buffer_samples: Vec<f32>,
+    buffer_slots: Vec<BufferedSlot>,
+    head_idx: usize,
+    buffered_count: usize,
+
     hangover_counter: usize,
     onset_counter: usize,
     in_speech: bool,
@@ -31,42 +36,75 @@ impl SmoothedVad {
         hangover_frames: usize,
         onset_frames: usize,
     ) -> Self {
+        let slot_samples = inner_vad.frame_samples();
+        let capacity_frames = prefill_frames + 2;
+        let buffer_samples = vec![0.0f32; capacity_frames * slot_samples];
+        let buffer_slots = vec![BufferedSlot::default(); capacity_frames];
+        let temp_out = Vec::with_capacity((prefill_frames + 1) * slot_samples);
+
         Self {
             inner_vad,
             prefill_frames,
             hangover_frames,
             onset_frames,
-            frame_buffer: VecDeque::new(),
+            capacity_frames,
+            slot_samples,
+            buffer_samples,
+            buffer_slots,
+            head_idx: 0,
+            buffered_count: 0,
             hangover_counter: 0,
             onset_counter: 0,
             in_speech: false,
-            temp_out: Vec::new(),
+            temp_out,
+        }
+    }
+
+    fn ensure_capacity(&mut self, samples_len: usize) {
+        if self.slot_samples != samples_len
+            || self.buffer_samples.len() < self.capacity_frames * samples_len
+        {
+            self.slot_samples = samples_len;
+            self.buffer_samples = vec![0.0f32; self.capacity_frames * samples_len];
+            self.temp_out
+                .reserve((self.prefill_frames + 1) * samples_len);
+            self.head_idx = 0;
+            self.buffered_count = 0;
         }
     }
 
     fn mark_last_emitted(&mut self) {
-        if let Some(frame) = self.frame_buffer.back_mut() {
-            frame.emitted = true;
+        if self.buffered_count > 0 {
+            let last_idx = (self.head_idx + self.buffered_count - 1) % self.capacity_frames;
+            self.buffer_slots[last_idx].emitted = true;
         }
     }
 }
 
 impl VoiceActivityDetector for SmoothedVad {
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
-        // 1. Buffer every incoming frame for possible pre-roll
-        self.frame_buffer.push_back(BufferedFrame {
-            samples: frame.to_vec(),
+        self.ensure_capacity(frame.len());
+
+        // 1. Buffer every incoming frame for possible pre-roll into circular buffer
+        let write_idx = (self.head_idx + self.buffered_count) % self.capacity_frames;
+        let start = write_idx * self.slot_samples;
+        self.buffer_samples[start..start + frame.len()].copy_from_slice(frame);
+        self.buffer_slots[write_idx] = BufferedSlot {
             emitted: false,
             voiced: false,
-        });
-        while self.frame_buffer.len() > self.prefill_frames + 1 {
-            self.frame_buffer.pop_front();
+        };
+        self.buffered_count += 1;
+
+        while self.buffered_count > self.prefill_frames + 1 {
+            self.head_idx = (self.head_idx + 1) % self.capacity_frames;
+            self.buffered_count -= 1;
         }
 
         // 2. Delegate to the wrapped boolean VAD
         let is_voice = self.inner_vad.is_voice(frame)?;
-        if let Some(last) = self.frame_buffer.back_mut() {
-            last.voiced = is_voice;
+        if self.buffered_count > 0 {
+            let last_idx = (self.head_idx + self.buffered_count - 1) % self.capacity_frames;
+            self.buffer_slots[last_idx].voiced = is_voice;
         }
 
         match (self.in_speech, is_voice) {
@@ -81,9 +119,12 @@ impl VoiceActivityDetector for SmoothedVad {
 
                     // Collect prefill + current frame
                     self.temp_out.clear();
-                    for buffered in self.frame_buffer.iter_mut() {
-                        self.temp_out.extend(buffered.samples.iter());
-                        buffered.emitted = true;
+                    for i in 0..self.buffered_count {
+                        let idx = (self.head_idx + i) % self.capacity_frames;
+                        let s = idx * self.slot_samples;
+                        self.temp_out
+                            .extend_from_slice(&self.buffer_samples[s..s + self.slot_samples]);
+                        self.buffer_slots[idx].emitted = true;
                     }
                     Ok(VadFrame::Speech(&self.temp_out))
                 } else {
@@ -132,14 +173,14 @@ impl VoiceActivityDetector for SmoothedVad {
     fn tail_report(&self) -> Option<VadTailReport> {
         let mut withheld_frames = 0;
         let mut withheld_voiced_frames = 0;
-        for frame in self
-            .frame_buffer
-            .iter()
-            .rev()
-            .take_while(|frame| !frame.emitted)
-        {
+        for i in (0..self.buffered_count).rev() {
+            let idx = (self.head_idx + i) % self.capacity_frames;
+            let slot = self.buffer_slots[idx];
+            if slot.emitted {
+                break;
+            }
             withheld_frames += 1;
-            if frame.voiced {
+            if slot.voiced {
                 withheld_voiced_frames += 1;
             }
         }
@@ -167,7 +208,8 @@ impl VoiceActivityDetector for SmoothedVad {
     }
     fn reset(&mut self) {
         self.inner_vad.reset();
-        self.frame_buffer.clear();
+        self.head_idx = 0;
+        self.buffered_count = 0;
         self.hangover_counter = 0;
         self.onset_counter = 0;
         self.in_speech = false;

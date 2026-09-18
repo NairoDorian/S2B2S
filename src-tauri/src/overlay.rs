@@ -317,31 +317,31 @@ mod macos_monitor {
 }
 
 fn get_monitor_with_cursor(app_handle: &AppHandle) -> Option<tauri::Monitor> {
-    if let Some(mouse_location) = input::get_cursor_position(app_handle) {
-        if let Ok(monitors) = app_handle.available_monitors() {
-            for monitor in monitors {
-                // On Windows both the cursor (enigo -> GetCursorPos) and the
-                // monitor bounds are physical pixels, so compare them directly.
-                #[cfg(target_os = "windows")]
-                if is_mouse_within_monitor(mouse_location, monitor.position(), monitor.size()) {
-                    return Some(monitor);
-                }
+    if let Some(mouse_location) = input::get_cursor_position(app_handle)
+        && let Ok(monitors) = app_handle.available_monitors()
+    {
+        for monitor in monitors {
+            // On Windows both the cursor (enigo -> GetCursorPos) and the
+            // monitor bounds are physical pixels, so compare them directly.
+            #[cfg(target_os = "windows")]
+            if is_mouse_within_monitor(mouse_location, monitor.position(), monitor.size()) {
+                return Some(monitor);
+            }
 
-                // macOS/Linux: enigo returns logical coords, so scale the bounds down.
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let scale = monitor.scale_factor();
-                    let pos = PhysicalPosition::new(
-                        (monitor.position().x as f64 / scale) as i32,
-                        (monitor.position().y as f64 / scale) as i32,
-                    );
-                    let size = PhysicalSize::new(
-                        (monitor.size().width as f64 / scale) as u32,
-                        (monitor.size().height as f64 / scale) as u32,
-                    );
-                    if is_mouse_within_monitor(mouse_location, &pos, &size) {
-                        return Some(monitor);
-                    }
+            // macOS/Linux: enigo returns logical coords, so scale the bounds down.
+            #[cfg(not(target_os = "windows"))]
+            {
+                let scale = monitor.scale_factor();
+                let pos = PhysicalPosition::new(
+                    (monitor.position().x as f64 / scale) as i32,
+                    (monitor.position().y as f64 / scale) as i32,
+                );
+                let size = PhysicalSize::new(
+                    (monitor.size().width as f64 / scale) as u32,
+                    (monitor.size().height as f64 / scale) as u32,
+                );
+                if is_mouse_within_monitor(mouse_location, &pos, &size) {
+                    return Some(monitor);
                 }
             }
         }
@@ -1030,7 +1030,7 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         // Hide the window after a short delay to allow animation to complete,
         // unless a newer session has shown the overlay again by then.
         let window_clone = overlay_window.clone();
-        let fade_ms = settings::get_settings(&app_handle).overlay_window_fade_ms as u64;
+        let fade_ms = settings::get_settings(app_handle).overlay_window_fade_ms as u64;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(fade_ms));
             if OVERLAY_SHOW_GENERATION.load(Ordering::SeqCst) != scheduled_at {

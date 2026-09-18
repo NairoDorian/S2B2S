@@ -96,7 +96,7 @@ export const GlobalShortcutInput = ({
 
         const updatedKeyPressed = keyPressed().filter((k) => k !== key);
         if (updatedKeyPressed.length === 0 && recordedKeys().length > 0) {
-          const modifiers = [
+          const modifiers = new Set([
             "ctrl",
             "control",
             "shift",
@@ -108,10 +108,10 @@ export const GlobalShortcutInput = ({
             "super",
             "win",
             "windows",
-          ];
-          const sortedKeys = recordedKeys().sort((a, b) => {
-            const aIsModifier = modifiers.includes(a.toLowerCase());
-            const bIsModifier = modifiers.includes(b.toLowerCase());
+          ]);
+          const sortedKeys = recordedKeys().toSorted((a, b) => {
+            const aIsModifier = modifiers.has(a.toLowerCase());
+            const bIsModifier = modifiers.has(b.toLowerCase());
             if (aIsModifier && !bIsModifier) return -1;
             if (!aIsModifier && bIsModifier) return 1;
             return 0;
@@ -254,12 +254,13 @@ export const GlobalShortcutInput = ({
             {formatCurrentKeys()}
           </div>
         ) : (
-          <div
-            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent"
+          <button
+            type="button"
+            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent text-start"
             onClick={() => startRecording(shortcutId)}
           >
             {formatKeyCombination(binding.current_binding, osType)}
-          </div>
+          </button>
         )}
         <ResetButton
           onClick={() => resetBinding(shortcutId)}

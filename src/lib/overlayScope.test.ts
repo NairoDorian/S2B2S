@@ -24,6 +24,8 @@ const BINS = 48;
 const TINY = 12;
 const TAU = Math.PI * 2;
 
+const norm = (th: number) => Math.atan2(Math.sin(th), Math.cos(th));
+
 test("circular spectrum geometry: A+B cross-sum input, full 2π sweep, 90° rotation, exact horizontal mirror symmetry", () => {
   // 1. The ring has exactly 2×displayBins points — each summed signal (A and
   //    B) is twice the original spectrum's length.
@@ -104,7 +106,6 @@ test("circular spectrum geometry: A+B cross-sum input, full 2π sweep, 90° rota
   for (const k of lit.keys())
     assert.ok(expected.has(k), `unexpected lit point ${k}`);
   // Mirror symmetry about the horizontal axis: θ → -θ (mod 2π).
-  const norm = (th: number) => Math.atan2(Math.sin(th), Math.cos(th));
   for (const th of lit.values()) {
     const reflected = norm(-norm(th));
     assert.ok(

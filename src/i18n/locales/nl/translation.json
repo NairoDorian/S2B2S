@@ -1638,7 +1638,7 @@
         "description": "Which llama-server binary runs. Install a release here (the same GitHub assets the download script fetched) or use a folder you already have.",
         "serverDir": "Server folder",
         "serverDirDescription": "Folder containing llama-server.exe.",
-        "serverDirPlaceholder": "…\\llama or <app data>\\llama_cpp\\cuda-13.3-b10630",
+        "serverDirPlaceholder": "…\\llama or <app data>\\llama_cpp\\cuda-13.4-b10630",
         "detect": "Detect existing",
         "detectNone": "No existing llama.cpp folder found in the usual places.",
         "detectFound": "Using {{dir}}",
