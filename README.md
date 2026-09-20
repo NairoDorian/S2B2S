@@ -20,6 +20,7 @@ ZER0 was created to fill the gap for a truly open source, extensible speech-to-t
 
 ZER0 isn't trying to be the best speech-to-text app—it's trying to be the most forkable one.
 
+
 ## How It Works
 
 1. **Press** a configurable keyboard shortcut: hold it to record and release to stop, or tap it to toggle recording on and off (Hold-only and Toggle-only modes are also available)
@@ -106,6 +107,28 @@ ZER0 is built as a Tauri application combining:
   - `rdev`: Global keyboard shortcuts and system events
   - `rubato`: Audio resampling
 
+## Sponsors (Upstream)
+
+<div align="center">
+  We're grateful for the support of the upstream project's sponsors:
+  <br><br>
+  <a href="https://wordcab.com">
+    <img src="sponsor-images/wordcab.png" alt="Wordcab" width="120" height="120">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/epicenter-so/epicenter">
+    <img src="sponsor-images/epicenter.png" alt="Epicenter" width="120" height="120">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://boltai.com?utm_source=handy">
+    <img src="sponsor-images/boltai.jpg" alt="Bolt AI" width="120" height="120">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://cantydigital.com.au/">
+    <img src="sponsor-images/cantydigital.png" alt="Canty Digital" width="120" height="120">
+  </a>
+</div>
+
 ### Debug Mode
 
 ZER0 includes an advanced debug mode for development and troubleshooting. Access it by pressing:
@@ -173,19 +196,6 @@ This is a hardware limitation rather than a ZER0 bug. `fn` is not part of the st
 
 If you switch between a MacBook keyboard and an external one, pick a shortcut built from standard modifiers (`ctrl`, `option`, `shift`, `command`) or a regular key instead.
 
-### Major Issues (Help Wanted)
-
-**Whisper Model Crashes:**
-
-- Whisper models crash on certain system configurations (Windows and Linux)
-- Does not affect all systems - issue is configuration-dependent
-  - If you experience crashes and are a developer, please help to fix and provide debug logs!
-
-**Wayland Support (Linux):**
-
-- Limited support for Wayland display server
-- Requires [`wtype`](https://github.com/atx/wtype) or [`dotool`](https://sr.ht/~geb/dotool/) for text input to work correctly (see [Linux Notes](#linux-notes) below for installation)
-
 ### Linux Notes
 
 **Text Input Tools:**
@@ -204,6 +214,11 @@ For reliable text input on Linux, install the appropriate tool for your display 
 - **dotool setup**: Requires adding your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in)
 
 Without these tools, ZER0 falls back to enigo which may have limited compatibility, especially on Wayland.
+
+**Wayland Support (Linux):**
+
+- Limited support for Wayland display server
+- Requires [`wtype`](https://github.com/atx/wtype) or [`dotool`](https://sr.ht/~geb/dotool/) for text input to work correctly (see [Linux Notes](#linux-notes) below for installation)
 
 **Other Notes:**
 
@@ -393,6 +408,7 @@ Download the models you want from below
 
 - Q8_0: `https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf`
 
+
 #### Step 4: Install Models
 
 **For Whisper Models (.bin files):**
@@ -413,7 +429,6 @@ Place the `.gguf` file directly into the `models` directory, exactly like the Wh
 
 **Important Notes:**
 
-- For Parakeet models, the extracted directory name **must** match exactly as shown above
 - Do not rename the `.bin` or `.gguf` files—use the exact filenames from the download URLs
 - After placing the files, restart ZER0 to detect the new models
 
@@ -504,6 +519,7 @@ Handy 0.9.4 and earlier listened for `SIGUSR1` as a remote-control trigger. WebK
 
 Update to a newer release, and replace any `pkill -USR1 -n zer0` keybindings with `zer0 --toggle-post-process`.
 
+
 ### How to Contribute
 
 1. **Check existing issues** at [github.com/NairoDorian/S2B2S/issues](https://github.com/NairoDorian/S2B2S/issues)
@@ -513,6 +529,8 @@ Update to a newer release, and replace any `pkill -USR1 -n zer0` keybindings wit
 5. **Read [CONTRIBUTING.md](CONTRIBUTING.md)** for the toolchain and the pre-commit routine every change is expected to pass
 
 The goal is to create both a useful tool and a foundation for others to build upon—a well-patterned, simple codebase that serves the community.
+
+
 
 ## License
 
