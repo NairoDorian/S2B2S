@@ -84,10 +84,16 @@ fn current_log_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// 500 MB rotated log from being read whole.
 #[tauri::command]
 #[specta::specta]
-pub fn get_recent_logs(app: AppHandle, limit: u32) -> Result<String, String> {
+pub async fn get_recent_logs(app: AppHandle, limit: u32) -> Result<String, String> {
+    let path = current_log_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || read_log_tail(&path, limit.min(10_000)))
+        .await
+        .map_err(|e| format!("Log reader failed: {e}"))?
+}
+
+fn read_log_tail(path: &std::path::Path, limit: u32) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
 
-    let path = current_log_file(&app)?;
     let mut file =
         std::fs::File::open(&path).map_err(|e| format!("Failed to open log file: {}", e))?;
 
@@ -100,9 +106,11 @@ pub fn get_recent_logs(app: AppHandle, limit: u32) -> Result<String, String> {
     file.seek(SeekFrom::Start(start))
         .map_err(|e| format!("Failed to seek log file: {}", e))?;
 
-    let mut buf = String::new();
-    file.read_to_string(&mut buf)
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
         .map_err(|e| format!("Failed to read log file: {}", e))?;
+    // The byte cap can split a UTF-8 character; it must not blank the viewer.
+    let buf = String::from_utf8_lossy(&bytes);
 
     let mut lines: Vec<&str> = buf.lines().collect();
     // When the cap cut into the middle of the file, the first line read is a
@@ -118,6 +126,31 @@ pub fn get_recent_logs(app: AppHandle, limit: u32) -> Result<String, String> {
         .join("\n"))
 }
 
+#[cfg(test)]
+mod log_tail_tests {
+    use super::read_log_tail;
+
+    #[test]
+    fn byte_cap_inside_utf8_does_not_blank_console() {
+        let path = std::env::temp_dir().join(format!("log-tail-utf8-{}.log", std::process::id()));
+        // 524290 bytes: the 512 KiB tail starts at byte 2, inside the euro sign.
+        let text = format!("\u{20ac}{}\nlast\n", "x".repeat(524281));
+        std::fs::write(&path, text).unwrap();
+        let result = read_log_tail(&path, 2);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result.unwrap(), "last");
+    }
+
+    #[test]
+    fn repeated_records_are_preserved() {
+        let path = std::env::temp_dir().join(format!("log-tail-repeat-{}.log", std::process::id()));
+        std::fs::write(&path, "old\nsame\nsame\n").unwrap();
+        let result = read_log_tail(&path, 2);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result.unwrap(), "same\nsame");
+    }
+}
+
 /// Truncate the log file. Explicit user action only — the panel itself never
 /// clears what it shows on its own.
 #[tauri::command]
@@ -131,37 +164,9 @@ pub fn clear_logs(app: AppHandle) -> Result<(), String> {
 #[specta::specta]
 #[tauri::command]
 pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
-    let tauri_log_level: tauri_plugin_log::LogLevel = level.into();
-    let log_level: log::Level = tauri_log_level.into();
-
+    // Legacy settings clients may still persist this field. Capture is always
+    // verbose; filtering belongs to the viewer and never discards diagnostics.
     let mut settings = get_settings(&app);
-    let previous = settings.log_level;
-
-    // Say so *before* the atomic moves, at `info`. This is the one command that
-    // can silence the log, and once the level is `warn` or `error` an info
-    // record is gone — so a transition reported after the store would be
-    // invisible in exactly the case worth recording. A downgrade with no record
-    // anywhere is how a store reaches `info` with nothing in the log to say who
-    // set it, which is what made the "logs got quieter" report take a file-log
-    // archaeology session to explain. The asymmetry is deliberate: a downgrade
-    // is the dangerous direction and this catches it, while an upgrade is
-    // self-announcing (the log fills up) and may legitimately be filtered by the
-    // near-silent level it is leaving.
-    if previous != level {
-        log::info!(
-            "Log level {:?} -> {:?}, set from the settings UI; file log now {}",
-            previous,
-            level,
-            log_level.to_level_filter(),
-        );
-    }
-
-    // Update the file log level atomic so the filter picks up the new level
-    crate::FILE_LOG_LEVEL.store(
-        log_level.to_level_filter() as u8,
-        std::sync::atomic::Ordering::Relaxed,
-    );
-
     settings.log_level = level;
     write_settings(&app, settings);
 

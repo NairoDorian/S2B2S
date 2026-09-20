@@ -149,7 +149,10 @@ pub struct StreamPhaseEvent {
 }
 
 enum StreamCmd {
-    Feed(Vec<f32>),
+    Feed {
+        pcm: Vec<f32>,
+        queued_at: Instant,
+    },
     /// Flush the stream and reply with the final text, or `None` if no stream
     /// was ever active (caller should fall back to batch transcription).
     Finalize(mpsc::Sender<StreamWorkerResult>),
@@ -235,7 +238,10 @@ impl StreamRouter {
             return;
         }
         if let Some(tx) = self.tx.lock().unwrap().as_ref() {
-            let _ = tx.send(StreamCmd::Feed(frame.to_vec()));
+            let _ = tx.send(StreamCmd::Feed {
+                pcm: frame.to_vec(),
+                queued_at: Instant::now(),
+            });
         }
     }
 
@@ -379,6 +385,8 @@ pub struct TranscriptionManager {
     /// The experimental Multi-STT streaming coordinator reports the primary
     /// model's rate from these at each chunk close.
     stream_timing: Arc<StreamTiming>,
+    /// One small record per completed batch; no work on the capture callback.
+    last_pipeline_metrics: Arc<Mutex<serde_json::Value>>,
 }
 
 /// Callback receiving every live-text update: `(committed, tentative,
@@ -418,6 +426,7 @@ impl TranscriptionManager {
             stream_text_sink: Arc::new(Mutex::new(None)),
             stream_text_sink_exclusive: Arc::new(AtomicBool::new(false)),
             stream_timing: Arc::new(StreamTiming::default()),
+            last_pipeline_metrics: Arc::new(Mutex::new(serde_json::Value::Null)),
         };
 
         // Start the idle watcher
@@ -590,8 +599,19 @@ impl TranscriptionManager {
         self.last_activity.store(Self::now_ms(), Ordering::Relaxed);
     }
 
+    pub fn pipeline_metrics(&self) -> serde_json::Value {
+        self.last_pipeline_metrics.lock().unwrap().clone()
+    }
+
     /// Unloads the model immediately if the setting is enabled and the model is loaded
     pub fn maybe_unload_immediately(&self, context: &str) {
+        if self
+            .app_handle
+            .try_state::<crate::cli::CliArgs>()
+            .is_some_and(|args| args.transcribe_file.is_some())
+        {
+            return; // Three benchmark runs must share one warmed model.
+        }
         let settings = get_settings(&self.app_handle);
         if settings.model_unload_timeout == ModelUnloadTimeout::Immediately
             && self.is_model_loaded()
@@ -1083,6 +1103,8 @@ impl TranscriptionManager {
                 family: stream_ext,
                 ..Default::default()
             };
+            info!(target: "pipeline", "stream model={} backend={} options={:?} run={:?}", model_id, backend, stream_options, run_options);
+            let begin_start = Instant::now();
             let mut stream = match session.stream(&run_options, &stream_options) {
                 Ok(s) => s,
                 Err(e) => {
@@ -1095,6 +1117,7 @@ impl TranscriptionManager {
                 }
             };
 
+            info!(target: "pipeline", "stream begin_ms={:.3}", begin_start.elapsed().as_secs_f64()*1000.0);
             self.stream_active.store(true, Ordering::Release);
             self.touch_activity();
             info!(
@@ -1118,7 +1141,8 @@ impl TranscriptionManager {
             let mut perf = StreamPerf::new(Arc::clone(&self.stream_timing));
             while let Ok(cmd) = rx.recv() {
                 match cmd {
-                    StreamCmd::Feed(pcm) => {
+                    StreamCmd::Feed { pcm, queued_at } => {
+                        perf.queue_max = perf.queue_max.max(queued_at.elapsed());
                         self.touch_activity();
                         perf.record_feed(pcm.len());
                         let feed_start = Instant::now();
@@ -1213,6 +1237,8 @@ impl TranscriptionManager {
                             StreamWorkerResult::Completed(finalized) => finalized.text.len(),
                             _ => 0,
                         };
+                        info!(target: "pipeline", "stream finalize_ms={:.3} native={:?}",
+                            finalize_start.elapsed().as_secs_f64()*1000.0, stream.snapshot().timings);
                         perf.log_finalized(chars);
                         finalize_reply = Some(reply);
                         finalize_result = Some(result);
@@ -1255,6 +1281,98 @@ impl TranscriptionManager {
         }
         // `_worker` drops here, clearing this worker's active/lease flags after
         // the engine has been returned to the pool.
+    }
+
+    /// Deterministic headless replay through the loaded engine and app settings.
+    /// Captured PCM bypasses microphone/VAD/UI; no user history is written.
+    pub fn benchmark_stream(
+        &self,
+        audio: &[f32],
+        chunk_ms: usize,
+        att_right: Option<i32>,
+    ) -> Result<(String, serde_json::Value)> {
+        anyhow::ensure!(chunk_ms > 0, "stream chunk must be positive");
+        let model_id = self
+            .get_current_model()
+            .ok_or_else(|| anyhow::anyhow!("No loaded model"))?;
+        let settings = get_settings(&self.app_handle);
+        let language =
+            effective_language_for_model(&settings, self.model_manager.as_ref(), &model_id);
+        let mut engine = self
+            .lock_engine()
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Engine is busy"))?;
+        let result = (|| -> Result<(String, serde_json::Value)> {
+            let LoadedEngine::TranscribeCpp(session) = &mut engine;
+            let model = session.model();
+            let caps = model.capabilities();
+            let plan = transcribe_cpp_run_plan(
+                settings.translate_to_english,
+                &language,
+                &caps.languages,
+                caps.supports_translate,
+            );
+            let options = RunOptions {
+                task: plan.task,
+                language: plan.language,
+                target_language: plan.target_language,
+                ..Default::default()
+            };
+            let family = if let Some(right) = att_right {
+                Some(transcribe_cpp::StreamExtension::ParakeetStream(
+                    transcribe_cpp::ParakeetStreamOptions {
+                        att_context_right: Some(right),
+                    },
+                ))
+            } else {
+                crate::managers::native_streaming_latency::stream_extension(
+                    &model,
+                    &model_id,
+                    self.model_manager
+                        .get_model_info(&model_id)
+                        .and_then(|m| m.native_streaming_latency_kind),
+                    settings
+                        .native_streaming_latency_presets
+                        .get(&model_id)
+                        .copied()
+                        .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate),
+                )
+            };
+            let stream_options = StreamOptions {
+                family,
+                ..Default::default()
+            };
+            let start = Instant::now();
+            let mut stream = session.stream(&options, &stream_options)?;
+            let begin_ms = start.elapsed().as_secs_f64() * 1000.0;
+            let mut feeds = Vec::new();
+            let mut first_text_ms = None;
+            for chunk in audio.chunks(chunk_ms.saturating_mul(16)) {
+                let tick = Instant::now();
+                let update = stream.feed(chunk)?;
+                feeds.push(tick.elapsed().as_secs_f64() * 1000.0);
+                if first_text_ms.is_none() && (update.committed_changed || update.tentative_changed)
+                {
+                    first_text_ms = Some(start.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            let tick = Instant::now();
+            stream.finalize()?;
+            let finalize_ms = tick.elapsed().as_secs_f64() * 1000.0;
+            let snapshot = stream.snapshot();
+            let native = &snapshot.timings;
+            Ok((
+                snapshot.text,
+                serde_json::json!({
+                    "begin_ms": begin_ms, "feed_ms": feeds, "first_text_compute_ms": first_text_ms,
+                    "finalize_ms": finalize_ms, "wall_ms": start.elapsed().as_secs_f64()*1000.0,
+                    "timings": { "mel_ms": native.mel_ms, "encode_ms": native.encode_ms, "decode_ms": native.decode_ms },
+                    "stream_options": format!("{:?}", stream_options), "language": options.language,
+                }),
+            ))
+        })();
+        self.return_engine(engine, &model_id);
+        result
     }
 
     /// Return the leased engine to the mutex, unless the model was switched or
@@ -1674,7 +1792,14 @@ impl TranscriptionManager {
                             .map(|t| {
                                 // Whisper's audio-based LID (auto mode only;
                                 // `None` when a language hint was passed).
+                                info!(target: "pipeline", "batch model={} audio_ms={:.3} native={:?}",
+                                    active_model, audio.len() as f64 / 16.0, t.timings);
                                 model_detected_language = t.language;
+                                *self.last_pipeline_metrics.lock().unwrap() = serde_json::json!({
+                                    "timings": { "mel_ms": t.timings.mel_ms,
+                                        "encode_ms": t.timings.encode_ms, "decode_ms": t.timings.decode_ms },
+                                    "language": run_options.language,
+                                });
                                 t.text
                             })
                             .map_err(|e| {
@@ -1868,6 +1993,8 @@ struct StreamPerf {
     streamed_samples: u64,
     stream_compute_elapsed: Duration,
     last_log: Instant,
+    queue_max: Duration,
+    call_max: Duration,
     latest_revision: i32,
     latest_input_received_ms: i64,
     latest_audio_committed_ms: i64,
@@ -1883,6 +2010,8 @@ impl StreamPerf {
             streamed_samples: 0,
             stream_compute_elapsed: Duration::ZERO,
             last_log: Instant::now(),
+            queue_max: Duration::ZERO,
+            call_max: Duration::ZERO,
             latest_revision: 0,
             latest_input_received_ms: 0,
             latest_audio_committed_ms: 0,
@@ -1897,6 +2026,7 @@ impl StreamPerf {
     }
 
     fn record_compute(&mut self, elapsed: Duration) {
+        self.call_max = self.call_max.max(elapsed);
         self.stream_compute_elapsed += elapsed;
         self.timing.record_compute(elapsed);
     }
@@ -1943,6 +2073,9 @@ impl StreamPerf {
     }
 
     fn log_finalized(&self, chars: usize) {
+        info!(target: "pipeline", "stream queue_max_ms={:.3} call_max_ms={:.3} audio_ms={:.3} compute_ms={:.3}",
+            self.queue_max.as_secs_f64()*1000.0, self.call_max.as_secs_f64()*1000.0,
+            self.audio_secs()*1000.0, self.compute_secs()*1000.0);
         let audio_secs = self.audio_secs();
         let compute_secs = self.compute_secs();
         info!(
@@ -2205,7 +2338,7 @@ fn cpp_translation_task(
 fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>, result: StreamWorkerResult) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            StreamCmd::Feed(_) => {}
+            StreamCmd::Feed { .. } => {}
             StreamCmd::Finalize(reply) => {
                 let _ = reply.send(result);
                 break;
@@ -3156,8 +3289,22 @@ fn transcribe_with_engine(
 /// In a static build (macOS Metal) `init_backends_default` is a harmless no-op;
 /// in a `dynamic-backends` build it loads the per-ISA CPU / GPU modules. Must run
 /// before the first model load.
+pub fn native_build_identity() -> String {
+    // Native API returns a process-lifetime static string.
+    let ptr = unsafe { transcribe_cpp::sys::transcribe_build_id() };
+    if ptr.is_null() {
+        return "unknown".to_string();
+    }
+    unsafe { std::ffi::CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .trim()
+        .to_string()
+}
+
 pub fn init_transcribe_backend() {
     transcribe_cpp::init_logging();
+    info!(target: "pipeline", "native={} executable={:?}",
+        native_build_identity(), std::env::current_exe());
     match transcribe_cpp::init_backends_default() {
         Ok(()) => {
             if transcribe_gpu_disabled_for_host() {

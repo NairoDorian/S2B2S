@@ -15,11 +15,6 @@ items live here, self-contained.
   enabled, the defaults could be restored (`ctrl+space` etc.) without
   reintroducing the loop — but that is a product decision. Until then the
   README tells users to set the hotkeys in Settings → General.
-- **`HIGH_PRIORITY_CLASS` for the whole process (Windows).** Raises every
-  thread, including the tokio pool and the 4-way Multi-STT inference threads,
-  which can starve foreground apps during a merge; the capture thread already
-  has MMCSS. `ABOVE_NORMAL_PRIORITY_CLASS` (or per-thread priority) would be
-  the conservative choice.
 - **`multi_stt_keep_extra_models_loaded` semantics.** Only matters when
   `model_unload_timeout` is `Immediately`; the idle watcher unloads extras
   regardless. Either make the flag independent of the timeout or reword the UI

@@ -122,3 +122,24 @@ Anything added to startup goes after that line or on its own thread.
 - Local llama.cpp with MTP speculative decoding (`--spec-type draft-mtp`) is
   the fastest configuration measured for the merge/clean prompts; keep the
   draft model on the same device as the main model.
+
+
+## Scheduling and repeatable STT measurements
+
+Use normal OS scheduling. Do not identify or rank P/E cores, exclude core 0,
+set CPU affinity, raise process/thread priority, register an elevated MMCSS
+task, or override power throttling. Thread counts respect the CPUs available
+to the process without assigning work to particular cores.
+
+The STT benchmark policy is exactly three runs on one loaded model: discard
+run 1, then average runs 2 and 3. Both CPU and CUDA are measured. See
+[STT_BENCHMARKS.md](STT_BENCHMARKS.md) for per-model and installed-subset commands,
+regression budgets, raw evidence, and the distinction between unpaced replay
+and live microphone latency. No baseline should be collected concurrently
+with a build or another inference process.
+
+Capture metrics add two clock reads per drained chunk and two per output
+frame on the consumer thread, plus one summary at stop. Live stream queue
+metrics add one enqueue timestamp per message. The platform capture callback
+has no new work; there are no new threads or dependencies. Debug log polling
+exists only while its page is mounted and has one bounded read in flight.

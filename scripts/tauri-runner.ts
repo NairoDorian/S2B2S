@@ -160,7 +160,13 @@ console.log(
 );
 
 // 2. Dependency check (never throws, never blocks the build)
-checkTranscribeDeps();
+if (process.env.TRANSCRIBE_DIR || process.env.TRANSCRIBE_PREBUILT_DIR) {
+  console.log(
+    "[transcribe] using the explicit local install; skipping remote pin updates",
+  );
+} else {
+  checkTranscribeDeps();
+}
 
 // 3. Prune what previous builds left behind. Runs after the dependency check
 //    so a pin bump's old revision is already "gone from Cargo.lock" and goes

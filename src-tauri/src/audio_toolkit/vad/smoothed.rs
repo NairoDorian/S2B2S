@@ -1,6 +1,5 @@
 use super::{VadFrame, VadTailReport, VoiceActivityDetector};
 use anyhow::Result;
-use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Default)]
 struct BufferedSlot {
@@ -220,6 +219,7 @@ impl VoiceActivityDetector for SmoothedVad {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
 
     /// Inner VAD that replays a scripted voice/no-voice sequence.
     struct ScriptedVad {

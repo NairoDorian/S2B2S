@@ -53,58 +53,6 @@ pub fn log_multiline(label: &str, text: &str) {
     }
 }
 
-/// Configures Windows process priority, power-throttling bypass (EcoQoS disable),
-/// and high-resolution multimedia system timers for lowest latency.
-#[cfg(target_os = "windows")]
-pub fn init_windows_process_performance() {
-    use windows::Win32::Media::timeBeginPeriod;
-    use windows::Win32::System::Threading::{
-        GetCurrentProcess, HIGH_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-        PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_STATE,
-        ProcessPowerThrottling, SetPriorityClass, SetProcessInformation,
-    };
-
-    unsafe {
-        // 1. Elevate Process Priority Class to HIGH_PRIORITY_CLASS
-        if let Err(e) = SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS) {
-            log::warn!("Failed to set HIGH_PRIORITY_CLASS: {e}");
-        } else {
-            log::info!("Elevated process priority to HIGH_PRIORITY_CLASS");
-        }
-
-        // 2. Disable Windows 11 background power throttling (EcoQoS / Efficiency Mode)
-        // so threads are not relegated to E-cores or downclocked while the app sits in the system tray.
-        let mut throttling_state = PROCESS_POWER_THROTTLING_STATE {
-            Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-            ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-            StateMask: 0, // Disable throttling
-        };
-        let res = SetProcessInformation(
-            GetCurrentProcess(),
-            ProcessPowerThrottling,
-            &raw mut throttling_state as *mut _,
-            std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
-        );
-        if let Err(e) = res {
-            log::debug!("SetProcessInformation (EcoQoS disable) skipped or unsupported: {e}");
-        } else {
-            log::info!(
-                "Disabled Windows EcoQoS power throttling for {}",
-                app_identity::NAME
-            );
-        }
-
-        // 3. Request 1ms global system timer resolution. Deliberately never
-        //    paired with timeEndPeriod: the request is meant to last for the
-        //    process lifetime and Windows releases it at exit.
-        let timer_res = timeBeginPeriod(1);
-        if timer_res == 0 {
-            log::info!("Set Windows system timer resolution to 1ms (timeBeginPeriod)");
-        } else {
-            log::warn!("timeBeginPeriod returned {timer_res}");
-        }
-    }
-}
 #[cfg(any(test, all(target_os = "windows", target_arch = "x86_64")))]
 const IMAGE_FILE_MACHINE_ARM64: u16 = 0xaa64;
 

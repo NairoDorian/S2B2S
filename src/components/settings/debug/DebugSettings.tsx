@@ -1,6 +1,5 @@
 import { useTranslation } from "@/i18n/useTranslation";
 import { WordCorrectionThreshold } from "./WordCorrectionThreshold";
-import { LogLevelSelector } from "./LogLevelSelector";
 import { LiveLogViewer } from "./LiveLogViewer";
 import { PasteDelay } from "./PasteDelay";
 import { HoldThreshold } from "./HoldThreshold";
@@ -32,7 +31,6 @@ export const DebugSettings = ({ onPreviewOnboarding }: DebugSettingsProps) => {
       <SessionToastHistory />
       <SettingsGroup title={t("settings.debug.title")}>
         <InterfaceScale descriptionMode="tooltip" grouped={true} />
-        <LogLevelSelector grouped={true} />
         <WhatsNewPreview descriptionMode="tooltip" grouped={true} />
         {onPreviewOnboarding && (
           <OnboardingPreview

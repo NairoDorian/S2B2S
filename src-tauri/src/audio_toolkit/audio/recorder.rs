@@ -108,49 +108,6 @@ struct CaptureTransportState {
     overrun_samples: AtomicU64,
 }
 
-#[cfg(target_os = "windows")]
-struct MmcssHandle(Option<windows::Win32::Foundation::HANDLE>);
-
-#[cfg(target_os = "windows")]
-impl MmcssHandle {
-    fn register(task_name: &str) -> Self {
-        use std::ffi::OsStr;
-        use std::os::windows::ffi::OsStrExt;
-        use windows::Win32::System::Threading::AvSetMmThreadCharacteristicsW;
-        use windows::core::PCWSTR;
-
-        let wide: Vec<u16> = OsStr::new(task_name).encode_wide().chain(Some(0)).collect();
-        let mut task_index = 0u32;
-        unsafe {
-            match AvSetMmThreadCharacteristicsW(PCWSTR(wide.as_ptr()), &mut task_index) {
-                Ok(h) => {
-                    log::info!(
-                        "MMCSS task '{task_name}' registered for audio capture worker (task_index={task_index})"
-                    );
-                    MmcssHandle(Some(h))
-                }
-                Err(e) => {
-                    log::warn!("Failed to register MMCSS task '{task_name}': {e}");
-                    MmcssHandle(None)
-                }
-            }
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for MmcssHandle {
-    fn drop(&mut self) {
-        if let Some(h) = self.0.take() {
-            unsafe {
-                use windows::Win32::System::Threading::AvRevertMmThreadCharacteristics;
-                let _ = AvRevertMmThreadCharacteristics(h);
-                log::debug!("MMCSS task reverted on audio worker thread exit");
-            }
-        }
-    }
-}
-
 /// How 16 kHz mono frames should be filtered for one recording session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VadPolicy {
@@ -596,9 +553,6 @@ impl AudioRecorder {
         let stream_error = Arc::clone(&self.stream_error);
 
         let worker = std::thread::spawn(move || {
-            #[cfg(target_os = "windows")]
-            let _mmcss = MmcssHandle::register("Audio");
-
             let transport = Arc::new(CaptureTransportState::default());
             let init_result =
                 (|| -> Result<(cpal::Stream, u32, cpal::SampleFormat, Consumer<f32>), String> {
@@ -1194,6 +1148,10 @@ pub(crate) struct CaptureProcessor {
     capture_ready_tx: Option<mpsc::Sender<()>>,
     total_dropped_samples: u64,
     overrun_warning_logged: bool,
+    pipeline_elapsed: std::time::Duration,
+    frame_elapsed: std::time::Duration,
+    chunk_max_elapsed: std::time::Duration,
+    timed_frames: u64,
 }
 
 impl CaptureProcessor {
@@ -1303,6 +1261,10 @@ impl CaptureProcessor {
             capture_ready_tx: None,
             total_dropped_samples: 0,
             overrun_warning_logged: false,
+            pipeline_elapsed: std::time::Duration::ZERO,
+            frame_elapsed: std::time::Duration::ZERO,
+            chunk_max_elapsed: std::time::Duration::ZERO,
+            timed_frames: 0,
         }
     }
 
@@ -1330,6 +1292,10 @@ impl CaptureProcessor {
         self.raw_captured_samples.clear();
         self.processed_samples.clear();
         self.vad_errors = 0;
+        self.pipeline_elapsed = std::time::Duration::ZERO;
+        self.frame_elapsed = std::time::Duration::ZERO;
+        self.chunk_max_elapsed = std::time::Duration::ZERO;
+        self.timed_frames = 0;
         self.visualizer.reset();
         self.frame_resampler.reset();
         if let Some(chain) = &mut self.denoise {
@@ -1375,6 +1341,7 @@ impl CaptureProcessor {
             return;
         }
 
+        let pipeline_start = Instant::now();
         if self.capture_raw {
             self.raw_captured_samples.extend_from_slice(raw);
         }
@@ -1433,7 +1400,10 @@ impl CaptureProcessor {
         let chunk_tap = self.chunk_tap.as_deref();
         let keep_audio = !self.discard_audio;
 
+        let frame_elapsed = &mut self.frame_elapsed;
+        let timed_frames = &mut self.timed_frames;
         let mut on_frame = |frame: &[f32], denoise_prob: Option<f32>| {
+            let frame_start = Instant::now();
             // Live FFT processed tap: the 16 kHz frames a model hears, after
             // resampling / noise suppression and before the VAD.
             if let Some(sink) = analysis
@@ -1454,7 +1424,9 @@ impl CaptureProcessor {
                 processed_samples,
                 chunk_tap,
                 denoise_prob,
-            )
+            );
+            *frame_elapsed += frame_start.elapsed();
+            *timed_frames += 1;
         };
         match (denoise_on, self.denoise.as_mut()) {
             (true, Some(chain)) => {
@@ -1487,6 +1459,9 @@ impl CaptureProcessor {
             }
         }
 
+        let elapsed = pipeline_start.elapsed();
+        self.pipeline_elapsed += elapsed;
+        self.chunk_max_elapsed = self.chunk_max_elapsed.max(elapsed);
         if let Some(started) = self.awaiting_first_captured_chunk.take() {
             log::debug!(
                 "first captured samples ({:.1}ms) processed {:?} after Cmd::Start",
@@ -1517,6 +1492,7 @@ impl CaptureProcessor {
 
     /// Flush the resampler tail and hand back the finished recording.
     fn finish_recording(&mut self) -> RecordedAudio {
+        let finish_start = Instant::now();
         let vad_policy = self.vad_policy;
         let vad = &self.vad;
         let audio_cb = &self.audio_cb;
@@ -1528,7 +1504,10 @@ impl CaptureProcessor {
         let chunk_tap = self.chunk_tap.as_deref();
         let keep_audio = !self.discard_audio;
 
+        let frame_elapsed = &mut self.frame_elapsed;
+        let timed_frames = &mut self.timed_frames;
         let mut on_frame = |frame: &[f32], denoise_prob: Option<f32>| {
+            let frame_start = Instant::now();
             handle_frame(
                 frame,
                 vad_policy,
@@ -1542,7 +1521,9 @@ impl CaptureProcessor {
                 processed_samples,
                 chunk_tap,
                 denoise_prob,
-            )
+            );
+            *frame_elapsed += frame_start.elapsed();
+            *timed_frames += 1;
         };
         match (self.denoise_active, self.denoise.as_mut()) {
             (true, Some(chain)) => {
@@ -1577,6 +1558,14 @@ impl CaptureProcessor {
             );
         }
 
+        let finish_elapsed = finish_start.elapsed();
+        self.pipeline_elapsed += finish_elapsed;
+        log::info!(target: "pipeline", "capture sample_rate={} frames={} total_ms={:.3} frame_vad_route_ms={:.3} frontend_taps_ms={:.3} chunk_max_ms={:.3} finish_ms={:.3} dropped_samples={} vad_errors={} denoise={}",
+            self.in_sample_rate, self.timed_frames,
+            self.pipeline_elapsed.as_secs_f64()*1000.0, self.frame_elapsed.as_secs_f64()*1000.0,
+            self.pipeline_elapsed.saturating_sub(self.frame_elapsed).as_secs_f64()*1000.0,
+            self.chunk_max_elapsed.as_secs_f64()*1000.0, finish_elapsed.as_secs_f64()*1000.0,
+            self.total_dropped_samples, self.vad_errors, self.denoise_active);
         RecordedAudio {
             stt_samples: std::mem::take(&mut self.processed_samples),
             raw_samples: std::mem::take(&mut self.raw_captured_samples),

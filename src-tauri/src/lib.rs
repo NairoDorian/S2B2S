@@ -44,13 +44,11 @@ use specta_typescript::Typescript;
 use tauri_specta::{Builder, collect_commands, collect_events};
 pub use utils::{app_env_flag, app_env_var, env_flag_enabled};
 
-use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 pub use transcription_coordinator::TranscriptionCoordinator;
 
 use tauri::tray::TrayIconBuilder;
@@ -59,122 +57,6 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
 
 use crate::settings::get_settings;
-
-// Global atomic to store the file log level filter
-// We use u8 to store the log::LevelFilter as a number
-pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u8);
-
-/// When `true`, log records are also forwarded to the webview via the
-/// `log://log` event for the debug panel's live log viewer. Gated on debug
-/// mode — the live log viewer is its only consumer and only exists in debug
-/// mode — so normal runs never broadcast log records (which can include file
-/// paths or transcribed text) onto the frontend event bus. Synced at startup
-/// and whenever debug mode is toggled (see `shortcut::change_debug_mode_setting`).
-pub static WEBVIEW_LOG_STREAMING: AtomicBool = AtomicBool::new(false);
-
-fn level_filter_from_u8(value: u8) -> log::LevelFilter {
-    match value {
-        0 => log::LevelFilter::Off,
-        1 => log::LevelFilter::Error,
-        2 => log::LevelFilter::Warn,
-        3 => log::LevelFilter::Info,
-        4 => log::LevelFilter::Debug,
-        5 => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Trace,
-    }
-}
-
-/// The log targets that belong to this app rather than to a dependency: the
-/// library crate every module here lives in, and the package name (the binary
-/// target's own records, i.e. `main.rs`).
-const APP_TARGETS: [&str; 2] = [env!("CARGO_CRATE_NAME"), env!("CARGO_PKG_NAME")];
-
-/// Whether a record's target is one of this app's own crates — `app_lib::actions`
-/// yes, `tao::window` no.
-fn is_app_target(target: &str) -> bool {
-    APP_TARGETS.contains(&target.split("::").next().unwrap_or(target))
-}
-
-/// The level the console target runs at for a record from `target`, when
-/// `RUST_LOG` says nothing.
-///
-/// A debug build's console is the developer's window onto the app, so it is
-/// floored well below the Log Level setting — otherwise debugging any feature
-/// starts by remembering to prefix the command with `$env:RUST_LOG=app_lib=debug`,
-/// and the diagnostics a developer runs `bun run tauri dev` to read (what the
-/// transcriber was fed and returned, what each Multi-STT model produced, what the
-/// merge and post-processing prompts were and what the brain answered) are
-/// exactly the ones the setting exists to keep out of a *user's* log.
-///
-/// The floor is per target because "everything" and "everything useful" are not
-/// the same thing. This app's own records run at `Trace` — the lowest level
-/// anything in this crate is written at — while a dependency's stay at `Debug`
-/// at most, so a chatty crate (an HTTP client tracing each header, a windowing
-/// library tracing each event) cannot bury the app's lines under its own.
-/// `RUST_LOG` opens that half when it is genuinely wanted; the app's half needs
-/// nothing typed. A release build has no floor at all: its console is the
-/// user's, and the Log Level setting is the whole rule.
-fn console_level(target: &str) -> log::LevelFilter {
-    let configured = level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed));
-    if !cfg!(debug_assertions) {
-        return configured;
-    }
-    if is_app_target(target) {
-        log::LevelFilter::Trace
-    } else {
-        configured.max(log::LevelFilter::Debug)
-    }
-}
-
-/// The console target's filter.
-///
-/// `RUST_LOG` still wins outright when it is set — an explicit per-module
-/// directive is a deliberate thing to type, and honouring it verbatim is what
-/// makes `RUST_LOG=trace` reach into the dependencies this app links — but with
-/// it unset the console follows [`console_level`] instead of a hardcoded `Info`.
-#[derive(Clone)]
-enum ConsoleFilter {
-    Env(env_filter::Filter),
-    Setting,
-}
-
-impl ConsoleFilter {
-    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-        match self {
-            Self::Env(filter) => filter.enabled(metadata),
-            Self::Setting => metadata.level() <= console_level(metadata.target()),
-        }
-    }
-}
-
-fn build_console_filter() -> ConsoleFilter {
-    match std::env::var("RUST_LOG") {
-        Ok(spec) if !spec.trim().is_empty() => {
-            let mut builder = EnvFilterBuilder::new();
-            if let Err(err) = builder.try_parse(&spec) {
-                log::warn!(
-                    "Ignoring invalid RUST_LOG value '{}': {}; falling back to the configured log \
-                     level",
-                    spec,
-                    err
-                );
-                return ConsoleFilter::Setting;
-            }
-            ConsoleFilter::Env(builder.build())
-        }
-        _ => ConsoleFilter::Setting,
-    }
-}
-
-/// Dependency targets whose own logging drowns the app's records out: the
-/// migration runner dumps whole SQL schemas (multi-line `CREATE TABLE` /
-/// `ALTER TABLE` blocks) at debug, and sqlx logs every prepared statement at
-/// info. Both are capped at `warn` on every target unless the record is a
-/// warning or worse — the schema still shows when a migration actually fails.
-fn dependency_target_allowed(target: &str, level: log::Level) -> bool {
-    let noisy = matches!(target, "rusqlite_migration" | "sqlx" | "sqlx::query");
-    !noisy || level <= log::Level::Warn
-}
 
 /// The stream the console target writes to: **stdout** for the interactive app,
 /// **stderr** for the headless one-shots.
@@ -732,6 +614,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         }
     }
 
+    let read_start = Instant::now();
     let samples = match crate::audio_toolkit::read_wav_samples(&wav) {
         Ok(s) => s,
         Err(e) => {
@@ -739,6 +622,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
             return 2;
         }
     };
+    let wav_read_ms = read_start.elapsed().as_secs_f64() * 1000.0;
     let audio_secs = samples.len() as f64 / 16_000.0;
 
     let tm = app.state::<Arc<TranscriptionManager>>();
@@ -770,32 +654,51 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     let load_ms = load_start.elapsed().as_millis() as u64;
     let bound_backend = tm.current_backend();
 
-    let runs = args.repeat.unwrap_or(1).max(1);
-    let mut times_ms: Vec<u64> = Vec::new();
+    if args.repeat.is_some_and(|runs| runs != 3) {
+        eprintln!("error: benchmarks require exactly 3 runs (warm-up, measured, measured)");
+        return 2;
+    }
+    let runs = 3;
+    let mut times_ms: Vec<f64> = Vec::new();
+    let mut pipeline_runs = Vec::new();
     let mut text = String::new();
     for i in 0..runs {
-        // If the model's unload-timeout is "Immediately", transcribe() unloads
-        // the engine after each run; reload (untimed) so repeats keep working
-        // and the inference timing below stays clean.
-        if !tm.is_model_loaded()
-            && let Err(e) = tm.load_model_with_device(&model_id, device_index)
-        {
-            eprintln!("error: reload before run {} failed: {}", i + 1, e);
+        if !tm.is_model_loaded() {
+            eprintln!(
+                "error: model was unloaded before run {}; warm benchmark invalid",
+                i + 1
+            );
             return 1;
         }
         let t = Instant::now();
-        match tm.transcribe(samples.clone()) {
+        let result = if let Some(chunk_ms) = args.stream_chunk_ms {
+            tm.benchmark_stream(&samples, chunk_ms as usize, args.stream_att_right)
+                .map(|(text, metrics)| {
+                    pipeline_runs.push(metrics);
+                    text
+                })
+        } else {
+            tm.transcribe(samples.clone()).map(|text| {
+                pipeline_runs.push(tm.pipeline_metrics());
+                text
+            })
+        };
+        match result {
             Ok(out) => text = out,
             Err(e) => {
                 eprintln!("error: transcribe failed: {}", e);
                 return 1;
             }
         }
-        times_ms.push(t.elapsed().as_millis() as u64);
+        times_ms.push(t.elapsed().as_secs_f64() * 1000.0);
+        pipeline_runs[i]["excluded_warmup"] = serde_json::json!(i == 0);
+        pipeline_runs[i]["text"] = serde_json::json!(text);
+        pipeline_runs[i]["wall_ms"] = serde_json::json!(times_ms[i]);
     }
-    let best_ms = times_ms.iter().copied().min().unwrap_or(0);
-    let rtf = if best_ms > 0 {
-        audio_secs / (best_ms as f64 / 1000.0)
+    let warm_mean_ms = (times_ms[1] + times_ms[2]) / 2.0;
+    let best_ms = times_ms[1].min(times_ms[2]);
+    let rtf = if warm_mean_ms > 0.0 {
+        audio_secs / (warm_mean_ms / 1000.0)
     } else {
         0.0
     };
@@ -804,6 +707,17 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         println!(
             "{}",
             serde_json::json!({
+                "schema_version": 1,
+                "native_commit": transcribe_cpp::version_commit(),
+                "native_build_id": managers::transcription::native_build_identity(),
+                "app_version": env!("CARGO_PKG_VERSION"),
+                "debug_build": cfg!(debug_assertions),
+                "wav_read_ms": wav_read_ms,
+                "pipeline_runs": pipeline_runs,
+                "stream_chunk_ms": args.stream_chunk_ms,
+                "rtf_compute_over_audio": if audio_secs > 0.0 { warm_mean_ms / (audio_secs*1000.0) } else { 0.0 },
+                "warm_mean_ms": warm_mean_ms,
+                "excluded_warmup_run": 1,
                 "model": model_id,
                 "requested_device": requested_device,
                 "bound_backend": bound_backend,
@@ -817,13 +731,13 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         );
     } else {
         println!(
-            "model={} device={} backend={} audio={:.2}s load={}ms best={}ms rtf={:.2}x",
+            "model={} device={} backend={} audio={:.2}s load={}ms warm_mean={}ms speed={:.2}x",
             model_id,
             requested_device,
             bound_backend.as_deref().unwrap_or("?"),
             audio_secs,
             load_ms,
-            best_ms,
+            warm_mean_ms,
             rtf,
         );
         println!("text: {}", text);
@@ -833,10 +747,6 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(cli_args: CliArgs) {
-    // Elevate process priority, disable EcoQoS throttling, and set 1ms timer resolution on Windows.
-    #[cfg(target_os = "windows")]
-    utils::init_windows_process_performance();
-
     // Avoid ggml-metal residency-set teardown assertions when a native engine
     // outlives the Tauri shutdown sequence (#1902). This must happen before
     // transcribe-cpp initializes its Metal device. Advanced users can restore
@@ -858,12 +768,6 @@ pub fn run(cli_args: CliArgs) {
 
     // Detect portable mode before anything else
     portable::init();
-
-    // Console logging: RUST_LOG when it is set, otherwise the app's own log
-    // level (a debug build floors it — at Trace for this crate's own records —
-    // so `bun run dev:fast` carries the app's diagnostics with no environment
-    // variable to remember). See `console_level`.
-    let console_filter = build_console_filter();
 
     let specta_builder = Builder::<tauri::DynRuntime>::new()
         .dangerously_cast_bigints_to_number()
@@ -1156,20 +1060,14 @@ pub fn run(cli_args: CliArgs) {
         .plugin(
             LogBuilder::new()
                 .level(log::LevelFilter::Trace) // Set to most verbose level globally
-                .max_file_size(500_000)
+                .max_file_size(10_000_000)
                 .rotation_strategy(RotationStrategy::KeepOne)
                 .clear_targets()
                 .targets([
                     // Interactive console output goes to stdout, headless to
                     // stderr; see `console_stream_kind`.
-                    Target::new(console_stream_kind(headless_mode)).filter({
-                        let console_filter = console_filter.clone();
-                        move |metadata| {
-                            console_filter.enabled(metadata)
-                                && dependency_target_allowed(metadata.target(), metadata.level())
-                        }
-                    }),
-                    // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic)
+                    Target::new(console_stream_kind(headless_mode)),
+                    // The durable console uses the same capture policy as the terminal.
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
@@ -1179,21 +1077,6 @@ pub fn run(cli_args: CliArgs) {
                         TargetKind::LogDir {
                             file_name: Some(app_identity::RECORDING_BASENAME.into()),
                         }
-                    })
-                    .filter(|metadata| {
-                        let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
-                        metadata.level() <= level_filter_from_u8(file_level)
-                            && dependency_target_allowed(metadata.target(), metadata.level())
-                    }),
-                    // Stream logs to the webview (via the `log://log` event) so the
-                    // debug panel's live log viewer can show them in real time. Only
-                    // active while debug mode is on (its sole consumer), and shares the
-                    // file log level so the "Log Level" setting controls verbosity.
-                    Target::new(TargetKind::Webview).filter(|metadata| {
-                        WEBVIEW_LOG_STREAMING.load(Ordering::Relaxed)
-                            && metadata.level()
-                                <= level_filter_from_u8(FILE_LOG_LEVEL.load(Ordering::Relaxed))
-                            && dependency_target_allowed(metadata.target(), metadata.level())
                     }),
                 ])
                 .build(),
@@ -1393,20 +1276,7 @@ pub fn run(cli_args: CliArgs) {
                 settings.log_level = settings::LogLevel::Trace;
             }
 
-            let tauri_log_level: tauri_plugin_log::LogLevel = settings.log_level.into();
-            let file_log_level: log::Level = tauri_log_level.into();
-            // What this process was actually handed, whether it has a terminal to
-            // write to, and which store it just read its level from. Three
-            // separate things have silently taken the log away here, and each one
-            // is answered by a line below rather than by a rebuild: the wrong
-            // stream (a terminal shows records only from the fd it owns — see
-            // `console_stream_kind`), a store that no longer holds the level the
-            // user set (the rename left several stores on disk and `get_settings`
-            // above read exactly one of them), and a level low enough to drop the
-            // app's own diagnostics. All three are `info`, the level the app
-            // ships with, and they are emitted *before* FILE_LOG_LEVEL moves
-            // below, so the level being reported cannot filter out the line that
-            // reports it.
+            let file_log_level = log::LevelFilter::Trace;
             if let Ok(config_dir) = app.path().app_config_dir() {
                 log::info!(
                     "Settings store: {} (log level {:?}, debug mode {})",
@@ -1421,7 +1291,7 @@ pub fn run(cli_args: CliArgs) {
                 use std::io::IsTerminal;
                 log::info!(
                     "Console log stream: {} (stdout is a terminal: {}, stderr is a terminal: {}); \
-                     file logs at {}, webview streaming {}",
+                     default capture {}, viewer reads durable file (debug mode {})",
                     if headless_mode { "stderr" } else { "stdout" },
                     std::io::stdout().is_terminal(),
                     std::io::stderr().is_terminal(),
@@ -1429,12 +1299,6 @@ pub fn run(cli_args: CliArgs) {
                     settings.debug_mode,
                 );
             }
-            // Store the file log level in the atomic for the filter to use
-            FILE_LOG_LEVEL.store(file_log_level.to_level_filter() as u8, Ordering::Relaxed);
-            // Only forward logs to the webview while debug mode is on (the live log
-            // viewer is the sole consumer and only exists in debug mode). This also
-            // honors the runtime `--debug` override applied to `settings` above.
-            WEBVIEW_LOG_STREAMING.store(settings.debug_mode, Ordering::Relaxed);
             let app_handle = app.handle().clone();
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
@@ -1564,59 +1428,6 @@ pub fn run(cli_args: CliArgs) {
 
 #[cfg(test)]
 mod console_logging_tests {
-    use super::{APP_TARGETS, is_app_target};
-
-    #[test]
-    fn app_targets_are_the_crates_this_repo_ships() {
-        // The library's modules, at every depth, plus the binary target.
-        for target in [
-            "app_lib",
-            "app_lib::managers::transcription",
-            "app_lib::multi_stt_stream",
-        ] {
-            assert!(is_app_target(target), "{target} should be an app target");
-        }
-        assert!(
-            is_app_target("zer0"),
-            "the binary target should be an app target"
-        );
-
-        // A dependency whose crate name merely starts with an app crate's name
-        // is not one of ours, and neither is a target that names no crate.
-        for target in ["app_library", "app_lib_extra::x", "tao::window", "wry", ""] {
-            assert!(
-                !is_app_target(target),
-                "{target} should not be an app target"
-            );
-        }
-        assert_eq!(APP_TARGETS.len(), 2);
-    }
-
-    /// The floor itself is a `debug_assertions` branch, so it is asserted where
-    /// it exists: this suite runs in the same profile `bun run dev` builds.
-    #[test]
-    #[cfg(debug_assertions)]
-    fn a_dev_console_runs_the_apps_own_records_at_trace() {
-        use super::{FILE_LOG_LEVEL, console_level};
-        use std::sync::atomic::Ordering;
-
-        // Whatever the Log Level setting says, the app's own detail is visible:
-        // that is what makes the detail "activated by default", with no
-        // environment variable and no `--debug` to remember.
-        let saved = FILE_LOG_LEVEL.load(Ordering::Relaxed);
-        for configured in [log::LevelFilter::Off, log::LevelFilter::Info] {
-            FILE_LOG_LEVEL.store(configured as u8, Ordering::Relaxed);
-            assert_eq!(
-                console_level("app_lib::llm_client"),
-                log::LevelFilter::Trace
-            );
-            // A dependency still gets a floor, but only at `Debug`, so it cannot
-            // flood the console the app's own lines have to be read from.
-            assert_eq!(console_level("hyper::proto"), log::LevelFilter::Debug);
-        }
-        FILE_LOG_LEVEL.store(saved, Ordering::Relaxed);
-    }
-
     /// Which stream the console target writes to is a *measured* decision, not a
     /// derivable one (see `console_stream_kind`), so it is pinned here. It
     /// regressed once already — stderr reads as the safer choice and was silent —

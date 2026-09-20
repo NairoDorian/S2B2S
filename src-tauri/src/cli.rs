@@ -52,6 +52,14 @@ pub struct CliArgs {
     #[arg(long, value_name = "N")]
     pub device_index: Option<usize>,
 
+    /// Replay a WAV through native streaming, with N-ms feeds (no microphone/UI).
+    #[arg(long, requires = "transcribe_file", value_parser = clap::value_parser!(u32).range(1..=10000))]
+    pub stream_chunk_ms: Option<u32>,
+
+    /// Nemotron right context for headless streaming (otherwise use app preset).
+    #[arg(long, requires = "stream_chunk_ms")]
+    pub stream_att_right: Option<i32>,
+
     /// List the transcribe-cpp compute devices (with indices) and exit.
     #[arg(long)]
     pub list_devices: bool,
@@ -61,7 +69,7 @@ pub struct CliArgs {
     #[arg(long)]
     pub list_models: bool,
 
-    /// Repeat the transcription N times (best_ms reports the fastest run).
+    /// Benchmark runs (must be 3): discard warm-up, average runs 2 and 3.
     #[arg(long, value_name = "N")]
     pub repeat: Option<usize>,
 

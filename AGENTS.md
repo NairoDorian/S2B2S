@@ -34,21 +34,12 @@ thread, poll or dependency in the commit message.
 
 ## Logging
 
-The whole stack — the three targets, their filters, the console stream rule and
-the ways it has silently gone quiet — is in [docs/LOGGING.md](docs/LOGGING.md).
-Read it before changing a level, a filter or a target. Two things worth knowing
-without opening it:
-
-- **A dev build's terminal is verbose on purpose.** This app's own records run at
-  `Trace`, dependencies at `Debug`, whatever the Log Level setting says; the
-  setting governs the **file** log (and the release console). `RUST_LOG`
-  overrides both.
-- **"There are no logs" is a three-way check,** and the app now prints the answer
-  to all three at startup at `info`: which store it read, whether it had a
-  terminal to write to, and the resolved level. They are in
-  `%LOCALAPPDATA%/<identifier>/logs/<basename>.log` even when the console shows
-  nothing — that file is the ground truth, because the console's problems cannot
-  hide from a target with no terminal in the loop.
+The runtime logging policy is documented in [docs/LOGGING.md](docs/LOGGING.md).
+Terminal and file capture all severities (Trace) in every build profile;
+`RUST_LOG` does not filter runtime capture. The old persisted `log_level`
+field is compatibility data only. The in-app console reads the durable log
+file regardless of debug mode, and its chips only hide records in the view.
+Do not add capture-level UI or a per-record webview event stream.
 
 ## The pre-commit routine
 
@@ -1225,7 +1216,7 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no Authenticode code signing (`signCommand` removed from `tauri.conf.json`) but **signed updater artifacts** (`createUpdaterArtifacts` on, the project's own minisign key: private at `~/.tauri/zer0.key`, public in `plugins.updater.pubkey`; CI injects it via the `TAURI_SIGNING_PRIVATE_KEY` secrets, the tauri runner reads the local file), real-time audio optimizations (`HIGH_PRIORITY_CLASS`, Windows 11 EcoQoS power throttling disable, 1ms `timeBeginPeriod`, MMCSS `"Capture"` worker thread scheduling, and hardware buffer size minimization). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
+- **Windows**: CUDA acceleration on x86_64 (transcribe.cpp `cuda` feature; upstream uses Vulkan), CPU only on aarch64, no Authenticode code signing (`signCommand` removed from `tauri.conf.json`) but **signed updater artifacts** (`createUpdaterArtifacts` on, the project's own minisign key: private at `~/.tauri/zer0.key`, public in `plugins.updater.pubkey`; CI injects it via the `TAURI_SIGNING_PRIVATE_KEY` secrets, the tauri runner reads the local file), normal OS CPU scheduling (no affinity, core ranking, process/thread priority elevation, MMCSS registration or power-throttling override). The NSIS installer (`src-tauri/nsis/installer.nsi`, upstream's template) creates a desktop shortcut only on request: the finish-page box starts unchecked and silent / passive installs need `/DESKTOP`. Implicit Vulkan layers (overlays, capture hooks) are disabled for the ZER0 process via `VK_LOADER_LAYERS_DISABLE=~implicit~` set in `main.rs`, as upstream does (upstream issue #2049); the CUDA build never loads the Vulkan loader, so this only keeps the process environment identical to upstream. Opt out with `ZER0_KEEP_VULKAN_IMPLICIT_LAYERS=1` or by setting `VK_LOADER_LAYERS_DISABLE` yourself
 - **Linux**: CUDA acceleration (upstream: OpenBLAS + Vulkan), limited Wayland support, overlay uses GTK layer shell (disable with `ZER0_NO_GTK_LAYER_SHELL=1`)
 - **Nix/NixOS**: the Nix package sets `ZER0_DISABLE_UPDATER=1` to force-disable the self-updater at runtime without touching the persisted setting (self-update can't work against an immutable `/nix/store`)
 

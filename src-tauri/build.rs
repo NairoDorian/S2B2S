@@ -316,6 +316,34 @@ fn stage_transcribe_runtime_libs() {
     // staged set actually differs.
     let desired: std::collections::BTreeMap<&str, &PathBuf> =
         best.values().map(|&(name, src, _)| (name, src)).collect();
+    // A prebuilt native install may change without Cargo rerunning the pinned
+    // sys crate. Refresh development/test DLLs as well as bundled resources;
+    // Windows searches beside the executable before the resource directory.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+        let profile = out.ancestors().nth(3).expect("Cargo profile directory");
+        for sub in ["", "deps", "examples"] {
+            let target = profile.join(sub);
+            std::fs::create_dir_all(&target).expect("create runtime directory");
+            for (name, src) in &desired {
+                let dst = target.join(name);
+                let source = std::fs::metadata(src).expect("native library metadata");
+                let fresh = std::fs::metadata(&dst).is_ok_and(|current| {
+                    current.len() == source.len()
+                        && current
+                            .modified()
+                            .ok()
+                            .zip(source.modified().ok())
+                            .is_some_and(|(current, source)| current >= source)
+                });
+                if !fresh {
+                    std::fs::copy(src, &dst).unwrap_or_else(|e| {
+                        panic!("refresh native runtime {}: {e}", dst.display())
+                    });
+                }
+            }
+        }
+    }
     if staged_up_to_date(&dest, &desired) {
         return;
     }

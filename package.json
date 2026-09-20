@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "bench:stt": "bun scripts/bench-stt.ts",
     "build": "tsc && vite build",
     "vite:build": "vite build",
     "typecheck": "bun x tsc -b",
