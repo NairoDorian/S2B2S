@@ -520,6 +520,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         }
     }
 
+    let read_start = Instant::now();
     let samples = match crate::audio_toolkit::read_wav_samples(&wav) {
         Ok(s) => s,
         Err(e) => {
@@ -527,6 +528,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
             return 2;
         }
     };
+    let wav_read_ms = read_start.elapsed().as_secs_f64() * 1000.0;
     let audio_secs = samples.len() as f64 / 16_000.0;
 
     let tm = app.state::<Arc<TranscriptionManager>>();
@@ -558,32 +560,51 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     let load_ms = load_start.elapsed().as_millis() as u64;
     let bound_backend = tm.current_backend();
 
-    let runs = args.repeat.unwrap_or(1).max(1);
-    let mut times_ms: Vec<u64> = Vec::new();
+    if args.repeat.is_some_and(|runs| runs != 3) {
+        eprintln!("error: benchmarks require exactly 3 runs (warm-up, measured, measured)");
+        return 2;
+    }
+    let runs = 3;
+    let mut times_ms: Vec<f64> = Vec::new();
+    let mut pipeline_runs = Vec::new();
     let mut text = String::new();
     for i in 0..runs {
-        // If the model's unload-timeout is "Immediately", transcribe() unloads
-        // the engine after each run; reload (untimed) so repeats keep working
-        // and the inference timing below stays clean.
         if !tm.is_model_loaded() {
-            if let Err(e) = tm.load_model_with_device(&model_id, device_index) {
-                eprintln!("error: reload before run {} failed: {}", i + 1, e);
-                return 1;
-            }
+            eprintln!(
+                "error: model was unloaded before run {}; warm benchmark invalid",
+                i + 1
+            );
+            return 1;
         }
         let t = Instant::now();
-        match tm.transcribe(samples.clone()) {
+        let result = if let Some(chunk_ms) = args.stream_chunk_ms {
+            tm.benchmark_stream(&samples, chunk_ms as usize, args.stream_att_right)
+                .map(|(text, metrics)| {
+                    pipeline_runs.push(metrics);
+                    text
+                })
+        } else {
+            tm.transcribe(samples.clone()).map(|text| {
+                pipeline_runs.push(tm.pipeline_metrics());
+                text
+            })
+        };
+        match result {
             Ok(out) => text = out,
             Err(e) => {
                 eprintln!("error: transcribe failed: {}", e);
                 return 1;
             }
         }
-        times_ms.push(t.elapsed().as_millis() as u64);
+        times_ms.push(t.elapsed().as_secs_f64() * 1000.0);
+        pipeline_runs[i]["excluded_warmup"] = serde_json::json!(i == 0);
+        pipeline_runs[i]["text"] = serde_json::json!(text);
+        pipeline_runs[i]["wall_ms"] = serde_json::json!(times_ms[i]);
     }
-    let best_ms = times_ms.iter().copied().min().unwrap_or(0);
-    let rtf = if best_ms > 0 {
-        audio_secs / (best_ms as f64 / 1000.0)
+    let warm_mean_ms = (times_ms[1] + times_ms[2]) / 2.0;
+    let best_ms = times_ms[1].min(times_ms[2]);
+    let rtf = if warm_mean_ms > 0.0 {
+        audio_secs / (warm_mean_ms / 1000.0)
     } else {
         0.0
     };
@@ -592,6 +613,17 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         println!(
             "{}",
             serde_json::json!({
+                "schema_version": 1,
+                "native_commit": transcribe_cpp::version_commit(),
+                "native_build_id": managers::transcription::native_build_identity(),
+                "app_version": env!("CARGO_PKG_VERSION"),
+                "debug_build": cfg!(debug_assertions),
+                "wav_read_ms": wav_read_ms,
+                "pipeline_runs": pipeline_runs,
+                "stream_chunk_ms": args.stream_chunk_ms,
+                "rtf_compute_over_audio": if audio_secs > 0.0 { warm_mean_ms / (audio_secs*1000.0) } else { 0.0 },
+                "warm_mean_ms": warm_mean_ms,
+                "excluded_warmup_run": 1,
                 "model": model_id,
                 "requested_device": requested_device,
                 "bound_backend": bound_backend,
@@ -605,13 +637,13 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         );
     } else {
         println!(
-            "model={} device={} backend={} audio={:.2}s load={}ms best={}ms rtf={:.2}x",
+            "model={} device={} backend={} audio={:.2}s load={}ms warm_mean={}ms speed={:.2}x",
             model_id,
             requested_device,
             bound_backend.as_deref().unwrap_or("?"),
             audio_secs,
             load_ms,
-            best_ms,
+            warm_mean_ms,
             rtf,
         );
         println!("text: {}", text);

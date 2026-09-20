@@ -53,9 +53,17 @@ pub struct CliArgs {
     #[arg(long)]
     pub list_models: bool,
 
-    /// Repeat the transcription N times (best_ms reports the fastest run).
+    /// Exactly three resident runs; discard warm-up run 1 and average runs 2 and 3.
     #[arg(long, value_name = "N")]
     pub repeat: Option<usize>,
+
+    /// Replay streaming with this many milliseconds per unpaced feed.
+    #[arg(long, value_name = "MS", requires = "transcribe_file", value_parser = clap::value_parser!(u32).range(1..=10000))]
+    pub stream_chunk_ms: Option<u32>,
+
+    /// Nemotron right attention context for the streaming benchmark.
+    #[arg(long, requires = "stream_chunk_ms")]
+    pub stream_att_right: Option<i32>,
 
     /// Emit --transcribe-file results as JSON.
     #[arg(long)]

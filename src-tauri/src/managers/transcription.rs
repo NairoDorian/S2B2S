@@ -246,6 +246,7 @@ impl Drop for StreamWorkerGuard {
 
 #[derive(Clone)]
 pub struct TranscriptionManager {
+    last_pipeline_metrics: Arc<Mutex<serde_json::Value>>,
     engine: Arc<Mutex<Option<LoadedEngine>>>,
     model_manager: Arc<ModelManager>,
     app_handle: AppHandle,
@@ -282,6 +283,7 @@ pub struct TranscriptionManager {
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
         let manager = Self {
+            last_pipeline_metrics: Arc::new(Mutex::new(serde_json::Value::Null)),
             engine: Arc::new(Mutex::new(None)),
             model_manager,
             app_handle: app_handle.clone(),
@@ -455,8 +457,19 @@ impl TranscriptionManager {
         self.last_activity.store(Self::now_ms(), Ordering::Relaxed);
     }
 
+    pub fn pipeline_metrics(&self) -> serde_json::Value {
+        self.last_pipeline_metrics.lock().unwrap().clone()
+    }
+
     /// Unloads the model immediately if the setting is enabled and the model is loaded
     pub fn maybe_unload_immediately(&self, context: &str) {
+        if self
+            .app_handle
+            .try_state::<crate::cli::CliArgs>()
+            .is_some_and(|args| args.transcribe_file.is_some())
+        {
+            return; // Three benchmark runs must share one warmed model.
+        }
         let settings = get_settings(&self.app_handle);
         if settings.model_unload_timeout == ModelUnloadTimeout::Immediately
             && self.is_model_loaded()
@@ -1090,8 +1103,90 @@ impl TranscriptionManager {
         // the engine has been returned to the pool.
     }
 
-    /// Return the leased engine to the mutex, unless the model was switched or
-    /// unloaded during transcription (in which case the stale engine is dropped).
+    /// Deterministic headless replay through the loaded engine and app settings.
+    /// Captured PCM bypasses microphone/VAD/UI; no user history is written.
+    pub fn benchmark_stream(
+        &self,
+        audio: &[f32],
+        chunk_ms: usize,
+        att_right: Option<i32>,
+    ) -> Result<(String, serde_json::Value)> {
+        anyhow::ensure!(chunk_ms > 0, "stream chunk must be positive");
+        let model_id = self
+            .get_current_model()
+            .ok_or_else(|| anyhow::anyhow!("No loaded model"))?;
+        let settings = get_settings(&self.app_handle);
+        let language =
+            effective_language_for_model(&settings, self.model_manager.as_ref(), &model_id);
+        let mut engine = self
+            .lock_engine()
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Engine is busy"))?;
+        let result = (|| -> Result<(String, serde_json::Value)> {
+            let LoadedEngine::TranscribeCpp(session) = &mut engine else {
+                anyhow::bail!("Streaming benchmark requires a transcribe-cpp model");
+            };
+            let model = session.model();
+            let caps = model.capabilities();
+            let plan = transcribe_cpp_run_plan(
+                settings.translate_to_english,
+                &language,
+                &caps.languages,
+                caps.supports_translate,
+            );
+            let options = RunOptions {
+                task: plan.task,
+                language: plan.language,
+                target_language: plan.target_language,
+                ..Default::default()
+            };
+            let family = if let Some(right) = att_right {
+                Some(transcribe_cpp::StreamExtension::ParakeetStream(
+                    transcribe_cpp::ParakeetStreamOptions {
+                        att_context_right: Some(right),
+                    },
+                ))
+            } else {
+                None
+            };
+            let stream_options = StreamOptions {
+                family,
+                ..Default::default()
+            };
+            let start = Instant::now();
+            let mut stream = session.stream(&options, &stream_options)?;
+            let begin_ms = start.elapsed().as_secs_f64() * 1000.0;
+            let mut feeds = Vec::new();
+            let mut first_text_ms = None;
+            for chunk in audio.chunks(chunk_ms.saturating_mul(16)) {
+                let tick = Instant::now();
+                let update = stream.feed(chunk)?;
+                feeds.push(tick.elapsed().as_secs_f64() * 1000.0);
+                if first_text_ms.is_none() && (update.committed_changed || update.tentative_changed)
+                {
+                    first_text_ms = Some(start.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            let tick = Instant::now();
+            stream.finalize()?;
+            let finalize_ms = tick.elapsed().as_secs_f64() * 1000.0;
+            let snapshot = stream.snapshot();
+            let native = &snapshot.timings;
+            Ok((
+                snapshot.text,
+                serde_json::json!({
+                    "begin_ms": begin_ms, "feed_ms": feeds, "first_text_compute_ms": first_text_ms,
+                    "finalize_ms": finalize_ms, "wall_ms": start.elapsed().as_secs_f64()*1000.0,
+                    "timings": { "mel_ms": native.mel_ms, "encode_ms": native.encode_ms, "decode_ms": native.decode_ms },
+                    "stream_options": format!("{:?}", stream_options), "language": options.language,
+                }),
+            ))
+        })();
+        self.return_engine(engine, &model_id);
+        result
+    }
+
+    /// Return the leased engine unless it was switched or unloaded.
     fn return_engine(&self, engine: LoadedEngine, expected_model_id: &str) {
         let still_current =
             self.current_model_id.lock().unwrap().as_deref() == Some(expected_model_id);
@@ -1346,6 +1441,11 @@ impl TranscriptionManager {
                                 // Whisper's audio-based LID (auto mode only;
                                 // `None` when a language hint was passed).
                                 model_detected_language = t.language;
+                                *self.last_pipeline_metrics.lock().unwrap() = serde_json::json!({
+                                    "timings": { "mel_ms": t.timings.mel_ms,
+                                        "encode_ms": t.timings.encode_ms, "decode_ms": t.timings.decode_ms },
+                                    "language": run_options.language,
+                                });
                                 t.text
                             })
                             .map_err(|e| {
@@ -1881,6 +1981,11 @@ fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
 /// In a static build (macOS Metal) `init_backends_default` is a harmless no-op;
 /// in a `dynamic-backends` build it loads the per-ISA CPU / GPU modules. Must run
 /// before the first model load.
+pub fn native_build_identity() -> String {
+    // This upstream API predates the fork's extended native build-id symbol.
+    format!("upstream commit {}", transcribe_cpp::version_commit())
+}
+
 pub fn init_transcribe_backend() {
     transcribe_cpp::init_logging();
     match transcribe_cpp::init_backends_default() {
