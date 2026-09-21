@@ -1148,10 +1148,54 @@ impl TranscriptionManager {
             };
 
             let mut perf = StreamPerf::new(Arc::clone(&self.stream_timing));
-            while let Ok(cmd) = rx.recv() {
+            // A command pulled out of the queue while coalescing a backlog.
+            // Only one can ever be held: the drain stops at the first
+            // non-Feed command, which is handled on the next pass.
+            let mut deferred: Option<StreamCmd> = None;
+            loop {
+                let cmd = match deferred.take() {
+                    Some(cmd) => cmd,
+                    None => match rx.recv() {
+                        Ok(cmd) => cmd,
+                        Err(_) => break,
+                    },
+                };
                 match cmd {
                     StreamCmd::Feed { pcm, queued_at } => {
                         perf.queue_max = perf.queue_max.max(queued_at.elapsed());
+                        // Take every frame that is already waiting and hand the
+                        // library one buffer instead of one frame per call.
+                        //
+                        // The audio callback keeps delivering while a tick is
+                        // still running, so when a tick costs more than the
+                        // chunk cadence the queue never empties and each feed
+                        // decodes exactly one chunk: the decoder stays one tick
+                        // behind per chunk and the lag grows with the utterance
+                        // (seconds behind the speaker, then a long stall after
+                        // they stop — what "streaming got slow" looks like from
+                        // the outside). Handing over the backlog lets the
+                        // library fold it into a single tick, so the effective
+                        // cadence settles at what the machine can actually
+                        // sustain and the lag stays bounded at about one tick.
+                        let mut pcm = pcm;
+                        loop {
+                            match rx.try_recv() {
+                                Ok(StreamCmd::Feed {
+                                    pcm: more,
+                                    queued_at: more_at,
+                                }) => {
+                                    perf.queue_max = perf.queue_max.max(more_at.elapsed());
+                                    pcm.extend_from_slice(&more);
+                                }
+                                Ok(other) => {
+                                    deferred = Some(other);
+                                    break;
+                                }
+                                // Empty (caught up) or disconnected: either way
+                                // there is nothing more to coalesce.
+                                Err(_) => break,
+                            }
+                        }
                         self.touch_activity();
                         perf.record_feed(pcm.len());
                         let feed_start = Instant::now();
