@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Rozmiar fragmentu strumieniowania",
+        "unit": "ms",
+        "pillLabel": "Rozmiar fragmentu strumieniowania: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Zmniejsz rozmiar fragmentu o jedną milisekundę",
+        "increase": "Zwiększ rozmiar fragmentu o jedną milisekundę",
+        "hint": "Ile dźwięku zbiera się przed każdym dekodowaniem. Niższa wartość reaguje szybciej, ale wymaga więcej obliczeń, ponieważ model przy każdym fragmencie ponownie odczytuje cały dotychczasowy dźwięk. Dotyczy następnego nagrania."
       }
     }
   },

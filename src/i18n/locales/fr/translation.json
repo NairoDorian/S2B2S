@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Taille de segment de streaming",
+        "unit": "ms",
+        "pillLabel": "Taille de segment : {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Réduire la taille du segment d'une milliseconde",
+        "increase": "Augmenter la taille du segment d'une milliseconde",
+        "hint": "Quantité d'audio accumulée avant chaque décodage. Une valeur plus faible réagit plus vite mais coûte plus de calcul, car le modèle relit tout l'audio accumulé à chaque segment. S'applique à l'enregistrement suivant."
       }
     }
   },

@@ -40,6 +40,18 @@ interface SettingsStore {
     modelId: string,
     preset: NativeStreamingLatencyPreset,
   ) => Promise<void>;
+  /**
+   * Persist the R2T2 streaming chunk size (whole milliseconds, 80..=2000) for
+   * one model.
+   *
+   * Separate from `setLatencyPreset` because R2T2's latency control is a
+   * continuous millisecond value, not one of the four presets — the two maps
+   * never apply to the same model. Resolves even when the backend rejects the
+   * value: the optimistic update is rolled back and the error is logged, so a
+   * rejected write never leaves the UI showing a cadence the decoder is not
+   * using.
+   */
+  setLatencyChunkMs: (modelId: string, chunkMs: number) => Promise<void>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
@@ -241,6 +253,10 @@ const settingUpdaters: {
   show_tray_icon: (value) =>
     commands.changeShowTrayIconSetting(value as boolean),
   native_streaming_latency_presets: () => Promise.resolve(),
+  // Same shape as the preset map above: this field has no generic
+  // `updateSetting` dispatch — it is written only through the dedicated
+  // `setLatencyChunkMs` (per-model, and validated against the native range).
+  native_streaming_chunk_ms: () => Promise.resolve(),
   transcribe_accelerator: (value) =>
     commands.changeTranscribeAcceleratorSetting(
       value as TranscribeAcceleratorSetting,
@@ -520,6 +536,59 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
           : null,
       }));
       console.error("Failed to set latency preset:", result.error);
+    }
+  },
+
+  // Set the R2T2 streaming chunk size for a specific model. Mirrors
+  // setLatencyPreset's optimistic-write-then-roll-back-on-error shape, but
+  // writes to its own map because R2T2's control is a millisecond value rather
+  // than a preset.
+  setLatencyChunkMs: async (modelId, chunkMs) => {
+    const { settings } = get();
+    const originalChunkMs = settings?.native_streaming_chunk_ms?.[modelId];
+
+    set((state) => ({
+      settings: state.settings
+        ? {
+            ...state.settings,
+            native_streaming_chunk_ms: {
+              ...state.settings.native_streaming_chunk_ms,
+              [modelId]: chunkMs,
+            },
+          }
+        : null,
+    }));
+
+    const result = await commands.changeNativeStreamingChunkMsSetting(
+      modelId,
+      chunkMs,
+    );
+    if (result.status === "error") {
+      set((state) => {
+        if (!state.settings) return { settings: null };
+        // Restore the exact previous entry, including removing the key when
+        // there was no prior value, so the rollback cannot leave a stale
+        // override behind for a model the user never configured.
+        //
+        // Annotated because the source map is optional on `AppSettings`, and
+        // spreading a possibly-undefined value widens the result to `{}` —
+        // which would then reject the `[modelId]` index below.
+        const nextChunkMs: Record<string, number> = {
+          ...state.settings.native_streaming_chunk_ms,
+        };
+        if (originalChunkMs === undefined) {
+          delete nextChunkMs[modelId];
+        } else {
+          nextChunkMs[modelId] = originalChunkMs;
+        }
+        return {
+          settings: {
+            ...state.settings,
+            native_streaming_chunk_ms: nextChunkMs,
+          },
+        };
+      });
+      console.error("Failed to set streaming chunk size:", result.error);
     }
   },
 

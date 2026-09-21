@@ -16,6 +16,7 @@ import LatencyPanel, {
   DEFAULT_LATENCY_PRESET,
   latencyPresetLabelKey,
 } from "./LatencyPanel";
+import ChunkSizePanel, { R2T2_CHUNK_MS_DEFAULT } from "./ChunkSizePanel";
 import { getQuantColor } from "./quantColors";
 import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
 
@@ -201,6 +202,19 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       ] ?? DEFAULT_LATENCY_PRESET,
   );
 
+  // R2T2 is the one family whose control is a continuous millisecond value
+  // rather than a four-way preset, so it gets a numeric panel instead of the
+  // radio group. Keyed off the kind string the backend serialises
+  // (`NativeStreamingLatencyKind::R2T2ChunkMs`), not off the model id, so the
+  // app never has to know the model's name to pick the right control.
+  const isChunkMsKind = () => latencyKind() === "r2t2_chunk_ms";
+  const currentChunkMs = createMemo(
+    (): number =>
+      settingsStore.settings?.native_streaming_chunk_ms?.[
+        displayModelId() ?? ""
+      ] ?? R2T2_CHUNK_MS_DEFAULT,
+  );
+
   const downloadPercentages = createMemo(() => {
     const map: Record<string, number> = {};
     for (const progress of Object.values(modelStore.downloadProgress)) {
@@ -274,6 +288,15 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     if (displayModelId())
       void settingsStore.setLatencyPreset(displayModelId(), preset);
     setOpenPanel(null);
+  };
+
+  // Deliberately does NOT close the popover, unlike the preset handler: picking
+  // a preset is a one-shot decision, whereas setting a chunk size is an
+  // exploratory drag-and-nudge where closing the panel after every release
+  // would fight the user. The value applies to the next stream either way.
+  const handleChunkMsSelect = (chunkMs: number) => {
+    if (displayModelId())
+      void settingsStore.setLatencyChunkMs(displayModelId(), chunkMs);
   };
 
   const getModelDisplayText = (): string => {
@@ -461,24 +484,50 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
         <StatusBarPopover
           open={openPanel() === "latency"}
           onToggle={() => togglePanel("latency")}
-          label={t("modelSelector.latencySelector.pillLabel", {
-            preset: t(latencyPresetLabelKey(currentPreset())),
-          })}
-          title={t("modelSelector.latencySelector.title")}
+          label={
+            isChunkMsKind()
+              ? t("modelSelector.latencySelector.chunkSize.pillLabel", {
+                  ms: currentChunkMs(),
+                })
+              : t("modelSelector.latencySelector.pillLabel", {
+                  preset: t(latencyPresetLabelKey(currentPreset())),
+                })
+          }
+          title={
+            isChunkMsKind()
+              ? t("modelSelector.latencySelector.chunkSize.label")
+              : t("modelSelector.latencySelector.title")
+          }
           widthClass="w-[min(17rem,calc(100vw-2rem))]"
           trigger={
             <>
               <Gauge class="h-3 w-3 shrink-0 text-text/50" />
               <span class="max-w-24 truncate">
-                {t(latencyPresetLabelKey(currentPreset()))}
+                {isChunkMsKind()
+                  ? t("modelSelector.latencySelector.chunkSize.trigger", {
+                      ms: currentChunkMs(),
+                    })
+                  : t(latencyPresetLabelKey(currentPreset()))}
               </span>
             </>
           }
         >
-          <LatencyPanel
-            selected={currentPreset()}
-            onSelect={handleLatencyPresetSelect}
-          />
+          {/* Two controls, one popover: R2T2 takes the numeric chunk size, every
+              other streaming family keeps the preset radio group untouched. */}
+          <Show
+            when={isChunkMsKind()}
+            fallback={
+              <LatencyPanel
+                selected={currentPreset()}
+                onSelect={handleLatencyPresetSelect}
+              />
+            }
+          >
+            <ChunkSizePanel
+              selected={currentChunkMs()}
+              onSelect={handleChunkMsSelect}
+            />
+          </Show>
         </StatusBarPopover>
       </Show>
       <DownloadProgressDisplay

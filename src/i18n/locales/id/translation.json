@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Ukuran chunk streaming",
+        "unit": "ms",
+        "pillLabel": "Ukuran chunk streaming: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Kurangi ukuran chunk satu milidetik",
+        "increase": "Tambah ukuran chunk satu milidetik",
+        "hint": "Berapa banyak audio yang dikumpulkan sebelum setiap dekode. Nilai lebih rendah lebih responsif tetapi lebih berat secara komputasi, karena model membaca ulang seluruh audio sejauh ini pada setiap chunk. Berlaku untuk rekaman berikutnya."
       }
     }
   },

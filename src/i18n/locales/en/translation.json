@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Streaming chunk size",
+        "unit": "ms",
+        "pillLabel": "Streaming chunk size: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Decrease chunk size by one millisecond",
+        "increase": "Increase chunk size by one millisecond",
+        "hint": "How much audio to accumulate before each decode. Lower is more responsive but costs more compute, because the model re-reads all audio so far on every chunk. Applies to the next recording."
       }
     }
   },

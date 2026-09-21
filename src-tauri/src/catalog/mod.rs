@@ -290,4 +290,65 @@ mod tests {
             missing
         );
     }
+
+    /// The R2T2 entry is the catalog's only hand-authored, foreign-repo model
+    /// (see `AUTHORED_MODELS` in `scripts/gen_catalog.py`), and it is load-bearing
+    /// in a way the generic tests above cannot see. Three separate mechanisms have
+    /// to agree for it to work at all, and each fails *silently* — the model just
+    /// doesn't appear, or appears without its low-latency control:
+    ///
+    /// 1. It must be catalogued under its real repo + filename, because the HF-cache
+    ///    scan resolves catalog entries by that pair and falls through to a header
+    ///    probe otherwise — and the probe rejects the file (its
+    ///    `general.architecture` is the audio.cpp marker `audiocpp`, not a
+    ///    transcribe-cpp arch), so the model would never be listed.
+    /// 2. The revision must stay pinned. Acquisition fetches `resolve/<revision>/…`,
+    ///    so an unpinned entry would download unverified bytes and the mirror
+    ///    fallbacks would lose their trust anchor.
+    /// 3. The descriptor id must still yield `R2T2ChunkMs`, which is inferred from
+    ///    the id — that is the only thing that gives the model its numeric chunk
+    ///    control, i.e. the ability to run at the lowest supported latency.
+    #[test]
+    fn r2t2_entry_is_wired_for_streaming_from_its_pinned_reference() {
+        use crate::managers::model::{NativeStreamingLatencyKind, native_streaming_latency_kind};
+
+        let repo = "davidxifeng/Confucius4-R2T2-gguf";
+        let (desc, file) = file_in_catalog("r2t2-q8_0.gguf", Some(repo))
+            .expect("R2T2 must be catalogued under its audio.cpp reference repo");
+
+        // (1) identity: repo + filename compose the registry id the cache scan matches.
+        assert_eq!(desc.id, format!("{}/r2t2-q8_0.gguf", repo));
+
+        // (2) the download is pinned to the revision the hashes were taken at, and
+        // it points at the publisher's repo rather than a mirror we host.
+        match &desc.source {
+            ModelSource::HuggingFace { repo_id, revision } => {
+                assert_eq!(repo_id, repo, "download must come from the reference repo");
+                assert_ne!(revision, "main", "R2T2 must download at a pinned revision");
+                assert_eq!(revision.len(), 40, "revision should be a full commit sha");
+            }
+            other => panic!("R2T2 must be a HuggingFace source, got {:?}", other),
+        }
+        assert_eq!(
+            file.sha256.as_deref().map(str::len),
+            Some(64),
+            "the default file needs a sha256 trust anchor"
+        );
+
+        // (3) streaming + the millisecond chunk control.
+        assert_eq!(
+            desc.caps.supports_streaming,
+            Some(true),
+            "R2T2 is a streaming model"
+        );
+        assert_eq!(
+            native_streaming_latency_kind(&desc.id),
+            Some(NativeStreamingLatencyKind::R2T2ChunkMs),
+            "the id hint must resolve to the numeric chunk control"
+        );
+
+        // The default quant is the variant verified to load and stream natively.
+        assert_eq!(desc.default_quant.as_deref(), Some("Q8_0"));
+        assert_eq!(file.quant, "Q8_0");
+    }
 }

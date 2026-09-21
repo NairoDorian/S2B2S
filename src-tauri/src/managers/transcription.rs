@@ -1082,6 +1082,9 @@ impl TranscriptionManager {
 
             // Resolve family-specific streaming extension (e.g. Parakeet Buffered,
             // Nemotron cache-aware) from the user's latency preset, if any.
+            // R2T2 resolves through the same dispatcher but reads its chunk size
+            // from `native_streaming_chunk_ms` instead (a preset has no meaning
+            // for a continuous millisecond range).
             let stream_ext = {
                 let latency_kind = self
                     .model_manager
@@ -1092,11 +1095,17 @@ impl TranscriptionManager {
                     .get(&model_id)
                     .copied()
                     .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate);
-                crate::managers::native_streaming_latency::stream_extension(
+                let chunk_ms = settings
+                    .native_streaming_chunk_ms
+                    .get(&model_id)
+                    .copied()
+                    .unwrap_or(crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT);
+                crate::managers::native_streaming_latency::stream_extension_for(
                     &session.model(),
                     &model_id,
                     latency_kind,
                     preset,
+                    chunk_ms,
                 )
             };
             let stream_options = StreamOptions {
@@ -1325,7 +1334,10 @@ impl TranscriptionManager {
                     },
                 ))
             } else {
-                crate::managers::native_streaming_latency::stream_extension(
+                // Same dispatcher and same resolved values as the primary live
+                // path above, so a headless benchmark cannot silently measure a
+                // different cadence than the app actually runs.
+                crate::managers::native_streaming_latency::stream_extension_for(
                     &model,
                     &model_id,
                     self.model_manager
@@ -1336,6 +1348,13 @@ impl TranscriptionManager {
                         .get(&model_id)
                         .copied()
                         .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate),
+                    settings
+                        .native_streaming_chunk_ms
+                        .get(&model_id)
+                        .copied()
+                        .unwrap_or(
+                            crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT,
+                        ),
                 )
             };
             let stream_options = StreamOptions {

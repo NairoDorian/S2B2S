@@ -1535,6 +1535,25 @@ pub struct AppSettings {
     pub mic_idle_infinite: bool,
     #[serde(default)]
     pub native_streaming_latency_presets: HashMap<String, NativeStreamingLatencyPreset>,
+    /// Per-model R2T2 (Confucius4-R2T2) native streaming chunk size, in whole
+    /// milliseconds, keyed by model id.
+    ///
+    /// Deliberately a *separate* map from
+    /// [`AppSettings::native_streaming_latency_presets`]: R2T2 is the one
+    /// streaming family whose latency control is a continuous millisecond value
+    /// rather than a four-value preset, so folding it into the preset enum
+    /// would either lose the user's exact choice or force a fake preset tier.
+    /// The two maps never apply to the same model — a given model has one
+    /// latency extension kind or the other.
+    ///
+    /// `#[serde(default)]` on an empty map is the backward-compatibility
+    /// story: an existing install has no entry, the resolver falls back to
+    /// `R2T2_CHUNK_MS_DEFAULT` (320 ms), and behaviour is exactly what it was.
+    /// Values are validated against the native 80..=2000 ms range by
+    /// `change_native_streaming_chunk_ms_setting`; the resolver still
+    /// re-validates because this file is user-editable.
+    #[serde(default)]
+    pub native_streaming_chunk_ms: HashMap<String, u32>,
     /// "Transcribe Files" page (fork feature).
     #[serde(default)]
     pub file_transcription: FileTranscriptionSettings,
@@ -2176,6 +2195,7 @@ pub fn get_default_settings() -> AppSettings {
         mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
         mic_idle_infinite: false,
         native_streaming_latency_presets: HashMap::new(),
+        native_streaming_chunk_ms: HashMap::new(),
         file_transcription: FileTranscriptionSettings::default(),
         llama: LlamaSettings::default(),
         live_mode: LiveModeSettings::default(),

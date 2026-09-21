@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Mida del fragment d'streaming",
+        "unit": "ms",
+        "pillLabel": "Mida del fragment d'streaming: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Redueix la mida del fragment en un mil·lisegon",
+        "increase": "Augmenta la mida del fragment en un mil·lisegon",
+        "hint": "Quant àudio s'acumula abans de cada descodificació. Un valor més baix respon millor però consumeix més càlcul, perquè el model rellegeix tot l'àudio acumulat a cada fragment. S'aplica a la propera gravació."
       }
     }
   },

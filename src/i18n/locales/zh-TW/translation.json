@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "串流分塊大小",
+        "unit": "ms",
+        "pillLabel": "串流分塊大小：{{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "將分塊大小減少一毫秒",
+        "increase": "將分塊大小增加一毫秒",
+        "hint": "每次解碼前累積的音訊長度。數值越小反應越快，但運算開銷越大，因為模型每處理一個分塊都會重新讀取截至目前的所有音訊。從下次錄音開始生效。"
       }
     }
   },

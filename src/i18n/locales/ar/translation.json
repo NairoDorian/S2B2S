@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "حجم مقطع البث",
+        "unit": "ms",
+        "pillLabel": "حجم مقطع البث: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "تقليل حجم المقطع بمقدار مللي ثانية واحدة",
+        "increase": "زيادة حجم المقطع بمقدار مللي ثانية واحدة",
+        "hint": "مقدار الصوت الذي يُجمَّع قبل كل فك ترميز. القيمة الأقل أكثر استجابة لكنها تستهلك حوسبة أكبر، لأن النموذج يعيد قراءة كل الصوت المتراكم في كل مقطع. يُطبَّق على التسجيل التالي."
       }
     }
   },

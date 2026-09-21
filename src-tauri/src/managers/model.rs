@@ -43,6 +43,11 @@ pub enum ModelSource {
 /// Which transcribe-cpp stream extension a catalog streaming model exposes for
 /// low-latency tuning. `None` means the model has no configurable latency
 /// extension (non-streaming models).
+///
+/// The first three variants are *preset* families: their extension takes a
+/// coarse operating point (`Fastest`/`Fast`/`Balanced`) and the module
+/// `native_streaming_latency` owns the mapping. `R2T2ChunkMs` is deliberately
+/// different — see its own doc comment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeStreamingLatencyKind {
@@ -50,13 +55,29 @@ pub enum NativeStreamingLatencyKind {
     #[serde(rename = "nemotron_3_5_cache_aware")]
     Nemotron35CacheAware,
     NemotronSpeechCacheAware,
+    /// Confucius4-R2T2: a `qwen3_asr`-architecture model whose native streaming
+    /// chunk size is a continuous millisecond value in 80..=2000, NOT a preset.
+    ///
+    /// This is the one family whose latency control is a free integer, so it
+    /// does not participate in `NativeStreamingLatencyPreset` at all — the
+    /// chosen value lives in `AppSettings::native_streaming_chunk_ms` keyed by
+    /// model id, and the resolver passes it through verbatim. Deliberately not
+    /// called something like `Qwen3AsrStreaming`: R2T2 shares an architecture
+    /// string with the offline-only Qwen3-ASR model, so inferring a streaming
+    /// extension from the architecture would advertise a latency picker for a
+    /// model that cannot stream. The id-hint match in
+    /// [`native_streaming_latency_kind`] keys on the R2T2 package name instead.
+    #[serde(rename = "r2t2_chunk_ms")]
+    R2T2ChunkMs,
 }
 
 /// Infer the stream-extension family from a model id hint. Matches on the HF
 /// repo slug so it works for both catalog seeds and on-disk discoveries.
 pub fn native_streaming_latency_kind(hint: &str) -> Option<NativeStreamingLatencyKind> {
     let hint = hint.to_ascii_lowercase();
-    if hint.contains("parakeet-unified") {
+    if hint.contains("confucius4-r2t2") {
+        Some(NativeStreamingLatencyKind::R2T2ChunkMs)
+    } else if hint.contains("parakeet-unified") {
         Some(NativeStreamingLatencyKind::ParakeetBuffered)
     } else if hint.contains("nemotron-3.5-asr-streaming") {
         Some(NativeStreamingLatencyKind::Nemotron35CacheAware)

@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Chunk-Größe für Streaming",
+        "unit": "ms",
+        "pillLabel": "Chunk-Größe: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Chunk-Größe um eine Millisekunde verringern",
+        "increase": "Chunk-Größe um eine Millisekunde erhöhen",
+        "hint": "Wie viel Audio vor jeder Dekodierung gesammelt wird. Kleinere Werte reagieren schneller, kosten aber mehr Rechenleistung, weil das Modell bei jedem Chunk das gesamte bisherige Audio erneut liest. Gilt für die nächste Aufnahme."
       }
     }
   },

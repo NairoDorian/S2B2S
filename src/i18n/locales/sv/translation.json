@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Chunkstorlek för streaming",
+        "unit": "ms",
+        "pillLabel": "Chunkstorlek: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Minska chunkstorleken med en millisekund",
+        "increase": "Öka chunkstorleken med en millisekund",
+        "hint": "Hur mycket ljud som samlas in före varje avkodning. Lägre värde svarar snabbare men kräver mer beräkning, eftersom modellen läser om allt ljud hittills vid varje chunk. Gäller nästa inspelning."
       }
     }
   },

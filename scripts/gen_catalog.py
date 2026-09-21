@@ -66,6 +66,78 @@ OVERRIDES = {
     "granite-speech-4.1-2b": {"timestamps": "none"},
 }
 
+# ──────────────── authored entries (published outside ORG) ───────────────────
+# Repos that live outside ORG and therefore are never returned by the
+# `author=ORG` listing, merged verbatim after generation. They are authored by
+# hand rather than derived because every input the pipeline would normally read
+# is either absent or actively wrong for them:
+#
+#   * the HF card carries none of the `transcribe_cpp` capability metadata that
+#     supplies `languages` / `capabilities`, so a generated entry would advertise
+#     zero languages and no streaming;
+#   * `general.architecture` is the audio.cpp package marker `audiocpp`, not a
+#     transcribe-cpp arch name — taking it verbatim would fail the Rust
+#     `catalog_architectures_are_known_to_capability_probe` gate, so `architecture`
+#     is the transcribe-cpp family the model actually loads as;
+#   * `general.languages` and `stt.capability.*` are absent from the GGUF, so the
+#     language list is transcribed from the publisher's own model spec.
+#
+# `revision` MUST stay pinned: it is what makes `size_bytes`/`sha256` meaningful,
+# since acquisition fetches `resolve/<revision>/<file>`. Sizes and hashes here are
+# the verified bytes at that revision. Note the mirror list at the top of this
+# file does not host these repos, so a mirror miss 404s and falls back to HF —
+# the hash check still governs, as for every other entry.
+AUTHORED_MODELS = [
+    {
+        # NetEase Youdao Confucius4-R2T2 — a Qwen3-ASR-1.7B fine-tune with
+        # Longest-Stable-Prefix streaming. Published as an audio.cpp GGUF package
+        # (config/tokenizer are embedded in the GGUF's own metadata, which is why
+        # one file is a complete model here). This is the upstream reference
+        # download point that audio.cpp's own model spec names.
+        "id": "davidxifeng/Confucius4-R2T2-gguf",
+        "revision": "a8e6b385d7df7eae9519363e07034a209004797a",
+        "slug": "Confucius4-R2T2",
+        "name": "Confucius4-R2T2",
+        # The transcribe-cpp family it loads as, not the GGUF's `audiocpp` marker.
+        "architecture": "qwen3_asr",
+        "family": "qwen3",
+        # Same parameter count as its base (F16 is within 0.02% of Qwen3-ASR-1.7B's
+        # F16), so it takes the base's label rather than a re-derived one.
+        "parameters": "2.0B",
+        "description": "Real-time streaming transcription in 80 ms to 2 s chunks, across 30 languages",
+        "base_model": "Qwen/Qwen3-ASR-1.7B",
+        "license": "other",
+        "language_count": 30,
+        "languages": ["zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it",
+                      "ko", "ru", "th", "vi", "ja", "tr", "hi", "ms", "nl", "sv",
+                      "da", "fi", "pl", "cs", "fil", "fa", "el", "hu", "mk", "ro"],
+        "capabilities": {
+            "streaming": True,
+            "translate": False,
+            "lang_detect": True,
+            # Partial results only; the streaming decoder emits no timestamps.
+            "timestamps": "none",
+        },
+        # Provisional editorial scores, NOT benchmarked on the reference machine:
+        # accuracy inherits the base model's (the streaming fine-tune shares its
+        # weights and was trained for exactly this), and speed is placed below the
+        # base's 38 because every chunk re-encodes all accumulated audio. Replace
+        # both once the reference-machine benchmark covers this model.
+        "speed_score": 30,
+        "accuracy_score": 90,
+        "files": [
+            {"filename": "r2t2-q8_0.gguf", "quant": "Q8_0", "size_bytes": 2477512064,
+             "sha256": "19f5ccd624484bcb5d44301437de41560b0ecc40c430e8850dfeefefbe82ccf5"},
+            {"filename": "r2t2-f16.gguf", "quant": "F16", "size_bytes": 4092155264,
+             "sha256": "d1b531ceaf5640d98352d3a9180238d99d36d393e160afd4692031077e7bae2c"},
+        ],
+        # The only variant verified to load and stream natively end to end.
+        "default_quant": "Q8_0",
+        "recommended": False,
+        "recommended_rank": None,
+    },
+]
+
 # ───────────────────────── helpers ──────────────────────────────────────────
 ARCH = ["whisper","moonshine-streaming","moonshine","parakeet","canary-qwen","canary","voxtral",
         "granite-speech","granite","qwen3","gigaam","sensevoice","cohere","fun-asr","nemotron","medasr",
@@ -275,6 +347,10 @@ def main():
     if failures:
         print(f"catalog generation failed for {len(failures)} repo(s)", file=sys.stderr)
         raise SystemExit(1)
+    # Hand-authored entries ride in after the generated ones: they are keyed by
+    # repo id, not by a repo the listing returned, so they cannot collide, and the
+    # sort below places them by their own rank/speed like any other model.
+    models.extend(dict(m) for m in AUTHORED_MODELS)
     models.sort(key=lambda m: (not m["recommended"], m["recommended_rank"] or 1e9,
                                m["family"], -(m["speed_score"] or 0), m["slug"]))
     catalog = {

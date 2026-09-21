@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "स्ट्रीमिंग चंक आकार",
+        "unit": "ms",
+        "pillLabel": "स्ट्रीमिंग चंक आकार: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "चंक आकार एक मिलीसेकंड कम करें",
+        "increase": "चंक आकार एक मिलीसेकंड बढ़ाएँ",
+        "hint": "हर डिकोड से पहले कितना ऑडियो जमा किया जाए। कम मान ज़्यादा तेज़ प्रतिक्रिया देता है पर अधिक गणना माँगता है, क्योंकि मॉडल हर चंक पर अब तक का सारा ऑडियो दोबारा पढ़ता है। अगली रिकॉर्डिंग पर लागू होगा।"
       }
     }
   },

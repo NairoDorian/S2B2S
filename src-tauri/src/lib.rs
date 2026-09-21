@@ -915,6 +915,7 @@ pub fn run(cli_args: CliArgs) {
             commands::models::download_model_quant,
             commands::models::get_model_quant_variants,
             commands::models::change_native_streaming_latency_preset_setting,
+            commands::models::change_native_streaming_chunk_ms_setting,
             commands::models::delete_model,
             commands::models::cancel_download,
             commands::models::set_active_model,

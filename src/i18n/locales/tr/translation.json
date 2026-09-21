@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Akış parça boyutu",
+        "unit": "ms",
+        "pillLabel": "Akış parça boyutu: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Parça boyutunu bir milisaniye azalt",
+        "increase": "Parça boyutunu bir milisaniye artır",
+        "hint": "Her çözümlemeden önce ne kadar ses biriktirileceği. Düşük değer daha hızlı yanıt verir ancak daha fazla işlem gücü gerektirir, çünkü model her parçada o ana kadarki tüm sesi yeniden okur. Bir sonraki kayıtta geçerli olur."
       }
     }
   },

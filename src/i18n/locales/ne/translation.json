@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "स्ट्रिमिङ चङ्क आकार",
+        "unit": "ms",
+        "pillLabel": "स्ट्रिमिङ चङ्क आकार: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "चङ्क आकार एक मिलिसेकेन्ड घटाउनुहोस्",
+        "increase": "चङ्क आकार एक मिलिसेकेन्ड बढाउनुहोस्",
+        "hint": "हरेक डिकोड अघि कति अडियो जम्मा गर्ने। कम मानले छिटो प्रतिक्रिया दिन्छ तर बढी गणना चाहिन्छ, किनकि मोडेलले हरेक चङ्कमा अहिलेसम्मको सबै अडियो फेरि पढ्छ। अर्को रेकर्डिङमा लागू हुन्छ।"
       }
     }
   },

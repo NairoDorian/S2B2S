@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "스트리밍 청크 크기",
+        "unit": "ms",
+        "pillLabel": "스트리밍 청크 크기: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "청크 크기를 1밀리초 줄입니다",
+        "increase": "청크 크기를 1밀리초 늘립니다",
+        "hint": "각 디코딩 전에 모을 오디오의 양입니다. 값이 작을수록 반응은 빠르지만, 청크마다 지금까지의 오디오를 모두 다시 읽으므로 연산 비용이 커집니다. 다음 녹음부터 적용됩니다."
       }
     }
   },

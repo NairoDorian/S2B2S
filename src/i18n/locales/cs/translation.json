@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Velikost streamovacího bloku",
+        "unit": "ms",
+        "pillLabel": "Velikost streamovacího bloku: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Snížit velikost bloku o jednu milisekundu",
+        "increase": "Zvýšit velikost bloku o jednu milisekundu",
+        "hint": "Kolik zvuku se nasbírá před každým dekódováním. Nižší hodnota reaguje rychleji, ale stojí více výpočetního výkonu, protože model při každém bloku znovu načítá veškerý dosavadní zvuk. Projeví se u dalšího nahrávání."
       }
     }
   },

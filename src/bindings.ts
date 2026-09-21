@@ -248,6 +248,26 @@ export const commands = {
 	downloadModelQuant: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("download_model_quant", { modelId })),
 	getModelQuantVariants: (modelId: string) => typedError<QuantVariant[], string>(__TAURI_INVOKE("get_model_quant_variants", { modelId })),
 	changeNativeStreamingLatencyPresetSetting: (modelId: string, preset: NativeStreamingLatencyPreset) => typedError<null, string>(__TAURI_INVOKE("change_native_streaming_latency_preset_setting", { modelId, preset })),
+	/**
+	 *  Persist the R2T2 streaming chunk size for one model.
+	 * 
+	 *  Separate from `change_native_streaming_latency_preset_setting` because the
+	 *  value is a free integer, not one of the four presets (see
+	 *  [`crate::settings::AppSettings::native_streaming_chunk_ms`]).
+	 * 
+	 *  The range is enforced *here*, at the input boundary, and the command fails
+	 *  rather than clamping: an out-of-range value is a caller bug (the UI slider
+	 *  cannot produce one), and silently storing 80 instead of 5000 would leave the
+	 *  UI and the decoder disagreeing about the actual cadence. Because the
+	 *  settings write only happens after validation, a rejected call leaves both
+	 *  the settings file and the previous transcript untouched — which is the
+	 *  contract's "reject invalid values without clearing the previous transcript".
+	 *  The resolver re-checks anyway, since the settings file is hand-editable.
+	 * 
+	 *  The change applies to the *next* stream: the native side copies the value at
+	 *  `stream_begin`, so an in-flight stream keeps the cadence it started with.
+	 */
+	changeNativeStreamingChunkMsSetting: (modelId: string, chunkMs: number) => typedError<null, string>(__TAURI_INVOKE("change_native_streaming_chunk_ms_setting", { modelId, chunkMs })),
 	deleteModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("delete_model", { modelId })),
 	cancelDownload: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("cancel_download", { modelId })),
 	setActiveModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("set_active_model", { modelId })),
@@ -695,6 +715,26 @@ export type AppSettings_Deserialize = {
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
 	native_streaming_latency_presets?: { [key in string]: NativeStreamingLatencyPreset },
+	/**
+	 *  Per-model R2T2 (Confucius4-R2T2) native streaming chunk size, in whole
+	 *  milliseconds, keyed by model id.
+	 * 
+	 *  Deliberately a *separate* map from
+	 *  [`AppSettings::native_streaming_latency_presets`]: R2T2 is the one
+	 *  streaming family whose latency control is a continuous millisecond value
+	 *  rather than a four-value preset, so folding it into the preset enum
+	 *  would either lose the user's exact choice or force a fake preset tier.
+	 *  The two maps never apply to the same model — a given model has one
+	 *  latency extension kind or the other.
+	 * 
+	 *  `#[serde(default)]` on an empty map is the backward-compatibility
+	 *  story: an existing install has no entry, the resolver falls back to
+	 *  `R2T2_CHUNK_MS_DEFAULT` (320 ms), and behaviour is exactly what it was.
+	 *  Values are validated against the native 80..=2000 ms range by
+	 *  `change_native_streaming_chunk_ms_setting`; the resolver still
+	 *  re-validates because this file is user-editable.
+	 */
+	native_streaming_chunk_ms?: { [key in string]: number },
 	/**  "Transcribe Files" page (fork feature). */
 	file_transcription?: FileTranscriptionSettings_Deserialize,
 	/**  "Live Mode" page (fork feature). */
@@ -936,6 +976,26 @@ export type AppSettings_Serialize = {
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,
 	native_streaming_latency_presets: { [key in string]: NativeStreamingLatencyPreset },
+	/**
+	 *  Per-model R2T2 (Confucius4-R2T2) native streaming chunk size, in whole
+	 *  milliseconds, keyed by model id.
+	 * 
+	 *  Deliberately a *separate* map from
+	 *  [`AppSettings::native_streaming_latency_presets`]: R2T2 is the one
+	 *  streaming family whose latency control is a continuous millisecond value
+	 *  rather than a four-value preset, so folding it into the preset enum
+	 *  would either lose the user's exact choice or force a fake preset tier.
+	 *  The two maps never apply to the same model — a given model has one
+	 *  latency extension kind or the other.
+	 * 
+	 *  `#[serde(default)]` on an empty map is the backward-compatibility
+	 *  story: an existing install has no entry, the resolver falls back to
+	 *  `R2T2_CHUNK_MS_DEFAULT` (320 ms), and behaviour is exactly what it was.
+	 *  Values are validated against the native 80..=2000 ms range by
+	 *  `change_native_streaming_chunk_ms_setting`; the resolver still
+	 *  re-validates because this file is user-editable.
+	 */
+	native_streaming_chunk_ms: { [key in string]: number },
 	/**  "Transcribe Files" page (fork feature). */
 	file_transcription: FileTranscriptionSettings_Serialize,
 	/**  "Live Mode" page (fork feature). */
@@ -2281,8 +2341,28 @@ export type MultiSttStreamChunkFailedEvent = {
  *  Which transcribe-cpp stream extension a catalog streaming model exposes for
  *  low-latency tuning. `None` means the model has no configurable latency
  *  extension (non-streaming models).
+ * 
+ *  The first three variants are *preset* families: their extension takes a
+ *  coarse operating point (`Fastest`/`Fast`/`Balanced`) and the module
+ *  `native_streaming_latency` owns the mapping. `R2T2ChunkMs` is deliberately
+ *  different — see its own doc comment.
  */
-export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cache_aware" | "nemotron_speech_cache_aware";
+export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cache_aware" | "nemotron_speech_cache_aware" | 
+/**
+ *  Confucius4-R2T2: a `qwen3_asr`-architecture model whose native streaming
+ *  chunk size is a continuous millisecond value in 80..=2000, NOT a preset.
+ * 
+ *  This is the one family whose latency control is a free integer, so it
+ *  does not participate in `NativeStreamingLatencyPreset` at all — the
+ *  chosen value lives in `AppSettings::native_streaming_chunk_ms` keyed by
+ *  model id, and the resolver passes it through verbatim. Deliberately not
+ *  called something like `Qwen3AsrStreaming`: R2T2 shares an architecture
+ *  string with the offline-only Qwen3-ASR model, so inferring a streaming
+ *  extension from the architecture would advertise a latency picker for a
+ *  model that cannot stream. The id-hint match in
+ *  [`native_streaming_latency_kind`] keys on the R2T2 package name instead.
+ */
+"r2t2_chunk_ms";
 
 /**
  *  User-facing latency preset for native streaming models (Parakeet Buffered,

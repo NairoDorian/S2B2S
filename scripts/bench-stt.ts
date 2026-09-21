@@ -87,6 +87,99 @@ async function run(args: string[], name: string): Promise<string> {
   }
 }
 
+// --- native per-chunk stage metrics -----------------------------------------
+//
+// An instrumented native library emits one line per streaming chunk from
+// emit_streaming_chunk (src/arch/parakeet/model.cpp):
+//
+//   parakeet stream chunk 7: total=12.3 ms  graph_build=0.4 ms  ...
+//   ... (backend=CUDA0, threads=6, T_q=17, T_cache=70, kv_mode=1, n_layers=24)
+//
+// The app replays all three repetitions inside one process, so the log holds
+// every run's chunks back to back and carries no explicit run marker. The
+// per-chunk index is the boundary: each run restarts it at 0. Groups are
+// therefore split on "chunk 0", and the first is dropped as warm-up so stage
+// metrics follow the same policy as the wall clock above. A library without
+// the instrumentation emits nothing and the report simply leaves the columns
+// blank, which is why this parses a log instead of requiring a new ABI.
+const STAGES = [
+  "total",
+  "graph_build",
+  "sched_alloc",
+  "graph_compute",
+  "readback",
+  "cache_rot",
+  "decoder",
+  "other",
+] as const;
+const STAGE_LINE =
+  /^parakeet stream chunk (\d+): total=([\d.]+) ms\s+graph_build=([\d.]+) ms\s+sched_alloc=([\d.]+) ms\s+graph_compute=([\d.]+) ms\s+readback=([\d.]+) ms\s+cache_rot=([\d.]+) ms\s+decoder=([\d.]+) ms\s+other=([\d.]+) ms\s+\(backend=([^,]+), threads=(\d+), T_q=(-?\d+), T_cache=(-?\d+), kv_mode=(\d+), n_layers=(\d+)\)/;
+
+// Same order statistic the native pipeline uses, so the two sides are directly
+// comparable rather than merely similar.
+function percentile(sorted: number[], quantile: number): number {
+  return sorted[
+    Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * quantile))
+  ];
+}
+
+function stageMetrics(
+  logPath: string,
+  expectedRuns: number,
+): Record<string, unknown> | null {
+  const groups: Record<string, number>[][] = [];
+  let geometry: Record<string, unknown> | null = null;
+  let current: Record<string, number>[] | null = null;
+  for (const line of readFileSync(logPath, "utf8").split(/\r?\n/)) {
+    const match = line.match(STAGE_LINE);
+    if (!match) continue;
+    if (match[1] === "0") {
+      current = [];
+      groups.push(current);
+    }
+    if (!current) continue; // chunks logged before any observed run boundary
+    current.push(
+      Object.fromEntries(
+        STAGES.map((stage, i) => [stage, Number(match[i + 2])] as const),
+      ),
+    );
+    geometry = {
+      backend: match[10].trim(),
+      threads: Number(match[11]),
+      T_q: Number(match[12]),
+      T_cache: Number(match[13]),
+      kv_mode: Number(match[14]),
+      n_layers: Number(match[15]),
+    };
+  }
+  const rows = groups.slice(1, expectedRuns).flat();
+  if (!rows.length) return null;
+  return {
+    source: "app log scrape of the native chunk records (emit_streaming_chunk)",
+    chunks: rows.length,
+    geometry,
+    chunks_per_run: Object.fromEntries(
+      groups.map((group, index) => [`run${index + 1}`, group.length] as const),
+    ),
+    stages_ms: Object.fromEntries(
+      STAGES.map((stage) => {
+        const values = rows.map((row) => row[stage]);
+        const sorted = [...values].sort((a, b) => a - b);
+        return [
+          stage,
+          {
+            mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+            p50: percentile(sorted, 0.5),
+            p95: percentile(sorted, 0.95),
+            max: sorted.at(-1),
+            sum: values.reduce((sum, value) => sum + value, 0),
+          },
+        ] as const;
+      }),
+    ),
+  };
+}
+
 interface Model {
   id: string;
   is_downloaded: boolean;
@@ -188,6 +281,14 @@ for (const backend of ["cpu", "cuda"]) {
           ...result,
           wav_sha256: wavSha256,
           warm_mean_timings: timings,
+          // Mirrors the native summary's field name so a single reporter can
+          // render app and native summaries alike.
+          backend: result.bound_backend,
+          // Null for batch cases, and for a staged library without the chunk
+          // instrumentation; the reporter leaves the columns blank then.
+          stage_metrics: streaming
+            ? stageMetrics(resolve(directory, `${name}.log`), 3)
+            : null,
         };
         writeFileSync(
           resolve(directory, `${name}.json`),

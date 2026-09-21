@@ -8,10 +8,36 @@
 
 use super::model::NativeStreamingLatencyKind;
 use crate::settings::NativeStreamingLatencyPreset;
-use log::warn;
+use log::{error, info, warn};
 use transcribe_cpp::{
-    ExtSlot, Model, ParakeetBufferedStreamOptions, ParakeetStreamOptions, StreamExtension, sys,
+    ExtSlot, Model, ParakeetBufferedStreamOptions, ParakeetStreamOptions, R2T2StreamOptions,
+    StreamExtension, sys,
 };
+
+/// Inclusive bounds of the R2T2 native streaming chunk size, in whole
+/// milliseconds.
+///
+/// These mirror `k_r2t2_chunk_ms_min` / `k_r2t2_chunk_ms_max` in the fork's
+/// `src/arch/qwen3_asr/r2t2-package.h` and are the ONLY place in the app that
+/// knows them. They exist so the settings command can reject an out-of-range
+/// value at the input boundary and so the UI can clamp its slider; the
+/// authoritative check is still the native `stream_begin`, which rejects rather
+/// than clamps (an out-of-range value there fails the stream and leaves the
+/// previous transcript untouched). Keeping a copy here is a deliberate
+/// duplication: the app must not send a value it already knows is invalid, but
+/// it must also not become the source of truth for the C side's range.
+pub const R2T2_CHUNK_MS_MIN: u32 = 80;
+pub const R2T2_CHUNK_MS_MAX: u32 = 2000;
+/// Matches `k_r2t2_chunk_ms_default` in the same header. Applied when a model
+/// has no persisted value, so an absent settings entry behaves exactly like the
+/// pre-existing users' installs (which have no entry at all).
+pub const R2T2_CHUNK_MS_DEFAULT: u32 = 320;
+
+/// Whether `ms` is a chunk size the native side will accept. Used by the
+/// settings command (reject) and the UI (clamp); see the constants above.
+pub fn r2t2_chunk_ms_is_valid(ms: u32) -> bool {
+    (R2T2_CHUNK_MS_MIN..=R2T2_CHUNK_MS_MAX).contains(&ms)
+}
 
 /// Translate a `(model_kind, preset)` pair into the raw extension kind + options
 /// the model should receive.
@@ -28,6 +54,16 @@ fn extension_for_kind(
     }
 
     match kind {
+        // R2T2 has no presets: it cannot be reached through this function's
+        // (kind, preset) contract at all. Resolving it here would mean inventing
+        // a preset -> millisecond table, which is exactly what the R2T2
+        // integration contract forbids. `stream_extension_for` routes R2T2 to
+        // `r2t2_stream_extension` before it ever gets here, so reaching this arm
+        // is a programming error, not a user-reachable state.
+        NativeStreamingLatencyKind::R2T2ChunkMs => unreachable!(
+            "R2T2 chunk size is a free millisecond value; route through \
+             stream_extension_for / r2t2_stream_extension"
+        ),
         NativeStreamingLatencyKind::ParakeetBuffered => {
             let (chunk_ms, right_ms) = match preset {
                 NativeStreamingLatencyPreset::Fastest => (160, 160),
@@ -59,6 +95,18 @@ fn extension_for_kind(
                 (_, NativeStreamingLatencyPreset::Balanced) => 6,
                 (_, NativeStreamingLatencyPreset::Accurate) => unreachable!(),
                 (NativeStreamingLatencyKind::ParakeetBuffered, _) => unreachable!(),
+                // R2T2 is likewise unreachable *here* — the outer match routes it
+                // to `r2t2_stream_extension` before this arm — but the inner
+                // match scrutinees are not narrowed by the outer pattern, so rustc
+                // still requires the pair to be covered. Only `(R2T2ChunkMs, Fast)`
+                // is missing: `Fastest`, `Balanced` and `Accurate` are already
+                // caught by the wildcard-preset arms above.
+                (NativeStreamingLatencyKind::R2T2ChunkMs, NativeStreamingLatencyPreset::Fast) => {
+                    unreachable!(
+                        "R2T2 chunk size is a free millisecond value; route through \
+                     stream_extension_for / r2t2_stream_extension"
+                    )
+                }
             };
             Some((
                 sys::TRANSCRIBE_EXT_KIND_PARAKEET_STREAM,
@@ -95,6 +143,73 @@ pub fn stream_extension(
             preset, model_id, extension_kind
         );
         None
+    }
+}
+
+/// Resolve the R2T2 streaming chunk size into its native extension.
+///
+/// Unlike the preset families this carries the *exact* millisecond value the
+/// user chose — no tier lookup, no rounding, no substitution of a preset. The
+/// value is copied by the native `stream_begin`, so it applies to the next
+/// stream and cannot disturb decoder state already accumulated.
+///
+/// An out-of-range value is refused here rather than clamped or mapped: the
+/// extension is omitted, an error naming the offending value is logged, and the
+/// session falls back to the native default (`R2T2_CHUNK_MS_DEFAULT`), which is
+/// itself in range. This path is only reachable from a settings file that was
+/// hand-edited past the command's validation — a stream that fails outright
+/// would take the user's live session down over a stale config, so the safe
+/// floor is preferred to a hard failure. The native side still rejects the
+/// value independently if it ever does arrive (see `r2t2_chunk_ms_is_valid`).
+fn r2t2_stream_extension(model: &Model, model_id: &str, chunk_ms: u32) -> Option<StreamExtension> {
+    if !model.accepts_ext(ExtSlot::Stream, sys::TRANSCRIBE_EXT_KIND_R2T2_STREAM) {
+        warn!(
+            "R2T2 chunk size {} ms ignored for model '{}': runtime rejected extension kind {:#x}",
+            chunk_ms,
+            model_id,
+            sys::TRANSCRIBE_EXT_KIND_R2T2_STREAM
+        );
+        return None;
+    }
+    if !r2t2_chunk_ms_is_valid(chunk_ms) {
+        error!(
+            "R2T2 chunk size {} ms for model '{}' is outside {}..={} ms; using the native default of {} ms",
+            chunk_ms, model_id, R2T2_CHUNK_MS_MIN, R2T2_CHUNK_MS_MAX, R2T2_CHUNK_MS_DEFAULT
+        );
+        return None;
+    }
+    // Log requested *and* resolved on the success path too, not just the failure
+    // paths above. The integration contract requires the resolved cadence to be
+    // visible in the app log alongside the native-side timing line, because the
+    // only way to tell "the slider did nothing" from "the model could not keep
+    // up with the cadence" is to see what the decoder was actually asked for.
+    // One line per stream begin, so it cannot spam a live session.
+    info!(
+        "R2T2 streaming chunk size: requested={} ms resolved={} ms for model '{}'",
+        chunk_ms, chunk_ms, model_id
+    );
+    Some(StreamExtension::R2T2(R2T2StreamOptions {
+        chunk_size_ms: Some(chunk_ms),
+    }))
+}
+
+/// Resolve the stream extension for *any* native-streaming model — the single
+/// entry point both the primary and the Multi-STT streaming paths call.
+///
+/// Keeping one dispatcher is what guarantees the two paths agree: the R2T2
+/// branch cannot be wired into one call site and forgotten in the other, which
+/// would silently run the second path at the native default. `chunk_ms` is
+/// ignored for the preset families and read only for `R2T2ChunkMs`.
+pub fn stream_extension_for(
+    model: &Model,
+    model_id: &str,
+    kind: Option<NativeStreamingLatencyKind>,
+    preset: NativeStreamingLatencyPreset,
+    chunk_ms: u32,
+) -> Option<StreamExtension> {
+    match kind? {
+        NativeStreamingLatencyKind::R2T2ChunkMs => r2t2_stream_extension(model, model_id, chunk_ms),
+        preset_kind => stream_extension(model, model_id, Some(preset_kind), preset),
     }
 }
 
@@ -138,5 +253,40 @@ mod tests {
                 att_context_right: Some(1),
             })
         );
+    }
+
+    /// The point of R2T2's control is that the user can reach the *lowest*
+    /// latency the model supports, so the inclusive lower bound is a contract,
+    /// not an implementation detail: `80` must be accepted and `79` rejected.
+    /// This also pins the default inside the range, since a default the resolver
+    /// refuses would silently fall back to the native default on every stream.
+    ///
+    /// The bounds are asserted literally as well as relationally: the range is
+    /// mirrored from the fork's `k_r2t2_chunk_ms_*` and duplicated in the UI, so
+    /// a one-sided edit in any of the three places should fail a test here rather
+    /// than quietly narrow the range users can select.
+    #[test]
+    fn r2t2_chunk_bounds_admit_the_lowest_latency_and_reject_outside() {
+        assert_eq!(R2T2_CHUNK_MS_MIN, 80);
+        assert_eq!(R2T2_CHUNK_MS_MAX, 2000);
+        assert_eq!(R2T2_CHUNK_MS_DEFAULT, 320);
+
+        assert!(r2t2_chunk_ms_is_valid(R2T2_CHUNK_MS_MIN), "80 ms must work");
+        assert!(
+            r2t2_chunk_ms_is_valid(R2T2_CHUNK_MS_MAX),
+            "2000 ms must work"
+        );
+        assert!(
+            r2t2_chunk_ms_is_valid(R2T2_CHUNK_MS_DEFAULT),
+            "the fallback default must itself be in range"
+        );
+        assert!(
+            (R2T2_CHUNK_MS_MIN..=R2T2_CHUNK_MS_MAX).contains(&R2T2_CHUNK_MS_DEFAULT),
+            "the default must lie inside the range"
+        );
+
+        assert!(!r2t2_chunk_ms_is_valid(R2T2_CHUNK_MS_MIN - 1));
+        assert!(!r2t2_chunk_ms_is_valid(R2T2_CHUNK_MS_MAX + 1));
+        assert!(!r2t2_chunk_ms_is_valid(0));
     }
 }

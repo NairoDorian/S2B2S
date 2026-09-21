@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Kích thước đoạn truyền trực tiếp",
+        "unit": "ms",
+        "pillLabel": "Kích thước đoạn: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Giảm kích thước đoạn một mili giây",
+        "increase": "Tăng kích thước đoạn một mili giây",
+        "hint": "Lượng âm thanh được tích lũy trước mỗi lần giải mã. Giá trị nhỏ hơn phản hồi nhanh hơn nhưng tốn nhiều tính toán hơn, vì mô hình đọc lại toàn bộ âm thanh đã tích lũy ở mỗi đoạn. Áp dụng cho bản ghi tiếp theo."
       }
     }
   },

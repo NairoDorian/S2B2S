@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "流式分块大小",
+        "unit": "ms",
+        "pillLabel": "流式分块大小：{{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "将分块大小减少一毫秒",
+        "increase": "将分块大小增加一毫秒",
+        "hint": "每次解码前累积的音频长度。数值越小响应越快，但计算开销越大，因为模型每处理一个分块都会重新读取迄今的全部音频。从下次录音开始生效。"
       }
     }
   },

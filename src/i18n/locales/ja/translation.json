@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "ストリーミングチャンクサイズ",
+        "unit": "ms",
+        "pillLabel": "ストリーミングチャンクサイズ: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "チャンクサイズを1ミリ秒短くする",
+        "increase": "チャンクサイズを1ミリ秒長くする",
+        "hint": "各デコードの前に溜める音声の長さです。小さいほど応答は速くなりますが、チャンクごとにそれまでの音声をすべて読み直すため計算量が増えます。次回の録音から適用されます。"
       }
     }
   },

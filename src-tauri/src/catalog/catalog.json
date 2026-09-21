@@ -1743,6 +1743,35 @@
       "recommended_rank": null
     },
     {
+      "id": "davidxifeng/Confucius4-R2T2-gguf",
+      "revision": "a8e6b385d7df7eae9519363e07034a209004797a",
+      "slug": "Confucius4-R2T2",
+      "name": "Confucius4-R2T2",
+      "architecture": "qwen3_asr",
+      "family": "qwen3",
+      "parameters": "2.0B",
+      "description": "Real-time streaming transcription in 80 ms to 2 s chunks, across 30 languages",
+      "base_model": "Qwen/Qwen3-ASR-1.7B",
+      "license": "other",
+      "language_count": 30,
+      "languages": ["zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru", "th", "vi", "ja", "tr", "hi", "ms", "nl", "sv", "da", "fi", "pl", "cs", "fil", "fa", "el", "hu", "mk", "ro"],
+      "capabilities": {
+        "streaming": true,
+        "translate": false,
+        "lang_detect": true,
+        "timestamps": "none"
+      },
+      "speed_score": 30,
+      "accuracy_score": 90,
+      "files": [
+        {"filename": "r2t2-q8_0.gguf", "quant": "Q8_0", "size_bytes": 2477512064, "sha256": "19f5ccd624484bcb5d44301437de41560b0ecc40c430e8850dfeefefbe82ccf5"},
+        {"filename": "r2t2-f16.gguf", "quant": "F16", "size_bytes": 4092155264, "sha256": "d1b531ceaf5640d98352d3a9180238d99d36d393e160afd4692031077e7bae2c"}
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
       "id": "handy-computer/SenseVoiceSmall-gguf",
       "revision": "4a08b8e900b38a977e32eb08d5d0697d6e72ba04",
       "slug": "SenseVoiceSmall",

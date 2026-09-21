@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Dimensione del blocco di streaming",
+        "unit": "ms",
+        "pillLabel": "Dimensione del blocco: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Riduci la dimensione del blocco di un millisecondo",
+        "increase": "Aumenta la dimensione del blocco di un millisecondo",
+        "hint": "Quanto audio viene accumulato prima di ogni decodifica. Un valore più basso è più reattivo ma costa più calcolo, perché il modello rilegge tutto l'audio accumulato a ogni blocco. Si applica alla prossima registrazione."
       }
     }
   },

@@ -71,6 +71,47 @@ pub fn change_native_streaming_latency_preset_setting(
     Ok(())
 }
 
+/// Persist the R2T2 streaming chunk size for one model.
+///
+/// Separate from `change_native_streaming_latency_preset_setting` because the
+/// value is a free integer, not one of the four presets (see
+/// [`crate::settings::AppSettings::native_streaming_chunk_ms`]).
+///
+/// The range is enforced *here*, at the input boundary, and the command fails
+/// rather than clamping: an out-of-range value is a caller bug (the UI slider
+/// cannot produce one), and silently storing 80 instead of 5000 would leave the
+/// UI and the decoder disagreeing about the actual cadence. Because the
+/// settings write only happens after validation, a rejected call leaves both
+/// the settings file and the previous transcript untouched — which is the
+/// contract's "reject invalid values without clearing the previous transcript".
+/// The resolver re-checks anyway, since the settings file is hand-editable.
+///
+/// The change applies to the *next* stream: the native side copies the value at
+/// `stream_begin`, so an in-flight stream keeps the cadence it started with.
+#[tauri::command]
+#[specta::specta]
+pub fn change_native_streaming_chunk_ms_setting(
+    app: AppHandle,
+    model_id: String,
+    chunk_ms: u32,
+) -> Result<(), String> {
+    use crate::managers::native_streaming_latency::{
+        R2T2_CHUNK_MS_MAX, R2T2_CHUNK_MS_MIN, r2t2_chunk_ms_is_valid,
+    };
+    if !r2t2_chunk_ms_is_valid(chunk_ms) {
+        return Err(format!(
+            "Streaming chunk size {} ms is outside the supported {}..={} ms range",
+            chunk_ms, R2T2_CHUNK_MS_MIN, R2T2_CHUNK_MS_MAX
+        ));
+    }
+    let mut settings = get_settings(&app);
+    settings
+        .native_streaming_chunk_ms
+        .insert(model_id, chunk_ms);
+    write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_available_models(

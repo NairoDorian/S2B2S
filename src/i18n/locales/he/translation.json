@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "גודל קטע בזרימה",
+        "unit": "ms",
+        "pillLabel": "גודל קטע בזרימה: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "הקטנת גודל הקטע במילישנייה אחת",
+        "increase": "הגדלת גודל הקטע במילישנייה אחת",
+        "hint": "כמה אודיו נצבר לפני כל פענוח. ערך נמוך מגיב מהר יותר אך דורש יותר חישוב, כי המודל קורא מחדש את כל האודיו שנצבר בכל קטע. חל על ההקלטה הבאה."
       }
     }
   },

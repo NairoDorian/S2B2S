@@ -195,6 +195,15 @@
         "fast": "Low latency, good balance",
         "balanced": "Balanced latency and accuracy",
         "accurate": "Best accuracy, higher latency"
+      },
+      "chunkSize": {
+        "label": "Blokstørrelse for streaming",
+        "unit": "ms",
+        "pillLabel": "Blokstørrelse: {{ms}} ms",
+        "trigger": "{{ms}} ms",
+        "decrease": "Reducer blokstørrelsen med ét millisekund",
+        "increase": "Forøg blokstørrelsen med ét millisekund",
+        "hint": "Hvor meget lyd der samles op før hver afkodning. Lavere værdi reagerer hurtigere, men koster mere regnekraft, fordi modellen læser al lyd indtil nu igen for hver blok. Gælder for den næste optagelse."
       }
     }
   },
