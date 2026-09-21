@@ -191,10 +191,14 @@ the number three.
 **Meaning.** One toggle, two views, and the number of blocks on top is the number
 of models actually running — not a fixed three.
 
-| Debug view | Overlay                                                                                |
-| ---------- | -------------------------------------------------------------------------------------- |
-| **on**     | one block per streaming model (marked `1`, `2`, …) + the merged block (`M`) under them |
-| **off**    | one block: model 1's live text, corrected in place at every pause                      |
+| Debug view | Overlay                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| **on**     | one block per streaming model (marked `1`, `2`, …) + the merged block (`Merge & Cleaned`) under them |
+| **off**    | one block: model 1's live text, corrected in place at every pause                                    |
+
+_A model's block appears as soon as its stream is live — before that model has
+said anything — so a running model's block can never be mistaken for a model that
+was not started. See D8._
 
 **Where it lives.**
 
@@ -228,6 +232,103 @@ itself is off by default, under a parent mode that is off by default.
 **Meaning.** This file, plus the status and layout updates in
 `2026-09-build-lanes-per-model-backends-and-multi-streaming.md`, and the
 `dev:fast` build/commit/push that close the step.
+
+---
+
+## D8 — What the first real run through the debug view found
+
+> with the debug mode I see the merge and cleaned block of text labeled 'M' it
+> should be labeled "Merge & Cleaned" and the text block 1 but I don't see the
+> text block 2 for the 2nd streaming model loaded , please debug this
+
+**Meaning, in two parts.** (1) Name the merged block rather than lettering it.
+(2) A streaming model that is _running_ must have its block, whether or not it
+has produced text — the second block was missing, and "missing" and "silent" have
+to be different things in this view.
+
+### D8.1 — The label
+
+The merged block's mark is the settings' own name for what the mode does at a
+pause, `overlay.mergeAndCleaned` = "Merge & Cleaned", in all 26 locales (English
+text, as ever, until translated). Spelled out rather than lettered, because a
+letter read against the numerals above it ("M" beside "1" and "2") reads as one
+more model whose name starts with M.
+
+### D8.2 — The second block, and why it was not there
+
+Two independent causes, both fixed:
+
+1. **The view hid empty columns.** A model's column was rendered only once it had
+   text. A model that is streaming and silent therefore had no column at all —
+   indistinguishable from a model that was never started, which is the one thing
+   this view exists to tell apart. Now a column appears with the stream: the
+   backend announces each extra slot the moment its stream is live
+   (`announce_stream_slot`, an empty-text event on that slot, gated exactly like
+   every other numbered-slot event so the production view never sees it), and the
+   overlay renders a column per known slot with a muted placeholder, "no live text
+   yet" (`overlay.awaitingText`), while it is empty.
+2. **The model was genuinely transcribing nothing** — see D8.3. The view was
+   telling the truth; there was simply no way to see it.
+
+With both fixes the two cases stop looking alike, and the log says which one it
+is: `Live streaming transcription started (model '…', slot 1, …)` is logged when
+the extra's stream goes live, and `finish_extras` already logs `'…' never
+streamed on slot 1, so the merge has one text less` when it never did. A live
+stream that stays empty is therefore the language-hint case, and a missing stream
+is named as such.
+
+### D8.3 — A silent extra is almost always a language hint, not a broken stream
+
+Reproduced against the fork's own CLI with `jfk.wav` and the configured extra,
+`nemotron-3.5-asr-streaming-0.6b`:
+
+| Language hint | Streaming result                                     |
+| ------------- | ---------------------------------------------------- |
+| `en-US`, `en` | full transcript                                      |
+| `fr`, `fr-FR` | empty                                                |
+| `de-DE`       | empty                                                |
+| `es-ES`       | the full English transcript (_not_ empty — the trap) |
+
+Offline it is the same story, and `german.wav` with `de-DE` transcribes fully.
+The model is prompt-conditioned — it is _told_ which language to transcribe, and
+its own doc says a language **must** be provided. Speech in one language under
+another language's hint yields nothing, and an unrelated hint can yield the
+speech back unchanged. So the second block was empty because the Multi-STT panel
+had model 2 set to `fr` while the speech was English.
+
+Nothing in the fork was wrong, and nothing in the mode was wrong. What was wrong
+was that the app said nothing about it: `finalize_stream_on` now warns when an
+extra stream that ran the whole session produced no text, naming the slot, the
+model, and the language hint it streamed under, and pointing at that model's
+language in the Multi-STT settings. In the production view this warning is the
+only signal there is — a silent extra has no column there, and its absence
+surfaces only as a merge that quietly had one text less.
+
+### D8.4 — Found while in there, changed on purpose
+
+`transcription.rs` applied the panel's per-slot language/translate preferences
+only to `EXTRA_STREAM_SLOT` (`1`) rather than to every extra slot, so a third or
+fourth model would have streamed with the primary's settings — the exact failure
+the code's own comment said it was preventing. Now gated on any non-primary slot,
+and the single-use constant is gone. The mapping slot→model and model→settings is
+pinned by a test, because it is read in both directions now (settings on the way
+into a decode, model on the way back out of a finished stream) and a disagreement
+would be silent.
+
+### D8.5 — Found while in there, deliberately _not_ changed
+
+`native_streaming_latency_presets` is keyed by full file name, and the user's map
+holds `…-Q6_K.gguf` → `fastest` while the configured extra is `…-Q8_0.gguf`. The
+key never matches, so the extra runs at the `Accurate` default, which for this
+checkpoint is its own `att_context_right = 13` — 1.12 s of lookahead, the largest
+of the model's four `att_context_size_choices`. That is consistent with the
+coordinator's own complaint when a chunk is still owed its text after a break
+(`chunk N was still owed its own text … (grace 2.5s)`), though the grace is also
+about compute and the link is not proven. Lowering the right context would cut
+the lookahead and cost accuracy, which the standing constraint below forbids, so
+this is reported rather than changed: the fix is to key these presets by model
+**variant** instead of by quantised file name, which is a settings-shape decision
+and not this step's.
 
 ---
 

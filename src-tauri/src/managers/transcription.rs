@@ -198,9 +198,6 @@ pub enum StreamFinalization {
 /// and the only one on every path but the experimental Multi Streaming STT
 /// mode.
 pub const PRIMARY_STREAM_SLOT: u8 = 0;
-/// Slot of the first model streaming beside the primary in a Multi Streaming STT
-/// session.
-pub const EXTRA_STREAM_SLOT: u8 = 1;
 /// How many live streams may be routed at once.
 ///
 /// One per Multi-STT model slot: the primary's stream is slot 0 and the extras
@@ -1262,9 +1259,12 @@ impl TranscriptionManager {
         // language gated against what the model actually advertises.
         let mut settings = get_settings(&self.app_handle);
         // A streaming extra is an extra like any other: the per-slot language and
-        // translate preferences the Multi-STT panel sets for it apply here, or
-        // the second column would be transcribed with the primary's settings.
-        if slot == EXTRA_STREAM_SLOT {
+        // translate preferences the Multi-STT panel sets for it apply here, or a
+        // second column would be transcribed with the primary's settings. Every
+        // slot but the primary's, not just the first extra: the mode runs two or
+        // more models beside the primary, and `apply_extra_model_settings`
+        // resolves the right per-slot settings from the model id itself.
+        if slot != PRIMARY_STREAM_SLOT {
             apply_extra_model_settings(&mut settings, &model_id);
         }
         let effective_language =
@@ -1371,6 +1371,12 @@ impl TranscriptionManager {
                 "Live streaming transcription started (model '{}', slot {}, backend '{}')",
                 model_id, slot, backend
             );
+            // Tell the detailed view this model's column exists, now that its
+            // stream does. Without this the column would appear only with the
+            // model's first word — seconds later for a chunked streaming model,
+            // and never for one that is running but saying nothing — which is
+            // exactly the "the second block is missing" this view must not do.
+            self.announce_stream_slot(slot);
 
             let is_direct_streaming_paste = settings.paste_method
                 == crate::settings::PasteMethod::DirectStreaming
@@ -1771,6 +1777,33 @@ impl TranscriptionManager {
         attempt.complete_canonical(&filtered);
         if filtered.trim().is_empty() {
             attempt.finish(StatisticsRunStatus::Empty);
+            // An extra that streamed a whole session and said nothing is almost
+            // never a broken stream: it is a setting that does not match the
+            // speech, and the model that does it is prompt-conditioned — told
+            // which language to transcribe, and silent when the answer is wrong
+            // (Nemotron's streaming checkpoint is one, and its own docs say the
+            // language must be given). Worth a warning rather than a debug-view
+            // column alone, because in the production view this model has no
+            // column at all: its text exists only as merge input, so a silent
+            // extra shows up as a merge that quietly had one text less. The
+            // primary is not one of the panel's models, so `multi_stt_extra_model`
+            // answers `None` for it and its own empty result stays unreported.
+            if let Some(extra_model) = multi_stt_extra_model(&settings, slot) {
+                let mut extra_settings = settings.clone();
+                apply_extra_model_settings(&mut extra_settings, &extra_model);
+                let hint = effective_language_for_model(
+                    &extra_settings,
+                    self.model_manager.as_ref(),
+                    &extra_model,
+                );
+                warn!(
+                    "Multi streaming STT: slot {} ('{}') streamed the whole session and produced \
+                     no text under the language hint '{}'. Nothing about the stream failed — check \
+                     that model's language in the Multi-STT settings: a prompt-conditioned \
+                     streaming model transcribes nothing when the hint does not match the speech",
+                    slot, extra_model, hint
+                );
+            }
         }
 
         // Only the primary's stream is the app's own transcription; an extra's
@@ -1844,6 +1877,39 @@ impl TranscriptionManager {
                 input_received_ms,
             );
         }
+    }
+
+    /// Declare a stream slot to the overlay's detailed view, with no text.
+    ///
+    /// Called once per stream, the moment it is live. The detailed view gives
+    /// every *running* model a column, so the column has to exist before the
+    /// model has said anything: a chunked streaming model closes its first
+    /// chunk seconds after it starts, and a model whose settings do not match
+    /// the speech (a wrong language hint on a prompt-conditioned model, say)
+    /// never says anything at all — in both cases a column that waited for
+    /// text would be indistinguishable from a model that was never started,
+    /// which is the one thing this view is for. An empty-text event is what
+    /// makes the column; the model's own text then fills it in.
+    ///
+    /// Only the extras are announced: column 1 is the primary model's, and it
+    /// is on screen whether or not anything is streaming.
+    ///
+    /// Gated exactly like the emission in [`Self::emit_stream_text`], because
+    /// it is the same event on the same channel: an exclusive sink composes the
+    /// production view's single block itself, so this is a no-op there and no
+    /// numbered slot ever reaches the overlay outside the detailed view.
+    fn announce_stream_slot(&self, slot: u8) {
+        if slot == PRIMARY_STREAM_SLOT || self.stream_text_sink_exclusive.load(Ordering::Acquire) {
+            return;
+        }
+        let _ = StreamTextEvent {
+            committed: String::new(),
+            tentative: String::new(),
+            slot: Some(slot),
+            failed_chunks: None,
+            whole_session: false,
+        }
+        .emit(&self.app_handle);
     }
 
     fn emit_stream_text(
@@ -2609,6 +2675,27 @@ fn transcribe_cpp_run_plan(
         language,
         target_language,
     }
+}
+
+/// The Multi-STT panel's model for a nested-mode stream slot, if one is set
+/// there: slot 1 is the panel's second model, slot 2 its third, and so on — the
+/// same `slot = list position + 1` numbering the overlay's columns are marked
+/// with. `None` for the primary, for a slot past the panel's models, and for a
+/// slot whose model was cleared.
+///
+/// The inverse of [`apply_extra_model_settings`], which resolves the other way
+/// (from a model id, because that is what a decoder has in hand). This direction
+/// exists for the account a finished stream has to give of itself, where the
+/// slot is what the caller has.
+fn multi_stt_extra_model(settings: &AppSettings, slot: u8) -> Option<String> {
+    let index = slot.checked_sub(1)? as usize;
+    [
+        settings.multi_stt_model_2.as_deref(),
+        settings.multi_stt_model_3.as_deref(),
+        settings.multi_stt_model_4.as_deref(),
+    ]
+    .get(index)?
+    .map(str::to_string)
 }
 
 /// Fold a Multi-STT slot's own preferences into the settings a decode of that
@@ -4517,5 +4604,49 @@ mod tests {
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("es"));
         assert_eq!(plan.target_language, None);
+    }
+
+    /// The two directions of the Multi-STT panel's slot numbering have to agree:
+    /// [`multi_stt_extra_model`] answers "which model is slot n" (for the account
+    /// a finished stream gives of itself) and [`apply_extra_model_settings`]
+    /// answers "which settings are this model's" (for the decode). A slot that
+    /// resolved to one model on the way in and another on the way out would give
+    /// the merge a text from the wrong settings and report it under the wrong
+    /// name, and both failures are silent.
+    #[test]
+    fn multi_stt_slots_and_models_resolve_to_each_other() {
+        let mut settings = AppSettings::default();
+        settings.multi_stt_model_2 = Some("model-two".into());
+        settings.multi_stt_model_3 = Some("model-three".into());
+        settings.multi_stt_model_4 = Some("model-four".into());
+
+        // The primary is not one of the panel's models: its stream is the app's
+        // own transcription, so nothing may be attributed to it.
+        assert_eq!(multi_stt_extra_model(&settings, PRIMARY_STREAM_SLOT), None);
+        assert_eq!(
+            multi_stt_extra_model(&settings, 1).as_deref(),
+            Some("model-two")
+        );
+        assert_eq!(
+            multi_stt_extra_model(&settings, 2).as_deref(),
+            Some("model-three")
+        );
+        assert_eq!(
+            multi_stt_extra_model(&settings, 3).as_deref(),
+            Some("model-four")
+        );
+        // Past the panel's three extras there is no fourth model to name.
+        assert_eq!(multi_stt_extra_model(&settings, 4), None);
+
+        // And each of those ids folds its own slot's preferences back in.
+        settings.multi_stt_language_model_3 = Some("de".into());
+        settings.selected_language = "en".into();
+        let mut resolved = settings.clone();
+        apply_extra_model_settings(&mut resolved, "model-three");
+        assert_eq!(resolved.selected_language, "de");
+        // A model that is not in the panel keeps the global language.
+        let mut untouched = settings.clone();
+        apply_extra_model_settings(&mut untouched, "some-other-model");
+        assert_eq!(untouched.selected_language, "en");
     }
 }

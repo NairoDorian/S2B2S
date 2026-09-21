@@ -342,6 +342,14 @@
   line-height: 1;
   color: var(--s-faint);
 }
+/* A column whose model is streaming but has said nothing yet — or never will.
+   The placeholder is what keeps an empty column from reading as a rendering
+   fault: the column is there because the stream is, and its emptiness is the
+   finding. */
+.swait {
+  color: var(--s-faint);
+  font-style: italic;
+}
 /* The merged-and-cleaned block, under the model columns it was merged from: the
    third block of the detailed view, and the only one that is not a model's own
    text. A rule above it and a brighter mark are what say so — the text itself is
@@ -359,8 +367,14 @@
   margin: 0;
   color: var(--s-accent);
 }
+/* Words where the marks above it are single numerals, and deliberately: this
+   block is not a model, so it carries the settings' own name for what the mode
+   does at a pause rather than a list position. A phrase needs a little more
+   than a numeral's 10px to stay legible at this size. */
 .smerge-mark {
   color: var(--s-accent);
+  font-size: 11px;
+  letter-spacing: 0.01em;
 }
 .scaret {
   display: inline-block;

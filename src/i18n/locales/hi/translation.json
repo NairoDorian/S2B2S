@@ -1836,6 +1836,8 @@
     "chunkFailed_one": "{{count}} chunk failed",
     "chunkFailed_other": "{{count}} chunks failed",
     "chunkFailedHint": "The merge of this chunk failed, so its text is the models' outputs side by side. The next pause retries it.",
+    "mergeAndCleaned": "Merge & Cleaned",
+    "awaitingText": "no live text yet",
     "dragGripTooltip": "Drag to reposition the overlay"
   },
   "secureInput": {
@@ -1909,7 +1911,7 @@
       },
       "debugView": {
         "label": "Show the detailed view: every model's live text, and the merged result",
-        "description": "The detailed view of this mode. The overlay gets one column per streaming model, each showing that model's own live text as it forms, and under them the merged-and-cleaned text of the last pause — the block marked M, which is the session's result. With this off, the overlay has the single block the mode normally shows: fed by the first streaming model and corrected in place every time a merge lands, which is also what gets pasted. This changes what the overlay shows, not what the mode does."
+        "description": "The detailed view of this mode. The overlay gets one column per streaming model, each showing that model's own live text as it forms, and under them the merged-and-cleaned text of the last pause — the block labelled Merge & Cleaned, which is the session's result. A model's column appears as soon as its stream starts, so a model that is running but producing no text shows as an empty column, marked \"no live text yet\", rather than as no column at all. With this off, the overlay has the single block the mode normally shows: fed by the first streaming model and corrected in place every time a merge lands, which is also what gets pasted. This changes what the overlay shows, not what the mode does."
       },
       "pauseLabel": "Pause that ends a chunk",
       "pauseDescription": "How long you have to stop speaking to end the chunk being spoken. Every pause this long closes one, and a chunk is the only unit here: nothing in the text is ever waited for, so the text is corrected at your own pauses and nowhere else. After 60 seconds with no pause the chunk is closed anyway.",

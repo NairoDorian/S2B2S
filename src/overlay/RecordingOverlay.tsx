@@ -899,12 +899,17 @@ const RecordingOverlay = () => {
   // rather than taken as the record's own order: the slots are numbers and an
   // object's keys would otherwise read 1, 10, 2 — and a column that swapped
   // places mid-recording would be the one thing this debug view must not do.
+  //
+  // A slot is in here from the moment its stream goes live, which the backend
+  // announces with an empty-text event, so the record answers "which models are
+  // running" and not only "which have spoken".
   const extraColumns = () =>
     Object.entries(extraTexts())
       .map(([slot, text]) => [Number(slot), text] as const)
       .toSorted(([a], [b]) => a - b);
-  // A column exists once its model has something to say; until then column 1
-  // alone is the whole layout, as it has always been.
+  // Whether any of them has actually said anything. Kept apart from
+  // `extraColumns()` on purpose: this one decides whether the card has text to
+  // open for, and a running-but-silent model must not open it on its own.
   const hasExtraTexts = () =>
     extraColumns().some(
       ([, text]) => text.committed.length > 0 || text.tentative.length > 0,
@@ -917,8 +922,12 @@ const RecordingOverlay = () => {
   // suppresses the extra streams' raw events and composes its single block onto
   // the primary's path — so this is exactly "which of the mode's two views is on
   // screen", answered by what the backend actually sent rather than by a setting
-  // the overlay would have to read and keep in step.
-  const debugStream = () => hasExtraTexts() || hasMergeText();
+  // the overlay would have to read and keep in step. A numbered slot is the
+  // whole test, because it is the one thing only the detailed view receives;
+  // an announced column counts before it has text, which is what keeps the
+  // view's first seconds from looking like a model that never started.
+  const debugStream = () => extraColumns().length > 0 || hasMergeText();
+
   const working = () => phase() === "working";
   // Keep the panel open whenever there's text — even while finalizing — so the
   // transcript stays put under a working spinner instead of collapsing and
@@ -1101,17 +1110,31 @@ const RecordingOverlay = () => {
                       </Show>
                     </p>
                   </div>
-                  {/* Every other model's column. No caret: the caret tracks the
-                      reveal, and these columns have none. */}
+                  {/* Every other model's column, present for as long as that
+                      model is streaming — including before it has said
+                      anything, and including when it never does. An empty
+                      column is a finding, not an absence: it says the model is
+                      running and producing nothing, which is most often a
+                      setting that does not match the speech (a wrong language
+                      hint on a prompt-conditioned model). No caret either: the
+                      caret tracks the reveal, and these columns have none. */}
                   <For each={extraColumns()}>
                     {([slot, text]) => (
-                      <Show
-                        when={
-                          text.committed.length > 0 || text.tentative.length > 0
-                        }
-                      >
-                        <div class="stext-col">
-                          <span class="smark">{`${slot + 1}`}</span>
+                      <div class="stext-col">
+                        <span class="smark">{`${slot + 1}`}</span>
+                        <Show
+                          when={
+                            text.committed.length > 0 ||
+                            text.tentative.length > 0
+                          }
+                          fallback={
+                            <p>
+                              <span class="swait">
+                                {t("overlay.awaitingText")}
+                              </span>
+                            </p>
+                          }
+                        >
                           {/* The same rule as column 1, and it matters more
                               here: these spans are one text cut in two as
                               well. */}
@@ -1119,8 +1142,8 @@ const RecordingOverlay = () => {
                             <span class="committed">{text.committed}</span>
                             <span class="tentative">{text.tentative}</span>
                           </p>
-                        </div>
-                      </Show>
+                        </Show>
+                      </div>
                     )}
                   </For>
                 </div>
@@ -1128,13 +1151,16 @@ const RecordingOverlay = () => {
                     under the models it was merged from — the third block of the
                     detailed view, and the only one that is not a model's own
                     text. The badge below reports the whole session either way. */}
-                <Show when={hasMergeText()}>
+                <Show when={debugStream()}>
                   <div class="smerged">
-                    {/* A letter rather than a word: the marks above it are bare
-                        numerals, and this one is read against them. What it
-                        stands for is written out in the settings that turn the
-                        mode on, not on the card. */}
-                    <span class="smark smerge-mark">{"M"}</span>
+                    {/* Spelled out, unlike the numerals above it: this block is
+                        not a model, and a letter read against them ("M" beside
+                        "1" and "2") reads as one more model whose name starts
+                        with M. The label is the settings' own name for what the
+                        mode does at a pause, so what it is needs no legend. */}
+                    <span class="smark smerge-mark">
+                      {t("overlay.mergeAndCleaned")}
+                    </span>
                     <p>
                       <span class="committed">{mergeText().committed}</span>
                       <span class="tentative">{mergeText().tentative}</span>

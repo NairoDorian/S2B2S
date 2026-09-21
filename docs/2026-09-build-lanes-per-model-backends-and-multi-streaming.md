@@ -18,13 +18,14 @@ note first proposed, §4.2 says so and gives the reason; it is the one substanti
 deviation, and it is flagged in place rather than left for the reader to infer
 from the code.
 
-| Part                                   | State                                            | Where                                            |
-| -------------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
-| 1. Lanes, always-full model set, `cpu` | done                                             | §1.1–§1.3, `scripts/tauri-runner.ts`             |
-| 2. Per-model backend selection         | done, Rust + UI                                  | §2.3, `managers/*`, `components/model-selector/` |
-| 3. Rename + nested toggle              | done                                             | §3, `components/settings/multi-stt/`             |
-| 4. Multi streaming STT                 | done: merge-at-pauses, both views, merged result | §4.2–§4.4, `multi_streaming.rs`                  |
-| Directives for part 4, verbatim        | recorded, each mapped to its code                | `2026-09-multi-streaming-stt-directives.md`      |
+| Part                                      | State                                             | Where                                            |
+| ----------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| 1. Lanes, always-full model set, `cpu`    | done                                              | §1.1–§1.3, `scripts/tauri-runner.ts`             |
+| 2. Per-model backend selection            | done, Rust + UI                                   | §2.3, `managers/*`, `components/model-selector/` |
+| 3. Rename + nested toggle                 | done                                              | §3, `components/settings/multi-stt/`             |
+| 4. Multi streaming STT                    | done: merge-at-pauses, both views, merged result  | §4.2–§4.4, `multi_streaming.rs`                  |
+| Directives for part 4, verbatim           | recorded, each mapped to its code                 | `2026-09-multi-streaming-stt-directives.md`      |
+| 4a. First real run through the debug view | two fixes + two findings, one fixed, one reported | §4.4, §4.5, D8                                   |
 
 Gates run on this state, all green: `cargo check --all-targets` (no warnings),
 `cargo test -p zer0 --lib` (**415 passed**), `cargo clippy
@@ -34,6 +35,19 @@ change touched), `cargo fmt -- --check`, `bun run vite:build`,
 `bun run check:model-languages`, `bun run meta:check`, `bun run test:unit`,
 `bun run typecheck`, `bun run lint` (warnings only, all pre-existing),
 `bunx prettier --check` on every file touched.
+
+The last row is the pass that came out of the mode's first real recording, and it
+is the reason §4.4's overlay table now reads `Merge & Cleaned` instead of `M` and
+carries the rule about a live model's block: the block's mark was renamed, a
+model's column stopped waiting for its first word (the backend announces the slot
+when the stream goes live, the overlay renders a known slot with a `no live text
+yet` placeholder while it is empty, and `debugStream()` keys off a known slot
+rather than off text), per-slot settings were extended from the first extra to
+every extra, and a stream that runs a whole session without producing text is now
+warned about by name, slot and language hint. Its gates: `cargo test -p zer0
+--lib` **416 passed** (the new one pins slot→model and model→settings against
+each other), clippy still two pre-existing warnings, `cargo fmt -- --check`
+clean, and the frontend gates above re-run green.
 
 Two things about this state are worth stating plainly — one red gate, and the
 check the earlier state could not run at all:
@@ -471,17 +485,31 @@ directives and the mapping; this is the design summary):
 - **Two views, one switch** (`multi_stt_streaming_multi_debug_view`, off by
   default):
 
-  | View          | Overlay                                                           | Sink      |
-  | ------------- | ----------------------------------------------------------------- | --------- |
-  | debug **on**  | one block per model (`1`, `2`, …) + the merged block (`M`) below  | shared    |
-  | debug **off** | one block: model 1's live text, corrected in place at every pause | exclusive |
+  | View          | Overlay                                                                        | Sink      |
+  | ------------- | ------------------------------------------------------------------------------ | --------- |
+  | debug **on**  | one block per model (`1`, `2`, …) + the merged block (`Merge & Cleaned`) below | shared    |
+  | debug **off** | one block: model 1's live text, corrected in place at every pause              | exclusive |
 
   The switch reaches the coordinator as `debug_view` and decides both the publish
   shape and the sink's exclusivity — the two have to agree, or the columns would
   be suppressed by an exclusive sink. The merged block rides
   `MERGE_BLOCK_SLOT = STREAM_SLOTS as u8`, a slot no model can occupy, and
   `whole_session: true` is what tells the overlay it is the block and not a
-  column.
+  column. The block's mark is the settings' own name for the pause-time work
+  (`overlay.mergeAndCleaned`) rather than a letter, so it cannot be read as one
+  more model beside the numerals.
+
+- **A model's block is up for as long as its stream is**, whether or not that
+  model has said anything: the stream's slot is announced with an empty-text
+  event when it goes live (`announce_stream_slot`, on the same terms as every
+  other numbered-slot event, so the production view never sees it), and the
+  overlay gives a known slot its column with a muted `no live text yet` while it
+  is empty. A column that waited for its first word would be indistinguishable
+  from a model that was never started — the whole point of the view — and a model
+  whose language hint does not match the speech never has a first word (§4.5).
+  In the production view a silent extra has no column at all, so the account it
+  gets instead is a warning from `finalize_stream_on` naming the slot, the model
+  and the hint it streamed under.
 
 - **The merged text is the result in both views**: `finish` composes
   `final_text` from the closed chunks' merged text exactly as the parent mode
@@ -523,3 +551,15 @@ with the _non-streaming_ `Qwen3-ASR-0.6B`, which is why streaming capability and
 latency kind are resolved by **id slug**, never by architecture — the guard test
 `r2t2_entry_is_wired_for_streaming_from_its_pinned_reference`
 (`catalog/mod.rs:312`) exists to keep that true.
+
+In a session, the language each of these streams under is the one the Multi-STT
+panel pinned for **that** slot (`multi_stt_language_model_2/3/4`, applied per
+slot by `apply_extra_model_settings`), and for a prompt-conditioned model that
+pin is not a preference but an instruction: `nemotron-3.5-asr-streaming-0.6b` is
+told which language to transcribe and returns **nothing** when the hint does not
+match the speech, while an unrelated hint can return the speech unchanged. Its
+own doc says a language must be provided. Verified against the fork's CLI on
+`jfk.wav`: `en-US` and `en` transcribe it, `fr`, `fr-FR` and `de-DE` come back
+empty, and `es-ES` comes back as the full English text. So a second column that
+never fills in is first a settings question, not a streaming one — which is what
+§4.4's warning exists to say.
