@@ -45,6 +45,15 @@ import {
   resolveOverlayScope,
   type ResolvedOverlayScope,
 } from "@/lib/overlayScope";
+import {
+  NO_REVEAL,
+  advanceReveal,
+  finishReveal,
+  joinStreamText,
+  revealStride,
+  splitReveal,
+  type StreamReveal,
+} from "@/lib/streamReveal";
 import type { OverlayScopeSettings } from "@/bindings";
 
 type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
@@ -178,7 +187,13 @@ const RecordingOverlay = () => {
   // block instead of rewinding the revealed characters and retyping them.
   let backCorrection = false;
   let targetText: StreamTextEvent = { committed: "", tentative: "" };
-  let displayedText: StreamTextEvent = { committed: "", tentative: "" };
+  // The reveal grows one string, not two, and is re-derived rather than
+  // accumulated — see `streamReveal.ts`, which carries the reasoning and the
+  // tests.
+  let reveal: StreamReveal = NO_REVEAL;
+  // The split the signal is currently holding, so that re-deriving an unchanged
+  // one does not re-signal it.
+  let published: StreamTextEvent = { committed: "", tentative: "" };
   let typewriterTimer: ReturnType<typeof setInterval> | null = null;
 
   // Drag-grip state (see AIVORelay's recording-overlay position memory pattern).
@@ -207,6 +222,26 @@ const RecordingOverlay = () => {
   let manualDragUpHandler: (() => void) | null = null;
   let dragGripFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Publish through here so an unchanged split is not re-signalled: a Solid
+  // signal fires on every `set` with a fresh object, and the typewriter ticks
+  // far faster than the text changes.
+  const applyStreamText = (next: StreamTextEvent) => {
+    if (
+      next.committed === published.committed &&
+      next.tentative === published.tentative
+    ) {
+      return;
+    }
+    published = next;
+    setStreamText(next);
+  };
+
+  // Show the reveal as the target splits it. The seam comes from the target, so
+  // it advances with the model's own boundary instead of being typed.
+  const publishReveal = () => {
+    applyStreamText(splitReveal(reveal, targetText.committed.length));
+  };
+
   const stopTypewriter = () => {
     if (typewriterTimer !== null) {
       clearInterval(typewriterTimer);
@@ -216,78 +251,28 @@ const RecordingOverlay = () => {
 
   const flushTypewriter = () => {
     stopTypewriter();
-    displayedText = { ...targetText };
-    setStreamText({ ...targetText });
+    reveal = finishReveal(
+      joinStreamText(targetText.committed, targetText.tentative),
+    );
+    publishReveal();
   };
 
   const stepTypewriter = () => {
-    const target = targetText;
-    const current = displayedText;
-
-    if (
-      current.committed === target.committed &&
-      current.tentative === target.tentative
-    ) {
+    const full = joinStreamText(targetText.committed, targetText.tentative);
+    // Caught up is the common resting state: publish anyway (a commit can move
+    // the seam without changing a byte of the text) and stop ticking.
+    if (reveal.text.slice(0, reveal.revealed) === full) {
+      publishReveal();
       stopTypewriter();
       return;
     }
-
-    let nextCommitted = current.committed;
-    let nextTentative = current.tentative;
-    const threshold = Math.max(15, Math.round((directSpeed || 50) * 0.6));
-
-    if (current.committed !== target.committed) {
-      if (target.committed.startsWith(current.committed)) {
-        const remaining = target.committed.length - current.committed.length;
-        const step =
-          remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
-        nextCommitted = target.committed.slice(
-          0,
-          current.committed.length + step,
-        );
-      } else {
-        nextCommitted = target.committed;
-      }
-    } else if (current.tentative !== target.tentative) {
-      if (target.tentative.startsWith(current.tentative)) {
-        const remaining = target.tentative.length - current.tentative.length;
-        const step =
-          remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
-        nextTentative = target.tentative.slice(
-          0,
-          current.tentative.length + step,
-        );
-      } else {
-        let prefixLen = 0;
-        while (
-          prefixLen < current.tentative.length &&
-          prefixLen < target.tentative.length &&
-          current.tentative[prefixLen] === target.tentative[prefixLen]
-        ) {
-          prefixLen++;
-        }
-        if (current.tentative.length > prefixLen) {
-          // The model rewrote part of the tail it had already shown. With back
-          // correction on, rewind the reveal to the shared prefix and type the
-          // new wording in again — a visible correction. With it off (the
-          // default) the revision lands as one block, which is what the
-          // non-direct path does anyway: the preview never moves backwards, so
-          // a model that revises on every chunk (R2T2 re-decodes its whole
-          // context each tick) cannot make the text stutter.
-          nextTentative = backCorrection
-            ? target.tentative.slice(0, prefixLen)
-            : target.tentative;
-        } else {
-          const remaining = target.tentative.length - prefixLen;
-          const step =
-            remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
-          nextTentative = target.tentative.slice(0, prefixLen + step);
-        }
-      }
-    }
-
-    displayedText = { committed: nextCommitted, tentative: nextTentative };
-    setStreamText({ committed: nextCommitted, tentative: nextTentative });
+    reveal = advanceReveal(
+      reveal,
+      full,
+      revealStride(full.length - reveal.revealed, directSpeed),
+      backCorrection,
+    );
+    publishReveal();
   };
 
   const startTypewriterIfNeeded = () => {
@@ -314,8 +299,8 @@ const RecordingOverlay = () => {
           setCaptureReady(false);
           stopTypewriter();
           targetText = { committed: "", tentative: "" };
-          displayedText = { committed: "", tentative: "" };
-          setStreamText({ committed: "", tentative: "" });
+          reveal = NO_REVEAL;
+          applyStreamText({ committed: "", tentative: "" });
           setSpeaking(false);
           setSpeechMs(0);
           setWordCount(0);
@@ -375,9 +360,15 @@ const RecordingOverlay = () => {
         // direct mode cannot make the speaking rate read artificially low. This
         // runs even in the minimal overlay, which never renders the text but
         // still receives it whenever the model streams.
+        // The two halves are one text and the model supplies the separators
+        // (see `splitReveal`), so join them verbatim: a space here splits a
+        // word in Chinese and counts a stray token in English.
         setWordCount(
           countWords(
-            `${event.payload.committed} ${event.payload.tentative}`.trim(),
+            joinStreamText(
+              event.payload.committed,
+              event.payload.tentative,
+            ).trim(),
           ),
         );
         // The experimental Multi-STT streaming mode composes the whole session's
@@ -395,8 +386,12 @@ const RecordingOverlay = () => {
         // normal dictation, which is what the setting is for.
         if (!directMode || event.payload.whole_session) {
           stopTypewriter();
-          displayedText = event.payload;
-          setStreamText(event.payload);
+          // The backend composed this text, so show its own split as it is;
+          // the reveal is simply complete.
+          reveal = finishReveal(
+            joinStreamText(event.payload.committed, event.payload.tentative),
+          );
+          applyStreamText(event.payload);
         } else {
           startTypewriterIfNeeded();
         }
@@ -970,9 +965,11 @@ const RecordingOverlay = () => {
                 onScroll={handleStreamScroll}
               >
                 <p>
-                  <span class="committed">
-                    {streamText().committed ? streamText().committed + " " : ""}
-                  </span>
+                  {/* Nothing between the two spans: they are one text cut in
+                      two and the model carries its own spacing (see
+                      `splitReveal`). A separator here lands inside a word —
+                      which for R2T2's Chinese is most of them. */}
+                  <span class="committed">{streamText().committed}</span>
                   <span class="tentative">{streamText().tentative}</span>
                   {/* Drop the blinking caret once finalizing — it's no longer
                       capturing, and a static spinner conveys the work. */}

@@ -235,12 +235,35 @@ fn clamp_boundary(text: &str, at: usize) -> usize {
     at
 }
 
+/// Whether `c` belongs to a script that does not put spaces between words.
+///
+/// The ranges are the overlay's own CJK set (`CJK_CHARS` in
+/// `RecordingOverlay.tsx`), widened to the whole fullwidth-forms block and to
+/// CJK punctuation, so `。` and `，` count as well. Chinese and Japanese supply
+/// no inter-word whitespace to preserve, and inventing one splits a word — see
+/// [`append_join`].
+fn is_unspaced_script(c: char) -> bool {
+    matches!(c as u32,
+        0x3000..=0x303F      // CJK punctuation: 。、「」・
+        | 0x3040..=0x30FF    // Hiragana, Katakana (with their extensions)
+        | 0x3400..=0x4DBF    // CJK Unified Ideographs Extension A
+        | 0x4E00..=0x9FFF    // CJK Unified Ideographs
+        | 0xF900..=0xFAFF    // CJK Compatibility Ideographs
+        | 0xFF00..=0xFFEF    // Halfwidth and Fullwidth Forms
+    )
+}
+
 /// Append `piece` to `out`, inserting one space if neither side supplies one.
 ///
 /// Merge results are trimmed and the streaming text is not, so the separator
 /// cannot be left to either side: without this, `...said.` + `Hello` would run
 /// together. When both sides came from the same streaming text the rule is a
-/// no-op, because the split kept the original whitespace.
+/// no-op, because the split kept the original whitespace — and that is exactly
+/// what does not hold for a script that puts no space between its words. Two
+/// consecutive Chinese chunks are two halves of a word (`放射性` + `物质碘`), so
+/// a space invented there is a defect rather than a separator. The space is
+/// skipped only when *both* sides are of such a script, which leaves every
+/// other boundary on the old rule.
 fn append_join(out: &mut String, piece: &str) {
     if piece.is_empty() {
         return;
@@ -248,6 +271,7 @@ fn append_join(out: &mut String, piece: &str) {
     if !out.is_empty()
         && !out.ends_with(char::is_whitespace)
         && !piece.starts_with(char::is_whitespace)
+        && !(out.ends_with(is_unspaced_script) && piece.starts_with(is_unspaced_script))
     {
         out.push(' ');
     }
@@ -2081,6 +2105,22 @@ mod tests {
         append_join(&mut out, "你好。");
         append_join(&mut out, " 我很好！");
         assert_eq!(out, "你好。 我很好！");
+
+        // Chunks of a script that puts no space between its words are joined
+        // with none: the cut between them is inside a word, and a space there
+        // would split it. R2T2 commits at character granularity, so this is the
+        // ordinary case for its Chinese output, not an edge one.
+        let mut out = String::new();
+        append_join(&mut out, "日本原子能机构表示，核电站检测出了放射性");
+        append_join(&mut out, "物质碘和碘。");
+        assert_eq!(out, "日本原子能机构表示，核电站检测出了放射性物质碘和碘。");
+
+        // Only a boundary that is unspaced on *both* sides is left alone. A
+        // Latin neighbour keeps the space, so the merge case above still works
+        // and so does a sentence ending in CJK punctuation followed by English.
+        let mut out = String::from("很好");
+        append_join(&mut out, "Hello");
+        assert_eq!(out, "很好 Hello");
     }
 
     #[test]
