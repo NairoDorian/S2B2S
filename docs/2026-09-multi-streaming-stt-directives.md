@@ -332,6 +332,41 @@ and not this step's.
 
 ---
 
+## D9 — Fix the end of `build:fast`
+
+> can you help me fix the issue at the end please ?
+
+**Meaning.** The pasted `bun run build:fast` built the app and the MSI and then
+aborted in the NSIS step, so the installer the release exists for was never
+produced. Fix that end of the command.
+
+**Where it lives.** Two lines in `src-tauri/nsis/installer.nsi`, the file
+`bundle.windows.nsis.template` points the bundler at. `build:fast` failed with
+`macro named "RestartManager_StartSession" not found` at
+`CheckIfAppIsRunning`'s first expansion, because the repo's template is a fork of
+the tauri-v2.9.1 one while the bundler's own `utils.nsh` is rendered from the
+installed CLI (3.0.0-alpha.2) and now inserts three macros from
+`RestartManager.nsh`: the include that defines them was missing, and the include's
+macro needs an absolute path at both call sites. §5 of
+`2026-09-build-lanes-per-model-backends-and-multi-streaming.md` is the full
+account — the CLI template's 18-hunk diff (the embedded one, extracted from the
+binary), which hunks are needed and which are deliberately left, and the
+two-stage verification.
+
+**Tested.** `makensis` on a copy of the rendered script (the cheap loop: about a
+minute against the bundler's eight) compiles and writes a 30.9 MB
+`nsis-output.exe`, and the full `bun run build:fast` re-run then reports
+`Finished 2 bundles at:` with the `.msi` and the `-setup.exe`, which installs the
+app. The command still exits 1 one step past the bundles, on the Tauri updater
+signing — `~/.tauri/zer0.key` is not on this machine, so the pubkey pinned in
+`plugins.updater.pubkey` has no private half to sign with. That ending is
+pre-existing and already documented in BUILD.md; it is a release secret only the
+maintainer can supply, so it is reported and untouched. The template's own header
+comment carries the merge instruction and now names what was merged and why, so
+the next Tauri bump re-diffs rather than re-discovers.
+
+---
+
 ## Standing constraints this work was held to
 
 - **"never commit something that would make current models slower in anyway"** —

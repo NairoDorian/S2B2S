@@ -4,6 +4,16 @@
 ;
 ; When upgrading Tauri, diff this file against the new upstream template and
 ; merge changes while preserving the portable sections.
+;
+; Merged from the tauri 3.0.0-alpha.2 CLI template on 2026-09-22. `utils.nsh` is
+; rendered by the bundler from the installed CLI, not from this file, so a
+; template left behind at 2.9.1 goes stale against it and stops compiling at the
+; first macro the new `utils.nsh` inserts and nothing defines:
+;   - `!include "Win\RestartManager.nsh"`, which defines `RestartManager_StartSession`
+;     and the two other macros the new `CheckIfAppIsRunning` inserts.
+;   - the full path at both `CheckIfAppIsRunning` call sites: the macro hands its
+;     first argument to `RmRegisterResources`, which fails on a bare `ZER0.exe`,
+;     and a failed registration skips the running-app check altogether.
 
 Unicode true
 ManifestDPIAware true
@@ -28,6 +38,7 @@ ManifestDPIAwareness PerMonitorV2
 !include "FileAssociation.nsh"
 !include "Win\COM.nsh"
 !include "Win\Propkey.nsh"
+!include "Win\RestartManager.nsh"
 !include "StrFunc.nsh"
 ${StrCase}
 ${StrLoc}
@@ -738,7 +749,7 @@ Section Install
     !insertmacro NSIS_HOOK_PREINSTALL
   !endif
 
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"
@@ -891,7 +902,7 @@ Section Uninstall
     !insertmacro NSIS_HOOK_PREUNINSTALL
   !endif
 
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
   ; Delete the app directory and its content from disk
   ; Copy main executable

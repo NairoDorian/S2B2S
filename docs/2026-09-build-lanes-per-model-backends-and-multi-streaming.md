@@ -26,6 +26,7 @@ from the code.
 | 4. Multi streaming STT                    | done: merge-at-pauses, both views, merged result  | §4.2–§4.4, `multi_streaming.rs`                  |
 | Directives for part 4, verbatim           | recorded, each mapped to its code                 | `2026-09-multi-streaming-stt-directives.md`      |
 | 4a. First real run through the debug view | two fixes + two findings, one fixed, one reported | §4.4, §4.5, D8                                   |
+| 4b. `build:fast` aborting in makensis     | fixed: the custom template caught up to the CLI   | §5, `src-tauri/nsis/installer.nsi`               |
 
 Gates run on this state, all green: `cargo check --all-targets` (no warnings),
 `cargo test -p zer0 --lib` (**415 passed**), `cargo clippy
@@ -563,3 +564,81 @@ own doc says a language must be provided. Verified against the fork's CLI on
 empty, and `es-ES` comes back as the full English text. So a second column that
 never fills in is first a settings question, not a streaming one — which is what
 §4.4's warning exists to say.
+
+## 5. The installer: `build:fast` aborting in makensis
+
+`build:fast` compiled the app (7m50s), bundled the MSI, and then died in the NSIS
+step:
+
+```
+!insertmacro: macro named "RestartManager_StartSession" not found!
+Error in macro CheckIfAppIsRunning on macroline 11
+Error in script "...\target\release\nsis\x64\installer.nsi" on line 734 -- aborting creation process
+failed to bundle project: Failed to bundle app with makensis
+```
+
+**The cause is one file out of step, and it is the one file in the NSIS step the
+repo owns.** `bundle.windows.nsis.template` points the bundler at
+`src-tauri/nsis/installer.nsi`: a fork of the tauri-v2.9.1 upstream template that
+adds portable mode. Everything else in that step is the installed CLI's —
+`utils.nsh` and `FileAssociation.nsh` are rendered from `@tauri-apps/cli
+3.0.0-alpha.2`, and `English.nsh`, `Win\*.nsh` and the plugins come from the NSIS
+tree it installs under `%LOCALAPPDATA%\tauri\NSIS`. An old template against a new
+`utils.nsh` is a mismatch NSIS only reports at the point of use: the new
+`CheckIfAppIsRunning` inserts three macros from **`RestartManager.nsh`**, which
+the current upstream template pulls in with `!include "Win\RestartManager.nsh"`
+and the fork never had.
+
+The file's own header has said what to do about this since it was forked —
+"when upgrading Tauri, diff this file against the new upstream template and
+merge changes while preserving the portable sections". Diffing it against the
+template embedded in the installed CLI (`include_str!`'d into
+`cli.win32-x64-msvc.node`, extractable as plain text) gives 18 hunks: the
+portable-mode ones, which stay, and the alpha's, of which exactly two are
+needed to build:
+
+| Edit                                    | Why it is required, not cosmetic                                                                                                                                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `!include "Win\RestartManager.nsh"`     | Defines `RestartManager_StartSession`, `_RegisterFile` and `_EndSession`. Without it the macro expansion fails outright, which is the error above.                                                                             |
+| full path at both `CheckIfAppIsRunning` | The macro hands its first argument to `RmRegisterResources`, which resolves a bare `ZER0.exe` against the installer's own directory, fails with `ERROR_FILE_NOT_FOUND`, and makes the caller skip the running-app check whole. |
+
+The alpha's other hunks are deliberately **not** merged: an uninstaller-icon and
+uninstaller-header-image block (cosmetic, and nothing configures those images),
+`!addplugindir "{{signed_plugins_path}}"` (this build's plugins resolve without
+it — the two `nsis_tauri_utils::StrReplace` calls ahead of the failing line
+compiled), and upstream's removal of `DesktopShortcutMode`, which is the repo's
+own opt-in desktop-shortcut feature and would take the `/DESKTOP` flag with it.
+
+**How it was verified, cheaply then fully.** `makensis` compiles a script in
+about a minute, so the two edits were first applied to a copy of the _rendered_
+`target/release/nsis/x64/installer.nsi` and compiled there — success, a 30.9 MB
+`nsis-output.exe`, and the only warning the long-standing one about
+`SkipIfPassiveOrPortable` being unreferenced when `STARTMENUFOLDER` is empty. The
+template was then edited and the whole `bun run build:fast` re-run: `Finished 2
+bundles at:` with `ZER0_0.9.7_x64_en-US.msi` (38.63 MiB) and
+`ZER0_0.9.7_x64-setup.exe` (29.50 MiB), and the setup was run and installed the
+app.
+
+**The command still exits 1, one step further on, and that is not this.** After
+`Finished 2 bundles at:` it stops on the Tauri updater signing:
+
+```
+A public key has been found, but no private key. Make sure to set `TAURI_SIGNING_PRIVATE_KEY` environment variable.
+```
+
+`bundle.createUpdaterArtifacts` is on and `plugins.updater.pubkey` is set, so
+every bundle build signs unless `TAURI_SIGNING_PRIVATE_KEY` is in the
+environment; `scripts/tauri-runner.ts` supplies it from `~/.tauri/zer0.key`, and
+that file is not on this machine — `%USERPROFILE%\.tauri\` exists and is empty.
+Both installers are already written by then, so a local release is usable, but
+the `.sig` artifacts and `latest.json` are not produced. BUILD.md already
+documents this exact ending and the remedy (regenerate with `bun x tauri signer
+generate -w ~/.tauri/zer0.key`, or restore the existing private key, whose public
+half is pinned in the config); it is a release secret, so nothing here touches
+it.
+
+Two notes for whoever is here next. The MSI is untouched by any of this — WiX
+does not read these files, which is why it succeeded while NSIS aborted. And the
+build directory under `target/release/nsis/x64/` is regenerated from the template
+on every bundle, so a fix applied there and not to the template disappears on the
+next build.
