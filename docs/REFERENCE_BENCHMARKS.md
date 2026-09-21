@@ -30,6 +30,26 @@ denoise, UI and clipboard. First-text compute time is not live microphone
 latency. Native stage timer definitions are those of the selected library.
 Batch replay uses the normal upstream app transcription/postprocessing path.
 
+For streaming cases the script also recovers per-chunk pipeline stages from the
+replay log — an instrumented native library emits one record per chunk from
+`emit_streaming_chunk`, eight disjoint stages that sum to the chunk total. The
+app runs all three repetitions in one process, so the log carries no explicit
+run marker; the per-chunk index is the boundary (each run restarts it at 0),
+and the first group is dropped as warm-up so the stage statistics follow the
+same policy as the wall clock. A library without the instrumentation emits
+nothing and those columns stay blank, which is why this scrapes a log rather
+than requiring a new ABI. The rows carry the same field names the native suite
+writes — `warm_mean_timings`, `stage_metrics`, and `bound_backend` alongside
+`backend` — so one reporter renders both:
+
+```powershell
+uv run --no-project scripts/bench/report.py --summary build/bench/upstream/summary.json
+```
+
+`scripts/bench/report.py` is byte identical in this branch and in both
+`transcribe*` trees; it reads only the summary, so it renders app and native
+output alike and the two sides cannot drift into separate implementations.
+
 Run comparisons sequentially on an idle machine. Match WAV, installed weights,
 language, translation/custom-word settings, backend, build profile and power
 state. JSON records the resolved language, WAV hash and native build identity.
