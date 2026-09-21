@@ -1,7 +1,11 @@
 import { untrack } from "solid-js";
 import type { Accessor } from "solid-js";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { AppSettings as Settings, AudioDevice } from "@/bindings";
+import type {
+  AppSettings as Settings,
+  AudioDevice,
+  ModelBackendSetting,
+} from "@/bindings";
 
 /**
  * The settings surface every page reads.
@@ -38,6 +42,11 @@ export interface UseSettingsResult {
   resetBinding: (id: string) => Promise<void>;
   getSetting: <K extends keyof Settings>(key: K) => Settings[K] | undefined;
   setPostProcessProvider: (providerId: string) => Promise<void>;
+  /** Pin one model to a compute backend (or clear the pin with `auto`). */
+  setModelBackend: (
+    modelId: string,
+    backend: ModelBackendSetting,
+  ) => Promise<void>;
   updatePostProcessBaseUrl: (
     providerId: string,
     baseUrl: string,
@@ -83,6 +92,7 @@ export const useSettings = (): UseSettingsResult => {
     getSetting: store.getSetting,
     isUpdating: store.isUpdatingKey,
     setPostProcessProvider: store.setPostProcessProvider,
+    setModelBackend: store.setModelBackend,
     updatePostProcessBaseUrl: store.updatePostProcessBaseUrl,
     updatePostProcessApiKey: store.updatePostProcessApiKey,
     updatePostProcessModel: store.updatePostProcessModel,
@@ -108,6 +118,7 @@ export const useSettings = (): UseSettingsResult => {
     resetBinding: actions.resetBinding,
     getSetting: actions.getSetting,
     setPostProcessProvider: actions.setPostProcessProvider,
+    setModelBackend: actions.setModelBackend,
     updatePostProcessBaseUrl: actions.updatePostProcessBaseUrl,
     updatePostProcessApiKey: actions.updatePostProcessApiKey,
     updatePostProcessModel: actions.updatePostProcessModel,

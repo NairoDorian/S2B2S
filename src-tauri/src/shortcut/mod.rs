@@ -1413,6 +1413,35 @@ pub fn change_multi_stt_streaming_context_chunks_setting(
     Ok(())
 }
 
+/// Experimental Multi Streaming STT: every streaming-capable Multi-STT slot runs
+/// beside the primary, and at each pause their live texts are merged and cleaned
+/// by the brain model — the parent mode's machinery, with no re-decode.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_streaming_multi_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_streaming_multi_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Experimental Multi Streaming STT: whether the overlay shows every live model's
+/// text plus the merged result (debug), or only the corrected first block.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_streaming_multi_debug_view_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.multi_stt_streaming_multi_debug_view = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -1997,6 +2026,45 @@ pub fn change_transcribe_accelerator_setting(
 pub fn change_transcribe_gpu_device(app: AppHandle, device: Option<String>) -> Result<(), String> {
     let mut s = settings::get_settings(&app);
     s.transcribe_gpu_device = device;
+    save_accelerator_and_reload_next_use(&app, s);
+    Ok(())
+}
+
+/// Pin one model — the primary, a Multi-STT slot, any id in the registry — to a
+/// backend of its own, or clear the pin with `Auto`.
+///
+/// A named backend is a hard request in the engine: an unavailable one would
+/// fail that model's load rather than fall back, so it is refused here and the
+/// dropdown (which lists only `get_available_accelerators().model_backends`)
+/// never offers it. The two places that *can* legitimately go stale are a build
+/// whose GPU module fails to load later in the session and a machine whose
+/// driver disappeared; both are handled at the load site by
+/// `resolve_model_backend`, which warns and applies the global policy rather
+/// than leaving the user with a model that will not open.
+#[tauri::command]
+#[specta::specta]
+pub fn set_model_backend_setting(
+    app: AppHandle,
+    model_id: String,
+    backend: settings::ModelBackendSetting,
+) -> Result<(), String> {
+    let available = crate::managers::transcription::available_model_backend_names();
+    if !available.iter().any(|name| name == backend.as_str()) {
+        return Err(format!(
+            "The {} backend is not available in this build; available backends: {}",
+            backend.as_str(),
+            available.join(", ")
+        ));
+    }
+
+    let mut s = settings::get_settings(&app);
+    if backend == settings::ModelBackendSetting::Auto {
+        // Auto is the absence of an override, stored as an absent key so the
+        // settings file stays a record of real choices only.
+        s.per_model_backends.remove(&model_id);
+    } else {
+        s.per_model_backends.insert(model_id, backend);
+    }
     save_accelerator_and_reload_next_use(&app, s);
     Ok(())
 }

@@ -200,6 +200,12 @@ const EXEMPTIONS: Exemption[] = [
     reason:
       "The one place the external HF org is stripped off a model id for display. The org is not ours — and the pattern stops at the org name, because the source spells the separator as an escaped slash (`/^handy-computer\\//`) that a pattern including it would miss.",
   },
+  {
+    file: "scripts/tauri-runner.ts",
+    allow: /"handy", "transcribe_cpp_cache"/,
+    reason:
+      "The CPU lane's private cache root. `get_cache_root()` in transcribe.cpp's own build script (`bindings/rust/sys/build.rs`, a separate repo) puts every persistent build artifact under `<LOCALAPPDATA>/handy/transcribe_cpp_cache/`, and that directory already exists on every developer's machine, holding the GPU caches. The CPU cache has to be a *sibling* of those, not a tree of its own, which is the whole reason it is named here: this path is not ours to rename.",
+  },
 
   // --- attribution, which must survive the rename ---------------------------
   {

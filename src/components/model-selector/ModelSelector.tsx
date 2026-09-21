@@ -1,9 +1,13 @@
 import { createSignal, createEffect, createMemo, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
-import { Gauge, LoaderCircle, Zap } from "@/components/icons/lucide";
+import { Cpu, Gauge, LoaderCircle, Zap } from "@/components/icons/lucide";
 import { commands } from "@/bindings";
-import type { NativeStreamingLatencyPreset, QuantVariant } from "@/bindings";
+import type {
+  ModelBackendSetting,
+  NativeStreamingLatencyPreset,
+  QuantVariant,
+} from "@/bindings";
 import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
 import { useModelStore, selectModel } from "../../stores/modelStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -17,6 +21,7 @@ import LatencyPanel, {
   latencyPresetLabelKey,
 } from "./LatencyPanel";
 import ChunkSizePanel, { R2T2_CHUNK_MS_DEFAULT } from "./ChunkSizePanel";
+import ModelBackendPanel, { backendLabel } from "./ModelBackendPanel";
 import { getQuantColor } from "./quantColors";
 import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
 
@@ -32,7 +37,7 @@ type ModelStatus =
   | "unloaded"
   | "none";
 
-type StatusPanel = "model" | "quant" | "latency";
+type StatusPanel = "model" | "quant" | "latency" | "backend";
 
 interface ModelSelectorProps {
   onError?: (error: string) => void;
@@ -61,6 +66,12 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   const displayModelId = createMemo(
     () => pendingModelId() || modelStore.currentModel,
   );
+
+  // This model's pin in `per_model_backends`; absent means `auto`, which is
+  // what the panel shows as selected.
+  const currentBackend = (): ModelBackendSetting =>
+    (settingsStore.settings?.per_model_backends?.[displayModelId() ?? ""] ??
+      "auto") as ModelBackendSetting;
 
   const togglePanel = (panel: StatusPanel) => {
     setOpenPanel(openPanel() === panel ? null : panel);
@@ -535,6 +546,34 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           </Show>
         </StatusBarPopover>
       </Show>
+      {/* The one pinned control: it says which backend this model would load
+          on, and is where that is changed. Only the models this build can
+          actually load a given backend on appear inside, so a choice the
+          engine would refuse cannot be made here. */}
+      <StatusBarPopover
+        open={openPanel() === "backend"}
+        onToggle={() => togglePanel("backend")}
+        label={backendLabel(currentBackend(), t)}
+        title={t("modelSelector.backend.title")}
+        widthClass="w-[min(20rem,calc(100vw-2rem))]"
+        trigger={
+          <>
+            <Cpu class="h-3 w-3 shrink-0 text-text/50" />
+            <span class="max-w-24 truncate">
+              {backendLabel(currentBackend(), t)}
+            </span>
+          </>
+        }
+      >
+        <ModelBackendPanel
+          modelId={displayModelId()}
+          selected={currentBackend()}
+          onSelect={(backend) =>
+            displayModelId() &&
+            void settingsStore.setModelBackend(displayModelId()!, backend)
+          }
+        />
+      </StatusBarPopover>
       <DownloadProgressDisplay
         downloadProgress={modelStore.downloadProgress}
         downloadStats={modelStore.downloadStats}

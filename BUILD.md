@@ -78,11 +78,12 @@ exactly like Apple Silicon (transcribe.cpp with Metal).
 - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) 13.x — this fork
   builds transcribe.cpp with the **`cuda`** feature on Windows x86_64
   (`src-tauri/Cargo.toml`), not upstream's Vulkan backend. `nvcc` must be on
-  `PATH` and must support your MSVC version; `.cargo/config.toml` passes the
-  flags CUDA 13.4 needs with MSVC 2026 (`-std=c++17 -Xcompiler=/Zc:preprocessor`)
-  and turns sccache off for the native build. `bun run build:fast` compiles
+  `PATH` and must support your MSVC version. `bun run build:fast` compiles
   kernels for the local GPU only (`TRANSCRIBE_CUDA_ARCHITECTURES=auto`);
-  `bun run build:full` builds the full architecture matrix.
+  `bun run build:full` builds the full architecture matrix. `bun run dev:cpu`
+  needs no CUDA toolkit at all — it configures the native build with
+  `TRANSCRIBE_CUDA=OFF` and runs on the CPU backend. Every lane compiles the
+  full set of model architectures in.
 
 - [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG — **only** if
   you switch the feature back to `vulkan` (`vulkan-shaders-gen` needs the

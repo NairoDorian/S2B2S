@@ -21,6 +21,7 @@ mod llama_server;
 mod llm_client;
 mod managers;
 mod memory;
+mod multi_streaming;
 mod multi_stt_stream;
 mod overlay;
 mod overlay_preview;
@@ -816,6 +817,8 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_multi_stt_streaming_first_enabled_setting,
             shortcut::change_multi_stt_streaming_pause_ms_setting,
             shortcut::change_multi_stt_streaming_context_chunks_setting,
+            shortcut::change_multi_stt_streaming_multi_enabled_setting,
+            shortcut::change_multi_stt_streaming_multi_debug_view_setting,
             shortcut::change_multi_stt_translate_model_2,
             shortcut::change_multi_stt_translate_model_3,
             shortcut::change_multi_stt_translate_model_4,
@@ -860,6 +863,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_show_tray_icon_setting,
             shortcut::change_transcribe_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
+            shortcut::set_model_backend_setting,
             shortcut::get_available_accelerators,
             shortcut::native_keys::start_native_keys_recording,
             shortcut::native_keys::stop_native_keys_recording,

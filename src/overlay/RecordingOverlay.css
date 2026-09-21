@@ -178,6 +178,12 @@
      the bottom (newest visible) and older lines fade off the top, same as bottom. */
   margin: 0;
 }
+.ov-stage.top .stext-cols {
+  /* Same anchoring, moved up a level: the columns' own bottom-anchor would
+     otherwise hold short text down at the bottom edge, the opposite of what the
+     top placement does everywhere else. */
+  margin-top: 0;
+}
 
 /* Shared base card. Flat: theme surface + hairline border, no shadow or blur. */
 .scard {
@@ -301,6 +307,60 @@
 }
 .stext-cap .tentative {
   color: inherit;
+}
+/* Two live-text columns, side by side: the experimental Multi Streaming STT mode
+   runs a second model beside the primary one and the card shows both. They share
+   the one scroll container above and so the one height measurement, and the
+   wrapper carries the bottom-anchor the lone <p> used to hold — that anchor has
+   to sit on the direct flex child, and the <p> is now one level down. */
+.stext-cols {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: auto;
+}
+.stext-col {
+  /* Equal shares that give before they overflow: the overlay window is narrow,
+     so a long unbroken token wraps rather than setting the card's width. Written
+     as `flex: 1 1 0` rather than a basis percentage because the mode runs *two or
+     more* models: three or four columns divide whatever there is between them. */
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.stext-col p {
+  /* The bottom-anchoring above would drop a short column's text below its own
+     marker, and the two columns are read side by side from their tops. */
+  margin: 0;
+}
+/* "1", "2", … — which model a column came from. Digits, so no translation. */
+.smark {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+  color: var(--s-faint);
+}
+/* The merged-and-cleaned block, under the model columns it was merged from: the
+   third block of the detailed view, and the only one that is not a model's own
+   text. A rule above it and a brighter mark are what say so — the text itself is
+   the session's finished result, so it is styled as the result rather than as
+   another column. */
+.smerged {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--s-faint);
+  overflow-wrap: anywhere;
+}
+.smerged p {
+  /* Same reason as the columns: the block is the direct flex child's text now,
+     and it must not re-anchor itself away from its own mark. */
+  margin: 0;
+  color: var(--s-accent);
+}
+.smerge-mark {
+  color: var(--s-accent);
 }
 .scaret {
   display: inline-block;

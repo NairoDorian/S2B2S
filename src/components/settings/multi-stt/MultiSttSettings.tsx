@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/Input";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { ShortcutInput } from "../ShortcutInput";
 import { KeyComboInput } from "../KeyComboInput";
+import { ModelBackendDropdown } from "./ModelBackendDropdown";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
 import { commands } from "@/bindings";
@@ -452,6 +453,11 @@ export const MultiSttSettings = () => {
                   modelId={multiSttModel2()}
                   modelInfo={model2Info()}
                 />
+                <ModelBackendDropdown
+                  modelId={multiSttModel2()}
+                  label={t("multiStt.models.backend")}
+                  class="mt-2"
+                />
                 {multiSttModel2() && model2Info()?.supports_translation && (
                   <div class="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
@@ -542,6 +548,11 @@ export const MultiSttSettings = () => {
                   modelId={multiSttModel3()}
                   modelInfo={model3Info()}
                 />
+                <ModelBackendDropdown
+                  modelId={multiSttModel3()}
+                  label={t("multiStt.models.backend")}
+                  class="mt-2"
+                />
                 {multiSttModel3() && model3Info()?.supports_translation && (
                   <div class="flex items-center gap-2 mt-1 ml-1">
                     <ToggleSwitch
@@ -630,6 +641,11 @@ export const MultiSttSettings = () => {
                   slot={4}
                   modelId={multiSttModel4()}
                   modelInfo={model4Info()}
+                />
+                <ModelBackendDropdown
+                  modelId={multiSttModel4()}
+                  label={t("multiStt.models.backend")}
+                  class="mt-2"
                 />
                 {multiSttModel4() && model4Info()?.supports_translation && (
                   <div class="flex items-center gap-2 mt-1 ml-1">
@@ -836,6 +852,61 @@ export const MultiSttSettings = () => {
               {((getSetting("multi_stt_streaming_first_enabled") as boolean) ??
                 false) && (
                 <>
+                  <ToggleSwitch
+                    checked={
+                      (getSetting(
+                        "multi_stt_streaming_multi_enabled",
+                      ) as boolean) ?? false
+                    }
+                    onChange={(enabled) =>
+                      updateSetting(
+                        "multi_stt_streaming_multi_enabled",
+                        enabled,
+                      )
+                    }
+                    isUpdating={isUpdating("multi_stt_streaming_multi_enabled")}
+                    label={t("multiStt.streamingFirst.multi.label")}
+                    description={t("multiStt.streamingFirst.multi.description")}
+                    descriptionMode="tooltip"
+                    grouped={false}
+                  />
+                  {((getSetting(
+                    "multi_stt_streaming_multi_enabled",
+                  ) as boolean) ?? false) ? (
+                    <>
+                      <Alert variant="info" contained>
+                        <p class="text-sm">
+                          {t("multiStt.streamingFirst.multi.note")}
+                        </p>
+                      </Alert>
+                      <ToggleSwitch
+                        checked={
+                          (getSetting(
+                            "multi_stt_streaming_multi_debug_view",
+                          ) as boolean) ?? false
+                        }
+                        onChange={(enabled) =>
+                          updateSetting(
+                            "multi_stt_streaming_multi_debug_view",
+                            enabled,
+                          )
+                        }
+                        isUpdating={isUpdating(
+                          "multi_stt_streaming_multi_debug_view",
+                        )}
+                        label={t("multiStt.streamingFirst.debugView.label")}
+                        description={t(
+                          "multiStt.streamingFirst.debugView.description",
+                        )}
+                        descriptionMode="tooltip"
+                        grouped={false}
+                      />
+                    </>
+                  ) : null}
+                  {/* The pause is what ends a chunk in *both* of this mode's
+                      forms — in this one it is what triggers the merge over the
+                      models' live texts, so it is the setting that matters most
+                      here and it stays on screen. */}
                   <Slider
                     value={
                       (getSetting("multi_stt_streaming_pause_ms") as number) ??
@@ -860,42 +931,52 @@ export const MultiSttSettings = () => {
                     }
                     disabled={isUpdating("multi_stt_streaming_pause_ms")}
                   />
-                  <Slider
-                    value={
-                      (getSetting(
-                        "multi_stt_streaming_context_chunks",
-                      ) as number) ?? 1
-                    }
-                    onChange={(value) =>
-                      updateSetting(
-                        "multi_stt_streaming_context_chunks",
-                        Math.round(value),
-                      )
-                    }
-                    min={0}
-                    max={3}
-                    step={1}
-                    label={t("multiStt.streamingFirst.contextLabel")}
-                    description={t(
-                      "multiStt.streamingFirst.contextDescription",
-                    )}
-                    descriptionMode="tooltip"
-                    grouped={false}
-                    formatValue={(v) =>
-                      v === 0
-                        ? t("multiStt.streamingFirst.contextOff")
-                        : t("multiStt.streamingFirst.contextValue", {
-                            count: Math.round(v),
-                          })
-                    }
-                    onReset={() =>
-                      updateSetting("multi_stt_streaming_context_chunks", 1)
-                    }
-                    disabled={isUpdating("multi_stt_streaming_context_chunks")}
-                  />
-                  <Alert variant="info" contained>
-                    <p class="text-sm">{t("multiStt.streamingFirst.note")}</p>
-                  </Alert>
+                  {((getSetting(
+                    "multi_stt_streaming_multi_enabled",
+                  ) as boolean) ?? false) ? null : (
+                    <>
+                      <Slider
+                        value={
+                          (getSetting(
+                            "multi_stt_streaming_context_chunks",
+                          ) as number) ?? 1
+                        }
+                        onChange={(value) =>
+                          updateSetting(
+                            "multi_stt_streaming_context_chunks",
+                            Math.round(value),
+                          )
+                        }
+                        min={0}
+                        max={3}
+                        step={1}
+                        label={t("multiStt.streamingFirst.contextLabel")}
+                        description={t(
+                          "multiStt.streamingFirst.contextDescription",
+                        )}
+                        descriptionMode="tooltip"
+                        grouped={false}
+                        formatValue={(v) =>
+                          v === 0
+                            ? t("multiStt.streamingFirst.contextOff")
+                            : t("multiStt.streamingFirst.contextValue", {
+                                count: Math.round(v),
+                              })
+                        }
+                        onReset={() =>
+                          updateSetting("multi_stt_streaming_context_chunks", 1)
+                        }
+                        disabled={isUpdating(
+                          "multi_stt_streaming_context_chunks",
+                        )}
+                      />
+                      <Alert variant="info" contained>
+                        <p class="text-sm">
+                          {t("multiStt.streamingFirst.note")}
+                        </p>
+                      </Alert>
+                    </>
+                  )}
                 </>
               )}
             </div>

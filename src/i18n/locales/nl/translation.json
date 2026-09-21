@@ -161,6 +161,20 @@
       "translate": "Vertalen",
       "streaming": "Toont live transcriptie tijdens het spreken"
     },
+    "backend": {
+      "title": "Backend",
+      "auto": "Auto",
+      "cpu": "CPU",
+      "appliesOnNextLoad": "Applies the next time this model is loaded.",
+      "descriptions": {
+        "auto": "Follow the global accelerator setting.",
+        "cpu": "Run this model on the CPU.",
+        "cuda": "Run this model on the NVIDIA GPU through CUDA.",
+        "vulkan": "Run this model on the GPU through Vulkan.",
+        "metal": "Run this model on the Apple GPU through Metal.",
+        "rocm": "Run this model on the AMD GPU through ROCm."
+      }
+    },
     "quantPicker": {
       "title": "Quantization",
       "pillLabel": "Quantization: {{quant}}",
@@ -1845,6 +1859,7 @@
     },
     "models": {
       "title": "Additional Models",
+      "backend": "Backend",
       "model2": "Second Model",
       "model3": "Third Model",
       "model2Description": "Select a second STT model to run alongside the primary model",
@@ -1884,9 +1899,18 @@
       "clearPrompt": "Clear Merge Prompt"
     },
     "streamingFirst": {
-      "title": "Experimental: streaming 1st model",
-      "enabledLabel": "Stream the rough text while you speak",
-      "enabledDescription": "The primary model's live stream becomes the 1st output and you watch it form, including everything you have said earlier in the session. Every pause longer than the one below ends a chunk: the extra models re-transcribe the audio since the last pause and the merge prompt replaces its rough text in place.",
+      "title": "Experimental Live Streaming Merge & Clean",
+      "enabledLabel": "Merge and clean the live text while I speak",
+      "enabledDescription": "Experimental. The primary model streams live and its rough text is the 1st output, forming as you speak. Every pause longer than the one below closes a chunk: the extra models re-transcribe that chunk's audio and the merge prompt rewrites it in place, so the transcript is cleaned up at your own pauses instead of being re-transcribed at the end. Needs a streaming-capable primary model and a merge prompt — without either, Multi-STT runs its normal batch path.",
+      "multi": {
+        "label": "Stream the other models beside the first",
+        "description": "Every Multi-STT slot that can stream runs beside the primary model, and each one forms its own live text as you speak. Nothing is re-transcribed at your pauses: at each pause the models' own live texts are handed to the merge prompt, and what it returns is the session's text — the text in the overlay and the text that gets pasted. Non-streaming slots are ignored and not even loaded. The pause setting below is what ends a chunk; the context setting does not apply here, since nothing is re-run. Needs a streaming-capable primary model and a merge prompt — without either, Multi-STT runs its normal batch path.",
+        "note": "Every model in the Secondary, Tertiary and Quaternary slots that can stream takes part; a slot whose model cannot stream is left out of the session and its model is not loaded. Two models are enough — the mode runs with however many the list holds."
+      },
+      "debugView": {
+        "label": "Show the detailed view: every model's live text, and the merged result",
+        "description": "The detailed view of this mode. The overlay gets one column per streaming model, each showing that model's own live text as it forms, and under them the merged-and-cleaned text of the last pause — the block marked M, which is the session's result. With this off, the overlay has the single block the mode normally shows: fed by the first streaming model and corrected in place every time a merge lands, which is also what gets pasted. This changes what the overlay shows, not what the mode does."
+      },
       "pauseLabel": "Pause that ends a chunk",
       "pauseDescription": "How long you have to stop speaking to end the chunk being spoken. Every pause this long closes one, and a chunk is the only unit here: nothing in the text is ever waited for, so the text is corrected at your own pauses and nowhere else. After 60 seconds with no pause the chunk is closed anyway.",
       "contextLabel": "Previous chunks re-run with the new one",

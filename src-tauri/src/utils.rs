@@ -134,8 +134,12 @@ pub fn cancel_current_operation(app: &AppHandle) {
     let recording_was_active = audio_manager.is_recording();
     audio_manager.cancel_recording();
 
-    // Abandon any live streaming transcription
+    // Abandon any live streaming transcription. The experimental Multi
+    // Streaming STT mode runs a second stream on its own slot, so both are
+    // released here: a session left armed would keep a waiter thread polling and
+    // an engine leased for a recording that is over.
     let tm = app.state::<Arc<TranscriptionManager>>();
+    crate::multi_streaming::cancel(&tm);
     tm.cancel_stream();
 
     if let Some(sm) = app.try_state::<Arc<crate::managers::statistics::StatisticsManager>>() {

@@ -10,6 +10,7 @@ import type {
   LlamaSettings,
   LLMPrompt,
   MicIdleTimeoutUnit,
+  ModelBackendSetting,
   NativeStreamingLatencyPreset,
   ShortcutActivation,
 } from "@/bindings";
@@ -52,6 +53,20 @@ interface SettingsStore {
    * using.
    */
   setLatencyChunkMs: (modelId: string, chunkMs: number) => Promise<void>;
+  /**
+   * Pin one model to a compute backend, or clear the pin with `auto`.
+   *
+   * Same optimistic-write-then-roll-back-on-error shape as `setLatencyPreset`:
+   * the backend refuses a choice this build cannot honour (the engine's
+   * explicit-backend request has no silent fallback), and a refusal must not
+   * leave the dropdown showing a backend the model is not actually on. `auto`
+   * is stored as the absence of an entry, so the rollback restores the exact
+   * previous state rather than writing an explicit `auto`.
+   */
+  setModelBackend: (
+    modelId: string,
+    backend: ModelBackendSetting,
+  ) => Promise<void>;
   resetSetting: (key: keyof Settings) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
@@ -307,6 +322,10 @@ const settingUpdaters: {
     commands.changeMultiSttStreamingPauseMsSetting(value as number),
   multi_stt_streaming_context_chunks: (value) =>
     commands.changeMultiSttStreamingContextChunksSetting(value as number),
+  multi_stt_streaming_multi_enabled: (value) =>
+    commands.changeMultiSttStreamingMultiEnabledSetting(value as boolean),
+  multi_stt_streaming_multi_debug_view: (value) =>
+    commands.changeMultiSttStreamingMultiDebugViewSetting(value as boolean),
   mic_idle_timeout_value: (value) =>
     commands.changeMicIdleTimeoutSettings(
       value as number,
@@ -591,6 +610,50 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
         };
       });
       console.error("Failed to set streaming chunk size:", result.error);
+    }
+  },
+
+  // Pin one model to a backend of its own (or clear the pin with "auto").
+  // Mirrors setLatencyChunkMs: the entry is written optimistically so the
+  // dropdown responds at once, and rolled back — including removing the key
+  // when there was none — if the backend refuses the choice.
+  setModelBackend: async (modelId, backend) => {
+    const { settings } = get();
+    const originalBackend = settings?.per_model_backends?.[modelId];
+
+    set((state) => {
+      if (!state.settings) return { settings: null };
+      const nextBackends: Record<string, ModelBackendSetting> = {
+        ...state.settings.per_model_backends,
+      };
+      if (backend === "auto") {
+        delete nextBackends[modelId];
+      } else {
+        nextBackends[modelId] = backend;
+      }
+      return {
+        settings: { ...state.settings, per_model_backends: nextBackends },
+      };
+    });
+
+    const result = await commands.setModelBackendSetting(modelId, backend);
+    if (result.status === "error") {
+      set((state) => {
+        if (!state.settings) return { settings: null };
+        const nextBackends: Record<string, ModelBackendSetting> = {
+          ...state.settings.per_model_backends,
+        };
+        if (originalBackend === undefined || originalBackend === "auto") {
+          delete nextBackends[modelId];
+        } else {
+          nextBackends[modelId] = originalBackend;
+        }
+        return {
+          settings: { ...state.settings, per_model_backends: nextBackends },
+        };
+      });
+      console.error("Failed to set model backend:", result.error);
+      toast.error(result.error);
     }
   },
 

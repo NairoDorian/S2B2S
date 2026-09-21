@@ -1,29 +1,24 @@
 //! Architecture plugin management for transcribe.cpp.
 //!
-//! In a build with the `arch-dl` feature (Windows x86_64 and Linux — see
-//! `src-tauri/Cargo.toml`) libtranscribe carries **no** model architecture of
-//! its own: each family is a loadable `transcribe-arch-<family>.dll` / `.so` /
-//! `.dylib` that the library resolves at model-open time. `TRANSCRIBE_MODEL_SET`
-//! picks which families get built — `minimal-multilingual` (parakeet, granite,
-//! qwen3_asr) for everyday development, `full` for a distribution build. See
-//! `scripts/tauri-runner.ts` and `.cargo/config.toml`.
+//! The `arch-dl` feature (one loadable `transcribe-arch-<family>.dll` / `.so` /
+//! `.dylib` per family, resolved at model-open time) is **switched off** for
+//! now: every build compiles its model families into libtranscribe, and every
+//! lane packs the full set, so in the shipped postures there are no plugins to
+//! find and [`list_arch_plugins`] reports nothing. See
+//! `scripts/tauri-runner.ts` and `src-tauri/Cargo.toml`.
 //!
-//! **This module adds no loading of its own to the normal path.** The library
-//! already searches, in order, the model file's directory and its `arch/`
-//! subdirectory, every directory registered here, `$TRANSCRIBE_ARCH_DIR`, and
-//! the directory holding libtranscribe. `cmake --install` puts the plugins
-//! beside libtranscribe and `build.rs` stages them next to the application
-//! binary, which is the last of those — so a stock install opens every model
-//! with no help from this file.
-//!
-//! What is left here is for the layouts that search cannot cover: letting a user
-//! drop a plugin into an app-owned folder ([`init_arch_plugin_dirs`],
+//! **This module adds no loading of its own to the normal path.** Were the
+//! feature on, the library already searches, in order, the model file's
+//! directory and its `arch/` subdirectory, every directory registered here,
+//! `$TRANSCRIBE_ARCH_DIR`, and the directory holding libtranscribe. What is left
+//! here is for the layouts that search cannot cover: letting a user drop a
+//! plugin into an app-owned folder ([`init_arch_plugin_dirs`],
 //! `register_arch_dir`), and reporting what is installed ([`list_arch_plugins`]).
 //!
 //! A model whose family is not in the build's set fails to load with
 //! "unsupported architecture"; the two `Model::load_with` call sites in
 //! `managers/transcription.rs` turn that into a message naming the plugin
-//! directory. That is the intended failure for the minimal preset.
+//! directory where one would go.
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -178,7 +173,7 @@ pub fn load_arch_plugin<P: AsRef<Path>>(path: P) -> Result<(), String> {
 /// Nothing is loaded here. The library resolves a plugin lazily, when a model
 /// that needs it is opened, so pre-loading every module in every directory would
 /// pay a `LoadLibrary` plus each plugin's static initializers at startup for
-/// models the user may never open — and with the full preset that is 18 modules.
+/// models the user may never open — and a `full` build's set is 19 families.
 /// Registration is enough: the directories below join the loader's search path.
 ///
 /// Returns the directories that were registered, in registration order.
@@ -220,10 +215,10 @@ pub fn init_arch_plugin_dirs(app_handle: &AppHandle) -> Vec<PathBuf> {
 
 /// The architecture plugin modules currently installed, sorted by name.
 ///
-/// Scans the registered directories for plugin modules. This is what the Models
-/// page reports, so in a `minimal-multilingual` build it lists three and in a
-/// `full` build eighteen — the count is read off disk, not from a hardcoded list
-/// of what a build is assumed to contain.
+/// Scans the registered directories for plugin modules. The count is read off
+/// disk, not from a hardcoded list of what a build is assumed to contain, which
+/// is the honest answer in every posture — including the current one, where
+/// `arch-dl` is off everywhere and this therefore reports nothing.
 pub fn list_arch_plugins(app_handle: &AppHandle) -> Vec<ArchPluginInfo> {
     // The UI can ask before anything has loaded a model, so make sure the
     // standard directories have been registered.

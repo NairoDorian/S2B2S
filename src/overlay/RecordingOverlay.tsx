@@ -22,7 +22,7 @@
 //   variable, and it is deliberately not guarded the way a React ref would be:
 //   it is only ever assigned, and the effects that read it ask the DOM what is
 //   on screen rather than asking whether it was unmounted.
-import { createEffect, createSignal, onSettled, Show } from "solid-js";
+import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -139,6 +139,24 @@ const RecordingOverlay = () => {
     committed: "",
     tentative: "",
   });
+  // The experimental Multi Streaming STT mode's other models: the debug view's
+  // columns 2, 3 and 4, keyed by stream slot. A record rather than a fixed pair
+  // because the mode runs *two or more* — the backend opens one live stream per
+  // Multi-STT slot that can stream, so there are as many columns as the user's
+  // own list holds. Its own signals, and never a second half of `streamText`:
+  // every column updates independently.
+  const [extraTexts, setExtraTexts] = createSignal<
+    Record<number, StreamTextEvent>
+  >({});
+  // The debug view's third block, below the columns: the merged-and-cleaned text
+  // the session's pauses produce. It arrives on a slot of its own — the one no
+  // model can occupy — so the card can tell it apart from a model's column
+  // without being told which model is which; see `MERGE_BLOCK_SLOT` and
+  // `emit_composed_stream_text` in the backend's `multi_stt_stream`.
+  const [mergeText, setMergeText] = createSignal<StreamTextEvent>({
+    committed: "",
+    tentative: "",
+  });
   const [phase, setPhase] = createSignal<StreamPhase>("listening");
   const [workKind, setWorkKind] = createSignal<StreamWorkKind>("transcribing");
   const [elapsed, setElapsed] = createSignal(0);
@@ -194,6 +212,13 @@ const RecordingOverlay = () => {
   // The split the signal is currently holding, so that re-deriving an unchanged
   // one does not re-signal it.
   let published: StreamTextEvent = { committed: "", tentative: "" };
+  // The extra columns' watermarks, one per slot, for the same reason column 1
+  // has its own: the streams arrive interleaved with no ordering between them, so
+  // one watermark shared between them would swallow whichever column another had
+  // just moved.
+  const publishedExtras = new Map<number, StreamTextEvent>();
+  // The merged block's watermark, on the same terms.
+  let publishedMerge: StreamTextEvent = { committed: "", tentative: "" };
   let typewriterTimer: ReturnType<typeof setInterval> | null = null;
 
   // Drag-grip state (see AIVORelay's recording-overlay position memory pattern).
@@ -234,6 +259,41 @@ const RecordingOverlay = () => {
     }
     published = next;
     setStreamText(next);
+  };
+
+  // Each extra column leans on the same rule as column 1, against its own
+  // watermark. The record is replaced rather than mutated so the signal — not the
+  // object inside it — is what the columns subscribe to.
+  const applyExtraText = (slot: number, next: StreamTextEvent) => {
+    const previous = publishedExtras.get(slot);
+    if (
+      previous !== undefined &&
+      next.committed === previous.committed &&
+      next.tentative === previous.tentative
+    ) {
+      return;
+    }
+    publishedExtras.set(slot, next);
+    setExtraTexts((current) => ({ ...current, [slot]: next }));
+  };
+
+  // The merged block, on the same terms as the columns above.
+  const applyMergeText = (next: StreamTextEvent) => {
+    if (
+      next.committed === publishedMerge.committed &&
+      next.tentative === publishedMerge.tentative
+    ) {
+      return;
+    }
+    publishedMerge = next;
+    setMergeText(next);
+  };
+
+  // A new session starts with no columns but the first, and no merged block.
+  const resetStreamTexts = () => {
+    publishedExtras.clear();
+    setExtraTexts({});
+    applyMergeText({ committed: "", tentative: "" });
   };
 
   // Show the reveal as the target splits it. The seam comes from the target, so
@@ -301,6 +361,7 @@ const RecordingOverlay = () => {
           targetText = { committed: "", tentative: "" };
           reveal = NO_REVEAL;
           applyStreamText({ committed: "", tentative: "" });
+          resetStreamTexts();
           setSpeaking(false);
           setSpeechMs(0);
           setWordCount(0);
@@ -355,6 +416,29 @@ const RecordingOverlay = () => {
       });
 
       const unlistenStream = await events.streamTextEvent.listen((event) => {
+        // A numbered slot is one of the mode's other streams, and it is handled
+        // here and nowhere else: it is applied whole (another model's text was
+        // never typed, so there is no reveal to keep) and then this handler
+        // returns, so nothing below — the typewriter's target, the word count,
+        // the session flags — is ever driven by another model's stream.
+        //
+        // Every composed event rides a numbered slot as well, and it is the only
+        // thing that sets `whole_session`: the merged block is the one numbered
+        // slot that is *not* a model's column, and the flag is what tells them
+        // apart. (The production view's single block is composed too, but it
+        // arrives unnumbered, on the primary's own path below.)
+        if (typeof event.payload.slot === "number") {
+          if (event.payload.whole_session) {
+            // The session's own text, so the card grows with it and the failed
+            // chunks are the session's, exactly as on the production path.
+            setWholeSession(true);
+            setFailedChunks(event.payload.failed_chunks ?? 0);
+            applyMergeText(event.payload);
+          } else {
+            applyExtraText(event.payload.slot, event.payload);
+          }
+          return;
+        }
         targetText = event.payload;
         // Count from the backend text, not the typewriter's partial reveal, so
         // direct mode cannot make the speaking rate read artificially low. This
@@ -588,7 +672,7 @@ const RecordingOverlay = () => {
   // before the browser paints. The apply writes `overflowing` — the effect phase
   // is the sanctioned place for that.
   createEffect(
-    () => streamText(),
+    () => [streamText(), extraTexts(), mergeText()] as const,
     () => {
       const el = capEl;
       if (!el) return;
@@ -603,9 +687,13 @@ const RecordingOverlay = () => {
   // so the report matches what is on screen, and rounded up to a step so this is
   // one call per line of text; the backend clamps to its own monitor-based cap and
   // returns that clamp, which is what bounds this card too.
+  // Both columns are inside the one `capEl`, so either one growing is the same
+  // measurement reported by the same call — each extra column needs a trigger
+  // here, not a second measurement of its own. The merged block is inside it too,
+  // and it grows a whole block at a time.
   createEffect(
-    () => [streamText(), wholeSession()] as const, // React's [streamText, wholeSession]
-    ([, whole]) => {
+    () => [streamText(), extraTexts(), mergeText(), wholeSession()] as const,
+    ([, , whole]) => {
       if (!whole) return;
       const el = capEl;
       if (!el) return;
@@ -803,7 +891,34 @@ const RecordingOverlay = () => {
       : null;
 
   const hasText = () =>
-    streamText().committed.length > 0 || streamText().tentative.length > 0;
+    streamText().committed.length > 0 ||
+    streamText().tentative.length > 0 ||
+    hasExtraTexts() ||
+    hasMergeText();
+  // The mode's other models, in slot order, as `[slot, text]` pairs. Sorted
+  // rather than taken as the record's own order: the slots are numbers and an
+  // object's keys would otherwise read 1, 10, 2 — and a column that swapped
+  // places mid-recording would be the one thing this debug view must not do.
+  const extraColumns = () =>
+    Object.entries(extraTexts())
+      .map(([slot, text]) => [Number(slot), text] as const)
+      .toSorted(([a], [b]) => a - b);
+  // A column exists once its model has something to say; until then column 1
+  // alone is the whole layout, as it has always been.
+  const hasExtraTexts = () =>
+    extraColumns().some(
+      ([, text]) => text.committed.length > 0 || text.tentative.length > 0,
+    );
+  // The merged-and-cleaned block, once a pause has produced one.
+  const hasMergeText = () =>
+    mergeText().committed.length > 0 || mergeText().tentative.length > 0;
+  // The detailed view: the models' own live texts side by side, with the merged
+  // result below them. In the production view neither ever arrives — the session
+  // suppresses the extra streams' raw events and composes its single block onto
+  // the primary's path — so this is exactly "which of the mode's two views is on
+  // screen", answered by what the backend actually sent rather than by a setting
+  // the overlay would have to read and keep in step.
+  const debugStream = () => hasExtraTexts() || hasMergeText();
   const working = () => phase() === "working";
   // Keep the panel open whenever there's text — even while finalizing — so the
   // transcript stays put under a working spinner instead of collapsing and
@@ -964,19 +1079,68 @@ const RecordingOverlay = () => {
                 }}
                 onScroll={handleStreamScroll}
               >
-                <p>
-                  {/* Nothing between the two spans: they are one text cut in
-                      two and the model carries its own spacing (see
-                      `splitReveal`). A separator here lands inside a word —
-                      which for R2T2's Chinese is most of them. */}
-                  <span class="committed">{streamText().committed}</span>
-                  <span class="tentative">{streamText().tentative}</span>
-                  {/* Drop the blinking caret once finalizing — it's no longer
-                      capturing, and a static spinner conveys the work. */}
-                  <Show when={!working()}>
-                    <span class="scaret" />
-                  </Show>
-                </p>
+                <div class="stext-cols">
+                  <div class="stext-col">
+                    <Show when={debugStream()}>
+                      {/* The model's own list position, so the columns below can
+                          be read against the Multi-STT settings' own numbering
+                          (slot n is model n + 1). */}
+                      <span class="smark">{"1"}</span>
+                    </Show>
+                    <p>
+                      {/* Nothing between the two spans: they are one text cut in
+                          two and the model carries its own spacing (see
+                          `splitReveal`). A separator here lands inside a word —
+                          which for R2T2's Chinese is most of them. */}
+                      <span class="committed">{streamText().committed}</span>
+                      <span class="tentative">{streamText().tentative}</span>
+                      {/* Drop the blinking caret once finalizing — it's no longer
+                          capturing, and a static spinner conveys the work. */}
+                      <Show when={!working()}>
+                        <span class="scaret" />
+                      </Show>
+                    </p>
+                  </div>
+                  {/* Every other model's column. No caret: the caret tracks the
+                      reveal, and these columns have none. */}
+                  <For each={extraColumns()}>
+                    {([slot, text]) => (
+                      <Show
+                        when={
+                          text.committed.length > 0 || text.tentative.length > 0
+                        }
+                      >
+                        <div class="stext-col">
+                          <span class="smark">{`${slot + 1}`}</span>
+                          {/* The same rule as column 1, and it matters more
+                              here: these spans are one text cut in two as
+                              well. */}
+                          <p>
+                            <span class="committed">{text.committed}</span>
+                            <span class="tentative">{text.tentative}</span>
+                          </p>
+                        </div>
+                      </Show>
+                    )}
+                  </For>
+                </div>
+                {/* The merged-and-cleaned result of the session's last pause,
+                    under the models it was merged from — the third block of the
+                    detailed view, and the only one that is not a model's own
+                    text. The badge below reports the whole session either way. */}
+                <Show when={hasMergeText()}>
+                  <div class="smerged">
+                    {/* A letter rather than a word: the marks above it are bare
+                        numerals, and this one is read against them. What it
+                        stands for is written out in the settings that turn the
+                        mode on, not on the card. */}
+                    <span class="smark smerge-mark">{"M"}</span>
+                    <p>
+                      <span class="committed">{mergeText().committed}</span>
+                      <span class="tentative">{mergeText().tentative}</span>
+                    </p>
+                  </div>
+                </Show>
               </div>
             </div>
           </div>

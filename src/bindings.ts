@@ -68,6 +68,17 @@ export const commands = {
 	 *  streaming-first mode. Read at the next close, so it applies mid-session.
 	 */
 	changeMultiSttStreamingContextChunksSetting: (chunks: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_context_chunks_setting", { chunks })),
+	/**
+	 *  Experimental Multi Streaming STT: every streaming-capable Multi-STT slot runs
+	 *  beside the primary, and at each pause their live texts are merged and cleaned
+	 *  by the brain model — the parent mode's machinery, with no re-decode.
+	 */
+	changeMultiSttStreamingMultiEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_multi_enabled_setting", { enabled })),
+	/**
+	 *  Experimental Multi Streaming STT: whether the overlay shows every live model's
+	 *  text plus the merged result (debug), or only the corrected first block.
+	 */
+	changeMultiSttStreamingMultiDebugViewSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_multi_debug_view_setting", { enabled })),
 	changeMultiSttTranslateModel2: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_2", { enabled })),
 	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
 	changeMultiSttTranslateModel4: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_4", { enabled })),
@@ -136,6 +147,20 @@ export const commands = {
 	changeShowTrayIconSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_show_tray_icon_setting", { enabled })),
 	changeTranscribeAcceleratorSetting: (accelerator: TranscribeAcceleratorSetting) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_accelerator_setting", { accelerator })),
 	changeTranscribeGpuDevice: (device: string | null) => typedError<null, string>(__TAURI_INVOKE("change_transcribe_gpu_device", { device })),
+	/**
+	 *  Pin one model — the primary, a Multi-STT slot, any id in the registry — to a
+	 *  backend of its own, or clear the pin with `Auto`.
+	 * 
+	 *  A named backend is a hard request in the engine: an unavailable one would
+	 *  fail that model's load rather than fall back, so it is refused here and the
+	 *  dropdown (which lists only `get_available_accelerators().model_backends`)
+	 *  never offers it. The two places that *can* legitimately go stale are a build
+	 *  whose GPU module fails to load later in the session and a machine whose
+	 *  driver disappeared; both are handled at the load site by
+	 *  `resolve_model_backend`, which warns and applies the global policy rather
+	 *  than leaving the user with a model that will not open.
+	 */
+	setModelBackendSetting: (modelId: string, backend: ModelBackendSetting) => typedError<null, string>(__TAURI_INVOKE("set_model_backend_setting", { modelId, backend })),
 	/**
 	 *  Return which accelerators and GPU devices are available for this build.
 	 * 
@@ -621,6 +646,18 @@ export type AppSettings_Deserialize = {
 	 *  never from the process-local device registry index.
 	 */
 	transcribe_gpu_device?: string | null,
+	/**
+	 *  Per-model backend overrides, keyed by model id. An id that is absent (or
+	 *  mapped to `Auto`) follows `transcribe_accelerator`; a named entry pins
+	 *  that one model — the primary, a Multi-STT slot, a benchmark variant — to
+	 *  a backend of its own, which is what lets one process run, say, an R2T2
+	 *  stream on CUDA beside a merge model on the CPU.
+	 * 
+	 *  Applied on the next load of that model, exactly like
+	 *  `transcribe_accelerator`; both load sites resolve through
+	 *  `resolve_model_backend`.
+	 */
+	per_model_backends?: { [key in string]: ModelBackendSetting },
 	extra_recording_buffer_ms?: number,
 	vad_enabled?: boolean,
 	/**
@@ -728,8 +765,12 @@ export type AppSettings_Deserialize = {
 	multi_stt_streaming_first_enabled?: boolean,
 	/**
 	 *  How long the speaker has to pause before the chunk being spoken closes
-	 *  and is merged â€” what divides the session into chunks (100â€“10000 ms).
+	 *  and is merged — what divides the session into chunks (100–10000 ms).
 	 *  Same test Live Mode uses for its silence boundary.
+	 * 
+	 *  Applies to both the parent mode and the nested Multi Streaming STT mode
+	 *  below: they are one coordinator, and a pause is what closes a chunk in
+	 *  either.
 	 */
 	multi_stt_streaming_pause_ms?: number,
 	/**
@@ -740,8 +781,45 @@ export type AppSettings_Deserialize = {
 	 *  of the session. 0 sends only the chunk that just closed. See
 	 *  `multi_stt_stream::strip_context_prefix` for what the extras' decodes of
 	 *  the context are cropped back against.
+	 * 
+	 *  Ignored by the nested Multi Streaming STT mode, and only by it: there are
+	 *  no decodes to crop, so the setting has nothing to say about that session.
+	 *  It is deliberately not hidden while the nested toggle is on — it keeps its
+	 *  value for the parent mode, and a control that vanishes is a value the user
+	 *  cannot check.
 	 */
 	multi_stt_streaming_context_chunks?: number,
+	/**
+	 *  Experimental Multi Streaming STT — nested inside the streaming-first mode
+	 *  above, and only meaningful when it is on.
+	 * 
+	 *  The parent mode's machinery, driven by live streaming text instead of a
+	 *  re-decode: every Multi-STT slot that can stream runs beside the primary
+	 *  one, and at each pause the models' live texts go to the brain model for
+	 *  the same merge and clean the parent mode performs — with no batch decode
+	 *  anywhere in the session. The result is the merged text, exactly as it is
+	 *  in the parent mode.
+	 * 
+	 *  A slot that cannot stream is not loaded at all: there is no second live
+	 *  text to take from it, and loading it would only cost memory.
+	 */
+	multi_stt_streaming_multi_enabled?: boolean,
+	/**
+	 *  Whether the nested Multi Streaming STT mode shows all three texts, or
+	 *  only the one the parent mode shows.
+	 * 
+	 *  Off (the default) is the mode's production view and the one the parent
+	 *  mode has always had: **one** text block, the primary model's live text,
+	 *  corrected in place as each pause's merge lands. The other models are the
+	 *  merge's inputs, not the display's.
+	 * 
+	 *  On is the mode's debug view: a block per live model — how many there are
+	 *  is how many streaming-capable slots the user configured — with the merged
+	 *  and cleaned result in a block underneath them. Nothing about the session
+	 *  changes but the display: the merge, the pauses, the result and the paste
+	 *  are identical either way.
+	 */
+	multi_stt_streaming_multi_debug_view?: boolean,
 	mic_idle_timeout_value?: number,
 	mic_idle_timeout_unit?: MicIdleTimeoutUnit,
 	mic_idle_infinite?: boolean,
@@ -905,6 +983,18 @@ export type AppSettings_Serialize = {
 	 *  never from the process-local device registry index.
 	 */
 	transcribe_gpu_device: string | null,
+	/**
+	 *  Per-model backend overrides, keyed by model id. An id that is absent (or
+	 *  mapped to `Auto`) follows `transcribe_accelerator`; a named entry pins
+	 *  that one model — the primary, a Multi-STT slot, a benchmark variant — to
+	 *  a backend of its own, which is what lets one process run, say, an R2T2
+	 *  stream on CUDA beside a merge model on the CPU.
+	 * 
+	 *  Applied on the next load of that model, exactly like
+	 *  `transcribe_accelerator`; both load sites resolve through
+	 *  `resolve_model_backend`.
+	 */
+	per_model_backends: { [key in string]: ModelBackendSetting },
 	extra_recording_buffer_ms: number,
 	vad_enabled: boolean,
 	/**
@@ -1012,8 +1102,12 @@ export type AppSettings_Serialize = {
 	multi_stt_streaming_first_enabled: boolean,
 	/**
 	 *  How long the speaker has to pause before the chunk being spoken closes
-	 *  and is merged â€” what divides the session into chunks (100â€“10000 ms).
+	 *  and is merged — what divides the session into chunks (100–10000 ms).
 	 *  Same test Live Mode uses for its silence boundary.
+	 * 
+	 *  Applies to both the parent mode and the nested Multi Streaming STT mode
+	 *  below: they are one coordinator, and a pause is what closes a chunk in
+	 *  either.
 	 */
 	multi_stt_streaming_pause_ms: number,
 	/**
@@ -1024,8 +1118,45 @@ export type AppSettings_Serialize = {
 	 *  of the session. 0 sends only the chunk that just closed. See
 	 *  `multi_stt_stream::strip_context_prefix` for what the extras' decodes of
 	 *  the context are cropped back against.
+	 * 
+	 *  Ignored by the nested Multi Streaming STT mode, and only by it: there are
+	 *  no decodes to crop, so the setting has nothing to say about that session.
+	 *  It is deliberately not hidden while the nested toggle is on — it keeps its
+	 *  value for the parent mode, and a control that vanishes is a value the user
+	 *  cannot check.
 	 */
 	multi_stt_streaming_context_chunks: number,
+	/**
+	 *  Experimental Multi Streaming STT — nested inside the streaming-first mode
+	 *  above, and only meaningful when it is on.
+	 * 
+	 *  The parent mode's machinery, driven by live streaming text instead of a
+	 *  re-decode: every Multi-STT slot that can stream runs beside the primary
+	 *  one, and at each pause the models' live texts go to the brain model for
+	 *  the same merge and clean the parent mode performs — with no batch decode
+	 *  anywhere in the session. The result is the merged text, exactly as it is
+	 *  in the parent mode.
+	 * 
+	 *  A slot that cannot stream is not loaded at all: there is no second live
+	 *  text to take from it, and loading it would only cost memory.
+	 */
+	multi_stt_streaming_multi_enabled: boolean,
+	/**
+	 *  Whether the nested Multi Streaming STT mode shows all three texts, or
+	 *  only the one the parent mode shows.
+	 * 
+	 *  Off (the default) is the mode's production view and the one the parent
+	 *  mode has always had: **one** text block, the primary model's live text,
+	 *  corrected in place as each pause's merge lands. The other models are the
+	 *  merge's inputs, not the display's.
+	 * 
+	 *  On is the mode's debug view: a block per live model — how many there are
+	 *  is how many streaming-capable slots the user configured — with the merged
+	 *  and cleaned result in a block underneath them. Nothing about the session
+	 *  changes but the display: the merge, the pauses, the result and the paste
+	 *  are identical either way.
+	 */
+	multi_stt_streaming_multi_debug_view: boolean,
 	mic_idle_timeout_value: number,
 	mic_idle_timeout_unit: MicIdleTimeoutUnit,
 	mic_idle_infinite: boolean,
@@ -1105,6 +1236,11 @@ export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter";
 export type AvailableAccelerators = {
 	transcribe: string[],
 	gpu_devices: GpuDeviceOption[],
+	/**
+	 *  Per-model backend choices this process can honour, best first (see
+	 *  `available_model_backends`).
+	 */
+	model_backends: string[],
 };
 
 /**
@@ -2252,6 +2388,23 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
 export type MicIdleTimeoutUnit = "seconds" | "minutes";
 
+/**
+ *  The backend one specific model loads on, overriding the global
+ *  `transcribe_accelerator` for that model alone.
+ * 
+ *  `Auto` is "no override": follow the global accelerator setting, including
+ *  its GPU device choice. The named variants request a compute backend
+ *  outright, which is a *hard* request in the engine — asking for a backend the
+ *  build or the machine does not have fails the load rather than falling back
+ *  silently — so a value that is not available is refused at the command
+ *  boundary and falls back with a warning at the load site. The UI lists only
+ *  what `get_available_accelerators` reports as present.
+ * 
+ *  Keyed by model id in `per_model_backends`, which covers the primary model
+ *  and every Multi-STT slot alike (they are all just model ids).
+ */
+export type ModelBackendSetting = "auto" | "cpu" | "cuda" | "vulkan" | "metal" | "rocm";
+
 export type ModelInfo = ModelInfo_Serialize | ModelInfo_Deserialize;
 
 export type ModelInfo_Deserialize = {
@@ -3023,6 +3176,15 @@ export type StreamTextEvent_Deserialize = {
 	committed: string,
 	tentative: string,
 	/**
+	 *  Which live stream this text came from. Absent on every path but the
+	 *  experimental Multi Streaming STT mode, so the plain path serializes
+	 *  byte-identically: `None` is the primary model's stream (what the overlay
+	 *  has always shown), `Some(1)` the streaming second model the mode runs
+	 *  beside it. The overlay renders the two as side-by-side columns and
+	 *  routes every other reader of this event to the primary only.
+	 */
+	slot?: number | null,
+	/**
 	 *  Experimental Multi-STT streaming mode only (`None` everywhere else, so
 	 *  the plain path serializes byte-identically): how many of the session's
 	 *  chunks ended in a merge failure. The overlay shows a badge for a
@@ -3049,6 +3211,15 @@ export type StreamTextEvent_Deserialize = {
 export type StreamTextEvent_Serialize = {
 	committed: string,
 	tentative: string,
+	/**
+	 *  Which live stream this text came from. Absent on every path but the
+	 *  experimental Multi Streaming STT mode, so the plain path serializes
+	 *  byte-identically: `None` is the primary model's stream (what the overlay
+	 *  has always shown), `Some(1)` the streaming second model the mode runs
+	 *  beside it. The overlay renders the two as side-by-side columns and
+	 *  routes every other reader of this event to the primary only.
+	 */
+	slot?: number,
 	/**
 	 *  Experimental Multi-STT streaming mode only (`None` everywhere else, so
 	 *  the plain path serializes byte-identically): how many of the session's

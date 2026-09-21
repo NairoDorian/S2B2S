@@ -8,7 +8,9 @@ use crate::managers::audio::{AudioRecordingManager, RecordingReadiness, StopReco
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::statistics::{StatisticsManager, StatisticsRunStatus};
-use crate::managers::transcription::{StreamFinalization, StreamWorkKind, TranscriptionManager};
+use crate::managers::transcription::{
+    StreamFinalization, StreamWorkKind, TrackedTranscription, TranscriptionManager,
+};
 use crate::settings::{
     APPLE_INTELLIGENCE_PROVIDER_ID, AppSettings, OverlayStyle, PasteMethod, get_settings,
 };
@@ -1684,11 +1686,44 @@ impl ShortcutAction for MultiSttAction {
         // Extra models follow the same idle-timeout lifecycle as the primary
         // model — they stay loaded until the primary unloads (which may be
         // infinite depending on the user's ModelUnloadTimeout setting).
+        // The nested Multi Streaming STT mode streams from every Multi-STT slot
+        // that can stream, and that set is also what is preloaded: a slot the
+        // mode cannot stream from is a model that must not be loaded at all
+        // ("not even loaded", as the design note puts it). Picked here, once, so
+        // the preload and the session below cannot disagree about which models
+        // run — the session is handed this very list.
+        let multi_streaming_slots = if settings.multi_stt_streaming_first_enabled
+            && settings.multi_stt_streaming_multi_enabled
+        {
+            crate::multi_streaming::streaming_slots(app, &settings)
+        } else {
+            Vec::new()
+        };
+        if settings.multi_stt_streaming_multi_enabled && multi_streaming_slots.is_empty() {
+            warn!(
+                "Multi streaming STT: none of the Multi-STT slots holds a streaming-capable model, \
+                 so there is no second live text to merge"
+            );
+        }
+
         if settings.multi_stt_enabled {
             let tm_pre = Arc::clone(&tm);
             let model_2 = settings.multi_stt_model_2.clone();
             let model_3 = settings.multi_stt_model_3.clone();
             let model_4 = settings.multi_stt_model_4.clone();
+            // With the nested mode on, only the slots it streams from are
+            // preloaded — the choice above, translated back to the list's own
+            // positions so the others stay unloaded.
+            let streaming: Vec<&str> = multi_streaming_slots
+                .iter()
+                .map(|(_, model_id)| model_id.as_str())
+                .collect();
+            let keep = |model: Option<String>| match &model {
+                Some(id) if streaming.contains(&id.as_str()) => model,
+                Some(_) if !multi_streaming_slots.is_empty() => None,
+                _ => model,
+            };
+            let (model_2, model_3, model_4) = (keep(model_2), keep(model_3), keep(model_4));
             tauri::async_runtime::spawn(async move {
                 preload_extra_models_parallel(&tm_pre, &model_2, &model_3, &model_4).await;
             });
@@ -1736,8 +1771,32 @@ impl ShortcutAction for MultiSttAction {
         // The overlay is handed to the coordinator for the whole session, so it
         // must own the text before the stream worker can emit its first raw
         // update and win the race.
-        let streaming_mode =
-            crate::multi_stt_stream::start(app, &tm, &rm, model_supports_streaming);
+        //
+        // The nested Multi Streaming STT mode takes the session over when it can
+        // arm: the two modes never run together, and the earlier return means the
+        // parent's coordinator is not armed at all. When the nested mode refuses
+        // — no streaming-capable slot, or a primary that cannot stream — the
+        // parent's own toggle still stands, so its coordinator arms as usual.
+        let multi_streaming = crate::multi_streaming::start(
+            app,
+            &tm,
+            &rm,
+            &multi_streaming_slots,
+            model_supports_streaming,
+            statistics.clone(),
+        );
+        let streaming_mode = multi_streaming
+            || crate::multi_stt_stream::start(
+                app,
+                &tm,
+                &rm,
+                model_supports_streaming,
+                // The parent mode's own session: its chunk texts are re-decodes of
+                // the recorded audio, and it streams from no extra slot — the
+                // nested mode above is the one that brings live extras.
+                crate::multi_stt_stream::TextSource::ReDecode,
+                &[],
+            );
         if model_supports_streaming {
             // `false`: with the experimental mode on, the coordinator does the
             // live typing from its own thread (it owns the only
@@ -1786,9 +1845,12 @@ impl ShortcutAction for MultiSttAction {
         } else {
             statistics.finish(StatisticsRunStatus::Failed);
             // The mode is armed but no recording will ever feed it: drop the
-            // coordinator (and its tap claim) rather than leaving it to drain
-            // the next recording's audio.
+            // coordinator (and its tap claim) — or the multi-streaming session,
+            // whose waiter would otherwise open a second stream on a recording
+            // that never began — rather than leaving either to drain the next
+            // recording's audio.
             crate::multi_stt_stream::cancel();
+            crate::multi_streaming::cancel(&tm);
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
@@ -1850,6 +1912,10 @@ impl ShortcutAction for MultiSttAction {
         // coordinator: it is showing the session's text, and a working phase
         // event would replace it with a spinner while the last chunk merges.
         let coordinator_active = crate::multi_stt_stream::is_active();
+        // The nested multi-streaming mode owns no overlay text — both its columns
+        // are the streams' own — so it takes the ordinary stream working phase
+        // like any other streaming session, and only changes which decodes run.
+        let multi_streaming_active = crate::multi_streaming::is_active();
         let preview_only = live_stream_is_preview_only(&stop_settings, true);
         let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
@@ -1886,6 +1952,7 @@ impl ShortcutAction for MultiSttAction {
                 }
                 StopRecordingResult::Cancelled => {
                     statistics.finish(StatisticsRunStatus::Cancelled);
+                    crate::multi_streaming::cancel(&tm);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
@@ -1912,6 +1979,7 @@ impl ShortcutAction for MultiSttAction {
                 }
                 StopRecordingResult::Failed(err) => {
                     statistics.finish(StatisticsRunStatus::Failed);
+                    crate::multi_streaming::cancel(&tm);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
@@ -1939,8 +2007,11 @@ impl ShortcutAction for MultiSttAction {
             // recording's audio tap.
             // `coordinator_active` implies the primary model streams natively:
             // the coordinator refuses to arm otherwise, and this is the same
-            // recording it armed for.
-            let stream_tracked = if coordinator_active {
+            // recording it armed for. The nested Multi Streaming STT mode runs
+            // *this* coordinator — it is the parent's own session, told where its
+            // chunk texts come from — so a nested session is simply a coordinator
+            // session, and its primary stream is finalized on these same terms.
+            let stream_tracked = if coordinator_active || multi_streaming_active {
                 match tm.finalize_stream() {
                     StreamFinalization::Completed(tracked) => Some(tracked),
                     // Nothing was decoded live: the batch path is a better answer
@@ -1958,6 +2029,44 @@ impl ShortcutAction for MultiSttAction {
                 None
             };
 
+            // === THE NESTED MODE'S EXTRA STREAMS ===
+            // Finalized here, between the primary's finalize above and the
+            // session's finish below, because that order is the whole of this
+            // mode's ending: the session's last chunk is built from the extras'
+            // live text, and a finalize is what delivers a model's last words to
+            // it through the sink. Held back until after the session had closed,
+            // those words would arrive for a coordinator with no chunk left to put
+            // them in, and be dropped without a trace.
+            //
+            // Each result is that model's *own* session text — the second column,
+            // in the history row so the two live texts stay comparable beside the
+            // merged one. It is kept on the same terms `task1` keeps the primary's,
+            // so every stream this session opened finishes its statistics attempt.
+            let mut multi_extras: [Option<TrackedTranscription>;
+                crate::multi_streaming::EXTRA_MODELS] =
+                if multi_streaming_active && stream_tracked.is_some() {
+                    tauri::async_runtime::spawn_blocking({
+                        let tm = Arc::clone(&tm);
+                        move || crate::multi_streaming::finish_extras(&tm)
+                    })
+                    .await
+                    .unwrap_or_default()
+                } else {
+                    // No session outcome is coming — the primary's stream did not
+                    // complete, so the batch path takes this recording over. The
+                    // extras are released rather than finalized with it, below: their
+                    // attempts belong to a session that is not what gets reported.
+                    Default::default()
+                };
+
+            // The session result is the coordinator's, and in this mode that is
+            // the point of it: it holds the merged-and-cleaned text of every chunk
+            // that closed while the user spoke, merged from the *live* texts of
+            // every streaming model — the primary's and each extra's — with no
+            // re-decode anywhere in the recording. That text is what gets pasted.
+            // The nested mode takes this path on exactly the parent's terms,
+            // because it is the parent's session; the only difference is where the
+            // merged-from texts came from.
             let stream_outcome = if stream_tracked.is_some() {
                 // A session that retired itself mid-recording — the primary's
                 // committed text was not tracking its audio, so its chunks could
@@ -2001,6 +2110,15 @@ impl ShortcutAction for MultiSttAction {
                 // claim the next recording's audio tap.
                 crate::multi_stt_stream::cancel();
             }
+            if multi_streaming_active && stream_tracked.is_none() {
+                // The nested mode's result *is* its session's merged text, which is
+                // built on the primary's live text, so a primary stream that did
+                // not complete leaves it with nothing to report and the batch path
+                // takes over. The session is released either way: an armed waiter
+                // would open a second stream on the next recording, and the extra's
+                // engine would stay leased.
+                crate::multi_streaming::cancel(&tm);
+            }
 
             if rm.was_cancelled_since(cancel_generation) {
                 debug!("Multi-STT: Cancelled after recording stop");
@@ -2039,6 +2157,9 @@ impl ShortcutAction for MultiSttAction {
                 // An armed coordinator whose recording had nothing to say is
                 // released with everything else that this recording owned.
                 crate::multi_stt_stream::cancel();
+                // Likewise the nested mode's session, which would otherwise keep
+                // its waiter polling and the extra's engine leased.
+                crate::multi_streaming::cancel(&tm);
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 let perf_settings = get_settings(&ah);
@@ -2115,10 +2236,28 @@ impl ShortcutAction for MultiSttAction {
             // Both models load concurrently on the blocking pool so the async
             // worker stays free for events/UI. Models already loaded (e.g. by
             // the pre-load in start()) are skipped immediately.
+            //
+            // The nested multi-streaming mode runs no batch decode at all: its
+            // second column is a live stream, and the engine behind it is leased
+            // by that stream's worker for the whole session. The extras are
+            // therefore taken out of the list entirely — the slots the mode does
+            // not stream from were never loaded (see the preload in `start`), and
+            // loading them here would be exactly the work this mode exists to
+            // skip.
             let settings = get_settings(&ah);
-            let extra_model_2 = settings.multi_stt_model_2.clone();
-            let extra_model_3 = settings.multi_stt_model_3.clone();
-            let extra_model_4 = settings.multi_stt_model_4.clone();
+            let (extra_model_2, extra_model_3, extra_model_4) = if multi_streaming_active {
+                debug!(
+                    "Multi streaming STT: no batch decode — the second column is the extra's live \
+                     stream, not a re-decode of the recording"
+                );
+                (None, None, None)
+            } else {
+                (
+                    settings.multi_stt_model_2.clone(),
+                    settings.multi_stt_model_3.clone(),
+                    settings.multi_stt_model_4.clone(),
+                )
+            };
 
             let need_load_2 = extra_model_2
                 .as_ref()
@@ -2270,7 +2409,13 @@ impl ShortcutAction for MultiSttAction {
                 },
             });
 
-            let task2 = if let Some(ref model_id) = extra_model_2 {
+            let task2 = if multi_streaming_active {
+                // No batch decode for the extras in this mode: their engines were
+                // leased by their own live stream workers and went home with them
+                // in `finish_extras` above. Each model's text is already in hand
+                // (`multi_extras`), so there is nothing for this task to wait on.
+                None
+            } else if let Some(ref model_id) = extra_model_2 {
                 let model_id = model_id.clone();
                 Some(tauri::async_runtime::spawn_blocking(move || {
                     if tm2.is_extra_model_loaded(&model_id) {
@@ -2318,16 +2463,36 @@ impl ShortcutAction for MultiSttAction {
             let mut tracked1 = task1.await.unwrap_or(None);
             let mut tracked2 = match task2 {
                 Some(t) => t.await.unwrap_or(None),
-                None => None,
+                // The nested mode: the extra's own live text, taken beside the
+                // primary's finalize so the history row holds both columns.
+                None => multi_extras[0].take(),
             };
             let mut tracked3 = match task3 {
                 Some(t) => t.await.unwrap_or(None),
-                None => None,
+                None => multi_extras[1].take(),
             };
             let mut tracked4 = match task4 {
                 Some(t) => t.await.unwrap_or(None),
-                None => None,
+                None => multi_extras[2].take(),
             };
+            if let Some(t) = &tracked2 {
+                info!(
+                    "Multi streaming STT: Model 2 (live) transcription: '{}'",
+                    utils::redact_text(&t.text)
+                );
+            }
+            if let Some(t) = &tracked3 {
+                info!(
+                    "Multi streaming STT: Model 3 (live) transcription: '{}'",
+                    utils::redact_text(&t.text)
+                );
+            }
+            if let Some(t) = &tracked4 {
+                info!(
+                    "Multi streaming STT: Model 4 (live) transcription: '{}'",
+                    utils::redact_text(&t.text)
+                );
+            }
 
             // === EXPERIMENTAL STREAMING MODE: THE SESSION'S OWN RESULT ===
             // The chunks were decoded and merged while the user spoke, so this

@@ -328,6 +328,61 @@ pub enum TranscribeAcceleratorSetting {
     Gpu,
 }
 
+/// The backend one specific model loads on, overriding the global
+/// `transcribe_accelerator` for that model alone.
+///
+/// `Auto` is "no override": follow the global accelerator setting, including
+/// its GPU device choice. The named variants request a compute backend
+/// outright, which is a *hard* request in the engine — asking for a backend the
+/// build or the machine does not have fails the load rather than falling back
+/// silently — so a value that is not available is refused at the command
+/// boundary and falls back with a warning at the load site. The UI lists only
+/// what `get_available_accelerators` reports as present.
+///
+/// Keyed by model id in `per_model_backends`, which covers the primary model
+/// and every Multi-STT slot alike (they are all just model ids).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelBackendSetting {
+    #[default]
+    Auto,
+    Cpu,
+    Cuda,
+    Vulkan,
+    Metal,
+    Rocm,
+}
+
+impl ModelBackendSetting {
+    /// The lowercase wire name, matching the serde representation. Used where a
+    /// backend is named in a log line or matched against the availability list.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Cpu => "cpu",
+            Self::Cuda => "cuda",
+            Self::Vulkan => "vulkan",
+            Self::Metal => "metal",
+            Self::Rocm => "rocm",
+        }
+    }
+
+    /// Parse the wire name back. Anything unknown is `Auto`: an unreadable
+    /// preference must not be able to break a load. Used by the tests that pin
+    /// the wire names the frontend sends.
+    #[cfg(test)]
+    pub fn from_wire(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cpu" => Self::Cpu,
+            "cuda" => Self::Cuda,
+            "vulkan" => Self::Vulkan,
+            "metal" => Self::Metal,
+            "rocm" => Self::Rocm,
+            _ => Self::Auto,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MicIdleTimeoutUnit {
@@ -1419,6 +1474,17 @@ pub struct AppSettings {
     )]
     #[specta(type = Option<String>)]
     pub transcribe_gpu_device: Option<String>,
+    /// Per-model backend overrides, keyed by model id. An id that is absent (or
+    /// mapped to `Auto`) follows `transcribe_accelerator`; a named entry pins
+    /// that one model — the primary, a Multi-STT slot, a benchmark variant — to
+    /// a backend of its own, which is what lets one process run, say, an R2T2
+    /// stream on CUDA beside a merge model on the CPU.
+    ///
+    /// Applied on the next load of that model, exactly like
+    /// `transcribe_accelerator`; both load sites resolve through
+    /// `resolve_model_backend`.
+    #[serde(default)]
+    pub per_model_backends: HashMap<String, ModelBackendSetting>,
     #[serde(default)]
     pub extra_recording_buffer_ms: u32,
     #[serde(default = "default_vad_enabled")]
@@ -1535,8 +1601,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub multi_stt_streaming_first_enabled: bool,
     /// How long the speaker has to pause before the chunk being spoken closes
-    /// and is merged â€” what divides the session into chunks (100â€“10000 ms).
+    /// and is merged — what divides the session into chunks (100–10000 ms).
     /// Same test Live Mode uses for its silence boundary.
+    ///
+    /// Applies to both the parent mode and the nested Multi Streaming STT mode
+    /// below: they are one coordinator, and a pause is what closes a chunk in
+    /// either.
     #[serde(default = "default_multi_stt_streaming_pause_ms")]
     pub multi_stt_streaming_pause_ms: u32,
     /// How many already-closed chunks a merge window of the experimental
@@ -1546,8 +1616,43 @@ pub struct AppSettings {
     /// of the session. 0 sends only the chunk that just closed. See
     /// `multi_stt_stream::strip_context_prefix` for what the extras' decodes of
     /// the context are cropped back against.
+    ///
+    /// Ignored by the nested Multi Streaming STT mode, and only by it: there are
+    /// no decodes to crop, so the setting has nothing to say about that session.
+    /// It is deliberately not hidden while the nested toggle is on — it keeps its
+    /// value for the parent mode, and a control that vanishes is a value the user
+    /// cannot check.
     #[serde(default = "default_multi_stt_streaming_context_chunks")]
     pub multi_stt_streaming_context_chunks: u32,
+    /// Experimental Multi Streaming STT — nested inside the streaming-first mode
+    /// above, and only meaningful when it is on.
+    ///
+    /// The parent mode's machinery, driven by live streaming text instead of a
+    /// re-decode: every Multi-STT slot that can stream runs beside the primary
+    /// one, and at each pause the models' live texts go to the brain model for
+    /// the same merge and clean the parent mode performs — with no batch decode
+    /// anywhere in the session. The result is the merged text, exactly as it is
+    /// in the parent mode.
+    ///
+    /// A slot that cannot stream is not loaded at all: there is no second live
+    /// text to take from it, and loading it would only cost memory.
+    #[serde(default)]
+    pub multi_stt_streaming_multi_enabled: bool,
+    /// Whether the nested Multi Streaming STT mode shows all three texts, or
+    /// only the one the parent mode shows.
+    ///
+    /// Off (the default) is the mode's production view and the one the parent
+    /// mode has always had: **one** text block, the primary model's live text,
+    /// corrected in place as each pause's merge lands. The other models are the
+    /// merge's inputs, not the display's.
+    ///
+    /// On is the mode's debug view: a block per live model — how many there are
+    /// is how many streaming-capable slots the user configured — with the merged
+    /// and cleaned result in a block underneath them. Nothing about the session
+    /// changes but the display: the merge, the pauses, the result and the paste
+    /// are identical either way.
+    #[serde(default)]
+    pub multi_stt_streaming_multi_debug_view: bool,
     // Microphone idle timeout
     #[serde(default = "default_mic_idle_timeout_value")]
     pub mic_idle_timeout_value: u32,
@@ -2181,6 +2286,7 @@ pub fn get_default_settings() -> AppSettings {
         custom_filler_words: None,
         transcribe_accelerator: TranscribeAcceleratorSetting::default(),
         transcribe_gpu_device: default_transcribe_gpu_device(),
+        per_model_backends: HashMap::new(),
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         denoise_enabled: false,
@@ -2214,6 +2320,8 @@ pub fn get_default_settings() -> AppSettings {
         multi_stt_streaming_first_enabled: false,
         multi_stt_streaming_pause_ms: default_multi_stt_streaming_pause_ms(),
         multi_stt_streaming_context_chunks: default_multi_stt_streaming_context_chunks(),
+        multi_stt_streaming_multi_enabled: false,
+        multi_stt_streaming_multi_debug_view: false,
         mic_idle_timeout_value: default_mic_idle_timeout_value(),
         mic_idle_timeout_unit: MicIdleTimeoutUnit::default(),
         mic_idle_infinite: false,
@@ -2269,13 +2377,20 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     // for when one field's value is the actual question.
     debug!(
         "Loaded settings: schema {}, model '{}', log level {:?}, {} binding(s), multi-STT {}, \
-         streaming-first {}",
+         streaming-first {}, multi-streaming {} ({}), debug view {}",
         settings.settings_schema_version,
         settings.selected_model,
         settings.log_level,
         settings.bindings.len(),
         settings.multi_stt_enabled,
-        settings.multi_stt_streaming_first_enabled
+        settings.multi_stt_streaming_first_enabled,
+        settings.multi_stt_streaming_multi_enabled,
+        if settings.multi_stt_streaming_first_enabled {
+            "streaming models only"
+        } else {
+            "n/a: the parent mode is off"
+        },
+        settings.multi_stt_streaming_multi_debug_view
     );
     trace!("Loaded settings: {:?}", settings);
     settings
@@ -2673,6 +2788,39 @@ mod tests {
         assert!(settings.filler_word_removal_enabled);
         // Bindings default to empty; the load path merges the real defaults in.
         assert!(settings.bindings.is_empty());
+        // No per-model backend override is stored for anybody until one is set.
+        assert!(settings.per_model_backends.is_empty());
+    }
+
+    /// The per-model backend preference is a frontend-facing contract: the
+    /// dropdown sends the serde name, `as_str` is what the command validates and
+    /// what the resolver logs, and `from_wire` is the inverse. They must agree,
+    /// or a choice would be accepted under one spelling and ignored under
+    /// another.
+    #[test]
+    fn model_backend_names_round_trip() {
+        for setting in [
+            ModelBackendSetting::Auto,
+            ModelBackendSetting::Cpu,
+            ModelBackendSetting::Cuda,
+            ModelBackendSetting::Vulkan,
+            ModelBackendSetting::Metal,
+            ModelBackendSetting::Rocm,
+        ] {
+            let wire = serde_json::to_value(setting).unwrap();
+            assert_eq!(wire, serde_json::Value::String(setting.as_str().into()));
+            assert_eq!(ModelBackendSetting::from_wire(setting.as_str()), setting);
+        }
+        // Anything unrecognised is "no override", never a hard request for a
+        // backend that does not exist.
+        assert_eq!(
+            ModelBackendSetting::from_wire("gpu"),
+            ModelBackendSetting::Auto
+        );
+        assert_eq!(
+            ModelBackendSetting::from_wire(""),
+            ModelBackendSetting::Auto
+        );
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to

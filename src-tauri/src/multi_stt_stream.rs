@@ -60,6 +60,33 @@
 //! lifecycle. At most one merge job runs at a time: a break that arrives while
 //! one is in flight is acted on as soon as it lands, and if the speaker resumes
 //! before that the chunk simply keeps the speech that followed.
+//!
+//! # Where a chunk's other texts come from
+//!
+//! A chunk's merge needs one text per model, and there are two ways to get them,
+//! which is the only thing the nested **Experimental Multi Streaming STT** mode
+//! changes about this coordinator:
+//!
+//! - [`TextSource::ReDecode`] — the parent mode. The other models are batch
+//!   models, so their text for the chunk has to be produced: they decode the
+//!   window's audio at the close, and each decode is cropped back to the chunk
+//!   by [`strip_context_prefix`] because they heard the context too.
+//! - [`TextSource::Live`] — the nested mode. Every model is already streaming,
+//!   so each one's text for the chunk is simply the part of its own live text
+//!   that belongs to the chunk's span: the words its stream published between
+//!   the previous close and this one. Nothing is decoded at a break, which is
+//!   the point — the merge costs one LLM round trip and no inference at all.
+//!
+//! The two differ in where the texts come from and in nothing else. The pause
+//! test, the chunk lifecycle, the merge job, the retry, the failure badge, the
+//! in-place correction of the displayed text, the direct-typing writer and the
+//! session's result are all shared, which is what makes the nested mode an
+//! extension of the parent one rather than a second implementation of it.
+//!
+//! A live session's texts need no cropping: the models' streams are cut on the
+//! same breaks, so each one's slice starts where the chunk starts. The context
+//! window has no meaning here for the same reason — there is no decode to feed
+//! it to — and `multi_stt_streaming_context_chunks` is not read.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -80,8 +107,22 @@ use crate::actions::{
 use crate::audio_toolkit::audio::{ChunkTap, chunk_tap};
 use crate::direct_stream_writer::DirectStreamWriter;
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::transcription::{StreamTiming, TranscriptionManager, real_time_factor};
+use crate::managers::transcription::{
+    PRIMARY_STREAM_SLOT, STREAM_SLOTS, StreamTiming, TranscriptionManager, real_time_factor,
+};
 use crate::settings::{AppSettings, PasteMethod, get_settings};
+
+/// The stream slot the debug view's merged-and-cleaned block is published on.
+///
+/// The block is not a model's text, so it must not take a slot a model can
+/// occupy — the overlay draws one column per *stream*, and a model's column would
+/// otherwise be shown twice, once raw and once merged. It rides the last slot
+/// instead: [the stream slot array](STREAM_SLOTS) has one entry per Multi-STT
+/// model slot, so the last index is beyond every model the mode can run, and the
+/// overlay's own reader branches on the event's shape rather than on a range of
+/// numbers (see `RecordingOverlay`, which treats a numbered event the whole
+/// session's text as this block and every other numbered event as a column).
+const MERGE_BLOCK_SLOT: u8 = STREAM_SLOTS as u8;
 
 /// The rate the tap and the streaming model both run at (see [`ChunkTap`]).
 const SAMPLES_PER_MS: i64 = 16;
@@ -201,6 +242,19 @@ const STREAM_DRAIN_TOLERANCE_MS: i64 = 500;
 /// user speaks, has a lag that never collapses, and no routing change can
 /// recover text that does not exist yet.
 const TEXT_CATCHUP_GRACE: Duration = Duration::from_millis(2500);
+
+/// Where a chunk's per-model texts come from. See the module docs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextSource {
+    /// The parent mode: each extra model batch-decodes the chunk's audio window
+    /// at the close. Costs one decode per extra per chunk, and buys the crop
+    /// machinery of [`strip_context_prefix`].
+    ReDecode,
+    /// The nested Multi Streaming STT mode: every model is streaming, so each
+    /// one's text for the chunk is taken from its own live text. No decode runs
+    /// at a break at all.
+    Live,
+}
 
 /// Emitted when a chunk's merge fails, so the main window can raise a toast.
 /// Rate-limited by construction: it fires only when the number of chunks
@@ -498,7 +552,16 @@ struct Chunk {
     /// 16 kHz samples of this chunk's own audio. Kept after the chunk closes
     /// while it can still be a merge window's context, and freed after that (see
     /// `Coordinator::retain_context_audio`).
+    ///
+    /// A live session still accumulates it — the break test asks whether the
+    /// chunk has audio behind it and the close line reports its length — but
+    /// never hands it to a merge: its slots' texts are already this chunk's, so
+    /// there is nothing to decode (see `Coordinator::window_for`).
     audio: Vec<f32>,
+    /// The other live models' own text for this chunk, by stream slot. Empty on
+    /// every slot in the parent mode, where the extras' texts are produced by
+    /// decoding at dispatch time and never held on the chunk.
+    extras: [String; 4],
     /// Whether the last merge for this chunk failed, so it is showing the
     /// extras' concatenated text rather than a merged one.
     failed: bool,
@@ -511,6 +574,7 @@ impl Chunk {
             live: String::new(),
             merged_text: None,
             audio: Vec::new(),
+            extras: Default::default(),
             failed: false,
         }
     }
@@ -534,6 +598,25 @@ impl Chunk {
         self.merged_text = Some(text);
         self.failed = failed;
     }
+
+    /// Every live model's text for this chunk, smallest slot first: the primary
+    /// on slot 0 and then whichever extras had something to say. Slots with no
+    /// text are left out — in a session where only some of the configured models
+    /// stream, the ones that are not running have no column at all, and a report
+    /// of "slot 3: 0 chars" for a model the user never started would be noise.
+    ///
+    /// Pairs, not one concatenation, because the slot is the point: it is what
+    /// tells a reader which model a text came from.
+    fn live_slots(&self) -> impl Iterator<Item = (usize, &String)> {
+        std::iter::once((PRIMARY_STREAM_SLOT as usize, &self.live))
+            .chain(
+                self.extras
+                    .iter()
+                    .enumerate()
+                    .filter(|(slot, _)| *slot != PRIMARY_STREAM_SLOT as usize),
+            )
+            .filter(|(_, text)| !text.trim().is_empty())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -546,7 +629,8 @@ struct JobInput {
     /// The primary model's own text for this chunk, which is what `${output}`
     /// (slot 1) receives.
     live: String,
-    /// The window: the context chunks' audio, then this chunk's.
+    /// The window: the context chunks' audio, then this chunk's. Empty in a live
+    /// session, where `live_outputs` is the whole input instead.
     audio: Vec<f32>,
     /// How many samples of `audio` belong to the context chunks, i.e. where this
     /// chunk's own audio starts. 0 when the window carries no context.
@@ -554,6 +638,12 @@ struct JobInput {
     /// The context chunks' displayed text, the ruler the extras' decodes are
     /// cropped against.
     context_text: String,
+    /// The other live models' texts for this chunk, by stream slot, when the
+    /// session's [`TextSource`] is [`TextSource::Live`]. `None` in the parent
+    /// mode, where the texts are produced by decoding `audio` instead — and the
+    /// two are mutually exclusive by construction, so the job never has to
+    /// choose between a decode it was given and one it could run.
+    live_outputs: Option<[String; 4]>,
     /// Whether this job's per-model outputs belong in the session's history
     /// metadata. True for the merge that closes a chunk, false for a retry (the
     /// outputs are already recorded).
@@ -596,6 +686,7 @@ async fn run_merge_job(
         audio,
         context_samples,
         context_text,
+        live_outputs,
         record_outputs,
     } = input;
     let live_len = live.len();
@@ -610,48 +701,63 @@ async fn run_merge_job(
         live.chars().count()
     );
 
-    // Each extra decodes the whole window. The clones are the window's samples —
-    // at most four chunks, ~7.7 MB at the valve — against decodes that cost far
-    // more.
-    let spawn_extra = |slot: usize, model_id: Option<String>| {
-        let tm = Arc::clone(&tm);
-        let audio = audio.clone();
-        let context = context_text.clone();
-        model_id.map(move |model_id| {
-            tauri::async_runtime::spawn_blocking(move || {
-                if !tm.is_extra_model_loaded(&model_id) {
-                    warn!(
-                        "Multi-STT streaming: extra model '{}' is not loaded, skipping it for this chunk",
-                        model_id
-                    );
-                    return (slot, String::new());
-                }
-                match tm.transcribe_with_extra(&model_id, audio) {
-                    Ok(text) => (slot, crop_decode(&model_id, &text, &context)),
-                    Err(e) => {
+    // The two sources, and nothing else about the job differs between them.
+    //
+    // A live session takes the texts its streams already produced, so the whole
+    // decode stage is skipped: `outputs` is what the models said, and the elapsed
+    // time is 0 because no inference ran here. The parent mode decodes the
+    // window with each extra instead, one per model on the blocking pool,
+    // concurrently — the same shape as the batch path in `MultiSttAction::stop`.
+    // The untracked `transcribe_with_extra` is used deliberately there: a
+    // session's statistics record one run, and three extra decode attempts per
+    // chunk would inflate that run's numbers by the chunk count.
+    let outputs: [String; 4] = if let Some(outputs) = live_outputs {
+        outputs
+    } else {
+        // Each extra decodes the whole window. The clones are the window's
+        // samples — at most four chunks, ~7.7 MB at the valve — against decodes
+        // that cost far more.
+        let spawn_extra = |slot: usize, model_id: Option<String>| {
+            let tm = Arc::clone(&tm);
+            let audio = audio.clone();
+            let context = context_text.clone();
+            model_id.map(move |model_id| {
+                tauri::async_runtime::spawn_blocking(move || {
+                    if !tm.is_extra_model_loaded(&model_id) {
                         warn!(
-                            "Multi-STT streaming: extra model '{}' failed on this chunk: {}",
-                            model_id, e
+                            "Multi-STT streaming: extra model '{}' is not loaded, skipping it for this chunk",
+                            model_id
                         );
-                        (slot, String::new())
+                        return (slot, String::new());
                     }
-                }
+                    match tm.transcribe_with_extra(&model_id, audio) {
+                        Ok(text) => (slot, crop_decode(&model_id, &text, &context)),
+                        Err(e) => {
+                            warn!(
+                                "Multi-STT streaming: extra model '{}' failed on this chunk: {}",
+                                model_id, e
+                            );
+                            (slot, String::new())
+                        }
+                    }
+                })
             })
-        })
-    };
+        };
 
-    let handles = [
-        spawn_extra(1, settings.multi_stt_model_2.clone()),
-        spawn_extra(2, settings.multi_stt_model_3.clone()),
-        spawn_extra(3, settings.multi_stt_model_4.clone()),
-    ];
+        let handles = [
+            spawn_extra(1, settings.multi_stt_model_2.clone()),
+            spawn_extra(2, settings.multi_stt_model_3.clone()),
+            spawn_extra(3, settings.multi_stt_model_4.clone()),
+        ];
 
-    let mut outputs: [String; 4] = Default::default();
-    for handle in handles.into_iter().flatten() {
-        if let Ok((slot, text)) = handle.await {
-            outputs[slot] = text;
+        let mut decoded: [String; 4] = Default::default();
+        for handle in handles.into_iter().flatten() {
+            if let Ok((slot, text)) = handle.await {
+                decoded[slot] = text;
+            }
         }
-    }
+        decoded
+    };
     let decode_latency_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
 
     let merge_start = Instant::now();
@@ -834,11 +940,18 @@ pub fn is_active() -> bool {
 /// of the recording is the first frame the coordinator sees. Every refusal is
 /// logged — the mode is experimental, and silently falling back to plain
 /// Multi-STT would look like the setting does nothing.
+///
+/// `extra_slots` is [`TextSource::Live`]'s whole extent: the stream slots the
+/// nested mode has running beside the primary, empty for the parent mode. The
+/// session watches exactly those and no others, so a slot the nested mode did
+/// not open contributes nothing rather than contributing an empty text.
 pub fn start(
     app: &AppHandle,
     tm: &Arc<TranscriptionManager>,
     rm: &Arc<AudioRecordingManager>,
     model_supports_streaming: bool,
+    source: TextSource,
+    extra_slots: &[u8],
 ) -> bool {
     // A session left over from a recording that never reached `stop` (a stop
     // path that returned early, the mode toggled off mid-recording) must not
@@ -871,18 +984,48 @@ pub fn start(
     // The sink owns the overlay's text for the session: the streaming model's
     // rough text never reaches the overlay raw, because what is displayed is
     // composed from the chunks.
+    //
+    // It watches every slot the session runs, not just the primary's. In the
+    // nested Multi Streaming STT mode each other model's live text is the merge
+    // input that replaces a decode, so those updates have to reach the
+    // coordinator too — labelled with their slot, because an unlabelled second
+    // model's text would be read as the first's.
     let snapshot = Arc::new(Mutex::new(Arc::new(Snapshot::default())));
+    let extras = Arc::new(Mutex::new(
+        extra_slots
+            .iter()
+            .map(|slot| ExtraStream::new(*slot))
+            .collect::<Vec<_>>(),
+    ));
+    // The debug view needs each live model's text *as a column* as well as as a
+    // merge input, and those two consumers want different things from the same
+    // event: the coordinator wants its own composition on the wire and nobody
+    // else's, while the columns are the streams' own raw text. So an exclusive
+    // sink is exactly wrong here — it would suppress the per-slot events the
+    // columns are made of — and the composed text goes out under its own slot
+    // instead.
+    let exclusive = !(source == TextSource::Live && settings.multi_stt_streaming_multi_debug_view);
     {
         let snapshot = Arc::clone(&snapshot);
+        let extras = Arc::clone(&extras);
         tm.set_stream_text_sink(
             Some(Arc::new(
-                move |committed: &str,
+                move |slot: u8,
+                      committed: &str,
                       tentative: &str,
                       audio_committed_ms: i64,
                       input_received_ms: i64| {
-                    let mut slot = snapshot.lock().unwrap();
-                    let revision = slot.revision.wrapping_add(1);
-                    *slot = Arc::new(Snapshot {
+                    if slot != PRIMARY_STREAM_SLOT {
+                        let mut extras = extras.lock().unwrap();
+                        if let Some(extra) = extras.iter_mut().find(|e| e.slot == slot) {
+                            extra.committed = committed.to_string();
+                            extra.tentative = tentative.to_string();
+                        }
+                        return;
+                    }
+                    let mut current = snapshot.lock().unwrap();
+                    let revision = current.revision.wrapping_add(1);
+                    *current = Arc::new(Snapshot {
                         committed: committed.to_string(),
                         tentative: tentative.to_string(),
                         audio_committed_ms,
@@ -891,7 +1034,7 @@ pub fn start(
                     });
                 },
             )),
-            true,
+            exclusive,
         );
     }
 
@@ -921,6 +1064,9 @@ pub fn start(
         token,
         start_generation: rm.cancel_generation(),
         snapshot,
+        source,
+        extras,
+        debug_view: settings.multi_stt_streaming_multi_debug_view,
         settings,
         settings_ticks: 0,
         seen_revision: u64::MAX,
@@ -947,6 +1093,8 @@ pub fn start(
         merge_latency_ms: 0.0,
         published_committed: String::new(),
         published_tentative: String::new(),
+        published_merged: String::new(),
+        published_merged_tentative: String::new(),
         writer,
         owns_typing,
         writer_pushed: String::new(),
@@ -957,13 +1105,26 @@ pub fn start(
     let handle = thread::spawn(move || coordinator.run(rx));
     *SESSION.lock().unwrap() = Some(Session { tx, handle, alive });
 
-    info!(
-        "Multi-STT streaming: armed (break threshold {} ms, up to {} context chunk(s), direct \
-         typing: {})",
-        get_settings(app).multi_stt_streaming_pause_ms,
-        context_depth(get_settings(app).multi_stt_streaming_context_chunks),
-        owns_typing
-    );
+    let settings = get_settings(app);
+    match source {
+        TextSource::ReDecode => info!(
+            "Multi-STT streaming: armed (break threshold {} ms, up to {} context chunk(s), direct \
+             typing: {})",
+            settings.multi_stt_streaming_pause_ms,
+            context_depth(settings.multi_stt_streaming_context_chunks),
+            owns_typing
+        ),
+        TextSource::Live => info!(
+            "Multi-STT streaming: armed for Multi Streaming STT — live texts from {} other model(s) \
+             (slots {:?}), merged at each break of {} ms with no re-decode; debug view {}, direct \
+             typing: {}",
+            extra_slots.len(),
+            extra_slots,
+            settings.multi_stt_streaming_pause_ms,
+            settings.multi_stt_streaming_multi_debug_view,
+            owns_typing
+        ),
+    }
     true
 }
 
@@ -1108,6 +1269,35 @@ impl MergeQueue {
     }
 }
 
+/// One extra live model's stream, as the coordinator sees it.
+///
+/// Written by the sink, which runs on that stream's own worker thread, and read
+/// by the coordinator's thread. The `copied` cursor is an absolute byte offset
+/// into `committed`, which only ever grows — the same bookkeeping the primary's
+/// own `live_copied` does, for the same reason: a chunk's text is the part of
+/// the stream that belongs to the chunk's span, and the span is the interval
+/// between two closes.
+struct ExtraStream {
+    /// The stream slot this model runs on. Never the primary's.
+    slot: u8,
+    committed: String,
+    tentative: String,
+    /// Absolute byte offset in `committed` up to which the open chunk has been
+    /// given this stream's words.
+    copied: usize,
+}
+
+impl ExtraStream {
+    fn new(slot: u8) -> Self {
+        Self {
+            slot,
+            committed: String::new(),
+            tentative: String::new(),
+            copied: 0,
+        }
+    }
+}
+
 /// The sending half of a [`MergeQueue`], held by a spawned merge job.
 struct MergeQueueHandle {
     results: Arc<Mutex<VecDeque<Box<JobResult>>>>,
@@ -1129,6 +1319,21 @@ struct Coordinator {
     token: u64,
     start_generation: u64,
     snapshot: Arc<Mutex<Arc<Snapshot>>>,
+    /// Where this session's per-chunk texts come from. Fixed at arm time: the
+    /// nested toggle is what chooses it, and a session that changed source
+    /// mid-recording would have halves built two different ways.
+    source: TextSource,
+    /// The other live models' streams, by slot, when [`Self::source`] is
+    /// [`TextSource::Live`]. Empty in the parent mode, whose extras' texts come
+    /// from the tap's audio instead.
+    extras: Arc<Mutex<Vec<ExtraStream>>>,
+    /// Whether the overlay shows every live model's text under a merged block
+    /// (the nested mode's debug view) or only the one corrected block. Read once
+    /// at arm time with the rest of the presentation, so a toggle flipped
+    /// mid-recording does not restart anything.
+    debug_view: bool,
+    /// The session's own settings, refreshed periodically and re-read at each
+    /// dispatch.
     settings: AppSettings,
     settings_ticks: u32,
 
@@ -1202,6 +1407,11 @@ struct Coordinator {
 
     published_committed: String,
     published_tentative: String,
+    /// The last text published for the debug view's own block, in both halves,
+    /// for the same dedupe `published_committed`/`published_tentative` do. Only
+    /// ever written in a live session with the debug view on.
+    published_merged: String,
+    published_merged_tentative: String,
     writer: Option<DirectStreamWriter>,
     /// Whether this session is the one typing into the app, in which case the
     /// action must not paste the final text as well.
@@ -1391,8 +1601,16 @@ impl Coordinator {
         true
     }
 
-    /// Read the stream's latest text into the open chunk.
+    /// Read the streams' latest text into the open chunk.
+    ///
+    /// The primary's own path is guarded by the snapshot's revision, so a tick
+    /// that arrives between two text updates costs one mutex read and nothing
+    /// else. The extras have no such revision — they are read from a small vec
+    /// the sink rewrites in place — and are compared against the open chunk's
+    /// own copy instead: only the words past the cursor are appended, so a tick
+    /// that adds nothing adds nothing.
     fn absorb_stream_text(&mut self) {
+        self.absorb_extra_text();
         let snapshot = Arc::clone(&*self.snapshot.lock().unwrap());
         if snapshot.revision == self.seen_revision {
             return;
@@ -1443,6 +1661,52 @@ impl Coordinator {
             let at = clamp_boundary(&snapshot.committed, self.live_copied);
             self.open.live.push_str(&snapshot.committed[at..]);
             self.live_copied = snapshot.committed.len();
+        }
+    }
+
+    /// Read the other live models' text into the open chunk, one slice per slot.
+    ///
+    /// Only [`TextSource::Live`] sessions have extras to read here, and the vec
+    /// is empty in the parent mode, so the loop below is what a parent-mode
+    /// session pays: one uncontended mutex read per tick.
+    ///
+    /// Each stream is copied the way the primary's is — the words past the
+    /// cursor and nothing else — and re-anchored the same way if its `committed`
+    /// shrinks. What it does *not* have is the primary's revision counter: a
+    /// stream's text is rewritten in place by its own worker, so a tick that
+    /// arrives between two updates finds the same bytes the last one did and
+    /// appends nothing. The cursor is the whole test.
+    ///
+    /// A stream that has not spoken yet contributes nothing rather than an
+    /// error: the merge's own per-slot texts are read at the close, and a model
+    /// whose chunk text is empty is a model that had nothing to say about this
+    /// chunk — which [`crate::multi_stt::merge_and_clean`] is written to handle.
+    fn absorb_extra_text(&mut self) {
+        if self.source != TextSource::Live {
+            return;
+        }
+        let mut extras = self.extras.lock().unwrap();
+        for extra in extras.iter_mut() {
+            let slot = extra.slot as usize;
+            if slot == 0 || slot >= self.open.extras.len() {
+                continue;
+            }
+            if extra.committed.len() < extra.copied {
+                warn!(
+                    "Multi-STT streaming: slot {}'s committed text shrank ({} → {} bytes); \
+                     re-anchoring the open chunk",
+                    extra.slot,
+                    extra.copied,
+                    extra.committed.len()
+                );
+                self.open.extras[slot].clear();
+                extra.copied = extra.committed.len();
+            }
+            if extra.committed.len() > extra.copied {
+                let at = clamp_boundary(&extra.committed, extra.copied);
+                self.open.extras[slot].push_str(&extra.committed[at..]);
+                extra.copied = extra.committed.len();
+            }
         }
     }
 
@@ -1508,13 +1772,8 @@ impl Coordinator {
         self.next_chunk_id += 1;
         closed.failed = false;
         self.closed.push(closed);
-        self.retain_context_audio();
 
         let index = self.closed.len() - 1;
-        let context_samples = {
-            let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
-            window_context(&self.closed, index, depth).0.len()
-        };
         // The stream's own audio position, which the tap has just drained up to.
         // The difference to the family's drain cursor is the audio the close had
         // to merge across without a decode: silence by construction, which is
@@ -1523,28 +1782,91 @@ impl Coordinator {
         // working near its edge, and one above it is the feed or the model
         // falling behind rather than a bug in the seam.
         let stream_position_ms = self.tap.pushed_samples() as i64 / SAMPLES_PER_MS;
-        info!(
-            "Multi-STT streaming: chunk {} closed — {} ms of audio, {} chars, {} ms of context, \
-             {} ms of it left un-drained (tolerance {} ms)",
-            self.closed.len(),
-            self.closed[index].duration_ms(),
-            self.closed[index].live.chars().count(),
-            context_samples as i64 / SAMPLES_PER_MS,
-            (stream_position_ms - self.stream_drained_ms).max(0),
-            STREAM_DRAIN_TOLERANCE_MS
-        );
+        let un_drained_ms = (stream_position_ms - self.stream_drained_ms).max(0);
+        match self.source {
+            TextSource::ReDecode => {
+                let context_samples = {
+                    let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
+                    window_context(&self.closed, index, depth).0.len()
+                };
+                info!(
+                    "Multi-STT streaming: chunk {} closed — {} ms of audio, {} chars, {} ms of \
+                     context, {} ms of it left un-drained (tolerance {} ms)",
+                    self.closed.len(),
+                    self.closed[index].duration_ms(),
+                    self.closed[index].live.chars().count(),
+                    context_samples as i64 / SAMPLES_PER_MS,
+                    un_drained_ms,
+                    STREAM_DRAIN_TOLERANCE_MS
+                );
+            }
+            // No window and no decode to report: what the line is worth here is
+            // each live model's own text for the chunk, which is what the merge
+            // will be handed — the per-model figures are the only way to see, from
+            // outside, that a second model contributed anything at all.
+            TextSource::Live => info!(
+                "Multi-STT streaming: chunk {} closed — {} ms of audio, {} ms left un-drained \
+                 (tolerance {} ms), live texts [{}]",
+                self.closed.len(),
+                self.closed[index].duration_ms(),
+                un_drained_ms,
+                STREAM_DRAIN_TOLERANCE_MS,
+                self.closed[index]
+                    .live_slots()
+                    .map(|(slot, text)| format!("{}: {} chars", slot + 1, text.chars().count()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
         self.log_primary_rate();
 
         let input = self.window_for(index, true);
         self.dispatch(input);
+        // After the dispatch, deliberately: retention is what forgets a closed
+        // chunk's samples, and both the line above and `window_for` read them —
+        // the job holds its own copy of the window, so once it is out, the
+        // chunk's audio is nobody's. Doing it before the dispatch would drop the
+        // just-closed chunk's own audio when the context setting is 0, leaving
+        // the extras with nothing to decode for the chunk that just ended.
+        self.retain_context_audio();
         self.recount_failed();
     }
 
-    /// The merge input for the closed chunk at `index`: the context chunks the
-    /// setting asks for, then the chunk itself. The window is what bounds the
-    /// mode's cost — it never grows with the length of the session.
+    /// The merge input for the closed chunk at `index`, in whichever shape this
+    /// session's [`TextSource`] calls for.
+    ///
+    /// The parent mode's input is a window — the context chunks the setting asks
+    /// for, then the chunk itself — whose audio the extras are decoded from. The
+    /// window is what bounds the mode's cost there: it never grows with the
+    /// length of the session.
+    ///
+    /// A live session's input is not audio at all: every slot's text for the
+    /// chunk was produced by its own model as the speech happened, so the merge
+    /// is handed four texts and asked to reconcile them. There is nothing to
+    /// decode, and therefore no `context_samples` to divide and no context text
+    /// to crop against — the extras' texts are already exactly this chunk's.
+    /// `audio` stays empty, which is what makes the job's decode stage and its
+    /// `crop_decode` unreachable.
     fn window_for(&self, index: usize, record_outputs: bool) -> JobInput {
         let chunk = &self.closed[index];
+        if self.source == TextSource::Live {
+            let mut outputs: [String; 4] = Default::default();
+            outputs[PRIMARY_STREAM_SLOT as usize] = chunk.live.clone();
+            for (slot, text) in chunk.extras.iter().enumerate() {
+                if slot != PRIMARY_STREAM_SLOT as usize {
+                    outputs[slot] = text.clone();
+                }
+            }
+            return JobInput {
+                chunk_id: chunk.id,
+                live: chunk.live.clone(),
+                audio: Vec::new(),
+                context_samples: 0,
+                context_text: String::new(),
+                live_outputs: Some(outputs),
+                record_outputs,
+            };
+        }
         let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
         let (mut audio, context_text) = window_context(&self.closed, index, depth);
         let context_samples = audio.len();
@@ -1555,6 +1877,7 @@ impl Coordinator {
             audio,
             context_samples,
             context_text,
+            live_outputs: None,
             record_outputs,
         }
     }
@@ -1567,14 +1890,28 @@ impl Coordinator {
     /// buffers. That retention is what bounds the mode's memory: the window plus
     /// the open chunk, `context_chunks + 1` chunks at most, and a chunk at the
     /// 60 s valve is ~3.8 MB.
+    ///
+    /// A live session retains none of it. Its merges are handed texts rather than
+    /// a window, so a closed chunk's samples are never read again — by the
+    /// context, by a retry of its own merge, or by anything else — and keeping
+    /// them would hold up to four chunks of the session's audio for nothing.
+    /// What a live session accumulates is therefore only the open chunk, which is
+    /// what the break test reads and what the valve bounds.
     fn retain_context_audio(&mut self) {
         let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
-        let keep_from = self.closed.len().saturating_sub(depth);
+        let keep_from = if self.source == TextSource::Live {
+            self.closed.len()
+        } else {
+            self.closed.len().saturating_sub(depth)
+        };
         for (index, chunk) in self.closed.iter_mut().enumerate() {
             // A chunk waiting to retry its own merge still needs its audio,
             // however far back it is: a retry is offered at a close, and that
-            // close may be several chunks later.
-            if index < keep_from && Some(chunk.id) != self.retry && !chunk.audio.is_empty() {
+            // close may be several chunks later. In a live session the retry
+            // re-sends the texts it already has, so this does not apply.
+            let needed_for_retry =
+                self.source == TextSource::ReDecode && Some(chunk.id) == self.retry;
+            if index < keep_from && !needed_for_retry && !chunk.audio.is_empty() {
                 chunk.audio = Vec::new();
             }
         }
@@ -1707,9 +2044,13 @@ impl Coordinator {
             return;
         }
 
-        if record_outputs {
+        if record_outputs && self.source == TextSource::ReDecode {
             // The extras' per-model texts, appended chunk by chunk so the
-            // history trailer holds the whole session's output per model.
+            // history trailer holds the whole session's output per model. A live
+            // session's trailer is not built here: each of its extra streams
+            // already holds its model's whole session (see
+            // [`ExtraStream::committed`]), and accumulating the same words a
+            // chunk at a time would only duplicate them in memory.
             let extras = outputs.iter().skip(1).zip(self.outputs.iter_mut().skip(1));
             for (text, session) in extras {
                 if text.is_empty() {
@@ -1764,7 +2105,13 @@ impl Coordinator {
             // The chunk was re-anchored away; nothing to retry.
             return;
         };
-        if self.closed[index].audio.is_empty() {
+        // A parent-mode retry decodes the window again, so it needs the chunk's
+        // audio — and the only way that is gone is a chunk whose audio the
+        // context window has already released, which a retry cannot be (see
+        // `retain_context_audio`). A live session's retry re-sends the texts the
+        // models already produced, which live on the chunk itself and are never
+        // freed, so it has no such requirement.
+        if self.source != TextSource::Live && self.closed[index].audio.is_empty() {
             return;
         }
         debug!(
@@ -1794,15 +2141,68 @@ impl Coordinator {
     /// abandoned composition on screen for the rest of the recording. This one
     /// event replaces it with exactly what the plain path shows: the stream's
     /// committed text and its volatile tail, nothing composed.
+    ///
+    /// In the debug view the primary's own column *is* the stream's raw text
+    /// already: the sink is not exclusive there, so the overlay's column 1 has
+    /// been showing exactly this all along, and re-sending it as a composed event
+    /// would only overwrite a column with the text it already holds. What has to
+    /// be taken back in that view is the block this session owns — the merged text
+    /// of a session that is no longer merging — so that is what this clears.
     fn publish_primary_text(&mut self) {
+        if self.debug_view {
+            self.publish_merged_block("", "", true);
+            return;
+        }
         self.tm
-            .emit_composed_stream_text(&self.primary_text, &self.primary_tentative, None);
+            .emit_composed_stream_text(&self.primary_text, &self.primary_tentative, None, None);
+    }
+
+    /// Publish the merged-and-cleaned block of the debug view.
+    ///
+    /// `MERGE_BLOCK_SLOT` is the block's slot — a stream slot no model can
+    /// occupy (see [`STREAM_SLOTS`]), which is what keeps the block out of the
+    /// live columns' numbering while still riding the one event that carries a
+    /// block of text. Deduped on the same terms as the composed text, so a tick
+    /// that merges nothing sends nothing; `force` is for the two calls that must
+    /// land whatever the text says, i.e. the flush at the end and the clear at
+    /// the start.
+    fn publish_merged_block(&mut self, committed: &str, tentative: &str, force: bool) {
+        let changed = force
+            || committed != self.published_merged
+            || tentative != self.published_merged_tentative;
+        if !changed {
+            return;
+        }
+        self.published_merged = committed.to_string();
+        self.published_merged_tentative = tentative.to_string();
+        self.tm.emit_composed_stream_text(
+            committed,
+            tentative,
+            (self.failed_chunks > 0).then_some(self.failed_chunks),
+            Some(MERGE_BLOCK_SLOT),
+        );
     }
 
     /// Publish the composed text: the closed chunks as `committed`, the open
     /// chunk plus the model's volatile tail as `tentative`. The whole session's
     /// text is therefore on the wire from the first second — the rough text is
     /// never hidden, it is replaced in place as merges land.
+    ///
+    /// Where that text goes is the whole difference between the mode's two views,
+    /// and nothing else about them differs:
+    ///
+    /// - The production view replaces the primary model's own column with it, so
+    ///   the one block on screen is the streaming text corrected in place, chunk
+    ///   by chunk, by the merge — what the mode has always shown.
+    /// - The debug view keeps the models' raw columns as they stream (the sink is
+    ///   not exclusive; see [`Coordinator::start`]) and puts this same text in a
+    ///   block underneath them, which is the merged-and-cleaned result of the
+    ///   session so far. So the block is not a fourth thing: it is the production
+    ///   view's text, shown beside the texts it was built from.
+    ///
+    /// Either way the writer (if any) gets the composed text — the merge is what
+    /// the mode exists to produce, and it is what the user's document should end
+    /// up holding.
     fn publish(&mut self, force: bool) {
         let committed = self.compose_committed();
         let mut tentative = self.open.display_text();
@@ -1811,19 +2211,25 @@ impl Coordinator {
         // stream and any separator would land inside a word.
         tentative.push_str(&self.primary_tentative);
 
-        // The overlay event is deduped: an unchanged text is not re-sent, which
-        // is what keeps a silent pause from emitting 20 times a second.
-        let changed =
-            force || committed != self.published_committed || tentative != self.published_tentative;
-        if changed {
-            self.published_committed = committed.clone();
-            self.published_tentative = tentative.clone();
+        if self.debug_view {
+            self.publish_merged_block(&committed, &tentative, force);
+        } else {
+            // The overlay event is deduped: an unchanged text is not re-sent,
+            // which is what keeps a silent pause from emitting 20 times a second.
+            let changed = force
+                || committed != self.published_committed
+                || tentative != self.published_tentative;
+            if changed {
+                self.published_committed = committed.clone();
+                self.published_tentative = tentative.clone();
 
-            self.tm.emit_composed_stream_text(
-                &committed,
-                &tentative,
-                (self.failed_chunks > 0).then_some(self.failed_chunks),
-            );
+                self.tm.emit_composed_stream_text(
+                    &committed,
+                    &tentative,
+                    (self.failed_chunks > 0).then_some(self.failed_chunks),
+                    None,
+                );
+            }
         }
 
         if self.owns_typing {
@@ -1884,9 +2290,17 @@ impl Coordinator {
         let mut last = std::mem::replace(&mut self.open, Chunk::new(self.next_chunk_id));
         self.next_chunk_id += 1;
         last.failed = false;
-        let has_content = !last.live.trim().is_empty() || !last.audio.is_empty();
+        // A live session asks whether any model said anything for this chunk: its
+        // audio alone is nothing to merge, since no extra is going to decode it
+        // and a job over four empty texts can only be answered with the request
+        // itself (see `run_merge_job`). The parent mode's test is the audio, which
+        // there is exactly what its extras decode.
+        let has_content = if self.source == TextSource::Live {
+            last.live_slots().next().is_some()
+        } else {
+            !last.live.trim().is_empty() || !last.audio.is_empty()
+        };
         self.closed.push(last);
-        self.retain_context_audio();
 
         let index = self.closed.len() - 1;
         self.log_primary_rate();
@@ -1901,22 +2315,47 @@ impl Coordinator {
             ));
             self.apply_job_result(result);
         }
+        // After the merge that reads the last chunk's audio, for the reason
+        // `close_open_chunk` does the same there.
+        self.retain_context_audio();
 
         let mut final_text = String::new();
         for chunk in &self.closed {
             append_join(&mut final_text, &chunk.display_text());
         }
 
-        // Slot 1 is the streaming model's own live text for the session; the
-        // other three are the extras' outputs as they were accumulated.
+        // The debug view's block ends the session holding the session's own final
+        // text — what is about to be pasted, typed or handed to the batch path —
+        // rather than the running composition the ticks published. Sent
+        // unconditionally: a session that merged nothing still has to show what it
+        // ended up with.
+        if self.debug_view {
+            self.publish_merged_block(&final_text, "", true);
+        }
+
+        // Slot 1 is the primary model's own live text for the session. The other
+        // three are the extras' outputs: a parent-mode session accumulated them
+        // chunk by chunk as its merges landed, and a live session takes them
+        // straight off its extra streams, which hold each model's whole session
+        // for exactly this reason — it is that model's own output, not a
+        // re-decode of anything.
         let mut model_outputs: [String; 4] = Default::default();
-        model_outputs[0] = self.primary_text.clone();
-        for (target, source) in model_outputs
-            .iter_mut()
-            .skip(1)
-            .zip(self.outputs.iter_mut().skip(1))
-        {
-            *target = std::mem::take(source);
+        model_outputs[PRIMARY_STREAM_SLOT as usize] = self.primary_text.clone();
+        if self.source == TextSource::Live {
+            for extra in self.extras.lock().unwrap().iter() {
+                let slot = extra.slot as usize;
+                if slot != PRIMARY_STREAM_SLOT as usize && slot < model_outputs.len() {
+                    model_outputs[slot] = extra.committed.clone();
+                }
+            }
+        } else {
+            for (target, source) in model_outputs
+                .iter_mut()
+                .skip(1)
+                .zip(self.outputs.iter_mut().skip(1))
+            {
+                *target = std::mem::take(source);
+            }
         }
 
         if let Some(writer) = self.writer.take() {

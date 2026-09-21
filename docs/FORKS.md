@@ -96,20 +96,24 @@ cargo update -p tauri-specta                        # or the crate you changed
 
 # 5. the whole-app check: builds the frontend and the entire Rust app, then runs it
 cd C:\Users\Z\Downloads\PROJECTS\Handy_V2
-bun run dev:fast
+bun run dev:cpu        # usually — no CUDA, fastest to build
+bun run dev:fast       # when GPU CUDA tests are necessary
 ```
 
 For the npm half of `tauri-plugin-macos-permissions`, step 4 is
 `bun update tauri-plugin-macos-permissions-api` in ZER0 (the dependency is a git
 spec, so it resolves the same way).
 
-**`bun run dev:fast` is the check that covers everything.** It compiles the
-frontend, builds the whole Rust app and launches it, which is what a fork bump
-needs: a Tauri-side break (an API rename, a plugin that no longer compiles
-against the core, a COM instance that stops resolving) shows up as a build or
-launch failure here, where a unit test would not see it. Close the app when
-done — while it runs it holds `transcribe.dll`, so `cargo build` and
-`cargo test` in ZER0 fail to link until it exits.
+**`bun run dev:cpu` is the check that covers everything**, and the one to reach
+for by default: it compiles the frontend, builds the whole Rust app and launches
+it, which is what a fork bump needs — a Tauri-side break (an API rename, a
+plugin that no longer compiles against the core, a COM instance that stops
+resolving) shows up as a build or launch failure here, where a unit test would
+not see it. It skips CUDA entirely, so it is also the fastest way to get there.
+Use `bun run dev:fast` instead when the change touches the GPU path (CUDA
+kernels, device selection, VRAM, a timing). Close the app when done — while it
+runs it holds `transcribe.dll`, so `cargo build` and `cargo test` in ZER0 fail
+to link until it exits.
 
 ## Constraints that bite when bumping
 

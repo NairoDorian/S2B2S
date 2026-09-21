@@ -437,23 +437,28 @@ impl LiveModeManager {
             let granularity = live.granularity;
             let last_write = Mutex::new(Instant::now() - LIVE_WRITE_INTERVAL);
             tm.set_stream_text_sink(
-                Some(Arc::new(move |committed: &str, tentative: &str, _, _| {
-                    let tail = live_tail_text(committed, tentative, granularity);
-                    let _ = LiveModeTranscriptEvent {
-                        reset: false,
-                        stable_appended: String::new(),
-                        live: tail.clone(),
-                    }
-                    .emit(&app);
-                    let mut last = last_write.lock().unwrap();
-                    if last.elapsed() < LIVE_WRITE_INTERVAL {
-                        return;
-                    }
-                    *last = Instant::now();
-                    if let Err(e) = writer.lock().unwrap().set_live(&tail) {
-                        warn!("Live Mode: failed to write live text: {e}");
-                    }
-                })),
+                // Live Mode is one model and one transcript; a second live stream
+                // is the experimental Multi Streaming STT mode's, never this
+                // session's, so the slot is ignored rather than branched on.
+                Some(Arc::new(
+                    move |_slot: u8, committed: &str, tentative: &str, _, _| {
+                        let tail = live_tail_text(committed, tentative, granularity);
+                        let _ = LiveModeTranscriptEvent {
+                            reset: false,
+                            stable_appended: String::new(),
+                            live: tail.clone(),
+                        }
+                        .emit(&app);
+                        let mut last = last_write.lock().unwrap();
+                        if last.elapsed() < LIVE_WRITE_INTERVAL {
+                            return;
+                        }
+                        *last = Instant::now();
+                        if let Err(e) = writer.lock().unwrap().set_live(&tail) {
+                            warn!("Live Mode: failed to write live text: {e}");
+                        }
+                    },
+                )),
                 false,
             );
         }

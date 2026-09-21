@@ -8,7 +8,8 @@ use crate::managers::statistics::{
     PendingStatisticsAttempt, StatisticsRunContext, StatisticsRunStatus,
 };
 use crate::settings::{
-    AppSettings, ModelUnloadTimeout, TranscribeAcceleratorSetting, get_settings,
+    AppSettings, ModelBackendSetting, ModelUnloadTimeout, TranscribeAcceleratorSetting,
+    get_settings,
 };
 use crate::utils;
 use anyhow::Result;
@@ -98,6 +99,14 @@ pub struct BenchmarkProgressEvent {
 pub struct StreamTextEvent {
     pub committed: String,
     pub tentative: String,
+    /// Which live stream this text came from. Absent on every path but the
+    /// experimental Multi Streaming STT mode, so the plain path serializes
+    /// byte-identically: `None` is the primary model's stream (what the overlay
+    /// has always shown), `Some(1)` the streaming second model the mode runs
+    /// beside it. The overlay renders the two as side-by-side columns and
+    /// routes every other reader of this event to the primary only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u8>,
     /// Experimental Multi-STT streaming mode only (`None` everywhere else, so
     /// the plain path serializes byte-identically): how many of the session's
     /// chunks ended in a merge failure. The overlay shows a badge for a
@@ -185,69 +194,102 @@ pub enum StreamFinalization {
     Timeout(String),
 }
 
-/// Routes real-time audio frames to the active streaming worker. Shared between
+/// Slot of the primary model's live stream — the one the app has always had,
+/// and the only one on every path but the experimental Multi Streaming STT
+/// mode.
+pub const PRIMARY_STREAM_SLOT: u8 = 0;
+/// Slot of the first model streaming beside the primary in a Multi Streaming STT
+/// session.
+pub const EXTRA_STREAM_SLOT: u8 = 1;
+/// How many live streams may be routed at once.
+///
+/// One per Multi-STT model slot: the primary's stream is slot 0 and the extras
+/// follow it in the order the user configured them, so stream slot `n` carries
+/// `multi_stt_model_{n + 1}`. A mode that runs "two or more" streaming models
+/// therefore has a slot for each of them rather than a hardcoded pair — which is
+/// all this costs: the per-slot state below is four atomics and an `Option` per
+/// slot, and a slot that no model occupies is never opened, never leased and
+/// never fed.
+pub const STREAM_SLOTS: usize = 4;
+
+/// How often [`TranscriptionManager::start_extra_stream_when_loaded`] looks for a
+/// still-loading extra model. Short enough that the second column starts within a
+/// frame or two of the load finishing, which is what the user sees as "it came up
+/// with me"; the check is a hash lookup, so the cost of asking often is nothing.
+const EXTRA_ENGINE_RETRY_POLL: Duration = Duration::from_millis(50);
+
+/// Routes real-time audio frames to the active streaming workers. Shared between
 /// the [`TranscriptionManager`] (opens/closes the route) and the audio recorder's
 /// per-frame callback (feeds frames). The recorder holds an `Arc<StreamRouter>`
 /// directly, so a frame with no stream pending costs a single relaxed atomic
 /// load — no Tauri state lookup, no mutex lock.
+///
+/// A *slot* per stream rather than one route: the experimental Multi Streaming
+/// STT mode runs two models over the same microphone at the same time, and the
+/// recorder feeds one frame to both. Every other path opens exactly one slot, so
+/// the cost of the second is a loop over a one-element list.
 pub struct StreamRouter {
-    /// Command channel to the active streaming worker, present from
-    /// `start_stream` until `finalize_stream`/`cancel_stream`.
-    tx: Mutex<Option<mpsc::Sender<StreamCmd>>>,
-    /// True while a stream is pending or active (channel is open). The audio
-    /// callback checks this first to avoid the mutex lock when no stream runs.
+    /// Command channels to the active streaming workers, at most one per slot,
+    /// present from `start_stream` until `finalize_stream`/`cancel_stream`.
+    tx: Mutex<Vec<(u8, mpsc::Sender<StreamCmd>)>>,
+    /// True while any stream is pending or active. The audio callback checks
+    /// this first to avoid the mutex lock when no stream runs.
     open: Arc<AtomicBool>,
 }
 
 impl StreamRouter {
     fn new() -> Self {
         Self {
-            tx: Mutex::new(None),
+            tx: Mutex::new(Vec::new()),
             open: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Open a fresh command channel for a new streaming session, returning the
-    /// receiver the worker should drain. Caller must ensure no prior channel is
-    /// still open.
-    fn open(&self) -> mpsc::Receiver<StreamCmd> {
+    /// Open a fresh command channel for a new streaming session on `slot`,
+    /// returning the receiver that worker should drain. Caller must ensure no
+    /// prior channel is still open on that slot.
+    fn open(&self, slot: u8) -> mpsc::Receiver<StreamCmd> {
         let (tx, rx) = mpsc::channel::<StreamCmd>();
-        *self.tx.lock().unwrap() = Some(tx);
+        let mut senders = self.tx.lock().unwrap();
+        senders.retain(|(open, _)| *open != slot);
+        senders.push((slot, tx));
         self.open.store(true, Ordering::Relaxed);
         rx
     }
 
-    /// Take the sender out (closing the channel to new feeds). Returns the
+    /// Take a slot's sender out (closing that route to new feeds). Returns the
     /// sender so the caller can send the final `Finalize`/`Cancel` command.
-    fn take(&self) -> Option<mpsc::Sender<StreamCmd>> {
-        self.open.store(false, Ordering::Relaxed);
-        self.tx.lock().unwrap().take()
+    fn take(&self, slot: u8) -> Option<mpsc::Sender<StreamCmd>> {
+        let mut senders = self.tx.lock().unwrap();
+        let taken = senders
+            .iter()
+            .position(|(open, _)| *open == slot)
+            .map(|index| senders.remove(index).1);
+        self.open.store(!senders.is_empty(), Ordering::Relaxed);
+        taken
     }
 
-    /// Drop the channel and mark closed without sending a final command (used
-    /// when the worker exits without a finalize/cancel handshake).
-    fn clear(&self) {
-        self.open.store(false, Ordering::Relaxed);
-        *self.tx.lock().unwrap() = None;
+    /// Drop a slot's channel and mark it closed without sending a final command
+    /// (used when the worker exits without a finalize/cancel handshake).
+    fn clear(&self, slot: u8) {
+        let mut senders = self.tx.lock().unwrap();
+        senders.retain(|(open, _)| *open != slot);
+        self.open.store(!senders.is_empty(), Ordering::Relaxed);
     }
 
-    /// Forward a 16 kHz frame to the active streaming worker. Cheap no-op (a
+    /// Forward a 16 kHz frame to every active streaming worker. Cheap no-op (a
     /// single relaxed atomic load) when no stream is pending.
     pub fn feed(&self, frame: &[f32]) {
         if !self.open.load(Ordering::Relaxed) {
             return;
         }
-        if let Some(tx) = self.tx.lock().unwrap().as_ref() {
+        let senders = self.tx.lock().unwrap();
+        for (_, tx) in senders.iter() {
             let _ = tx.send(StreamCmd::Feed {
                 pcm: frame.to_vec(),
                 queued_at: Instant::now(),
             });
         }
-    }
-
-    /// Whether a stream is pending or active.
-    pub fn is_open(&self) -> bool {
-        self.open.load(Ordering::Relaxed)
     }
 }
 
@@ -292,24 +334,26 @@ impl Drop for LoadingGuard {
 /// detached worker thread. Tokens prevent an older worker from clearing a newer
 /// worker's state if a start/finalize race ever slips through.
 struct StreamWorkerGuard {
+    slot: u8,
     worker_id: u64,
-    active_stream_worker: Arc<AtomicU64>,
-    active_engine_lease: Arc<AtomicU64>,
-    stream_active: Arc<AtomicBool>,
+    active_stream_worker: Arc<[AtomicU64; STREAM_SLOTS]>,
+    active_engine_lease: Arc<[AtomicU64; STREAM_SLOTS]>,
+    stream_active: Arc<[AtomicBool; STREAM_SLOTS]>,
 }
 
 impl Drop for StreamWorkerGuard {
     fn drop(&mut self) {
-        if self.active_stream_worker.load(Ordering::Acquire) == self.worker_id {
-            self.stream_active.store(false, Ordering::Release);
+        let slot = self.slot as usize;
+        if self.active_stream_worker[slot].load(Ordering::Acquire) == self.worker_id {
+            self.stream_active[slot].store(false, Ordering::Release);
         }
-        let _ = self.active_engine_lease.compare_exchange(
+        let _ = self.active_engine_lease[slot].compare_exchange(
             self.worker_id,
             0,
             Ordering::AcqRel,
             Ordering::Acquire,
         );
-        let _ = self.active_stream_worker.compare_exchange(
+        let _ = self.active_stream_worker[slot].compare_exchange(
             self.worker_id,
             0,
             Ordering::AcqRel,
@@ -341,11 +385,14 @@ pub struct TranscriptionManager {
     /// out for transcription (not present in `extra_engines`). The engine is
     /// dropped instead of re-inserted when the in-flight transcription returns.
     extra_unload_requests: Arc<Mutex<HashSet<String>>>,
-    /// Whether the current stream may type its text into the foreground app
-    /// (`PasteMethod::DirectStreaming`). Only plain transcription sets this;
-    /// post-processing and Multi-STT stream to the overlay as a preview and
-    /// paste their final text through the clipboard instead.
-    stream_live_typing: Arc<AtomicBool>,
+    // Live typing (`PasteMethod::DirectStreaming`) is deliberately *not* a field
+    // here: it is a property of one stream, not of the manager. It used to be a
+    // single `AtomicBool` written by every `start_stream*` call, which was
+    // correct while at most one stream could run; with the primary and an extra
+    // streaming side by side, the extra's `false` would land after the primary's
+    // stream began and silently turn the primary's live typing off — the one
+    // thing the plain path's `DirectStreaming` exists for. It travels to the
+    // worker as an argument instead.
     /// Extra model ids whose engine is currently being built. `load_extra_model`
     /// coalesces concurrent requests for the same id (the pre-load in
     /// `MultiSttAction::start` races the load in `stop()` on short recordings)
@@ -353,28 +400,36 @@ pub struct TranscriptionManager {
     extra_loading: Arc<(Mutex<HashSet<String>>, std::sync::Condvar)>,
     /// True only while a transcribe-cpp `Stream` is actually in flight (set by
     /// the worker once `stream()` succeeds). Used for overlay/UI decisions.
-    stream_active: Arc<AtomicBool>,
-    /// Streaming uses four independent flags: router open = frames should route,
-    /// worker active = no second worker may start, engine lease = engine is out
-    /// of the mutex, stream active = UI should show a live session.
+    stream_active: Arc<[AtomicBool; STREAM_SLOTS]>,
+    /// Streaming uses four independent flags per slot: router open = frames
+    /// should route, worker active = no second worker may start on that slot,
+    /// engine lease = engine is out of the mutex, stream active = UI should show
+    /// a live session. One entry per slot, because the experimental Multi
+    /// Streaming STT mode runs the primary and a streaming extra side by side.
     ///
     /// Monotonic id source for stream workers; zero means "no worker".
     next_stream_worker_id: Arc<AtomicU64>,
-    /// Nonzero while a stream worker exists, even if it has not leased the engine
-    /// yet. This prevents a second worker from starting after finalize/cancel
-    /// closes the router but before the first worker has fully exited.
-    active_stream_worker: Arc<AtomicU64>,
-    /// Nonzero while the streaming worker has taken the engine out of `engine`.
+    /// Nonzero while a worker exists on that slot, even if it has not leased the
+    /// engine yet. This prevents a second worker from starting on the same slot
+    /// after finalize/cancel closes the router but before the first worker has
+    /// fully exited.
+    active_stream_worker: Arc<[AtomicU64; STREAM_SLOTS]>,
+    /// Nonzero while that slot's worker has taken an engine out of `engine` (the
+    /// primary) or out of `extra_engines` (the streaming extra).
     /// `is_model_loaded()` consults this so the model still reports "loaded"
     /// while the worker holds it.
-    active_engine_lease: Arc<AtomicU64>,
-    /// Pending statistics attempt for an in-flight live stream.
-    stream_attempt: Arc<Mutex<Option<PendingStatisticsAttempt>>>,
+    active_engine_lease: Arc<[AtomicU64; STREAM_SLOTS]>,
+    /// Pending statistics attempt for an in-flight live stream, per slot. One
+    /// per stream rather than one for the process: with two streams live, the
+    /// second's attempt would otherwise overwrite the first's and the primary's
+    /// finalize would complete the wrong one.
+    stream_attempt: Arc<Mutex<[Option<PendingStatisticsAttempt>; STREAM_SLOTS]>>,
     /// Optional in-process observer of the live text, called on the stream
     /// worker thread alongside the overlay event. Live Mode installs one to
     /// mirror the stream into its transcript file; the experimental Multi-STT
-    /// streaming mode installs one to re-chunk and re-merge the text, and asks
-    /// for it exclusively so its own composed text is what the overlay shows.
+    /// streaming mode installs one to watch every live model and re-merge their
+    /// text at each pause. It sees every slot, so a sink watching more than one
+    /// stream can tell them apart.
     stream_text_sink: Arc<Mutex<Option<StreamTextSink>>>,
     /// When set, `emit_stream_text` calls the sink and skips the overlay event:
     /// the sink owns what the overlay displays and emits the composed text
@@ -389,8 +444,14 @@ pub struct TranscriptionManager {
     last_pipeline_metrics: Arc<Mutex<serde_json::Value>>,
 }
 
-/// Callback receiving every live-text update: `(committed, tentative,
-/// audio_committed_ms, input_received_ms)`.
+/// Callback receiving every live-text update:
+/// `(slot, committed, tentative, audio_committed_ms, input_received_ms)`.
+///
+/// The **slot** is what makes the callback a stream observer rather than the
+/// primary model's alone. A sink installed by the experimental Multi Streaming
+/// STT mode is watching every live model in the session — that is the whole
+/// point of the mode — and a second model's text arriving unlabelled would be
+/// read as the first's.
 ///
 /// `audio_committed_ms` is the family's own statement of how much audio the
 /// committed text accounts for — a *hint* with family-dependent granularity,
@@ -398,7 +459,7 @@ pub struct TranscriptionManager {
 /// coordinator anchors its audio cuts to. `input_received_ms` is the total audio
 /// the stream has been fed since it began, which is what lets that coordinator
 /// check its own copy of the same signal is still in step.
-pub type StreamTextSink = Arc<dyn Fn(&str, &str, i64, i64) + Send + Sync>;
+pub type StreamTextSink = Arc<dyn Fn(u8, &str, &str, i64, i64) + Send + Sync>;
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
@@ -416,13 +477,12 @@ impl TranscriptionManager {
             router: Arc::new(StreamRouter::new()),
             extra_engines: Arc::new(Mutex::new(HashMap::new())),
             extra_unload_requests: Arc::new(Mutex::new(HashSet::new())),
-            stream_live_typing: Arc::new(AtomicBool::new(false)),
             extra_loading: Arc::new((Mutex::new(HashSet::new()), std::sync::Condvar::new())),
-            stream_active: Arc::new(AtomicBool::new(false)),
+            stream_active: Arc::new(std::array::from_fn(|_| AtomicBool::new(false))),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
-            active_stream_worker: Arc::new(AtomicU64::new(0)),
-            active_engine_lease: Arc::new(AtomicU64::new(0)),
-            stream_attempt: Arc::new(Mutex::new(None)),
+            active_stream_worker: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
+            active_engine_lease: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
+            stream_attempt: Arc::new(Mutex::new(std::array::from_fn(|_| None))),
             stream_text_sink: Arc::new(Mutex::new(None)),
             stream_text_sink_exclusive: Arc::new(AtomicBool::new(false)),
             stream_timing: Arc::new(StreamTiming::default()),
@@ -528,7 +588,11 @@ impl TranscriptionManager {
     pub fn is_model_loaded(&self) -> bool {
         // The engine may be leased out to the streaming worker (taken out of
         // the mutex). It's still loaded, just in use, so report true.
-        self.lock_engine().is_some() || self.active_engine_lease.load(Ordering::Acquire) != 0
+        self.lock_engine().is_some()
+            || self
+                .active_engine_lease
+                .iter()
+                .any(|leased| leased.load(Ordering::Acquire) != 0)
     }
 
     /// Accelerator changes should not disturb the current transcription. Mark
@@ -709,30 +773,18 @@ impl TranscriptionManager {
         }
 
         let loaded_engine = {
-            // The whisper backend is chosen at load time (transcribe-cpp has
-            // no runtime global). With an explicit `device_index` (the
+            // The backend is chosen at load time (transcribe-cpp has no
+            // runtime global). With an explicit `device_index` (the
             // --device-index flag) hard-select that registered device;
-            // otherwise re-read the persisted accelerator preference (so an
-            // accelerator change marked for reload takes effect here).
+            // otherwise ask for the backend this model resolves to — a
+            // per-model override when one is set, the persisted accelerator
+            // preference otherwise (so an accelerator change marked for reload
+            // takes effect here).
             let (backend, device) = match device_index {
                 Some(index) => resolve_device_index(index).inspect_err(|e| {
                     emit_loading_failed(&e.to_string());
                 })?,
-                None => {
-                    let settings = get_settings(&self.app_handle);
-                    let accelerator = settings.transcribe_accelerator;
-                    let device =
-                        resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref());
-                    // Backend::Auto accepts an exact CPU/GPU device. When
-                    // no exact device is saved, retain the strict
-                    // accelerator/backend policy and native fallback.
-                    let backend = if device.is_some() {
-                        Backend::Auto
-                    } else {
-                        select_transcribe_backend(accelerator)
-                    };
-                    (backend, device)
-                }
+                None => resolve_model_backend(&get_settings(&self.app_handle), model_id),
             };
             let requested_device = device
                 .as_ref()
@@ -888,9 +940,12 @@ impl TranscriptionManager {
             .map(|LoadedEngine::TranscribeCpp(session)| session.model().backend().to_string())
     }
 
-    /// Whether a live streaming run is currently in flight.
+    /// Whether a live streaming run is currently in flight (on any slot — the
+    /// overlay shows a live session while either column is streaming).
     pub fn is_streaming(&self) -> bool {
-        self.stream_active.load(Ordering::Acquire)
+        self.stream_active
+            .iter()
+            .any(|active| active.load(Ordering::Acquire))
     }
 
     /// Shared handle to the stream router, used by the audio recorder to feed
@@ -915,35 +970,200 @@ impl TranscriptionManager {
     /// the stream is only a preview for the overlay and the final text is
     /// pasted afterwards.
     pub fn start_stream(&self, live_typing: bool, statistics: StatisticsRunContext) {
-        if self.router.is_open() || self.active_stream_worker.load(Ordering::Acquire) != 0 {
-            warn!("start_stream called while a stream worker is already active");
+        self.start_stream_on(PRIMARY_STREAM_SLOT, live_typing, statistics, None);
+    }
+
+    /// Begin a live stream on an extra model's engine, beside the primary's.
+    /// The experimental Multi Streaming STT mode is the only caller: the extra's
+    /// engine is leased for the whole session rather than per decode (see
+    /// [`Self::lease_extra_engine`]), because an unrelated batch decode taking it
+    /// out from under a live stream is exactly what leasing prevents.
+    ///
+    /// `slot` is the stream slot, one per extra model, in the order the mode
+    /// configured them; the range is the caller's business (see [`STREAM_SLOTS`])
+    /// and the primary's own slot is not one of them.
+    ///
+    /// The engine is supplied by the caller — see
+    /// [`Self::start_extra_stream_when_loaded`], which is the only one, and which
+    /// is what makes the supplied engine this module's own type.
+    fn start_extra_stream(
+        &self,
+        slot: u8,
+        model_id: &str,
+        engine: LoadedEngine,
+        statistics: StatisticsRunContext,
+    ) {
+        debug_assert!(
+            slot != PRIMARY_STREAM_SLOT,
+            "the primary stream is not an extra"
+        );
+        self.start_stream_on(
+            slot,
+            // Never types: an extra's text is another column, and with
+            // `DirectStreaming` a second writer would race the primary into the
+            // same document.
+            false,
+            statistics,
+            Some((model_id.to_string(), Some(engine))),
+        );
+    }
+
+    /// Wait for an extra model's engine, lease it, and start its stream — the
+    /// three steps an early second column needs, in one call.
+    ///
+    /// Only the Multi Streaming STT mode uses this, and only when an early start
+    /// is impossible: its extra is preloaded in the background so the user can
+    /// begin speaking at once, so the engine is usually still loading when the
+    /// recording starts. The stream does not have to wait for the model, though —
+    /// frames pushed before it opens queue on the slot's channel — so this polls
+    /// until the load lands and then opens the stream, which is why it must run
+    /// on a thread of its own rather than on the recording path.
+    ///
+    /// `stop` is polled alongside the load: a recording that has already ended
+    /// must not have a stream opened under it, or the second column would start
+    /// on audio nobody is going to collect.
+    ///
+    /// It lives here rather than in its caller because the lease and the start
+    /// are two steps over this manager's own state, and because [`LoadedEngine`]
+    /// is this module's own: a caller holding one would be holding an inference
+    /// handle it has no use for. Returns whether a stream is now running.
+    ///
+    /// Blocks the calling thread.
+    pub fn start_extra_stream_when_loaded(
+        &self,
+        slot: u8,
+        model_id: &str,
+        stop: &AtomicBool,
+        retry_window: Duration,
+        statistics: StatisticsRunContext,
+    ) -> bool {
+        let deadline = Instant::now() + retry_window;
+        let engine = loop {
+            if stop.load(Ordering::Acquire) {
+                return false;
+            }
+            if self.is_extra_model_loaded(model_id) {
+                match self.lease_extra_engine(model_id) {
+                    Ok(engine) => break engine,
+                    Err(error) => {
+                        warn!(
+                            "Multi streaming STT: '{}' reports loaded but its engine could not be \
+                             leased: {}; slot {}'s column stays empty",
+                            model_id, error, slot
+                        );
+                        return false;
+                    }
+                }
+            }
+            if Instant::now() >= deadline {
+                warn!(
+                    "Multi streaming STT: '{}' was still not loaded after {:?}; slot {}'s column \
+                     stays empty",
+                    model_id, retry_window, slot
+                );
+                return false;
+            }
+            thread::sleep(EXTRA_ENGINE_RETRY_POLL);
+        };
+
+        // Between the lease and the start there is nothing that can block, so the
+        // engine cannot be stranded: `start_stream_on` gives it back itself if the
+        // slot is already held.
+        self.start_extra_stream(slot, model_id, engine, statistics);
+        true
+    }
+
+    /// Open a stream worker on `slot`. `supplied` is `None` for the primary (the
+    /// worker leases the app's own engine) and names the extra model plus the
+    /// engine the caller leased for it otherwise.
+    fn start_stream_on(
+        &self,
+        slot: u8,
+        live_typing: bool,
+        statistics: StatisticsRunContext,
+        mut supplied: Option<(String, Option<LoadedEngine>)>,
+    ) {
+        // An engine the caller leased but this worker will never use — the slot
+        // is taken — belongs back in `extra_engines`: dropping it would unload
+        // the model the user asked to keep.
+        macro_rules! give_back {
+            () => {
+                if let Some((model_id, Some(engine))) = supplied.take() {
+                    self.return_extra_engine(&model_id, engine);
+                }
+            };
+        }
+
+        // The test is per slot, deliberately. `router.is_open()` says *a* stream
+        // is running and cannot be the guard here: the whole point of the slot
+        // array is that the primary's stream may already be open when an extra's
+        // starts, and testing the router as a whole would refuse the extra on
+        // every multi-streaming session — silently, since the caller's only
+        // signal is an empty column. One worker per slot is what has to hold, and
+        // that is what the second half tests.
+        let index = slot as usize;
+        if self.active_stream_worker[index].load(Ordering::Acquire) != 0 {
+            warn!(
+                "start_stream called for slot {} while a stream worker is already active there",
+                slot
+            );
+            give_back!();
             return;
         }
         let worker_id = self.next_stream_worker_id.fetch_add(1, Ordering::Relaxed);
-        if self
-            .active_stream_worker
+        if self.active_stream_worker[index]
             .compare_exchange(0, worker_id, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             warn!("start_stream lost a race with another stream worker");
+            give_back!();
             return;
         }
-        let rx = self.router.open();
-        self.stream_active.store(false, Ordering::Release);
-        self.stream_live_typing
-            .store(live_typing, Ordering::Release);
+        let rx = self.router.open(slot);
+        self.stream_active[index].store(false, Ordering::Release);
 
         let manager = self.clone();
-        thread::spawn(move || manager.run_stream_worker(rx, worker_id, statistics));
+        thread::spawn(move || {
+            manager.run_stream_worker(rx, slot, worker_id, live_typing, statistics, supplied)
+        });
     }
 
+    /// Put a stream worker's engine back where it was leased from: the app's own
+    /// engine for the primary slot, `extra_engines` for every other — the test is
+    /// the primary's slot rather than the extra's, so it holds for however many
+    /// extra slots the mode runs and keys the extra by the id the caller supplied
+    /// rather than by the slot.
+    fn restore_stream_engine(&self, slot: u8, engine: LoadedEngine, model_id: &str) {
+        if slot == PRIMARY_STREAM_SLOT {
+            self.return_engine(engine, model_id);
+        } else {
+            self.return_extra_engine(model_id, engine);
+        }
+    }
+
+    /// Give back an engine the caller leased for a worker that never ran — the
+    /// slot was already held, so nothing else will ever return it.
+    fn give_back_supplied_engine(&self, slot: u8, engine: Option<LoadedEngine>, model_id: &str) {
+        if let Some(engine) = engine {
+            self.restore_stream_engine(slot, engine, model_id);
+        }
+    }
+
+    /// `live_typing` is this stream's own permission to type into the foreground
+    /// app; see the note where the field used to be. It is a parameter rather than
+    /// shared state because two streams are live at once in the Multi Streaming
+    /// STT mode and the primary's permission is not the extra's.
     fn run_stream_worker(
         &self,
         rx: mpsc::Receiver<StreamCmd>,
+        slot: u8,
         worker_id: u64,
+        live_typing: bool,
         statistics: StatisticsRunContext,
+        supplied: Option<(String, Option<LoadedEngine>)>,
     ) {
         let _worker = StreamWorkerGuard {
+            slot,
             worker_id,
             active_stream_worker: Arc::clone(&self.active_stream_worker),
             active_engine_lease: Arc::clone(&self.active_engine_lease),
@@ -959,40 +1179,51 @@ impl TranscriptionManager {
             }
         }
 
-        let model_id = self.get_current_model().unwrap_or_default();
+        // The extra's model and its pre-leased engine, or the app's own model
+        // and `None` for the primary.
+        let (model_id, supplied_engine) = match supplied {
+            Some((model_id, engine)) => (model_id, engine),
+            None => (self.get_current_model().unwrap_or_default(), None),
+        };
+        let index = slot as usize;
 
         // Take the engine out of the mutex so we own it during streaming,
         // structurally excluding any concurrent batch transcription (which
         // transcribe-cpp's compute_lock would refuse anyway). Returned when the
         // worker exits, or dropped if the model was switched/unloaded mid-stream.
-        if self
-            .active_engine_lease
+        // The extra's engine is already out of `extra_engines` — it was leased
+        // by the caller, for the whole session rather than per decode.
+        if self.active_engine_lease[index]
             .compare_exchange(0, worker_id, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             warn!("Live preview: another worker already holds the transcription engine");
-            self.router.clear();
+            self.router.clear(slot);
+            self.give_back_supplied_engine(slot, supplied_engine, &model_id);
             drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
             return;
         }
-        let mut engine = match self.lock_engine().take() {
-            Some(e) => e,
-            None => {
-                info!(
-                    "Live preview: model '{}' was unloaded before streaming could begin; \
-                     falling back to batch transcription",
-                    model_id
-                );
-                let _ = self.active_engine_lease.compare_exchange(
-                    worker_id,
-                    0,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                );
-                self.router.clear();
-                drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
-                return;
-            }
+        let mut engine = match supplied_engine {
+            Some(engine) => engine,
+            None => match self.lock_engine().take() {
+                Some(e) => e,
+                None => {
+                    info!(
+                        "Live preview: model '{}' was unloaded before streaming could begin; \
+                         falling back to batch transcription",
+                        model_id
+                    );
+                    let _ = self.active_engine_lease[index].compare_exchange(
+                        worker_id,
+                        0,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    );
+                    self.router.clear(slot);
+                    drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
+                    return;
+                }
+            },
         };
 
         // The loaded session (not the ModelManager copy) is the source of truth
@@ -1002,9 +1233,10 @@ impl TranscriptionManager {
                 let model = session.model();
                 let caps = model.capabilities();
                 info!(
-                    "Live preview: model '{}' arch='{}' variant='{}' supports_streaming={} \
-                     supports_translate={} languages={:?}",
+                    "Live preview: model '{}' slot={} arch='{}' variant='{}' \
+                     supports_streaming={} supports_translate={} languages={:?}",
                     model_id,
+                    slot,
                     model.arch(),
                     model.variant(),
                     caps.supports_streaming,
@@ -1020,15 +1252,21 @@ impl TranscriptionManager {
         };
 
         if !supports_streaming {
-            self.return_engine(engine, &model_id);
-            self.router.clear();
+            self.restore_stream_engine(slot, engine, &model_id);
+            self.router.clear(slot);
             drain_until_finalize(rx, StreamWorkerResult::NeverStarted);
             return;
         }
 
         // Build run options mirroring the offline transcribe-cpp path: task +
         // language gated against what the model actually advertises.
-        let settings = get_settings(&self.app_handle);
+        let mut settings = get_settings(&self.app_handle);
+        // A streaming extra is an extra like any other: the per-slot language and
+        // translate preferences the Multi-STT panel sets for it apply here, or
+        // the second column would be transcribed with the primary's settings.
+        if slot == EXTRA_STREAM_SLOT {
+            apply_extra_model_settings(&mut settings, &model_id);
+        }
         let effective_language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), &model_id);
         let run_plan = transcribe_cpp_run_plan(
@@ -1078,7 +1316,7 @@ impl TranscriptionManager {
             ) else {
                 break 'stream false;
             };
-            *self.stream_attempt.lock().unwrap() = Some(attempt.clone());
+            self.stream_attempt.lock().unwrap()[index] = Some(attempt.clone());
 
             // Resolve family-specific streaming extension (e.g. Parakeet Buffered,
             // Nemotron cache-aware) from the user's latency preset, if any.
@@ -1127,16 +1365,16 @@ impl TranscriptionManager {
             };
 
             info!(target: "pipeline", "stream begin_ms={:.3}", begin_start.elapsed().as_secs_f64()*1000.0);
-            self.stream_active.store(true, Ordering::Release);
+            self.stream_active[index].store(true, Ordering::Release);
             self.touch_activity();
             info!(
-                "Live streaming transcription started (model '{}', backend '{}')",
-                model_id, backend
+                "Live streaming transcription started (model '{}', slot {}, backend '{}')",
+                model_id, slot, backend
             );
 
             let is_direct_streaming_paste = settings.paste_method
                 == crate::settings::PasteMethod::DirectStreaming
-                && self.stream_live_typing.load(Ordering::Acquire);
+                && live_typing;
             let mut direct_writer = if is_direct_streaming_paste {
                 Some(crate::direct_stream_writer::DirectStreamWriter::new(
                     self.app_handle.clone(),
@@ -1212,6 +1450,7 @@ impl TranscriptionManager {
                                     let text = stream.text();
                                     perf.record_emit();
                                     self.emit_stream_text(
+                                        slot,
                                         &text.committed,
                                         &text.tentative,
                                         update.audio_committed_ms,
@@ -1247,7 +1486,12 @@ impl TranscriptionManager {
                                 // After finalize the committed prefix holds the
                                 // whole text, so a sink that has been tracking
                                 // the chunk boundaries gets its last words here.
+                                // Named by slot: every live stream in the
+                                // session finalizes, and a coordinator that
+                                // watches more than one has to be able to tell
+                                // which of them just delivered its tail.
                                 self.notify_stream_text_sink(
+                                    slot,
                                     &text.committed,
                                     &text.tentative,
                                     update.audio_committed_ms,
@@ -1320,7 +1564,7 @@ impl TranscriptionManager {
             // failed); drain so the finalize handshake still completes and the
             // caller falls back to batch transcription. Return the engine first
             // so the fallback can immediately use it.
-            self.return_engine(engine, &model_id);
+            self.restore_stream_engine(slot, engine, &model_id);
             let result = start_failure
                 .map(StreamWorkerResult::Failed)
                 .unwrap_or(StreamWorkerResult::NeverStarted);
@@ -1328,7 +1572,7 @@ impl TranscriptionManager {
             return;
         }
 
-        self.return_engine(engine, &model_id);
+        self.restore_stream_engine(slot, engine, &model_id);
         if let (Some(reply), Some(result)) = (finalize_reply, finalize_result) {
             let _ = reply.send(result);
         }
@@ -1459,23 +1703,32 @@ impl TranscriptionManager {
     /// A never-started, empty, failed, and timed-out stream remain distinct so
     /// callers can apply the fallback policy without losing attempt outcomes.
     pub fn finalize_stream(&self) -> StreamFinalization {
-        let Some(tx) = self.router.take() else {
+        self.finalize_stream_on(PRIMARY_STREAM_SLOT)
+    }
+
+    /// Finalize one slot's stream and post-process its text. The second slot is
+    /// the experimental Multi Streaming STT mode's extra; its text is a column of
+    /// its own and never becomes the session's transcript.
+    pub fn finalize_stream_on(&self, slot: u8) -> StreamFinalization {
+        let index = slot as usize;
+        let Some(tx) = self.router.take(slot) else {
             return StreamFinalization::NeverStarted;
         };
         let (reply_tx, reply_rx) = mpsc::channel();
         if tx.send(StreamCmd::Finalize(reply_tx)).is_err() {
             return self.failed_or_never_started_stream(
+                slot,
                 "Live transcription worker stopped before finalization",
             );
         }
         let finalized = match reply_rx.recv_timeout(STREAM_FINALIZE_REPLY_TIMEOUT) {
             Ok(StreamWorkerResult::Completed(finalized)) => finalized,
             Ok(StreamWorkerResult::NeverStarted) => {
-                self.stream_attempt.lock().unwrap().take();
+                self.stream_attempt.lock().unwrap()[index].take();
                 return StreamFinalization::NeverStarted;
             }
             Ok(StreamWorkerResult::Failed(error)) => {
-                if let Some(attempt) = self.stream_attempt.lock().unwrap().take() {
+                if let Some(attempt) = self.stream_attempt.lock().unwrap()[index].take() {
                     attempt.complete_canonical("");
                     attempt.finish(StatisticsRunStatus::Failed);
                 }
@@ -1483,12 +1736,13 @@ impl TranscriptionManager {
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return self.failed_or_never_started_stream(
+                    slot,
                     "Live transcription worker disconnected during finalization",
                 );
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                self.stream_active.store(false, Ordering::Release);
-                if let Some(attempt) = self.stream_attempt.lock().unwrap().take() {
+                self.stream_active[index].store(false, Ordering::Release);
+                if let Some(attempt) = self.stream_attempt.lock().unwrap()[index].take() {
                     attempt.complete_canonical("");
                     attempt.finish(StatisticsRunStatus::Failed);
                 }
@@ -1509,7 +1763,7 @@ impl TranscriptionManager {
             &finalized.output_language,
             &finalized.supported_languages,
         );
-        let Some(attempt) = self.stream_attempt.lock().unwrap().take() else {
+        let Some(attempt) = self.stream_attempt.lock().unwrap()[index].take() else {
             return StreamFinalization::Failed(
                 "Live transcription completed without an attempt context".to_string(),
             );
@@ -1519,7 +1773,11 @@ impl TranscriptionManager {
             attempt.finish(StatisticsRunStatus::Empty);
         }
 
-        self.maybe_unload_immediately("streaming transcription");
+        // Only the primary's stream is the app's own transcription; an extra's
+        // unload policy belongs to the Multi-STT paths that started it.
+        if slot == PRIMARY_STREAM_SLOT {
+            self.maybe_unload_immediately("streaming transcription");
+        }
         StreamFinalization::Completed(TrackedTranscription {
             text: filtered,
             attempt,
@@ -1528,15 +1786,22 @@ impl TranscriptionManager {
 
     /// Abandon any active stream without producing text (e.g. on cancel).
     pub fn cancel_stream(&self) {
-        if let Some(tx) = self.router.take() {
-            let _ = tx.send(StreamCmd::Cancel);
-        }
-        self.stream_attempt.lock().unwrap().take();
-        self.stream_active.store(false, Ordering::Release);
+        self.cancel_stream_on(PRIMARY_STREAM_SLOT);
     }
 
-    fn failed_or_never_started_stream(&self, error: &str) -> StreamFinalization {
-        match self.stream_attempt.lock().unwrap().take() {
+    /// Abandon one slot's stream without producing text. The extra slot's stream
+    /// ends here on every path that drops the multi-streaming session.
+    pub fn cancel_stream_on(&self, slot: u8) {
+        let index = slot as usize;
+        if let Some(tx) = self.router.take(slot) {
+            let _ = tx.send(StreamCmd::Cancel);
+        }
+        self.stream_attempt.lock().unwrap()[index].take();
+        self.stream_active[index].store(false, Ordering::Release);
+    }
+
+    fn failed_or_never_started_stream(&self, slot: u8, error: &str) -> StreamFinalization {
+        match self.stream_attempt.lock().unwrap()[slot as usize].take() {
             Some(attempt) => {
                 attempt.complete_canonical("");
                 attempt.finish(StatisticsRunStatus::Failed);
@@ -1563,6 +1828,7 @@ impl TranscriptionManager {
     /// that chunk's merge.
     fn notify_stream_text_sink(
         &self,
+        slot: u8,
         committed: &str,
         tentative: &str,
         audio_committed_ms: i64,
@@ -1570,18 +1836,38 @@ impl TranscriptionManager {
     ) {
         let sink = self.stream_text_sink.lock().unwrap().clone();
         if let Some(sink) = sink {
-            sink(committed, tentative, audio_committed_ms, input_received_ms);
+            sink(
+                slot,
+                committed,
+                tentative,
+                audio_committed_ms,
+                input_received_ms,
+            );
         }
     }
 
     fn emit_stream_text(
         &self,
+        slot: u8,
         committed: &str,
         tentative: &str,
         audio_committed_ms: i64,
         input_received_ms: i64,
     ) {
-        self.notify_stream_text_sink(committed, tentative, audio_committed_ms, input_received_ms);
+        // Every slot reaches the sink, labelled with the stream it came from.
+        // The experimental Multi-STT streaming coordinator watches the primary
+        // and, in its nested Multi Streaming STT form, the extras as well: it
+        // takes each model's text for the chunk that closes, so a second model's
+        // text has to arrive here rather than only in its own overlay column.
+        // The sink is `None` on every path that has no coordinator, so the plain
+        // session's extra slot pays one mutex read per update and nothing else.
+        self.notify_stream_text_sink(
+            slot,
+            committed,
+            tentative,
+            audio_committed_ms,
+            input_received_ms,
+        );
         // An exclusive sink composes the displayed text itself (it re-chunks
         // the stream), so emitting the worker's raw text here would race it.
         if self.stream_text_sink_exclusive.load(Ordering::Acquire) {
@@ -1590,6 +1876,7 @@ impl TranscriptionManager {
         let _ = StreamTextEvent {
             committed: committed.to_string(),
             tentative: tentative.to_string(),
+            slot: (slot != PRIMARY_STREAM_SLOT).then_some(slot),
             failed_chunks: None,
             whole_session: false,
         }
@@ -1597,20 +1884,38 @@ impl TranscriptionManager {
     }
 
     /// Publish a [`StreamTextEvent`] composed elsewhere (the experimental
-    /// Multi-STT streaming coordinator). Only meaningful together with an
-    /// exclusive sink; the plain stream worker uses `emit_stream_text`.
+    /// Multi-STT streaming coordinator). The plain stream worker uses
+    /// [`Self::emit_stream_text`].
+    ///
+    /// `slot` says which block of the overlay the text belongs to, and the
+    /// coordinator has two shapes:
+    ///
+    /// - `None` is the primary model's own column, whose rough text the
+    ///   coordinator replaces in place with the merged one. This is the mode's
+    ///   production view and the only shape a parent-mode session emits; it goes
+    ///   with an exclusive sink, so the raw text of that column never reaches the
+    ///   overlay at all.
+    /// - `Some(n)` is a column the coordinator owns *beside* the streaming
+    ///   models' own — the merged-and-cleaned block of the Multi Streaming STT
+    ///   mode's debug view, under the live columns. A session in that view leaves
+    ///   the sink non-exclusive, so the models' raw text keeps arriving on its own
+    ///   slots and this is the only text on the block.
+    ///
+    /// Either way the event is the whole session's text, which is what tells the
+    /// overlay to grow its card and read a height cap back — a per-block flag
+    /// would have to be carried separately to say the same thing.
     pub fn emit_composed_stream_text(
         &self,
         committed: &str,
         tentative: &str,
         failed_chunks: Option<u32>,
+        slot: Option<u8>,
     ) {
         let _ = StreamTextEvent {
             committed: committed.to_string(),
             tentative: tentative.to_string(),
+            slot,
             failed_chunks,
-            // This is the one path that composes the whole session's text: the
-            // overlay grows its card for it and reads the height cap back.
             whole_session: true,
         }
         .emit(&self.app_handle);
@@ -1622,9 +1927,12 @@ impl TranscriptionManager {
     ///
     /// `exclusive` makes the sink responsible for the overlay's text as well:
     /// see [`Self::emit_composed_stream_text`]. The experimental Multi-STT
-    /// streaming mode is the only exclusive user — it replaces the streaming
-    /// model's rough text with the merged text, so the overlay must show the
-    /// composed version and never the raw one.
+    /// streaming mode asks for it in its production view, where it replaces the
+    /// streaming model's rough text with the merged one in place — the overlay
+    /// must show the composed version and never the raw one. In its debug view
+    /// the same session asks for a non-exclusive sink instead: the models' raw
+    /// text *is* what that view displays, in a block each, and suppressing it
+    /// would leave every live column empty.
     pub fn set_stream_text_sink(&self, sink: Option<StreamTextSink>, exclusive: bool) {
         *self.stream_text_sink.lock().unwrap() = sink;
         self.stream_text_sink_exclusive
@@ -2303,6 +2611,40 @@ fn transcribe_cpp_run_plan(
     }
 }
 
+/// Fold a Multi-STT slot's own preferences into the settings a decode of that
+/// slot's model runs with: the language the user pinned for that model and
+/// whether it should translate to English. Shared by the batch extra path and
+/// the experimental Multi Streaming STT mode's second stream, so a model used
+/// both ways behaves the same.
+///
+/// A model that is not one of the configured slots keeps the global settings.
+fn apply_extra_model_settings(settings: &mut AppSettings, model_id: &str) {
+    let (language, translate) = if Some(model_id) == settings.multi_stt_model_2.as_deref() {
+        (
+            settings.multi_stt_language_model_2.clone(),
+            Some(settings.multi_stt_translate_model_2),
+        )
+    } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
+        (
+            settings.multi_stt_language_model_3.clone(),
+            Some(settings.multi_stt_translate_model_3),
+        )
+    } else if Some(model_id) == settings.multi_stt_model_4.as_deref() {
+        (
+            settings.multi_stt_language_model_4.clone(),
+            Some(settings.multi_stt_translate_model_4),
+        )
+    } else {
+        (None, None)
+    };
+    if let Some(language) = language {
+        settings.selected_language = language;
+    }
+    if let Some(translate) = translate {
+        settings.translate_to_english = translate;
+    }
+}
+
 fn post_process_transcription_text(
     raw: String,
     settings: &AppSettings,
@@ -2597,6 +2939,63 @@ impl TranscriptionManager {
         }
     }
 
+    /// Lease one extra model's engine for the whole of a live streaming session.
+    ///
+    /// [`Self::transcribe_with_extra`] leases per decode — it removes the engine
+    /// from the map, decodes, and puts it back — which is right for a batch decode
+    /// and wrong for a stream: an unrelated decode while the extra's stream is
+    /// live would take the very engine that stream is reading from. The streaming
+    /// session takes it out once, at arm time, and holds it until the session ends.
+    ///
+    /// Private because a lease is only meaningful to the worker that will hold it:
+    /// [`Self::start_extra_stream_when_loaded`] leases and starts in one step, so
+    /// no caller ever holds an engine of its own.
+    fn lease_extra_engine(&self, model_id: &str) -> Result<LoadedEngine> {
+        let mut extra = self.extra_engines.lock().unwrap();
+        extra
+            .remove(model_id)
+            .ok_or_else(|| anyhow::anyhow!("Extra model '{}' is not loaded", model_id))
+    }
+
+    /// Give a leased engine back. An unload that was asked for while it was out is
+    /// honoured here rather than lost, with the same policy
+    /// [`Self::transcribe_with_extra_internal`] applies to a per-decode lease: the
+    /// request flag, or `Immediately` with the Multi-STT pin off, frees the engine
+    /// instead of reinserting it.
+    fn return_extra_engine(&self, model_id: &str, engine: LoadedEngine) {
+        let settings = get_settings(&self.app_handle);
+        let mut extra = self.extra_engines.lock().unwrap();
+        let unload_requested = self.extra_unload_requests.lock().unwrap().remove(model_id);
+        let unload_immediately = settings.model_unload_timeout == ModelUnloadTimeout::Immediately
+            && !settings.multi_stt_keep_extra_models_loaded;
+        if unload_requested || unload_immediately {
+            if unload_immediately {
+                info!(
+                    "Immediately unloading extra model '{}' after its live stream",
+                    model_id
+                );
+            } else {
+                info!(
+                    "Extra model '{}' was unloaded during its live stream; freeing its engine",
+                    model_id
+                );
+            }
+            drop(extra);
+            drop(engine);
+            let _ = self.app_handle.emit(
+                "model-state-changed",
+                ModelStateEvent {
+                    event_type: "multi_stt_model_unloaded".to_string(),
+                    model_id: Some(model_id.to_string()),
+                    model_name: None,
+                    error: None,
+                },
+            );
+        } else {
+            extra.insert(model_id.to_string(), engine);
+        }
+    }
+
     /// Transcribe audio with one of the extra model engines.
     /// The engine is temporarily removed from the map, used, and returned.
     #[allow(dead_code)]
@@ -2666,34 +3065,7 @@ impl TranscriptionManager {
         let st = std::time::Instant::now();
         let audio_len = audio.len();
         let mut settings = get_settings(&self.app_handle);
-
-        // Override language with per-model preference if set
-        let model_language = if Some(model_id) == settings.multi_stt_model_2.as_deref() {
-            settings.multi_stt_language_model_2.clone()
-        } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
-            settings.multi_stt_language_model_3.clone()
-        } else if Some(model_id) == settings.multi_stt_model_4.as_deref() {
-            settings.multi_stt_language_model_4.clone()
-        } else {
-            None
-        };
-        if let Some(ref lang) = model_language {
-            settings.selected_language = lang.clone();
-        }
-
-        // Override translation with per-model preference if set
-        let model_translate = if Some(model_id) == settings.multi_stt_model_2.as_deref() {
-            Some(settings.multi_stt_translate_model_2)
-        } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
-            Some(settings.multi_stt_translate_model_3)
-        } else if Some(model_id) == settings.multi_stt_model_4.as_deref() {
-            Some(settings.multi_stt_translate_model_4)
-        } else {
-            None
-        };
-        if let Some(translate) = model_translate {
-            settings.translate_to_english = translate;
-        }
+        apply_extra_model_settings(&mut settings, model_id);
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(
@@ -3216,14 +3588,11 @@ impl TranscriptionManager {
         use transcribe_cpp::{Model, ModelOptions};
 
         {
-            let settings = get_settings(&self.app_handle);
-            let accelerator = settings.transcribe_accelerator;
-            let device = resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref());
-            let backend = if device.is_some() {
-                Backend::Auto
-            } else {
-                select_transcribe_backend(accelerator)
-            };
+            // Same resolution as the primary load, so a per-model backend
+            // override applies to a Multi-STT extra exactly as it does to the
+            // primary model.
+            let (backend, device) =
+                resolve_model_backend(&get_settings(&self.app_handle), model_id);
             let model_options = ModelOptions { backend, device };
 
             // Ensure architecture plugin is activated if required
@@ -3512,6 +3881,83 @@ fn resolve_gpu_device(
     resolved
 }
 
+/// Map a per-model backend preference onto an engine [`Backend`].
+///
+/// `Auto` never reaches here — it means "no override", handled by the caller.
+/// The names line up one-to-one with the engine's variants, which is why the
+/// preference enum can be spelled in user-facing terms (`cuda`, `vulkan`,
+/// `metal`, `rocm`) instead of the coarser `auto | cpu | gpu` of the global
+/// setting.
+fn model_backend_kind(setting: ModelBackendSetting) -> Option<Backend> {
+    match setting {
+        ModelBackendSetting::Auto => None,
+        ModelBackendSetting::Cpu => Some(Backend::Cpu),
+        ModelBackendSetting::Cuda => Some(Backend::Cuda),
+        ModelBackendSetting::Vulkan => Some(Backend::Vulkan),
+        ModelBackendSetting::Metal => Some(Backend::Metal),
+        ModelBackendSetting::Rocm => Some(Backend::Rocm),
+    }
+}
+
+/// Resolve the `(backend, device)` a **specific** model should load with.
+///
+/// This is the single place the two load sites (the primary model and
+/// `create_engine`, which every Multi-STT extra goes through) get their options
+/// from, so a per-model override cannot apply on one path and not the other.
+///
+/// The override, when there is one, is a hard request: an explicit backend has
+/// no silent fallback inside the engine, and a model that asks for a backend
+/// this build or this machine does not have would fail to load outright. So an
+/// unavailable request is refused here, with a warning naming the model, and the
+/// global policy is applied instead — a preference is not worth a dead model.
+/// Only `Auto`/`Cpu` reach the engine from an override; the GPU variants pass
+/// `device: None` and let the library pick the device for that backend, since
+/// `transcribe_gpu_device` is an identity for the global GPU choice, not a
+/// per-model one.
+fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Option<Device>) {
+    let accelerator = settings.transcribe_accelerator;
+    let requested = settings
+        .per_model_backends
+        .get(model_id)
+        .copied()
+        .unwrap_or_default();
+    // An emulated x64 process on Windows ARM64 has no GPU backends at all, so
+    // every GPU request — global or per-model — collapses to CPU there.
+    let requested = if transcribe_gpu_disabled_for_host() {
+        ModelBackendSetting::Cpu
+    } else {
+        requested
+    };
+
+    let global = || {
+        let device = resolve_gpu_device(accelerator, settings.transcribe_gpu_device.as_deref());
+        let backend = if device.is_some() {
+            Backend::Auto
+        } else {
+            select_transcribe_backend(accelerator)
+        };
+        (backend, device)
+    };
+
+    match model_backend_kind(requested) {
+        None => global(),
+        Some(Backend::Cpu) => (Backend::Cpu, None),
+        Some(backend) => {
+            if transcribe_cpp::backend_available(backend) {
+                (backend, None)
+            } else {
+                warn!(
+                    "Model '{}' is set to the {:?} backend, which is not available in this \
+                     build or on this machine; using the global accelerator policy instead",
+                    model_id,
+                    requested.as_str()
+                );
+                global()
+            }
+        }
+    }
+}
+
 fn transcribe_device_key(device: &transcribe_cpp::Device) -> String {
     let (identity_kind, identity) = match device.device_id.as_deref() {
         Some(device_id) => ("id", device_id),
@@ -3618,10 +4064,51 @@ fn cached_gpu_devices() -> &'static [GpuDeviceOption] {
     })
 }
 
+/// The compute backends this process can actually load a model on, as
+/// [`crate::settings::ModelBackendSetting`] wire names, for the per-model
+/// backend dropdown.
+///
+/// `auto` comes first because it is not a backend but the "follow the global
+/// accelerator setting" choice; `cpu` is always offered (the CPU backend is
+/// compiled in unconditionally and is the engine's own fallback). A GPU entry
+/// appears only when the engine reports that backend as loadable in this build
+/// — which is the same predicate `resolve_model_backend` checks before honouring
+/// an override, so what the dropdown offers and what a load will accept cannot
+/// drift apart.
+fn available_model_backends() -> Vec<String> {
+    let mut out = vec!["auto".to_string(), "cpu".to_string()];
+    if transcribe_gpu_disabled_for_host() {
+        return out;
+    }
+    for (name, backend) in [
+        ("cuda", Backend::Cuda),
+        ("vulkan", Backend::Vulkan),
+        ("metal", Backend::Metal),
+        ("rocm", Backend::Rocm),
+    ] {
+        if transcribe_cpp::backend_available(backend) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// The per-model backend wire names this process can honour, for validating a
+/// stored choice (`set_model_backend_setting`). Cheap by construction —
+/// `backend_available` reads the backend registry, it does not enumerate
+/// devices, so this does not pay the first-call GPU probe that
+/// `get_available_accelerators` does.
+pub fn available_model_backend_names() -> Vec<String> {
+    available_model_backends()
+}
+
 #[derive(Serialize, Clone, Debug, Type)]
 pub struct AvailableAccelerators {
     pub transcribe: Vec<String>,
     pub gpu_devices: Vec<GpuDeviceOption>,
+    /// Per-model backend choices this process can honour, best first (see
+    /// `available_model_backends`).
+    pub model_backends: Vec<String>,
 }
 
 /// Return the accelerators available to this process on its current host.
@@ -3631,6 +4118,7 @@ pub fn get_available_accelerators() -> AvailableAccelerators {
     AvailableAccelerators {
         transcribe: transcribe_options,
         gpu_devices: cached_gpu_devices().to_vec(),
+        model_backends: available_model_backends(),
     }
 }
 
