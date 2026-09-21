@@ -21,13 +21,13 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "3.0.0-alpha.0", features = [] }
+tauri-build = { version = "3.0.0-alpha.1", features = [] }
 serde_json = "1.0.151"
 serde = { version = "1.0.229", features = ["derive"] }
 
 [dependencies]
 once_cell = "1.21.4"
-tauri = { version = "3.0.0-alpha.0", features = [
+tauri = { version = "3.0.0-alpha.2", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
@@ -36,19 +36,28 @@ tauri = { version = "3.0.0-alpha.0", features = [
 # In Tauri 3 the runtime lives in a separate crate; `tauri::Builder::default()`
 # is generic over `tauri_runtime::Runtime` and defaults to the type-erased
 # `DynRuntime`. The Wry runtime type (`WryRuntime`) and the `Wry` runtime
-# initializer both live here. The crate is patched from the Tauri `v3` git
-# branch (see `[patch.crates-io]`); enabling `macos-private-api` mirrors the
-# same feature on the `tauri` crate so the macOS private-API window
-# functionality (transparent windows, full-screen enablement) is available.
-tauri-runtime-wry = { version = "3.0.0-alpha.0", features = ["macos-private-api"] }
-tauri-plugin-log = "3.0.0-alpha.0"
-tauri-plugin-opener = "3.0.0-alpha.0"
-tauri-plugin-store = "3.0.0-alpha.0"
-tauri-plugin-os = "3.0.0-alpha.0"
-tauri-plugin-clipboard-manager = "3.0.0-alpha.0"
-tauri-plugin-process = "3.0.0-alpha.0"
+# initializer both live here. Published on crates.io; enabling
+# `macos-private-api` mirrors the same feature on the `tauri` crate so the macOS
+# private-API window functionality (transparent windows, full-screen
+# enablement) is available.
+tauri-runtime-wry = { version = "3.0.0-alpha.2", features = ["macos-private-api"] }
+# Every `tauri-plugin-*` comes from Tauri's own `plugins-workspace`, `v3`
+# branch — the canonical source, tracked at the branch tip so a `cargo update`
+# always takes the newest v3 alpha. Not from crates.io: the published plugin
+# crates stop at 3.0.0-alpha.0, which still calls `Builder::js_init_script`, and
+# `tauri 3.0.0-alpha.2` renamed that to `initialization_script`. The v3 branch
+# is at 3.0.0-alpha.1 and speaks the alpha.2 API, so it is the only published
+# line that compiles against the core above. `tauri-plugin-macos-permissions`
+# is the exception — it is a community plugin with no v3 release at all, so it
+# stays on its fork.
+tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-opener = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-store = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-os = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-clipboard-manager = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-process = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 rusqlite_migration = "2.6.0"
-tauri-plugin-fs = "3.0.0-alpha.0"
+tauri-plugin-fs = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 rdev = { git = "https://github.com/rustdesk-org/rdev" }
@@ -104,36 +113,36 @@ specta = "2.0.0-rc.26"
 specta-typescript = "0.0.13"
 tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-macos-permissions = "2.3.0"
-tauri-plugin-dialog = "3.0.0-alpha.0"
+tauri-plugin-dialog = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 hf-hub = { git = "https://github.com/huggingface/hf-hub", branch = "main" }
 tokio-util = "^0.7.19"
 dirs = "^7.0.0"
 chacha20poly1305 = "0.11.0"
 argon2 = "0.6.0"
-rand = "0.10.2"
+rand = "^0.10.3"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-autostart = "3.0.0-alpha.0"
-tauri-plugin-global-shortcut = "3.0.0-alpha.0"
-tauri-plugin-single-instance = "3.0.0-alpha.0"
-tauri-plugin-updater = "3.0.0-alpha.0"
+tauri-plugin-autostart = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-global-shortcut = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-single-instance = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
+tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 
 [target.'cfg(windows)'.dependencies]
 # Used to reach ICoreWebView2Settings3 through the webview's controller
 # (disabling browser accelerator keys in the main window, upstream #1940).
 # Must match the version tauri-runtime-wry links against so the COM types
 # are identical — both depend on the same windows-core instance.
-webview2-com = "0.39"
+webview2-com = "^0.39.1"
 # windows-core 0.62 — same minor as what wry 0.57 + webview2-com 0.39 bring
 # in, so there is a single windows-core version in the graph and the
 # COM `Interface` trait resolves for both our imports and the controller().
 # (tauri itself still uses windows 0.61, which is a separate crate and
 # does not share COM types with our webview2-com interop.)
 windows-core = "0.62"
-windows = { version = "0.62", features = [
+windows = { version = "^0.62.2", features = [
   "Win32_Media",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
@@ -198,11 +207,13 @@ transcribe-cpp = { version = "*", default-features = false, features = [
   "cuda",
 ] }
 
-# TEMPORARY: tao pinned past 0.35.3 for the Wayland client-side-decorations fix
-# (tao #1218, fixes tauri #11856 — dead titlebar buttons after visible(false) →
-# show()) and the thread event target shutdown fix (tao #1274 / upstream #1710).
-# Pinned to upstream tauri-apps/tao rev da7441aa (where #1274 merged, compatible
-# with Tauri 2.x's tao 0.35.x constraint).
+# TEMPORARY: tao pinned to upstream tauri-apps/tao `main` for the Wayland
+# client-side-decorations fix (tao #1218, fixes tauri #11856 — dead titlebar
+# buttons after visible(false) → show()) and the thread event target shutdown
+# fix (tao #1274 / upstream #1710). The patched tree is tao **0.37.0**, which is
+# what `tauri-runtime-wry 3.0.0-alpha.2` requires (`tao ^0.37.0`), so the patch
+# no longer pins past its consumer's constraint — it tracks `main` for the two
+# fixes above.
 # tao-macros must be patched to the SAME rev even though nothing here depends on
 # it directly: wry pulls tao-macros 0.1.3 from crates.io, so without this the
 # lockfile carries two tao-macros 0.1.3 entries (registry + git). cargo tolerates
@@ -211,16 +222,14 @@ transcribe-cpp = { version = "*", default-features = false, features = [
 [patch.crates-io]
 tao = { git = "https://github.com/tauri-apps/tao" }
 tao-macros = { git = "https://github.com/tauri-apps/tao" }
-# All tauri crates from the fork, which carries one commit on v3: bumping
-# tauri-runtime-wry's wry dependency from 0.56 to 0.57 (webview2-com 0.38→0.39,
-# windows 0.61→0.62). All other crates are identical to upstream.
-tauri = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
-tauri-build = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
-tauri-codegen = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
-tauri-macros = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
-tauri-runtime = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
-tauri-runtime-wry = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
-tauri-utils = { git = "https://github.com/NairoDorian/tauri-fork", branch = "v3" }
+# The tauri crates are NOT patched: they resolve from crates.io at the versions
+# `[dependencies]` above asks for. They were briefly patched from a v3 fork that
+# carried one commit — bumping tauri-runtime-wry's wry dependency from 0.56 to
+# 0.57 (webview2-com 0.38→0.39, windows 0.61→0.62) ahead of the release. That
+# bump is upstream now: published `tauri-runtime-wry 3.0.0-alpha.2` links
+# `wry ^0.57.0`, `webview2-com ^0.39` and `windows ^0.62`, which is exactly what
+# the fork's commit made it link, so the fork is obsolete and the patch is gone.
+# The Windows `webview2-com` / `windows-core` pins below stay valid against it.
 tauri-specta = { git = "https://github.com/NairoDorian/tauri-specta-v3" }
 tauri-plugin-macos-permissions = { git = "https://github.com/NairoDorian/tauri-plugin-macos-permissions" }
 transcribe-cpp = { git = "https://github.com/NairoDorian/transcribe.cpp", branch = "main" }

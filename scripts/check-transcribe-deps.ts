@@ -1,12 +1,19 @@
 // scripts/check-transcribe-deps.ts
 //
-// Checks if our git fork dependencies:
+// Checks if our git dependencies:
 //   1. transcribe-cpp / transcribe-cpp-sys (https://github.com/NairoDorian/transcribe.cpp, branch=main)
-//   2. tauri / tauri-* (https://github.com/NairoDorian/tauri-fork, branch=v3)
+//   2. tauri-plugin-* (https://github.com/tauri-apps/plugins-workspace, branch=v3)
 // are pinned to the latest remote commit. If the remote branch tip differs from
 // the commit locked in Cargo.lock, runs `cargo update` to pull the latest —
-// so every `bun run tauri dev` catches upstream changes to the forks without
-// manual bumping or hardcoding specific commit SHAs.
+// so every `bun run tauri dev` catches upstream changes without manual bumping
+// or hardcoding specific commit SHAs.
+//
+// The Tauri crates themselves (`tauri`, `tauri-runtime-wry`, ...) are no longer
+// watched here: they come from crates.io at a pinned alpha, and a version bump
+// is `scripts/update-deps.ts`'s job, not a branch-tip refresh. The plugins stay
+// on a branch because Tauri publishes them behind their own core releases —
+// crates.io stops at `3.0.0-alpha.0`, which still calls the pre-alpha.2 plugin
+// API, so the `v3` branch is the only line that compiles against our core.
 //
 // How it works:
 //   1. Reads the commit hashes pinned in src-tauri/Cargo.lock
@@ -53,10 +60,23 @@ const TRACKED_GIT_DEPS: GitDep[] = [
     packages: ["transcribe-cpp", "transcribe-cpp-sys"],
   },
   {
-    name: "tauri-fork",
-    repoUrl: "https://github.com/NairoDorian/tauri-fork",
+    name: "tauri plugins-workspace",
+    repoUrl: "https://github.com/tauri-apps/plugins-workspace",
     branch: "v3",
-    packages: ["tauri"],
+    packages: [
+      "tauri-plugin-autostart",
+      "tauri-plugin-clipboard-manager",
+      "tauri-plugin-dialog",
+      "tauri-plugin-fs",
+      "tauri-plugin-global-shortcut",
+      "tauri-plugin-log",
+      "tauri-plugin-opener",
+      "tauri-plugin-os",
+      "tauri-plugin-process",
+      "tauri-plugin-single-instance",
+      "tauri-plugin-store",
+      "tauri-plugin-updater",
+    ],
   },
 ];
 

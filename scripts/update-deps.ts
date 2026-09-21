@@ -126,12 +126,26 @@ const CARGO_MAJOR_LOCKED: ReadonlyMap<string, string> = new Map([
   ],
   [
     "webview2-com",
-    "webview2-com 0.39 pulls windows-core 0.62.2, but Tauri's git commit " +
-      "(dev branch) links webview2-com 0.38.2 which uses windows-core 0.61.2 " +
-      "via the windows-core-061 alias. Bumping webview2-com creates two " +
-      "incompatible windows_core versions and the ICoreWebView2Settings3 cast " +
-      "fails. The pin follows Tauri's linked version and moves only when Tauri " +
-      "moves to webview2-com 0.39.",
+    "`src-tauri/Cargo.toml` names this crate directly, in the Windows target " +
+      "section, to reach ICoreWebView2Settings3 through the webview's " +
+      "controller. Its COM types only unify with the rest of the app when it is " +
+      "the SAME webview2-com instance `tauri-runtime-wry` links: two versions " +
+      "mean two windows_core versions and the Interface cast stops resolving. " +
+      "`tauri-runtime-wry 3.0.0-alpha.2` requires webview2-com ^0.39, which is " +
+      "the 0.39 the manifest pins, so the ceiling here holds both halves on " +
+      "0.39.x. It moves when that crate moves — the same event that moves the " +
+      "manifest pin.",
+  ],
+  [
+    "windows-core",
+    "The other half of the same pin, and the reason the ceiling above is not " +
+      "enough on its own: `webview2-com 0.39` speaks to `windows-core 0.62`, so " +
+      "the manifest's direct `windows-core` has to be a 0.62 as well or the " +
+      "COM interface types in the app and in the webview's controller come from " +
+      "different crates. Unheld, --prerelease proposes `0.100.0` for it — a " +
+      "real published version, ~38 minors of breaking changes away from the " +
+      "one the webview stack links, and a compile failure rather than a silent " +
+      "one only because the cast stops resolving.",
   ],
 ]);
 
@@ -152,13 +166,17 @@ interface LinePin {
  *
  * `@tauri-apps/*` is the reason. Those packages are not a library the app uses;
  * they are the JS half of the IPC that the Rust `tauri` crate implements, and
- * the two are coupled at the major: `tauri = "2.11.5"` in `src-tauri/Cargo.toml`
- * speaks to a 2.x JS API. Prerelease mode probes dist-tags and takes the newest
- * by **core version**, deliberately ignoring range operators — which is right
- * for a package that is merely newer, and wrong here, where it proposed
- * `@tauri-apps/api@3.0.0-alpha.0` against a 2.x backend (dry run, 2026-09-12).
- * That is not a newer version of the same thing; it is the API for a different
- * Tauri, and no amount of "it typechecks" makes the process boundary agree.
+ * the two are coupled at the major: `tauri = "3.0.0-alpha.2"` in
+ * `src-tauri/Cargo.toml` speaks to a 3.x JS API. Prerelease mode probes
+ * dist-tags and takes the newest by **core version**, deliberately ignoring
+ * range operators — which is right for a package that is merely newer, and
+ * wrong across a major, where it would hand a 4.x JS API to a 3.x backend with
+ * nothing to catch it: the two halves live on opposite sides of the IPC and
+ * only meet at runtime. A ceiling of `3.x` is what keeps a bump inside the
+ * alpha line this project is actually tracking, since the alphas carry their
+ * breaking changes in the prerelease position (alpha.1 → alpha.2 renamed
+ * `Builder::js_init_script` to `initialization_script` — the JS packages and
+ * the crates have to move together or not at all).
  *
  * The packages are already pinned with `~` or an exact version for the same
  * reason, but a range does not stop prerelease mode — it ignores ranges — so
@@ -431,6 +449,31 @@ function compareCores(a: string, b: string): number {
 function cleanVersion(v: string): string {
   if (typeof v !== "string") return "";
   return v.replace(/^[\^~=v]/, "").trim();
+}
+
+/**
+ * Is this `package.json` spec a version the registry can answer for?
+ *
+ * `cleanVersion` strips a leading range operator and returns everything else
+ * unchanged, so a spec that names a *source* rather than a version comes back
+ * as itself, parses as an empty core and loses every comparison — the registry's
+ * newest release then reads as an upgrade over "0.0.0". That is how
+ * `tauri-plugin-macos-permissions-api`, declared as
+ * `git+https://github.com/NairoDorian/tauri-plugin-macos-permissions.git`, was
+ * proposed to move to the registry's `2.3.0`: the same version number, but the
+ * upstream v2 package, while the fork is the v3-aware build this app needs.
+ *
+ * The Cargo side already skips `git = "` lines for the same reason. There the
+ * shape is a table field; here it is the spec itself, so the test is on
+ * anything that is not a version range. Such a dependency is owned by its own
+ * mechanism — the fork, the workspace, the tarball — and this script leaves it
+ * alone rather than trading it for a same-numbered stranger.
+ */
+function isRegistrySpec(spec: string): boolean {
+  if (typeof spec !== "string" || spec.length === 0) return false;
+  return !/^(git(\+|:)|github:|https?:|file:|link:|workspace:|portal:|npm:|jsr:)/.test(
+    spec.trim(),
+  );
 }
 
 /**
@@ -1157,6 +1200,10 @@ async function updateEverything() {
     type: DependencyStatus["type"],
   ): void => {
     Object.entries(deps).forEach(([name, ver]) => {
+      // A git / workspace / file spec is not a version to compare — see
+      // `isRegistrySpec`. Left to its own mechanism, exactly as the Cargo side
+      // leaves `git = "` lines alone.
+      if (!isRegistrySpec(ver as string)) return;
       fetchPromises.push(
         (async () => {
           const currClean = cleanVersion(ver as string);
