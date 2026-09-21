@@ -867,10 +867,10 @@ pub fn change_overlay_back_correction_setting(app: AppHandle, enabled: bool) -> 
     let mut settings = settings::get_settings(&app);
     settings.overlay_back_correction = enabled;
     settings::write_settings(&app, settings);
-    // The overlay reads this once per session, when it resets for a recording
-    // (`show-overlay`), so a change applies from the next recording rather than
-    // mid-stream. The event is still emitted: the overlay's own settings UI and
-    // any future live consumer would otherwise have to poll.
+    // Same shape as the direct-mode and direct-speed events: the overlay also
+    // reads the setting when it resets for a recording (`show-overlay`), and this
+    // keeps a change made mid-recording live. It does not disturb the reveal
+    // already on screen — it only decides what the next revision does.
     let _ = app.emit("overlay-back-correction", enabled);
     Ok(())
 }

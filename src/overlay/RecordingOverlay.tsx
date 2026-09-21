@@ -492,6 +492,16 @@ const RecordingOverlay = () => {
           directSpeed = event.payload;
         },
       );
+      // Live back-correction toggle. Unlike the two above it does not disturb
+      // the reveal already on screen — it only decides what the *next* revision
+      // does, so a change mid-recording takes effect on the next update rather
+      // than snapping the displayed text to its target.
+      const unlistenBackCorrection = await listen(
+        "overlay-back-correction",
+        (event: { payload: boolean }) => {
+          backCorrection = event.payload;
+        },
+      );
 
       // Live overlay-position change — drop any drag-grip offset so the card
       // snaps back to the new anchor (Top/Bottom) without a restart.
@@ -516,6 +526,7 @@ const RecordingOverlay = () => {
         unlistenStats();
         unlistenDirectMode();
         unlistenDirectSpeed();
+        unlistenBackCorrection();
         unlistenPos();
       };
     };
