@@ -421,7 +421,39 @@ fn hf_cached_path(repo_id: &str, revision: &str, filename: &str) -> Option<PathB
         return Some(p);
     }
 
-    None
+    // Neither the pin nor `main` resolved through a ref. The policy the note
+    // above states applies one step further out: a working local model is never
+    // invalidated, and it must not be hidden either. Two shapes reach here — a
+    // cache folder carrying no `refs/` at all (copied in by hand, or written by
+    // a tool that does not create refs; the R2T2 package on this machine is that
+    // shape), and a pin naming a commit this machine never downloaded while an
+    // older snapshot of the same file sits right there. The filename is what the
+    // caller actually asked for, so the last resort is to look for it by name.
+    hf_snapshots_newest_first(&repo_path)
+        .into_iter()
+        .map(|snapshot| snapshot.join(filename))
+        .find(|path| path.exists())
+}
+
+/// A cache repo folder's snapshot directories, newest first.
+///
+/// A snapshot is named by its commit id, and a hash says nothing about age, so
+/// a directory's own timestamp is what orders them; the name breaks ties, and an
+/// unreadable timestamp falls back to it. Used wherever no ref names the
+/// snapshot to use — see `hf_cached_path` and `ModelManager::pick_hf_snapshot`.
+fn hf_snapshots_newest_first(repo_path: &Path) -> Vec<PathBuf> {
+    let mut snapshots: Vec<PathBuf> = fs::read_dir(repo_path.join("snapshots"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    snapshots.sort_by(|a, b| {
+        let modified = |path: &PathBuf| fs::metadata(path).and_then(|m| m.modified()).ok();
+        modified(b).cmp(&modified(a)).then_with(|| b.cmp(a))
+    });
+    snapshots
 }
 
 /// Friendly name advertised by GGUF metadata, if present. Empty strings are not
@@ -1413,14 +1445,9 @@ impl ModelManager {
             // Reverse hf-hub's `org/name` -> `models--org--name` folder naming.
             let repo_id = rest.replace("--", "/");
 
-            let refs_dir = entry.path().join("refs");
-            let Some(revision) = Self::pick_hf_revision(&refs_dir) else {
+            let Some((snapshot, revision)) = Self::pick_hf_snapshot(&entry.path()) else {
                 continue;
             };
-            let Ok(commit) = fs::read_to_string(refs_dir.join(&revision)) else {
-                continue;
-            };
-            let snapshot = entry.path().join("snapshots").join(commit.trim());
             let Ok(files) = fs::read_dir(&snapshot) else {
                 continue;
             };
@@ -1520,6 +1547,36 @@ impl ModelManager {
                 None
             }
         })
+    }
+
+    /// Resolve the snapshot directory of a cache repo to list, with the
+    /// revision it was reached through.
+    ///
+    /// `refs/` is the normal route: it names the revision, and the file under
+    /// it is the commit, so the snapshot is `<commit>` by construction. It is
+    /// not the only one — a copy that came in by file transfer (rsync, a zip, a
+    /// mounted cache) can legitimately hold complete snapshots and no `refs/` at
+    /// all, and refusing those hides a model that is already on disk. So the
+    /// fallback lists `snapshots/` directly and takes the newest, which is what
+    /// a repo with no refs has to mean. Newest by mtime, with the directory name
+    /// — a commit hash — as the tiebreak so the choice is stable.
+    ///
+    /// The revision returned with it is what downstream path resolution needs
+    /// (`hf_cached_path`): the ref name when one was found, else the snapshot
+    /// directory's own name, which is the commit that directory holds.
+    fn pick_hf_snapshot(repo_path: &Path) -> Option<(PathBuf, String)> {
+        let refs_dir = repo_path.join("refs");
+        if let Some(revision) = Self::pick_hf_revision(&refs_dir)
+            && let Ok(commit) = fs::read_to_string(refs_dir.join(&revision))
+        {
+            let snapshot = repo_path.join("snapshots").join(commit.trim());
+            if snapshot.is_dir() {
+                return Some((snapshot, revision));
+            }
+        }
+        let snapshot = hf_snapshots_newest_first(repo_path).into_iter().next()?;
+        let revision = snapshot.file_name()?.to_str()?.to_string();
+        Some((snapshot, revision))
     }
 
     /// Download a Hugging Face-sourced model into the shared HF cache via
@@ -2196,6 +2253,51 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_pick_hf_snapshot_follows_refs_and_survives_without_them() {
+        // The normal shape: refs/main names a revision whose file is the commit.
+        let repo = TempDir::new().unwrap();
+        let refs = repo.path().join("refs");
+        fs::create_dir_all(&refs).unwrap();
+        let pinned = "a8e6b385d7df7eae9519363e07034a209004797a";
+        let other = "0000000000000000000000000000000000000000";
+        fs::create_dir_all(repo.path().join("snapshots").join(pinned)).unwrap();
+        fs::create_dir_all(repo.path().join("snapshots").join(other)).unwrap();
+        fs::write(refs.join("main"), format!("{pinned}\n")).unwrap();
+
+        let (snapshot, revision) = ModelManager::pick_hf_snapshot(repo.path()).unwrap();
+        assert_eq!(snapshot, repo.path().join("snapshots").join(pinned));
+        assert_eq!(revision, "main");
+
+        // A copy that came in without refs — complete snapshots, nothing naming
+        // one of them. The newest has to be it, and its directory name is the
+        // revision downstream path resolution needs. The names are chosen so the
+        // name tiebreak would pick the wrong one, leaving mtime as the only
+        // thing that can get this right.
+        let copied = TempDir::new().unwrap();
+        let older = copied
+            .path()
+            .join("snapshots")
+            .join("ff00000000000000000000000000000000000000");
+        let newer = copied
+            .path()
+            .join("snapshots")
+            .join("00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        fs::create_dir_all(&older).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::create_dir_all(&newer).unwrap();
+
+        let (snapshot, revision) = ModelManager::pick_hf_snapshot(copied.path()).unwrap();
+        assert_eq!(snapshot, newer);
+        assert_eq!(revision, "00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        // Nothing to resolve: not a repo folder, and a repo with no snapshots.
+        assert!(ModelManager::pick_hf_snapshot(&copied.path().join("refs")).is_none());
+        let empty = TempDir::new().unwrap();
+        fs::create_dir_all(empty.path().join("snapshots")).unwrap();
+        assert!(ModelManager::pick_hf_snapshot(empty.path()).is_none());
+    }
 
     #[test]
     fn test_effective_language_accepts_chinese_script_intent_for_zh_capability() {
