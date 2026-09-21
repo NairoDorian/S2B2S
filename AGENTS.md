@@ -181,6 +181,16 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 | `update-rtk.ts`            | `bun run update:rtk`                                                         | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                       |
 | `gen_catalog.py`           | manual                                                                       | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                |
 
+**Forked dependencies:** three crates in this graph are forks under
+`NairoDorian` rather than their upstream projects (`tauri-specta`,
+`tauri-plugin-macos-permissions`, `transcribe-cpp`) — upstream stopped
+publishing the version this app runs on. Their source is **read and edited in
+their own working copies** under `C:\Users\Z\Downloads\PROJECTS\` (never here,
+and never in `src-tauri/target` or `~/.cargo/git/checkouts`): edit, build and
+push to `NairoDorian` from that folder, then move the pin in ZER0. The folders,
+the end-to-end procedure and the constraints that bite when bumping one are in
+[docs/FORKS.md](docs/FORKS.md).
+
 **Model Setup:** nothing to download for development. Voice activity
 detection is pure Rust (Earshot, no model file), and speech models are fetched
 from the in-app catalog on first run.
