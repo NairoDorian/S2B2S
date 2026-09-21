@@ -22,6 +22,14 @@ const ModelDropdown = (props: ModelDropdownProps): JSX.Element => {
     onModelSelect(modelId);
   };
 
+  // The row that is both current and R2T2 gets the app's active box around its
+  // name, matching the status bar's trigger (see `ModelStatusButton`). Keyed off
+  // the latency kind the backend serialises, not the model id, so a renamed or
+  // re-quantised R2T2 package still gets it.
+  const isActiveChunkMs = (model: ModelInfo): boolean =>
+    currentModelId === model.id &&
+    model.native_streaming_latency_kind === "r2t2_chunk_ms";
+
   return (
     <div class="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2 z-50">
       {downloadedModels.length > 0 ? (
@@ -35,7 +43,13 @@ const ModelDropdown = (props: ModelDropdownProps): JSX.Element => {
               >
                 <div class="flex items-center justify-between">
                   <div>
-                    <div class="text-sm text-text/80">
+                    <div
+                      class={`text-sm text-text/80 ${
+                        isActiveChunkMs(model)
+                          ? "inline-block rounded border-2 border-accent bg-accent/10 px-1.5 py-0.5 text-accent"
+                          : ""
+                      }`}
+                    >
                       {getTranslatedModelName(model, t)}
                       {model.is_custom && (
                         <span class="ms-1.5 text-[10px] font-medium text-text/40 uppercase">

@@ -790,6 +790,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_overlay_style_setting,
             shortcut::change_overlay_direct_mode_setting,
             shortcut::change_overlay_direct_speed_setting,
+            shortcut::change_overlay_back_correction_setting,
             shortcut::change_overlay_window_fade_ms_setting,
             shortcut::change_overlay_window_corner_radius_setting,
             shortcut::change_overlay_speech_stats_setting,

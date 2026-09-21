@@ -592,7 +592,11 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
   (default 1000, settable 100–10000) / `multi_stt_streaming_context_chunks`
   (default 1, settable 0–3) - The experimental streaming-first mode: the pause
   that ends a chunk, and how many already-closed chunks are re-run with it for
-  accuracy (see below). Both take effect mid-session, refreshed every 2 s
+  accuracy (see below). All three take effect mid-session, refreshed every 2 s:
+  turning the enable flag off while recording releases the session on the next
+  refresh — it retires the same way the text-catchup grace does, handing the
+  overlay back the primary's own live text — so a mode the user just switched
+  off cannot keep closing chunks at every pause
 
 Extra models are managed by `TranscriptionManager` (`extra_engines` HashMap) with explicit
 load/unload lifecycle, separate from the primary model. They are unloaded when Multi-STT is
@@ -609,6 +613,15 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `overlay_direct_mode` / `overlay_direct_speed` - Live overlay
   character-by-character mode. The experimental Multi-STT streaming mode's
   preview is exempt: its updates are whole blocks, not a reveal (see below)
+- `overlay_back_correction` (default off) - Whether that typewriter may rewrite
+  text it has already revealed. Off, a revision that is not an extension of what
+  is on screen lands as one block; on, the reveal rewinds to the longest common
+  prefix and retypes. Deliberately independent of
+  `multi_stt_streaming_first_enabled` — that flag decides whether a batch pass
+  re-transcribes each pause, this one only whether the display may move
+  backwards. A model that re-attends over its whole audio context (R2T2)
+  replaces its volatile `tentative_text` tail on every decode, so leaving this
+  off is what keeps such a preview from stuttering backwards
 - `save_raw_audio`, `overlay_speech_stats`, `speech_pause_hold_ms` - see Voice Activity Detection below
 - `mic_idle_timeout_value` / `mic_idle_timeout_unit` / `mic_idle_infinite` - Lazy microphone close timeout (was a fixed 30 s upstream)
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
@@ -1049,8 +1062,9 @@ close-gate defect described below, is in
   A merge replaces text that is already on screen, and a character-by-character
   reveal could only retype its way back to every correction — one
   render per 1–3 characters instead of one per update. Normal dictation keeps
-  `overlay_direct_mode`'s typewriter, including its rewind-to-common-prefix
-  revision path. The `DirectStreamWriter` path is deliberately untouched:
+  `overlay_direct_mode`'s typewriter; its rewind-to-common-prefix revision path
+  is its own setting, `overlay_back_correction`, off by default (see the
+  settings list above). The `DirectStreamWriter` path is deliberately untouched:
   reaching a revision in someone else's document can only be done by backspacing
   the divergence and retyping it.
 - **The merge bookkeeping is a queue, not a slot** (`MergeQueue`). The watchdog

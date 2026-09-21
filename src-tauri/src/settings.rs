@@ -1456,6 +1456,28 @@ pub struct AppSettings {
     /// Speed at which characters appear in direct streaming mode (characters per second).
     #[serde(default = "default_overlay_direct_speed")]
     pub overlay_direct_speed: u32,
+    /// Whether the live preview may *rewrite* text it has already shown —
+    /// "back correction".
+    ///
+    /// Off (the default): the preview only ever reveals forward, and a revision
+    /// that is not an extension of what is displayed is applied as one block,
+    /// exactly as it already is when direct mode is off.
+    ///
+    /// On: the preview retypes corrections, rewinding the revealed text to the
+    /// longest common prefix and revealing the new wording again. That is
+    /// pleasant for a model that revises rarely, and unpleasant for one that
+    /// revises on every chunk — a model that re-attends over the growing audio
+    /// context (see `transcribe_stream_text` in the fork's public header)
+    /// replaces its volatile `tentative_text` tail on each decode, so the
+    /// rewind fires continuously and the preview appears to stutter backwards.
+    ///
+    /// Deliberately independent of `multi_stt_streaming_first_enabled`: that
+    /// flag decides whether a batch pass re-transcribes each pause, this one
+    /// decides only whether the display is allowed to move backwards. Neither
+    /// implies the other, so a user who wants steady text keeps it steady in
+    /// both modes.
+    #[serde(default)]
+    pub overlay_back_correction: bool,
     /// Speed at which characters are typed in direct streaming paste method (characters per second).
     #[serde(default = "default_direct_streaming_speed")]
     pub direct_streaming_speed: u32,
@@ -2169,6 +2191,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         overlay_direct_mode: false,
         overlay_direct_speed: default_overlay_direct_speed(),
+        overlay_back_correction: false,
         direct_streaming_speed: default_direct_streaming_speed(),
         overlay_speech_stats: default_overlay_speech_stats(),
         speech_pause_hold_ms: default_speech_pause_hold_ms(),

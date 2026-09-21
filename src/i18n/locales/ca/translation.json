@@ -387,6 +387,10 @@
         "directSpeed": {
           "label": "Direct Streaming Speed",
           "description": "Speed at which characters appear during direct live streaming (in characters per second)."
+        },
+        "backCorrection": {
+          "label": "Back Correction",
+          "description": "Let the preview rewrite text it has already shown, retyping a correction from the last character that still matches. Off, every update lands as one block and the preview never moves backwards — steadier for a model that revises on every chunk."
         }
       },
       "pasteMethod": {

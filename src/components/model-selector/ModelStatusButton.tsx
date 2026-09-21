@@ -5,6 +5,13 @@ interface ModelStatusButtonProps {
   isDropdownOpen: boolean;
   onClick: () => void;
   class?: string;
+  // Draw the model name inside the app's active box (`border-accent
+  // bg-accent/10 text-accent`, the same treatment an active sidebar section
+  // gets). Set for the one family whose streaming behaviour is distinctive —
+  // R2T2, whose continuous chunk-size control the model menu also swaps in — so
+  // the bar shows at a glance not just that a model is loaded but that it is
+  // *this* one. The caller decides; this stays a dumb component.
+  highlight?: boolean;
 }
 
 type ModelStatus =
@@ -45,7 +52,15 @@ const ModelStatusButton = (props: ModelStatusButtonProps): JSX.Element => {
       title={`Model status: ${props.displayText}`}
     >
       <div class={`w-2 h-2 rounded-full ${getStatusColor(props.status)}`} />
-      <span class="max-w-28 truncate">{props.displayText}</span>
+      <span
+        class={
+          props.highlight
+            ? "max-w-28 truncate rounded border-2 border-accent bg-accent/10 px-1.5 py-0.5 text-accent"
+            : "max-w-28 truncate"
+        }
+      >
+        {props.displayText}
+      </span>
       <svg
         class={`w-3 h-3 transition-transform ${props.isDropdownOpen ? "rotate-180" : ""}`}
         fill="none"

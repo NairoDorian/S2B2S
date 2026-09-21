@@ -170,6 +170,13 @@ const RecordingOverlay = () => {
   let pinned = true;
   let directMode = false;
   let directSpeed = 30;
+  // Whether the typewriter may rewrite text it has already revealed. Off by
+  // default, and read per session in the `show-overlay` handler beside
+  // `directMode`. See `overlay_back_correction` in settings.rs: a model that
+  // re-attends over its whole audio context (R2T2) replaces its volatile tail on
+  // every decode, so with this off the preview simply shows each revision as a
+  // block instead of rewinding the revealed characters and retyping them.
+  let backCorrection = false;
   let targetText: StreamTextEvent = { committed: "", tentative: "" };
   let displayedText: StreamTextEvent = { committed: "", tentative: "" };
   let typewriterTimer: ReturnType<typeof setInterval> | null = null;
@@ -260,7 +267,16 @@ const RecordingOverlay = () => {
           prefixLen++;
         }
         if (current.tentative.length > prefixLen) {
-          nextTentative = target.tentative.slice(0, prefixLen);
+          // The model rewrote part of the tail it had already shown. With back
+          // correction on, rewind the reveal to the shared prefix and type the
+          // new wording in again — a visible correction. With it off (the
+          // default) the revision lands as one block, which is what the
+          // non-direct path does anyway: the preview never moves backwards, so
+          // a model that revises on every chunk (R2T2 re-decodes its whole
+          // context each tick) cannot make the text stutter.
+          nextTentative = backCorrection
+            ? target.tentative.slice(0, prefixLen)
+            : target.tentative;
         } else {
           const remaining = target.tentative.length - prefixLen;
           const step =
@@ -322,6 +338,7 @@ const RecordingOverlay = () => {
             );
             directMode = settings.data.overlay_direct_mode ?? false;
             directSpeed = settings.data.overlay_direct_speed ?? 30;
+            backCorrection = settings.data.overlay_back_correction ?? false;
             setStatsEnabled(settings.data.overlay_speech_stats ?? true);
             setScopeRate(settings.data.live_fft?.update_rate_hz ?? 30);
             const scope = resolveOverlayScope(settings.data.overlay_scope);

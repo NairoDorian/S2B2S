@@ -118,6 +118,26 @@ export const ShowOverlay = (props: ShowOverlayProps): JSX.Element => {
             disabled={isUpdating("overlay_direct_speed")}
           />
         )}
+
+      {/* Sits under the typewriter speed because it only means anything while
+          the typewriter is running: with direct mode off the preview already
+          applies every update as a block, so there is nothing to allow. */}
+      {getSetting("overlay_style") === "live" &&
+        (getSetting("overlay_direct_mode") ?? false) && (
+          <ToggleSwitch
+            checked={getSetting("overlay_back_correction") ?? false}
+            onChange={(enabled) =>
+              updateSetting("overlay_back_correction", enabled)
+            }
+            isUpdating={isUpdating("overlay_back_correction")}
+            label={t("settings.advanced.overlay.backCorrection.label")}
+            description={t(
+              "settings.advanced.overlay.backCorrection.description",
+            )}
+            descriptionMode={props.descriptionMode}
+            grouped={props.grouped}
+          />
+        )}
     </>
   );
 };

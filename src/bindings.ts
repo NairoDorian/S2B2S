@@ -23,6 +23,14 @@ export const commands = {
 	changeOverlayStyleSetting: (style: string) => typedError<null, string>(__TAURI_INVOKE("change_overlay_style_setting", { style })),
 	changeOverlayDirectModeSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_mode_setting", { enabled })),
 	changeOverlayDirectSpeedSetting: (speed: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_direct_speed_setting", { speed })),
+	/**
+	 *  Back correction: whether the live preview may rewrite text it has already
+	 *  shown. Independent of `change_multi_stt_streaming_first_enabled_setting` —
+	 *  that one decides whether a batch pass re-transcribes each pause, this one
+	 *  only whether the display is allowed to move backwards. See the field's doc
+	 *  comment in `settings.rs` for why they are separate.
+	 */
+	changeOverlayBackCorrectionSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_back_correction_setting", { enabled })),
 	changeOverlayWindowFadeMsSetting: (fadeMs: number) => typedError<null, string>(__TAURI_INVOKE("change_overlay_window_fade_ms_setting", { fadeMs })),
 	changeOverlayWindowCornerRadiusSetting: (radius: number | null) => typedError<null, string>(__TAURI_INVOKE("change_overlay_window_corner_radius_setting", { radius })),
 	changeOverlaySpeechStatsSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_overlay_speech_stats_setting", { enabled })),
@@ -652,6 +660,29 @@ export type AppSettings_Deserialize = {
 	overlay_direct_mode?: boolean,
 	/**  Speed at which characters appear in direct streaming mode (characters per second). */
 	overlay_direct_speed?: number,
+	/**
+	 *  Whether the live preview may *rewrite* text it has already shown —
+	 *  "back correction".
+	 * 
+	 *  Off (the default): the preview only ever reveals forward, and a revision
+	 *  that is not an extension of what is displayed is applied as one block,
+	 *  exactly as it already is when direct mode is off.
+	 * 
+	 *  On: the preview retypes corrections, rewinding the revealed text to the
+	 *  longest common prefix and revealing the new wording again. That is
+	 *  pleasant for a model that revises rarely, and unpleasant for one that
+	 *  revises on every chunk — a model that re-attends over the growing audio
+	 *  context (see `transcribe_stream_text` in the fork's public header)
+	 *  replaces its volatile `tentative_text` tail on each decode, so the
+	 *  rewind fires continuously and the preview appears to stutter backwards.
+	 * 
+	 *  Deliberately independent of `multi_stt_streaming_first_enabled`: that
+	 *  flag decides whether a batch pass re-transcribes each pause, this one
+	 *  decides only whether the display is allowed to move backwards. Neither
+	 *  implies the other, so a user who wants steady text keeps it steady in
+	 *  both modes.
+	 */
+	overlay_back_correction?: boolean,
 	/**  Speed at which characters are typed in direct streaming paste method (characters per second). */
 	direct_streaming_speed?: number,
 	/**
@@ -913,6 +944,29 @@ export type AppSettings_Serialize = {
 	overlay_direct_mode: boolean,
 	/**  Speed at which characters appear in direct streaming mode (characters per second). */
 	overlay_direct_speed: number,
+	/**
+	 *  Whether the live preview may *rewrite* text it has already shown —
+	 *  "back correction".
+	 * 
+	 *  Off (the default): the preview only ever reveals forward, and a revision
+	 *  that is not an extension of what is displayed is applied as one block,
+	 *  exactly as it already is when direct mode is off.
+	 * 
+	 *  On: the preview retypes corrections, rewinding the revealed text to the
+	 *  longest common prefix and revealing the new wording again. That is
+	 *  pleasant for a model that revises rarely, and unpleasant for one that
+	 *  revises on every chunk — a model that re-attends over the growing audio
+	 *  context (see `transcribe_stream_text` in the fork's public header)
+	 *  replaces its volatile `tentative_text` tail on each decode, so the
+	 *  rewind fires continuously and the preview appears to stutter backwards.
+	 * 
+	 *  Deliberately independent of `multi_stt_streaming_first_enabled`: that
+	 *  flag decides whether a batch pass re-transcribes each pause, this one
+	 *  decides only whether the display is allowed to move backwards. Neither
+	 *  implies the other, so a user who wants steady text keeps it steady in
+	 *  both modes.
+	 */
+	overlay_back_correction: boolean,
 	/**  Speed at which characters are typed in direct streaming paste method (characters per second). */
 	direct_streaming_speed: number,
 	/**

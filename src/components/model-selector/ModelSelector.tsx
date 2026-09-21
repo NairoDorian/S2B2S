@@ -400,6 +400,11 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           displayText={getModelDisplayText()}
           isDropdownOpen={openPanel() === "model"}
           onClick={() => togglePanel("model")}
+          // The box marks the loaded model as R2T2 — selected *and* ready, the
+          // two halves of "active". `getDisplayText` only returns the model's own
+          // name in the `ready` case, so gating on it keeps the box on a name and
+          // never on a "downloading 42%" line.
+          highlight={isChunkMsKind() && getDisplayStatus() === "ready"}
         />
         <Show when={openPanel() === "model"}>
           <ModelDropdown

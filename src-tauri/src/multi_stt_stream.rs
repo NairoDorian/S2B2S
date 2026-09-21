@@ -1221,6 +1221,25 @@ impl Coordinator {
         self.settings_ticks = self.settings_ticks.wrapping_add(1);
         if self.settings_ticks.is_multiple_of(SETTINGS_REFRESH_TICKS) {
             self.settings = get_settings(&self.app);
+            // The flag that armed this session is read once, in `start`, so a
+            // toggle switched off while recording would otherwise leave the
+            // coordinator running: it would keep closing a chunk at every pause
+            // and keep replacing the preview with its composed text, which is
+            // precisely the behaviour the user just turned off. The periodic
+            // refresh is where the change is seen — up to `SETTINGS_REFRESH_TICKS`
+            // late, the same latency the pause and context sliders already have —
+            // and the retire below is the right way out: the recording keeps
+            // running, the overlay goes back to the primary's own live text, and
+            // the batch path transcribes and merges the session at stop.
+            if !self.settings.multi_stt_streaming_first_enabled {
+                info!(
+                    "Multi-STT streaming: the mode was switched off while recording; releasing \
+                     the session. The overlay returns to the primary's own live text and the \
+                     batch path covers the whole session at stop"
+                );
+                self.publish_primary_text();
+                return false;
+            }
         }
 
         // Audio first: the tap is drained every tick, so a chunk's audio is

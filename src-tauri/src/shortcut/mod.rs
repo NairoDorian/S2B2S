@@ -856,6 +856,25 @@ pub fn change_overlay_direct_speed_setting(app: AppHandle, speed: u32) -> Result
     Ok(())
 }
 
+/// Back correction: whether the live preview may rewrite text it has already
+/// shown. Independent of `change_multi_stt_streaming_first_enabled_setting` —
+/// that one decides whether a batch pass re-transcribes each pause, this one
+/// only whether the display is allowed to move backwards. See the field's doc
+/// comment in `settings.rs` for why they are separate.
+#[tauri::command]
+#[specta::specta]
+pub fn change_overlay_back_correction_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.overlay_back_correction = enabled;
+    settings::write_settings(&app, settings);
+    // The overlay reads this once per session, when it resets for a recording
+    // (`show-overlay`), so a change applies from the next recording rather than
+    // mid-stream. The event is still emitted: the overlay's own settings UI and
+    // any future live consumer would otherwise have to poll.
+    let _ = app.emit("overlay-back-correction", enabled);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_overlay_speech_stats_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
