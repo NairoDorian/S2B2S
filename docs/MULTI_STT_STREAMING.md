@@ -261,6 +261,31 @@ path when:
 Cancel cancels the coordinator: nothing more is typed, nothing is pasted, no
 history row.
 
+### Nothing to merge, and a reply that is not a transcript
+
+The close gate (§3) makes an empty slot 1 impossible on the streaming path, but
+the merge is its own layer and every caller shares it — the batch path at stop,
+file transcription, and a re-run from history all reach it with whatever the
+extras produced. Two guards live there, in `actions.rs`:
+
+- **No slot carries a word** (`slots_carry_words`): whitespace, `.`, `…` are a
+  decoder emitting a fragment, not text to reconcile. The call is skipped. On
+  the streaming path this is deliberately **not** `failed`: a failure is retried
+  at the next close, and retrying a chunk with no words in it re-decodes the
+  extras for the same nothing. The chunk keeps the streaming model's own text.
+- **The reply is not a transcript** (`merge_response_rejection`): a model handed
+  nothing to reconcile answers _the request_, and the sentence it writes is text
+  the user never said, typed into their document. It is caught two ways — it
+  asks for its own input (a merge never does; a phrase the _inputs_ contain does
+  not count, since that is the speaker's sentence, not the model's), or it is
+  several times the longest input it was given, which no reconciliation of the
+  same audio can be. Rejection returns "no merge", so the caller's concatenation
+  fallback keeps the user's own words — uncleaned, rather than replaced.
+
+The refusal, pasted verbatim before the guard existed: `Please provide the four
+raw audio transcripts so I can perform the multi-source merge and consensus
+according to your strict rules.`
+
 ---
 
 ## 6. Cost
@@ -292,6 +317,8 @@ No new dependency, no new poll.
 | `chunk n was still owed its own text … — … chars of it, and … ms of audio the stream decodes but has not drained` | The retire path. The two figures are the two conditions of §3; which one is large says whether the model is slow (drain) or committing nothing (chars).                                                               |
 | `Live preview perf`                                                                                               | The primary's own stream: `input_received`, `committed_audio`, `buffered`, revision, real-time factor.                                                                                                                |
 | `the audio tap is N samples ahead of the stream`                                                                  | A structural mismatch between the tap and the stream feed. One warning per session, and the correction is deliberately **not** applied — a worker-thread lag of a frame or two is indistinguishable from a real lead. |
+| `chunk n has no word in any slot, nothing to merge`                                                               | §5: the chunk's slots held nothing but punctuation, so no merge was dispatched. Not a failure, so no retry — the chunk keeps the streaming model's own text.                                                          |
+| `Multi-STT merge rejected: <reason>`                                                                              | §5: the model answered the prompt instead of the audio. The reason says which test caught it, and the reply is logged under `Multi-STT merge reply (rejected)` — the user gets the concatenation fallback instead.    |
 
 ---
 

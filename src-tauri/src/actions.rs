@@ -1308,6 +1308,136 @@ pub(crate) fn format_multi_stt_history_transcript(
     text
 }
 
+/// Whether any of the merge's slots carries a word, as opposed to whitespace,
+/// punctuation, or nothing at all.
+///
+/// The merge prompt hands a model four transcripts of the same audio and asks
+/// for one reconciled transcript. A slot set with no words in it gives it
+/// nothing to reconcile, and a small model answers *the request* instead: the
+/// reply is a sentence asking for the transcripts ("Please provide the four raw
+/// audio transcripts so I can perform the multi-source merge and consensus
+/// according to your strict rules."), which every caller would otherwise accept
+/// as merged text and type into the user's document. `.`, `…`, `   ` are not
+/// text to merge — they are a decoder emitting a fragment of punctuation.
+///
+/// Shared with the streaming coordinator, which asks this before dispatching a
+/// merge at all: there, "no merge" has to be told apart from "the merge failed",
+/// because a failure is retried at the next close.
+pub(crate) fn slots_carry_words(slots: &[&str]) -> bool {
+    slots
+        .iter()
+        .any(|slot| slot.chars().any(char::is_alphanumeric))
+}
+
+/// Phrases that ask the reader for the input rather than delivering a
+/// transcript. Matched against the reply lowercased with whitespace collapsed,
+/// and only counted when the reply also names the thing it is missing, so an
+/// ordinary sentence containing "provide" is not caught by itself.
+const MERGE_INPUT_REQUESTS: &[&str] = &[
+    "please provide",
+    "please share",
+    "please send",
+    "please paste",
+    "provide the four",
+    "provide the raw",
+    "provide the audio",
+    "provide the transcript",
+    "provide the transcripts",
+    "provide me with",
+    "i need the four",
+    "i need the transcript",
+    "i need the audio",
+    "i will need the",
+    "i'll need the",
+    "you have not provided",
+    "you did not provide",
+    "you haven't provided",
+    "no transcripts",
+    "no audio transcripts",
+    "transcripts were provided",
+    "transcripts are empty",
+    "transcripts appear to be",
+    "transcripts are missing",
+    "transcript is empty",
+    "without the transcripts",
+    "waiting for the transcripts",
+    "once you provide",
+    "if you provide",
+];
+
+const MERGE_INPUT_NOUNS: &[&str] = &["transcript", "audio", "input", "dictation"];
+
+/// Why a merge reply must not be pasted, if it must not be.
+///
+/// The failure this guards is not a wrong transcript, it is a model answering
+/// the *prompt* instead of the audio — text the user never said, typed into
+/// their document. Two independent tests, because either alone can be fooled:
+///
+/// * it asks for its own input. A merge never asks for the transcripts it was
+///   given.
+/// * it is implausibly long. A merge reconciles transcripts of the same audio,
+///   so it cannot be several times the longest one it was handed; four disjoint
+///   partials are the most it can legitimately amount to.
+///
+/// `None` means "looks like a transcript". A rejection is not a lost session:
+/// every caller already has a path for "no merge" that keeps the raw outputs,
+/// so what the user said still reaches them — uncleaned, rather than replaced
+/// by a sentence the model addressed to us.
+fn merge_response_rejection(response: &str, slots: &[&str]) -> Option<String> {
+    let trimmed = response.trim();
+    if trimmed.is_empty() {
+        // The callers' own case: an empty merge is a failed merge, never text.
+        return None;
+    }
+
+    let flat = trimmed
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let dictated = |phrase: &str| {
+        // A phrase the inputs themselves contain is not the model asking for
+        // them: a speaker who dictated "please provide the transcripts to the
+        // court" gets that sentence back from a faithful merge. Only a phrase
+        // the model brought on its own is evidence against the reply. Matched
+        // within one slot, since that is how the prompt delimits them.
+        slots.iter().any(|slot| {
+            let flat_slot = slot
+                .to_lowercase()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            flat_slot.contains(phrase)
+        })
+    };
+    // Both halves are needed: the phrase says the model is asking, the noun
+    // says what it is asking for.
+    let asks_for_input = MERGE_INPUT_REQUESTS
+        .iter()
+        .find(|p| flat.contains(**p) && !dictated(p));
+    if let (Some(phrase), true) = (
+        asks_for_input,
+        MERGE_INPUT_NOUNS.iter().any(|noun| flat.contains(noun)),
+    ) {
+        return Some(format!("the reply asks for its own input ({phrase:?})"));
+    }
+
+    let longest = slots
+        .iter()
+        .map(|slot| slot.trim().chars().count())
+        .max()
+        .unwrap_or(0);
+    let response_chars = trimmed.chars().count();
+    if response_chars > longest * 4 + 64 {
+        return Some(format!(
+            "the reply is {response_chars} chars against a longest input of {longest}, which is \
+             not a merge of what it was given"
+        ));
+    }
+
+    None
+}
+
 /// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}, ${output4}
 /// and sends to the LLM API (same provider as post-processing).
 pub(crate) async fn multi_stt_merge_transcriptions(
@@ -1354,6 +1484,23 @@ pub(crate) async fn multi_stt_merge_transcriptions(
         );
     }
 
+    // Nothing to reconcile: the four slots hold no word between them, so the
+    // prompt would reach the model as four empty quoted blocks and the model
+    // would answer the request instead of the audio — see
+    // [`slots_carry_words`]. The call is skipped rather than made and then
+    // rejected, which also removes a round-trip that can only return what is
+    // already here.
+    if !slots_carry_words(&[output1, output2, output3, output4]) {
+        debug!(
+            "Multi-STT merge skipped: no slot carries a word ({} chars across the four slots)",
+            [output1, output2, output3, output4]
+                .iter()
+                .map(|s| s.chars().count())
+                .sum::<usize>()
+        );
+        return None;
+    }
+
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
@@ -1388,48 +1535,66 @@ pub(crate) async fn multi_stt_merge_transcriptions(
     );
 
     // Use legacy chat completion for merging
-    let merge_result =
-        match crate::llm_client::send_chat_completion(&provider, api_key, &model, prompt, false)
-            .await
-        {
-            Ok(Some(raw_content)) => {
-                // Same sanitising as post-processing: a reasoning model on the
-                // same provider must not paste its <think> block, and invisible
-                // characters must not leak into the pasted text.
-                let cleaned_text = strip_invisible_chars(strip_think_block(&raw_content))
-                    .trim()
-                    .to_string();
-                debug!(
-                    "Multi-STT merge succeeded. Output length: {} chars, raw length: {} chars",
-                    cleaned_text.len(),
-                    raw_content.len()
-                );
-                // The text the app will actually paste, after the <think> strip
-                // and the trim. It is logged separately from the raw response
-                // because the two differ exactly when sanitising changed
-                // something, which is otherwise invisible.
-                crate::utils::log_multiline("Multi-STT merged text (as pasted)", &cleaned_text);
-                Some(MultiSttMergeOutcome {
-                    cleaned_text,
-                    raw_text: raw_content,
-                    provider_id: provider.id.clone(),
-                    provider_label: provider.label.clone(),
-                    model_name: model.clone(),
-                    prompt_name: Some(merge_prompt.name.clone()),
-                })
+    let merge_result = match crate::llm_client::send_chat_completion(
+        &provider, api_key, &model, prompt, false,
+    )
+    .await
+    {
+        Ok(Some(raw_content)) => {
+            // Same sanitising as post-processing: a reasoning model on the
+            // same provider must not paste its <think> block, and invisible
+            // characters must not leak into the pasted text.
+            let cleaned_text = strip_invisible_chars(strip_think_block(&raw_content))
+                .trim()
+                .to_string();
+            match merge_response_rejection(&cleaned_text, &[output1, output2, output3, output4]) {
+                // The reply is not a transcript — the model answered the
+                // prompt. Returning "no merge" hands the caller its
+                // concatenation fallback, so the user's own words are kept
+                // and the model's sentence never reaches their document.
+                Some(reason) => {
+                    warn!(
+                        "Multi-STT merge rejected: {}. Keeping the raw outputs instead; the \
+                         model's reply was not a transcript:",
+                        reason
+                    );
+                    crate::utils::log_multiline("Multi-STT merge reply (rejected)", &cleaned_text);
+                    None
+                }
+                None => {
+                    debug!(
+                        "Multi-STT merge succeeded. Output length: {} chars, raw length: {} chars",
+                        cleaned_text.len(),
+                        raw_content.len()
+                    );
+                    // The text the app will actually paste, after the <think>
+                    // strip and the trim. It is logged separately from the raw
+                    // response because the two differ exactly when sanitising
+                    // changed something, which is otherwise invisible.
+                    crate::utils::log_multiline("Multi-STT merged text (as pasted)", &cleaned_text);
+                    Some(MultiSttMergeOutcome {
+                        cleaned_text,
+                        raw_text: raw_content,
+                        provider_id: provider.id.clone(),
+                        provider_label: provider.label.clone(),
+                        model_name: model.clone(),
+                        prompt_name: Some(merge_prompt.name.clone()),
+                    })
+                }
             }
-            Ok(None) => {
-                error!("Multi-STT merge: LLM API response has no content");
-                None
-            }
-            Err(e) => {
-                error!(
-                    "Multi-STT merge failed for provider '{}': {}",
-                    provider.id, e
-                );
-                None
-            }
-        };
+        }
+        Ok(None) => {
+            error!("Multi-STT merge: LLM API response has no content");
+            None
+        }
+        Err(e) => {
+            error!(
+                "Multi-STT merge failed for provider '{}': {}",
+                provider.id, e
+            );
+            None
+        }
+    };
 
     // Clean up server-side conversation state on llama.cpp servers to prevent
     // memory accumulation across many merge round-trips. Only the "custom"
@@ -2707,8 +2872,8 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         complete_unless_cancelled, effective_overlay_style, final_paste_method,
-        is_blank_transcription, live_stream_is_preview_only, should_use_streaming_overlay,
-        strip_think_block,
+        is_blank_transcription, live_stream_is_preview_only, merge_response_rejection,
+        should_use_streaming_overlay, slots_carry_words, strip_think_block,
     };
     use crate::settings::{AppSettings, OverlayStyle, PasteMethod};
     use std::future;
@@ -2782,6 +2947,137 @@ mod tests {
             strip_think_block("<think>never closed"),
             "<think>never closed"
         );
+    }
+
+    // A merge slot set with no words in it is skipped, not merged. The four
+    // slots of a chunk that decoded nothing but a punctuation fragment are
+    // exactly how a small merge model is invited to answer the *prompt* — the
+    // "Please provide the four raw audio transcripts..." reply that gets pasted
+    // as a transcript. `.` is the observed case: a slot of one period.
+    #[test]
+    fn slots_without_a_word_are_not_worth_merging() {
+        assert!(!slots_carry_words(&["", "", "", ""]));
+        assert!(!slots_carry_words(&["   ", "\t\n", "", ""]));
+        assert!(!slots_carry_words(&[".", "", "", ""]));
+        assert!(!slots_carry_words(&["...", "…", "-", "?"]));
+        assert!(slots_carry_words(&[".", "Sentence one.", "", ""]));
+        // Scripts that are not Latin are words too, or Chinese and Arabic audio
+        // would have its merges skipped.
+        assert!(slots_carry_words(&["", "", "这是一句话。", ""]));
+        assert!(slots_carry_words(&["", "", "", "مرحبا"]));
+        assert!(slots_carry_words(&["", "", "", "42"]));
+    }
+
+    #[test]
+    fn a_merge_that_asks_for_its_input_is_rejected() {
+        let slots = [".", "", "", ""];
+        let refusal = "Please provide the four raw audio transcripts so I can perform the \
+                       multi-source merge and consensus according to your strict rules.";
+        let reason = merge_response_rejection(refusal, &slots).expect("rejected");
+        assert!(reason.contains("asks for its own input"), "{reason}");
+
+        // The same sentence with a longer input cannot be caught by the length
+        // test, which is what the phrase list is for.
+        let long_slot = "x".repeat(400);
+        let long_slots = [long_slot.as_str(), "", "", ""];
+        assert!(merge_response_rejection(refusal, &long_slots).is_some());
+
+        for reply in [
+            "I need the transcripts to continue.",
+            "No transcripts were provided, so there is nothing to merge.",
+            "Once you provide the audio transcripts I will proceed.",
+            "There are no transcripts in your message.",
+        ] {
+            assert!(
+                merge_response_rejection(reply, &["Sentence one.", "", "", ""]).is_some(),
+                "{reply}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_real_merge_is_not_rejected() {
+        let slots = [
+            "This is now sentence two.",
+            "This is sentence one. This is now sentence two.",
+            "",
+            "",
+        ];
+        assert_eq!(
+            merge_response_rejection("This is sentence one. This is now sentence two.", &slots),
+            None
+        );
+        // A single-slot merge is legitimate: the cleaning rules apply to one
+        // transcript as much as to four.
+        assert_eq!(
+            merge_response_rejection(
+                "le budget de 150000 EUR",
+                &["le budget de 120000 euros, mais correction, 150000 euros"],
+            ),
+            None
+        );
+        // Complementary partials: the output may be nearly the sum of its
+        // inputs, which is the largest a merge can honestly be.
+        let parts = [
+            "alpha bravo charlie",
+            "delta echo foxtrot",
+            "golf hotel",
+            "india",
+        ];
+        let joined = parts.join(" ");
+        assert_eq!(merge_response_rejection(&joined, &parts), None);
+        // Dictated speech may even contain a phrase from the request list, as
+        // long as it is not addressed at the reader with the missing noun.
+        assert_eq!(
+            merge_response_rejection(
+                "Please provide the report to accounting by Friday.",
+                &["Please provide the report to accounting by Friday.", ""],
+            ),
+            None
+        );
+        // And a dictated phrase that *is* on the list survives, because the
+        // model did not bring it: it is what the speaker said. Cleaning rules
+        // still apply to the rest of the sentence around it.
+        assert_eq!(
+            merge_response_rejection(
+                "Please provide the transcripts to the court by 5:00 PM.",
+                &[
+                    "Please provide the transcripts to the court by five PM.",
+                    "Please provide the transcripts to the courthouse by 5 PM.",
+                ],
+            ),
+            None
+        );
+        // The same words with no such sentence behind them are the model
+        // asking for its input, and are rejected however short they are.
+        assert!(
+            merge_response_rejection(
+                "Please provide the transcripts to continue.",
+                &["Sentence two.", "Sentence two", "", ""],
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn an_implausibly_long_reply_is_rejected() {
+        let slots = ["Sentence one.", "Test sentence one", "", ""];
+        // 132 chars against a 17-char longest input: not a merge of what it was
+        // given, whatever it says.
+        let hallucination = "This is a transcript that was never in any of the inputs, padded out to a length \
+             no reconciliation of two short sentences could reach on its own.";
+        let reason = merge_response_rejection(hallucination, &slots).expect("rejected");
+        assert!(
+            reason.contains("implausibly") || reason.contains("chars against"),
+            "{reason}"
+        );
+        // The boundary itself is allowed: four disjoint inputs plus the slack.
+        let twenty = "a".repeat(20);
+        let slots = [twenty.as_str()];
+        assert_eq!(merge_response_rejection(&"b".repeat(144), &slots), None);
+        assert!(merge_response_rejection(&"b".repeat(145), &slots).is_some());
+        // An empty reply is the callers' own case, not a rejection here.
+        assert_eq!(merge_response_rejection("", &slots), None);
     }
 
     #[test]

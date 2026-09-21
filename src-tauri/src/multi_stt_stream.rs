@@ -74,7 +74,9 @@ use specta::Type;
 use tauri::AppHandle;
 use tauri_specta::Event;
 
-use crate::actions::{MultiSttHistoryBrain, has_merge_prompt, multi_stt_merge_transcriptions};
+use crate::actions::{
+    MultiSttHistoryBrain, has_merge_prompt, multi_stt_merge_transcriptions, slots_carry_words,
+};
 use crate::audio_toolkit::audio::{ChunkTap, chunk_tap};
 use crate::direct_stream_writer::DirectStreamWriter;
 use crate::managers::audio::AudioRecordingManager;
@@ -653,7 +655,17 @@ async fn run_merge_job(
     let decode_latency_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
 
     let merge_start = Instant::now();
-    let (merged, brain, failed) = if has_merge_prompt(&settings) {
+    // A chunk whose every slot is punctuation (or empty) has nothing to merge:
+    // the merge prompt would carry four empty quoted blocks, and a small model
+    // answers *the request* rather than the audio, which lands in the user's
+    // document as a sentence they never said. This is not a failure and must not
+    // be reported as one — `failed` is what marks the chunk for a retry at the
+    // next close, and a retry of a chunk with no words in it can only decode the
+    // extras again for the same nothing. The chunk keeps the streaming model's
+    // own text (`Chunk::display_text` falls back to it).
+    let (merged, brain, failed) = if has_merge_prompt(&settings)
+        && slots_carry_words(&[&live, &outputs[1], &outputs[2], &outputs[3]])
+    {
         let outcome =
             multi_stt_merge_transcriptions(&settings, &live, &outputs[1], &outputs[2], &outputs[3])
                 .await;
@@ -678,6 +690,12 @@ async fn run_merge_job(
             }
             None => (None, None, true),
         }
+    } else if has_merge_prompt(&settings) {
+        debug!(
+            "Multi-STT streaming: chunk {} has no word in any slot, nothing to merge",
+            chunk_id + 1
+        );
+        (None, None, false)
     } else {
         (None, None, false)
     };
