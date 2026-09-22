@@ -246,8 +246,8 @@ export const commands = {
 	 */
 	getRecentLogs: (limit: number) => typedError<string, string>(__TAURI_INVOKE("get_recent_logs", { limit })),
 	/**
-	 *  Truncate the log file. Explicit user action only — the panel itself never
-	 *  clears what it shows on its own.
+	 *  Truncate the current session's log file. Explicit user action only — the
+	 *  panel itself never clears what it shows on its own.
 	 */
 	clearLogs: () => typedError<null, string>(__TAURI_INVOKE("clear_logs")),
 	setLogLevel: (level: LogLevel) => typedError<null, string>(__TAURI_INVOKE("set_log_level", { level })),

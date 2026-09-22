@@ -4,83 +4,12 @@ import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Button } from "../../ui/Button";
+import { parseLogRecords, type LogLine, type Tag } from "./logParse";
 
 // Capture all records in the backend file; poll only while this view exists.
 // A single source avoids live/file deduplication deleting legitimate records.
 const FILE_POLL_LINES = 2000;
 const FILE_POLL_INTERVAL_MS = 500;
-
-type Tag = "ERR" | "WRN" | "INF" | "DBG" | "TRC";
-
-interface LogLine {
-  id: number;
-  tag: Tag;
-  time: string;
-  /** Log target/module from the third bracket — shown muted after the time. */
-  target: string;
-  message: string;
-  live: boolean;
-  raw: string;
-}
-
-// File lines look like:
-//   [2026-09-12][20:30:04][app_lib][DEBUG] message
-// A record whose payload contains newlines (e.g. multi-line SQL from
-// rusqlite_migration) is written as one header line plus bare continuation
-// lines that do not match the regex. Those continuations are joined into the
-// preceding record so they inherit its time and severity instead of showing
-// up as bogus INF rows with an empty timestamp.
-const RECORD_HEADER = /^\[([^\]]+)\]\[([^\]]+)\]\[[^\]]*\]\[(\w+)\]\s?(.*)$/;
-
-const tagFromLevel = (level: string): Tag => {
-  const u = level.toUpperCase().slice(0, 4);
-  if (u === "WARN") return "WRN";
-  if (u === "ERRO") return "ERR";
-  if (u === "TRAC") return "TRC";
-  if (u === "DEBU") return "DBG";
-  return "INF";
-};
-
-// Parse a file tail into complete records (header + folded continuations).
-const parseLogRecords = (data: string): LogLine[] => {
-  const out: LogLine[] = [];
-  for (const raw of data.split("\n")) {
-    if (!raw.trim()) continue;
-    const m = raw.match(RECORD_HEADER);
-    if (m) {
-      out.push({
-        id: 0,
-        tag: tagFromLevel(m[4]),
-        time: m[2],
-        target: m[3],
-        message: m[5],
-        live: false,
-        raw,
-      });
-      continue;
-    }
-    const last = out[out.length - 1];
-    if (last) {
-      // Continuation of the previous record: keep its time/tag, append text.
-      last.message = `${last.message}\n${raw}`;
-      last.raw = `${last.raw}\n${raw}`;
-    } else {
-      // Orphan continuation with no header in the tail window — keep the text
-      // but do not fabricate a severity chip for it.
-      out.push({
-        id: 0,
-        tag: "INF",
-        time: "",
-        target: "",
-        message: raw,
-        live: false,
-        raw,
-      });
-    }
-  }
-  return out;
-};
-
 // Level accents carry a light-theme color plus a brighter `dark:` variant, so
 // they read on both the light code-block surface and the dark console surface.
 const TAG_META: Record<Tag, { tagClass: string; msgClass: string }> = {
