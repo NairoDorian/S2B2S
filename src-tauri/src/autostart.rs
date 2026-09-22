@@ -26,7 +26,7 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
         return;
     }
 
-    let manager = app.autolaunch();
+    let manager = app.autostart();
     let result = if enabled {
         manager.enable()
     } else {
