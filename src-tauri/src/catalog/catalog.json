@@ -1765,6 +1765,7 @@
       "accuracy_score": 90,
       "files": [
         {"filename": "r2t2-q8_0.gguf", "quant": "Q8_0", "size_bytes": 2477512064, "sha256": "19f5ccd624484bcb5d44301437de41560b0ecc40c430e8850dfeefefbe82ccf5"},
+        {"filename": "r2t2-q4_k_m.gguf", "quant": "Q4_K_M", "size_bytes": 1186939968, "sha256": "d740d6636f2ea2f3736800c3c88a6e22ecb6c0f26c567fe22b0572ae9c2c4ec8"},
         {"filename": "r2t2-f16.gguf", "quant": "F16", "size_bytes": 4092155264, "sha256": "d1b531ceaf5640d98352d3a9180238d99d36d393e160afd4692031077e7bae2c"}
       ],
       "default_quant": "Q8_0",
