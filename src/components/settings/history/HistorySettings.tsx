@@ -430,10 +430,18 @@ export const HistorySettings = () => {
             </h2>
           </div>
           <div class="flex items-center gap-2">
+            {/* Gated on load/delete state only, never on `entries()`. The
+                button clears the recordings directory and the history table on
+                disk, which this paginated list is not a faithful proxy for:
+                audio files outlive their rows, so an empty list does not mean
+                an empty folder. Gating on the list greyed the button out in
+                exactly the case that needed it, and `handleDeleteAllRecordings`
+                itself sets hasMore(false), so one successful delete disabled it
+                permanently. The confirmation dialog is the guard. */}
             <DeleteRecordingsButton
               onClick={() => setShowDeleteConfirm(true)}
               label={t("settings.history.deleteRecordings")}
-              disabled={loading() || (entries().length === 0 && !hasMore())}
+              disabled={loading() || isDeleting()}
             />
             <OpenRecordingsButton
               onClick={openRecordingsFolder}
