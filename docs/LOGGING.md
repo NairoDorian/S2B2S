@@ -10,8 +10,11 @@ silence the durable console. Hide records with the viewer chips.
 
 - Interactive runtime: stdout (visible under `bun run tauri dev`).
 - Headless commands: stderr, keeping JSON stdout parseable.
-- File: the same records, with a 10 MB rotation cap and one current file.
+- File: the same records, one file per app session
+  (`zer0-YYYYMMDD-HHMMSS-mmm.log`), with a 10 MB rotation cap per file.
   `portable::app_log_dir` resolves its location; the Debug page can open it.
+  Previous sessions' files are left on disk; the console only ever reads the
+  current session's file (`session_log::basename`).
 - In-app console: polls the last 2,000 file lines every 500 ms while mounted.
   No polling or log events when the page is closed. Only one read is in flight.
 
@@ -23,9 +26,12 @@ bounded, and tolerate a tail boundary inside a UTF-8 character.
 
 Pause freezes the view; resume fetches the current tail. All severity chips
 start enabled and can be toggled independently. Clear explicitly truncates the
-current file. Rendering retains unchanged line objects to avoid rebuilding
-2,000 rows on every poll. The file retains older records until rotation; the
-viewer is a bounded tail, not an unlimited history.
+current session's file only — other sessions' logs on disk are untouched.
+Multi-line records (e.g. multi-line SQL from migration setup) are folded back
+into a single row so continuations inherit the header's time and severity.
+Rendering retains unchanged line objects to avoid rebuilding 2,000 rows on
+every poll. The file retains older records until rotation; the viewer is a
+bounded tail, not an unlimited history.
 
 Build output from Bun/Cargo/Vite belongs to those parent processes and does not
 pass through the app logger. Runtime Rust records and the transcribe.cpp logging

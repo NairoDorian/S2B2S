@@ -123,7 +123,6 @@ Anything added to startup goes after that line or on its own thread.
   the fastest configuration measured for the merge/clean prompts; keep the
   draft model on the same device as the main model.
 
-
 ## Scheduling and repeatable STT measurements
 
 Use normal OS scheduling. Do not identify or rank P/E cores, exclude core 0,

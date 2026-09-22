@@ -774,7 +774,7 @@
       },
       "liveLogs": {
         "title": "Live Logs",
-        "description": "The app's log console: streamed live and reconciled with the on-disk log file, so history survives reopening this page. Everything is always visible; the tag row is the only filter.",
+        "description": "The app's log console: reads the current session's on-disk log file live, so history survives reopening this page. Multi-line records are folded into one row; the tag row is the only filter.",
         "live": "Live",
         "paused": "Paused",
         "pause": "Pause",

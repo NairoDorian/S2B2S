@@ -65,13 +65,18 @@ pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
     Ok(log_dir.to_string_lossy().to_string())
 }
 
-/// The log file the plugin's file target writes to: `<log dir>/<basename>.log`
-/// (`RotationStrategy::KeepOne`, so there is exactly one current file and the
-/// name never changes).
+/// The log file the plugin's file target writes to for this process:
+/// `<log dir>/<basename>-<session-stamp>.log`.
+///
+/// The basename is fixed for the process lifetime (set once at startup by
+/// `LogBuilder`), so the debug console and `clear_logs` always resolve the
+/// same path the writer opened — even though each app open gets a fresh file.
 fn current_log_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let log_dir = crate::portable::app_log_dir(app)
         .map_err(|e| format!("Failed to get log directory: {}", e))?;
-    Ok(log_dir.join(format!("{}.log", crate::app_identity::RECORDING_BASENAME)))
+    let stem = crate::session_log::basename()
+        .ok_or_else(|| "Session log basename not initialised".to_string())?;
+    Ok(log_dir.join(format!("{stem}.log")))
 }
 
 /// The last `limit` lines of the log file, oldest first.
@@ -151,8 +156,8 @@ mod log_tail_tests {
     }
 }
 
-/// Truncate the log file. Explicit user action only — the panel itself never
-/// clears what it shows on its own.
+/// Truncate the current session's log file. Explicit user action only — the
+/// panel itself never clears what it shows on its own.
 #[tauri::command]
 #[specta::specta]
 pub fn clear_logs(app: AppHandle) -> Result<(), String> {

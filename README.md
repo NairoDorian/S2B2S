@@ -20,7 +20,6 @@ ZER0 was created to fill the gap for a truly open source, extensible speech-to-t
 
 ZER0 isn't trying to be the best speech-to-text app—it's trying to be the most forkable one.
 
-
 ## How It Works
 
 1. **Press** a configurable keyboard shortcut: hold it to record and release to stop, or tap it to toggle recording on and off (Hold-only and Toggle-only modes are also available)
@@ -408,7 +407,6 @@ Download the models you want from below
 
 - Q8_0: `https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf`
 
-
 #### Step 4: Install Models
 
 **For Whisper Models (.bin files):**
@@ -519,7 +517,6 @@ Handy 0.9.4 and earlier listened for `SIGUSR1` as a remote-control trigger. WebK
 
 Update to a newer release, and replace any `pkill -USR1 -n zer0` keybindings with `zer0 --toggle-post-process`.
 
-
 ### How to Contribute
 
 1. **Check existing issues** at [github.com/NairoDorian/S2B2S/issues](https://github.com/NairoDorian/S2B2S/issues)
@@ -529,8 +526,6 @@ Update to a newer release, and replace any `pkill -USR1 -n zer0` keybindings wit
 5. **Read [CONTRIBUTING.md](CONTRIBUTING.md)** for the toolchain and the pre-commit routine every change is expected to pass
 
 The goal is to create both a useful tool and a foundation for others to build upon—a well-patterned, simple codebase that serves the community.
-
-
 
 ## License
 

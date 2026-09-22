@@ -29,6 +29,7 @@ mod paste_tx;
 pub mod portable;
 pub mod recall;
 mod secure_input;
+mod session_log;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -770,6 +771,10 @@ pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
     portable::init();
 
+    // Freeze this session's log filename before the Tauri log plugin opens its
+    // file, so `commands::current_log_file` and the writer share one stem.
+    session_log::init();
+
     let specta_builder = Builder::<tauri::DynRuntime>::new()
         .dangerously_cast_bigints_to_number()
         .commands(collect_commands![
@@ -1077,11 +1082,11 @@ pub fn run(cli_args: CliArgs) {
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
-                            file_name: Some(app_identity::RECORDING_BASENAME.into()),
+                            file_name: Some(session_log::init().into()),
                         }
                     } else {
                         TargetKind::LogDir {
-                            file_name: Some(app_identity::RECORDING_BASENAME.into()),
+                            file_name: Some(session_log::init().into()),
                         }
                     }),
                 ])
