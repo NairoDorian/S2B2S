@@ -230,6 +230,16 @@ if (
   const localKey = join(homedir(), ".tauri", "zer0.key");
   if (existsSync(localKey)) {
     process.env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(localKey, "utf-8");
+    // `tauri signer generate` always writes an encrypted key, so with no
+    // password in the environment the bundler stops on "Decrypting updater
+    // signing key, expect a prompt for password" -- and that read blocks a
+    // non-interactive run (`CI=`, a script, an agent) forever, after the
+    // bundles are already built. These keys carry no password, and minisign
+    // reads an empty one exactly as it reads no password at all, so supplying
+    // it explicitly just skips the prompt. A key regenerated *with* a password
+    // needs TAURI_SIGNING_PRIVATE_KEY_PASSWORD set to it, in which case
+    // `??=` keeps that value instead.
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
   }
 }
 

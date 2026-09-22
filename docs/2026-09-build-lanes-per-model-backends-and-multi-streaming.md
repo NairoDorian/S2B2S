@@ -27,6 +27,7 @@ from the code.
 | Directives for part 4, verbatim           | recorded, each mapped to its code                 | `2026-09-multi-streaming-stt-directives.md`      |
 | 4a. First real run through the debug view | two fixes + two findings, one fixed, one reported | §4.4, §4.5, D8                                   |
 | 4b. `build:fast` aborting in makensis     | fixed: the custom template caught up to the CLI   | §5, `src-tauri/nsis/installer.nsi`               |
+| 4c. `build:fast` exiting 1 once bundled   | fixed: the updater signing key was rotated        | §5a, `tauri.conf.json`, `tauri-runner.ts`        |
 
 Gates run on this state, all green: `cargo check --all-targets` (no warnings),
 `cargo test -p zer0 --lib` (**415 passed**), `cargo clippy
@@ -631,7 +632,7 @@ every bundle build signs unless `TAURI_SIGNING_PRIVATE_KEY` is in the
 environment; `scripts/tauri-runner.ts` supplies it from `~/.tauri/zer0.key`, and
 that file is not on this machine — `%USERPROFILE%\.tauri\` exists and is empty.
 Both installers are already written by then, so a local release is usable, but
-the `.sig` artifacts and `latest.json` are not produced. BUILD.md already
+the `.sig` artifacts are not produced. BUILD.md already
 documents this exact ending and the remedy (regenerate with `bun x tauri signer
 generate -w ~/.tauri/zer0.key`, or restore the existing private key, whose public
 half is pinned in the config); it is a release secret, so nothing here touches
@@ -642,3 +643,64 @@ does not read these files, which is why it succeeded while NSIS aborted. And the
 build directory under `target/release/nsis/x64/` is regenerated from the template
 on every bundle, so a fix applied there and not to the template disappears on the
 next build.
+
+## 5a. The updater signing key, rotated (2026-09-22)
+
+`build:fast` now ends at exit 0 — `Finished 2 bundles at:` and `Finished 2 updater
+signatures at:`, four artifacts: both installers and both `.sig` files. Two things
+stood in the way, and neither was the installer work of §5.
+
+**There was no key to restore.** The repository has no Actions secrets at all
+(`gh api repos/NairoDorian/S2B2S/actions/secrets` → `total_count: 0`), so the
+`TAURI_SIGNING_PRIVATE_KEY` the release workflow reads has never been set, and no
+copy of the key existed on this machine either. That is what left rotation as the
+only option.
+
+**The public half has a shape that fails only in the field.**
+`plugins.updater.pubkey` is base64 _of the minisign public key text_ — not by
+convention but because the pinned plugin runs `base64_to_string(pub_key)` before
+`PublicKey::decode` (`plugins/updater/src/updater.rs:1537` of the
+`plugins-workspace` checkout at `2fd27c2`). The alpha CLI writes exactly that
+value into `~/.tauri/zer0.key.pub`, so the config wants that file's contents,
+trimmed; encoding them a second time yields something that base64-decodes without
+complaint — to base64 rather than to `untrusted comment: minisign public key: …`.
+The first splice here did that, and only reading the consumer caught it.
+
+Three checks now separate that from a release:
+
+- **The bundler checks the pair itself.** With a mismatched key it warns that the
+  secret key does not match the public key in `plugins > updater > pubkey` and
+  that the configuration "won't be accepted at runtime when performing update".
+  That warning is absent from the build above, and the probe that produced it —
+  `bun x tauri bundle --bundles nsis` against the already-built binary, 25 seconds
+  rather than eight minutes — is the cheap way to see it.
+- **An independent verifier.** `sigcheck`, a scratch crate, pins
+  `minisign-verify` to the version `Cargo.lock` resolves the plugin to, and
+  reproduces `verify_signature` step for step: both `.sig` files verify against
+  the config's value. Its negative control is the point of it — handed a
+  signature made with the other key, it fails, naming the key as the reason.
+- **The signatures carry `version: 0.9.7`** in the trusted comment, matching the
+  announced version, so the check would hold with `require_signed_version` turned
+  on as well.
+
+**One more obstruction, in the runner.** `tauri signer generate` always writes an
+_encrypted_ secret key, so with no password in the environment the bundler stops
+at `Decrypting updater signing key, expect a prompt for password` — after the
+bundles are built, reading from a terminal that a non-interactive run does not
+have. It does not fail; it waits. `scripts/tauri-runner.ts` now sets
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to empty when it is the one supplying the
+local key, which skips the prompt (`minisign` reads an empty password exactly as
+it reads no password) and leaves any password already in the environment alone.
+
+`latest.json` is not the bundler's to write: it emits `.sig` files, and the
+release workflow's `tauri-apps/tauri-action@v0` step is what turns them into the
+manifest the updater endpoint serves.
+
+**What the rotation costs, and what is still open.** Installs built before it pin
+the old public key and reject new-key artifacts (`UnexpectedKeyId`) until they are
+updated by hand once. And with the repository's secret list empty, CI's bundle
+builds still sign with an empty key and fail exactly where this did:
+`gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/zer0.key` unblocks them, with
+no password secret needed for this pair. BUILD.md's "Updater artifact signing"
+section carries the procedure, the shape of the config value, and the warning to
+back the private key up somewhere outside the machine.

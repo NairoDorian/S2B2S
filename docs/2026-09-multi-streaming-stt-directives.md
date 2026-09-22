@@ -363,7 +363,48 @@ signing — `~/.tauri/zer0.key` is not on this machine, so the pubkey pinned in
 pre-existing and already documented in BUILD.md; it is a release secret only the
 maintainer can supply, so it is reported and untouched. The template's own header
 comment carries the merge instruction and now names what was merged and why, so
-the next Tauri bump re-diffs rather than re-discovers.
+the next Tauri bump re-diffs rather than re-discovers. D10 is where that ending
+was resolved: the signing key was rotated on 2026-09-22, and the command now exits
+cleanly.
+
+---
+
+## D10 — Rotate the signing key
+
+> Rotate the pair.
+
+**Meaning.** The choice offered and taken once `build:fast` still exited 1 past
+the NSIS fix: the private key was not on this machine and no copy existed, so
+generate a new minisign pair, put the new public key in `plugins.updater.pubkey`,
+and replace the `TAURI_SIGNING_PRIVATE_KEY` repository secret. The option as
+chosen carried its own warning, kept here because it is the cost of the decision:
+installs that already exist pin the old public key, so they reject artifacts
+signed with the new one until they are updated by hand once.
+
+**Where it lives.** `src-tauri/tauri.conf.json` — `plugins.updater.pubkey`, whose
+new value is `~/.tauri/zer0.key.pub` verbatim. That file already holds base64 of
+the minisign public key text, and the pinned plugin base64-decodes the config
+value before `PublicKey::decode`, so encoding it a second time produces a value
+that decodes without error and verifies never. `scripts/tauri-runner.ts` — its
+local-key fallback now also sets an empty `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`,
+because the key the CLI generates is always encrypted and the bundler otherwise
+stops on an interactive password prompt _after_ the bundles are built, waiting
+forever instead of failing in any non-interactive run. The private key is never
+read, printed, or committed: it stays at `~/.tauri/zer0.key`, and the copy that
+belongs in CI is the repository secret. §5a of
+`2026-09-build-lanes-per-model-backends-and-multi-streaming.md` is the full
+account, and BUILD.md's "Updater artifact signing" is the procedure.
+
+**Tested.** `bun run build:fast` exits 0 — `Finished 2 bundles at:` and `Finished
+2 updater signatures at:`, with `ZER0_0.9.7_x64_en-US.msi.sig` and
+`ZER0_0.9.7_x64-setup.exe.sig`. The bundler's own pair check stays silent (it
+warns that the secret key `does not match the public key` for a mismatched pair,
+which is how a probe with a throwaway key confirmed that check has teeth), and an
+independent `sigcheck` build against `minisign-verify 0.2.5` — the version the
+plugin resolves to — verifies both signatures against the configured public key
+and rejects one made with any other key. Outstanding, and not code: the
+repository has **no Actions secrets at all**, so that secret has to be created
+before CI can sign.
 
 ---
 
@@ -378,6 +419,10 @@ the next Tauri bump re-diffs rather than re-discovers.
 - The **sched-free leak fix** stays untouched, as ever.
 - The **multi-STT serializer** was correctly reverted and is not re-added here.
 - Read-only reference trees stay read-only; this work is in `Handy_V2`.
+- The **updater private key is a release secret**: it is never read into a
+  command's output, never printed, and never committed. D10 works entirely from
+  the public half, and the private half only ever reaches the bundler as the
+  environment variable `scripts/tauri-runner.ts` sets from `~/.tauri/zer0.key`.
 
 ## Not in this step
 
