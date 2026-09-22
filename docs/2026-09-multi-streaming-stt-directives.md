@@ -379,7 +379,12 @@ generate a new minisign pair, put the new public key in `plugins.updater.pubkey`
 and replace the `TAURI_SIGNING_PRIVATE_KEY` repository secret. The option as
 chosen carried its own warning, kept here because it is the cost of the decision:
 installs that already exist pin the old public key, so they reject artifacts
-signed with the new one until they are updated by hand once.
+signed with the new one until they are updated by hand once. The user's own
+account of the project narrows that to almost nothing: ZER0 has never been
+released publicly and the user is its sole developer, so the only install that
+predates the rotation is the one on the development machine, cleared by
+re-running the installer once. Corrected in place on the user's word,
+2026-09-22, alongside the repository secret, which the same session created.
 
 **Where it lives.** `src-tauri/tauri.conf.json` — `plugins.updater.pubkey`, whose
 new value is `~/.tauri/zer0.key.pub` verbatim. That file already holds base64 of

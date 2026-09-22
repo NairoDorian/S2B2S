@@ -190,12 +190,15 @@ the config:
 
 - Installs built before the rotation pin the old public key, so they reject
   artifacts signed with the new one (`verify_signature` fails with
-  `UnexpectedKeyId`). They update once by re-downloading the installer by hand;
-  after that they carry the new key and update normally.
-- The repository secret still holds the retired key and must be replaced before
-  CI signs anything: `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/zer0.key`.
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must be unset or empty, since this pair
-  was generated with `--ci` and carries no password.
+  `UnexpectedKeyId`), and they update once by re-downloading the installer by
+  hand; after that they carry the new key and update normally. Nothing has been
+  released publicly and the developer's own machine holds the only install, so
+  this costs one reinstall and no user is affected.
+- The `TAURI_SIGNING_PRIVATE_KEY` repository secret now holds the new key:
+  `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/zer0.key` (set
+  2026-09-22; `gh secret list` showed an empty list before it, so there was no
+  retired key to remove). `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must be unset or
+  empty, since this pair was generated with `--ci` and carries no password.
 
 `plugins.updater.pubkey` is base64 **of the minisign public key text**, and the
 consumer settles it rather than convention: `verify_signature` calls

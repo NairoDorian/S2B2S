@@ -696,11 +696,14 @@ it reads no password) and leaves any password already in the environment alone.
 release workflow's `tauri-apps/tauri-action@v0` step is what turns them into the
 manifest the updater endpoint serves.
 
-**What the rotation costs, and what is still open.** Installs built before it pin
+**What the rotation costs, and what it does not.** Installs built before it pin
 the old public key and reject new-key artifacts (`UnexpectedKeyId`) until they are
-updated by hand once. And with the repository's secret list empty, CI's bundle
-builds still sign with an empty key and fail exactly where this did:
-`gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/zer0.key` unblocks them, with
-no password secret needed for this pair. BUILD.md's "Updater artifact signing"
+updated by hand once — but the app has never been released and the only install in
+existence is the developer's own, so that is one reinstall, not a migration. CI
+had the matching gap: the secret list was empty, so its bundle builds signed with
+an empty key and failed exactly where this did. That is closed —
+`gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/zer0.key` was run on
+2026-09-22 and `gh secret list` now shows the one secret, with no password secret
+needed for this pair. BUILD.md's "Updater artifact signing"
 section carries the procedure, the shape of the config value, and the warning to
 back the private key up somewhere outside the machine.
