@@ -137,7 +137,11 @@ export const LiveLogViewer = (props: LiveLogViewerProps) => {
   const handleCopy = async () => {
     const text = logs()
       .filter((l) => visible(l.tag))
-      .map((l) => `${l.time} ${l.tag} ${l.message}`)
+      .map((l) =>
+        l.target
+          ? `${l.time} [${l.target}] ${l.tag} ${l.message}`
+          : `${l.time} ${l.tag} ${l.message}`,
+      )
       .join("\n");
     try {
       await navigator.clipboard.writeText(text);
