@@ -151,7 +151,7 @@ zer0 --cancel                  # Cancel the current operation
 ```bash
 zer0 --start-hidden            # Start without showing the main window
 zer0 --no-tray                 # Start without the system tray icon
-zer0 --debug                   # Enable debug mode with verbose logging
+zer0 --debug                   # Accepted for compatibility (logging is always Trace, see docs/LOGGING.md)
 zer0 --help                    # Show all available flags
 ```
 
@@ -163,7 +163,7 @@ zer0 -f recording.wav --model <model-id>      # pick a model instead of the sele
 zer0 -f recording.wav --device-index 0        # GPU device for GGUF models
 zer0 -f recording.wav --repeat 3 --json       # timing runs, machine-readable output
 zer0 --list-models                            # installed model ids
-zer0 --list-devices                           # GPU devices
+zer0 --list-devices                           # compute devices (CPU and GPU) with their indices
 ```
 
 Flags can be combined for autostart scenarios:
@@ -231,7 +231,7 @@ Without these tools, ZER0 falls back to enigo which may have limited compatibili
 
   - For building from source on Ubuntu/Debian, you may also need `libgtk-layer-shell-dev`.
 
-- The recording overlay is disabled by default on Linux (`Overlay Position: None`) because certain compositors treat it as the active window. When the overlay is visible it can steal focus, which prevents ZER0 from pasting back into the application that triggered transcription. If you enable the overlay anyway, be aware that clipboard-based pasting might fail or end up in the wrong window.
+- The recording overlay is disabled by default on Linux (**Settings > Overlay**, **"Overlay"** set to **"None"**) because certain compositors treat it as the active window. When the overlay is visible it can steal focus, which prevents ZER0 from pasting back into the application that triggered transcription. If you enable the overlay anyway, be aware that clipboard-based pasting might fail or end up in the wrong window.
 - If you are having trouble with the app, running with the environment variable `WEBKIT_DISABLE_DMABUF_RENDERER=1` may help
 - If ZER0 fails to start reliably on Linux, see [Troubleshooting → Linux Startup Crashes or Instability](#linux-startup-crashes-or-instability).
 - **Global keyboard shortcuts (Wayland):** On Wayland, system-level shortcuts must be configured through your desktop environment or window manager. Use the [CLI flags](#cli-parameters) as the command for your custom shortcut.
@@ -287,8 +287,8 @@ Without these tools, ZER0 falls back to enigo which may have limited compatibili
 **Overlay & Pasting Issues (Linux):**
 
 - The recording overlay window can interfere with pasting transcribed text into target applications on Linux (X11)
-- **Solution:** Open **Settings > Advanced** and set **"Overlay Position"** to **"None"** to disable the overlay
-- Enable **"Audio Feedback"** (also in Advanced) if you still want audible confirmation of recording state
+- **Solution:** Open **Settings > Overlay** and set **"Overlay"** to **"None"** to disable the overlay
+- Enable **"Audio Feedback"** (under **Settings > General**) if you still want audible confirmation of recording state
 - Users who upgrade from older versions or import settings from other platforms may need to manually apply this change
 
 ### Platform Support
@@ -500,7 +500,7 @@ If a workaround helps you, please [open an issue](https://github.com/NairoDorian
 
 ### Vulkan Overlays and Capture Tools on Windows (`ZER0_KEEP_VULKAN_IMPLICIT_LAYERS`)
 
-On Windows, the app asks the Vulkan loader to skip implicit layers to avoid crashes caused by overlay and capture hooks (upstream issue upstream issue #2049). GPU acceleration remains enabled; this does not change system-wide settings.
+On Windows, the app asks the Vulkan loader to skip implicit layers to avoid crashes caused by overlay and capture hooks (upstream issue #2049). GPU acceleration remains enabled; this does not change system-wide settings.
 
 To opt out for GPU selection or debugging tools, fully quit the app (including the tray icon), then run both commands in the same PowerShell window:
 

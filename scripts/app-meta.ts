@@ -73,7 +73,10 @@ function spellingsOf(name: string) {
   return {
     /** Machine slug: crate name, binary name, `package.json` name. */
     slug,
-    /** `<app data>/<name>/` — what the user sees in `%APPDATA%`. */
+    /**
+     * The product-name folder leaf a platform may use (kept for the
+     * migration's symmetry). The app-data folder itself is the identifier.
+     */
     dataDirName: name,
     /** Prefix of every environment flag the application reads. */
     envPrefix: `${slug.toUpperCase()}_`,
@@ -195,9 +198,9 @@ pub const RELEASES_URL: &str = "${RELEASES_URL}";
 /// of those services expects.
 pub const USER_AGENT: &str = "${APP.name}/${APP.version}";
 
-/// The folder under the OS app-data directory that holds models, history and
-/// settings. Kept separate from \`IDENTIFIER\` because the folder name is also
-/// what the user sees in \`%APPDATA%\` / \`~/.local/share\`.
+/// The product-name folder leaf a platform may use (kept for the migration's
+/// symmetry). The app-data folder that holds models, history and settings is
+/// named after \`IDENTIFIER\`, not this.
 pub const DATA_DIR_NAME: &str = "${APP.dataDirName}";
 
 /// The folder name a pre-rename install used. Read at startup by the one-shot
@@ -304,7 +307,10 @@ ${tsConst("REPO_URL", REPO_URL)}
 /** Releases page — where an update or a portable installer link points. */
 ${tsConst("RELEASES_URL", RELEASES_URL)}
 
-/** The folder under the OS app-data directory that holds models and history. */
+/**
+ * The product-name folder leaf a platform may use (kept for the migration's
+ * symmetry); the app-data folder itself is named after the identifier.
+ */
 ${tsConst("DATA_DIR_NAME", APP.dataDirName)}
 
 /** The folder name a pre-rename install used; read by the migration only. */
@@ -1082,7 +1088,7 @@ type SyncOptions = {
 // ---------------------------------------------------------------------------
 
 /**
- * Point every mirror at the constants above and regenerate both modules.
+ * Point every mirror at the constants above and regenerate the generated files.
  *
  * @param options.dryRun report what would change and write nothing.
  * @returns what was already correct, what was rewritten, what was regenerated.
@@ -1267,7 +1273,8 @@ function printUsage(): void {
   console.log(`Usage: bun ${META_TS} [options]
 
   (no arguments)              Sync every mirror to the constants in ${META_TS}
-                              and regenerate app_identity.rs / appIdentity.ts.
+                              and regenerate the generated files (app_identity.rs,
+                              appIdentity.ts, nix/module.nix, nix/hm-module.nix).
   --check                     Report drift; exit 1 when anything disagrees.
   --set <x.y.z>               Set the version, then sync.
   --bump <major|minor|patch>  Increment the version, then sync.

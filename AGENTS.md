@@ -253,8 +253,11 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum
   - `statistics.rs` - Metrics tracking (independent SQLite table, streak calculation, stop-relative transcription and LLM post-processing latency distributions)
   - `arch_plugins.rs` - transcribe.cpp per-family architecture-plugin
-    directories and listing (`get_arch_plugins`, `load_arch_plugin`,
-    `register_arch_dir`, `open_plugins_folder`); the `arch-dl` feature is off
+    directories and listing (`list_arch_plugins`, `load_arch_plugin`,
+    `register_arch_dir`, `init_arch_plugin_dirs`,
+    `ensure_arch_plugin_for_model`); the Tauri commands `get_arch_plugins`,
+    `load_arch_plugin` and `register_arch_dir` live in `commands/models.rs`,
+    `open_plugins_folder` in `commands/mod.rs`. The `arch-dl` feature is off
     in every shipped posture, so it normally reports nothing
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling, WAV read/write
@@ -374,10 +377,12 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   `llm_client::send_chat_completion_with_schema`) starts it on demand when
   a request targets the local port. `adopt_detected_install_if_unconfigured`
   picks up an existing `<home>/Downloads/PROJECTS/Llama.cpp` layout on
-  first run. Stopped on `RunEvent::Exit` and, on Windows, by a job object
-  if the app dies
+  first run. When `stop_on_exit` is on, stopped on `RunEvent::Exit` and, on
+  Windows, by a job object if the app dies; with it off the server is not
+  tied to the job object and survives the app's exit
 - `job_object.rs` - The Windows job object (kill-on-close) that ties
-  `llama-server` to the app's lifetime; a no-op elsewhere
+  `llama-server` to the app's lifetime when `llama.stop_on_exit` is on; a
+  no-op elsewhere
 - `llama_releases.rs` - GitHub release discovery (10-minute cache), backend
   detection via nvidia-smi, streamed download with `LlamaDownloadEvent`
   progress, pure-Rust zip extraction into `<app data>/llama_cpp/<backend>-<tag>`
@@ -852,6 +857,10 @@ Backend: `file_transcription.rs` + `commands/file_transcription.rs`; frontend:
   finishes first. The primary engine is reloaded before each segment when the
   unload timeout is `Immediately`, exactly like the headless path does.
 - File transcriptions do not create history rows or statistics runs.
+- **Known limitation**: the job refuses to start during a recording, but not
+  the reverse — a hotkey dictation started while a file job runs competes for
+  the primary engine, and one of the two can fail with "Model is not available
+  for transcription (unloaded or in use)".
 
 ### Live Mode (fork addition)
 
@@ -869,7 +878,8 @@ while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
   `chunk_0001.wav`, `chunk_0002.wav`, …
 - **Chunk loop** (`LiveModeManager::run_session`, its own thread): each chunk
   is a normal recording — `try_start_recording_with_raw(.., Some(save_audio))`
-  forces the native-rate raw tap on regardless of `save_raw_audio`, and
+  sets the native-rate raw tap to the session's `save_audio` option (on when
+  it is on, off otherwise), independent of `save_raw_audio`, and
   `start_stream(false, ..)` runs the model's native live stream. A chunk ends
   at `chunk_minutes`, or (with `prefer_silence_boundary`) on the first ≥1.2 s
   pause after 80 % of it, as measured by `last_speech_ms()` standing still.
@@ -879,8 +889,8 @@ while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
   starts. Audio spoken during the finalize and restart (plus a batch decode,
   below) is not captured; the WAV write adds nothing. If the stream produced
   no text (`NeverStarted`, failed or timed out), the chunk's STT samples are
-  batch-transcribed instead, and the chunk's statistics run is `Failed` when
-  that decode fails too. VAD policy follows `vad_enabled`
+  batch-transcribed instead: a chunk the batch fallback rescues counts as
+  `Success`, and one whose fallback decode fails too is `Failed`. VAD policy follows `vad_enabled`
   (`Streaming` or `Disabled`).
 - **Transcript file** (`TranscriptWriter`): an append-only committed prefix
   plus a live tail rewritten in place (`seek` + `write` + `set_len`) on every
@@ -1113,11 +1123,12 @@ close-gate defect described below, is in
   twice. Two conditions must hold, and they are independent (see
   `break_outcome`). The family must have **decoded** the chunk's audio:
   `input_received_ms − audio_committed_ms` within `STREAM_DRAIN_TOLERANCE_MS`
-  (500 ms). And it must have **published** the text for it: `Chunk::live`
+  (500 ms, capped at the configured pause, so a 100–499 ms pause keeps the
+  invariant). And it must have **published** the text for it: `Chunk::live`
   non-empty. The first is a drain hint rather than a text cursor —
   `transcribe.h` says as much and Parakeet derives it from `mel_frames_consumed`
-  — so an exact zero is unreachable while a stream runs; 500 ms is safe because
-  a break is silence, and a sequential decoder's un-decoded audio is a _suffix_
+  — so an exact zero is unreachable while a stream runs; the tolerance is safe
+  because a break is silence at least that long, and a sequential decoder's un-decoded audio is a _suffix_
   of what it was fed, short enough to lie inside that silence. The second is not
   implied by the first: a family that decodes eagerly and commits late drains
   completely with its text still owed. A break waits up to `TEXT_CATCHUP_GRACE`
@@ -1261,7 +1272,11 @@ close-gate defect described below, is in
   coordinator stops (the overlay falls back to the primary's own live text, via
   one last publish that drops the composed preview), the recording keeps running
   and the batch path transcribes and merges the whole session at stop, exactly
-  as it does when the mode is off. Both cases are logged, with the characters
+  as it does when the mode is off — with one exception: with
+  `paste_method = direct_streaming`, a session that retires mid-recording (or
+  hits the finish timeout) has already typed part of the text into the
+  document, and the batch path then pastes the full result, so the text can
+  appear twice in that configuration. Both cases are logged, with the characters
   still owed, the audio left un-drained, and the grace that produced them.
   Cancel cancels the coordinator: nothing more is typed, nothing is pasted, no
   history row.

@@ -7,8 +7,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 // Since the React → Solid 2 migration (see CHANGELOG, 2026-09-13) both windows
 // are Solid, so the Solid plugin covers all of `src/`.
-// `tsconfig.json` still uses `jsx: "preserve"` so esbuild passes untransformed
-// JSX to the Solid plugin — both entry points go through the same compiler.
+// `tsconfig.json` still uses `jsx: "preserve"` so the TS transform (Oxc in
+// Vite 8) leaves JSX untouched for the Solid plugin — both entry points go
+// through the same compiler.
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({

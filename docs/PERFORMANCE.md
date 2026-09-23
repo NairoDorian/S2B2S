@@ -54,11 +54,15 @@ dependency or a thread.**
    inference; the noise chain and the direct chain are separate objects so a
    toggle never waits on a rebuild. Serialize only what shares a resource.
 7. **Long-lived child processes run detached on their own thread.** The
-   llama.cpp server is spawned by a supervisor thread that owns the child,
-   captures its stdout/stderr line by line into a 400-line ring buffer shown
-   on the Local LLM page (not the app log), polls readiness on
-   `/health` with backoff, and kills it on app exit. The request path only
-   ever talks HTTP to a server that is already warm.
+   llama.cpp server is spawned off the main thread by `start()` (the blocking
+   pool or a dedicated thread) and held by its manager; one supervisor thread
+   watches it, and two reader threads capture its stdout/stderr line by line
+   into a 400-line ring buffer shown on the Local LLM page (not the app log).
+   The supervisor polls `/health` every 300 ms (`HEALTH_POLL`) until it
+   answers or the 180 s startup timeout passes, then only checks every 2 s
+   that the process is alive. It is stopped on app exit when
+   `llama.stop_on_exit` is on. The request path only ever talks HTTP to a
+   server that is already warm.
 8. **System meters must be cheap.** CPU / RAM / GPU readings come from one
    sampler thread on a 1 s tick (NVML for the GPU when present), published
    through an event; the UI never polls a command per render.

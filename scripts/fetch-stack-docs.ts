@@ -135,7 +135,7 @@ const SOURCES: Source[] = [
   {
     kind: "github",
     id: "tauri-specta",
-    repo: "oscartbeaumont/tauri-specta",
+    repo: "specta-rs/tauri-specta",
     prefix: "",
     note: "tauri-specta — the typed bindings generator behind src/bindings.ts.",
   },
@@ -483,13 +483,24 @@ function siteRelPath(url: string): string {
   return clean ? `${clean}.md` : "index.md";
 }
 
-async function scrapeSite(source: SiteSource): Promise<Map<string, string>> {
+/**
+ * A source's fetched pages, plus the relative paths that failed to fetch this
+ * run — those still exist upstream, so the mirror must keep its copies rather
+ * than report them removed.
+ */
+interface Mirrored {
+  pages: Map<string, string>;
+  failed: Set<string>;
+}
+
+async function scrapeSite(source: SiteSource): Promise<Mirrored> {
   console.log(`${TAG} ${source.id}: reading sitemap of ${source.base} …`);
   const urls = await urlsFromSitemap(source.base);
   const work = LIMIT ? urls.slice(0, LIMIT) : urls;
   console.log(`${TAG} ${source.id}: ${work.length} pages.`);
 
   const pages = new Map<string, string>();
+  const failed = new Set<string>();
   const failures: { url: string; error: string }[] = [];
   let done = 0;
 
@@ -521,6 +532,7 @@ async function scrapeSite(source: SiteSource): Promise<Map<string, string>> {
 
         pages.set(rel, `${provenance}${parsed.markdown.trim()}\n`);
       } catch (err) {
+        failed.add(rel);
         failures.push({
           url,
           error: err instanceof Error ? err.message : String(err),
@@ -539,7 +551,7 @@ async function scrapeSite(source: SiteSource): Promise<Map<string, string>> {
     for (const f of failures.slice(0, 10))
       console.log(`${TAG}   ${f.url} (${f.error})`);
   }
-  return pages;
+  return { pages, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -582,9 +594,7 @@ function stripFrontmatter(text: string): string {
   return match ? text.slice(match[0].length) : text;
 }
 
-async function mirrorGitHub(
-  source: GitHubSource,
-): Promise<Map<string, string>> {
+async function mirrorGitHub(source: GitHubSource): Promise<Mirrored> {
   const files = await listGitHubMarkdown(source);
   const work = LIMIT ? files.slice(0, LIMIT) : files;
   const bytes = work.reduce((s, f) => s + f.size, 0);
@@ -593,31 +603,32 @@ async function mirrorGitHub(
   );
 
   const pages = new Map<string, string>();
+  const failed = new Set<string>();
   const failures: { path: string; error: string }[] = [];
   let done = 0;
 
   await runPool(
     work,
     async (file) => {
+      const ref = source.ref ?? "HEAD";
+      const prefix = source.prefix
+        ? `${source.prefix.replace(/\/+$/, "")}/`
+        : "";
+      const rel =
+        file.path
+          .slice(prefix.length)
+          // SolidJS's docs repo encodes page order as `(0)`, `(1)`… folder
+          // and file prefixes; strip them so the mirror is readable paths.
+          .split("/")
+          .map((segment) => segment.replace(/^\(\d+\)/, ""))
+          .join("/")
+          .replace(/\.mdx?$/, "") + ".md";
       // One failed file is reported and skipped, as `scrapeSite` does for a
       // page — it must not abort the whole source after its retries.
       try {
-        const ref = source.ref ?? "HEAD";
         const raw = await fetchText(
           `https://raw.githubusercontent.com/${source.repo}/${ref}/${file.path}`,
         );
-        const prefix = source.prefix
-          ? `${source.prefix.replace(/\/+$/, "")}/`
-          : "";
-        const rel =
-          file.path
-            .slice(prefix.length)
-            // SolidJS's docs repo encodes page order as `(0)`, `(1)`… folder
-            // and file prefixes; strip them so the mirror is readable paths.
-            .split("/")
-            .map((segment) => segment.replace(/^\(\d+\)/, ""))
-            .join("/")
-            .replace(/\.mdx?$/, "") + ".md";
         const provenance = [
           "---",
           `source_repo: "${source.repo}"`,
@@ -632,6 +643,7 @@ async function mirrorGitHub(
           `${provenance}${stripFrontmatter(raw).replace(/\r\n/g, "\n").trim()}\n`,
         );
       } catch (err) {
+        failed.add(rel);
         failures.push({
           path: file.path,
           error: err instanceof Error ? err.message : String(err),
@@ -651,7 +663,7 @@ async function mirrorGitHub(
     for (const f of failures.slice(0, 10))
       console.log(`${TAG}   ${f.path} (${f.error})`);
   }
-  return pages;
+  return { pages, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -703,7 +715,7 @@ async function main(): Promise<number> {
   for (const source of selected) {
     console.log(`${TAG} ${source.id}: ${source.note}`);
     try {
-      const pages =
+      const { pages, failed } =
         source.kind === "site"
           ? await scrapeSite(source)
           : await mirrorGitHub(source);
@@ -727,16 +739,15 @@ async function main(): Promise<number> {
 
       // Pages that vanished upstream are removed locally, so the mirror stays
       // an exact image rather than an accretion. Skipped under --limit: a
-      // partial fetch is a smoke test, not evidence a page disappeared.
+      // partial fetch is a smoke test, not evidence a page disappeared. A page
+      // that failed to fetch is still listed upstream, so its copy (and hash)
+      // stays.
       let removed = 0;
       if (!LIMIT) {
         for (const key of Object.keys(nextHashes)) {
-          if (
-            !key.startsWith(`${source.id}/`) ||
-            pages.has(key.slice(source.id.length + 1))
-          )
-            continue;
+          if (!key.startsWith(`${source.id}/`)) continue;
           const rel = key.slice(source.id.length + 1);
+          if (pages.has(rel) || failed.has(rel)) continue;
           await rm(join(outDir, rel), { force: true });
           delete nextHashes[key];
           removed++;

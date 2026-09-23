@@ -4,7 +4,7 @@
 #
 # On Linux/Windows, this app builds transcribe-cpp in its `dynamic-backends`
 # posture: a shared `libtranscribe` plus loadable per-ISA ggml backend modules
-# (`libggml-cpu-<isa>.so`, `libggml-vulkan.so`, ...). These are produced by the
+# (`libggml-cpu-<isa>.so`, `libggml-cuda.so`, ...). These are produced by the
 # transcribe-cpp-sys CMake install during the cargo build, but nothing ships
 # them. This script copies them, as a co-located set, next to where the app
 # binary will find them at runtime:
@@ -31,7 +31,7 @@ fi
 mkdir -p "$DEST"
 
 # Copy the shared lib + every ggml lib/module. `-L` dereferences any SONAME
-# symlinks so the package gets real files (mirrors the onnxruntime deb step).
+# symlinks so the package gets real files.
 # `|| true` guards an unmatched glob; the verification below is the real gate.
 cp -vL "$SRC"/libtranscribe.so* "$DEST"/ 2>/dev/null || true
 cp -vL "$SRC"/libggml*.so*      "$DEST"/ 2>/dev/null || true

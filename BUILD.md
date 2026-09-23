@@ -159,8 +159,10 @@ bun run tauri dev
 `bun run tauri` goes through `scripts/tauri-runner.ts`, which first checks
 whether the pinned `transcribe-cpp` commit is behind the
 `NairoDorian/transcribe.cpp` fork's `main` and, if so, runs
-`cargo update -p transcribe-cpp -p transcribe-cpp-sys` (it never fails the
-build, even offline). There is no VAD model file to fetch — the detector is
+`cargo update -p transcribe-cpp -p transcribe-cpp-sys`. It tracks the
+`tauri-plugin-*` git pins the same way, against
+`tauri-apps/plugins-workspace`'s `v3` branch. Neither check ever fails the
+build, even offline. There is no VAD model file to fetch — the detector is
 pure Rust — and speech models come from the in-app catalog on first run.
 
 ### 4. Build for Production

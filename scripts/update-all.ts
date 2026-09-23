@@ -8,7 +8,7 @@
 //
 // Run this before each release (0.9.7 → 0.9.8 → 0.9.9 → 1.0.0) and whenever
 // something has been pinned for a while. It is not part of the pre-commit
-// hook: it reaches the network, it rewrites three lockfiles, and a dependency
+// hook: it reaches the network, it rewrites four lockfiles, and a dependency
 // bump is a change that deserves its own commit with its own message.
 //
 // **`--prerelease` is always passed to the dependency updater.** Newest-first

@@ -265,14 +265,10 @@ const EXEMPTIONS: Exemption[] = [
       "The Cachix *cache* name — an external address, not our name. It is declared on cachix.io and renamed there, so it cannot be derived from app-meta.ts; the workflows are otherwise checked, which is why this is one narrow entry and not a folder-wide ignore.",
   },
   {
-    file: "tests/",
-    allow: /[Hh]andy/,
-    reason: "Test suite fixtures that name the app in a title string.",
-  },
-  {
     file: "bun.lock",
     allow: /[Hh]andy/,
-    reason: "Package-manager lockfile; comments are generated.",
+    reason:
+      'Package-manager lockfile: its workspace entry still carries the pre-rename package name ("handy-app") until the next `bun install` rewrites it.',
   },
   {
     file: ".nix/",

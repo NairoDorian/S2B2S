@@ -147,12 +147,14 @@ streaming Parakeet on CUDA, decoding at 2.4–2.6× real time) it sat between **
 and 86 ms**. During a pause the VAD feeds the stream nothing, so the drain hint
 has no new input to advance on and the residual _freezes_.
 
-`STREAM_DRAIN_TOLERANCE_MS` (500) is what "decoded enough" means. It is safe for
-the same reason waiting is cheap: **a break is
-`multi_stt_streaming_pause_ms` of silence**, and a sequential decoder's
+`STREAM_DRAIN_TOLERANCE_MS` (500), capped at the configured pause, is what
+"decoded enough" means. It is safe for the same reason waiting is cheap: **a
+break is `multi_stt_streaming_pause_ms` of silence**, and a sequential decoder's
 un-decoded audio is a _suffix_ of what it was fed — so a suffix this short lies
-inside that silence and cannot hold a word that has not been written yet. Keep it
-below the smallest break for that argument to hold. It is also an order of
+inside that silence and cannot hold a word that has not been written yet. The
+argument needs the tolerance to stay below the break, which is what the cap
+does: a pause of 100–499 ms gets a tolerance equal to itself, so the invariant
+holds for every pause the setting allows. It is also an order of
 magnitude below the backlog it must still catch: the model that motivated the
 retire path measured **4918 ms**.
 
@@ -260,6 +262,13 @@ path when:
 - the stream never starts (`StreamFinalization::NeverStarted`),
 - the session **retires itself** mid-recording (§3).
 
+The batch fallback is otherwise exactly what runs when the mode is off, with one
+exception. With `paste_method = direct_streaming` the coordinator types the
+composed text into the document as it goes, so a session that retires
+mid-recording (or hits the finish timeout) has already typed part of the text,
+and the batch path then pastes the full result: in that configuration the text
+can appear twice.
+
 Cancel cancels the coordinator: nothing more is typed, nothing is pasted, no
 history row.
 
@@ -315,14 +324,14 @@ No new dependency, no new poll.
 
 ## 7. Reading the log
 
-| Line                                                                                                              | Means                                                                                                                                                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chunk n closed — … ms of audio, … chars, … ms of context, … ms of it left un-drained (tolerance 500 ms)`         | A normal close. The un-drained figure is the same backlog the close gate tested, so it is always within the tolerance at a close: tens of ms is normal, a figure near 500 ms is the model barely keeping up.          |
-| `chunk n was still owed its own text … — … chars of it, and … ms of audio the stream decodes but has not drained` | The retire path. The two figures are the two conditions of §3; which one is large says whether the model is slow (drain) or committing nothing (chars).                                                               |
-| `Live preview perf`                                                                                               | The primary's own stream: `input_received`, `committed_audio`, `buffered`, revision, real-time factor.                                                                                                                |
-| `the audio tap is N samples ahead of the stream`                                                                  | A structural mismatch between the tap and the stream feed. One warning per session, and the correction is deliberately **not** applied — a worker-thread lag of a frame or two is indistinguishable from a real lead. |
-| `chunk n has no word in any slot, nothing to merge`                                                               | §5: the chunk's slots held nothing but punctuation, so no merge was dispatched. Not a failure, so no retry — the chunk keeps the streaming model's own text.                                                          |
-| `Multi-STT merge rejected: <reason>`                                                                              | §5: the model answered the prompt instead of the audio. The reason says which test caught it, and the reply is logged under `Multi-STT merge reply (rejected)` — the user gets the concatenation fallback instead.    |
+| Line                                                                                                                                                                  | Means                                                                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chunk n closed — … ms of audio, … chars, … ms of context, … ms of it left un-drained (tolerance … ms)`                                                               | A normal close. The un-drained figure is the same backlog the close gate tested, so it is always within the tolerance at a close (500 ms, capped at the pause): tens of ms is normal, a figure near the tolerance is the model barely keeping up. |
+| `chunk n was still owed its own text … after the last speech (the pause plus a grace of …) — … chars of it, and … ms of audio the stream decodes but has not drained` | The retire path. The two figures are the two conditions of §3; which one is large says whether the model is slow (drain) or committing nothing (chars).                                                                                           |
+| `Live preview perf`                                                                                                                                                   | The primary's own stream: `input_received`, `committed_audio`, `buffered`, revision, real-time factor.                                                                                                                                            |
+| `the audio tap is N samples ahead of the stream; the chunk's audio may not be exactly the audio the stream decoded (… ms)`                                            | A structural mismatch between the tap and the stream feed. One warning per session, and the correction is deliberately **not** applied — a worker-thread lag of a frame or two is indistinguishable from a real lead.                             |
+| `chunk n has no word in any slot, nothing to merge`                                                                                                                   | §5: the chunk's slots held nothing but punctuation, so no merge was dispatched. Not a failure, so no retry — the chunk keeps the streaming model's own text.                                                                                      |
+| `Multi-STT merge rejected: <reason>`                                                                                                                                  | §5: the model answered the prompt instead of the audio. The reason says which test caught it, and the reply is logged under `Multi-STT merge reply (rejected)` — the user gets the concatenation fallback instead.                                |
 
 ---
 

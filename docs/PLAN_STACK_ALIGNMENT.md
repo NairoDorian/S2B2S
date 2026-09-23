@@ -36,23 +36,10 @@ concepts/reactivity.md, components-and-jsx.md):
 **Tauri 2 — security hardening** (docs/vendor/tauri/security/csp.md,
 asset-protocol.md, capabilities.md; plugin/store.md):
 
-4. `tauri.conf.json` ships `"csp": null`. Add a tailored CSP (`default-src
-'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self'
-asset: http://asset.localhost blob: data:; style-src 'self'
-'unsafe-inline'`), verified against both windows in dev and bundle builds.
-5. `assetProtocol.scope` is `["**"]` (dotfiles included) — the docs'
-   caution-flagged maximal shape. The only consumer is history playback of
-   recordings; scope to `$APPDATA/**/*` plus the portable data dir at runtime
-   (`tauri-plugin-persisted-scope` or programmatic scope extension).
-6. `store:default` exposes every store to both webviews — the settings store
-   holds `post_process_api_keys`, and the frontend never imports the store
-   plugin. Delete the grant.
 7. ~~Updater contradiction~~ **Resolved 2026-09-14, sign path:** the project's
    own key pair was generated and installed (private `~/.tauri/zer0.key`,
    public `plugins.updater.pubkey`), `createUpdaterArtifacts: true`, CI
    secrets wired (see Open decisions below).
-8. `locale()` is ACL-denied (no `os:default`) — first-run language detection
-   silently never works. Add `os:default` to capabilities.
 
 **Tailwind 4** (docs/vendor/tailwind/dark-mode.md, upgrade-guide.md):
 
@@ -75,22 +62,12 @@ asset: http://asset.localhost blob: data:; style-src 'self'
 
 **Bun** (docs/vendor/bun/test/\*, pm/cli/install.md):
 
-12. Replace `scripts/test-unit.ts` with documented `bun test`: `[test] root =
-"src"` in bunfig.toml, `"test:unit": "bun test --parallel"` (worker
-    processes, per-file isolation, CI annotations), wrap the four test files
-    in `test(...)` blocks, delete the script.
 13. Add `bun install --frozen-lockfile --dry-run` as a gate step ("lockfile in
     sync") so package.json↔bun.lock drift fails locally instead of on the
     7-platform CI matrix.
 
 ## Phase 1 — architecture and the native pipeline (high value, medium effort)
 
-14. **Live FFT frames → binary, not JSON events** (tauri/develop/
-    calling-frontend.md: "events are not designed for low latency or high
-    throughput"; calling-rust.md: ArrayBuffers/Channels). The page receives
-    `LiveFftFrameEvent { bins: Vec<f32> }` as JSON at up to 60 Hz. Mirror the
-    overlay's `overlay_scope_frame` machinery (or a `Channel<&[u8]>`) so
-    frames ride as raw bytes into a `Float32Array`.
 15. **Overlay scope: poll → push channel** (calling-rust.md streaming
     example). `Channel<&[u8]>` from a subscribe command deletes the 16 ms
     poll loop, the in-flight guard, and the bespoke `generate_handler!`
@@ -153,10 +130,7 @@ update-deps.ts queries; replace the batch deadline race. 31. CI: cache `~/.bun/i
 advertises the isolated-linker win; nothing warms it). 32. Standardize the node:child_process scripts on `Bun.spawnSync` / `$`;
 drop the win32 `shell:` toggles. Adopt `Bun.file().json()`, `Bun.write`,
 `Bun.Glob` opportunistically. Route update-deps' stable-mode NPM path
-through `bun outdated`. 33. Remove the dead `@tauri-apps/plugin-sql` dependency (frontend never
-imports it; no Rust plugin registered). 34. Capability hygiene: dedupe `autostart:default` ×3, drop unneeded
-`global-shortcut:*` / `macos-permissions:default` webview grants; split
-`recording_overlay` into its own minimal capability (core:default only). 35. Single-instance plugin first in the builder chain (plugin docs: "must be
+through `bun outdated`. 35. Single-instance plugin first in the builder chain (plugin docs: "must be
 the first one to be registered"). 36. Tooling: `fetch-stack-docs.ts` INDEX titles — extract each page's first
 heading instead of falling back to the repo name.
 
@@ -206,8 +180,7 @@ installs including `--cpu=arm64`.
 
 ## Execution order and verification
 
-Phase 0 first (each item independently gated by `bun run precommit`; CSP and
-asset-scope verified in dev AND bundle builds on Windows, both windows).
+Phase 0 first (each item independently gated by `bun run precommit`).
 Phase 1 items 16-18 verified with real recordings via the CDP harnesses
 (`bun tests/tauri-window.ts`, `bun tests/overlay-window.ts`) and the VAD
 probe; 38's WER measured before and after. Phase 2 lands as sweeps with a

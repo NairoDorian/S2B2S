@@ -16,8 +16,9 @@
  * | `src-tauri/icons/**` | an SVG handed to `tauri icon` | the bundler's own tool knows every size, and writes the ICO and ICNS containers itself |
  * | `src-tauri/resources/tray_*.png` | the SDF rasteriser in `scripts/lib/sdf.ts` | the tray needs exact pixel control: which ink for which OS theme, and a state badge punched out of the mark |
  *
- * The app icon is the *badge*: a white tile with an ink outline and the zero
- * struck through it, reading as one black-and-white glyph at any size. The
+ * The app icon is the *badge*: a near-black tile in the badge's own outline,
+ * with the zero struck through it drawn in white, reading as one
+ * black-and-white glyph at any size. The
  * tray icons are the *line drawing* alone, matching the sidebar's icons, with
  * a state badge in the corner while recording or transcribing.
  *

@@ -53,7 +53,7 @@ import { appEnvVar } from "./lib/env-flag";
  *
  * Prerelease clobber guard (step 4b): `bun update --latest` resolves the
  * `latest` dist-tag and rewrites package.json specs, silently downgrading
- * exact prerelease pins (e.g. `react-dom 19.3.0-canary-* -> 19.2.8`) and
+ * exact prerelease pins (e.g. `solid-js 2.0.0-rc.9 -> 1.x`) and
  * stripping range operators. After the transitive refresh, prerelease mode
  * re-runs `bun add <pkg>@<spec>` to restore EVERY prerelease pin in the
  * snapshot — whether or not this run targeted it.
@@ -354,6 +354,17 @@ interface DependencyStatus {
   holdReason?: string;
 }
 
+/**
+ * The `bun add` spec for an outdated NPM package: the exact resolved target in
+ * prerelease mode and for any held package (line pin or ceiling), `@latest`
+ * otherwise.
+ */
+function npmInstallSpec(s: DependencyStatus): string {
+  const exact =
+    PRERELEASE_MODE || s.linePin !== undefined || s.majorCeiling !== undefined;
+  return `${s.name}@${exact ? s.latestVersion : "latest"}`;
+}
+
 interface SubDepDiff {
   name: string;
   ecosystem: "NPM (Bun)" | "Cargo (Rust)";
@@ -512,6 +523,14 @@ async function fetchLatestNpmVersion(
       );
       if (response.ok) {
         const data = (await response.json()) as { version?: string };
+        // The ceiling holds in stable mode too: `latest` is exactly where a
+        // cross-major jump comes from (a new major of `@tauri-apps/*`).
+        if (
+          data.version &&
+          majorCeiling !== undefined &&
+          !isUnderCeiling(data.version, majorCeiling)
+        )
+          return null;
         return data.version && compareVersions(data.version, current) > 0
           ? data.version
           : null;
@@ -557,7 +576,25 @@ async function fetchLatestNpmVersion(
     // NPM_LINE_PINNED.
     const probedTags = linePin ? [linePin.tag] : PRERELEASE_TAGS;
 
-    let best: { version: string; publishedAt: string | null } | null = null;
+    type Candidate = { version: string; publishedAt: string | null };
+    // Ranking between two candidates: highest core first; for equal cores the
+    // later publish wins; lexical SemVer otherwise.
+    const beats = (a: Candidate, b: Candidate): boolean => {
+      const coreDiff = compareCores(a.version, b.version);
+      if (coreDiff !== 0) return coreDiff > 0;
+      if (
+        a.publishedAt !== null &&
+        b.publishedAt !== null &&
+        a.publishedAt !== b.publishedAt
+      ) {
+        return (
+          new Date(a.publishedAt).getTime() > new Date(b.publishedAt).getTime()
+        );
+      }
+      return compareVersions(a.version, b.version) > 0;
+    };
+
+    let best: Candidate | null = null;
     for (const tag of probedTags) {
       const candidate = tags[tag];
       const publishedAt = candidate ? (times[candidate] ?? null) : null;
@@ -570,26 +607,8 @@ async function fetchLatestNpmVersion(
       const ceiling = linePin ? [linePin.major] : (majorCeiling ?? undefined);
       if (ceiling !== undefined && !isUnderCeiling(candidate, ceiling))
         continue;
-      if (best === null) {
-        best = { version: candidate, publishedAt };
-        continue;
-      }
-      const coreDiff = compareCores(candidate, best.version);
-      let takeCandidate: boolean;
-      if (coreDiff !== 0) {
-        takeCandidate = coreDiff > 0;
-      } else if (
-        publishedAt !== null &&
-        best.publishedAt !== null &&
-        publishedAt !== best.publishedAt
-      ) {
-        takeCandidate =
-          new Date(publishedAt).getTime() >
-          new Date(best.publishedAt).getTime();
-      } else {
-        takeCandidate = compareVersions(candidate, best.version) > 0;
-      }
-      if (takeCandidate) best = { version: candidate, publishedAt };
+      const next = { version: candidate, publishedAt };
+      if (best === null || beats(next, best)) best = next;
     }
 
     // A line pin never falls back to `latest` — that fallback is precisely what
@@ -605,7 +624,16 @@ async function fetchLatestNpmVersion(
       latestTag !== null &&
       (majorCeiling === undefined || isUnderCeiling(latestTag, majorCeiling)) &&
       isStrictlyNewer(latestTag, times[latestTag] ?? null);
-    return best?.version ?? (latestOk ? latestTag : null);
+    if (!latestOk) return best?.version ?? null;
+    // A stale prerelease tag can still be strictly newer than `current` while
+    // `latest` has moved past it: rank the two with the same rule.
+    const latestCandidate = {
+      version: latestTag,
+      publishedAt: times[latestTag] ?? null,
+    };
+    return best === null || beats(latestCandidate, best)
+      ? latestTag
+      : best.version;
   } catch {
     return null;
   }
@@ -766,13 +794,16 @@ function parseBunInstalledVersions(): Record<string, string> {
   return map;
 }
 
+// No shell: every command here is `bun` or `cargo`, which resolve as
+// executables on every platform, and cmd.exe would eat the `^` / `<` / `>` of
+// a version spec such as `solid-js@^2.0.0-rc.1`.
 function runCmd(
   cmd: string,
   args: string[],
   cwd?: string,
 ): { success: boolean; durationMs: number } {
   const start = Date.now();
-  const res = spawnSync(cmd, args, { stdio: "inherit", shell: true, cwd });
+  const res = spawnSync(cmd, args, { stdio: "inherit", cwd });
   const durationMs = Date.now() - start;
   return { success: res.status === 0, durationMs };
 }
@@ -788,7 +819,7 @@ interface CapturedRun {
 /** Like runCmd, but captures output so callers can filter or diagnose it. */
 function runCaptured(cmd: string, args: string[], cwd?: string): CapturedRun {
   const start = Date.now();
-  const res = spawnSync(cmd, args, { encoding: "utf8", shell: true, cwd });
+  const res = spawnSync(cmd, args, { encoding: "utf8", cwd });
   return {
     success: res.status === 0,
     durationMs: Date.now() - start,
@@ -1066,7 +1097,7 @@ function printHeldNotes(allStatuses: readonly DependencyStatus[]): void {
         `    ${s.name} ${s.currentVersion}: stays on ${ceilingLabel(ceiling)}`,
       );
       // Only a named hold carries a reason; the prefix rule's reason is the
-      // paragraph above it, and printing it thirteen times would bury it.
+      // paragraph above it, and printing it once per package would bury it.
       if (s.holdReason !== undefined) console.log(`      ${s.holdReason}`);
     }
   }
@@ -1379,10 +1410,10 @@ async function updateEverything() {
       `📦 Step 1/7: Upgrading ${outdatedRuntime.length} Outdated NPM Runtime Dependencies...`,
     );
     // Stable mode pins @latest; prerelease mode pins the exact resolved target
-    // version (dist-tags are transient, exact versions are deterministic).
-    const targets = outdatedRuntime.map(
-      (s) => `${s.name}@${PRERELEASE_MODE ? s.latestVersion : "latest"}`,
-    );
+    // version (dist-tags are transient, exact versions are deterministic). A
+    // held package takes its resolved version in either mode: `@latest` is the
+    // 1.x major for `solid-js` and a cross-major jump for a ceilinged package.
+    const targets = outdatedRuntime.map(npmInstallSpec);
     const { success, durationMs } = runCmd("bun", ["add", ...targets]);
     if (!success) {
       console.error("❌ Error: NPM runtime dependency upgrade failed!");
@@ -1404,9 +1435,7 @@ async function updateEverything() {
     console.log(
       `🛠️ Step 2/7: Upgrading ${outdatedDev.length} Outdated NPM DevDependencies...`,
     );
-    const targets = outdatedDev.map(
-      (s) => `${s.name}@${PRERELEASE_MODE ? s.latestVersion : "latest"}`,
-    );
+    const targets = outdatedDev.map(npmInstallSpec);
     const { success, durationMs } = runCmd("bun", ["add", "-d", ...targets]);
     if (!success) {
       console.error("❌ Error: NPM devDependency upgrade failed!");
@@ -1563,7 +1592,7 @@ async function updateEverything() {
 
   // --- Step 4b: Re-pin Prerelease Pins (Clobber Guard) ---
   // `bun update --latest` resolves the `latest` dist-tag and REWRITES package.json
-  // specs (e.g. `react-dom 19.3.0-canary-d5736f09-20260507 -> 19.2.8`), silently
+  // specs (e.g. `solid-js 2.0.0-rc.9 -> 1.x`, its `latest` major), silently
   // downgrading ANY exact prerelease pin — including ones this run did not touch
   // — and stripping range operators. This restores every direct NPM dependency
   // whose snapshot spec is a prerelease.

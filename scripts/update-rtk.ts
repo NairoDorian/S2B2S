@@ -213,14 +213,16 @@ Flags:
   --help, -h    Show this usage.
 `;
 
-const flags = parseFlags(process.argv.slice(2));
-
-if (flags.help) {
-  console.log(HELP_TEXT);
-  process.exit(0);
-}
-
 const run = async (): Promise<void> => {
+  // Parsed inside run() so a bad flag reports through the same catch as every
+  // other failure.
+  const flags = parseFlags(process.argv.slice(2));
+
+  if (flags.help) {
+    console.log(HELP_TEXT);
+    return;
+  }
+
   if (flags.commit) {
     console.log(`Reinstalling RTK from the latest git commit (HEAD)...`);
     execSync(`cargo install --git ${GIT_URL} --force`, {

@@ -3,12 +3,12 @@
 // — no imports — and it must run before any page module.
 //
 // Why this is required at all: the app dies on its FIRST synchronous line
-// outside Tauri. `src/main.tsx:21` calls `platform()` from
+// outside Tauri. `src/main.tsx` calls `platform()` (top level) from
 // `@tauri-apps/plugin-os`, which reads `window.__TAURI_OS_PLUGIN_INTERNALS__`
 // — a global Tauri's build step injects into the webview. It is not an
 // `invoke`, so `@tauri-apps/api/mocks` does not provide it and no amount of
 // `mockIPC` will help. Without the global the module throws before
-// `createRoot(...).render(...)` is ever reached and `#root` stays empty.
+// Solid's `render(...)` is ever reached and `#root` stays empty.
 //
 // The `__TAURI_INTERNALS__` plumbing below mirrors the real
 // `@tauri-apps/api/mocks` `mockIPC` so behaviour matches what the app would
@@ -120,13 +120,13 @@
     get_app_settings: settings,
     get_default_settings: settings,
 
-    // The debug panel's log console polls the log file; the mock has no file,
-    // so the tail is empty and the console shows only what its live stream
-    // receives (which is nothing, without the plugin's webview target).
+    // The debug panel's log console polls `get_recent_logs` (there is no live
+    // log stream); the mock has no file, so the console stays empty.
     get_recent_logs: "",
     clear_logs: null,
 
-    // Persistence: the app also writes settings through tauri-plugin-store.
+    // Defensive only: the frontend never imports the store plugin (settings
+    // persist through typed commands), so nothing should reach these.
     "plugin:store|load": 1,
     "plugin:store|get": [null, false],
     "plugin:store|set": null,

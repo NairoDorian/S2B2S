@@ -252,4 +252,4 @@ const proc = Bun.spawnSync(
   },
 );
 
-process.exit(proc.exitCode ?? 0);
+process.exit(proc.exitCode ?? 1);
