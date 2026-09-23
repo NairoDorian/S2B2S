@@ -13,7 +13,8 @@ import { OverlayScopeGroup } from "./OverlayScopeGroup";
 
 export const OverlaySettings = () => {
   const { t } = useTranslation();
-  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const { getSetting, updateSetting, isUpdating, refreshSettings } =
+    useSettings();
   // Read inside the JSX: a body-level read would freeze at mount.
   const shown = () => (getSetting("overlay_style") ?? "live") !== "none";
 
@@ -120,7 +121,7 @@ export const OverlaySettings = () => {
             )
           }
           min={0}
-          max={20}
+          max={25}
           step={0.5}
           label={t("settings.overlay.window.cornerRadius.label")}
           description={t("settings.overlay.window.cornerRadius.description")}
@@ -145,7 +146,13 @@ export const OverlaySettings = () => {
                 try {
                   const result =
                     await commands.resetRecordingOverlayManualPosition();
-                  if (result.status === "error") toast.error(result.error);
+                  if (result.status === "error") {
+                    toast.error(result.error);
+                    return;
+                  }
+                  // The backend rewrites the store without emitting a
+                  // settings change, so pull the cleared flag back in.
+                  await refreshSettings();
                 } catch (error) {
                   toast.error(String(error));
                 }

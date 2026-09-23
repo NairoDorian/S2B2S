@@ -11,6 +11,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
+import { logCommandResult } from "./logCommandResult";
 import { sessionToast as toast } from "@/lib/sessionToast";
 
 interface GlobalShortcutInputProps {
@@ -41,7 +42,10 @@ export const GlobalShortcutInput = (props: GlobalShortcutInputProps) => {
   const startRecording = async (id: string) => {
     if (editingShortcutId() === id) return;
 
-    await commands.suspendAllBindings().catch(console.error);
+    await logCommandResult(
+      "Failed to suspend bindings",
+      commands.suspendAllBindings(),
+    );
 
     setOriginalBinding(bindings()[id]?.current_binding || "");
     setEditingShortcutId(id);
@@ -123,7 +127,10 @@ export const GlobalShortcutInput = (props: GlobalShortcutInputProps) => {
               }
             }
 
-            await commands.resumeAllBindings().catch(console.error);
+            await logCommandResult(
+              "Failed to resume bindings",
+              commands.resumeAllBindings(),
+            );
 
             setEditingShortcutId(null);
             setKeyPressed([]);
@@ -145,7 +152,10 @@ export const GlobalShortcutInput = (props: GlobalShortcutInputProps) => {
               toast.error(t("settings.general.shortcut.errors.restore"));
             }
           }
-          await commands.resumeAllBindings().catch(console.error);
+          await logCommandResult(
+            "Failed to resume bindings",
+            commands.resumeAllBindings(),
+          );
           setEditingShortcutId(null);
           setKeyPressed([]);
           setRecordedKeys([]);

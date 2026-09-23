@@ -35,6 +35,8 @@ import { Button } from "@/components/ui/Button";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import ProgressBar from "@/components/shared/ProgressBar";
 import { useSettings } from "@/hooks/useSettings";
+import { formatClockSeconds } from "@/lib/utils/format";
+import { revealPath } from "../revealPath";
 import {
   SUPPORTED_AUDIO_EXTENSIONS,
   isSupportedAudioPath,
@@ -59,15 +61,6 @@ const MODES: FileTranscriptionMode[] = [
   "multi_stt_post_process",
 ];
 
-const formatSeconds = (secs: number): string => {
-  const total = Math.max(0, Math.round(secs));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
-  return `${h > 0 ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
-};
-
 const STATUS_CLASSES: Record<FileJobStatus, string> = {
   queued: "bg-mid-gray/15 text-text/70 border-mid-gray/20",
   decoding: "bg-accent/15 text-text border-accent/30",
@@ -82,11 +75,6 @@ const STATUS_CLASSES: Record<FileJobStatus, string> = {
 
 const isBusy = (status: FileJobStatus) =>
   !isTerminalStatus(status) && status !== "queued";
-
-const reveal = async (path: string) => {
-  const result = await commands.revealPathInFileManager(path);
-  if (result.status === "error") toast.error(result.error);
-};
 
 interface QueueRowProps {
   item: QueueItem;
@@ -113,7 +101,8 @@ const QueueRow = (props: QueueRowProps) => {
   const meta = (): string[] => {
     const item = props.item;
     const parts: string[] = [];
-    if (item.audioSeconds != null) parts.push(formatSeconds(item.audioSeconds));
+    if (item.audioSeconds != null)
+      parts.push(formatClockSeconds(Math.round(item.audioSeconds)));
     if (item.elapsedMs != null && item.status === "done") {
       parts.push(
         t("settings.fileTranscription.result.took", {
@@ -214,7 +203,7 @@ const QueueRow = (props: QueueRowProps) => {
                   size="sm"
                   onClick={() => {
                     const path = props.item.outputPath;
-                    if (path) void reveal(path);
+                    if (path) void revealPath(path);
                   }}
                 >
                   <span class="inline-flex items-center gap-1">
@@ -416,7 +405,8 @@ export const FileTranscriptionSettings = () => {
             type="button"
             aria-label={t("settings.fileTranscription.dropZone.title")}
             onClick={pickFiles}
-            class={`w-full border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors bg-transparent block ${dragOver() ? "border-accent bg-accent/10" : "border-mid-gray/30 hover:border-accent/50 hover:bg-mid-gray/5"}`}
+            disabled={store.running}
+            class={`w-full border-2 border-dashed rounded-xl p-6 text-center cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors bg-transparent block ${dragOver() ? "border-accent bg-accent/10" : "border-mid-gray/30 hover:border-accent/50 hover:bg-mid-gray/5"}`}
           >
             <div class="flex flex-col items-center gap-2">
               <div

@@ -4,10 +4,9 @@ import RecordingOverlay from "./RecordingOverlay";
 import {
   applyTheme,
   getStoredTheme,
-  syncThemeFromSettings,
   applyAccentColor,
   getStoredAccentColor,
-  syncAccentColorFromSettings,
+  syncAppearanceFromSettings,
 } from "@/lib/utils/theme";
 import type { Theme } from "@/bindings";
 import { i18nReady } from "@/i18n";
@@ -17,9 +16,8 @@ import { i18nReady } from "@/i18n";
 // before render (shared localStorage) to avoid a flash, reconcile with the persisted
 // setting in case the overlay booted first, then follow live changes.
 applyTheme(getStoredTheme());
-syncThemeFromSettings();
 applyAccentColor(getStoredAccentColor());
-syncAccentColorFromSettings();
+void syncAppearanceFromSettings({ uiScale: false });
 
 listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
 listen<string>("accent-color-changed", (event) =>

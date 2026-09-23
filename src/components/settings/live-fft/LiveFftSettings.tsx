@@ -841,7 +841,6 @@ export const LiveFftSettings = () => {
           value={draft().display_max_hz}
           min={100}
           max={192000}
-          step={10}
           log
           unit="Hz"
           disabled={raw()}
@@ -897,7 +896,6 @@ export const LiveFftSettings = () => {
           value={draft().log_floor_hz}
           min={1}
           max={5000}
-          step={1}
           log
           unit="Hz"
           disabled={raw()}
@@ -927,7 +925,6 @@ export const LiveFftSettings = () => {
             value={draft().window_samples}
             min={1}
             max={65536}
-            step={1}
             log
             integer
             defaultValue={LIVE_FFT_DEFAULTS.window_samples}
@@ -940,7 +937,6 @@ export const LiveFftSettings = () => {
             value={draft().window_ms}
             min={0.1}
             max={5000}
-            step={0.1}
             log
             unit="ms"
             defaultValue={LIVE_FFT_DEFAULTS.window_ms}
@@ -1015,7 +1011,6 @@ export const LiveFftSettings = () => {
               value={draft().high_cutoff_hz}
               min={20}
               max={20000}
-              step={1}
               log
               unit="Hz"
               disabled={!draft().high_shelf}
@@ -1048,7 +1043,6 @@ export const LiveFftSettings = () => {
               value={draft().low_cutoff_hz}
               min={20}
               max={5000}
-              step={1}
               log
               unit="Hz"
               disabled={!draft().low_shelf}
@@ -1314,7 +1308,6 @@ export const LiveFftSettings = () => {
           value={draft().update_rate_hz}
           min={5}
           max={60}
-          step={1}
           integer
           unit="Hz"
           defaultValue={LIVE_FFT_DEFAULTS.update_rate_hz}

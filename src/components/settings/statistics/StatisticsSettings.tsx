@@ -350,9 +350,6 @@ export const StatisticsSettings = () => {
                     summary={stats().transcription_latency}
                     formatLatency={formatLatency}
                     formatNumber={formatNumber}
-                    unavailableDescription={t(
-                      "settings.statistics.metrics.transcription.description",
-                    )}
                   />
                   <LatencyCard
                     icon={WandSparkles}
@@ -494,7 +491,8 @@ interface LatencyCardProps {
   summary: DurationMetricSummary;
   formatLatency: (milliseconds: number) => string;
   formatNumber: (value: number) => string;
-  unavailableDescription: string;
+  /** Why no figures exist yet; omitted when the header already says it. */
+  unavailableDescription?: string;
 }
 
 const LatencyCard = (props: LatencyCardProps) => {
@@ -524,9 +522,11 @@ const LatencyCard = (props: LatencyCardProps) => {
             <p class="text-sm font-medium">
               {t("settings.statistics.latency.unavailable")}
             </p>
-            <p class="mt-1 text-xs text-mid-gray">
-              {props.unavailableDescription}
-            </p>
+            <Show when={props.unavailableDescription}>
+              <p class="mt-1 text-xs text-mid-gray">
+                {props.unavailableDescription}
+              </p>
+            </Show>
           </div>
         }
       >
@@ -571,7 +571,7 @@ const LoadingState = () => {
   const { t } = useTranslation();
 
   return (
-    <output class="flex min-h-64 flex-col items-center justify-center gap-3 text-center block">
+    <output class="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
       <LoaderCircle
         class="h-7 w-7 animate-spin text-accent"
         aria-hidden="true"

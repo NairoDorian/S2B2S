@@ -40,13 +40,12 @@ const AccessibilityPermissions = () => {
   onSettled(() => {
     if (!isMacOS) return;
 
-    const initialSetup = async (): Promise<void> => {
-      const hasPermissions: boolean = await checkPermissions();
+    // Unlike `checkPermissions`, a missing permission at mount means it was
+    // never requested: offer the request, not the verify step.
+    void checkAccessibilityPermission().then((hasPermissions) => {
       setHasAccessibility(hasPermissions);
       setPermissionState(hasPermissions ? "granted" : "request");
-    };
-
-    void initialSetup();
+    });
   });
 
   // The button's text and style must be read reactively: permissionState()

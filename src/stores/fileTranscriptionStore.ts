@@ -23,8 +23,7 @@ export const isSupportedAudioPath = (path: string): boolean => {
   return (SUPPORTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext);
 };
 
-export const fileNameOf = (path: string): string =>
-  path.split(/[/\\]/).pop() ?? path;
+const fileNameOf = (path: string): string => path.split(/[/\\]/).pop() ?? path;
 
 export interface QueueItem {
   path: string;
@@ -107,6 +106,12 @@ const fileTranscriptionState = createSolidStore<FileTranscriptionStore>(
       set({ initialized: true });
       await events.fileTranscriptionEvent.listen((event) => {
         const payload = event.payload;
+        // `start` marks the store running before the start command replies,
+        // and the job's first events (or all of them, for a job that fails at
+        // once) can arrive before that reply: adopt the job then.
+        if (get().jobId === null && get().running) {
+          set({ jobId: payload.job_id });
+        }
         if (payload.job_id !== get().jobId) return;
         if (payload.batch_finished) {
           set((state) => ({
@@ -165,14 +170,42 @@ const fileTranscriptionState = createSolidStore<FileTranscriptionStore>(
             ? item
             : { ...newItem(item.path), status: "queued" },
         ),
+        running: true,
+        jobId: null,
       }));
-      const result = await commands.startFileTranscription(
-        pending.map((item) => item.path),
-      );
+      let result: Awaited<ReturnType<typeof commands.startFileTranscription>>;
+      try {
+        result = await commands.startFileTranscription(
+          pending.map((item) => item.path),
+        );
+      } catch (error) {
+        set({ running: false });
+        throw error;
+      }
       if (result.status === "error") {
+        set({ running: false, jobId: null });
         return result.error;
       }
-      set({ running: true, jobId: result.data });
+      const jobId = result.data;
+      set({ jobId });
+      if (!get().running) return null; // batch_finished already arrived
+      // A job that finished before the reply may have emitted its last event
+      // before the listener could adopt it; the status command settles it.
+      try {
+        const status = await commands.getFileTranscriptionStatus();
+        if (status.job_id === jobId && !status.running && get().running) {
+          set((state) => ({
+            running: false,
+            items: state.items.map((item) =>
+              isTerminalStatus(item.status)
+                ? item
+                : { ...item, status: "queued" },
+            ),
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to read file transcription status:", error);
+      }
       return null;
     },
 

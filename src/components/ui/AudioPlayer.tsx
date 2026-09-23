@@ -210,8 +210,13 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
       } else {
         if (!loadedSrc() && props.onLoadRequest) {
           setIsLoading(true);
-          const newSrc = await props.onLoadRequest();
-          setIsLoading(false);
+          let newSrc: string | null;
+          try {
+            newSrc = await props.onLoadRequest();
+          } finally {
+            // A rejected load must not leave the button locked on "loading".
+            setIsLoading(false);
+          }
           if (newSrc) setLoadedSrc(newSrc);
         } else if (loadedSrc()) {
           await audio.play();

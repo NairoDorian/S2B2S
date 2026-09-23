@@ -29,7 +29,15 @@ export const BaseUrlField = (props: BaseUrlFieldProps): JSX.Element => {
       type="text"
       value={localValue()}
       onInput={(e) => setLocalValue(e.target.value)}
-      onBlur={() => props.onBlur(localValue())}
+      onBlur={() => {
+        // An emptied field is not saved (a custom provider needs a URL), so
+        // put the stored URL back instead of showing a blank that is not real.
+        if (!localValue().trim()) {
+          setLocalValue(props.value);
+          return;
+        }
+        props.onBlur(localValue());
+      }}
       placeholder={props.placeholder}
       variant="compact"
       disabled={props.disabled}

@@ -26,11 +26,14 @@ const DownloadProgressDisplay = (
   // Live reads: download progress updates continuously, so a body-level
   // snapshot of the maps would freeze the bar at its first value.
   const progressData = () =>
-    Object.entries(props.downloadProgress).map(([id, progress]) => ({
-      id: progress.model_id || id,
-      percentage: progress.percentage,
-      speed: props.downloadStats[progress.model_id]?.speed,
-    }));
+    Object.entries(props.downloadProgress).map(([id, progress]) => {
+      const key = progress.model_id || id;
+      return {
+        id: key,
+        percentage: progress.percentage,
+        speed: props.downloadStats[key]?.speed,
+      };
+    });
 
   return (
     <Show when={progressData().length > 0}>

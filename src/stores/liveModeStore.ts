@@ -117,6 +117,12 @@ const liveModeState = createSolidStore<LiveModeStore>((set, get) => ({
     const result = await commands.readTextFile(session.transcript_path);
     if (result.status === "ok") {
       set({ viewing: session, viewingText: result.data });
+    } else {
+      // Leave the viewer as it was rather than showing this session empty.
+      console.error(
+        `Failed to read live session transcript ${session.transcript_path}:`,
+        result.error,
+      );
     }
   },
 

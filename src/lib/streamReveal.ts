@@ -44,7 +44,7 @@ export const joinStreamText = (committed: string, tentative: string): string =>
  * `speed` is `overlay_direct_speed`.
  */
 export const revealStride = (remaining: number, speed: number): number => {
-  const threshold = Math.max(15, Math.round((speed || 50) * 0.6));
+  const threshold = Math.max(15, Math.round((speed || 30) * 0.6));
   return remaining > threshold * 2 ? 3 : remaining > threshold ? 2 : 1;
 };
 
@@ -75,6 +75,9 @@ export function advanceReveal(
     };
   }
 
+  // `full` does not extend what is shown, so text on screen was rewritten.
+  if (!backCorrection) return finishReveal(full);
+
   let common = 0;
   while (
     common < shown.length &&
@@ -83,14 +86,7 @@ export function advanceReveal(
   ) {
     common++;
   }
-  const rewroteOnScreen = common < shown.length;
-  return {
-    text: full,
-    revealed:
-      backCorrection && rewroteOnScreen
-        ? Math.min(full.length, common + stride)
-        : full.length,
-  };
+  return { text: full, revealed: Math.min(full.length, common + stride) };
 }
 
 /** Show all of `full` at once — the flush and the block-replace paths. */

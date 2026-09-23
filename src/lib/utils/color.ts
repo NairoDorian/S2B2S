@@ -15,7 +15,7 @@ export interface RGB {
 }
 
 /**
- * The four colours a single user-chosen accent resolves to.
+ * The three colours a single user-chosen accent resolves to.
  *
  * `light` and `dark` are the two theme variants of the accent itself, and
  * `backgroundUi` is the saturated tone the filled controls (buttons, toggles,

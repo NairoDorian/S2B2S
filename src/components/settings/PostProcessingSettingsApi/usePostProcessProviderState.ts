@@ -18,7 +18,6 @@ type PostProcessProviderState = {
   handleApiKeyChange: (value: string) => void;
   isApiKeyUpdating: Accessor<boolean>;
   model: Accessor<string>;
-  handleModelChange: (value: string) => void;
   modelOptions: Accessor<ModelOption[]>;
   isModelUpdating: Accessor<boolean>;
   isFetchingModels: Accessor<boolean>;
@@ -75,9 +74,11 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   });
 
   const handleProviderSelect = async (providerId: string) => {
-    setAppleIntelligenceUnavailable(false);
-
+    // Re-picking the current provider changes nothing, so it must not clear
+    // the Apple Intelligence warning either.
     if (providerId === selectedProviderId()) return;
+
+    setAppleIntelligenceUnavailable(false);
 
     if (providerId === APPLE_PROVIDER_ID) {
       const available = await commands.checkAppleIntelligenceAvailable();
@@ -115,13 +116,6 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     const trimmed = value.trim();
     if (trimmed !== apiKey()) {
       void updatePostProcessApiKey(selectedProviderId(), trimmed);
-    }
-  };
-
-  const handleModelChange = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed !== model()) {
-      void updatePostProcessModel(selectedProviderId(), trimmed);
     }
   };
 
@@ -184,7 +178,6 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     handleApiKeyChange,
     isApiKeyUpdating,
     model,
-    handleModelChange,
     modelOptions,
     isModelUpdating,
     isFetchingModels,

@@ -5,13 +5,11 @@ import { i18nReady } from "@/i18n";
 import {
   applyTheme,
   getStoredTheme,
-  syncThemeFromSettings,
   applyAccentColor,
   getStoredAccentColor,
-  syncAccentColorFromSettings,
   applyUiScale,
   getStoredUiScale,
-  syncUiScaleFromSettings,
+  syncAppearanceFromSettings,
 } from "@/lib/utils/theme";
 import { listen } from "@tauri-apps/api/event";
 import { useModelStore } from "./stores/modelStore";
@@ -25,11 +23,9 @@ document.documentElement.dataset.platform = platform();
 // first paint to avoid a flash of the wrong palette, then reconcile with the
 // persisted settings once they load.
 applyTheme(getStoredTheme());
-syncThemeFromSettings();
 applyAccentColor(getStoredAccentColor());
-syncAccentColorFromSettings();
 applyUiScale(getStoredUiScale());
-syncUiScaleFromSettings();
+void syncAppearanceFromSettings({ uiScale: true });
 
 // Load the model catalog and register its event listeners. The Models page
 // renders a spinner until `loading` clears, and `loading` only clears when this

@@ -143,7 +143,8 @@ const subscribeScope = (listener: ScopeListener, period: number) => {
     if (scopeFeed.listeners.size === 0) {
       if (scopeFeed.timer !== null) clearTimeout(scopeFeed.timer);
       scopeFeed.timer = null;
-      // A later recording restarts the scope's sequence: forget this one.
+      // The scope's sequence is process-wide and never restarts, so this is
+      // hygiene only: drop the last frame rather than repaint it next time.
       scopeFeed.knownSeq = null;
       scopeFeed.last = null;
     }
@@ -230,8 +231,8 @@ export function OverlayScope(props: OverlayScopeProps) {
   // element and never again — `RefCallback<T>` returns `void`, so there is no
   // unmount call to null these the way React's ref objects are nulled. Nothing
   // below depends on that: the guards ask the config what is being drawn (see
-  // the early return in the effect), and a handle left pointing at a detached
-  // canvas only ever paints into a canvas nobody can see.
+  // the context gates and the early return in the effect), so a handle left
+  // pointing at a detached canvas is never painted.
   let spectrum: HTMLCanvasElement | undefined;
   let wave: HTMLCanvasElement | undefined;
   let circular: HTMLCanvasElement | undefined;
@@ -252,8 +253,22 @@ export function OverlayScope(props: OverlayScopeProps) {
 
   createEffect(pollKey, () => {
     const bg = props.background;
-    const sctx = bg ? null : (spectrum?.getContext("2d") ?? null);
-    const wctx = bg ? null : (wave?.getContext("2d") ?? null);
+    const cfg0 = props.config;
+    // Gated on the config like the circular one: a view switched off leaves
+    // its handle on a detached canvas, and painting it would be wasted work.
+    // The standalone waveform is also absent while the wave is traced inside
+    // the block ring (`paintCircular` draws it there instead).
+    const waveStandalone =
+      cfg0.show_wave &&
+      !(
+        cfg0.wave_inside_circular &&
+        cfg0.show_circular &&
+        !cfg0.circular_background
+      );
+    const sctx =
+      bg || !cfg0.show_spectrum ? null : (spectrum?.getContext("2d") ?? null);
+    const wctx =
+      bg || !waveStandalone ? null : (wave?.getContext("2d") ?? null);
     const cctx =
       bg || (circular && props.config.show_circular)
         ? (circular?.getContext("2d") ?? null)
@@ -507,17 +522,13 @@ export function OverlayScope(props: OverlayScopeProps) {
       }
     };
 
-    // The circular spectrum, per the construction: the pooled bins are
-    // mirrored about their centre and joined end-to-end (`[p, reversed(p)]`
-    // — symmetric by construction), and that ONE mirrored signal is laid
-    // over the WHOLE circle — D = 2·p points across a full 2π sweep,
-    // starting and ending half a step either side of 3 o'clock (the right of
-    // the ring, canvas angle 0), where the spectrum's low edge meets its
-    // mirrored tail. The mirrored signal's
-    // own symmetry is what closes the loop without a seam. The two paths
-    // ±p ride at radius 1+p (outer) and 1-p (inner). The gain is a fixed
-    // scale — no dynamic normalisation — so the loop breathes with the
-    // signal instead of always filling the ring.
+    // The circular spectrum. Its construction — the A + B cross-sum of the
+    // pooled bins laid over the whole ring, the seam at 3 o'clock and the
+    // outer / inner branches — is described with `circularSignalAt`,
+    // `circularAngleAt` and the doc block above them in
+    // `lib/overlayScope.ts`. The gain is a fixed scale — no dynamic
+    // normalisation — so the loop breathes with the signal instead of always
+    // filling the ring.
     const paintCircular = (
       canvasEl: HTMLCanvasElement | undefined,
       ctx: CanvasRenderingContext2D | null,
@@ -660,9 +671,10 @@ export function OverlayScope(props: OverlayScopeProps) {
           ctx.globalAlpha = 0.85;
           ctx.lineWidth = 1;
           ctx.lineJoin = "round";
-          // Track the wave ceiling from the raw analyser samples — same
-          // source the linear waveform view reads — so the trace fills the
-          // ring's horizontal span for the loudest recent swing.
+          // Scaled to this frame's peak of the raw analyser samples — same
+          // source the linear waveform view reads — floored at
+          // `wave_gain_floor` so silence is not amplified. There is no
+          // decaying ceiling here: each frame fills the ring's span on its own.
           traceWave(
             ctx,
             samples,
@@ -698,12 +710,13 @@ export function OverlayScope(props: OverlayScopeProps) {
       }
       // Auto-gain: the trace fills the box for the loudest recent swing and
       // relaxes as the signal quiets, never amplifying below the floor.
-      // The intensity scale multiplies the raw samples before the peak search,
-      // so the trace swings taller without changing the view's pixel width.
+      // The ceiling tracks the unscaled peak and the intensity scale multiplies
+      // the gain after it, as in the ring trace, so the trace really swings
+      // taller (scaling before the peak search would cancel out in the gain).
       const wScale = props.config.wave_signal_scale;
       traceWave(wctx, frame.wave, 0, w, mid, (peak) => {
         waveCeiling = Math.max(
-          peak * Math.abs(wScale),
+          peak,
           waveCeiling * WAVE_CEILING_DECAY,
           props.config.wave_gain_floor,
         );

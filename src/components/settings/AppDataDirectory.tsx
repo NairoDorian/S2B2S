@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { commands } from "@/bindings";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { SettingContainer } from "../ui/SettingContainer";
 import { PathDisplay } from "../ui/PathDisplay";
 
@@ -41,9 +42,14 @@ export const AppDataDirectory = (props: AppDataDirectoryProps) => {
   const handleOpen = async () => {
     if (!appDirPath()) return;
     try {
-      await commands.openAppDataDir();
+      const result = await commands.openAppDataDir();
+      if (result.status === "error") {
+        console.error("Failed to open app data directory:", result.error);
+        toast.error(result.error);
+      }
     } catch (openError) {
       console.error("Failed to open app data directory:", openError);
+      toast.error(String(openError));
     }
   };
 

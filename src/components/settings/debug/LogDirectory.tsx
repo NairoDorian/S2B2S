@@ -1,6 +1,7 @@
 import { createSignal, createEffect } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { commands } from "@/bindings";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { PathDisplay } from "../../ui/PathDisplay";
 
@@ -41,9 +42,14 @@ export const LogDirectory = (props: LogDirectoryProps) => {
   const handleOpen = async () => {
     if (!logDir()) return;
     try {
-      await commands.openLogDir();
+      const result = await commands.openLogDir();
+      if (result.status === "error") {
+        console.error("Failed to open log directory:", result.error);
+        toast.error(result.error);
+      }
     } catch (openError) {
       console.error("Failed to open log directory:", openError);
+      toast.error(String(openError));
     }
   };
 

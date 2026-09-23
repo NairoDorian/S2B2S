@@ -71,24 +71,30 @@ export function resolveOverlayScope(
 const VIEW_GAP = 6;
 const BLOCK_PADDING = 8;
 
+/*
+ * The four view sizes floor, like settings.rs's `u32` division
+ * (`view_width * spectrum_scale / 100`): rounding here made the CSS block a
+ * pixel wider than the native window sized from the same numbers.
+ */
+
 /** Width of the linear spectrum view: base width × scale, in px. */
 export function spectrumViewW(cfg: ResolvedOverlayScope): number {
-  return Math.round((cfg.view_width * cfg.spectrum_scale) / 100);
+  return Math.floor((cfg.view_width * cfg.spectrum_scale) / 100);
 }
 
 /** Height of the linear spectrum view: base height × scale, in px. */
 export function spectrumViewH(cfg: ResolvedOverlayScope): number {
-  return Math.round((cfg.view_height * cfg.spectrum_scale) / 100);
+  return Math.floor((cfg.view_height * cfg.spectrum_scale) / 100);
 }
 
 /** Width of the waveform view: base width × scale, in px. */
 export function waveViewW(cfg: ResolvedOverlayScope): number {
-  return Math.round((cfg.view_width * cfg.wave_scale) / 100);
+  return Math.floor((cfg.view_width * cfg.wave_scale) / 100);
 }
 
 /** Height of the waveform view: base height × scale, in px. */
 export function waveViewH(cfg: ResolvedOverlayScope): number {
-  return Math.round((cfg.view_height * cfg.wave_scale) / 100);
+  return Math.floor((cfg.view_height * cfg.wave_scale) / 100);
 }
 
 /**

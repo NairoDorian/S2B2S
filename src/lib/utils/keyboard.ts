@@ -256,8 +256,10 @@ export function isSimulatableKey(token: string): boolean {
   const key = token.toLowerCase();
   if (SIMULATABLE_NAMED_KEYS.has(key)) return true;
   if (/^f([1-9]|1\d|2[0-4])$/.test(key)) return true;
-  // Single printable character (letters, digits, punctuation).
-  return [...key].length === 1;
+  // A single ASCII character (letters, digits, punctuation). `input.rs` only
+  // maps a one-*byte* token to a key, so a non-ASCII character (é, ß, ü) is
+  // rejected there and must be rejected here too.
+  return key.length === 1 && key.charCodeAt(0) < 0x80;
 }
 
 /**

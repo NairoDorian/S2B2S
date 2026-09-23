@@ -14,14 +14,14 @@ const DEFAULT_VAD_THRESHOLD = 0;
 const DEFAULT_VAD_GRACE_MS = 200;
 const P = "settings.advanced.noiseSuppressionParams";
 
+const percent = (v: number) => `${Math.round(v * 100)}%`;
+
 /**
  * The three things that shape RNNoise's output: its wet/dry strength, the
  * threshold on its own speech probability below which frames are muted, and
  * the grace period that keeps word endings. Each applies on the next frame,
  * mid-recording included, so the live meters show the change at once.
  */
-const percent = (v: number) => `${Math.round(v * 100)}%`;
-
 export const NoiseSuppressionParams = (
   props: NoiseSuppressionParamsProps,
 ): JSX.Element => {

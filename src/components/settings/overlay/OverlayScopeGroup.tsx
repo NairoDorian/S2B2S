@@ -21,7 +21,7 @@ const P = "settings.overlay.scope";
 
 /**
  * The picture the recording overlay draws of the microphone: which of the
- * two views to show, how the spectrum is drawn, how much raw audio the
+ * three views to show (spectrum, waveform, circular), how the spectrum is drawn, how much raw audio the
  * waveform covers and how it is faded and scaled, and the size of the views.
  * The analysis behind the spectrum (scale, window, EQ, weighting, dB, update
  * rate) is the Live FFT page's; this group only shapes the display.
@@ -132,7 +132,6 @@ export const OverlayScopeGroup = () => {
             value={draft().spectrum_scale}
             min={OVERLAY_SCOPE_LIMITS.viewScale.min}
             max={OVERLAY_SCOPE_LIMITS.viewScale.max}
-            step={5}
             integer
             defaultValue={OVERLAY_SCOPE_DEFAULTS.spectrum_scale}
             format={(v) => `${Math.round(v)}%`}
@@ -168,7 +167,6 @@ export const OverlayScopeGroup = () => {
             value={draft().wave_scale}
             min={OVERLAY_SCOPE_LIMITS.viewScale.min}
             max={OVERLAY_SCOPE_LIMITS.viewScale.max}
-            step={5}
             integer
             defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_scale}
             format={(v) => `${Math.round(v)}%`}
@@ -180,7 +178,6 @@ export const OverlayScopeGroup = () => {
             value={draft().wave_samples}
             min={OVERLAY_SCOPE_LIMITS.waveSamples.min}
             max={OVERLAY_SCOPE_LIMITS.waveSamples.max}
-            step={1}
             log
             integer
             defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_samples}
@@ -192,7 +189,6 @@ export const OverlayScopeGroup = () => {
             value={draft().wave_taper_samples}
             min={0}
             max={Math.floor(draft().wave_samples / 2)}
-            step={1}
             integer
             defaultValue={Math.min(
               OVERLAY_SCOPE_DEFAULTS.wave_taper_samples,
@@ -206,7 +202,6 @@ export const OverlayScopeGroup = () => {
             value={draft().wave_gain_floor}
             min={OVERLAY_SCOPE_LIMITS.waveGainFloor.min}
             max={OVERLAY_SCOPE_LIMITS.waveGainFloor.max}
-            step={0.001}
             log
             defaultValue={OVERLAY_SCOPE_DEFAULTS.wave_gain_floor}
             format={(v) => `${(20 * Math.log10(v)).toFixed(0)} dBFS`}
@@ -252,7 +247,6 @@ export const OverlayScopeGroup = () => {
               value={draft().circular_size}
               min={OVERLAY_SCOPE_LIMITS.circularSize.min}
               max={OVERLAY_SCOPE_LIMITS.circularSize.max}
-              step={2}
               log
               integer
               unit="px"
@@ -275,7 +269,6 @@ export const OverlayScopeGroup = () => {
             value={draft().circular_bins}
             min={OVERLAY_SCOPE_LIMITS.circularBins.min}
             max={OVERLAY_SCOPE_LIMITS.circularBins.max}
-            step={1}
             log
             integer
             defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_bins}
@@ -287,7 +280,6 @@ export const OverlayScopeGroup = () => {
             value={draft().circular_gain}
             min={OVERLAY_SCOPE_LIMITS.circularGain.min}
             max={OVERLAY_SCOPE_LIMITS.circularGain.max}
-            step={0.05}
             log
             defaultValue={OVERLAY_SCOPE_DEFAULTS.circular_gain}
             format={(v) => `${v.toFixed(2)}×`}
@@ -343,7 +335,6 @@ export const OverlayScopeGroup = () => {
             value={draft().view_width}
             min={OVERLAY_SCOPE_LIMITS.viewWidth.min}
             max={OVERLAY_SCOPE_LIMITS.viewWidth.max}
-            step={1}
             integer
             unit="px"
             defaultValue={OVERLAY_SCOPE_DEFAULTS.view_width}
@@ -355,7 +346,6 @@ export const OverlayScopeGroup = () => {
             value={draft().view_height}
             min={OVERLAY_SCOPE_LIMITS.viewHeight.min}
             max={OVERLAY_SCOPE_LIMITS.viewHeight.max}
-            step={1}
             integer
             unit="px"
             defaultValue={OVERLAY_SCOPE_DEFAULTS.view_height}

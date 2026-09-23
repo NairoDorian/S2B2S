@@ -44,6 +44,26 @@ const hasWindowsMicrophoneAccess = async (): Promise<boolean> => {
   return microphoneStatus.overall_access !== "denied";
 };
 
+/**
+ * Brings up keyboard simulation and the global shortcuts once accessibility is
+ * granted. Both commands report failure as a result rather than a rejection,
+ * so each result is inspected; a failure is logged and never blocks onboarding.
+ */
+const initializeAfterAccessibilityGrant = async (): Promise<void> => {
+  try {
+    const [enigo, shortcuts] = await Promise.all([
+      commands.initializeEnigo(),
+      commands.initializeShortcuts(),
+    ]);
+    if (enigo.status === "error")
+      console.warn("Failed to initialize keyboard simulation:", enigo.error);
+    if (shortcuts.status === "error")
+      console.warn("Failed to initialize shortcuts:", shortcuts.error);
+  } catch (e) {
+    console.warn("Failed to initialize after permission grant:", e);
+  }
+};
+
 const AccessibilityOnboarding = (props: AccessibilityOnboardingProps) => {
   const { t } = useTranslation();
   const settingsStore = useSettingsStore();
@@ -116,12 +136,7 @@ const AccessibilityOnboarding = (props: AccessibilityOnboardingProps) => {
 
           if (accessibilityGranted && prev.accessibility !== "granted") {
             newState.accessibility = "granted";
-            Promise.all([
-              commands.initializeEnigo(),
-              commands.initializeShortcuts(),
-            ]).catch((e) => {
-              console.warn("Failed to initialize after permission grant:", e);
-            });
+            void initializeAfterAccessibilityGrant();
           }
 
           if (microphoneGranted && prev.microphone !== "granted") {
@@ -189,14 +204,7 @@ const AccessibilityOnboarding = (props: AccessibilityOnboardingProps) => {
             );
 
             if (accessibilityGranted) {
-              try {
-                await Promise.all([
-                  commands.initializeEnigo(),
-                  commands.initializeShortcuts(),
-                ]);
-              } catch (e) {
-                console.warn("Failed to initialize after permission grant:", e);
-              }
+              await initializeAfterAccessibilityGrant();
             }
 
             const newState: PermissionsState = {
@@ -276,7 +284,8 @@ const AccessibilityOnboarding = (props: AccessibilityOnboardingProps) => {
 
     try {
       if (isWindows()) {
-        await commands.openMicrophonePrivacySettings();
+        const result = await commands.openMicrophonePrivacySettings();
+        if (result.status === "error") throw new Error(result.error);
       } else {
         await requestMicrophonePermission();
       }

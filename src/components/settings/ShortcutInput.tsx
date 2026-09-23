@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import { useSettings } from "../../hooks/useSettings";
 import { GlobalShortcutInput } from "./GlobalShortcutInput";
 import { NativeKeysShortcutInput } from "./NativeKeysShortcutInput";
@@ -15,23 +16,18 @@ interface ShortcutInputProps {
  * Wrapper component that selects the appropriate shortcut input implementation
  * based on the keyboard_implementation setting.
  *
- * - "tauri" (default): Uses GlobalShortcutInput with JS keyboard events
- * - "handy_keys": Uses NativeKeysShortcutInput with backend key events
+ * - "handy_keys" (the default on Windows and macOS): NativeKeysShortcutInput
+ *   with backend key events
+ * - "tauri" (the default on Linux): GlobalShortcutInput with JS keyboard events
+ *
+ * The setting is read reactively, so switching the backend on the Advanced
+ * page swaps the recorder without a remount.
  *
  * The wrapper carries a stable `shortcut-<id>` element id so the hotkey
  * sidebar and Help links can scroll to and highlight this control.
  */
 export const ShortcutInput = (props: ShortcutInputProps): JSX.Element => {
   const { getSetting } = useSettings();
-  const keyboardImplementation = getSetting("keyboard_implementation");
-
-  // Default to Tauri implementation if not set
-  const input =
-    keyboardImplementation === "handy_keys" ? (
-      <NativeKeysShortcutInput {...props} />
-    ) : (
-      <GlobalShortcutInput {...props} />
-    );
 
   return (
     <div
@@ -39,7 +35,12 @@ export const ShortcutInput = (props: ShortcutInputProps): JSX.Element => {
       tabindex={-1}
       class="settings-anchor rounded-lg focus:outline-none"
     >
-      {input}
+      <Show
+        when={getSetting("keyboard_implementation") === "handy_keys"}
+        fallback={<GlobalShortcutInput {...props} />}
+      >
+        <NativeKeysShortcutInput {...props} />
+      </Show>
     </div>
   );
 };

@@ -15,7 +15,6 @@ import {
   X,
 } from "@/components/icons/lucide";
 import {
-  commands,
   type LiveModePhase,
   type LiveModeSettings as LiveModeSettingsType,
   type LiveSessionInfo,
@@ -32,6 +31,8 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { useSettings } from "@/hooks/useSettings";
+import { formatClockSeconds } from "@/lib/utils/format";
+import { revealPath } from "../revealPath";
 import { useModelStore } from "@/stores/modelStore";
 import { isLiveActive, useLiveModeStore } from "@/stores/liveModeStore";
 import { formatDateTime } from "@/utils/dateFormat";
@@ -45,14 +46,7 @@ const DEFAULTS: Required<LiveModeSettingsType> = {
   prefer_silence_boundary: true,
 };
 
-const formatClock = (ms: number): string => {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
-  return `${h > 0 ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
-};
+const formatClock = (ms: number): string => formatClockSeconds(ms / 1000);
 
 const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -67,11 +61,6 @@ const PHASE_CLASSES: Record<LiveModePhase, string> = {
   rotating: "bg-accent/20 text-text border-accent/40",
   stopping: "bg-accent/15 text-text border-accent/30",
   error: "bg-red-500/15 text-red-400 border-red-500/30",
-};
-
-const reveal = async (path: string) => {
-  const result = await commands.revealPathInFileManager(path);
-  if (result.status === "error") toast.error(result.error);
 };
 
 export const LiveModeSettings = () => {
@@ -336,7 +325,7 @@ export const LiveModeSettings = () => {
                 size="sm"
                 onClick={() => {
                   const dir = sessionDir();
-                  if (dir) void reveal(dir);
+                  if (dir) void revealPath(dir);
                 }}
               >
                 <span class="inline-flex items-center gap-1">
@@ -393,7 +382,7 @@ export const LiveModeSettings = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => reveal(chunk.path as string)}
+                          onClick={() => revealPath(chunk.path as string)}
                           aria-label={t("settings.liveMode.transcript.reveal")}
                           title={t("settings.liveMode.transcript.reveal")}
                         >
@@ -591,7 +580,7 @@ export const LiveModeSettings = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => reveal(session.dir)}
+                        onClick={() => revealPath(session.dir)}
                         aria-label={t("settings.liveMode.transcript.reveal")}
                         title={t("settings.liveMode.transcript.reveal")}
                       >

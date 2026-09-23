@@ -7,6 +7,7 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
+import { logCommandResult } from "./logCommandResult";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SECURE_INPUT_HELP_URL } from "../SecureInputWarning";
@@ -54,7 +55,10 @@ export const NativeKeysShortcutInput = (
       unlistenRef = null;
     }
 
-    await commands.stopNativeKeysRecording().catch(console.error);
+    await logCommandResult(
+      "Failed to stop key recording",
+      commands.stopNativeKeysRecording(),
+    );
 
     if (originalBinding()) {
       try {
@@ -105,7 +109,10 @@ export const NativeKeysShortcutInput = (
             unlistenRef();
             unlistenRef = null;
           }
-          await commands.stopNativeKeysRecording().catch(console.error);
+          await logCommandResult(
+            "Failed to stop key recording",
+            commands.stopNativeKeysRecording(),
+          );
           setIsRecording(false);
           setCurrentKeys("");
           keyedShortcutRef = "";
@@ -159,7 +166,10 @@ export const NativeKeysShortcutInput = (
           unlistenRef();
           unlistenRef = null;
         }
-        commands.stopNativeKeysRecording().catch(console.error);
+        void logCommandResult(
+          "Failed to stop key recording",
+          commands.stopNativeKeysRecording(),
+        );
       };
     },
   );

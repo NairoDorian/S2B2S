@@ -52,7 +52,7 @@ const PostProcessingSettingsApiComponent = (): JSX.Element => {
         ) : null
       ) : (
         <>
-          {state.selectedProvider()?.id === "custom" && (
+          {state.isCustomProvider() && (
             <SettingContainer
               title={t("settings.postProcessing.api.baseUrl.title")}
               description={t("settings.postProcessing.api.baseUrl.description")}
@@ -123,7 +123,6 @@ const PostProcessingSettingsApiComponent = (): JSX.Element => {
               }
               onSelect={state.handleModelSelect}
               onCreate={state.handleModelCreate}
-              onBlur={() => {}}
               className="flex-1 min-w-[380px]"
             />
             <ResetButton
@@ -376,7 +375,7 @@ const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
 
         {isCreating() && (
           <div class="space-y-3">
-            <div class="space-y-2 block flex flex-col">
+            <div class="space-y-2 flex flex-col">
               <label class="text-sm font-semibold text-text">
                 {t("settings.postProcessing.prompts.promptLabel")}
               </label>
@@ -433,14 +432,6 @@ const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
   );
 };
 
-export const PostProcessingSettingsApi = (): JSX.Element => {
-  return <PostProcessingSettingsApiComponent />;
-};
-
-export const PostProcessingSettingsPrompts = (): JSX.Element => {
-  return <PostProcessingSettingsPromptsComponent />;
-};
-
 export const PostProcessingSettings = (): JSX.Element => {
   const { t } = useTranslation();
 
@@ -455,11 +446,11 @@ export const PostProcessingSettings = (): JSX.Element => {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.postProcessing.api.title")}>
-        <PostProcessingSettingsApi />
+        <PostProcessingSettingsApiComponent />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
-        <PostProcessingSettingsPrompts />
+        <PostProcessingSettingsPromptsComponent />
       </SettingsGroup>
     </div>
   );

@@ -11,7 +11,7 @@ type ModelSelectProps = {
   isLoading?: boolean;
   onSelect: (value: string) => void;
   onCreate: (value: string) => void;
-  onBlur: () => void;
+  onBlur?: () => void;
   className?: string;
 };
 
@@ -31,7 +31,7 @@ export const ModelSelect = (props: ModelSelectProps): JSX.Element => {
       options={props.options}
       onChange={(selected) => props.onSelect(selected ?? "")}
       onCreateOption={handleCreate}
-      onBlur={() => props.onBlur()}
+      onBlur={() => props.onBlur?.()}
       placeholder={props.placeholder}
       disabled={props.disabled}
       isLoading={props.isLoading}

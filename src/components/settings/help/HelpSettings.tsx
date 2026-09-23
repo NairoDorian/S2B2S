@@ -39,12 +39,6 @@ const ALL_ENTRIES: readonly HelpEntryDefinition[] = HELP_SECTIONS.flatMap(
   (section) => [section, ...(section.subsections ?? [])],
 );
 
-/**
- * In-app Help: goal cards, a search box, a table of contents and one block
- * per feature, each with a button into the page that configures it. Adapted
- * from the AIVORelay fork's Help page; the copy is this fork's. Search runs
- * over the translated title and summary, so it follows the app language.
- */
 const pendingHelpAnchor = () => useNavigationStore().pendingHelpAnchor;
 
 const scrollToAnchor = (anchor: string) => {
@@ -52,6 +46,12 @@ const scrollToAnchor = (anchor: string) => {
   if (heading) scrollAndFocusAnchor(heading);
 };
 
+/**
+ * In-app Help: goal cards, a search box, a table of contents and one block
+ * per feature, each with a button into the page that configures it. Adapted
+ * from the AIVORelay fork's Help page; the copy is this fork's. Search runs
+ * over the translated title and summary, so it follows the app language.
+ */
 export const HelpSettings = () => {
   const { t } = useTranslation();
   const [query, setQuery] = createSignal("");

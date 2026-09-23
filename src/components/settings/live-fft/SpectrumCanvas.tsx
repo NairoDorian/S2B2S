@@ -302,6 +302,12 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
           ctx.textAlign = "center";
           ctx.fillText(p.labels.idle, plotX + plotW / 2, plotY + plotH / 2);
           ctx.globalAlpha = 1;
+          // No frame, nothing under the cursor: drop a readout left over from
+          // the last frame so it does not outlive the stream.
+          if (lastHoverInfo !== null) {
+            lastHoverInfo = null;
+            p.onHover?.(null);
+          }
           return;
         }
 

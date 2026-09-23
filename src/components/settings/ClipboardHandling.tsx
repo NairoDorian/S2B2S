@@ -13,7 +13,8 @@ export const ClipboardHandlingSetting = (props: ClipboardHandlingProps) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
 
-  const clipboardHandlingOptions = [
+  // A function, so the labels follow a language change.
+  const clipboardHandlingOptions = () => [
     {
       value: "dont_modify",
       label: t("settings.advanced.clipboardHandling.options.dontModify"),
@@ -32,7 +33,7 @@ export const ClipboardHandlingSetting = (props: ClipboardHandlingProps) => {
       grouped={props.grouped}
     >
       <Dropdown
-        options={clipboardHandlingOptions}
+        options={clipboardHandlingOptions()}
         selectedValue={
           (getSetting("clipboard_handling") ||
             "dont_modify") as ClipboardHandling

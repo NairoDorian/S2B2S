@@ -87,6 +87,10 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
             setModelStatus(
               statusResult.data === current ? "ready" : "unloaded",
             );
+          } else {
+            console.error("Failed to check model status:", statusResult.error);
+            setModelStatus("error");
+            setModelError(t("modelSelector.errors.checkStatusFailed"));
           }
         })
         .catch(() => {
@@ -103,6 +107,9 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   createEffect(
     () => undefined,
     () => {
+      // The post-download auto-select waits 500 ms; a timer still pending at
+      // unmount must not switch the model behind a component that is gone.
+      const autoSelectTimers = new Set<ReturnType<typeof setTimeout>>();
       const modelStateUnlisten = listen<ModelStateEvent>(
         "model-state-changed",
         (event) => {
@@ -139,7 +146,8 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
             next.delete(modelId);
             return next;
           });
-          setTimeout(async () => {
+          const timer = setTimeout(async () => {
+            autoSelectTimers.delete(timer);
             try {
               const isRecording = await commands.isRecording();
               if (!isRecording) {
@@ -150,9 +158,12 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
               }
             } catch {}
           }, 500);
+          autoSelectTimers.add(timer);
         },
       );
       return () => {
+        for (const timer of autoSelectTimers) clearTimeout(timer);
+        autoSelectTimers.clear();
         modelStateUnlisten.then((fn) => fn());
         downloadCompleteUnlisten.then((fn) => fn());
       };
@@ -313,10 +324,10 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       if (verifyingKeys.length === 1) {
         const modelId = verifyingKeys[0];
         const model = modelStore.models.find((m) => m.id === modelId);
-        const modelName = model
-          ? getTranslatedModelName(model, t)
-          : t("modelSelector.verifyingGeneric").replace("...", "");
-        return t("modelSelector.verifying", { modelName });
+        if (!model) return t("modelSelector.verifyingGeneric");
+        return t("modelSelector.verifying", {
+          modelName: getTranslatedModelName(model, t),
+        });
       } else {
         return t("modelSelector.verifyingGeneric");
       }
@@ -409,9 +420,10 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           isDropdownOpen={openPanel() === "model"}
           onClick={() => togglePanel("model")}
           // The box marks the loaded model as R2T2 — selected *and* ready, the
-          // two halves of "active". `getDisplayText` only returns the model's own
-          // name in the `ready` case, so gating on it keeps the box on a name and
-          // never on a "downloading 42%" line.
+          // two halves of "active". `getDisplayStatus()` is `ready` only when no
+          // model is verifying or downloading, which is exactly when
+          // `getModelDisplayText` shows the model's own name, so gating on it
+          // keeps the box on a name and never on a "downloading 42%" line.
           highlight={isChunkMsKind() && getDisplayStatus() === "ready"}
         />
         <Show when={openPanel() === "model"}>

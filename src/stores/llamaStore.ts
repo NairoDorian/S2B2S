@@ -13,6 +13,9 @@ import { useTranslation } from "@/i18n/useTranslation";
 
 const { t } = useTranslation();
 
+/** Sequence number of the newest command-preview request. */
+let previewRequest = 0;
+
 /**
  * In-app llama.cpp server: supervised state (pushed by the backend), logs
  * (pulled only while the page shows them), release list and installs.
@@ -116,7 +119,11 @@ const llamaState = createSolidStore<LlamaStore>((set, get) => ({
   },
 
   refreshPreview: async () => {
+    // Asked for on every keystroke and answered from the blocking pool, so
+    // replies can arrive out of order: only the newest request may paint.
+    const request = ++previewRequest;
     const result = await commands.getLlamaCommandPreview();
+    if (request !== previewRequest) return;
     if (result.status === "ok") {
       set({ commandPreview: result.data, commandError: null });
     } else {

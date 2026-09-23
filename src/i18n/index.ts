@@ -11,7 +11,7 @@ import {
 
 // Auto-discover translation files using Vite's glob import. Deliberately not
 // `eager`: each locale is its own chunk, imported the first time that language
-// is used. Eager bundling put all 26 files (2.1 MB of JSON) into the chunk
+// is used. Eager bundling put all 26 files (~2.9 MB of JSON) into the chunk
 // both windows parse at startup, for the one language that is ever read.
 const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
   "./locales/*/translation.json",
@@ -145,15 +145,19 @@ const initialized = i18n.use(lazyLocaleBackend).init({
   },
 });
 
-// Sync language from app settings
-export const syncLanguageFromSettings = async () => {
+/**
+ * Switch to `appLanguage` (the settings' `app_language`), or to the system
+ * locale when it is unset. For a caller that already holds the settings, so
+ * it does not have to fetch them a second time.
+ */
+export const applyPreferredLanguage = async (
+  appLanguage: string | null | undefined,
+) => {
   try {
-    const result = await commands.getAppSettings();
     const preferred =
-      result.status === "ok" && result.data.app_language
-        ? result.data.app_language
-        : // Fall back to system locale detection if no saved preference
-          await locale();
+      appLanguage ||
+      // Fall back to system locale detection if no saved preference
+      (await locale());
     const supported = getSupportedLanguage(preferred);
     // init() switches to the default language once that bundle has loaded.
     // Wait for it so its switch can never land after ours and so `i18nReady`
@@ -167,6 +171,19 @@ export const syncLanguageFromSettings = async () => {
   }
 };
 
+// Sync language from app settings
+export const syncLanguageFromSettings = async () => {
+  let appLanguage: string | null = null;
+  try {
+    const result = await commands.getAppSettings();
+    if (result.status === "ok") appLanguage = result.data.app_language || null;
+  } catch (e) {
+    console.warn("Failed to sync language from settings:", e);
+    return;
+  }
+  await applyPreferredLanguage(appLanguage);
+};
+
 // Run language sync on init. Both windows wait for this before their first
 // render, so the first paint is already in the user's language.
 export const i18nReady: Promise<void> = syncLanguageFromSettings();
@@ -177,8 +194,5 @@ i18n.on("languageChanged", (lng) => {
   updateDocumentDirection(dir);
   updateDocumentLanguage(lng);
 });
-
-// Re-export RTL utilities for convenience
-export { getLanguageDirection, isRTLLanguage } from "@/lib/utils/rtl";
 
 export default i18n;

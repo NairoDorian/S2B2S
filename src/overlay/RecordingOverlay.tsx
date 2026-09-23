@@ -32,7 +32,7 @@ import type {
   StreamTextEvent,
   StreamWorkKind,
 } from "@/bindings";
-import { syncLanguageFromSettings } from "@/i18n";
+import { applyPreferredLanguage } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 import { OverlayScope } from "./OverlayScope";
 import {
@@ -219,6 +219,11 @@ const RecordingOverlay = () => {
   // The merged block's watermark, on the same terms.
   let publishedMerge: StreamTextEvent = { committed: "", tentative: "" };
   let typewriterTimer: ReturnType<typeof setInterval> | null = null;
+  // Bumped by every show-overlay and hide-overlay. The show handler awaits
+  // settings I/O before it makes the overlay visible; a hide (or a newer
+  // show) arriving meanwhile makes that continuation stale, and it returns
+  // instead of undoing the later event.
+  let showGeneration = 0;
 
   // Drag-grip state (see AIVORelay's recording-overlay position memory pattern).
   // These are plain variables — not reactive — because nothing renders from them
@@ -351,6 +356,7 @@ const RecordingOverlay = () => {
     const setupEventListeners = async () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
         const overlayState = event.payload as OverlayState;
+        const generation = ++showGeneration;
         // Reset synchronously before settings I/O. A fast microphone can emit
         // recording-ready while the awaits below are in flight; resetting after
         // them would overwrite that event and leave the overlay stuck arming.
@@ -372,11 +378,15 @@ const RecordingOverlay = () => {
           reportedHeight = -1;
         }
 
-        await syncLanguageFromSettings();
+        // One settings read serves both the language and the layout below.
         // The Live panel flows downward from a top overlay and upward from a
         // bottom one; read the placement so the layout can flip to match.
         try {
           const settings = await commands.getAppSettings();
+          await applyPreferredLanguage(
+            settings.status === "ok" ? settings.data.app_language : null,
+          );
+          if (generation !== showGeneration) return;
           if (settings.status === "ok") {
             setPosition(
               settings.data.overlay_position === "top" ? "top" : "bottom",
@@ -393,6 +403,7 @@ const RecordingOverlay = () => {
         } catch {
           // Keep the previous/default placement if settings can't be read.
         }
+        if (generation !== showGeneration) return;
         setState(overlayState);
         if (overlayState === "streaming") {
           setPhase("listening");
@@ -404,6 +415,7 @@ const RecordingOverlay = () => {
       });
 
       const unlistenHide = await listen("hide-overlay", () => {
+        showGeneration++;
         setIsVisible(false);
         setCaptureReady(false);
         stopTypewriter();
@@ -738,9 +750,19 @@ const RecordingOverlay = () => {
       clearTimeout(dragGripSaveTimer);
       dragGripSaveTimer = null;
     }
-    commands.rememberRecordingOverlayWindowPosition(xPx, yPx).catch((error) => {
-      console.error("Failed to remember recording overlay position:", error);
-    });
+    commands
+      .rememberRecordingOverlayWindowPosition(xPx, yPx)
+      .then((result) => {
+        if (result.status === "error") {
+          console.error(
+            "Failed to remember recording overlay position:",
+            result.error,
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to remember recording overlay position:", error);
+      });
   };
 
   const handleDragGripPointerDown = (event: PointerEvent) => {

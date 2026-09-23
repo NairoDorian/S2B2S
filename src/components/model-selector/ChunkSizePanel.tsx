@@ -1,4 +1,4 @@
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
 
@@ -56,10 +56,6 @@ export const ChunkSizePanel = (props: ChunkSizePanelProps): JSX.Element => {
     setDraft(null);
     if (next !== props.selected) props.onSelect(next);
   };
-
-  // A drag that ends outside the panel still commits on release, but if the
-  // component unmounts mid-gesture we must not keep a dangling draft.
-  onCleanup(() => setDraft(null));
 
   const step = (delta: number) => commit(value() + delta);
 

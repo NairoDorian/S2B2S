@@ -218,7 +218,8 @@ const liveFftState = createSolidStore<LiveFftStore>((set) => {
     currentStatus = status;
     set({ status });
     if (!wasActive && isFftActive(status)) {
-      // A new session numbers its frames from scratch.
+      // Frame seqs are process-wide and never restart, so an old seq can
+      // never match a new frame; forgetting it is hygiene only.
       knownSeq = null;
     }
     syncPoll();

@@ -1,4 +1,11 @@
-import { createSignal, createEffect, createMemo, untrack } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  For,
+  Show,
+  untrack,
+} from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
@@ -21,8 +28,7 @@ import {
   supportsLanguageCode,
 } from "@/lib/constants/languages.ts";
 import { commands, type ArchPluginInfo, type ModelInfo } from "@/bindings";
-import { For } from "solid-js";
-import { Show } from "solid-js";
+import { sessionToast as toast } from "@/lib/sessionToast";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -164,13 +170,19 @@ export const ModelsSettings = () => {
     return stats?.speed;
   };
 
+  // The store's actions never throw: a failure returns false and leaves its
+  // message in `store.error`, which this page otherwise never shows.
+  const reportStoreError = (context: string) => {
+    const message = untrack(() => store.error);
+    console.error(`${context}:`, message);
+    if (message) toast.error(message);
+  };
+
   const handleModelSelect = async (modelId: string) => {
     setSwitchingModelId(modelId);
-    try {
-      await selectModel(modelId);
-    } finally {
-      setSwitchingModelId(null);
-    }
+    const ok = await selectModel(modelId);
+    setSwitchingModelId(null);
+    if (!ok) reportStoreError(`Failed to switch to model ${modelId}`);
   };
 
   const handleModelDownload = async (modelId: string) => {
@@ -192,20 +204,14 @@ export const ModelsSettings = () => {
       },
     );
 
-    if (confirmed) {
-      try {
-        await deleteModel(modelId);
-      } catch (err) {
-        console.error(`Failed to delete model ${modelId}:`, err);
-      }
+    if (confirmed && !(await deleteModel(modelId))) {
+      reportStoreError(`Failed to delete model ${modelId}`);
     }
   };
 
   const handleModelCancel = async (modelId: string) => {
-    try {
-      await cancelDownload(modelId);
-    } catch (err) {
-      console.error(`Failed to cancel download for ${modelId}:`, err);
+    if (!(await cancelDownload(modelId))) {
+      reportStoreError(`Failed to cancel download for ${modelId}`);
     }
   };
 

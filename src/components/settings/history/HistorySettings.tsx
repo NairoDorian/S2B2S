@@ -1,4 +1,13 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
@@ -175,6 +184,9 @@ export const HistorySettings = () => {
           isFirstPage ? newEntries : [...prev, ...newEntries],
         );
         setHasMore(has_more);
+      } else {
+        console.error("Failed to load history entries:", result.error);
+        toast.error(result.error);
       }
     } catch (error) {
       console.error("Failed to load history entries:", error);
@@ -194,9 +206,12 @@ export const HistorySettings = () => {
 
   // Infinite scroll. The compute tracks every input: the apply runs untracked,
   // so reading `loading()` / `hasMore()` there would only ever see the mount
-  // values (loading = true) and never create the observer.
+  // values (loading = true) and never create the observer. The entry count is
+  // tracked too: a later page never touches `loading()`, and an observer only
+  // fires on an intersection *change*, so a sentinel still in view after a
+  // page landed would otherwise never ask for the next one.
   createEffect(
-    () => [loading(), hasMore(), sentinel()] as const,
+    () => [loading(), hasMore(), sentinel(), entries().length] as const,
     ([isLoading, more, el]) => {
       if (isLoading || !more || !el) return;
 
@@ -289,16 +304,20 @@ export const HistorySettings = () => {
     }
   };
 
+  // Optimistic removal; on failure the list is reloaded and the error is
+  // rethrown so the row's handler can report it.
   const deleteAudioEntry = async (id: number) => {
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    let result;
     try {
-      const result = await commands.deleteHistoryEntry(id);
-      if (result.status !== "ok") {
-        loadPage();
-      }
+      result = await commands.deleteHistoryEntry(id);
     } catch (error) {
-      console.error("Failed to delete entry:", error);
-      loadPage();
+      void loadPage();
+      throw error;
+    }
+    if (result.status !== "ok") {
+      void loadPage();
+      throw new Error(String(result.error));
     }
   };
 
@@ -338,8 +357,8 @@ export const HistorySettings = () => {
       }
 
       // Search query check
-      if (!searchQuery().trim()) return true;
-      const q = searchQuery().toLowerCase();
+      const q = searchQuery().trim().toLowerCase();
+      if (!q) return true;
       const textMatch = entry.transcription_text.toLowerCase().includes(q);
       const postMatch =
         entry.post_processed_text?.toLowerCase().includes(q) ?? false;
@@ -350,53 +369,16 @@ export const HistorySettings = () => {
     });
   });
 
-  const content = () => {
-    if (loading() && entries().length === 0) {
-      return (
-        <div class="px-4 py-8 text-center text-text/60">
-          <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-accent mb-2" />
-          <p class="text-sm">{t("settings.history.loading")}</p>
-        </div>
-      );
-    } else if (entries().length === 0) {
-      return (
-        <div class="px-4 py-12 text-center text-text/60">
-          <FileText class="w-10 h-10 mx-auto mb-3 opacity-40 text-mid-gray" />
-          <p class="text-sm font-medium">{t("settings.history.empty")}</p>
-        </div>
-      );
-    } else if (filteredEntries().length === 0) {
-      return (
-        <div class="px-4 py-10 text-center text-text/60">
-          <p class="text-sm font-medium">{t("settings.history.noMatch")}</p>
-        </div>
-      );
-    }
-
-    return (
-      <>
-        <AudioPlayerGroup>
-          <div class="divide-y divide-mid-gray/20">
-            <For each={filteredEntries()}>
-              {(entry) => (
-                <HistoryEntryComponent
-                  entry={entry}
-                  onToggleSaved={() => toggleSaved(entry.id)}
-                  onCopyText={copyToClipboard}
-                  getAudioUrl={getAudioUrl}
-                  deleteAudio={deleteAudioEntry}
-                  retryTranscription={retryHistoryEntry}
-                  postProcessTranscription={postProcessHistoryEntry}
-                  multiSttTranscription={multiSttHistoryEntry}
-                />
-              )}
-            </For>
-          </div>
-        </AudioPlayerGroup>
-        <div ref={setSentinel} class="h-1" />
-      </>
-    );
-  };
+  // Which of the four bodies is shown. A memo of a string, so the list branch
+  // is built once and its `<For>` keeps its rows (and a playing recording)
+  // across entry updates; returning fresh JSX from a plain accessor rebuilt
+  // every row on any change to `entries()`.
+  const view = createMemo((): "loading" | "empty" | "noMatch" | "list" => {
+    if (loading() && entries().length === 0) return "loading";
+    if (entries().length === 0) return "empty";
+    if (filteredEntries().length === 0) return "noMatch";
+    return "list";
+  });
 
   return (
     <div class="max-w-3xl w-full mx-auto space-y-5">
@@ -482,7 +464,48 @@ export const HistorySettings = () => {
 
         {/* Entries Container */}
         <div class="bg-background border border-mid-gray/20 rounded-lg overflow-visible shadow-sm">
-          {content()}
+          <Switch>
+            <Match when={view() === "loading"}>
+              <div class="px-4 py-8 text-center text-text/60">
+                <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-accent mb-2" />
+                <p class="text-sm">{t("settings.history.loading")}</p>
+              </div>
+            </Match>
+            <Match when={view() === "empty"}>
+              <div class="px-4 py-12 text-center text-text/60">
+                <FileText class="w-10 h-10 mx-auto mb-3 opacity-40 text-mid-gray" />
+                <p class="text-sm font-medium">{t("settings.history.empty")}</p>
+              </div>
+            </Match>
+            <Match when={view() === "noMatch"}>
+              <div class="px-4 py-10 text-center text-text/60">
+                <p class="text-sm font-medium">
+                  {t("settings.history.noMatch")}
+                </p>
+              </div>
+            </Match>
+            <Match when={view() === "list"}>
+              <AudioPlayerGroup>
+                <div class="divide-y divide-mid-gray/20">
+                  <For each={filteredEntries()}>
+                    {(entry) => (
+                      <HistoryEntryComponent
+                        entry={entry}
+                        onToggleSaved={() => toggleSaved(entry.id)}
+                        onCopyText={copyToClipboard}
+                        getAudioUrl={getAudioUrl}
+                        deleteAudio={deleteAudioEntry}
+                        retryTranscription={retryHistoryEntry}
+                        postProcessTranscription={postProcessHistoryEntry}
+                        multiSttTranscription={multiSttHistoryEntry}
+                      />
+                    )}
+                  </For>
+                </div>
+              </AudioPlayerGroup>
+              <div ref={setSentinel} class="h-1" />
+            </Match>
+          </Switch>
         </div>
       </div>
 
@@ -552,6 +575,22 @@ interface MultiSttHistoryMeta {
   final_merged_text: string;
 }
 
+const MULTI_STT_METADATA_RE = /\n?<!--MULTI_STT_METADATA:(.+?)-->$/s;
+
+const parseMultiSttMeta = (text: string): MultiSttHistoryMeta | null => {
+  const match = text.match(MULTI_STT_METADATA_RE);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]) as MultiSttHistoryMeta;
+  } catch {
+    return null;
+  }
+};
+
+/** A Multi-STT entry's raw log: its text without the trailing metadata block. */
+const stripMultiSttMetadata = (text: string): string =>
+  text.replace(MULTI_STT_METADATA_RE, "");
+
 interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
@@ -582,10 +621,24 @@ const HistoryEntryComponent = ({
   const [retrying, setRetrying] = createSignal<
     "standard" | "post_process" | "multi_stt" | null
   >(null);
+  const hasTranscription = entry.transcription_text.trim().length > 0;
+  const isMultiStt =
+    entry.mode === "multi_stt" || isMultiRecordingFileName(entry.file_name);
+
+  const multiSttMeta = createMemo(() =>
+    isMultiStt ? parseMultiSttMeta(entry.transcription_text) : null,
+  );
+  // The transcript as stored, minus a Multi-STT entry's metadata block.
+  const rawText = isMultiStt
+    ? stripMultiSttMetadata(entry.transcription_text)
+    : entry.transcription_text;
+
+  // The details tab only has something to show when the metadata parsed; an
+  // entry without it (older or truncated) opens on its text instead.
   const [activeTab, setActiveTab] = createSignal<
     "polished" | "raw" | "multi_stt_details"
   >(
-    entry.mode === "multi_stt" || isMultiRecordingFileName(entry.file_name)
+    untrack(multiSttMeta)
       ? "multi_stt_details"
       : entry.post_processed_text
         ? "polished"
@@ -593,24 +646,6 @@ const HistoryEntryComponent = ({
   );
   const [showPromptDetails, setShowPromptDetails] = createSignal(false);
   const [showBrainRaw, setShowBrainRaw] = createSignal(false);
-
-  const hasTranscription = entry.transcription_text.trim().length > 0;
-  const isMultiStt =
-    entry.mode === "multi_stt" || isMultiRecordingFileName(entry.file_name);
-
-  const multiSttMeta = createMemo(() => {
-    if (!isMultiStt) return null;
-    const raw = entry.transcription_text;
-    const match = raw.match(/<!--MULTI_STT_METADATA:(.+?)-->$/s);
-    if (match) {
-      try {
-        return JSON.parse(match[1]) as MultiSttHistoryMeta;
-      } catch {
-        /* fall through */
-      }
-    }
-    return null;
-  });
 
   const multiSttCleanedText = createMemo(() => {
     if (!isMultiStt) return null;
@@ -622,7 +657,10 @@ const HistoryEntryComponent = ({
 
   const handleLoadAudio = () => getAudioUrl(entry.file_name);
 
+  // What the active tab shows (and what copy and Save to Recall take). The
+  // Raw tab is always the stored transcript, a Multi-STT entry's included.
   const textToDisplay = createMemo(() => {
+    if (activeTab() === "raw") return rawText;
     const cleaned = multiSttCleanedText();
     if (isMultiStt && cleaned) {
       return cleaned;
@@ -630,12 +668,11 @@ const HistoryEntryComponent = ({
     if (activeTab() === "polished" && entry.post_processed_text) {
       return entry.post_processed_text;
     }
-    return entry.transcription_text;
+    return rawText;
   });
 
   const handleCopyText = () => {
-    const cleaned = multiSttCleanedText();
-    const text = isMultiStt && cleaned ? cleaned : textToDisplay();
+    const text = textToDisplay();
     if (!text || !text.trim()) return;
     onCopyText(text);
     setShowCopied(true);
@@ -862,7 +899,9 @@ const HistoryEntryComponent = ({
                   : "bg-teal-500/10 text-teal-400 border border-teal-500/20"
               }`}
             >
-              {entry.mode}
+              {entry.mode === "multi_stt"
+                ? t("settings.history.filterMultiStt")
+                : entry.mode}
             </span>
           )}
         </div>

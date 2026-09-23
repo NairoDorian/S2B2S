@@ -129,7 +129,9 @@ const ModelCard = (props: ModelCardProps) => {
     props.onDelete?.(props.model.id);
   };
 
-  // ModelCard is conditionally interactive (when not downloaded/downloading); inner buttons handle secondary actions.
+  // ModelCard is itself interactive only while it can be picked or downloaded
+  // (`available` / `downloadable`: a click selects or starts the download);
+  // inner buttons handle secondary actions.
   return (
     <div
       onClick={handleClick}

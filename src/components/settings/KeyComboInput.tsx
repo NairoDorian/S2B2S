@@ -11,6 +11,7 @@ import { ResetButton } from "../ui/ResetButton";
 import { useSettings } from "../../hooks/useSettings";
 import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
+import { logCommandResult } from "./logCommandResult";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import type { JSX } from "@solidjs/web";
 
@@ -28,6 +29,9 @@ const DEFAULT_SHORTCUTS: Record<StringSettingKey, string> = {
   multi_stt_performance_mode_normal_shortcut: "ctrl+alt+space",
 };
 
+const resumeBindings = () =>
+  logCommandResult("Failed to resume bindings", commands.resumeAllBindings());
+
 export const KeyComboInput = (props: KeyComboInputProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
@@ -41,7 +45,6 @@ export const KeyComboInput = (props: KeyComboInputProps): JSX.Element => {
   const [editing, setEditing] = createSignal(false);
   const [keyPressed, setKeyPressed] = createSignal<string[]>([]);
   const [recordedKeys, setRecordedKeys] = createSignal<string[]>([]);
-  const [originalValue, setOriginalValue] = createSignal<string>("");
   let inputRef: HTMLDivElement | null = null;
 
   createEffect(
@@ -99,48 +102,32 @@ export const KeyComboInput = (props: KeyComboInputProps): JSX.Element => {
                 combo: formatKeyCombination(newShortcut, osType),
               }),
             );
-            if (originalValue()) {
-              void updateSetting(props.settingKey, originalValue());
-            }
-            await commands.resumeAllBindings().catch(console.error);
+            await resumeBindings();
             setEditing(false);
             setKeyPressed([]);
             setRecordedKeys([]);
-            setOriginalValue("");
             return;
           }
 
-          try {
-            await updateSetting(props.settingKey, newShortcut);
-          } catch (error) {
-            console.error("Failed to change setting:", error);
-            toast.error(
-              t("settings.general.shortcut.errors.set", {
-                error: String(error),
-              }),
-            );
-          }
-
-          await commands.resumeAllBindings().catch(console.error);
+          // `updateSetting` never throws: it reports a failed write itself
+          // and rolls the store back.
+          await updateSetting(props.settingKey, newShortcut);
+          await resumeBindings();
 
           setEditing(false);
           setKeyPressed([]);
           setRecordedKeys([]);
-          setOriginalValue("");
         }
       };
 
       const handleClickOutside = (e: MouseEvent) => {
         if (cleanup) return;
         if (inputRef && !inputRef.contains(e.target as Node)) {
-          if (originalValue()) {
-            void updateSetting(props.settingKey, originalValue());
-          }
-          void commands.resumeAllBindings().catch(console.error);
+          // Nothing is written while recording, so there is nothing to undo.
+          void resumeBindings();
           setEditing(false);
           setKeyPressed([]);
           setRecordedKeys([]);
-          setOriginalValue("");
         }
       };
 
@@ -160,9 +147,11 @@ export const KeyComboInput = (props: KeyComboInputProps): JSX.Element => {
   const startEditing = async () => {
     if (editing()) return;
 
-    await commands.suspendAllBindings().catch(console.error);
+    await logCommandResult(
+      "Failed to suspend bindings",
+      commands.suspendAllBindings(),
+    );
 
-    setOriginalValue(displayValue());
     setEditing(true);
     setKeyPressed([]);
     setRecordedKeys([]);

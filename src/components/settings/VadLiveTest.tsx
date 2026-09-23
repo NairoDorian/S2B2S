@@ -58,6 +58,15 @@ export const VadLiveTest = (props: VadLiveTestProps): JSX.Element => {
     setRunning(true);
   };
 
+  // Turning VAD off hides this control (`Show` below); a test still running
+  // then would keep the microphone open with no way to stop it from here.
+  createEffect(
+    () => !vadEnabled() && running(),
+    (orphaned) => {
+      if (orphaned) void stop();
+    },
+  );
+
   createEffect(
     () => undefined,
     () => {

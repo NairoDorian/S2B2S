@@ -108,20 +108,23 @@ export const RecallPage = () => {
    * switches back to write mode first.
    */
   const insertAtCaret = (text: string) => {
-    if (mode() === "preview") setMode("write");
-    const el = bodyRef;
+    const fromPreview = mode() === "preview";
+    if (fromPreview) setMode("write");
+    // Preview has no caret, and `bodyRef` then holds nothing or a detached
+    // textarea from the last write session, so the text goes at the end.
+    const el = fromPreview ? undefined : bodyRef;
     const body = store.draft.body;
-    if (!el) {
-      store.setDraft({ body: body + text });
-      return;
-    }
-    const start = el.selectionStart ?? body.length;
-    const end = el.selectionEnd ?? start;
+    const start = el?.selectionStart ?? body.length;
+    const end = el?.selectionEnd ?? start;
     store.setDraft({ body: body.slice(0, start) + text + body.slice(end) });
     const caret = start + text.length;
     requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(caret, caret);
+      // Read the ref here, not above: leaving preview mounts the textarea
+      // only after this function has returned.
+      const target = bodyRef;
+      if (!target?.isConnected) return;
+      target.focus();
+      target.setSelectionRange(caret, caret);
     });
   };
 
@@ -167,7 +170,9 @@ export const RecallPage = () => {
   );
 
   const handleEnableEncryption = async () => {
-    if (encPass().length < 8) {
+    // Counted in characters, like the backend (`chars().count()`), not in
+    // UTF-16 units: an emoji is one character, not two.
+    if ([...encPass()].length < 8) {
       toast.error(t("settings.recall.enc.tooShort"));
       return;
     }
@@ -555,7 +560,11 @@ export const RecallPage = () => {
                       variant="ghost"
                       size="sm"
                       disabled={encBusy()}
-                      onClick={() => setEncFormOpen(false)}
+                      onClick={() => {
+                        setEncFormOpen(false);
+                        setEncPass("");
+                        setEncPass2("");
+                      }}
                     >
                       {t("common.cancel")}
                     </Button>
@@ -600,14 +609,17 @@ export const RecallPage = () => {
                   <Button
                     variant="danger-ghost"
                     size="sm"
-                    onClick={() => setDisableOpen(!disableOpen())}
+                    onClick={() => {
+                      if (disableOpen()) setDisablePass("");
+                      setDisableOpen(!disableOpen());
+                    }}
                   >
                     {t("settings.recall.enc.disable")}
                   </Button>
                 </div>
               </div>
 
-              {/* Locked: the unlock field also lives here for reachability */}
+              {/* Locked: this is the vault's only unlock field */}
               <Show when={locked()}>
                 <div class="space-y-2 rounded-lg border border-mid-gray/20 bg-background p-3">
                   <input
@@ -642,7 +654,10 @@ export const RecallPage = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setDisableOpen(false)}
+                      onClick={() => {
+                        setDisableOpen(false);
+                        setDisablePass("");
+                      }}
                     >
                       {t("common.cancel")}
                     </Button>

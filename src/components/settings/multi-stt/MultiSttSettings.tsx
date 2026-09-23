@@ -471,7 +471,9 @@ export const MultiSttSettings = () => {
                       }
                       isUpdating={isUpdating("multi_stt_translate_model_2")}
                       label={t("multiStt.models.translateToEnglish")}
-                      description=""
+                      description={t(
+                        "settings.advanced.translateToEnglish.description",
+                      )}
                       descriptionMode="tooltip"
                       grouped={false}
                     />
@@ -566,7 +568,9 @@ export const MultiSttSettings = () => {
                       }
                       isUpdating={isUpdating("multi_stt_translate_model_3")}
                       label={t("multiStt.models.translateToEnglish")}
-                      description=""
+                      description={t(
+                        "settings.advanced.translateToEnglish.description",
+                      )}
                       descriptionMode="tooltip"
                       grouped={false}
                     />
@@ -660,7 +664,9 @@ export const MultiSttSettings = () => {
                       }
                       isUpdating={isUpdating("multi_stt_translate_model_4")}
                       label={t("multiStt.models.translateToEnglish")}
-                      description=""
+                      description={t(
+                        "settings.advanced.translateToEnglish.description",
+                      )}
                       descriptionMode="tooltip"
                       grouped={false}
                     />

@@ -247,7 +247,6 @@
       "availableModels": "Disponibles para descargar",
       "searchPlaceholder": "Buscar modelos por nombre…",
       "rescan": {
-        "label": "Volver a escanear",
         "tooltip": "Vuelve a escanear en busca de modelos añadidos a la carpeta de modelos o a la caché de Hugging Face fuera de {{app}}"
       },
       "openFolder": "Open Models Folder",
@@ -650,7 +649,6 @@
       "multiSttSuccess": "Multi-STT transcription complete",
       "rawTranscriptTab": "Transcripción original",
       "polishedTextTab": "Pulido (LLM)",
-      "mergedTextTab": "Resultado fusionado",
       "speedSlow": "Lento",
       "speedConversational": "Conversacional",
       "speedFast": "Rápido",
@@ -660,9 +658,7 @@
       "audioDetails": "{{total}} total : {{speech}} de voz ({{silence}} silencio eliminado)",
       "latencyStt": "{{duration}} STT",
       "latencyLlm": "{{duration}} LLM",
-      "extraModelsCount": "{{count}} modelos",
       "multiSttModelsBadge": "Multi-STT ({{count}} models)",
-      "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
       "audioDetailsNoCut": "{{total}} total : {{speech}} de voz",
@@ -684,10 +680,6 @@
       "logDirectory": {
         "title": "Directorio de registros",
         "description": "Ubicación donde se almacenan los archivos de registro"
-      },
-      "logLevel": {
-        "title": "Nivel de registro",
-        "description": "Establece el nivel de detalle del registro"
       },
       "liveLogs": {
         "title": "Registros en vivo",
@@ -1996,7 +1988,7 @@
         "description": "The detailed view of this mode. The overlay gets one column per streaming model, each showing that model's own live text as it forms, and under them the merged-and-cleaned text of the last pause — the block labelled Merge & Cleaned, which is the session's result. A model's column appears as soon as its stream starts, so a model that is running but producing no text shows as an empty column, marked \"no live text yet\", rather than as no column at all. With this off, the overlay has the single block the mode normally shows: fed by the first streaming model and corrected in place every time a merge lands, which is also what gets pasted. This changes what the overlay shows, not what the mode does."
       },
       "pauseLabel": "Pause that ends a chunk",
-      "pauseDescription": "How long you have to stop speaking to end the chunk being spoken. Every pause this long closes one, and a chunk is the only unit here: nothing in the text is ever waited for, so the text is corrected at your own pauses and nowhere else. After 60 seconds with no pause the chunk is closed anyway.",
+      "pauseDescription": "How long you have to stop speaking to end the chunk being spoken. Every pause this long closes one, and a chunk is the only unit here: nothing in the text (punctuation, sentence ends) decides where a chunk ends, so the text is corrected at your own pauses and nowhere else. After 60 seconds with no pause the chunk is closed anyway.",
       "contextLabel": "Previous chunks re-run with the new one",
       "contextDescription": "How many chunks you have already closed are handed to the extra models together with the new one. One sentence can run across many pauses — a hum, a breath, a long reasoning — and this is what lets the merge finish it and correct the chunks carrying it, in the preview and in the final text. What is re-decoded at each pause stays the same size however long the session runs, so it never grows with what you have already said. 0 hands over only the new chunk.",
       "contextOff": "None, only the new chunk",

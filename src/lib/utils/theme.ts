@@ -87,25 +87,15 @@ export const getStoredTheme = (): Theme => {
   return isTheme(stored) ? stored : "system";
 };
 
-/** Apply the persisted theme from AppSettings (the source of truth). */
-export const syncThemeFromSettings = async (): Promise<void> => {
-  try {
-    const result = await commands.getAppSettings();
-    if (result.status === "ok") {
-      applyTheme(result.data.theme ?? "system");
-    }
-  } catch (e) {
-    console.warn("Failed to sync theme from settings:", e);
-  }
-};
-
 /**
  * Apply an accent color palette dynamically to the document root.
  *
- * Only the two *palette source* variables are written, never the active
- * `--color-accent`. The active token is a `var(--light|dark-color-accent)`
- * reference resolved by the media query / `data-theme` selectors in
- * `theme.css`, so the theme override keeps deciding which of the two applies.
+ * Three variables are written: the two *palette source* variables
+ * (`--light-color-accent`, `--dark-color-accent`) and the accent-tinted
+ * `--color-background-ui`. The active `--color-accent` is never written: it
+ * is a `var(--light|dark-color-accent)` reference resolved by the media
+ * query / `data-theme` selectors in `theme.css`, so the theme override keeps
+ * deciding which of the two applies.
  */
 export const applyAccentColor = (hex: string, broadcast = false): void => {
   if (!parseHex(hex)) {
@@ -131,20 +121,7 @@ export const getStoredAccentColor = (): string => {
   return stored && parseHex(stored) ? stored : DEFAULT_ACCENT_COLOR;
 };
 
-/** Apply the persisted accent color from AppSettings (the source of truth). */
-export const syncAccentColorFromSettings = async (): Promise<void> => {
-  try {
-    const result = await commands.getAppSettings();
-    if (result.status === "ok") {
-      const color = result.data.custom_accent_color || DEFAULT_ACCENT_COLOR;
-      applyAccentColor(color, false);
-    }
-  } catch (e) {
-    console.warn("Failed to sync accent color from settings:", e);
-  }
-};
-
-export const UI_SCALE_PREF = "ui_scale";
+const UI_SCALE_PREF = "ui_scale";
 const MIN_UI_SCALE = 0.7;
 const MAX_UI_SCALE = 1.6;
 
@@ -171,13 +148,26 @@ export const applyUiScale = (scale: number): void => {
 export const getStoredUiScale = (): number =>
   clampUiScale(readPref(UI_SCALE_PREF) ?? 1);
 
-export const syncUiScaleFromSettings = async (): Promise<void> => {
+/**
+ * Apply the persisted theme, accent color and (with `uiScale`) UI scale from
+ * AppSettings, the source of truth, with one settings read. The overlay passes
+ * `uiScale: false`: the UI scale zooms the settings window only.
+ */
+export const syncAppearanceFromSettings = async ({
+  uiScale,
+}: {
+  uiScale: boolean;
+}): Promise<void> => {
   try {
     const result = await commands.getAppSettings();
-    if (result.status === "ok") {
-      applyUiScale(result.data.ui_scale ?? 1);
-    }
-  } catch (error) {
-    console.error("Failed to sync UI scale from settings:", error);
+    if (result.status !== "ok") return;
+    applyTheme(result.data.theme ?? "system");
+    applyAccentColor(
+      result.data.custom_accent_color || DEFAULT_ACCENT_COLOR,
+      false,
+    );
+    if (uiScale) applyUiScale(result.data.ui_scale ?? 1);
+  } catch (e) {
+    console.warn("Failed to sync appearance from settings:", e);
   }
 };

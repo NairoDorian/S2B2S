@@ -9,7 +9,13 @@ interface ParamSliderProps {
   value: number;
   min: number;
   max: number;
-  step: number;
+  /**
+   * Quantisation step of a typed or dragged value. Applies only to linear,
+   * non-integer sliders: an `integer` slider rounds to whole numbers and a
+   * `log` slider is continuous, so both ignore it. Omitted, a linear value is
+   * not quantised.
+   */
+  step?: number;
   onChange: (value: number) => void;
   log?: boolean;
   integer?: boolean;
@@ -36,25 +42,39 @@ export const ParamSlider = (props: ParamSliderProps) => {
   const disabled = () => props.disabled ?? false;
   // The text field seeds from the prop once (explicit snapshot); the effect
   // below keeps it in step with the value from then on.
-  const [text, setText] = createSignal(untrack(() => String(props.value)));
+  const format = (value: number): string =>
+    integer() ? String(Math.round(value)) : String(value);
+  const [text, setText] = createSignal(untrack(() => format(props.value)));
   createEffect(
     () => props.value,
     (value) => {
-      setText(integer() ? String(Math.round(value)) : String(value));
+      setText(format(value));
     },
   );
 
   const clamp = (v: number): number => {
     let next = Math.min(props.max, Math.max(props.min, v));
     if (integer()) next = Math.round(next);
-    else if (!log()) next = Math.round(next / props.step) * props.step;
+    else if (!log() && props.step) {
+      next = Math.round(next / props.step) * props.step;
+    }
     return Number(next.toPrecision(7));
   };
 
+  // An empty field is not a number (`Number("")` is 0, which would commit
+  // the minimum). The text is always put back to the committed value: when
+  // the clamp lands on the value already held, `props.value` does not change
+  // and the effect above would leave the out-of-range text standing.
   const commitText = () => {
-    const parsed = Number(text());
-    if (Number.isFinite(parsed)) props.onChange(clamp(parsed));
-    else setText(String(props.value));
+    const raw = text().trim();
+    const parsed = raw === "" ? NaN : Number(raw);
+    if (!Number.isFinite(parsed)) {
+      setText(format(props.value));
+      return;
+    }
+    const next = clamp(parsed);
+    props.onChange(next);
+    setText(format(next));
   };
 
   const pos = () =>

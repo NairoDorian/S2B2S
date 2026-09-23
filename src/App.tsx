@@ -33,7 +33,7 @@ import { useNavigationStore, setSection } from "@/stores/navigationStore";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { commands, events } from "@/bindings";
-import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
+import { getLanguageDirection } from "@/lib/utils/rtl";
 import { applyUiScale } from "@/lib/utils/theme";
 
 type OnboardingStep = "accessibility" | "model" | "done";
@@ -47,7 +47,13 @@ const direction = () => getLanguageDirection(currentLanguage());
 
 const revealMainWindowForPermissions = async () => {
   try {
-    await commands.showMainWindowCommand();
+    const result = await commands.showMainWindowCommand();
+    if (result.status === "error") {
+      console.warn(
+        "Failed to show main window for permission onboarding:",
+        result.error,
+      );
+    }
   } catch (e) {
     console.warn("Failed to show main window for permission onboarding:", e);
   }
@@ -102,13 +108,6 @@ function App() {
     checkOnboardingStatus();
   });
 
-  createEffect(
-    () => currentLanguage(),
-    (language) => {
-      initializeRTL(language);
-    },
-  );
-
   // Tracked on `onboardingStep`, not run once: this used to fire at mount, when
   // the step is still `null`, so the Enigo/shortcut init and the device refresh
   // never ran at all.
@@ -120,18 +119,28 @@ function App() {
         Promise.all([
           commands.initializeEnigo(),
           commands.initializeShortcuts(),
-        ]).catch((e) => {
-          console.warn("Failed to initialize:", e);
-        });
+        ])
+          .then(([enigo, shortcuts]) => {
+            if (enigo.status === "error") {
+              console.warn("Failed to initialize Enigo:", enigo.error);
+            }
+            if (shortcuts.status === "error") {
+              console.warn("Failed to initialize shortcuts:", shortcuts.error);
+            }
+          })
+          .catch((e) => {
+            console.warn("Failed to initialize:", e);
+          });
         refreshAudioDevices();
         refreshOutputDevices();
       }
     },
   );
 
-  // Each subscription below returns its cleanup from the apply: `onCleanup`
-  // there has no owner and never runs, so a language change would stack a
-  // second listener (and a second toast) on top of the first.
+  // Each subscription below runs once (`() => undefined` tracks nothing) and
+  // returns its cleanup from the apply: `onCleanup` there has no owner and
+  // never runs. None of them depends on the language: `t()` resolves against
+  // the current language when a handler calls it.
   createEffect(
     () => undefined,
     () => {
@@ -156,7 +165,7 @@ function App() {
   );
 
   createEffect(
-    () => currentLanguage(),
+    () => undefined,
     () => {
       const unlisten = listen<RecordingErrorEvent>(
         "recording-error",
@@ -190,7 +199,7 @@ function App() {
   );
 
   createEffect(
-    () => currentLanguage(),
+    () => undefined,
     () => {
       const unlisten = listen("paste-error", () => {
         toast.error(t("errors.pasteFailedTitle"), {
@@ -204,7 +213,7 @@ function App() {
   );
 
   createEffect(
-    () => currentLanguage(),
+    () => undefined,
     () => {
       const unlisten = listen<string>("transcription-error", (event) => {
         toast.error(t("errors.transcriptionFailedTitle"), {
@@ -218,7 +227,7 @@ function App() {
   );
 
   createEffect(
-    () => currentLanguage(),
+    () => undefined,
     () => {
       const unlisten = listen<ModelStateEvent>(
         "model-state-changed",
@@ -255,7 +264,7 @@ function App() {
   );
 
   createEffect(
-    () => currentLanguage(),
+    () => undefined,
     () => {
       const unlisten = events.multiSttStreamChunkFailedEvent.listen((event) => {
         toast.warning(t("multiStt.streamingFirst.chunkFailedTitle"), {

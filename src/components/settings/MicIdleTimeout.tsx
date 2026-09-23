@@ -54,6 +54,18 @@ export const MicIdleTimeout = () => {
     }
   };
 
+  // A number is only valid in its unit: 3600 seconds would become 3600
+  // minutes, past the minutes maximum. Clamp into the new unit's range first,
+  // so every intermediate state that reaches the store is a valid one.
+  const handleUnitSelect = async (next: TimeoutUnit) => {
+    if (next === unit()) return;
+    const clamped = Math.min(value(), MAX_TIMEOUT[next]);
+    if (clamped !== value()) {
+      await updateSetting("mic_idle_timeout_value", clamped);
+    }
+    await updateSetting("mic_idle_timeout_unit", next);
+  };
+
   const unitOptions = () => [
     { value: "seconds", label: t("settings.advanced.micIdleTimeout.seconds") },
     { value: "minutes", label: t("settings.advanced.micIdleTimeout.minutes") },
@@ -128,7 +140,7 @@ export const MicIdleTimeout = () => {
                     selectedValue={unit()}
                     options={unitOptions()}
                     onSelect={(val) =>
-                      updateSetting("mic_idle_timeout_unit", val as TimeoutUnit)
+                      void handleUnitSelect(val as TimeoutUnit)
                     }
                   />
                 </SettingContainer>

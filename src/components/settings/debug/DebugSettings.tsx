@@ -32,13 +32,11 @@ export const DebugSettings = (props: DebugSettingsProps) => {
       <SettingsGroup title={t("settings.debug.title")}>
         <InterfaceScale descriptionMode="tooltip" grouped={true} />
         <WhatsNewPreview descriptionMode="tooltip" grouped={true} />
-        {props.onPreviewOnboarding && (
-          <OnboardingPreview
-            onPreview={props.onPreviewOnboarding}
-            descriptionMode="tooltip"
-            grouped={true}
-          />
-        )}
+        <OnboardingPreview
+          onPreview={props.onPreviewOnboarding}
+          descriptionMode="tooltip"
+          grouped={true}
+        />
         <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
         <SoundPicker
           label={t("settings.debug.soundTheme.label")}

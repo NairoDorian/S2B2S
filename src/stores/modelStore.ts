@@ -134,11 +134,13 @@ const modelState = createSolidStore<ModelsStore>((set, get) => ({
     try {
       const result = await commands.rescanLocalModels();
       if (result.status !== "ok") {
+        console.error("Failed to rescan models:", result.error);
         set({ error: `Failed to rescan models: ${result.error}` });
       }
       // On success the backend emits `models-updated`, which reloads the list
       // via the listener registered in initialize().
     } catch (err) {
+      console.error("Failed to rescan models:", err);
       set({ error: `Failed to rescan models: ${err}` });
     } finally {
       set({ isRescanning: false });

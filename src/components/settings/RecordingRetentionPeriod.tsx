@@ -30,7 +30,7 @@ export const RecordingRetentionPeriodSelector = (
     {
       value: "preserve_limit",
       label: t("settings.debug.recordingRetention.preserveLimit", {
-        count: Number(getSetting("history_limit") || 5),
+        count: Number(getSetting("history_limit") ?? 5),
       }),
     },
     { value: "days3", label: t("settings.debug.recordingRetention.days3") },
@@ -50,7 +50,9 @@ export const RecordingRetentionPeriodSelector = (
     >
       <Dropdown
         options={retentionOptions()}
-        selectedValue={getSetting("recording_retention_period") || "never"}
+        selectedValue={
+          getSetting("recording_retention_period") ?? "preserve_limit"
+        }
         onSelect={handleRetentionPeriodSelect}
         placeholder={t("settings.debug.recordingRetention.placeholder")}
         disabled={isUpdating("recording_retention_period")}

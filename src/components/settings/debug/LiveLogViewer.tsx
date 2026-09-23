@@ -128,10 +128,18 @@ export const LiveLogViewer = (props: LiveLogViewerProps) => {
   const handleClear = () => {
     setLogs([]);
     pinnedRef = true;
-    commands.clearLogs().catch((error) => {
-      console.error("Failed to clear log file:", error);
-      toast.error(String(error));
-    });
+    commands
+      .clearLogs()
+      .then((result) => {
+        if (result.status === "error") {
+          console.error("Failed to clear log file:", result.error);
+          toast.error(result.error);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to clear log file:", error);
+        toast.error(String(error));
+      });
   };
 
   const handleCopy = async () => {

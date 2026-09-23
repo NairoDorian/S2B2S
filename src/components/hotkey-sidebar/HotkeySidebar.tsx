@@ -24,6 +24,11 @@ export const HotkeySidebar = (): JSX.Element => {
   // Accessors, not consts: the sidebar is mounted for the app's lifetime and
   // must follow the user setting (or clearing) a shortcut.
   const hasAnyHotkeys = () => categories().length > 0;
+  // `cancel` ships bound to Escape, so it says nothing about whether the user
+  // can start a recording: the "set your shortcut" call-out and the warning
+  // dot follow the other bindings only.
+  const hasRecordingHotkey = () =>
+    categories().some((c) => c.hotkeys.some((h) => h.id !== "cancel"));
 
   const close = () => setIsOpen(false);
   const handleHotkeyClick = (shortcutId: string) => {
@@ -81,7 +86,7 @@ export const HotkeySidebar = (): JSX.Element => {
         class={`flex items-center gap-1.5 h-8 px-2 border text-xs font-medium cursor-pointer transition-colors ${isOpen() ? "border-accent bg-accent/15 text-accent" : "border-mid-gray/30 bg-background text-text/70 hover:border-accent hover:text-text"}`}
       >
         <Keyboard class="w-4 h-4" />
-        {!hasAnyHotkeys() && (
+        {!hasRecordingHotkey() && (
           <span class="w-1.5 h-1.5 bg-warning" aria-hidden="true" />
         )}
       </button>
@@ -118,7 +123,7 @@ export const HotkeySidebar = (): JSX.Element => {
                 )}
               </For>
             </Show>
-            <Show when={!hasAnyHotkeys()}>
+            <Show when={!hasRecordingHotkey()}>
               <div class="flex flex-col gap-3 border border-warning/30 bg-warning/10 p-3">
                 <p class="text-sm font-medium text-text">
                   {t("hotkeySidebar.empty.title")}

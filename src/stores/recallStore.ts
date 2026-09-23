@@ -93,13 +93,8 @@ const recallState = createSolidStore<RecallStore>((set, get) => ({
     }
   },
 
-  refreshEncryption: async () => {
-    const result = await commands.recallEncryptionStatus();
-    if (result.status === "ok") {
-      set({ encryption: result.data });
-    }
-    await get().refresh();
-  },
+  // `refresh` already reads the encryption status alongside the notes.
+  refreshEncryption: () => get().refresh(),
 
   openNote: async (id) => {
     const result = await commands.recallReadNote(id);
@@ -178,7 +173,10 @@ const recallState = createSolidStore<RecallStore>((set, get) => ({
   },
 
   openVaultFolder: async () => {
-    await commands.recallOpenVaultFolder();
+    const result = await commands.recallOpenVaultFolder();
+    if (result.status === "error") {
+      console.error("Failed to open the Recall vault folder:", result.error);
+    }
   },
 
   enableEncryption: async (passphrase) => {
@@ -220,5 +218,3 @@ const recallState = createSolidStore<RecallStore>((set, get) => ({
 export function useRecallStore() {
   return recallState;
 }
-
-export { parseTags };

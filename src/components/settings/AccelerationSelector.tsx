@@ -44,34 +44,39 @@ export const AccelerationSelector = (props: AccelerationSelectorProps) => {
   createEffect(
     () => undefined,
     () => {
-      commands.getAvailableAccelerators().then((available) => {
-        const opts: DropdownOption[] = [];
-        if (available.transcribe.includes("auto")) {
-          opts.push({
-            value: "auto",
-            label: t("settings.advanced.acceleration.gpuDevice.auto"),
-          });
-        }
-
-        if (available.transcribe.includes("gpu")) {
-          opts.push({ value: "gpu", label: "GPU" });
-          for (const dev of available.gpu_devices) {
-            const vramLabel =
-              dev.total_vram_mb >= 1024
-                ? `${(dev.total_vram_mb / 1024).toFixed(1)} GB`
-                : `${dev.total_vram_mb} MB`;
+      commands
+        .getAvailableAccelerators()
+        .then((available) => {
+          const opts: DropdownOption[] = [];
+          if (available.transcribe.includes("auto")) {
             opts.push({
-              value: `gpu:${dev.id}`,
-              label: `${dev.name} (${vramLabel})`,
+              value: "auto",
+              label: t("settings.advanced.acceleration.gpuDevice.auto"),
             });
           }
-        }
 
-        if (available.transcribe.includes("cpu")) {
-          opts.push({ value: "cpu", label: "CPU" });
-        }
-        setTranscribeOptions(opts);
-      });
+          if (available.transcribe.includes("gpu")) {
+            opts.push({ value: "gpu", label: "GPU" });
+            for (const dev of available.gpu_devices) {
+              const vramLabel =
+                dev.total_vram_mb >= 1024
+                  ? `${(dev.total_vram_mb / 1024).toFixed(1)} GB`
+                  : `${dev.total_vram_mb} MB`;
+              opts.push({
+                value: `gpu:${dev.id}`,
+                label: `${dev.name} (${vramLabel})`,
+              });
+            }
+          }
+
+          if (available.transcribe.includes("cpu")) {
+            opts.push({ value: "cpu", label: "CPU" });
+          }
+          setTranscribeOptions(opts);
+        })
+        .catch((error) => {
+          console.error("Failed to list available accelerators:", error);
+        });
     },
   );
 
