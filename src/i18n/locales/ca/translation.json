@@ -1102,7 +1102,7 @@
         "mismatch": "The passphrases do not match.",
         "tooShort": "Use at least 8 characters.",
         "encrypting": "Encrypting…",
-        "encrypted": "Vault encrypted — {{count}} notes are now ciphertext. A plaintext backup was written to {{path}}; delete it once you have checked the encrypted vault.",
+        "encrypted": "Vault encrypted — {{count}} notes are now ciphertext. No plaintext copy was kept: only your passphrase opens them.",
         "on": "Notes are encrypted on disk.",
         "lock": "Lock",
         "lockedBadge": "Vault locked",

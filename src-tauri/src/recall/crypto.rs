@@ -111,9 +111,54 @@ fn wipe(bytes: &mut [u8]) {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct EnableReport {
     pub notes_encrypted: u32,
-    /// Where the one-time plaintext backup was written — the UI shows it so
-    /// the user can delete it once the encrypted vault checks out.
-    pub backup_dir: String,
+}
+
+/// The folder earlier versions wrote a plaintext copy of every note into when
+/// encryption was enabled. It is never written any more, and one left behind
+/// by an older version is removed as soon as the vault is encrypted
+/// ([`enable`], [`unlock`]): plaintext notes beside an encrypted vault
+/// would make the encryption pointless.
+const LEGACY_BACKUP_DIR: &str = "backup";
+
+/// Remove the plaintext backup folder an older version left in `root`.
+fn remove_legacy_backup(root: &Path) {
+    let dir = root.join(LEGACY_BACKUP_DIR);
+    if !dir.is_dir() {
+        return;
+    }
+    match fs::remove_dir_all(&dir) {
+        Ok(()) => log::info!(
+            "Recall: removed the plaintext backup folder an earlier version left in the \
+             encrypted vault ({})",
+            dir.display()
+        ),
+        Err(e) => log::warn!(
+            "Recall: could not remove the plaintext backup folder {}: {e}",
+            dir.display()
+        ),
+    }
+}
+
+/// Best-effort removal of a plaintext file's contents: overwritten with zeros
+/// and flushed before it is deleted, so the note is not left readable in the
+/// freed blocks of a plain disk. (An SSD, a journaling or copy-on-write file
+/// system, or a synced folder can still keep old blocks; that is outside what
+/// an application can guarantee.)
+fn shred_file(path: &Path) -> std::io::Result<()> {
+    use std::io::Write;
+    let len = fs::metadata(path)?.len();
+    {
+        let mut file = fs::OpenOptions::new().write(true).open(path)?;
+        let zeros = [0u8; 8192];
+        let mut left = len;
+        while left > 0 {
+            let n = left.min(zeros.len() as u64) as usize;
+            file.write_all(&zeros[..n])?;
+            left -= n as u64;
+        }
+        file.sync_all()?;
+    }
+    fs::remove_file(path)
 }
 
 /// The vault's encryption state, as the page's toggle renders it.
@@ -404,8 +449,10 @@ pub(crate) fn note_ids_encrypted(root: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Encrypt the whole vault in place. Every `.md` becomes `.rcl` (same
-/// stem); a one-time plaintext backup is copied to `backup/<timestamp>/`
-/// and reported, so the toggle stays a reversible, checkable operation.
+/// stem), and no plaintext copy is kept anywhere: each note's ciphertext is
+/// read back and decrypted, and must match the original byte for byte,
+/// before the plaintext file is overwritten and deleted — so a failed write
+/// stops the run with that note still in plain form instead of losing it.
 /// The vault is left unlocked — the user just proved the passphrase.
 pub fn enable(root: &Path, passphrase: &str) -> Result<EnableReport, String> {
     if passphrase.chars().count() < MIN_PASSPHRASE_LEN {
@@ -418,20 +465,6 @@ pub fn enable(root: &Path, passphrase: &str) -> Result<EnableReport, String> {
     }
 
     let ids = note_ids_in(root, "md")?;
-
-    // The plaintext backup: one folder, one timestamp, reported to the UI.
-    let backup_dir = root
-        .join("backup")
-        .join(chrono::Local::now().format("%Y%m%d-%H%M%S").to_string());
-    // Created even for an empty vault: the report always names a real folder.
-    fs::create_dir_all(&backup_dir).map_err(|e| format!("Failed to create backup: {e}"))?;
-    for id in &ids {
-        fs::copy(
-            notes_dir(root).join(format!("{id}.md")),
-            backup_dir.join(format!("{id}.md")),
-        )
-        .map_err(|e| format!("Failed to back up note {id}: {e}"))?;
-    }
 
     let salt = random_bytes(SALT_LEN);
     let kdf = KdfParams {
@@ -454,19 +487,27 @@ pub fn enable(root: &Path, passphrase: &str) -> Result<EnableReport, String> {
 
     let mut encrypted = 0u32;
     for id in &ids {
-        let raw = fs::read(notes_dir(root).join(format!("{id}.md")))
-            .map_err(|e| format!("Failed to read note {id}: {e}"))?;
+        let plain_path = notes_dir(root).join(format!("{id}.md"));
+        let raw = fs::read(&plain_path).map_err(|e| format!("Failed to read note {id}: {e}"))?;
         write_note_encrypted(root, id, &key, &raw)?;
-        fs::remove_file(notes_dir(root).join(format!("{id}.md")))
+        // The ciphertext must give the note back before the plaintext goes:
+        // with no plaintext copy kept anywhere, this check is the safety net.
+        let round_trip = read_encrypted_file(&encrypted_note_path(root, id), &key)?;
+        if round_trip != raw {
+            return Err(format!(
+                "Encrypting note {id} did not round-trip; it was left unencrypted"
+            ));
+        }
+        shred_file(&plain_path)
             .map_err(|e| format!("Failed to remove plaintext note {id}: {e}"))?;
         encrypted += 1;
     }
 
-    // The audio the vault holds is encrypted with the same envelope. The
-    // plaintext backup above covers the (small) notes; a recording backup
-    // could be gigabytes, and a crash mid-conversion is recoverable — every
-    // file is either its plain self or a `.rcl`, and `disable` reads both.
+    // The audio the vault holds is encrypted with the same envelope. A crash
+    // mid-conversion is recoverable — every file is either its plain self or
+    // a `.rcl`, and `disable` reads both.
     encrypt_audio_dir(root, &key)?;
+    remove_legacy_backup(root);
 
     // The derived index is plaintext metadata (titles, tags). Zero
     // knowledge means it does not survive the toggle; `disable` rebuilds it
@@ -476,7 +517,6 @@ pub fn enable(root: &Path, passphrase: &str) -> Result<EnableReport, String> {
     session_unlock_with(key);
     Ok(EnableReport {
         notes_encrypted: encrypted,
-        backup_dir: backup_dir.to_string_lossy().to_string(),
     })
 }
 
@@ -584,6 +624,9 @@ pub fn unlock(root: &Path, passphrase: &str) -> Result<(), String> {
     let file = existing_key_file(root)?;
     let key = verify_passphrase(&file, passphrase)?;
     session_unlock_with(key);
+    // A vault encrypted by an earlier version may still hold that version's
+    // plaintext backup of every note; it goes on the owner's first unlock.
+    remove_legacy_backup(root);
     Ok(())
 }
 
@@ -645,7 +688,10 @@ mod tests {
         assert!(!notes_dir(&root).join(format!("{}.md", meta.id)).exists());
         let rcl = fs::read(encrypted_note_path(&root, &meta.id)).unwrap();
         assert!(!windows_contains(&rcl, b"Body line"));
-        assert!(backup_dir_has(&report.backup_dir, &meta.id));
+        // No plaintext copy anywhere: no backup folder, no .md left behind.
+        assert_eq!(report.notes_encrypted, 2);
+        assert!(!root.join(LEGACY_BACKUP_DIR).exists());
+        assert!(note_ids_in(&root, "md").unwrap().is_empty());
         // The audio is ciphertext too, and the plaintext index is gone.
         assert!(!root.join("audio").join("source-recording.wav").exists());
         assert!(root.join("audio").join("source-recording.wav.rcl").exists());
@@ -693,8 +739,21 @@ mod tests {
         haystack.windows(needle.len()).any(|w| w == needle)
     }
 
-    fn backup_dir_has(backup: &str, id: &str) -> bool {
-        fs::read_to_string(Path::new(backup).join(format!("{id}.md"))).is_ok()
+    /// A vault encrypted by an earlier version still holds that version's
+    /// plaintext `backup/`; the owner's unlock removes it.
+    #[test]
+    fn unlock_removes_a_legacy_plaintext_backup() {
+        let root = temp_root("legacy-backup");
+        create_note(&root, "Old", &[]).unwrap();
+        enable(&root, PASS).unwrap();
+        let legacy = root.join(LEGACY_BACKUP_DIR).join("20260901-120000");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("old.md"), "plaintext").unwrap();
+        session_lock();
+        unlock(&root, PASS).unwrap();
+        assert!(!root.join(LEGACY_BACKUP_DIR).exists());
+        session_lock();
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// The session key is a process-global, so the tests that exercise it

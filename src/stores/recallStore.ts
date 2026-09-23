@@ -50,9 +50,7 @@ interface RecallStore {
   openVaultFolder: () => Promise<void>;
   enableEncryption: (
     passphrase: string,
-  ) => Promise<
-    { notesEncrypted: number; backupDir: string } | { error: string }
-  >;
+  ) => Promise<{ notesEncrypted: number } | { error: string }>;
   unlock: (passphrase: string) => Promise<string | null>;
   lock: () => Promise<string | null>;
   disableEncryption: (passphrase: string) => Promise<string | null>;
@@ -185,10 +183,7 @@ const recallState = createSolidStore<RecallStore>((set, get) => ({
     await get().refreshEncryption();
     // The notes the page held are ciphertext metadata now; the editor closes.
     get().closeNote();
-    return {
-      notesEncrypted: result.data.notes_encrypted,
-      backupDir: result.data.backup_dir,
-    };
+    return { notesEncrypted: result.data.notes_encrypted };
   },
 
   unlock: async (passphrase) => {

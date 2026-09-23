@@ -193,7 +193,6 @@ export const RecallPage = () => {
     toast.success(
       t("settings.recall.enc.encrypted", {
         count: result.notesEncrypted,
-        path: result.backupDir,
       }),
     );
   };

@@ -199,7 +199,7 @@ pub async fn recall_encryption_status(
 }
 
 /// Turn encryption on: passphrase → key file + every note becomes `.rcl`.
-/// A plaintext backup is written and reported in the reply.
+/// No plaintext copy is kept (see `crypto::enable`).
 #[tauri::command]
 #[specta::specta]
 pub async fn recall_enable_encryption(

@@ -1364,8 +1364,11 @@ Backend: `recall/` + `commands/recall.rs`. The root is
   verifier in `vault.json`) to a master key held only in process memory while
   unlocked. Every note and recording becomes `<name>.rcl` = magic ‖ per-file
   XChaCha20-Poly1305 key wrapped by the master key ‖ nonce ‖ ciphertext.
-  Enabling writes a one-time plaintext backup to `backup/<timestamp>/` and
-  deletes `index.json`; disabling needs the passphrase, restores byte-identical
+  Enabling keeps **no plaintext copy**: each note's ciphertext is read back
+  and must decrypt to the original bytes before the `.md` is overwritten with
+  zeros and deleted (a failed round-trip stops the run with that note still
+  plain), `index.json` is deleted, and a `backup/` folder an earlier version
+  wrote is removed (on enable, and on the first unlock of an older vault); disabling needs the passphrase, restores byte-identical
   files and rebuilds the index. Changing the vault folder locks the session;
   while locked, a vault lists only note ids and every write is refused.
 

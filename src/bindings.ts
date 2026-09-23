@@ -1378,11 +1378,6 @@ export type DurationMetricSummary_Serialize = {
 /**  What [`enable`] reports back to the UI. */
 export type EnableReport = {
 	notes_encrypted: number,
-	/**
-	 *  Where the one-time plaintext backup was written — the UI shows it so
-	 *  the user can delete it once the encrypted vault checks out.
-	 */
-	backup_dir: string,
 };
 
 export type FftBallisticsMode = 
