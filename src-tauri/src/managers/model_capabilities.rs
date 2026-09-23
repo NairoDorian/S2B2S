@@ -7,7 +7,8 @@
 //! translation, language detection, and the supported-language set (see
 //! [`crate::managers::model::ModelManager::set_runtime_capabilities`]). This
 //! module covers the other half — reading the same values from the GGUF header
-//! *before* download, so search/listing can show them honestly ahead of a load.
+//! *before* a load (for files already on disk: the custom-folder and HF-cache
+//! scans), so listing can show them honestly ahead of a load.
 //!
 //! Everything goes through the [`CapabilityProber`] trait. Today the only
 //! implementation, [`GgufHeaderProber`], parses a local GGUF's header directly
@@ -69,7 +70,7 @@ const PROBE_KEYS: &[&str] = &[
 ];
 
 /// How confident we are that the app can run a given model, judged from its GGUF
-/// header alone (pre-download).
+/// header alone (before a load).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Compatibility {

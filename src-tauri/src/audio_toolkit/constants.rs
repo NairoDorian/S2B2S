@@ -5,6 +5,8 @@ pub const WHISPER_SAMPLE_RATE: u32 = 16000;
 /// decision.
 pub const VAD_FRAME_SAMPLES: usize = 256;
 
-/// Length of that window in milliseconds (256 / 16000). Used to frame the
-/// resampler and to bill time on the speech clock.
+/// Length of that window in milliseconds (256 / 16000). The capture path
+/// derives its framing and the speech clock's billing from the detector's
+/// `frame_samples()` instead; this constant frames the offline resamplers
+/// (`read_wav_samples`, file transcription) and the tests.
 pub const VAD_FRAME_MS: u64 = 16;

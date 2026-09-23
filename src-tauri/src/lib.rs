@@ -195,9 +195,8 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
 
 fn initialize_core_logic(app_handle: &AppHandle) {
     let startup_started = std::time::Instant::now();
-    // Before anything reads a path: move a pre-rename install's data dir,
-    // cache and logs to where this version looks for them. A no-op on every
-    // start after the first. See `portable::migrate_legacy_app_data`.
+    // Already done right after `build()` (see `run`); repeated here as the
+    // idempotent fallback, a no-op whenever the new directories exist.
     portable::migrate_legacy_app_data(app_handle);
     log::info!(
         "{} {} starting on {} {} — data dir {}",
@@ -212,9 +211,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: on macOS, Enigo (keyboard/mouse simulation) and the shortcuts are
     // NOT initialized here: the frontend calls `initialize_enigo` /
     // `initialize_shortcuts` after onboarding, so no permission dialog appears
-    // before the user is ready. Other platforms initialize both at the end of
-    // this function (see below), so the hotkeys work seconds before the
-    // webview has even loaded.
+    // before the user is ready. Other platforms initialize both right after
+    // the managers are created (see below), so the hotkeys work seconds before
+    // the webview has even loaded.
 
     // Initialize the managers. The audio recorder receives the streaming router
     // explicitly, so always-on microphone startup can wire live-preview frames
@@ -268,8 +267,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(Arc::clone(&llama_manager));
     // A port or alias changed while the app was closed leaves the `custom`
     // provider pointing at the old address; repair it here so the first
-    // post-processing request of the session does not fail to connect.
-    llama_manager.relink_custom_provider(false);
+    // post-processing request of the session does not fail to connect. Off the
+    // main thread: the decision can probe a dead loopback port for ~1 s, and
+    // the relink's own mutex serializes it with the one a start makes.
+    {
+        let llama_manager = Arc::clone(&llama_manager);
+        std::thread::spawn(move || {
+            llama_manager.relink_custom_provider(false);
+        });
+    }
     {
         let llama_settings = settings::get_settings(app_handle).llama;
         if llama_settings.autostart {
@@ -457,17 +463,23 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             _ => {}
         })
-        .build(app_handle)
-        .unwrap();
-    app_handle.manage(tray);
-
-    // Initialize tray menu with idle state
-    tray::update_tray_menu(app_handle);
-
-    // Apply show_tray_icon setting
+        .build(app_handle);
+    // A missing tray (e.g. Linux without an appindicator library) is not fatal:
+    // every tray helper already tolerates an unmanaged `TrayIcon`.
     let settings = settings::get_settings(app_handle);
-    if !settings.show_tray_icon {
-        tray::set_tray_visibility(app_handle, false);
+    match tray {
+        Ok(icon) => {
+            app_handle.manage(icon);
+
+            // Initialize tray menu with idle state
+            tray::update_tray_menu(app_handle);
+
+            // Apply show_tray_icon setting
+            if !settings.show_tray_icon {
+                tray::set_tray_visibility(app_handle, false);
+            }
+        }
+        Err(e) => log::error!("Failed to create the tray icon; running without one: {e}"),
     }
 
     // Refresh tray menu when model state changes
@@ -1268,10 +1280,12 @@ pub fn run(cli_args: CliArgs) {
             }
 
             let file_log_level = log::LevelFilter::Trace;
-            if let Ok(config_dir) = app.path().app_config_dir() {
+            // The store plugin resolves a relative path against the app *data*
+            // dir (not the config dir, which differs on Linux).
+            if let Ok(data_dir) = portable::app_data_dir(app.handle()) {
                 log::info!(
                     "Settings store: {} (log level {:?}, debug mode {})",
-                    config_dir
+                    data_dir
                         .join(portable::store_path(settings::SETTINGS_STORE_PATH))
                         .display(),
                     settings.log_level,
@@ -1374,6 +1388,14 @@ pub fn run(cli_args: CliArgs) {
         .invoke_handler(invoke_handler)
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
+
+    // Before anything reads the settings store — the macOS activation policy
+    // below, then `setup` (which Tauri runs on `RunEvent::Ready`): move a
+    // pre-rename install's data to where this version looks for it. Run any
+    // later and a read would seed the store with defaults whose autosave then
+    // creates the new directory (so the migration skips) or overwrites the
+    // migrated `settings_store.json`. See `portable::migrate_legacy_app_data`.
+    portable::migrate_legacy_app_data(app.handle());
 
     // Must sit between build() and run(): see the doc comment.
     #[cfg(target_os = "macos")]

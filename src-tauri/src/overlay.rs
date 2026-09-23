@@ -62,6 +62,9 @@ const OVERLAY_HEIGHT: f64 = 50.0;
 /// bars minus those 46 px), and the same for the pill carrying speech stats.
 const OVERLAY_REST_BASE_W: f64 = 126.0;
 const OVERLAY_STATS_BASE_W: f64 = 198.0;
+/// The working pill's fixed width (`--ov-work-w`). The compact window must fit
+/// it whatever the resting pill shrinks to, since the same window hosts both.
+const OVERLAY_WORK_W: f64 = 216.0;
 /// Window width beyond the pill, and height beyond the control row.
 const OVERLAY_WINDOW_SLACK_W: f64 = 44.0;
 const OVERLAY_WINDOW_SLACK_H: f64 = 10.0;
@@ -82,7 +85,8 @@ const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
 /// Compact pill window size for a scope block `block` px wide and views
-/// `view_h` px tall, with or without the speech-stats cluster.
+/// `view_h` px tall, with or without the speech-stats cluster. The width never
+/// drops below the working pill's, which animates in the same window.
 fn compact_dimensions(block: u32, view_h: u32, stats: bool) -> (f64, f64) {
     let base = if stats {
         OVERLAY_STATS_BASE_W
@@ -91,7 +95,7 @@ fn compact_dimensions(block: u32, view_h: u32, stats: bool) -> (f64, f64) {
     };
     let row_h = (f64::from(view_h) + OVERLAY_ROW_PADDING_H).max(OVERLAY_ROW_H);
     (
-        base + f64::from(block) + OVERLAY_WINDOW_SLACK_W,
+        (base + f64::from(block)).max(OVERLAY_WORK_W) + OVERLAY_WINDOW_SLACK_W,
         row_h + OVERLAY_WINDOW_SLACK_H,
     )
 }
@@ -1289,10 +1293,20 @@ mod tests {
             compact_dimensions(default.block_width_px(), default.view_height, true),
             (OVERLAY_STATS_WIDTH, OVERLAY_HEIGHT)
         );
-        // No views: the pill shrinks to its base; taller views raise the row.
+        // No views: the resting pill shrinks to its base, but the window still
+        // fits the working pill; taller views raise the row.
         assert_eq!(
             compact_dimensions(0, 22, false).0,
-            OVERLAY_REST_BASE_W + OVERLAY_WINDOW_SLACK_W
+            OVERLAY_WORK_W + OVERLAY_WINDOW_SLACK_W
+        );
+        assert_eq!(
+            compact_dimensions(0, 22, true).0,
+            OVERLAY_WORK_W + OVERLAY_WINDOW_SLACK_W
+        );
+        // Past the working width the resting pill decides again.
+        assert_eq!(
+            compact_dimensions(100, 22, false).0,
+            OVERLAY_REST_BASE_W + 100.0 + OVERLAY_WINDOW_SLACK_W
         );
         assert_eq!(
             compact_dimensions(110, 40, false).1,

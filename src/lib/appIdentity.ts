@@ -27,7 +27,10 @@ export const REPO_URL = "https://github.com/NairoDorian/S2B2S";
 export const RELEASES_URL =
   "https://github.com/NairoDorian/S2B2S/releases/latest";
 
-/** The folder under the OS app-data directory that holds models and history. */
+/**
+ * The product-name folder leaf a platform may use (kept for the migration's
+ * symmetry); the app-data folder itself is named after the identifier.
+ */
 export const DATA_DIR_NAME = "ZER0";
 
 /** The folder name a pre-rename install used; read by the migration only. */

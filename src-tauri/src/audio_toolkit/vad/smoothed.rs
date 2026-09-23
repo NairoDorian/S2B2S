@@ -84,26 +84,24 @@ impl VoiceActivityDetector for SmoothedVad {
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
         self.ensure_capacity(frame.len());
 
-        // 1. Buffer every incoming frame for possible pre-roll into circular buffer
+        // 1. Delegate to the wrapped boolean VAD first: a frame it fails on
+        // is passed through by the caller, so it must not also enter the
+        // pre-roll, where a later onset would emit it a second time.
+        let is_voice = self.inner_vad.is_voice(frame)?;
+
+        // 2. Buffer every scored frame for possible pre-roll into circular buffer
         let write_idx = (self.head_idx + self.buffered_count) % self.capacity_frames;
         let start = write_idx * self.slot_samples;
         self.buffer_samples[start..start + frame.len()].copy_from_slice(frame);
         self.buffer_slots[write_idx] = BufferedSlot {
             emitted: false,
-            voiced: false,
+            voiced: is_voice,
         };
         self.buffered_count += 1;
 
         while self.buffered_count > self.prefill_frames + 1 {
             self.head_idx = (self.head_idx + 1) % self.capacity_frames;
             self.buffered_count -= 1;
-        }
-
-        // 2. Delegate to the wrapped boolean VAD
-        let is_voice = self.inner_vad.is_voice(frame)?;
-        if self.buffered_count > 0 {
-            let last_idx = (self.head_idx + self.buffered_count - 1) % self.capacity_frames;
-            self.buffer_slots[last_idx].voiced = is_voice;
         }
 
         match (self.in_speech, is_voice) {
@@ -302,6 +300,43 @@ mod tests {
         // Every frame is emitted exactly once: the first onset, the hangover,
         // the one withheld silent frame (as pre-roll) and the new onset.
         let expected: Vec<f32> = (0..script.len()).flat_map(|i| frame(i as f32)).collect();
+        assert_eq!(emitted, expected);
+    }
+
+    /// Inner VAD whose first frame fails, then reports every frame voiced.
+    struct FailsFirstVad {
+        failed: bool,
+    }
+
+    impl VoiceActivityDetector for FailsFirstVad {
+        fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>> {
+            if !self.failed {
+                self.failed = true;
+                anyhow::bail!("scripted failure");
+            }
+            Ok(VadFrame::Speech(frame))
+        }
+
+        fn frame_samples(&self) -> usize {
+            4
+        }
+    }
+
+    #[test]
+    fn a_frame_the_inner_vad_failed_on_is_not_replayed_as_pre_roll() {
+        // The caller passes a failed frame through itself; the onset that
+        // follows must not emit it a second time from the pre-roll.
+        let mut vad = SmoothedVad::new(Box::new(FailsFirstVad { failed: false }), 3, 2, 2);
+        assert!(vad.push_frame(&frame(0.1)).is_err());
+
+        let mut emitted = Vec::new();
+        for v in [0.2, 0.3] {
+            if let VadFrame::Speech(buf) = vad.push_frame(&frame(v)).unwrap() {
+                emitted.extend_from_slice(buf);
+            }
+        }
+
+        let expected: Vec<f32> = [0.2, 0.3].into_iter().flat_map(frame).collect();
         assert_eq!(emitted, expected);
     }
 

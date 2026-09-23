@@ -302,7 +302,13 @@ pub async fn play_test_sound(app: AppHandle, sound_type: String) {
             return;
         }
     };
-    audio_feedback::play_test_sound(&app, sound);
+    // Playback blocks until the sound ends; keep it off the async workers.
+    if let Err(e) =
+        tauri::async_runtime::spawn_blocking(move || audio_feedback::play_test_sound(&app, sound))
+            .await
+    {
+        warn!("test sound task join failed: {e}");
+    }
 }
 
 #[tauri::command]

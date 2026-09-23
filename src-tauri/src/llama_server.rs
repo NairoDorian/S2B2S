@@ -3,17 +3,21 @@
 //!
 //! Replaces the hand-run `launch_server_E2B_Q4.ps1`: the same `llama-server`
 //! command line is built from `LlamaSettings`, the child is spawned detached
-//! (no console, tied to the app through a Windows job object), its output is
-//! kept in a ring buffer, readiness is polled on `/health`, and state changes
-//! reach the UI as `LlamaServerStateEvent`. Requests to the local endpoint
-//! call [`ensure_ready_for_provider`] first, so a cold start happens once and
-//! the request path only ever talks to a warm server.
+//! (no console; with `stop_on_exit` on, tied to the app through a Windows job
+//! object), its output is kept in a ring buffer, readiness is polled on
+//! `/health`, and state changes reach the UI as `LlamaServerStateEvent`.
+//! Requests to the local endpoint call [`ensure_ready_for_provider`] first, so
+//! a cold start happens once and the request path only ever talks to a warm
+//! server.
 //!
-//! Performance notes (see docs/PERFORMANCE.md): the supervisor is a plain
-//! thread that owns the child; readers are two more threads that block on the
-//! pipes; the request path reads one mutex-protected snapshot and never
-//! probes the process. Health polls stop once the server is ready — after
-//! that a 2 s `try_wait` is the only cost.
+//! Performance notes (see docs/PERFORMANCE.md): `start` spawns the child on
+//! its caller's thread (the blocking pool or a dedicated thread, never the
+//! main thread) and the manager holds it in `child`; a plain supervisor
+//! thread watches it, and two reader threads block on the pipes. The request
+//! path reads one mutex-protected snapshot plus a `try_wait` on the child —
+//! and, for an adopted server that has no child handle, one loopback
+//! `/health` probe on the blocking pool. Health polls stop once the server is
+//! ready — after that a 2 s `try_wait` is the only cost.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
@@ -39,6 +43,18 @@ const START_TIMEOUT: Duration = Duration::from_secs(180);
 const HEALTH_POLL: Duration = Duration::from_millis(300);
 const ALIVE_POLL: Duration = Duration::from_secs(2);
 
+/// The server binary's file name on this platform.
+pub const SERVER_EXE: &str = if cfg!(windows) {
+    "llama-server.exe"
+} else {
+    "llama-server"
+};
+
+/// `CREATE_NO_WINDOW`: a console child spawned from a GUI app gets no console
+/// window of its own.
+#[cfg(windows)]
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LlamaStatus {
@@ -53,7 +69,9 @@ pub enum LlamaStatus {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type, tauri_specta::Event)]
 pub struct LlamaServerStateEvent {
     pub status: LlamaStatus,
-    /// Human-readable reason for `Error`, or the last log line while starting.
+    /// Human-readable reason for `Error`, the last log line while starting,
+    /// or, for `Ready` on a server this app did not start, "Using a
+    /// llama-server already listening on port …".
     pub message: Option<String>,
     pub pid: Option<u32>,
     pub port: u16,
@@ -250,28 +268,25 @@ impl LlamaServerManager {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
         self.logs.lock().unwrap().clear();
         self.push_log(format!(
-            "$ {} {}",
-            exe.display(),
-            args.iter()
-                .map(|a| if a.contains(' ') {
-                    format!("\"{a}\"")
-                } else {
-                    a.clone()
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
+            "$ {}",
+            format_command_line(&exe.to_string_lossy(), &args)
         ));
 
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn {}: {e}", exe.display()))?;
-        crate::job_object::register(&child);
+        // The job object kills its members when the app goes, crash included;
+        // with `stop_on_exit` off the server is meant to outlive the app, so it
+        // stays out of the job. Read per start: a change applies at the next
+        // start, as every other setting here does.
+        if settings.stop_on_exit {
+            crate::job_object::register(&child);
+        }
         let pid = child.id();
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
 
@@ -294,7 +309,7 @@ impl LlamaServerManager {
         ] {
             let Some(reader) = reader else { continue };
             let manager = global().expect("manager registered");
-            std::thread::Builder::new()
+            let spawned = std::thread::Builder::new()
                 .name(format!("llama-{name}"))
                 .spawn(move || {
                     for line in BufReader::new(reader).lines().map_while(Result::ok) {
@@ -302,8 +317,16 @@ impl LlamaServerManager {
                             manager.push_log(line);
                         }
                     }
-                })
-                .map_err(|e| e.to_string())?;
+                });
+            if let Err(e) = spawned {
+                // Not yet in `self.child`, so nothing else would ever end it.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(self.start_failed(
+                    &settings,
+                    format!("Failed to start the llama-server {name} reader: {e}"),
+                ));
+            }
         }
 
         *self.child.lock().unwrap() = Some(child);
@@ -318,11 +341,33 @@ impl LlamaServerManager {
 
         let manager = global().expect("manager registered");
         let port = settings.port;
-        std::thread::Builder::new()
+        if let Err(e) = std::thread::Builder::new()
             .name("llama-supervisor".into())
             .spawn(move || manager.supervise(generation, port))
-            .map_err(|e| e.to_string())?;
+        {
+            // Without a supervisor nothing would ever leave `Starting`.
+            self.kill_child();
+            return Err(self.start_failed(
+                &settings,
+                format!("Failed to start the llama-server supervisor: {e}"),
+            ));
+        }
         Ok(())
+    }
+
+    /// A start that failed after the spawn: show the reason as the server's
+    /// state and hand it back for the caller's `Err`. The child is already
+    /// gone by the time this runs.
+    fn start_failed(&self, settings: &LlamaSettings, message: String) -> String {
+        error!("{message}");
+        let stopped = LlamaServerStateEvent::stopped(settings);
+        let shown = message.clone();
+        self.set_state(|s| {
+            *s = stopped;
+            s.status = LlamaStatus::Error;
+            s.message = Some(shown);
+        });
+        message
     }
 
     /// Owns the child's lifetime: polls readiness, then watches for exit.
@@ -517,6 +562,10 @@ impl LlamaServerManager {
         link_custom_provider(&mut settings);
         settings.post_process_provider_id = "custom".to_string();
         write_settings(&self.app, settings);
+        let _ = self.app.emit(
+            "settings-changed",
+            serde_json::json!({ "setting": "post_process_providers" }),
+        );
         Ok(())
     }
 
@@ -771,20 +820,33 @@ pub fn sync_custom_provider_to_local_server(settings: &mut AppSettings, running:
 /// The `llama-server` binary for the configured folder, if present.
 pub fn resolve_server_exe(settings: &LlamaSettings) -> Option<PathBuf> {
     let dir = PathBuf::from(settings.server_dir.as_deref()?);
-    let name = if cfg!(windows) {
-        "llama-server.exe"
-    } else {
-        "llama-server"
-    };
-    let direct = dir.join(name);
+    let direct = dir.join(SERVER_EXE);
     if direct.is_file() {
         return Some(direct);
     }
     // Releases sometimes unpack into a nested folder.
     std::fs::read_dir(&dir).ok()?.flatten().find_map(|entry| {
-        let candidate = entry.path().join(name);
+        let candidate = entry.path().join(SERVER_EXE);
         candidate.is_file().then_some(candidate)
     })
+}
+
+/// `exe` and `args` as one display line, an argument that contains a space
+/// wrapped in double quotes — the form the log's first line and the page's
+/// preview show, and the one `split_args` reads back.
+pub fn format_command_line(exe: &str, args: &[String]) -> String {
+    let mut line = exe.to_string();
+    for arg in args {
+        line.push(' ');
+        if arg.contains(' ') {
+            line.push('"');
+            line.push_str(arg);
+            line.push('"');
+        } else {
+            line.push_str(arg);
+        }
+    }
+    line
 }
 
 /// The command line, exactly as `launch_server_E2B_Q4.ps1` runs it, from the
@@ -944,7 +1006,8 @@ fn gguf_kind(name: &str) -> &'static str {
 
 /// Look for a llama.cpp folder the user already has (the layout of the
 /// maintainer's download script: `<root>/llama/llama-server.exe` with models
-/// under `<root>/model/**`), so first use needs no configuration.
+/// in `<root>/model` or one of its immediate subfolders), so first use needs
+/// no configuration.
 pub fn detect_existing_install() -> Option<LlamaDetectedInstall> {
     let mut roots: Vec<PathBuf> = Vec::new();
     if let Some(home) = dirs::home_dir() {

@@ -271,7 +271,7 @@ impl ModelDescriptor {
             filename: file.map(|f| f.filename.clone()).unwrap_or_default(),
             source: self.source.clone(),
             size_mb: file
-                .map(|f| (f.size_bytes / (1024 * 1024)) as u32)
+                .map(|f| f.size_bytes.div_ceil(1024 * 1024) as u32)
                 .unwrap_or(0),
             is_downloaded: status.is_downloaded,
             is_downloading: status.is_downloading,

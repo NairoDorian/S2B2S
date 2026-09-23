@@ -27,9 +27,9 @@ pub const RELEASES_URL: &str = "https://github.com/NairoDorian/S2B2S/releases/la
 /// of those services expects.
 pub const USER_AGENT: &str = "ZER0/0.9.7";
 
-/// The folder under the OS app-data directory that holds models, history and
-/// settings. Kept separate from `IDENTIFIER` because the folder name is also
-/// what the user sees in `%APPDATA%` / `~/.local/share`.
+/// The product-name folder leaf a platform may use (kept for the migration's
+/// symmetry). The app-data folder that holds models, history and settings is
+/// named after `IDENTIFIER`, not this.
 pub const DATA_DIR_NAME: &str = "ZER0";
 
 /// The folder name a pre-rename install used. Read at startup by the one-shot

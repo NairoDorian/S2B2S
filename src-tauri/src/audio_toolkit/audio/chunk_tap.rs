@@ -9,10 +9,13 @@
 //! same VAD-kept frame to the batch buffer (`RecordedAudio::stt_samples`) and to
 //! the streaming worker's feed callback, and this tap sits in the same place — so
 //! the tapped samples, the batch recording and the streaming model's input are
-//! one and the same signal in one and the same order. That is what lets
-//! `StreamUpdate::audio_committed_ms`, which is stated in *stream input* time,
-//! be used as an index into the tapped buffer (`ms * 16` at 16 kHz) without any
-//! resampling or silence-compression correction.
+//! one and the same signal in one and the same order. That shared timeline is
+//! what makes a chunk's audio the same speech the stream decoded, and what makes
+//! the pushed-sample count comparable to the stream's `input_received_ms` (the
+//! coordinator's lead check) without any resampling or silence-compression
+//! correction. Nothing indexes the tap by a stream timestamp: a chunk's
+//! boundaries are its own timestamps, and `StreamText::audio_committed_ms` is
+//! only a drain hint.
 //!
 //! A process-wide instance, like the Live FFT tap, so the always-on microphone
 //! (opened on its own thread during startup) is wired to it before any manager

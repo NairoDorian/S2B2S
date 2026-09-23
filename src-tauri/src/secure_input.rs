@@ -478,10 +478,18 @@ mod imp {
         let mut wanted: Vec<(String, ShortcutBinding, bool)> = Vec::new();
         if eligible {
             for (id, binding) in &settings.bindings {
-                if id == "cancel" && !state.cancel_requested.load(Ordering::SeqCst) {
-                    continue;
-                }
-                if id == "transcribe_with_post_process" && !settings.post_process_enabled {
+                // The same rule as normal registration (feature gates, empty
+                // bindings, performance-mode conflicts): otherwise a fresh
+                // install's empty transcribe bindings plan as Uncovered and
+                // raise a false "shortcuts blocked" warning. Cancel is the
+                // exception: it is live only while a recording asks for it.
+                if id == "cancel" {
+                    if !state.cancel_requested.load(Ordering::SeqCst)
+                        || binding.current_binding.is_empty()
+                    {
+                        continue;
+                    }
+                } else if !crate::shortcut::should_register_binding(&settings, binding) {
                     continue;
                 }
 

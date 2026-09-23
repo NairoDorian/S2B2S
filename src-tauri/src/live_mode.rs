@@ -3,9 +3,10 @@
 //!
 //! One session = one folder `<output dir>/live_<timestamp>/` holding
 //! `transcript.txt` (or `.md`) and `chunk_0001.wav`, `chunk_0002.wav`, …
-//! Each chunk is a normal recording: `AudioRecordingManager` captures
-//! (raw tap forced on) while `TranscriptionManager::start_stream` runs the
-//! model's native live stream. When a chunk reaches its target length — on
+//! Each chunk is a normal recording: `AudioRecordingManager` captures (the
+//! raw tap on exactly when `save_audio` is, whatever `save_raw_audio` says)
+//! while `TranscriptionManager::start_stream` runs the model's native live
+//! stream. When a chunk reaches its target length — on
 //! the first pause after 80 % of it, if `prefer_silence_boundary` is on — the
 //! stream is finalized, the recording stopped, the chunk WAV written on a
 //! blocking thread, the finalized text committed to the transcript, and the
@@ -564,6 +565,7 @@ impl LiveModeManager {
             // The chunk's speech time, as the dictation paths record it: a
             // Success row without an audio duration fails validation.
             statistics.set_speech_audio_duration_ms(rm.last_speech_ms() as i64, 16_000);
+            let mut stream_failed = false;
             let mut chunk_text = match tm.finalize_stream() {
                 StreamFinalization::Completed(tracked) => {
                     tracked.attempt.finish(StatisticsRunStatus::Success);
@@ -571,9 +573,11 @@ impl LiveModeManager {
                     Some(tracked.text)
                 }
                 StreamFinalization::NeverStarted => None,
+                // The stream's own attempt was already finished as Failed; the
+                // run stays open so a batch fallback below can still succeed.
                 StreamFinalization::Failed(err) | StreamFinalization::Timeout(err) => {
                     warn!("Live Mode: stream finalize failed: {err}");
-                    statistics.finish(StatisticsRunStatus::Failed);
+                    stream_failed = true;
                     None
                 }
             };
@@ -590,26 +594,27 @@ impl LiveModeManager {
                 StopRecordingResult::Captured { recorded, .. } => {
                     if chunk_text.is_none() && !recorded.stt_samples.is_empty() {
                         // No stream text (never started, failed or timed out):
-                        // fall back to a batch decode of the captured chunk.
-                        let fallback_ok = match tm.transcribe(recorded.stt_samples.clone()) {
-                            Ok(text) => {
-                                chunk_text = Some(text);
-                                true
+                        // fall back to a batch decode of the captured chunk. A
+                        // tracked decode, so a rescued chunk counts as a success
+                        // (an untracked one leaves the run without an attempt,
+                        // which records it as Empty); on error
+                        // `transcribe_tracked` finishes the run as Failed.
+                        match tm
+                            .transcribe_tracked(recorded.stt_samples.clone(), statistics.clone())
+                        {
+                            Ok(tracked) => {
+                                tracked.attempt.finish(StatisticsRunStatus::Success);
+                                statistics.finish(StatisticsRunStatus::Success);
+                                chunk_text = Some(tracked.text);
                             }
-                            Err(e) => {
-                                warn!("Live Mode: batch fallback failed: {e}");
-                                false
-                            }
-                        };
-                        if !statistics.is_terminal() {
-                            statistics.finish(if fallback_ok {
-                                StatisticsRunStatus::Success
-                            } else {
-                                StatisticsRunStatus::Failed
-                            });
+                            Err(e) => warn!("Live Mode: batch fallback failed: {e}"),
                         }
                     } else if !statistics.is_terminal() {
-                        statistics.finish(StatisticsRunStatus::Empty);
+                        statistics.finish(if stream_failed {
+                            StatisticsRunStatus::Failed
+                        } else {
+                            StatisticsRunStatus::Empty
+                        });
                     }
 
                     if live.save_audio {

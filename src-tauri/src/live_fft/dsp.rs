@@ -1508,7 +1508,10 @@ pub(super) fn spectral_features_impl<const SIMD: bool>(
         if p > 1e-24 {
             (10.0 * p.log10()) as f32
         } else {
-            -240.0
+            // The floor `SpectralFeatures::default()` (the silence shortcut)
+            // and `rms_db` report, so a band without power reads the same
+            // whichever path computed it.
+            -120.0
         }
     };
     f.bass_db = db(bass.pw);
@@ -1886,16 +1889,15 @@ impl SpectrumPipeline {
         true
     }
 
-    /// Feed new samples: only the tail that still fits the window is kept,
-    /// the EQ runs on the new samples in time order, digital silence is
-    /// tracked on what enters the FIFO, then they enter it.
+    /// Feed new samples: the EQ runs on all of them in time order, only the
+    /// tail that still fits the window is kept, digital silence is tracked
+    /// on what enters the FIFO, then it enters it.
     pub fn ingest(&mut self, samples: &[f32], sample_rate: u32, p: &LiveFftSettings) {
         self.prepare(p, sample_rate);
         if samples.is_empty() {
             return;
         }
         let keep = samples.len().min(self.capacity);
-        let tail = &samples[samples.len() - keep..];
 
         let eq_active = p.eq_enabled
             && self.eq.update_and_check_active(
@@ -1926,13 +1928,19 @@ impl SpectrumPipeline {
         // EQ, whose decaying tail is not silence), so a window counted
         // silent is exactly zero and the shortcut is exact.
         let silent = if eq_active {
+            // The filters see every sample, including those of a chunk
+            // longer than the window that never reach it: skipping them
+            // would make the biquad state jump across the dropped span.
+            // `block` only grows to the largest chunk, then is reused.
             self.block.clear();
-            self.block.extend_from_slice(tail);
+            self.block.extend_from_slice(samples);
             self.eq
                 .process_block_in_place(&mut self.block, f64::from(p.eq_amount));
-            self.fifo.add(&self.block);
-            block_is_silent(&self.block)
+            let tail = &self.block[self.block.len() - keep..];
+            self.fifo.add(tail);
+            block_is_silent(tail)
         } else {
+            let tail = &samples[samples.len() - keep..];
             self.fifo.add(tail);
             block_is_silent(tail)
         };
@@ -2074,7 +2082,12 @@ impl SpectrumPipeline {
             fft_size: self.fft_size as u32,
             window_samples: self.capacity as u32,
             linear_bins: (self.fft_size / 2 + 1) as u32,
-            magnitude_bins: self.magnitude_bins as u32,
+            // The features compute the whole band (see `process`).
+            magnitude_bins: if p.spectral_features {
+                self.magnitude.len() as u32
+            } else {
+                self.magnitude_bins as u32
+            },
             output_bins: n_out as u32,
             identity_warp: self.warp.is_identity(),
             full_scale_ref: match p.magnitude_norm {
@@ -2178,7 +2191,9 @@ impl SpectrumPipeline {
             // 1. window into the aligned centre of the zero-padded frame
             self.window_into_frame();
 
-            // 2. FFT + magnitude (only the bins the warp reads)
+            // 2. FFT + magnitude (only the bins the warp reads, unless the
+            //    spectral features need the whole band: they describe the
+            //    signal, so they must not move with `display_max_hz`)
             if let Some(fft) = &self.fft
                 && fft
                     .process_with_scratch(&mut self.padded, &mut self.spectrum, &mut self.scratch)
@@ -2186,7 +2201,12 @@ impl SpectrumPipeline {
             {
                 self.spectrum.fill(Complex::new(0.0, 0.0));
             }
-            let n_mag = self.magnitude_bins.min(self.spectrum.len());
+            let n_mag = if p.spectral_features {
+                self.magnitude.len()
+            } else {
+                self.magnitude_bins
+            }
+            .min(self.spectrum.len());
             // (LLVM's auto-vectorised sqrt measured faster than every AVX2
             // form tried: vhaddps / vshufps deinterleave with vsqrtps or
             // rsqrt + Newton-Raphson, 0.74–0.93×.)
@@ -3538,6 +3558,76 @@ mod tests {
         assert_eq!(stats.features, Some(SpectralFeatures::default()));
         p.spectral_features = false;
         assert!(pipe.process(&p, 33.0, &mut out).features.is_none());
+    }
+
+    /// The features describe the signal, not the display: narrowing the
+    /// axis (which shrinks the magnitude bins the warp reads) changes none
+    /// of them, and a band the axis no longer reaches keeps its level.
+    #[test]
+    fn spectral_features_do_not_depend_on_the_display_range() {
+        let sr = 48_000u32;
+        let x: Vec<f32> = sine(1000.0, 0.3, sr, 4096)
+            .iter()
+            .zip(noise(0.05, 4096, 3))
+            .map(|(a, b)| a + b)
+            .collect();
+        let features = |display_max_hz: f32| {
+            let mut p = settings();
+            p.spectral_features = true;
+            p.fft_size = 8192;
+            p.window_samples = 4096;
+            p.display_max_hz = display_max_hz;
+            let p = p.normalized();
+            let mut pipe = SpectrumPipeline::new();
+            pipe.ingest(&x, sr, &p);
+            let mut out = Vec::new();
+            let f = pipe.process(&p, 33.0, &mut out).features.expect("features");
+            let st = pipe.status(&p);
+            (f, st.magnitude_bins, st.linear_bins)
+        };
+        let (narrow, narrow_bins, linear_bins) = features(2_000.0);
+        let (wide, wide_bins, _) = features(24_000.0);
+        assert_eq!(narrow.to_array(), wide.to_array());
+        assert!(narrow.high_db > -120.0, "high band {}", narrow.high_db);
+        assert_eq!((narrow_bins, wide_bins), (linear_bins, linear_bins));
+    }
+
+    /// The EQ is stateful and runs in time order on every sample: a chunk
+    /// longer than the window leaves the same filter state, and the same
+    /// window, as the same audio fed in window-sized pieces.
+    #[test]
+    fn eq_filters_every_sample_of_a_chunk_longer_than_the_window() {
+        let sr = 48_000u32;
+        let mut p = settings();
+        p.fft_size = 4096;
+        p.window_samples = 1024;
+        p.eq_enabled = true;
+        p.high_gain_db = 9.0;
+        p.low_gain_db = -6.0;
+        p.loudness_mode = FftLoudnessMode::Off;
+        p.ballistics_enabled = false;
+        let p = p.normalized();
+        let x: Vec<f32> = sine(90.0, 0.4, sr, 4096)
+            .iter()
+            .zip(noise(0.1, 4096, 9))
+            .map(|(a, b)| a + b)
+            .collect();
+        let next = sine(3000.0, 0.2, sr, 256);
+        let (mut whole, mut pieces) = (SpectrumPipeline::new(), SpectrumPipeline::new());
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        whole.ingest(&x, sr, &p);
+        for chunk in x.chunks(1024) {
+            pieces.ingest(chunk, sr, &p);
+        }
+        whole.process(&p, 33.0, &mut a);
+        pieces.process(&p, 33.0, &mut b);
+        assert_eq!(a, b, "the window holds the same filtered samples");
+        // The state carries on identically into the next chunk.
+        whole.ingest(&next, sr, &p);
+        pieces.ingest(&next, sr, &p);
+        whole.process(&p, 33.0, &mut a);
+        pieces.process(&p, 33.0, &mut b);
+        assert_eq!(a, b, "the biquads left the same state");
     }
 
     /// The ballistics history restarts at the current frame when the output

@@ -23,7 +23,7 @@ fn write_temp_file(data: &[u8]) -> (TempDir, std::path::PathBuf) {
 
 #[test]
 fn test_verify_sha256_skipped_when_none() {
-    // Custom models have no expected hash — verification must be a no-op.
+    // A URL source without a pinned hash — verification must be a no-op.
     let (_dir, path) = write_temp_file(b"anything");
     assert!(ModelManager::verify_sha256(&path, None, "custom").is_ok());
     assert!(

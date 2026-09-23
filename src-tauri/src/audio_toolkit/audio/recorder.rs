@@ -1014,7 +1014,7 @@ fn handle_frame(
             out_buf.extend_from_slice(buf);
             // Mid-recording tap, on the *same* frames and in the same order as
             // the batch buffer above and the stream feed below — that identical
-            // timeline is what lets `audio_committed_ms` index into it.
+            // timeline makes a chunk's audio the speech the stream decoded.
             if let Some(tap) = chunk_tap
                 && tap.is_active()
             {
@@ -1037,7 +1037,7 @@ fn handle_frame(
             Err(e) => {
                 if *vad_errors == 0 {
                     log::error!(
-                        "VAD failed on a frame; passing audio through unfiltered for the rest of this recording: {e}"
+                        "VAD failed on a frame; passing failed frames through unfiltered (logged once per recording): {e}"
                     );
                 }
                 *vad_errors += 1;

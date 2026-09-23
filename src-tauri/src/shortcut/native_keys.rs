@@ -91,12 +91,28 @@ impl NativeKeysState {
     /// Create a new NativeKeysState
     pub fn new(app: AppHandle) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<ManagerCommand>();
+        // The thread reports whether it could create its `HotkeyManager`
+        // (it cannot without the macOS accessibility permission). Without this
+        // a failure would only be logged: `new` would return a dead state, and
+        // the caller's Tauri fallback / rollback would never run.
+        let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
 
         // Start the manager thread
         let app_clone = app.clone();
         let thread_handle = thread::spawn(move || {
-            Self::manager_thread(cmd_rx, app_clone);
+            Self::manager_thread(cmd_rx, ready_tx, app_clone);
         });
+        match ready_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                let _ = thread_handle.join();
+                return Err(e);
+            }
+            Err(_) => {
+                let _ = thread_handle.join();
+                return Err("native-keys manager thread exited before starting".to_string());
+            }
+        }
 
         Ok(Self {
             command_sender: Mutex::new(cmd_tx),
@@ -109,7 +125,11 @@ impl NativeKeysState {
     }
 
     /// The main manager thread - owns the HotkeyManager and processes commands
-    fn manager_thread(cmd_rx: Receiver<ManagerCommand>, app: AppHandle) {
+    fn manager_thread(
+        cmd_rx: Receiver<ManagerCommand>,
+        ready_tx: mpsc::SyncSender<Result<(), String>>,
+        app: AppHandle,
+    ) {
         info!("native-keys manager thread started");
 
         // Create the HotkeyManager in this thread
@@ -117,9 +137,11 @@ impl NativeKeysState {
             Ok(m) => m,
             Err(e) => {
                 error!("Failed to create HotkeyManager: {}", e);
+                let _ = ready_tx.send(Err(format!("Failed to create HotkeyManager: {e}")));
                 return;
             }
         };
+        let _ = ready_tx.send(Ok(()));
 
         // Maps binding IDs to HotkeyIds and hotkey strings
         let mut binding_to_hotkey: HashMap<String, HotkeyId> = HashMap::new();
@@ -428,7 +450,8 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
     let state = NativeKeysState::new(app.clone())?;
 
     let default_bindings = settings::get_default_settings().bindings;
-    let user_settings = settings::load_or_create_app_settings(app);
+    // `shortcut::init_shortcuts` already did the startup load and dump.
+    let user_settings = get_settings(app);
 
     // Register all bindings except cancel (which is dynamic). The feature
     // gates and the performance-mode conflict rule live in

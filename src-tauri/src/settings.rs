@@ -1695,9 +1695,8 @@ pub struct AppSettings {
     ///
     /// Ignored by the nested Multi Streaming STT mode, and only by it: there are
     /// no decodes to crop, so the setting has nothing to say about that session.
-    /// It is deliberately not hidden while the nested toggle is on — it keeps its
-    /// value for the parent mode, and a control that vanishes is a value the user
-    /// cannot check.
+    /// The Multi-STT page hides the slider while the nested toggle is on; the
+    /// stored value is kept for the parent mode.
     #[serde(default = "default_multi_stt_streaming_context_chunks")]
     pub multi_stt_streaming_context_chunks: u32,
     /// Experimental Multi Streaming STT — nested inside the streaming-first mode
@@ -2747,6 +2746,13 @@ fn apply_settings_migrations(
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
     }
 
+    // A version bump is a change in itself: without persisting it, a store
+    // that needed no other fix would stay at its old version and replay every
+    // migration above on each read (and `get_settings` is on hot paths).
+    if stored_schema_version < u64::from(CURRENT_SETTINGS_SCHEMA_VERSION) {
+        updated = true;
+    }
+
     updated
 }
 
@@ -3526,7 +3532,8 @@ mod tests {
         let mut settings: AppSettings =
             serde_json::from_value(stored.clone()).expect("valid settings parse with schema 4");
 
-        assert!(!apply_settings_migrations(&mut settings, &stored));
+        // Reports a change (the version bump itself), but keeps the binding.
+        assert!(apply_settings_migrations(&mut settings, &stored));
         assert_eq!(
             settings.bindings["transcribe_with_post_process"].current_binding,
             "ctrl+shift+space"

@@ -766,37 +766,36 @@ pub(crate) fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Res
                 .key(Key::Return, Direction::Release)
                 .map_err(|e| format!("Failed to release Return key: {}", e))?;
         }
-        AutoSubmitKey::CtrlEnter => {
-            enigo
-                .key(Key::Control, Direction::Press)
-                .map_err(|e| format!("Failed to press Control key: {}", e))?;
-            enigo
-                .key(Key::Return, Direction::Press)
-                .map_err(|e| format!("Failed to press Return key: {}", e))?;
-            enigo
-                .key(Key::Return, Direction::Release)
-                .map_err(|e| format!("Failed to release Return key: {}", e))?;
-            enigo
-                .key(Key::Control, Direction::Release)
-                .map_err(|e| format!("Failed to release Control key: {}", e))?;
-        }
-        AutoSubmitKey::CmdEnter => {
-            enigo
-                .key(Key::Meta, Direction::Press)
-                .map_err(|e| format!("Failed to press Meta/Cmd key: {}", e))?;
-            enigo
-                .key(Key::Return, Direction::Press)
-                .map_err(|e| format!("Failed to press Return key: {}", e))?;
-            enigo
-                .key(Key::Return, Direction::Release)
-                .map_err(|e| format!("Failed to release Return key: {}", e))?;
-            enigo
-                .key(Key::Meta, Direction::Release)
-                .map_err(|e| format!("Failed to release Meta/Cmd key: {}", e))?;
-        }
+        AutoSubmitKey::CtrlEnter => send_return_with_modifier(enigo, Key::Control, "Control")?,
+        AutoSubmitKey::CmdEnter => send_return_with_modifier(enigo, Key::Meta, "Meta/Cmd")?,
     }
 
     Ok(())
+}
+
+/// Modifier + Return. The modifier is released even when the Return press or
+/// release fails, so a failed auto-submit never leaves Ctrl/Cmd held down for
+/// the user's next keystroke; the first error is the one returned.
+fn send_return_with_modifier(
+    enigo: &mut Enigo,
+    modifier: Key,
+    modifier_name: &str,
+) -> Result<(), String> {
+    enigo
+        .key(modifier, Direction::Press)
+        .map_err(|e| format!("Failed to press {modifier_name} key: {}", e))?;
+    let enter = enigo
+        .key(Key::Return, Direction::Press)
+        .map_err(|e| format!("Failed to press Return key: {}", e))
+        .and_then(|()| {
+            enigo
+                .key(Key::Return, Direction::Release)
+                .map_err(|e| format!("Failed to release Return key: {}", e))
+        });
+    let release = enigo
+        .key(modifier, Direction::Release)
+        .map_err(|e| format!("Failed to release {modifier_name} key: {}", e));
+    enter.and(release)
 }
 
 fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool {

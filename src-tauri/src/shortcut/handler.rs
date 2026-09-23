@@ -32,10 +32,10 @@ pub fn handle_shortcut_event(
     hotkey_string: &str,
     is_pressed: bool,
 ) {
-    let settings = get_settings(app);
-
-    // Transcribe bindings are handled by the coordinator.
+    // Transcribe bindings are handled by the coordinator. Only they need the
+    // settings (a full store read), so cancel and test events skip it.
     if is_transcribe_binding(binding_id) {
+        let settings = get_settings(app);
         if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {
             coordinator.send_input(
                 binding_id,

@@ -106,7 +106,8 @@ pub fn store_path(relative: &str) -> PathBuf {
     }
 }
 
-/// Move a pre-rename install's data to where 0.9.7 and later look for it.
+/// Move a pre-rename install's data and cache to where 0.9.7 and later look
+/// for them.
 ///
 /// The fork renamed its bundle identifier — `app_identity::LEGACY_IDENTIFIER` to
 /// `app_identity::IDENTIFIER` — and Tauri derives the app data, cache and log
@@ -127,11 +128,12 @@ pub fn migrate_legacy_app_data(app: &tauri::AppHandle) {
         return;
     }
 
+    // Not the log directory: the log plugin creates the new one while the app
+    // is being built, before this can run, and old logs are disposable anyway.
     let paths = app.path();
-    let dirs: [(&str, Result<PathBuf, tauri::Error>); 3] = [
+    let dirs: [(&str, Result<PathBuf, tauri::Error>); 2] = [
         ("app data", paths.app_data_dir()),
         ("cache", paths.app_cache_dir()),
-        ("logs", paths.app_log_dir()),
     ];
 
     for (label, new_dir) in dirs {

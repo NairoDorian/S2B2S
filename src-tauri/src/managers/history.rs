@@ -333,14 +333,18 @@ impl HistoryManager {
         // re-decoded) on every launch, on the startup path.
         let mut stmt = conn.prepare(
             "SELECT id, file_name, transcription_text, post_processed_text,
-                    audio_duration_ms IS NULL OR speech_duration_ms IS NULL AS needs_audio
+                    audio_duration_ms IS NULL OR speech_duration_ms IS NULL AS needs_audio,
+                    mode
              FROM transcription_history
              WHERE audio_duration_ms IS NULL OR speech_duration_ms IS NULL
                 OR (word_count IS NULL
-                    AND trim(COALESCE(post_processed_text, transcription_text)) != '')",
+                    AND trim(CASE WHEN mode = 'multi_stt' AND post_processed_text IS NOT NULL
+                                  THEN post_processed_text
+                                  ELSE transcription_text END) != '')",
         )?;
 
-        let entries_to_update: Vec<(i32, String, String, Option<String>, bool)> = stmt
+        type BackfillRow = (i32, String, String, Option<String>, bool, Option<String>);
+        let entries_to_update: Vec<BackfillRow> = stmt
             .query_map([], |row| {
                 Ok((
                     row.get(0)?,
@@ -348,6 +352,7 @@ impl HistoryManager {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             })?
             .filter_map(|res| res.ok())
@@ -359,51 +364,55 @@ impl HistoryManager {
                 entries_to_update.len()
             );
 
-            for (id, file_name, transcription_text, post_processed_text, needs_audio) in
+            for (id, file_name, transcription_text, post_processed_text, needs_audio, mode) in
                 entries_to_update
             {
                 let wav_path = self.recordings_dir.join(&file_name);
-                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) =
-                    if needs_audio && wav_path.exists() {
-                        if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
-                            let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
-                            let speech_dur =
-                                if let Ok(mut vad) = crate::audio_toolkit::EarshotVad::new(0.5) {
-                                    let mut voiced = 0;
-                                    let total = samples_16k.len()
-                                        / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
-                                    #[allow(clippy::chunks_exact_to_as_chunks)]
-                                    for chunk in samples_16k.chunks_exact(
-                                        crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
-                                    ) {
-                                        if let Ok(frame) = vad.push_frame(chunk)
-                                            && frame.is_speech()
-                                        {
-                                            voiced += 1;
-                                        }
-                                    }
-                                    if total > 0 && voiced > 0 {
-                                        (voiced as f64) * 16.0
-                                    } else {
-                                        dur
-                                    }
-                                } else {
-                                    dur
-                                };
-                            (Some(dur), Some(speech_dur), Some(16000))
+                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) = if needs_audio
+                    && wav_path.exists()
+                {
+                    if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
+                        let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
+                        let speech_dur = if let Ok(mut vad) =
+                            crate::audio_toolkit::EarshotVad::new(0.5)
+                        {
+                            let mut voiced = 0;
+                            let total = samples_16k.len()
+                                / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
+                            #[allow(clippy::chunks_exact_to_as_chunks)]
+                            for chunk in samples_16k.chunks_exact(
+                                crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
+                            ) {
+                                if let Ok(frame) = vad.push_frame(chunk)
+                                    && frame.is_speech()
+                                {
+                                    voiced += 1;
+                                }
+                            }
+                            if total > 0 && voiced > 0 {
+                                // Frames of 16 kHz samples, in ms.
+                                (voiced * crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES)
+                                    as f64
+                                    / 16.0
+                            } else {
+                                dur
+                            }
                         } else {
-                            (None, None, None)
-                        }
+                            dur
+                        };
+                        (Some(dur), Some(speech_dur), Some(16000))
                     } else {
                         (None, None, None)
-                    };
-
-                let text_for_words = post_processed_text.unwrap_or(transcription_text);
-                let word_count = if !text_for_words.trim().is_empty() {
-                    Some(text_for_words.split_whitespace().count() as i32)
+                    }
                 } else {
-                    None
+                    (None, None, None)
                 };
+
+                let word_count = counted_word_count(
+                    &transcription_text,
+                    post_processed_text.as_deref(),
+                    mode.as_deref(),
+                );
 
                 let _ = conn.execute(
                     "UPDATE transcription_history SET audio_duration_ms = COALESCE(audio_duration_ms, ?1), speech_duration_ms = COALESCE(speech_duration_ms, ?2), sample_rate_hz = COALESCE(sample_rate_hz, ?3), word_count = COALESCE(word_count, ?4) WHERE id = ?5",
@@ -444,13 +453,13 @@ impl HistoryManager {
 
         let transcription_text: String = row.get("transcription_text")?;
         let post_processed_text: Option<String> = row.get("post_processed_text")?;
+        let mode: Option<String> = row.get("mode").unwrap_or(None);
         let word_count: Option<i32> = row.get("word_count").unwrap_or(None).or_else(|| {
-            let active_text = post_processed_text.as_ref().unwrap_or(&transcription_text);
-            if !active_text.trim().is_empty() {
-                Some(active_text.split_whitespace().count() as i32)
-            } else {
-                None
-            }
+            counted_word_count(
+                &transcription_text,
+                post_processed_text.as_deref(),
+                mode.as_deref(),
+            )
         });
 
         Ok(HistoryEntry {
@@ -472,7 +481,7 @@ impl HistoryManager {
             transcription_latency_ms: row.get("transcription_latency_ms").unwrap_or(None),
             post_processing_latency_ms: row.get("post_processing_latency_ms").unwrap_or(None),
             language: row.get("language").unwrap_or(None),
-            mode: row.get("mode").unwrap_or(None),
+            mode,
             extra_models,
         })
     }
@@ -495,15 +504,12 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
     ) -> Result<HistoryEntry> {
-        let word_count = (!transcription_text.trim().is_empty())
-            .then(|| transcription_text.split_whitespace().count() as i32);
         self.save_entry_full(NewHistoryEntry {
             file_name,
             transcription_text,
             post_process_requested,
             post_processed_text,
             post_process_prompt,
-            word_count,
             ..Default::default()
         })
     }
@@ -517,8 +523,11 @@ impl HistoryManager {
             .as_ref()
             .and_then(|m| serde_json::to_string(m).ok());
         let word_count = new_entry.word_count.or_else(|| {
-            (!new_entry.transcription_text.trim().is_empty())
-                .then(|| new_entry.transcription_text.split_whitespace().count() as i32)
+            counted_word_count(
+                &new_entry.transcription_text,
+                new_entry.post_processed_text.as_deref(),
+                new_entry.mode.as_deref(),
+            )
         });
 
         let conn = self.get_connection()?;

@@ -154,6 +154,18 @@ fn final_paste_method(preview_only: bool) -> Option<PasteMethod> {
     preview_only.then_some(PasteMethod::CtrlV)
 }
 
+/// Multi-STT performance mode, on an exit path after the "full power"
+/// shortcut was sent at recording start (`trigger_on_start`): send the
+/// "normal" one so the external power profile is not left at full power.
+fn restore_power_if_triggered_on_start(app: &AppHandle) {
+    let settings = get_settings(app);
+    if settings.multi_stt_performance_mode_enabled
+        && settings.multi_stt_performance_mode_trigger_on_start
+    {
+        restore_normal_power(app, settings.multi_stt_performance_mode_normal_shortcut);
+    }
+}
+
 /// Multi-STT performance mode: simulate the "normal power" shortcut off the
 /// current thread. Used on exit paths that otherwise would leave the external
 /// power profile stuck in "full power".
@@ -817,6 +829,14 @@ impl ShortcutAction for TranscribeAction {
                 }
                 StopRecordingResult::NotActive => {
                     statistics.finish(StatisticsRunStatus::Failed);
+                    // Nothing of ours was recording: a cancel got there first.
+                    // Undo the "transcribing" state `stop()` has just shown,
+                    // unless another recording owns the overlay by now.
+                    if !rm.is_recording() {
+                        tm.cancel_stream();
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                    }
                     return;
                 }
                 StopRecordingResult::Failed(err) => {
@@ -1029,11 +1049,14 @@ impl ShortcutAction for TranscribeAction {
                         // vault, not History, is the destination.
                         if crate::recall::insertion::is_armed() {
                             let recording_path = hm.recordings_dir().join(&file_name);
-                            crate::recall::insertion::absorb_recording(
-                                &ah,
-                                &recording_path,
-                                wav_saved,
-                            );
+                            let absorb_ah = ah.clone();
+                            tauri::async_runtime::spawn_blocking(move || {
+                                crate::recall::insertion::absorb_recording(
+                                    &absorb_ah,
+                                    &recording_path,
+                                    wav_saved,
+                                );
+                            });
                             if let Err(e) = crate::recall::insertion::emit_insert(
                                 &ah,
                                 processed.final_text.clone(),
@@ -1961,19 +1984,22 @@ impl ShortcutAction for MultiSttAction {
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
-                    let perf_settings = get_settings(&ah);
-                    if perf_settings.multi_stt_performance_mode_enabled
-                        && perf_settings.multi_stt_performance_mode_trigger_on_start
-                    {
-                        restore_normal_power(
-                            &ah,
-                            perf_settings.multi_stt_performance_mode_normal_shortcut,
-                        );
-                    }
+                    restore_power_if_triggered_on_start(&ah);
                     return;
                 }
                 StopRecordingResult::NotActive => {
                     statistics.finish(StatisticsRunStatus::Failed);
+                    // As in TranscribeAction: a cancel got there first. Release
+                    // the session state and undo the UI `stop()` has shown,
+                    // unless another recording owns it by now.
+                    if !rm.is_recording() {
+                        crate::multi_stt_stream::cancel();
+                        crate::multi_streaming::cancel(&tm);
+                        tm.cancel_stream();
+                        utils::hide_recording_overlay(&ah);
+                        set_tray_state(&ah, TrayIconState::Idle);
+                        restore_power_if_triggered_on_start(&ah);
+                    }
                     return;
                 }
                 StopRecordingResult::Failed(err) => {
@@ -2133,15 +2159,7 @@ impl ShortcutAction for MultiSttAction {
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
-                let perf_settings = get_settings(&ah);
-                if perf_settings.multi_stt_performance_mode_enabled
-                    && perf_settings.multi_stt_performance_mode_trigger_on_start
-                {
-                    restore_normal_power(
-                        &ah,
-                        perf_settings.multi_stt_performance_mode_normal_shortcut,
-                    );
-                }
+                restore_power_if_triggered_on_start(&ah);
                 return;
             }
 
@@ -2163,15 +2181,7 @@ impl ShortcutAction for MultiSttAction {
                 crate::multi_streaming::cancel(&tm);
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
-                let perf_settings = get_settings(&ah);
-                if perf_settings.multi_stt_performance_mode_enabled
-                    && perf_settings.multi_stt_performance_mode_trigger_on_start
-                {
-                    restore_normal_power(
-                        &ah,
-                        perf_settings.multi_stt_performance_mode_normal_shortcut,
-                    );
-                }
+                restore_power_if_triggered_on_start(&ah);
                 return;
             }
 
@@ -2516,11 +2526,13 @@ impl ShortcutAction for MultiSttAction {
                 streaming_final.clone()
             {
                 let succeeded = brain.is_some() && failed_chunks == 0;
-                if !succeeded {
+                if failed_chunks > 0 {
                     warn!(
                         "Multi-STT streaming: the session ended with {} failed chunk(s)",
                         failed_chunks
                     );
+                } else if brain.is_none() {
+                    debug!("Multi-STT streaming: no chunk of the session was merged");
                 }
                 (final_text, brain, succeeded, None)
             } else if merge_requested {
@@ -2679,7 +2691,10 @@ impl ShortcutAction for MultiSttAction {
             // recording file — and the performance-mode power restore still
             // fires, exactly as the ordinary paths do.
             if crate::recall::insertion::is_armed() {
-                crate::recall::insertion::absorb_recording(&ah, &wav_path, wav_saved);
+                let (absorb_ah, absorb_path) = (ah.clone(), wav_path.clone());
+                tauri::async_runtime::spawn_blocking(move || {
+                    crate::recall::insertion::absorb_recording(&absorb_ah, &absorb_path, wav_saved);
+                });
                 if let Err(e) = crate::recall::insertion::emit_insert(&ah, merged) {
                     error!("Failed to emit recall insert event: {e}");
                 }
@@ -3093,15 +3108,12 @@ mod tests {
     #[test]
     fn an_implausibly_long_reply_is_rejected() {
         let slots = ["Sentence one.", "Test sentence one", "", ""];
-        // 132 chars against a 17-char longest input: not a merge of what it was
-        // given, whatever it says.
+        // 145 chars against a 17-char longest input (limit 17 * 4 + 64 = 132):
+        // not a merge of what it was given, whatever it says.
         let hallucination = "This is a transcript that was never in any of the inputs, padded out to a length \
              no reconciliation of two short sentences could reach on its own.";
         let reason = merge_response_rejection(hallucination, &slots).expect("rejected");
-        assert!(
-            reason.contains("implausibly") || reason.contains("chars against"),
-            "{reason}"
-        );
+        assert!(reason.contains("chars against"), "{reason}");
         // The boundary itself is allowed: four disjoint inputs plus the slack.
         let twenty = "a".repeat(20);
         let slots = [twenty.as_str()];

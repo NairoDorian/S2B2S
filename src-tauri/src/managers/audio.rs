@@ -512,8 +512,8 @@ pub struct AudioRecordingManager {
     /// device, cached so on-demand recording starts skip the full device
     /// enumeration (~40-110ms). Keyed by the resolved name, so a settings
     /// change misses naturally; cleared when an open fails (device unplugged)
-    /// so the retry re-enumerates. The system-default case is never cached —
-    /// the recorder resolves the current default itself, cheaply.
+    /// so the retry re-enumerates. The system-default case is never cached,
+    /// so a changed default is picked up by the next open.
     cached_device: Arc<Mutex<Option<(String, cpal::Device)>>>,
     /// A microphone change that arrived during a recording; the stream is
     /// restarted on the new device once that recording ends (see
@@ -835,9 +835,9 @@ impl AudioRecordingManager {
         }
 
         // Get the selected device from settings, considering clamshell mode.
-        // No pre-flight enumeration here: when nothing is configured the
-        // recorder resolves the system default itself, and a machine with no
-        // input devices at all fails inside open() with the same
+        // No separate pre-check: the default case resolves the concrete
+        // endpoint in resolve_microphone_device, and a machine with no input
+        // devices at all fails inside open() with the same
         // "No input device found" error this used to check for.
         let settings = get_settings(&self.app_handle);
         let resolve_started = Instant::now();
@@ -966,8 +966,8 @@ impl AudioRecordingManager {
 
     /// Like [`Self::try_start_recording`], but lets the caller force the
     /// native-rate raw tap on or off instead of following `save_raw_audio`.
-    /// Live Mode always captures raw audio for its chunk files, whatever the
-    /// history setting says.
+    /// Live Mode ties it to its own `save_audio` option (raw audio for its chunk
+    /// files), whatever the history setting says.
     pub fn try_start_recording_with_raw(
         &self,
         binding_id: &str,
@@ -1178,16 +1178,23 @@ impl AudioRecordingManager {
             // on-demand mode an idle open stream is only ever a lazily-closing
             // one, so re-arm that close for the new device rather than leaving
             // the microphone (and the OS privacy indicator) on indefinitely.
-            if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                if get_settings(&self.app_handle).lazy_stream_close {
-                    self.schedule_lazy_close(get_idle_timeout(&self.app_handle));
-                } else {
-                    self.stop_microphone_stream();
-                }
-            }
+            self.release_stream_after_recording();
         }
         drop(state);
         Ok(())
+    }
+
+    /// In on-demand mode, close the microphone once a recording is over
+    /// (lazily when `lazy_stream_close` is on). Always-on streams stay open.
+    fn release_stream_after_recording(&self) {
+        if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+            if get_settings(&self.app_handle).lazy_stream_close {
+                let timeout = get_idle_timeout(&self.app_handle);
+                self.schedule_lazy_close(timeout);
+            } else {
+                self.stop_microphone_stream();
+            }
+        }
     }
 
     /// Apply a microphone change `update_selected_device` deferred because a
@@ -1310,15 +1317,7 @@ impl AudioRecordingManager {
                 *self.is_recording.lock().unwrap() = false;
                 self.set_state(&mut self.state.lock().unwrap(), RecordingState::Idle);
 
-                // In on-demand mode, close the mic (lazily if the setting is enabled)
-                if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                    if get_settings(&self.app_handle).lazy_stream_close {
-                        let timeout = get_idle_timeout(&self.app_handle);
-                        self.schedule_lazy_close(timeout);
-                    } else {
-                        self.stop_microphone_stream();
-                    }
-                }
+                self.release_stream_after_recording();
                 self.apply_pending_device_change();
 
                 if self.was_cancelled_since(cancel_generation) {
@@ -1335,7 +1334,6 @@ impl AudioRecordingManager {
 
                 // Pad if very short
                 let s_len = recorded.stt_samples.len();
-                // debug!("Got {} samples", s_len);
                 if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
                     recorded
                         .stt_samples
@@ -1366,8 +1364,17 @@ impl AudioRecordingManager {
         let mut state = self.state.lock().unwrap();
 
         match *state {
-            RecordingState::Recording { .. } => {
-                self.set_state(&mut state, RecordingState::Idle);
+            RecordingState::Recording { ref binding_id } => {
+                // Whoever ends the live VAD test (its page, or the cancel
+                // hotkey) must also end its per-frame reports, or they keep
+                // flowing through every later dictation.
+                if binding_id == VAD_TEST_BINDING {
+                    set_vad_reporting(VAD_REPORT_TEST, false);
+                }
+                // Hold `Stopping` until the recorder has actually stopped,
+                // like stop_recording: a start landing in between would
+                // otherwise have its fresh recording stopped by this cancel.
+                self.set_state(&mut state, RecordingState::Stopping);
                 drop(state);
 
                 if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
@@ -1375,16 +1382,9 @@ impl AudioRecordingManager {
                 }
 
                 *self.is_recording.lock().unwrap() = false;
+                self.set_state(&mut self.state.lock().unwrap(), RecordingState::Idle);
 
-                // In on-demand mode, close the mic (lazily if the setting is enabled)
-                if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                    if get_settings(&self.app_handle).lazy_stream_close {
-                        let timeout = get_idle_timeout(&self.app_handle);
-                        self.schedule_lazy_close(timeout);
-                    } else {
-                        self.stop_microphone_stream();
-                    }
-                }
+                self.release_stream_after_recording();
                 self.apply_pending_device_change();
             }
             RecordingState::Stopping => {

@@ -16,7 +16,8 @@ use super::handler::handle_shortcut_event;
 /// Initialize shortcuts using Tauri's global-shortcut plugin
 pub fn init_shortcuts(app: &AppHandle) {
     let default_bindings = settings::get_default_settings().bindings;
-    let user_settings = settings::load_or_create_app_settings(app);
+    // `shortcut::init_shortcuts` already did the startup load and dump.
+    let user_settings = get_settings(app);
 
     // Register all default shortcuts, applying user customizations. The
     // feature gates and the performance-mode conflict rule live in

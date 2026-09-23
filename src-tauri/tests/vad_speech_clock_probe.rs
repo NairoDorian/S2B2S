@@ -13,7 +13,7 @@ use app_lib::audio_toolkit::{
     audio::read_wav_samples,
     constants::VAD_FRAME_SAMPLES,
     vad::{
-        SmoothedVad, VAD_ONSET_MS, VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
+        SmoothedVad, VAD_ONSET_MS, VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS, VadFrame,
         frames_for_duration_ms,
     },
 };
@@ -47,11 +47,10 @@ fn real_vad_chain_reports_speech_over_real_audio() {
         }
         frames += 1;
         match vad.push_frame(chunk) {
-            Ok(f) => {
-                if f.is_speech() {
-                    kept += 1;
-                }
-            }
+            // An onset returns its pre-roll together with the current
+            // frame, so count the frames it carries, not the call.
+            Ok(VadFrame::Speech(buf)) => kept += buf.len() / VAD_FRAME_SAMPLES,
+            Ok(VadFrame::Noise) => {}
             Err(e) => {
                 if errors == 0 {
                     eprintln!("first push_frame error: {e}");

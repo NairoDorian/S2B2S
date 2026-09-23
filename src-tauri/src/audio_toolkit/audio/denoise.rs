@@ -49,6 +49,8 @@ const I16_SCALE: f32 = i16::MAX as f32;
 /// Fraction of the remaining distance the gate's gain covers per 10 ms
 /// frame: about three frames from open to closed and back.
 const GATE_SLEW: f32 = 0.5;
+/// The frame `DenoiseChain::finish` flushes RNNoise's one-frame lag with.
+const SILENT_FRAME: [f32; RNNOISE_FRAME_SAMPLES] = [0.0; RNNOISE_FRAME_SAMPLES];
 /// Longest grace period the settings accept.
 pub const MAX_DENOISE_VAD_GRACE_MS: u32 = 5000;
 
@@ -228,7 +230,9 @@ impl DenoiseChain {
         });
     }
 
-    /// Flush both resamplers' delay lines at the end of a recording.
+    /// Flush both resamplers' delay lines at the end of a recording, and
+    /// RNNoise's own one-frame lag: one silent frame pushes the last real
+    /// frame out of the suppressor, or the final ~10 ms would be lost.
     pub fn finish(
         &mut self,
         params: DenoiseParams,
@@ -245,15 +249,27 @@ impl DenoiseChain {
             frame_out,
             gate,
         } = self;
-        let mut last_prob = 0.0;
         to_48k.finish(|frame| {
             let prob = denoise_frame(
                 denoiser, gate, &params, frame, scaled_in, scaled_out, dry_delay, frame_out,
             );
-            last_prob = prob;
             on_denoised(frame_out);
             to_out.push(frame_out, |out| emit(out, prob));
         });
+        // The flush frame is always the last one through the suppressor, so
+        // its probability is also the one the final partial frame carries.
+        let last_prob = denoise_frame(
+            denoiser,
+            gate,
+            &params,
+            &SILENT_FRAME,
+            scaled_in,
+            scaled_out,
+            dry_delay,
+            frame_out,
+        );
+        on_denoised(frame_out);
+        to_out.push(frame_out, |out| emit(out, last_prob));
         to_out.finish(|out| emit(out, last_prob));
     }
 

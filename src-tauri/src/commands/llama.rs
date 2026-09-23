@@ -98,25 +98,22 @@ pub fn change_llama_settings(app: AppHandle, settings: LlamaSettings) -> Result<
 }
 
 /// The command line the current settings would launch, for the page preview.
+/// Asked for on every keystroke of the server fields, and resolving it stats
+/// the model files and lists the server folder, so it runs on the blocking
+/// pool rather than the main thread.
 #[tauri::command]
 #[specta::specta]
-pub fn get_llama_command_preview(app: AppHandle) -> Result<String, String> {
-    let settings = get_settings(&app).llama.normalized();
-    let exe = llama_server::resolve_server_exe(&settings)
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "llama-server".into());
-    let args = llama_server::build_args(&settings)?;
-    Ok(format!(
-        "{exe} {}",
-        args.iter()
-            .map(|a| if a.contains(' ') {
-                format!("\"{a}\"")
-            } else {
-                a.clone()
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
-    ))
+pub async fn get_llama_command_preview(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let settings = get_settings(&app).llama.normalized();
+        let exe = llama_server::resolve_server_exe(&settings)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "llama-server".into());
+        let args = llama_server::build_args(&settings)?;
+        Ok(llama_server::format_command_line(&exe, &args))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

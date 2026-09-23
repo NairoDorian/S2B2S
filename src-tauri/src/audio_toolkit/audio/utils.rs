@@ -3,9 +3,11 @@ use hound::{WavReader, WavSpec, WavWriter};
 use log::debug;
 use std::path::Path;
 
-/// Read a WAV file and return normalised f32 samples at 16 kHz.
+/// Read a mono WAV file and return normalised f32 samples at 16 kHz.
 /// Handles 16/24/32-bit integer and 32-bit IEEE float WAV files at any sample rate,
 /// automatically downsampling to 16 kHz if needed (for Whisper / benchmarking).
+/// Multi-channel files are not downmixed: their interleaved samples are read
+/// as if they were one channel.
 pub fn read_wav_samples<P: AsRef<Path>>(file_path: P) -> Result<Vec<f32>> {
     let reader = WavReader::open(file_path.as_ref())?;
     let spec = reader.spec();

@@ -5,7 +5,9 @@
 //! keep the GPU and the port. Assigning it to a job created with
 //! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` makes the kernel end it when the last
 //! handle to the job — held by this process — goes away. One job for the
-//! whole app; `register` is a no-op on other platforms.
+//! whole app; `register` is a no-op on other platforms. Membership is the
+//! caller's choice: `llama-server` only joins when `llama.stop_on_exit` is on,
+//! since a job member cannot outlive the app.
 
 #[cfg(windows)]
 pub fn register(child: &std::process::Child) {

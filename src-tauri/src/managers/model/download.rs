@@ -52,7 +52,7 @@ impl ModelManager {
     /// Verifies the SHA256 of `path` against `expected_sha256` (if provided).
     /// On mismatch or read error the partial file is deleted and an error is returned,
     /// so the next download attempt always starts from a clean state.
-    /// When `expected_sha256` is `None` (custom user models) verification is skipped.
+    /// When `expected_sha256` is `None` (a URL source without a pinned hash) verification is skipped.
     fn verify_sha256(path: &Path, expected_sha256: Option<&str>, model_id: &str) -> Result<()> {
         let Some(expected) = expected_sha256 else {
             return Ok(());
@@ -102,7 +102,7 @@ impl ModelManager {
 
     /// Emit verification events around a blocking sha256 check of `path`.
     /// On mismatch `verify_sha256` deletes the file, so the next attempt (or
-    /// next source) starts clean. A `None` hash skips checking (custom models).
+    /// next source) starts clean. A `None` hash (a URL source without a pinned hash) skips checking.
     async fn verify_file_with_events(
         model_id: &str,
         path: &Path,

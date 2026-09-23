@@ -36,6 +36,22 @@ const KEY_AUDIO: &str = "audio";
 pub const NOTES_SUBDIR: &str = "notes";
 /// Sub-folder holding (or linking to) the recordings behind the notes.
 pub const AUDIO_SUBDIR: &str = "audio";
+/// Longest slug a new note's id takes from its title.
+const MAX_SLUG_LEN: usize = 80;
+
+/// Serialises every vault operation: the Recall commands
+/// (`commands::recall`) and insertion mode's recording hand-off
+/// (`insertion::absorb_recording`). Enabling or disabling encryption is a
+/// multi-step rewrite that a concurrent write must not interleave with (a
+/// recording written mid-disable would stay encrypted after the key file is
+/// gone, and one written mid-enable would stay in plaintext).
+static VAULT_OP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Take the vault lock. A panic in an earlier operation poisons it but leaves
+/// nothing half-held that a later one could trip over, so carry on.
+pub(crate) fn lock_vault() -> std::sync::MutexGuard<'static, ()> {
+    VAULT_OP.lock().unwrap_or_else(|e| e.into_inner())
+}
 /// The derived, rebuildable index file. Plaintext metadata by definition,
 /// so enabling encryption removes it and disabling rebuilds it.
 pub(crate) const INDEX_FILE: &str = "index.json";
@@ -101,14 +117,20 @@ fn note_path(root: &Path, id: &str) -> PathBuf {
     notes_dir(root).join(format!("{id}.md"))
 }
 
-/// Reject ids that could escape `notes/`: a plain file stem only.
+/// Reject ids that could escape `notes/`: a plain file stem only. A denylist
+/// rather than an allowlist, because `list_notes` lists every `*.md` stem — a
+/// note named `My note.md` or `réunion.md` by another editor must open, save
+/// and delete like one the app created. No separator, no drive colon and no
+/// leading dot means the id can never name anything outside `notes/`.
 fn sanitize_id(id: &str) -> Result<&str, String> {
     let id = id.trim();
     let ok = !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !id.chars().any(|c| {
+            c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        })
         && !id.starts_with('.')
+        // Windows silently drops a trailing dot, so `a.` would alias `a`.
+        && !id.ends_with('.')
         && !is_windows_device_name(id);
     if ok {
         Ok(id)
@@ -202,7 +224,11 @@ fn local_date_prefix() -> String {
 /// collision — in either state of the vault, so an encrypted vault never
 /// reuses a `.rcl` stem either.
 fn fresh_note_id(root: &Path, title: &str) -> String {
-    let base = format!("{}-{}", local_date_prefix(), slugify(title));
+    // Bounded, so a long title cannot produce a file name the OS refuses
+    // (`slugify` is ASCII-only, so the cut lands on a character boundary).
+    let slug = slugify(title);
+    let slug = slug[..slug.len().min(MAX_SLUG_LEN)].trim_end_matches('-');
+    let base = format!("{}-{}", local_date_prefix(), slug);
     let mut candidate = base.clone();
     let mut n = 2;
     while note_path(root, &candidate).exists()
@@ -214,10 +240,10 @@ fn fresh_note_id(root: &Path, title: &str) -> String {
     candidate
 }
 
-/// Frontmatter values are single lines: a newline inside a title would
+/// Frontmatter values are single lines: a line break inside a title would
 /// otherwise end the key and start a bogus one.
 fn escape_value(value: &str) -> String {
-    value.replace('\n', " ")
+    value.replace(['\r', '\n'], " ")
 }
 
 fn serialize_note(meta: &RecallNoteMeta, body: &str) -> String {
@@ -226,7 +252,10 @@ fn serialize_note(meta: &RecallNoteMeta, body: &str) -> String {
     out.push_str(&format!("{KEY_CREATED}: {}\n", meta.created_ms));
     out.push_str(&format!("{KEY_UPDATED}: {}\n", meta.updated_ms));
     if !meta.tags.is_empty() {
-        out.push_str(&format!("{KEY_TAGS}: {}\n", meta.tags.join(", ")));
+        out.push_str(&format!(
+            "{KEY_TAGS}: {}\n",
+            escape_value(&meta.tags.join(", "))
+        ));
     }
     if let Some(source) = &meta.source {
         out.push_str(&format!("{KEY_SOURCE}: {}\n", escape_value(source)));
@@ -244,6 +273,16 @@ fn serialize_note(meta: &RecallNoteMeta, body: &str) -> String {
 /// to sane defaults derived from the file itself, so a hand-written or
 /// externally edited note still opens.
 fn parse_note(id: &str, raw: &str, file_updated_ms: i64) -> RecallNoteContent {
+    // A note saved with CRLF line endings by another editor: without this its
+    // `---\r\n` frontmatter would not be recognised, would become part of the
+    // body, and would be duplicated under a fresh frontmatter on the next save.
+    let normalized;
+    let raw = if raw.contains("\r\n") {
+        normalized = raw.replace("\r\n", "\n");
+        normalized.as_str()
+    } else {
+        raw
+    };
     let mut title = String::new();
     let mut created_ms: Option<i64> = None;
     let mut updated_ms: Option<i64> = None;
@@ -455,6 +494,8 @@ fn persist(root: &Path, meta: &RecallNoteMeta, body: &str) -> Result<(), String>
     crypto::write_note_encrypted(root, &meta.id, &key, raw.as_bytes())
 }
 
+/// Plain-vault create, for the tests (the commands use `create_note_any`).
+#[cfg(test)]
 pub fn create_note(root: &Path, title: &str, tags: &[String]) -> Result<RecallNoteMeta, String> {
     ensure_dirs(root)?;
     let meta = created_meta(root, title, tags);
@@ -462,6 +503,8 @@ pub fn create_note(root: &Path, title: &str, tags: &[String]) -> Result<RecallNo
     Ok(meta)
 }
 
+/// Plain-vault write, for the tests (the commands use `write_note_any`).
+#[cfg(test)]
 pub fn write_note(
     root: &Path,
     id: &str,
@@ -791,6 +834,13 @@ mod tests {
         assert!(sanitize_id("../escape").is_err());
         assert!(sanitize_id(".hidden").is_err());
         assert!(sanitize_id("").is_err());
+        assert!(sanitize_id("C:evil").is_err());
+        assert!(sanitize_id("a\\b").is_err());
+        assert!(sanitize_id("aux").is_err());
+        assert_eq!(sanitize_id("My note"), Ok("My note"));
+        assert_eq!(sanitize_id("réunion"), Ok("réunion"));
+        let long = create_note(&root, &"word ".repeat(100), &[]).unwrap();
+        assert!(long.id.len() <= "YYYY-MM-DD-".len() + MAX_SLUG_LEN);
         let _ = fs::remove_dir_all(&root);
     }
 

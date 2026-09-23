@@ -7,11 +7,11 @@
 
 use std::sync::OnceLock;
 
-use crate::app_identity::RECORDING_BASENAME;
+use crate::app_identity::SLUG;
 
 static SESSION_BASENAME: OnceLock<String> = OnceLock::new();
 
-/// `zer0-YYYYMMDD-HHMMSS-mmm` — unique per process open (millisecond stamp
+/// `<slug>-YYYYMMDD-HHMMSS-mmm` — unique per process open (millisecond stamp
 /// guards two launches inside the same second).
 fn new_session_stem() -> String {
     let now = std::time::SystemTime::now()
@@ -20,7 +20,7 @@ fn new_session_stem() -> String {
         .unwrap_or(0);
     // Human-readable UTC date from the unix millis without a chrono dependency.
     let (y, mo, d, h, mi, s, ms) = civil_from_unix_ms(now);
-    format!("{RECORDING_BASENAME}-{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}-{ms:03}")
+    format!("{SLUG}-{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}-{ms:03}")
 }
 
 /// Idempotent: first call freezes the stem for this process.
@@ -28,7 +28,7 @@ pub fn init() -> &'static str {
     SESSION_BASENAME.get_or_init(new_session_stem)
 }
 
-/// The frozen stem (`zer0-…`), or `None` if `init` has not run yet.
+/// The frozen stem (`<slug>-…`), or `None` if `init` has not run yet.
 pub fn basename() -> Option<&'static str> {
     SESSION_BASENAME.get().map(|s| s.as_str())
 }
@@ -65,7 +65,7 @@ mod tests {
         let a = init();
         let b = init();
         assert_eq!(a, b);
-        assert!(a.starts_with(&format!("{RECORDING_BASENAME}-")));
+        assert!(a.starts_with(&format!("{SLUG}-")));
         assert!(!a.ends_with(".log"));
     }
 

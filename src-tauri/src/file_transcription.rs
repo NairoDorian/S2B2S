@@ -979,7 +979,10 @@ pub fn write_without_overwrite(preferred: &Path, contents: &[u8]) -> Result<Path
 }
 
 /// Recursively (optionally) list the supported audio files below `folder`,
-/// sorted by path. Hidden entries (dot-prefixed) are skipped.
+/// sorted by path. Hidden entries (dot-prefixed) are skipped. An unreadable
+/// sub-folder (`System Volume Information` under a drive root) is skipped with
+/// a warning rather than failing the scan, and links to folders are not
+/// followed, so a link back to an ancestor cannot make the walk loop.
 pub fn list_audio_files(folder: &Path, include_subfolders: bool) -> Result<Vec<PathBuf>> {
     if !folder.is_dir() {
         return Err(anyhow!("Not a folder: {}", folder.display()));
@@ -987,8 +990,16 @@ pub fn list_audio_files(folder: &Path, include_subfolders: bool) -> Result<Vec<P
     let mut out = Vec::new();
     let mut stack = vec![folder.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir)
-            .with_context(|| format!("Cannot read folder {}", dir.display()))?;
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) if dir != folder => {
+                warn!("Skipping unreadable folder {}: {e}", dir.display());
+                continue;
+            }
+            Err(e) => {
+                return Err(e).with_context(|| format!("Cannot read folder {}", dir.display()));
+            }
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let hidden = path
@@ -998,7 +1009,7 @@ pub fn list_audio_files(folder: &Path, include_subfolders: bool) -> Result<Vec<P
             if hidden {
                 continue;
             }
-            if path.is_dir() {
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
                 if include_subfolders {
                     stack.push(path);
                 }

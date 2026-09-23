@@ -286,8 +286,11 @@ fn next_frame_seq() -> u32 {
     }
 }
 
-/// `lock()` that shrugs off poisoning (the data is plain telemetry).
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+/// `lock()` that shrugs off poisoning. Every value these mutexes guard stays
+/// usable after a panic mid-update (telemetry, settings snapshots, the parked
+/// ring consumer, join handles), and a panic in inline analysis on the audio
+/// thread must not turn the session's own teardown into a second panic.
+pub(super) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -374,9 +377,12 @@ impl AnalysisTap {
         self.source.store(source as u8, Ordering::Relaxed);
         self.inline.store(inline, Ordering::Relaxed);
         self.dropped.store(0, Ordering::Relaxed);
-        *self.inline_engine.lock().unwrap() = runner;
+        // Unknown until the first chunk of this session: the previous
+        // session's rate (another device, another source) must not be used.
+        self.sample_rate.store(0, Ordering::Relaxed);
+        *lock(&self.inline_engine) = runner;
         // Stale audio from a previous session must not reach the new one.
-        if let Some(consumer) = self.consumer.lock().unwrap().as_mut() {
+        if let Some(consumer) = lock(&self.consumer).as_mut() {
             let n = consumer.slots();
             if n > 0
                 && let Ok(chunk) = consumer.read_chunk(n)
@@ -389,15 +395,15 @@ impl AnalysisTap {
 
     fn disarm(&self) {
         self.active.store(false, Ordering::Release);
-        *self.inline_engine.lock().unwrap() = None;
+        *lock(&self.inline_engine) = None;
     }
 
     fn take_consumer(&self) -> Option<Consumer<f32>> {
-        self.consumer.lock().unwrap().take()
+        lock(&self.consumer).take()
     }
 
     fn return_consumer(&self, consumer: Consumer<f32>) {
-        *self.consumer.lock().unwrap() = Some(consumer);
+        *lock(&self.consumer) = Some(consumer);
     }
 
     fn set_source(&self, source: TapSource) {
@@ -806,7 +812,7 @@ impl LiveFftManager {
     }
 
     pub fn status(&self) -> LiveFftStatus {
-        self.shared.status.lock().unwrap().clone()
+        lock(&self.shared.status).clone()
     }
 
     /// The latest page frame, encoded (see [`encode_frame`]); only its
@@ -821,11 +827,12 @@ impl LiveFftManager {
     }
 
     /// Adopt new settings; the running engine picks them up on its next
-    /// tick. Only the threading mode needs a restart of the session.
+    /// tick. Only the threading mode and the voice-detection view
+    /// (`show_vad`, which picks the VAD policy) need a restart of the session.
     pub fn update_settings(self: &Arc<Self>, settings: LiveFftSettings) {
         let settings = settings.normalized();
         let restart = {
-            let mut current = self.shared.settings.lock().unwrap();
+            let mut current = lock(&self.shared.settings);
             // The threading mode and the VAD policy are fixed per session.
             let restart = self.is_active()
                 && (current.async_analysis != settings.async_analysis
@@ -840,7 +847,7 @@ impl LiveFftManager {
             let _ = self.stop();
             self.join_worker();
             if let Err(e) = self.start() {
-                warn!("Live FFT: restart after threading change failed: {e}");
+                warn!("Live FFT: restart after a threading or voice-detection change failed: {e}");
             }
         }
     }
@@ -852,7 +859,7 @@ impl LiveFftManager {
 
     fn publish_status(&self, f: impl FnOnce(&mut LiveFftStatus)) {
         let snapshot = {
-            let mut status = self.shared.status.lock().unwrap();
+            let mut status = lock(&self.shared.status);
             f(&mut status);
             status.clone()
         };
@@ -860,7 +867,7 @@ impl LiveFftManager {
     }
 
     fn join_worker(&self) {
-        if let Some(handle) = self.worker.lock().unwrap().take() {
+        if let Some(handle) = lock(&self.worker).take() {
             let _ = handle.join();
         }
     }
@@ -885,7 +892,7 @@ impl LiveFftManager {
         }
         self.join_scope_worker();
         self.scope.stop_requested.store(false, Ordering::Release);
-        let settings = self.shared.settings.lock().unwrap().clone();
+        let settings = lock(&self.shared.settings).clone();
         TAP.arm(settings.source.into(), false, None);
 
         let mut engine = scope::ScopeEngine::new(Arc::clone(&self.shared), Arc::clone(&self.scope));
@@ -910,7 +917,7 @@ impl LiveFftManager {
             });
         match handle {
             Ok(handle) => {
-                *self.scope_worker.lock().unwrap() = Some(handle);
+                *lock(&self.scope_worker) = Some(handle);
                 debug!(
                     "Overlay scope started ({} Hz, {} bins, N={}, source {:?})",
                     settings.update_rate_hz,
@@ -935,7 +942,7 @@ impl LiveFftManager {
     }
 
     fn join_scope_worker(&self) {
-        if let Some(handle) = self.scope_worker.lock().unwrap().take() {
+        if let Some(handle) = lock(&self.scope_worker).take() {
             let _ = handle.join();
         }
     }
@@ -980,7 +987,7 @@ impl LiveFftManager {
             Err(msg)
         };
 
-        let settings = self.shared.settings.lock().unwrap().clone();
+        let settings = lock(&self.shared.settings).clone();
         let rm = self
             .app
             .state::<Arc<AudioRecordingManager>>()
@@ -1047,7 +1054,7 @@ impl LiveFftManager {
             });
         match handle {
             Ok(handle) => {
-                *self.worker.lock().unwrap() = Some(handle);
+                *lock(&self.worker) = Some(handle);
                 info!(
                     "Live FFT started ({} analysis, {} Hz, {} bins, N={}, source {:?}, VAD {})",
                     if inline { "inline" } else { "async" },
@@ -1122,21 +1129,24 @@ impl LiveFftManager {
             match (engine.as_mut(), consumer.as_mut()) {
                 (Some(engine), Some(consumer)) => {
                     // --- async: drain, analyse when due, nap until the next frame ---
-                    let rate = TAP.sample_rate();
                     let available = consumer.slots().min(MAX_DRAIN);
                     if available > 0
                         && let Ok(chunk) = consumer.read_chunk(available)
                     {
+                        // Read after the chunk: the producer stores the rate
+                        // before the ring's commit, so this is these samples'
+                        // rate, never the previous session's.
+                        let rate = TAP.sample_rate();
                         let (first, second) = chunk.as_slices();
-                        if !first.is_empty() {
+                        if rate > 0 && !first.is_empty() {
                             engine.ingest(first, rate);
                         }
-                        if !second.is_empty() {
+                        if rate > 0 && !second.is_empty() {
                             engine.ingest(second, rate);
                         }
                         chunk.commit_all();
                     }
-                    if rate > 0 {
+                    if TAP.sample_rate() > 0 {
                         engine.maybe_process(now);
                     }
                     let nap = engine.time_to_next(Instant::now()).min(MAX_NAP);
@@ -1234,8 +1244,12 @@ mod tests {
         tap.push(&[9.0; 10], 48_000);
         tap.arm(TapSource::Native, false, None);
         assert_eq!(tap.dropped(), 0);
+        // ... and forgets its rate until the new session's first chunk.
+        assert_eq!(tap.sample_rate(), 0);
         let mut consumer = tap.take_consumer().expect("consumer parked");
         assert!(drain(&mut consumer).is_empty());
+        tap.push(&[1.0], 16_000);
+        assert_eq!(tap.sample_rate(), 16_000);
     }
 
     /// A Reset clears the EQ state before the next chunk is filtered (like
@@ -1305,6 +1319,7 @@ mod tests {
     #[test]
     fn tap_source_follows_the_setting() {
         assert_eq!(TapSource::from(FftSource::Microphone), TapSource::Native);
+        assert_eq!(TapSource::from(FftSource::Denoised), TapSource::Denoised);
         assert_eq!(TapSource::from(FftSource::Processed), TapSource::Processed);
     }
 }

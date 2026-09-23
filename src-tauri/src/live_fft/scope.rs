@@ -23,7 +23,7 @@ use log::debug;
 use rtrb::Consumer;
 
 use super::dsp::SpectrumPipeline;
-use super::{MAX_DRAIN, MAX_NAP, Shared, TAP, extend_f32_le, frame_seq, header_only};
+use super::{MAX_DRAIN, MAX_NAP, Shared, TAP, extend_f32_le, frame_seq, header_only, lock};
 use crate::managers::audio::AudioRecordingManager;
 use crate::settings::{FftLoudnessMode, LiveFftSettings, OverlayScopeSettings};
 
@@ -213,19 +213,19 @@ impl ScopeShared {
     }
 
     pub fn set_overlay(&self, overlay: OverlayScopeSettings) {
-        *self.overlay.lock().unwrap() = overlay.normalized();
+        *lock(&self.overlay) = overlay.normalized();
         self.overlay_version.fetch_add(1, Ordering::AcqRel);
     }
 
     fn overlay_snapshot(&self) -> (OverlayScopeSettings, u64) {
         let version = self.overlay_version.load(Ordering::Acquire);
-        (self.overlay.lock().unwrap().clone(), version)
+        (lock(&self.overlay).clone(), version)
     }
 
     /// The latest frame, or only its header (bins and wave lengths 0) when
     /// the caller already holds `known_seq`.
     pub fn frame_bytes(&self, known_seq: Option<u32>) -> Vec<u8> {
-        let frame = self.frame.lock().unwrap();
+        let frame = lock(&self.frame);
         if known_seq.is_some_and(|seq| seq == frame_seq(&frame)) {
             header_only(&frame, &[2, 3])
         } else {
@@ -234,13 +234,13 @@ impl ScopeShared {
     }
 
     fn publish(&self, encoded: &mut Vec<u8>) {
-        let mut frame = self.frame.lock().unwrap();
+        let mut frame = lock(&self.frame);
         std::mem::swap(&mut *frame, encoded);
     }
 
     /// Back to the idle placeholder; called by the worker as it ends.
     pub fn finish(&self) {
-        *self.frame.lock().unwrap() = idle_frame();
+        *lock(&self.frame) = idle_frame();
         self.active.store(false, Ordering::Release);
     }
 }
@@ -264,8 +264,9 @@ pub(super) struct ScopeEngine {
 /// Most bins the overlay scope computes and ships per frame. The page may
 /// ask for up to 65536 (Auto or Raw at N = 65536, or a large Fixed count),
 /// but the overlay draws a few hundred columns during every dictation, so
-/// anything above this is capped (see `SpectrumPipeline::with_output_bin_cap`)
-/// to keep a changed poll near the ~32 KB it cost before the ceiling was raised.
+/// anything above this is capped (see `SpectrumPipeline::with_output_bin_cap`).
+/// At the cap a changed poll carries 32 KB of bins, ~48 KB with the default
+/// 4096-sample waveform.
 const OVERLAY_MAX_BINS: usize = 8192;
 
 /// The page's settings as the scope runs them: the overlay never shows the
@@ -390,21 +391,24 @@ pub(super) fn run_scope(
         }
 
         let now = Instant::now();
-        let rate = TAP.sample_rate();
         let available = consumer.slots().min(MAX_DRAIN);
         if available > 0
             && let Ok(chunk) = consumer.read_chunk(available)
         {
+            // Read after the chunk: the producer stores the rate before the
+            // ring's commit, so this is these samples' rate (the tap resets
+            // it on arm), never the previous recording's.
+            let rate = TAP.sample_rate();
             let (first, second) = chunk.as_slices();
-            if !first.is_empty() {
+            if rate > 0 && !first.is_empty() {
                 engine.ingest(first, rate);
             }
-            if !second.is_empty() {
+            if rate > 0 && !second.is_empty() {
                 engine.ingest(second, rate);
             }
             chunk.commit_all();
         }
-        if rate > 0 && seen_recording {
+        if TAP.sample_rate() > 0 && seen_recording {
             engine.maybe_process(now);
         }
         let nap = engine.time_to_next(Instant::now()).min(MAX_NAP);

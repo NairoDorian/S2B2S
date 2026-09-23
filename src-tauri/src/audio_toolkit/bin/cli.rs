@@ -1,9 +1,8 @@
-use hound::WavWriter;
 use std::io::{self, Write};
 
 use app_lib::audio_toolkit::{
     AudioRecorder, DEFAULT_SPEECH_PAUSE_HOLD_MS, VadPolicy, VoiceActivityDetector,
-    audio::{CpalDeviceInfo, list_input_devices},
+    audio::{CpalDeviceInfo, list_input_devices, save_wav_file},
     vad::{
         EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS, VAD_PREFILL_MS,
         VAD_STREAMING_HANGOVER_MS, frames_for_duration_ms,
@@ -207,7 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-        let parts: Vec<&str> = input.trim().split_whitespace().collect();
+        let parts: Vec<&str> = input.split_whitespace().collect();
 
         if parts.is_empty() {
             continue;
@@ -238,7 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(samples) => {
                     if !samples.is_empty() {
                         let filename = format!("recording_{}.wav", state.recording_index);
-                        match save_audio(&samples, &filename) {
+                        match save_wav_file(&filename, &samples) {
                             Ok(_) => {
                                 println!("Recording saved as: {}", filename);
                                 state.recording_index += 1;
@@ -305,9 +304,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Goodbye!");
                 break;
             }
-            "" => {
-                // Empty input, continue
-            }
             _ => {
                 println!(
                     "Unknown command: '{}'. Type 'help' for available commands.",
@@ -346,23 +342,4 @@ fn print_devices(devices: &[CpalDeviceInfo]) {
         println!("  {}: {}", index, device.name);
     }
     println!();
-}
-
-fn save_audio(samples: &[f32], filename: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: 16000,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut writer = WavWriter::create(filename, spec)?;
-
-    for &sample in samples {
-        let sample_i16 = (sample * i16::MAX as f32) as i16;
-        writer.write_sample(sample_i16)?;
-    }
-
-    writer.finalize()?;
-    Ok(())
 }

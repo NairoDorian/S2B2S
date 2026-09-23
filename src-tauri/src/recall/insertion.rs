@@ -48,10 +48,14 @@ pub fn emit_insert(app: &AppHandle, text: String) -> Result<(), String> {
 /// `audio/`, encrypted when the vault is and the session holds the key.
 /// A take that can neither be moved nor encrypted is discarded — the vault
 /// is the only destination this recording has.
+///
+/// Blocking file I/O under the vault lock (it may wait behind an encryption
+/// toggle): call it from the blocking pool, not an async worker.
 pub fn absorb_recording(app: &AppHandle, wav_path: &Path, saved: bool) {
     if !saved || !wav_path.exists() {
         return;
     }
+    let _vault = super::lock_vault();
     let discard = |why: &str| {
         warn!("Recall insert: {why}; discarding {}", wav_path.display());
         let _ = fs::remove_file(wav_path);

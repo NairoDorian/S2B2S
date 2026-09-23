@@ -3,8 +3,9 @@
 //! Every command that touches the vault runs on the blocking pool (`vault`):
 //! unlocking runs Argon2id over 64 MiB, and toggling encryption rewrites every
 //! note and recording, none of which may stall the webview. Those commands are
-//! also serialised by one process-wide lock. They used to run one at a time on
-//! the main thread, and enabling or disabling encryption is a multi-step
+//! also serialised by one process-wide lock (`recall::lock_vault`, which
+//! insertion mode's recording hand-off takes too). They used to run one at a
+//! time on the main thread, and enabling or disabling encryption is a multi-step
 //! rewrite that a concurrent save, unlock or folder change must not interleave
 //! with (a note written mid-disable would stay encrypted after the key file is
 //! gone). Dictation only records and transcribes, so it takes a plain
@@ -21,9 +22,6 @@ fn vault_root_or_err(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     recall::vault_root(app, &settings)
 }
 
-/// Serialises every vault operation (see the module doc).
-static VAULT_OP: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// Run `task` on the blocking pool and flatten its result.
 async fn blocking<T: Send + 'static>(
     task: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -38,9 +36,7 @@ async fn vault<T: Send + 'static>(
     task: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     blocking(move || {
-        // A panic in an earlier operation poisons the lock but leaves nothing
-        // half-held that a later one could trip over; carry on.
-        let _guard = VAULT_OP.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = recall::lock_vault();
         task()
     })
     .await
@@ -54,11 +50,15 @@ pub async fn change_recall_settings(
 ) -> Result<(), String> {
     vault(move || {
         let mut current = get_settings(&app);
-        current.recall = settings.normalized();
+        let new = settings.normalized();
+        let folder_changed = current.recall.normalized().output_dir != new.output_dir;
+        current.recall = new;
         write_settings(&app, current);
         // The session key belongs to whichever vault it was derived for; after
         // the vault folder changes, the user unlocks the new one explicitly.
-        crypto::session_lock();
+        if folder_changed {
+            crypto::session_lock();
+        }
         Ok(())
     })
     .await
@@ -137,7 +137,17 @@ pub async fn recall_save_transcription(
     }
     vault(move || {
         let root = vault_root_or_err(&app)?;
+        // A bare file name only: the name comes from the webview, and a path
+        // (`..\x`, an absolute one) would copy a file from outside the
+        // recordings folder into the vault.
         let audio_source = audio_file.as_ref().and_then(|file_name| {
+            let is_bare_name = std::path::Path::new(file_name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == file_name);
+            if !is_bare_name {
+                return None;
+            }
             let path = app
                 .state::<std::sync::Arc<crate::managers::history::HistoryManager>>()
                 .get_audio_file_path(file_name);

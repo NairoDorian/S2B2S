@@ -101,12 +101,22 @@ struct GhRelease {
 
 static CACHE: Mutex<Option<(Instant, Vec<LlamaRelease>)>> = Mutex::new(None);
 
-fn client() -> reqwest::Client {
+fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(crate::app_identity::USER_AGENT)
         .connect_timeout(Duration::from_secs(15))
         .build()
-        .expect("reqwest client")
+        .map_err(|e| format!("Cannot create the HTTP client: {e}"))
+}
+
+/// Run filesystem or process work on the blocking pool: `install` is a task on
+/// an async-runtime worker, which must not stall on a disk or a child process.
+async fn on_blocking_pool<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn build_number(release: &GhRelease) -> u32 {
@@ -216,7 +226,7 @@ pub async fn fetch_releases(channel: &str, force: bool) -> Result<Vec<LlamaRelea
         Some(list) => list,
         None => {
             let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=30");
-            let list: Vec<GhRelease> = client()
+            let list: Vec<GhRelease> = client()?
                 .get(&url)
                 .header("Accept", "application/vnd.github+json")
                 .send()
@@ -252,7 +262,7 @@ pub async fn fetch_releases(channel: &str, force: bool) -> Result<Vec<LlamaRelea
 
 async fn fetch_release_by_tag(tag: &str) -> Result<LlamaRelease, String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/tags/{tag}");
-    let release: GhRelease = client()
+    let release: GhRelease = client()?
         .get(&url)
         .header("Accept", "application/vnd.github+json")
         .send()
@@ -305,7 +315,7 @@ fn detect_backend_uncached() -> String {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
+        cmd.creation_flags(crate::llama_server::CREATE_NO_WINDOW);
     }
     let Ok(output) = cmd.output() else {
         return "cpu".into();
@@ -361,13 +371,8 @@ pub fn list_installed(app: &AppHandle) -> Vec<InstalledLlamaServer> {
                 .rsplit_once('-')
                 .map(|(b, t)| (b.to_string(), t.to_string()))
                 .unwrap_or((name.clone(), String::new()));
-            let server_name = if cfg!(windows) {
-                "llama-server.exe"
-            } else {
-                "llama-server"
-            };
             InstalledLlamaServer {
-                has_server: dir.join(server_name).is_file(),
+                has_server: dir.join(crate::llama_server::SERVER_EXE).is_file(),
                 size_mb: dir_size_mb(&dir),
                 cuda_runtime_mb: bundled_cuda_runtime_mb(&dir.to_string_lossy()),
                 dir: dir.to_string_lossy().to_string(),
@@ -405,7 +410,13 @@ pub async fn install(
     include_cudart: bool,
 ) -> Result<InstalledLlamaServer, String> {
     let backend = if backend == "auto" {
-        detect_backend()
+        // The first detection runs `nvidia-smi` and waits for it.
+        tauri::async_runtime::spawn_blocking(detect_backend)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("Backend detection failed ({e}); installing the CPU build");
+                "cpu".into()
+            })
     } else {
         backend.to_string()
     };
@@ -450,7 +461,8 @@ async fn install_inner(
                     release.tag
                 );
                 let mut resolved = None;
-                if let Ok(response) = client().get(&url).send().await
+                if let Ok(http) = client()
+                    && let Ok(response) = http.get(&url).send().await
                     && let Ok(response) = response.error_for_status()
                     && let Ok(text) = response.text().await
                 {
@@ -484,7 +496,9 @@ async fn install_inner(
 
     let root = servers_root(app)?;
     let downloads = root.join("downloads");
-    std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
+    let downloads_dir = downloads.clone();
+    on_blocking_pool(move || std::fs::create_dir_all(&downloads_dir).map_err(|e| e.to_string()))
+        .await?;
     let install_name = format!("{}-{}", asset.backend, release.tag);
     let final_dir = root.join(&install_name);
     let extracting_dir = root.join(format!("{install_name}.extracting"));
@@ -514,36 +528,34 @@ async fn install_inner(
     };
 
     emit("extracting", 0.0, 0.0, Some(asset.name.clone()), None);
-    let _ = std::fs::remove_dir_all(&extracting_dir);
-    std::fs::create_dir_all(&extracting_dir).map_err(|e| e.to_string())?;
-    let extract_root = extracting_dir.clone();
-    let zip_for_extract = zip_path.clone();
-    let cudart_for_extract = cudart_path.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        unzip_flat(&zip_for_extract, &extract_root)?;
-        if let Some(c) = cudart_for_extract {
-            unzip_flat(&c, &extract_root)?;
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-
-    let server_name = if cfg!(windows) {
-        "llama-server.exe"
-    } else {
-        "llama-server"
-    };
-    if !extracting_dir.join(server_name).is_file() {
+    // Unpack, swap the folder in and size it, all on the blocking pool: an
+    // old install being replaced can be hundreds of MB to delete.
+    let final_for_install = final_dir.clone();
+    let asset_name = asset.name.clone();
+    let (size_mb, cuda_runtime_mb) = on_blocking_pool(move || {
         let _ = std::fs::remove_dir_all(&extracting_dir);
-        return Err(format!("{server_name} not found in {}", asset.name));
-    }
-    let _ = std::fs::remove_dir_all(&final_dir);
-    std::fs::rename(&extracting_dir, &final_dir).map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_file(&zip_path);
-    if let Some(c) = cudart_path {
-        let _ = std::fs::remove_file(c);
-    }
+        std::fs::create_dir_all(&extracting_dir).map_err(|e| e.to_string())?;
+        unzip_flat(&zip_path, &extracting_dir)?;
+        if let Some(c) = &cudart_path {
+            unzip_flat(c, &extracting_dir)?;
+        }
+        let server_exe = crate::llama_server::SERVER_EXE;
+        if !extracting_dir.join(server_exe).is_file() {
+            let _ = std::fs::remove_dir_all(&extracting_dir);
+            return Err(format!("{server_exe} not found in {asset_name}"));
+        }
+        let _ = std::fs::remove_dir_all(&final_for_install);
+        std::fs::rename(&extracting_dir, &final_for_install).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&zip_path);
+        if let Some(c) = cudart_path {
+            let _ = std::fs::remove_file(c);
+        }
+        Ok((
+            dir_size_mb(&final_for_install),
+            bundled_cuda_runtime_mb(&final_for_install.to_string_lossy()),
+        ))
+    })
+    .await?;
     info!(
         "Installed llama.cpp {} into {}",
         release.tag,
@@ -552,8 +564,8 @@ async fn install_inner(
 
     Ok(InstalledLlamaServer {
         has_server: true,
-        size_mb: dir_size_mb(&final_dir),
-        cuda_runtime_mb: bundled_cuda_runtime_mb(&final_dir.to_string_lossy()),
+        size_mb,
+        cuda_runtime_mb,
         dir: final_dir.to_string_lossy().to_string(),
         name: install_name,
         backend: asset.backend,
@@ -567,7 +579,7 @@ async fn download_with_progress(
     expected_total: f64,
     emit: ProgressEmitter<'_>,
 ) -> Result<(), String> {
-    let response = client()
+    let response = client()?
         .get(url)
         .send()
         .await

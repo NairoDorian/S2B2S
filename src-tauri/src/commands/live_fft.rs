@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::live_fft::{LiveFftAxis, LiveFftManager, LiveFftStatus};
 use crate::settings::{LiveFftSettings, get_settings, write_settings};
@@ -22,14 +22,11 @@ pub async fn change_live_fft_settings(
     current.live_fft = settings.clone();
     write_settings(&app, current);
     let manager = app.state::<Arc<LiveFftManager>>().inner().clone();
-    let settings_for_manager = settings.clone();
-    tauri::async_runtime::spawn_blocking(move || manager.update_settings(settings_for_manager))
+    // A running overlay scope shares the manager's settings and picks the
+    // change up through `settings_version` on its next frame; no event needed.
+    tauri::async_runtime::spawn_blocking(move || manager.update_settings(settings))
         .await
         .map_err(|e| format!("live fft task join failed: {e}"))?;
-    // The overlay's miniature analyser polls the same FFT manager — nudge a
-    // running overlay preview so it picks up the new analysis parameters
-    // (scale, warp, EQ, weighting, dB, ballistics) on its next frame.
-    let _ = app.emit("live-fft-settings", settings);
     Ok(())
 }
 

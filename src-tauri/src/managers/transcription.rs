@@ -222,9 +222,10 @@ const EXTRA_ENGINE_RETRY_POLL: Duration = Duration::from_millis(50);
 /// load — no Tauri state lookup, no mutex lock.
 ///
 /// A *slot* per stream rather than one route: the experimental Multi Streaming
-/// STT mode runs two models over the same microphone at the same time, and the
-/// recorder feeds one frame to both. Every other path opens exactly one slot, so
-/// the cost of the second is a loop over a one-element list.
+/// STT mode runs up to four models (the primary plus up to three extras) over the
+/// same microphone at the same time, and the recorder feeds one frame to each.
+/// Every other path opens exactly one slot, so the cost of the others is a loop
+/// over a one-element list.
 pub struct StreamRouter {
     /// Command channels to the active streaming workers, at most one per slot,
     /// present from `start_stream` until `finalize_stream`/`cancel_stream`.
@@ -418,8 +419,8 @@ pub struct TranscriptionManager {
     /// while the worker holds it.
     active_engine_lease: Arc<[AtomicU64; STREAM_SLOTS]>,
     /// Pending statistics attempt for an in-flight live stream, per slot. One
-    /// per stream rather than one for the process: with two streams live, the
-    /// second's attempt would otherwise overwrite the first's and the primary's
+    /// per stream rather than one for the process: with several streams live, a
+    /// later one's attempt would otherwise overwrite the primary's and the primary's
     /// finalize would complete the wrong one.
     stream_attempt: Arc<Mutex<[Option<PendingStatisticsAttempt>; STREAM_SLOTS]>>,
     /// Optional in-process observer of the live text, called on the stream
@@ -884,8 +885,16 @@ impl TranscriptionManager {
         }
 
         *is_loading = true;
+        // Cleared on drop, so a panic in the load (FFI, a poisoned lock) cannot
+        // leave `is_loading` set and every waiter on the condvar parked forever.
+        let guard = LoadingGuard {
+            is_loading: self.is_loading.clone(),
+            loading_condvar: self.loading_condvar.clone(),
+        };
+        drop(is_loading);
         let self_clone = self.clone();
         thread::spawn(move || {
+            let _guard = guard;
             if reload_pending {
                 self_clone
                     .reload_model_on_next_use
@@ -895,9 +904,6 @@ impl TranscriptionManager {
             if let Err(e) = self_clone.load_model(&settings.selected_model) {
                 error!("Failed to load model: {}", e);
             }
-            let mut is_loading = self_clone.is_loading.lock().unwrap();
-            *is_loading = false;
-            self_clone.loading_condvar.notify_all();
         });
     }
 
@@ -917,7 +923,7 @@ impl TranscriptionManager {
     }
 
     /// Whether a live streaming run is currently in flight (on any slot — the
-    /// overlay shows a live session while either column is streaming).
+    /// overlay shows a live session while any column is streaming).
     pub fn is_streaming(&self) -> bool {
         self.stream_active
             .iter()
@@ -1065,7 +1071,7 @@ impl TranscriptionManager {
         macro_rules! give_back {
             () => {
                 if let Some((model_id, Some(engine))) = supplied.take() {
-                    self.return_extra_engine(&model_id, engine);
+                    self.return_extra_engine(&model_id, engine, "its live stream");
                 }
             };
         }
@@ -1113,7 +1119,7 @@ impl TranscriptionManager {
         if slot == PRIMARY_STREAM_SLOT {
             self.return_engine(engine, model_id);
         } else {
-            self.return_extra_engine(model_id, engine);
+            self.return_extra_engine(model_id, engine, "its live stream");
         }
     }
 
@@ -1127,7 +1133,7 @@ impl TranscriptionManager {
 
     /// `live_typing` is this stream's own permission to type into the foreground
     /// app; see the note where the field used to be. It is a parameter rather than
-    /// shared state because two streams are live at once in the Multi Streaming
+    /// shared state because several streams are live at once in the Multi Streaming
     /// STT mode and the primary's permission is not the extra's.
     fn run_stream_worker(
         &self,
@@ -1302,29 +1308,7 @@ impl TranscriptionManager {
             // R2T2 resolves through the same dispatcher but reads its chunk size
             // from `native_streaming_chunk_ms` instead (a preset has no meaning
             // for a continuous millisecond range).
-            let stream_ext = {
-                let latency_kind = self
-                    .model_manager
-                    .get_model_info(&model_id)
-                    .and_then(|info| info.native_streaming_latency_kind);
-                let preset = settings
-                    .native_streaming_latency_presets
-                    .get(&model_id)
-                    .copied()
-                    .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate);
-                let chunk_ms = settings
-                    .native_streaming_chunk_ms
-                    .get(&model_id)
-                    .copied()
-                    .unwrap_or(crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT);
-                crate::managers::native_streaming_latency::stream_extension_for(
-                    &session.model(),
-                    &model_id,
-                    latency_kind,
-                    preset,
-                    chunk_ms,
-                )
-            };
+            let stream_ext = self.resolved_stream_extension(&settings, &session.model(), &model_id);
             let stream_options = StreamOptions {
                 family: stream_ext,
                 ..Default::default()
@@ -1545,8 +1529,8 @@ impl TranscriptionManager {
         // `stream` + the `&mut engine` borrow are released here.
 
         if !stream_started {
-            // Stream never began (model doesn't support streaming or begin
-            // failed); drain so the finalize handshake still completes and the
+            // Stream never began (the statistics run was already terminal, or
+            // `begin_attempt` / `session.stream()` failed); drain so the finalize handshake still completes and the
             // caller falls back to batch transcription. Return the engine first
             // so the fallback can immediately use it.
             self.restore_stream_engine(slot, engine, &model_id);
@@ -1610,25 +1594,7 @@ impl TranscriptionManager {
                 // Same dispatcher and same resolved values as the primary live
                 // path above, so a headless benchmark cannot silently measure a
                 // different cadence than the app actually runs.
-                crate::managers::native_streaming_latency::stream_extension_for(
-                    &model,
-                    &model_id,
-                    self.model_manager
-                        .get_model_info(&model_id)
-                        .and_then(|m| m.native_streaming_latency_kind),
-                    settings
-                        .native_streaming_latency_presets
-                        .get(&model_id)
-                        .copied()
-                        .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate),
-                    settings
-                        .native_streaming_chunk_ms
-                        .get(&model_id)
-                        .copied()
-                        .unwrap_or(
-                            crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT,
-                        ),
-                )
+                self.resolved_stream_extension(&settings, &model, &model_id)
             };
             let stream_options = StreamOptions {
                 family,
@@ -1801,7 +1767,7 @@ impl TranscriptionManager {
         self.cancel_stream_on(PRIMARY_STREAM_SLOT);
     }
 
-    /// Abandon one slot's stream without producing text. The extra slot's stream
+    /// Abandon one slot's stream without producing text. An extra slot's stream
     /// ends here on every path that drops the multi-streaming session.
     pub fn cancel_stream_on(&self, slot: u8) {
         let index = slot as usize;
@@ -1982,6 +1948,18 @@ impl TranscriptionManager {
         *self.stream_text_sink.lock().unwrap() = sink;
         self.stream_text_sink_exclusive
             .store(exclusive, Ordering::Release);
+    }
+
+    /// Remove the live-text observer only if it is still `sink` — for an owner
+    /// that may outlive its session (the Multi-STT streaming coordinator after
+    /// a finish timeout) and must not clear a sink someone else installed since.
+    pub fn clear_stream_text_sink_if(&self, sink: &StreamTextSink) {
+        let mut current = self.stream_text_sink.lock().unwrap();
+        if current.as_ref().is_some_and(|c| Arc::ptr_eq(c, sink)) {
+            *current = None;
+            self.stream_text_sink_exclusive
+                .store(false, Ordering::Release);
+        }
     }
 
     /// Running totals of the live stream worker's feed and compute time, for
@@ -2933,21 +2911,30 @@ impl TranscriptionManager {
 
     /// Unload an extra model engine.
     ///
-    /// If the engine is currently leased out for an in-flight transcription it
-    /// cannot be dropped here; the unload request is recorded instead and the
-    /// engine is dropped when `transcribe_with_extra` returns it.
+    /// If the engine is currently leased out (an in-flight decode or a live
+    /// stream) it cannot be dropped here; the unload request is recorded instead
+    /// and the engine is dropped when `return_extra_engine` gets it back.
     pub fn unload_extra_model(&self, model_id: &str) -> Result<()> {
         info!("Unloading extra model: {}", model_id);
-        {
+        let removed = {
             let mut extra = self.extra_engines.lock().unwrap();
-            if extra.remove(model_id).is_none() {
+            let removed = extra.remove(model_id).is_some();
+            if !removed {
                 self.extra_unload_requests
                     .lock()
                     .unwrap()
                     .insert(model_id.to_string());
             }
+            removed
+        };
+        if removed {
+            info!("Extra model '{}' unloaded", model_id);
+        } else {
+            info!(
+                "Extra model '{}' is not in the map (leased or not loaded); unload deferred until its lease ends",
+                model_id
+            );
         }
-        info!("Extra model '{}' unloaded", model_id);
 
         let _ = self.app_handle.emit(
             "model-state-changed",
@@ -2966,9 +2953,11 @@ impl TranscriptionManager {
     /// shutdown so the 2nd, 3rd, and 4th models are freed just like the primary model.
     ///
     /// Engines sitting in `extra_engines` are dropped directly. Engines
-    /// currently leased out for an in-flight `transcribe_with_extra` are not in
-    /// the map, so their IDs are recorded in `extra_unload_requests` — the
-    /// transcription caller drops them instead of re-inserting.
+    /// currently leased out (an in-flight decode or a live stream) are not in
+    /// the map, so every configured Multi-STT slot gets an entry in
+    /// `extra_unload_requests` — `return_extra_engine` then drops a leased
+    /// engine instead of re-inserting it. A request for a slot model that is
+    /// not loaded at all is harmless: the next `load_extra_model` clears it.
     pub fn unload_all_extra_models(&self) {
         let to_unload: Vec<String> = {
             let mut extra = self.extra_engines.lock().unwrap();
@@ -2977,12 +2966,18 @@ impl TranscriptionManager {
             ids
         };
 
-        // Record unload requests for any models that might be leased out
-        // (mid-transcription) so transcribe_with_extra drops them on return
-        // instead of re-inserting them into the now-drained map.
-        if !to_unload.is_empty() {
+        let settings = get_settings(&self.app_handle);
+        {
             let mut pending = self.extra_unload_requests.lock().unwrap();
-            for id in &to_unload {
+            for id in [
+                &settings.multi_stt_model_2,
+                &settings.multi_stt_model_3,
+                &settings.multi_stt_model_4,
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|id| !id.is_empty() && !to_unload.contains(id))
+            {
                 pending.insert(id.clone());
             }
         }
@@ -3019,12 +3014,14 @@ impl TranscriptionManager {
             .ok_or_else(|| anyhow::anyhow!("Extra model '{}' is not loaded", model_id))
     }
 
-    /// Give a leased engine back. An unload that was asked for while it was out is
-    /// honoured here rather than lost, with the same policy
-    /// [`Self::transcribe_with_extra_internal`] applies to a per-decode lease: the
-    /// request flag, or `Immediately` with the Multi-STT pin off, frees the engine
-    /// instead of reinserting it.
-    fn return_extra_engine(&self, model_id: &str, engine: LoadedEngine) {
+    /// Give a leased engine back — after a per-decode lease
+    /// ([`Self::transcribe_with_extra_internal`], `during` = "transcription") or
+    /// a whole live stream (`during` = "its live stream"). An unload that was
+    /// asked for while it was out is honoured here rather than lost: the request
+    /// flag, or `Immediately` with the Multi-STT pin off (mirroring the primary
+    /// model's `maybe_unload_immediately`), frees the engine instead of
+    /// reinserting it.
+    fn return_extra_engine(&self, model_id: &str, engine: LoadedEngine, during: &str) {
         let settings = get_settings(&self.app_handle);
         let mut extra = self.extra_engines.lock().unwrap();
         let unload_requested = self.extra_unload_requests.lock().unwrap().remove(model_id);
@@ -3033,29 +3030,66 @@ impl TranscriptionManager {
         if unload_requested || unload_immediately {
             if unload_immediately {
                 info!(
-                    "Immediately unloading extra model '{}' after its live stream",
-                    model_id
+                    "Immediately unloading extra model '{}' after {}",
+                    model_id, during
                 );
             } else {
                 info!(
-                    "Extra model '{}' was unloaded during its live stream; freeing its engine",
-                    model_id
+                    "Extra model '{}' was unloaded during {}; freeing its engine",
+                    model_id, during
                 );
             }
             drop(extra);
             drop(engine);
-            let _ = self.app_handle.emit(
-                "model-state-changed",
-                ModelStateEvent {
-                    event_type: "multi_stt_model_unloaded".to_string(),
-                    model_id: Some(model_id.to_string()),
-                    model_name: None,
-                    error: None,
-                },
-            );
+            self.emit_extra_model_unloaded(model_id);
         } else {
             extra.insert(model_id.to_string(), engine);
         }
+    }
+
+    /// The family-specific stream extension for `model_id` under the user's
+    /// settings: the latency preset (default `Accurate`), or for R2T2 the
+    /// `native_streaming_chunk_ms` value. One resolver for the live path and
+    /// the headless benchmark, so the two can never measure different cadences.
+    fn resolved_stream_extension(
+        &self,
+        settings: &AppSettings,
+        model: &transcribe_cpp::Model,
+        model_id: &str,
+    ) -> Option<transcribe_cpp::StreamExtension> {
+        let latency_kind = self
+            .model_manager
+            .get_model_info(model_id)
+            .and_then(|info| info.native_streaming_latency_kind);
+        let preset = settings
+            .native_streaming_latency_presets
+            .get(model_id)
+            .copied()
+            .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate);
+        let chunk_ms = settings
+            .native_streaming_chunk_ms
+            .get(model_id)
+            .copied()
+            .unwrap_or(crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT);
+        crate::managers::native_streaming_latency::stream_extension_for(
+            model,
+            model_id,
+            latency_kind,
+            preset,
+            chunk_ms,
+        )
+    }
+
+    fn emit_extra_model_unloaded(&self, model_id: &str) {
+        let _ = self.app_handle.emit(
+            "model-state-changed",
+            ModelStateEvent {
+                event_type: "multi_stt_model_unloaded".to_string(),
+                model_id: Some(model_id.to_string()),
+                model_name: None,
+                error: None,
+            },
+        );
     }
 
     /// Transcribe audio with one of the extra model engines.
@@ -3167,41 +3201,15 @@ impl TranscriptionManager {
             }
         };
 
-        // Decide whether the surviving engine returns to the map. It is dropped
-        // (freed) when an unload was requested while it was leased out, or when
-        // the unload timeout is Immediately AND multi_stt_keep_extra_models_loaded
-        // is false (mirrors the primary model's maybe_unload_immediately).
-        if let Some(eng) = engine_to_return {
-            let mut extra = self.extra_engines.lock().unwrap();
-            let unload_requested = self.extra_unload_requests.lock().unwrap().remove(model_id);
-            let unload_immediately = settings.model_unload_timeout
-                == ModelUnloadTimeout::Immediately
-                && !settings.multi_stt_keep_extra_models_loaded;
-            if unload_requested || unload_immediately {
-                if unload_immediately {
-                    info!(
-                        "Immediately unloading extra model '{}' after transcription",
-                        model_id
-                    );
-                } else {
-                    info!(
-                        "Extra model '{}' was unloaded during transcription; freeing its engine",
-                        model_id
-                    );
-                }
-                drop(extra);
-                drop(eng);
-                let _ = self.app_handle.emit(
-                    "model-state-changed",
-                    ModelStateEvent {
-                        event_type: "multi_stt_model_unloaded".to_string(),
-                        model_id: Some(model_id.to_string()),
-                        model_name: None,
-                        error: None,
-                    },
-                );
-            } else {
-                extra.insert(model_id.to_string(), eng);
+        // The surviving engine goes back to the map, or is freed when an unload
+        // was requested while it was leased out (or Immediately with the pin off).
+        // A panicked engine is already gone: tell the UI, and drop any request
+        // that was waiting for it.
+        match engine_to_return {
+            Some(eng) => self.return_extra_engine(model_id, eng, "transcription"),
+            None => {
+                self.extra_unload_requests.lock().unwrap().remove(model_id);
+                self.emit_extra_model_unloaded(model_id);
             }
         }
 
@@ -3684,7 +3692,7 @@ impl TranscriptionManager {
 
         Model::load_with(model_path, model_options).map_err(|e| {
             let err_str = e.to_string();
-            if err_str.contains("unsupported architecture") || err_str.contains("-9") {
+            if err_str.contains("unsupported architecture") {
                 anyhow::anyhow!(
                     "Failed to load model {}: architecture requires a dynamic plugin (transcribe-arch-*.dll) in your plugins directory. Error: {}",
                     model_id,
@@ -4037,7 +4045,7 @@ fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Op
                 (backend, None)
             } else {
                 warn!(
-                    "Model '{}' is set to the {:?} backend, which is not available in this \
+                    "Model '{}' is set to the {} backend, which is not available in this \
                      build or on this machine; using the global accelerator policy instead",
                     model_id,
                     requested.as_str()

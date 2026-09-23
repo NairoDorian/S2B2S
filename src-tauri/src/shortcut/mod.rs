@@ -91,8 +91,14 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
     }
 }
 
-/// Unregister a shortcut using the appropriate implementation
+/// Unregister a shortcut using the appropriate implementation. An empty
+/// binding (the shipped default for the transcribe triggers) was never
+/// registered, so there is nothing to do — and the Tauri backend would log a
+/// parse error for it.
 pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    if binding.current_binding.is_empty() {
+        return Ok(());
+    }
     let settings = get_settings(app);
     match settings.keyboard_implementation {
         KeyboardImplementation::Tauri => tauri_impl::unregister_shortcut(app, binding),
@@ -527,8 +533,9 @@ fn unregister_all_shortcuts(app: &AppHandle, implementation: KeyboardImplementat
     let bindings = settings::get_bindings(app);
 
     for (id, binding) in bindings {
-        // Skip cancel shortcut as it's dynamically registered
-        if id == "cancel" {
+        // Skip cancel shortcut as it's dynamically registered, and empty
+        // bindings, which were never registered at all.
+        if id == "cancel" || binding.current_binding.is_empty() {
             continue;
         }
 
@@ -656,7 +663,8 @@ pub fn change_shortcut_activation_setting(
 #[specta::specta]
 pub fn change_hold_threshold_ms_setting(app: AppHandle, ms: u64) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.hold_threshold_ms = ms;
+    // The range the Debug page's slider offers.
+    settings.hold_threshold_ms = ms.clamp(100, 1000);
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1413,7 +1421,8 @@ pub fn change_multi_stt_streaming_pause_ms_setting(
     pause_ms: u32,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.multi_stt_streaming_pause_ms = pause_ms;
+    // The range the Multi-STT page's slider offers (and AGENTS.md documents).
+    settings.multi_stt_streaming_pause_ms = pause_ms.clamp(100, 10_000);
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1427,7 +1436,7 @@ pub fn change_multi_stt_streaming_context_chunks_setting(
     chunks: u32,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.multi_stt_streaming_context_chunks = chunks;
+    settings.multi_stt_streaming_context_chunks = chunks.min(3);
     settings::write_settings(&app, settings);
     Ok(())
 }

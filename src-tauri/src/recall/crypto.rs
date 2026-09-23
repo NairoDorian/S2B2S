@@ -493,7 +493,10 @@ fn encrypt_audio_dir(root: &Path, key: &MasterKey) -> Result<u32, String> {
         .flatten()
     {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("rcl") {
+        // A sub-folder (or anything else that is not a file) is left alone:
+        // failing on it here would abort `enable` with the notes already
+        // encrypted and the session not unlocked.
+        if !path.is_file() || path.extension().and_then(|e| e.to_str()) == Some("rcl") {
             continue;
         }
         let bytes =

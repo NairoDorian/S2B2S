@@ -110,7 +110,8 @@ use crate::audio_toolkit::audio::{ChunkTap, chunk_tap};
 use crate::direct_stream_writer::DirectStreamWriter;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::{
-    PRIMARY_STREAM_SLOT, STREAM_SLOTS, StreamTiming, TranscriptionManager, real_time_factor,
+    PRIMARY_STREAM_SLOT, STREAM_SLOTS, StreamTextSink, StreamTiming, TranscriptionManager,
+    real_time_factor,
 };
 use crate::settings::{AppSettings, PasteMethod, get_settings};
 
@@ -211,11 +212,19 @@ const _: () = assert!(FINISH_TIMEOUT.as_secs() > MERGE_TIMEOUT.as_secs());
 /// `multi_stt_streaming_pause_ms` of *silence*, so the un-drained tail of a
 /// closed chunk is the end of the audio the stream was fed — a suffix, because a
 /// decoder consumes in order — and a suffix this short lies inside that silence
-/// and cannot hold a word that has not been written yet. Keep it below the
-/// smallest break for that to hold. It is also an order of magnitude below the
+/// and cannot hold a word that has not been written yet. That only holds while
+/// the tolerance is below the break, so [`break_outcome`] caps it at the
+/// configured pause (settable down to 100 ms). It is also an order of magnitude below the
 /// backlog this must still catch: the model that motivated [`Break::Retire`]
 /// measured 4918 ms.
 const STREAM_DRAIN_TOLERANCE_MS: i64 = 500;
+
+/// [`STREAM_DRAIN_TOLERANCE_MS`] capped at the configured pause: an un-drained
+/// suffix longer than the silence could hold speech the stream has not written
+/// yet, and the pause is settable down to 100 ms.
+fn drain_tolerance_ms(pause: Duration) -> i64 {
+    STREAM_DRAIN_TOLERANCE_MS.min(i64::try_from(pause.as_millis()).unwrap_or(i64::MAX))
+}
 
 /// How long a break waits for the chunk's own text to arrive before the session
 /// gives up on the chunk and retires itself.
@@ -410,7 +419,7 @@ fn break_outcome(
     if !closes {
         return Break::Wait;
     }
-    if has_text && stream_drain_ms <= STREAM_DRAIN_TOLERANCE_MS {
+    if has_text && stream_drain_ms <= drain_tolerance_ms(pause) {
         return Break::Close;
     }
     if paused_for >= pause + TEXT_CATCHUP_GRACE {
@@ -1007,40 +1016,40 @@ pub fn start(
     // else's, while the columns are the streams' own raw text. So an exclusive
     // sink is exactly wrong here — it would suppress the per-slot events the
     // columns are made of — and the composed text goes out under its own slot
-    // instead.
-    let exclusive = !(source == TextSource::Live && settings.multi_stt_streaming_multi_debug_view);
-    {
+    // instead. The debug view belongs to the nested mode only: a parent-mode
+    // (ReDecode) session — including the fallback when the nested mode refuses
+    // to arm — keeps the production view whatever that setting says.
+    let debug_view = source == TextSource::Live && settings.multi_stt_streaming_multi_debug_view;
+    let exclusive = !debug_view;
+    let sink: StreamTextSink = {
         let snapshot = Arc::clone(&snapshot);
         let extras = Arc::clone(&extras);
-        tm.set_stream_text_sink(
-            Some(Arc::new(
-                move |slot: u8,
-                      committed: &str,
-                      tentative: &str,
-                      audio_committed_ms: i64,
-                      input_received_ms: i64| {
-                    if slot != PRIMARY_STREAM_SLOT {
-                        let mut extras = extras.lock().unwrap();
-                        if let Some(extra) = extras.iter_mut().find(|e| e.slot == slot) {
-                            extra.committed = committed.to_string();
-                            extra.tentative = tentative.to_string();
-                        }
-                        return;
+        Arc::new(
+            move |slot: u8,
+                  committed: &str,
+                  tentative: &str,
+                  audio_committed_ms: i64,
+                  input_received_ms: i64| {
+                if slot != PRIMARY_STREAM_SLOT {
+                    let mut extras = extras.lock().unwrap();
+                    if let Some(extra) = extras.iter_mut().find(|e| e.slot == slot) {
+                        extra.committed = committed.to_string();
                     }
-                    let mut current = snapshot.lock().unwrap();
-                    let revision = current.revision.wrapping_add(1);
-                    *current = Arc::new(Snapshot {
-                        committed: committed.to_string(),
-                        tentative: tentative.to_string(),
-                        audio_committed_ms,
-                        input_received_ms,
-                        revision,
-                    });
-                },
-            )),
-            exclusive,
-        );
-    }
+                    return;
+                }
+                let mut current = snapshot.lock().unwrap();
+                let revision = current.revision.wrapping_add(1);
+                *current = Arc::new(Snapshot {
+                    committed: committed.to_string(),
+                    tentative: tentative.to_string(),
+                    audio_committed_ms,
+                    input_received_ms,
+                    revision,
+                });
+            },
+        )
+    };
+    tm.set_stream_text_sink(Some(Arc::clone(&sink)), exclusive);
 
     let (tx, rx) = mpsc::channel();
     let alive = Arc::new(AtomicBool::new(true));
@@ -1066,11 +1075,12 @@ pub fn start(
         rm: Arc::clone(rm),
         tap,
         token,
+        sink,
         start_generation: rm.cancel_generation(),
         snapshot,
         source,
         extras,
-        debug_view: settings.multi_stt_streaming_multi_debug_view,
+        debug_view,
         settings,
         settings_ticks: 0,
         seen_revision: u64::MAX,
@@ -1194,7 +1204,8 @@ pub fn cancel() {
 struct Snapshot {
     committed: String,
     tentative: String,
-    /// How much audio the committed text accounts for. Gates the close (via
+    /// The family's drain hint: how far into its input the stream has decoded
+    /// (not a cursor into `committed`). Gates the close (via
     /// [`STREAM_DRAIN_TOLERANCE_MS`]) and is reported at each close; never used
     /// to cut (see the module docs).
     audio_committed_ms: i64,
@@ -1315,7 +1326,6 @@ struct ExtraStream {
     /// The stream slot this model runs on. Never the primary's.
     slot: u8,
     committed: String,
-    tentative: String,
     /// Absolute byte offset in `committed` up to which the open chunk has been
     /// given this stream's words.
     copied: usize,
@@ -1326,7 +1336,6 @@ impl ExtraStream {
         Self {
             slot,
             committed: String::new(),
-            tentative: String::new(),
             copied: 0,
         }
     }
@@ -1351,6 +1360,10 @@ struct Coordinator {
     /// This session's claim on the tap; a different token means another
     /// recording took it and this coordinator must stop touching it.
     token: u64,
+    /// The text sink this session installed. Only this one is cleared at
+    /// shutdown: a coordinator orphaned by a finish timeout must not remove the
+    /// sink a newer session (or Live Mode) has installed since.
+    sink: StreamTextSink,
     start_generation: u64,
     snapshot: Arc<Mutex<Arc<Snapshot>>>,
     /// Where this session's per-chunk texts come from. Fixed at arm time: the
@@ -1499,9 +1512,10 @@ impl Coordinator {
             warn!("Multi-STT streaming: another recording took the audio tap; stopping");
             return false;
         }
-        // A cancel never reaches this action (`utils::cancel_current_operation`
-        // stops the recorder and the stream, and only then tells the
-        // coordinator), so the session has to notice it itself.
+        // A cancel never reaches this module (`utils::cancel_current_operation`
+        // stops the recorder and the stream, tells the transcription
+        // coordinator and never calls in here), so the session has to notice it
+        // itself.
         if self.rm.was_cancelled_since(self.start_generation) {
             debug!("Multi-STT streaming: cancelled by the user");
             return false;
@@ -1610,7 +1624,7 @@ impl Coordinator {
                 // dispatch of another.
                 warn!(
                     "Multi-STT streaming: chunk {} was still owed its own text {:?} after the \
-                     break (grace {:?}) — {} chars of it, and {} ms of audio the stream decodes \
+                     last speech (the pause plus a grace of {:?}) — {} chars of it, and {} ms of audio the stream decodes \
                      but has not drained. A chunk cannot be merged against text it does not have: \
                      closing this one would leave slot 1 empty or short, and its words would \
                      arrive during the next chunk and be read into it, showing the same speech \
@@ -1656,10 +1670,10 @@ impl Coordinator {
 
         // The tap and the stream are fed the same frames in the same order (see
         // `ChunkTap`), so the tap must have seen exactly the audio the stream was
-        // fed. A structural mismatch would mean every reported lag is off by a
-        // constant, which is worth one warning — the correction is not applied,
-        // because a worker-thread lag of a frame or two is indistinguishable
-        // from a real lead and would silently absorb it.
+        // fed. A structural mismatch would mean a chunk's audio is not exactly
+        // the audio the stream decoded for it, which is worth one warning — no
+        // correction is applied, because a worker-thread lag of a frame or two
+        // is indistinguishable from a real lead and would silently absorb it.
         if !self.lead_checked && snapshot.input_received_ms > 0 {
             self.lead_checked = true;
             let fed = snapshot.input_received_ms as u64 * SAMPLES_PER_MS as u64;
@@ -1667,7 +1681,7 @@ impl Coordinator {
             if tapped > fed {
                 warn!(
                     "Multi-STT streaming: the audio tap is {} samples ahead of the stream; the \
-                     stream lag reported at each close may be off by {:.0} ms",
+                     chunk's audio may not be exactly the audio the stream decoded ({:.0} ms)",
                     tapped - fed,
                     (tapped - fed) as f64 / SAMPLES_PER_MS as f64
                 );
@@ -1819,6 +1833,9 @@ impl Coordinator {
         // figure crawling towards the tolerance is the mode working near its
         // edge.
         let un_drained_ms = (self.stream_input_ms - self.stream_drained_ms).max(0);
+        let tolerance_ms = drain_tolerance_ms(Duration::from_millis(u64::from(
+            self.settings.multi_stt_streaming_pause_ms.max(1),
+        )));
         match self.source {
             TextSource::ReDecode => {
                 let context_samples = {
@@ -1833,7 +1850,7 @@ impl Coordinator {
                     self.closed[index].live.chars().count(),
                     context_samples as i64 / SAMPLES_PER_MS,
                     un_drained_ms,
-                    STREAM_DRAIN_TOLERANCE_MS
+                    tolerance_ms
                 );
             }
             // No window and no decode to report: what the line is worth here is
@@ -1846,7 +1863,7 @@ impl Coordinator {
                 self.closed.len(),
                 self.closed[index].duration_ms(),
                 un_drained_ms,
-                STREAM_DRAIN_TOLERANCE_MS,
+                tolerance_ms,
                 self.closed[index]
                     .live_slots()
                     .map(|(slot, text)| format!("{}: {} chars", slot + 1, text.chars().count()))
@@ -2486,7 +2503,7 @@ impl Coordinator {
         self.tap.end(self.token);
         // The sink is the session's; clearing it hands the overlay back to the
         // plain path's events (a later recording that is not in this mode).
-        self.tm.set_stream_text_sink(None, false);
+        self.tm.clear_stream_text_sink_if(&self.sink);
         self.merge.clear();
         if !finished {
             if let Some(writer) = self.writer.take() {
@@ -2537,6 +2554,16 @@ mod tests {
         // to merge, so a job over it would be three decodes of silence.
         assert!(!closes(true, false, 0));
         assert!(!closes(true, false, MAX_CHUNK_SECONDS * 1000));
+    }
+
+    #[test]
+    fn the_drain_tolerance_never_exceeds_a_short_pause() {
+        // A 200 ms pause: a 300 ms un-drained suffix is longer than the silence
+        // and could hold speech, so the break must wait for it to drain.
+        let pause = Duration::from_millis(200);
+        let broken = pause + Duration::from_millis(50);
+        assert_eq!(break_outcome(true, true, 300, broken, pause), Break::Wait);
+        assert_eq!(break_outcome(true, true, 200, broken, pause), Break::Close);
     }
 
     #[test]

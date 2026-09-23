@@ -1,6 +1,14 @@
 fn main() {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    build_apple_intelligence_bridge();
+    // A build script's `cfg` describes the *host*; the bridge follows the
+    // *target* (`mod apple_intelligence` in lib.rs is gated on an aarch64
+    // macOS target), so an x86_64 build on an arm64 Mac does not compile an
+    // arm64 archive into its link, and the reverse cross build gets the bridge.
+    #[cfg(target_os = "macos")]
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+        && std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64")
+    {
+        build_apple_intelligence_bridge();
+    }
 
     generate_tray_translations();
 
@@ -35,12 +43,11 @@ fn main() {
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
 
-    // The released Tauri CLI (2.11) exports STATIC_VCRUNTIME=true for
-    // `tauri build`. tauri-build from the `dev` branch (Cargo.toml [patch])
-    // deprecated that variable in favour of `build.windows.staticVCRuntime`
-    // (default true) and prints a warning on every build while it is set.
-    // Drop it so the config decides, which links the same static VC runtime.
-    // Remove once the CLI stops setting it.
+    // The Tauri CLI may still export STATIC_VCRUNTIME=true for `tauri build`.
+    // tauri-build deprecated that variable in favour of
+    // `build.windows.staticVCRuntime` (default true) and prints a warning on
+    // every build while it is set. Drop it so the config decides, which links
+    // the same static VC runtime. Remove once the CLI stops setting it.
     if std::env::var_os("STATIC_VCRUNTIME").is_some_and(|v| v == "true") {
         // SAFETY: a build script is single-threaded here; nothing reads the
         // environment concurrently.
@@ -522,7 +529,7 @@ fn escape_string(s: &str) -> String {
         .replace('\t', "\\t")
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[cfg(target_os = "macos")]
 fn build_apple_intelligence_bridge() {
     use std::env;
     use std::path::{Path, PathBuf};
@@ -707,7 +714,7 @@ fn build_apple_intelligence_bridge() {
 /// FoundationModelsMacros plugin, so the Apple Intelligence Swift path cannot
 /// compile (issue #1448). On any error we conservatively return false so the
 /// existing SDK-presence check decides.
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[cfg(target_os = "macos")]
 fn is_command_line_tools_only() -> bool {
     use std::process::Command;
 

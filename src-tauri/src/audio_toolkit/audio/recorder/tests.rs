@@ -449,7 +449,6 @@ fn does_not_match_other_errors_for_no_device() {
 }
 
 const FRAME_MS: u64 = crate::audio_toolkit::constants::VAD_FRAME_MS;
-const SPEECH_HEARTBEAT_MS: u64 = 150;
 
 fn clock(hold_ms: u64) -> super::SpeechClock {
     super::SpeechClock::new(
@@ -561,7 +560,7 @@ fn speech_clock_heartbeats_while_speech_continues() {
 
     let frames = 100;
     let emissions = (0..frames).filter(|_| clock.tick(true).is_some()).count();
-    let frames_per_emit = SPEECH_HEARTBEAT_MS.div_ceil(FRAME_MS) as usize;
+    let frames_per_emit = super::SPEECH_HEARTBEAT_MS.div_ceil(FRAME_MS) as usize;
     assert_eq!(emissions, frames / frames_per_emit);
 }
 
