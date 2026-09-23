@@ -3644,8 +3644,8 @@ impl TranscriptionManager {
     /// shared by the primary load and [`Self::create_engine`].
     ///
     /// When the catalog names an architecture for `filename`, its external
-    /// plugin is activated first (a no-op in every shipped posture, where
-    /// arch-dl is off). A load failure that looks like a missing plugin is
+    /// plugin is activated first (`ensure_arch_plugin_for_model`, a no-op in
+    /// every shipped posture, where arch-dl is off and the family is built in). A load failure that looks like a missing plugin is
     /// reported as such; anything else as a plain load failure.
     fn load_transcribe_model(
         &self,

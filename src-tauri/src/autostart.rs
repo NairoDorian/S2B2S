@@ -30,7 +30,13 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
     let result = if enabled {
         manager.enable()
     } else {
-        manager.disable()
+        // Disabling an entry that was never created fails ("The system cannot
+        // find the file specified" on Windows), which with autostart off would
+        // log a warning on every launch. Nothing to undo in that case.
+        match manager.is_enabled() {
+            Ok(false) => Ok(()),
+            _ => manager.disable(),
+        }
     };
     if let Err(e) = result {
         log::warn!(

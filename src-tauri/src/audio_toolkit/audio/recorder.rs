@@ -1673,7 +1673,10 @@ fn run_consumer(
         }
 
         if stream_error.load(Ordering::Acquire) && !stream_error_logged {
-            log::error!("Microphone backend reported a stream error; it will be rebuilt");
+            log::error!(
+                "Microphone backend reported a stream error; the stream is rebuilt when the next \
+                 recording starts"
+            );
             stream_error_logged = true;
         }
     }

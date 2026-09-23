@@ -331,6 +331,21 @@ fn stage_transcribe_runtime_libs() {
             for (name, src) in &desired {
                 copy_if_changed(src, &target.join(name));
             }
+            // This copy is additive, unlike the recreated package directory
+            // below, so an architecture plugin from an earlier build (one that
+            // used the `arch-dl` module split) would stay beside the executable
+            // indefinitely — and the app's plugin scan would then try to load a
+            // family older than the one compiled into libtranscribe. Only the
+            // plugin files this staging owns are touched.
+            if let Ok(entries) = std::fs::read_dir(&target) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let Some(name) = name.to_str() else { continue };
+                    if name.starts_with("transcribe-arch-") && !desired.contains_key(name) {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+            }
         }
     }
     if staged_up_to_date(&dest, &desired) {

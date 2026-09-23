@@ -52,6 +52,11 @@ unsafe extern "C" {
 static EXPLICITLY_LOADED: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static REGISTERED_DIRS: Lazy<Mutex<Vec<PathBuf>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
+/// Whether this build splits model families into loadable plugins (the
+/// transcribe-cpp `arch-dl` feature). Off in every posture Cargo.toml builds;
+/// flip it together with that feature.
+const ARCH_DL: bool = false;
+
 /// Metadata describing an architecture plugin module.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ArchPluginInfo {
@@ -283,6 +288,15 @@ pub fn list_arch_plugins(app_handle: &AppHandle) -> Vec<ArchPluginInfo> {
 /// be served by a compiled-in architecture (a static build, or the `full` set)
 /// — and the load that follows produces the accurate error if it is not.
 pub fn ensure_arch_plugin_for_model(arch: &str, app_handle: &AppHandle) -> Result<(), String> {
+    // Every posture compiles its families into libtranscribe (`arch-dl` is off,
+    // see the module docs and Cargo.toml), so a model load needs no plugin — and
+    // a `transcribe-arch-*` file found on disk can only be a leftover of an older
+    // build, which would replace the built-in family with a stale one (or fail
+    // its ABI check and log a false warning on every load). An explicit load
+    // from the plugins page still goes through [`load_arch_plugin`].
+    if !ARCH_DL {
+        return Ok(());
+    }
     let arch_lower = arch.to_ascii_lowercase();
     if EXPLICITLY_LOADED.lock().unwrap().contains(&arch_lower) {
         return Ok(());
