@@ -127,7 +127,10 @@ fn extension_for_kind(
 /// Returns `None` when the model has no latency extension, when the user is on
 /// the `Accurate` preset, or when the runtime rejects the extension kind for
 /// this particular model build.
-pub fn stream_extension(
+///
+/// Preset families only: [`stream_extension_for`] routes R2T2 to
+/// `r2t2_stream_extension` before reaching here.
+fn stream_extension(
     model: &Model,
     model_id: &str,
     kind: Option<NativeStreamingLatencyKind>,

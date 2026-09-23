@@ -26,29 +26,29 @@ interface LatencyPanelProps {
 }
 
 export const LatencyPanel = (props: LatencyPanelProps): JSX.Element => {
-  const { selected, onSelect } = props;
   const { t } = useTranslation();
 
   return (
     <ul role="radiogroup" class="py-1">
       <For each={LATENCY_PRESET_ORDER}>
         {(preset) => {
-          const isSelected = preset === selected;
+          // An accessor: the row outlives a change of selection.
+          const isSelected = () => preset === props.selected;
           return (
             <li>
               <button
                 type="button"
                 role="radio"
-                aria-checked={isSelected ? "true" : "false"}
-                onClick={() => onSelect(preset)}
-                class={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors ${isSelected ? "bg-accent/10" : "hover:bg-mid-gray/10"}`}
+                aria-checked={isSelected() ? "true" : "false"}
+                onClick={() => props.onSelect(preset)}
+                class={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors ${isSelected() ? "bg-accent/10" : "hover:bg-mid-gray/10"}`}
               >
                 <Check
-                  class={`mt-0.5 h-3 w-3 shrink-0 ${isSelected ? "text-accent" : "text-transparent"}`}
+                  class={`mt-0.5 h-3 w-3 shrink-0 ${isSelected() ? "text-accent" : "text-transparent"}`}
                 />
                 <span class="min-w-0">
                   <span
-                    class={`block font-medium ${isSelected ? "text-accent" : "text-text/85"}`}
+                    class={`block font-medium ${isSelected() ? "text-accent" : "text-text/85"}`}
                   >
                     {t(latencyPresetLabelKey(preset))}
                   </span>

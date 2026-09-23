@@ -11,7 +11,7 @@ import {
 
 // Auto-discover translation files using Vite's glob import. Deliberately not
 // `eager`: each locale is its own chunk, imported the first time that language
-// is used. Eager bundling put all 24 files (2.1 MB of JSON) into the chunk
+// is used. Eager bundling put all 26 files (2.1 MB of JSON) into the chunk
 // both windows parse at startup, for the one language that is ever read.
 const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
   "./locales/*/translation.json",
@@ -130,17 +130,17 @@ export const getSupportedLanguage = (
 //
 // No plugin is installed: `initReactI18next` was here to give `react-i18next`'s
 // hooks an instance, and `useTranslation.tsx` reads this module directly
-// (Phase 1 of docs/PLAN_SOLIDJS_2.md). Nothing else about the setup changed,
-// including the non-eager locale glob above.
+// (since the React → Solid 2 migration, see CHANGELOG). Nothing else about the
+// setup changed, including the non-eager locale glob above.
 const initialized = i18n.use(lazyLocaleBackend).init({
   lng: "en",
   fallbackLng: "en",
   interpolation: {
-    escapeValue: false, // React already escapes values
+    escapeValue: false, // Solid's text bindings already escape values
     // `{{app}}` is available in every string without each key having to pass
     // it. A locale that names the product — "Start with {{app}}", "{{app}}
     // needs some permissions to work properly" — therefore survives a rename
-    // untouched, and 25 files never have to be edited for one new word.
+    // untouched, and 26 files never have to be edited for one new word.
     defaultVariables: { app: APP_NAME },
   },
 });

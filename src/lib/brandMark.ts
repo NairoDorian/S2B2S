@@ -1,7 +1,7 @@
 /**
  * The application mark, as geometry.
  *
- * This module is the **only** place the mark's shape is written down. The React
+ * This module is the **only** place the mark's shape is written down. The Solid
  * component (`components/icons/BrandMark.tsx`) and the icon generator
  * (`scripts/gen-icons.ts`, which rasterises every taskbar / tray / installer
  * PNG, ICO and ICNS) both draw from here, so the sidebar icon, the tray icon
@@ -166,7 +166,7 @@ export const SLASH_PATH: string = (() => {
 
 /** One stroked stroke of the mark. */
 export interface BrandStroke {
-  /** Stable id — also the React key. */
+  /** Stable id — also the `<For>` key. */
   id: "badge" | "zero" | "slash";
   d: string;
   /** Stroke width in grid units, before {@link strokeScaleFor}. */
@@ -189,42 +189,4 @@ export function brandStrokes(size: number): BrandStroke[] {
     strokes.push({ id: "slash", d: SLASH_PATH, width: SLASH.stroke * scale });
   }
   return strokes;
-}
-
-export interface BrandMarkOptions {
-  /** Rendered size in pixels; selects the optical variant. */
-  size: number;
-  /** Any CSS colour. Defaults to `currentColor`, so it inherits. */
-  color?: string;
-  /** Override the variant's slash choice (used by the generator's variants). */
-  withSlash?: boolean;
-}
-
-/**
- * The mark as a standalone SVG document.
- *
- * Used by `scripts/gen-icons.ts`, which hands each output to a headless
- * browser to rasterise. Kept here rather than in the script so the rasterised
- * files and the on-screen component are the same drawing.
- */
-export function brandMarkSvg({
-  size,
-  color = "currentColor",
-  withSlash,
-}: BrandMarkOptions): string {
-  const strokes = brandStrokes(size).filter(
-    (s) => withSlash || s.id !== "slash",
-  );
-  const body = strokes
-    .map(
-      (s) =>
-        `<path d="${s.d}" fill="none" stroke="${color}" ` +
-        `stroke-width="${s.width.toFixed(3)}" stroke-linecap="round" ` +
-        `stroke-linejoin="round"/>`,
-    )
-    .join("");
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" ` +
-    `viewBox="0 0 ${GRID} ${GRID}">${body}</svg>`
-  );
 }

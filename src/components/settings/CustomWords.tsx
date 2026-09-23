@@ -70,7 +70,7 @@ export const CustomWords = (props: CustomWordsProps) => {
             type="text"
             class="max-w-40"
             value={newWord()}
-            onChange={(e) => setNewWord(e.target.value)}
+            onInput={(e) => setNewWord(e.currentTarget.value)}
             onKeyDown={handleKeyPress}
             placeholder={t("settings.advanced.customWords.placeholder")}
             variant="compact"

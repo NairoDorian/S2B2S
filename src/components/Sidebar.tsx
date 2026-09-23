@@ -53,7 +53,7 @@ export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
 interface SectionConfig {
   labelKey: string;
-  icon: Component<any>;
+  icon: Component<{ width?: number; height?: number; class?: string }>;
   component: ValidComponent;
   enabled: (settings: unknown) => boolean;
 }
@@ -326,10 +326,19 @@ export function Sidebar(props: SidebarProps) {
           tabindex={0}
           onMouseDown={onResizeStart}
           onKeyDown={(e) => {
+            // Persisted like a mouse resize, or the next launch would forget it.
             if (e.key === "ArrowLeft") {
-              setWidth((w) => Math.max(MIN_WIDTH, w - 10));
+              setWidth((w) => {
+                const next = Math.max(MIN_WIDTH, w - 10);
+                writePref(WIDTH_PREF, String(next));
+                return next;
+              });
             } else if (e.key === "ArrowRight") {
-              setWidth((w) => Math.min(MAX_WIDTH, w + 10));
+              setWidth((w) => {
+                const next = Math.min(MAX_WIDTH, w + 10);
+                writePref(WIDTH_PREF, String(next));
+                return next;
+              });
             }
           }}
           class={`absolute top-0 -end-0.5 w-1.5 h-full cursor-ew-resize hover:bg-accent/40 transition-colors ${

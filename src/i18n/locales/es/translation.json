@@ -148,6 +148,7 @@
     "modelError": "Error del modelo",
     "modelUnloaded": "Modelo descargado",
     "noModelDownloadRequired": "Sin modelo - descarga requerida",
+    "statusTitle": "Model status: {{status}}",
     "deleteModel": "Eliminar {{modelName}}",
     "capabilities": {
       "languageSelection": "Soporta múltiples idiomas de entrada",
@@ -219,6 +220,11 @@
         "increase": "Aumentar el tamaño del fragmento en un milisegundo",
         "hint": "Cuánto audio se acumula antes de cada decodificación. Un valor más bajo responde antes pero consume más cómputo, porque el modelo relee todo el audio acumulado en cada fragmento. Se aplica a la próxima grabación."
       }
+    },
+    "errors": {
+      "checkStatusFailed": "Failed to check model status",
+      "loadFailed": "Failed to load model",
+      "switchFailed": "Failed to switch model"
     }
   },
   "settings": {
@@ -354,7 +360,7 @@
       "acceleration": {
         "transcribe": {
           "title": "Aceleración de transcribe.cpp",
-          "description": "Aceleración por hardware para modelos transcribe.cpp (familia Whisper). Auto usa GPU si está disponible (Metal en macOS, Vulkan en Windows/Linux)."
+          "description": "Aceleración por hardware para modelos transcribe.cpp (familia Whisper). Auto usa GPU si está disponible (Metal en macOS, CUDA en Windows x86_64/Linux)."
         },
         "gpuDevice": {
           "auto": "Automático"
@@ -564,6 +570,7 @@
         "baseUrl": {
           "title": "URL base",
           "description": "URL base de la API para el proveedor seleccionado. Solo se puede editar el proveedor personalizado.",
+          "managedByProvider": "Base URL is managed by the selected provider.",
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
@@ -577,6 +584,7 @@
           "descriptionDefault": "Elige un modelo expuesto por el proveedor seleccionado.",
           "placeholderWithOptions": "Buscar o seleccionar un modelo",
           "placeholderNoOptions": "Escribe un nombre de modelo",
+          "useCustom": "Use \"{{value}}\"",
           "refreshModels": "Actualizar modelos"
         }
       },
@@ -608,6 +616,7 @@
       "loading": "Cargando historial...",
       "empty": "Aún no hay transcripciones. ¡Comienza a grabar para crear tu historial!",
       "copyToClipboard": "Copiar transcripción al portapapeles",
+      "copied": "Copied to clipboard",
       "save": "Guardar transcripción",
       "saveToRecall": "File as Recall note",
       "savedToRecall": "Saved to Recall",
@@ -616,6 +625,7 @@
       "deleteError": "Error al eliminar la entrada. Por favor, intenta de nuevo.",
       "retranscribe": "Re-transcribir",
       "retranscribeError": "No se pudo re-transcribir. Por favor, inténtalo de nuevo.",
+      "retranscribeSuccess": "Transcription updated",
       "transcribing": "Transcribiendo...",
       "transcriptionFailed": "La transcripción falló. Puedes re-transcribir usando el icono de reintentar.",
       "deleteRecordings": "Delete Recordings",
@@ -633,9 +643,11 @@
       "postProcess": "Poscronización (LLM)",
       "postProcessing": "Puliendo...",
       "postProcessError": "Error al posprocesar la transcripción.",
+      "postProcessSuccess": "Transcript polished with LLM",
       "multiSttRetranscribe": "Re-transcribir con Multi-STT",
       "multiSttTranscribing": "Transcribiendo con Multi-STT...",
       "multiSttError": "Error al retranscribir con Multi-STT.",
+      "multiSttSuccess": "Multi-STT transcription complete",
       "rawTranscriptTab": "Transcripción original",
       "polishedTextTab": "Pulido (LLM)",
       "mergedTextTab": "Resultado fusionado",
@@ -646,9 +658,10 @@
       "wpmRating": "{{wpm}} PPM",
       "wordCount": "{{count}} palabras",
       "audioDetails": "{{total}} total : {{speech}} de voz ({{silence}} silencio eliminado)",
-      "latencyStt": "{{latency}} STT",
-      "latencyLlm": "{{latency}} LLM",
+      "latencyStt": "{{duration}} STT",
+      "latencyLlm": "{{duration}} LLM",
       "extraModelsCount": "{{count}} modelos",
+      "multiSttModelsBadge": "Multi-STT ({{count}} models)",
       "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
@@ -658,11 +671,11 @@
       "multiSttCleanedOutputTab": "Cleaned Output",
       "multiSttRawLogTab": "Raw Log",
       "multiSttModelSlot": "Model {{slot}}",
-      "multiSttBrainLabel": "ðŸ§  Brain LLM",
+      "multiSttBrainLabel": "🧠 Brain LLM",
       "multiSttBrainCleanedOutput": "Cleaned Output",
       "multiSttBrainPromptLabel": "Prompt: {{name}}",
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
-      "multiSttNoOutput": "â€” no output â€”",
+      "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
       "multiSttCopyBrainOutput": "Copy cleaned Brain output"
     },
@@ -686,7 +699,8 @@
         "copied": "Copiado",
         "lineCount": "{{count}} líneas",
         "empty": "Esperando registros… Las entradas aparecerán aquí a medida que la aplicación las emita.",
-        "noFilterMatch": "No lines match this tag."
+        "noFilterMatch": "No lines match this tag.",
+        "allTags": "ALL"
       },
       "updateChecks": {
         "label": "Buscar actualizaciones",
@@ -695,7 +709,13 @@
       },
       "soundTheme": {
         "label": "Tema de sonido",
-        "description": "Elige un tema de sonido para la retroalimentación de inicio y parada de grabación"
+        "description": "Elige un tema de sonido para la retroalimentación de inicio y parada de grabación",
+        "options": {
+          "marimba": "Marimba",
+          "pop": "Pop",
+          "custom": "Custom"
+        },
+        "preview": "Preview sound theme (plays start then stop)"
       },
       "wordCorrectionThreshold": {
         "title": "Umbral de corrección de palabras",
@@ -740,13 +760,6 @@
         "title": "Implementación del teclado",
         "description": "Elige el sistema que gestiona los atajos de teclado.",
         "bindingsReset": "Los atajos de teclado eran incompatibles y se restablecieron a los valores predeterminados"
-      },
-      "paths": {
-        "title": "Debug Paths",
-        "description": "Absolute paths of the directories this app writes to, for troubleshooting",
-        "appData": "Datos de la aplicación:",
-        "models": "Modelos:",
-        "settings": "Configuración:"
       },
       "pasteDelay": {
         "title": "Retraso de pegado (antes)",
@@ -1363,7 +1376,9 @@
       },
       "canvas": {
         "idle": "Start the analyser to see the spectrum",
-        "silence": "digital silence"
+        "silence": "digital silence",
+        "now": "now",
+        "span": "−{{seconds}} s"
       },
       "telemetry": {
         "sampleRate": "Rate (Hz)",
@@ -1375,7 +1390,13 @@
         "threading": "Analysis: {{mode}}",
         "async": "worker thread",
         "inline": "inline on the audio thread",
-        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}"
+        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}",
+        "hzPerBin": "Hz / bin",
+        "magnitudeBins": "Magnitude bins",
+        "magnitudeBinsValue": "{{used}} of {{total}}",
+        "aggregated": "Aggregated",
+        "kaiserBeta": "Kaiser β",
+        "latency": "Latency"
       },
       "view": {
         "title": "Analyser",
@@ -1402,7 +1423,15 @@
         "music": "Music (Log, cubic, Blackman-Harris)",
         "meter": "Fast meter (linear, 60 Hz)",
         "chroma": "Chroma / pitch",
-        "applied": "Preset applied"
+        "applied": "Preset applied",
+        "quality": {
+          "title": "Quality",
+          "description": "Transform length, warp interpolation, Kaiser beta mode and aggregation tuned for a frame budget. Applied on top of the current settings; the output bins are kept.",
+          "visual60": "Visual 60 fps (8K, cubic, auto β)",
+          "visual120": "Visual 120 fps (4K, cubic, auto β)",
+          "analysis": "Analysis (32K, auto β, RMS)",
+          "active": "Matches: {{preset}}"
+        }
       },
       "spectrum": {
         "title": "Spectrum",
@@ -1469,6 +1498,29 @@
         "fftSize": {
           "label": "Zero-pad length",
           "description": "Transform length. The window is centred in a zero-padded frame of this size (grown to the next power of two above the window when that is larger); a longer transform interpolates the spectrum more finely."
+        },
+        "rawBins": {
+          "label": "Raw FFT bins",
+          "description": "Output the transform's magnitude untouched: N/2+1 bins from DC to Nyquist on a linear axis, with no warp, interpolation or aggregation. Scale, display max, warp blend, log floor, output bins and aggregation do not apply while it is on."
+        },
+        "outputBinsMode": {
+          "label": "Output bins mode",
+          "description": "Fixed: the output bin count below. Auto: one output bin per FFT bin, N/2+1 of the transform actually run.",
+          "fixed": "Fixed",
+          "auto": "Auto (N/2+1)"
+        },
+        "warpAggregation": {
+          "label": "Warp aggregation",
+          "description": "Where one output bin spans two or more FFT bins (the top of a log axis), combine them instead of interpolating between two: Peak keeps the loudest, so a narrow peak is never skipped; RMS averages their power. Off interpolates everywhere.",
+          "options": {
+            "off": "Off (interpolate, may skip peaks)",
+            "peak": "Peak (never drops a peak)",
+            "rms": "RMS (power mean)"
+          }
+        },
+        "zeroPadding": {
+          "label": "Zero-padding",
+          "description": "On: the window is centred in a zero-padded transform of the zero-pad length. Off: the transform is the window length itself (rounded up to even), the cheapest option, and the zero-pad length does not apply."
         }
       },
       "eq": {
@@ -1546,6 +1598,12 @@
             "coherent_gain": "Coherent gain (mean(window) = 1)",
             "full_scale": "Full scale (sine amplitude 1 → 1.0)"
           }
+        },
+        "kaiserBetaMode": {
+          "label": "Kaiser beta mode",
+          "description": "Manual: the beta below. Auto: derived from the dB range floor, so the window's side lobes sit just under what the display can show.",
+          "manual": "Manual",
+          "auto": "Auto (from dB range)"
         }
       },
       "loudness": {
@@ -1614,7 +1672,11 @@
           "label": "Update rate",
           "description": "Spectrum frames per second sent to the page."
         },
-        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size.",
+        "features": {
+          "label": "Spectral features",
+          "description": "Compute the centroid, 85 % rolloff, flatness, flux, RMS level and bass / mid / high band levels from the linear spectrum with every frame, shown under the analyser. A few microseconds per frame."
+        }
       },
       "voice": {
         "title": "Voice detection & noise suppression",
@@ -1629,6 +1691,17 @@
       },
       "errors": {
         "start": "Could not start the analyser: {{error}}"
+      },
+      "features": {
+        "title": "Features",
+        "centroid": "Centroid",
+        "rolloff": "Rolloff",
+        "flatness": "Flatness",
+        "flux": "Flux",
+        "rms": "RMS",
+        "bass": "Bass",
+        "mid": "Mid",
+        "high": "High"
       }
     },
     "llama": {
@@ -1695,6 +1768,7 @@
         "bundledRuntime": "{{mb}} MB of bundled CUDA runtime",
         "removeRuntime": "Remove runtime",
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
+        "runtimeFreed": "Freed {{mb}} MB",
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
@@ -1789,7 +1863,13 @@
     "downloadSpeed": "{{speed}} MB/s",
     "downloading": "Downloading...",
     "downloadingCount": "{{count}} downloading...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "moreInformation": "Más información",
+    "selectOption": "Select an option...",
+    "unknownSize": "Unknown size",
+    "charsPerSecond": "{{value}} chars/s"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} necesita permisos de accesibilidad para escribir texto transcrito.",
@@ -1797,6 +1877,7 @@
   },
   "errors": {
     "loadDirectory": "Error al cargar el directorio: {{error}}",
+    "loadDirectoryUnknown": "unknown error",
     "micPermissionDeniedTitle": "Acceso al micrófono denegado",
     "micPermissionDenied": {
       "generic": "El sistema operativo denegó el acceso al micrófono. Por favor, conceda el permiso del micrófono en la configuración del sistema.",
@@ -1811,7 +1892,8 @@
     "modelLoadFailedUnknown": "modelo desconocido",
     "pasteFailedTitle": "Error al pegar el texto",
     "pasteFailed": "No se pudo pegar el texto en la aplicación activa.",
-    "transcriptionFailedTitle": "Error de transcripción"
+    "transcriptionFailedTitle": "Error de transcripción",
+    "unknownError": "Unknown error"
   },
   "appLanguage": {
     "title": "Idioma de la aplicación",
@@ -1958,6 +2040,9 @@
     "custom": "Custom Color",
     "reset": "Reset to Default",
     "presets": {
+      "cyan": "Neon Cyan",
+      "magenta": "Neon Magenta",
+      "lime": "Terminal Green",
       "gold": "Gold",
       "pink": "Rose",
       "amber": "Amber",

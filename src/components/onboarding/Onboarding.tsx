@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For } from "solid-js";
+import { createEffect, createMemo, createSignal, For, untrack } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import { ChevronDown } from "@/components/icons/lucide";
@@ -16,13 +16,16 @@ interface OnboardingProps {
 const Onboarding = (props: OnboardingProps) => {
   const { t } = useTranslation();
   const modelStore = useModelStore();
-  // Actions are stable functions and safe to take once; every reactive list
-  // (models, downloadingModels, …) is read through the store proxy inside
-  // memos and JSX below — a body-level read would snapshot the initial
-  // empty state and the picker would never populate.
-  const downloadModel = modelStore.downloadModel;
-  const selectModel = modelStore.selectModel;
-  const cancelDownload = modelStore.cancelDownload;
+  // Actions are stable functions and safe to take once (inside `untrack`, so
+  // the one-time read says so); every reactive list (models,
+  // downloadingModels, …) is read through the store proxy inside memos and
+  // JSX below — a body-level read would snapshot the initial empty state and
+  // the picker would never populate.
+  const { downloadModel, selectModel, cancelDownload } = untrack(() => ({
+    downloadModel: modelStore.downloadModel,
+    selectModel: modelStore.selectModel,
+    cancelDownload: modelStore.cancelDownload,
+  }));
   const [selectedModelId, setSelectedModelId] = createSignal<string | null>(
     null,
   );
@@ -33,7 +36,7 @@ const Onboarding = (props: OnboardingProps) => {
 
   const curated = createMemo(() => {
     const downloadable = modelStore.models.filter(
-      (m: ModelInfo) => !m.is_downloaded && isLegacySource(m),
+      (m: ModelInfo) => !m.is_downloaded && !isLegacySource(m),
     );
     const recommended = downloadable.filter((m: ModelInfo) => m.is_recommended);
     const rest = downloadable.filter((m: ModelInfo) => !m.is_recommended);

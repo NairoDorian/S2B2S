@@ -36,32 +36,29 @@ import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 
-const IconButton = ({
-  onClick,
-  title,
-  disabled,
-  active,
-  class: className,
-  children,
-}: {
+interface IconButtonProps {
   onClick: () => void;
   title: string;
   disabled?: boolean;
   active?: boolean;
   class?: string;
   children: JSX.Element;
-}) => (
+}
+
+// Props are read through `props.*`, never destructured: a destructured prop is
+// read once at mount, so `disabled` would never follow the row's retry state.
+const IconButton = (props: IconButtonProps) => (
   <button
-    onClick={onClick}
-    disabled={disabled}
+    onClick={() => props.onClick()}
+    disabled={props.disabled}
     class={`p-1.5 rounded-md flex items-center justify-center transition-colors cursor-pointer disabled:cursor-not-allowed disabled:text-text/20 ${
-      active
+      props.active
         ? "text-accent hover:text-accent/80 bg-accent/10"
         : "text-text/50 hover:text-accent hover:bg-mid-gray/10"
-    } ${className ?? ""}`}
-    title={title}
+    } ${props.class ?? ""}`}
+    title={props.title}
   >
-    {children}
+    {props.children}
   </button>
 );
 
@@ -72,19 +69,16 @@ interface OpenRecordingsButtonProps {
   label: string;
 }
 
-const OpenRecordingsButton = ({
-  onClick,
-  label,
-}: OpenRecordingsButtonProps) => (
+const OpenRecordingsButton = (props: OpenRecordingsButtonProps) => (
   <Button
-    onClick={onClick}
+    onClick={() => props.onClick()}
     variant="secondary"
     size="sm"
     class="flex items-center gap-2"
-    title={label}
+    title={props.label}
   >
     <FolderOpen class="w-4 h-4" />
-    <span>{label}</span>
+    <span>{props.label}</span>
   </Button>
 );
 
@@ -94,21 +88,17 @@ interface DeleteRecordingsButtonProps {
   disabled?: boolean;
 }
 
-const DeleteRecordingsButton = ({
-  onClick,
-  label,
-  disabled,
-}: DeleteRecordingsButtonProps) => (
+const DeleteRecordingsButton = (props: DeleteRecordingsButtonProps) => (
   <Button
-    onClick={onClick}
+    onClick={() => props.onClick()}
     variant="secondary"
     size="sm"
     class="flex items-center gap-2 text-red-400 hover:text-red-300 hover:border-red-500/40"
-    title={label}
-    disabled={disabled}
+    title={props.label}
+    disabled={props.disabled}
   >
     <Trash2 class="w-4 h-4" />
-    <span>{label}</span>
+    <span>{props.label}</span>
   </Button>
 );
 
@@ -161,17 +151,11 @@ export const HistorySettings = () => {
   const [isDeleting, setIsDeleting] = createSignal(false);
   const [searchQuery, setSearchQuery] = createSignal("");
   const [activeFilter, setActiveFilter] = createSignal<HistoryFilter>("all");
-  let sentinelRef: HTMLDivElement | null = null;
-  let entriesRef: HistoryEntry[] = [];
+  // A signal, not a plain ref: the sentinel only exists once the list has
+  // rendered, and the infinite-scroll effect has to re-run when it appears.
+  const [sentinel, setSentinel] = createSignal<HTMLDivElement | null>(null);
   let loadingRef = false;
   const initialFocusRef: { current: HTMLElement | null } = { current: null };
-
-  createEffect(
-    () => undefined,
-    () => {
-      entriesRef = entries();
-    },
-  );
 
   const loadPage = async (cursor?: number) => {
     const isFirstPage = cursor === undefined;
@@ -208,20 +192,20 @@ export const HistorySettings = () => {
     },
   );
 
-  // Infinite scroll
+  // Infinite scroll. The compute tracks every input: the apply runs untracked,
+  // so reading `loading()` / `hasMore()` there would only ever see the mount
+  // values (loading = true) and never create the observer.
   createEffect(
-    () => undefined,
-    () => {
-      if (loading()) return;
-
-      const sentinel = sentinelRef;
-      if (!sentinel || !hasMore()) return;
+    () => [loading(), hasMore(), sentinel()] as const,
+    ([isLoading, more, el]) => {
+      if (isLoading || !more || !el) return;
 
       const observer = new IntersectionObserver(
         (observerEntries) => {
           const first = observerEntries[0];
           if (first.isIntersecting) {
-            const lastEntry = entriesRef[entriesRef.length - 1];
+            const list = entries();
+            const lastEntry = list[list.length - 1];
             if (lastEntry) {
               loadPage(lastEntry.id);
             }
@@ -230,7 +214,7 @@ export const HistorySettings = () => {
         { threshold: 0 },
       );
 
-      observer.observe(sentinel);
+      observer.observe(el);
       return () => observer.disconnect();
     },
   );
@@ -281,7 +265,7 @@ export const HistorySettings = () => {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(t("settings.history.copyToClipboard"));
+      toast.success(t("settings.history.copied"));
     } catch (error) {
       console.error("Failed to copy to clipboard:", error);
     }
@@ -409,12 +393,7 @@ export const HistorySettings = () => {
             </For>
           </div>
         </AudioPlayerGroup>
-        <div
-          ref={(el) => {
-            sentinelRef = el;
-          }}
-          class="h-1"
-        />
+        <div ref={setSentinel} class="h-1" />
       </>
     );
   };
@@ -542,9 +521,9 @@ export const HistorySettings = () => {
           </>
         }
       >
-        <p class="text-sm text-text/80">
-          {t("settings.history.deleteRecordingsConfirmMessage")}
-        </p>
+        {/* The message is the dialog's `description` (which also wires
+            aria-describedby); repeating it here showed it twice. */}
+        {null}
       </Dialog>
     </div>
   );
@@ -584,6 +563,10 @@ interface HistoryEntryProps {
   multiSttTranscription: (id: number) => Promise<void>;
 }
 
+// The destructured `entry` (and the body-level values derived from it) is a
+// mount-time snapshot on purpose: the list's `<For>` keys rows by reference,
+// and every history update replaces the entry object, so an updated entry
+// remounts its row. The other props are stable callbacks.
 const HistoryEntryComponent = ({
   entry,
   onToggleSaved,
@@ -692,7 +675,7 @@ const HistoryEntryComponent = ({
     try {
       setRetrying("standard");
       await retryTranscription(entry.id);
-      toast.success("Transcription updated");
+      toast.success(t("settings.history.retranscribeSuccess"));
     } catch (error) {
       console.error("Failed to re-transcribe:", error);
       toast.error(t("settings.history.retranscribeError"));
@@ -706,7 +689,7 @@ const HistoryEntryComponent = ({
       setRetrying("post_process");
       await postProcessTranscription(entry.id);
       setActiveTab("polished");
-      toast.success("Transcript polished with LLM");
+      toast.success(t("settings.history.postProcessSuccess"));
     } catch (error) {
       console.error("Failed to post-process:", error);
       toast.error(t("settings.history.postProcessError"), {
@@ -722,7 +705,7 @@ const HistoryEntryComponent = ({
       setRetrying("multi_stt");
       await multiSttTranscription(entry.id);
       setActiveTab("polished");
-      toast.success("Multi-STT transcription complete");
+      toast.success(t("settings.history.multiSttSuccess"));
     } catch (error) {
       console.error("Failed to Multi-STT re-transcribe:", error);
       toast.error(t("settings.history.multiSttError"), {
@@ -744,39 +727,47 @@ const HistoryEntryComponent = ({
         getAudioUrl(entry.file_name).then((url) => {
           if (!url) return;
           const audio = new Audio(url);
-          audio.addEventListener("loadedmetadata", () => {
-            if (
-              audio.duration &&
-              !isNaN(audio.duration) &&
-              isFinite(audio.duration)
-            ) {
-              setLoadedAudioDurationSec(audio.duration);
-            }
-          });
+          // On Linux the URL is an object URL over the whole WAV; release it
+          // once the metadata (or an error) is in.
+          const release = () => {
+            if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+          };
+          audio.addEventListener(
+            "loadedmetadata",
+            () => {
+              if (
+                audio.duration &&
+                !isNaN(audio.duration) &&
+                isFinite(audio.duration)
+              ) {
+                setLoadedAudioDurationSec(audio.duration);
+              }
+              release();
+            },
+            { once: true },
+          );
+          audio.addEventListener("error", release, { once: true });
         });
       }
     },
   );
 
-  // Metric calculations
-  const totalDurationSec = entry.audio_duration_ms
-    ? entry.audio_duration_ms / 1000
-    : loadedAudioDurationSec();
+  // Metric calculations. `totalDurationSec` is an accessor: without a stored
+  // duration it waits for the metadata load above.
+  const totalDurationSec = () =>
+    entry.audio_duration_ms
+      ? entry.audio_duration_ms / 1000
+      : loadedAudioDurationSec();
   const speechDurationSec = entry.speech_duration_ms
     ? entry.speech_duration_ms / 1000
     : null;
 
   const silenceCutPercent = createMemo(() => {
-    if (
-      totalDurationSec &&
-      speechDurationSec &&
-      totalDurationSec > speechDurationSec
-    ) {
+    const total = totalDurationSec();
+    if (total && speechDurationSec && total > speechDurationSec) {
       return Math.max(
         0,
-        Math.round(
-          ((totalDurationSec - speechDurationSec) / totalDurationSec) * 100,
-        ),
+        Math.round(((total - speechDurationSec) / total) * 100),
       );
     }
     return 0;
@@ -792,11 +783,12 @@ const HistoryEntryComponent = ({
 
   const metrics = createMemo(() => {
     // Always calculate WPM from the silence-removed speech duration
+    const total = totalDurationSec();
     const silenceRemovedSec =
       speechDurationSec && speechDurationSec > 0
         ? speechDurationSec
-        : totalDurationSec && totalDurationSec > 0
-          ? totalDurationSec
+        : total && total > 0
+          ? total
           : 0;
 
     if (silenceRemovedSec <= 0 || wordCount() <= 0) {
@@ -833,6 +825,13 @@ const HistoryEntryComponent = ({
 
   const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
 
+  const formatLatency = (ms: number) =>
+    ms >= 1000
+      ? t("settings.statistics.units.seconds", {
+          value: (ms / 1000).toFixed(1),
+        })
+      : t("settings.statistics.units.milliseconds", { value: Math.round(ms) });
+
   return (
     <div class="p-4 flex flex-col gap-3 hover:bg-card/30 transition-colors">
       {/* Header Row: Title & Action Toolbar */}
@@ -846,7 +845,9 @@ const HistoryEntryComponent = ({
               <Cpu class="w-3 h-3 text-accent" />
               <span>
                 {isMultiStt
-                  ? `Multi-STT (${(entry.extra_models?.length ?? 0) + 1} models)`
+                  ? t("settings.history.multiSttModelsBadge", {
+                      count: (entry.extra_models?.length ?? 0) + 1,
+                    })
                   : displayModelId(entry.model_id)}
               </span>
             </span>
@@ -969,27 +970,29 @@ const HistoryEntryComponent = ({
       {/* Intelligence & Metrics Bar */}
       <div class="flex flex-wrap items-center gap-2 text-xs">
         {/* Audio Duration & Silence Suppression */}
-        {totalDurationSec !== null && (
-          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-mid-gray/10 text-text/80 border border-mid-gray/15">
-            <Volume2 class="w-3.5 h-3.5 text-mid-gray" />
-            <span>
-              {speechDurationSec !== null
-                ? silenceCutPercent() > 0
-                  ? t("settings.history.audioDetails", {
-                      total: formatDurationSec(totalDurationSec),
-                      speech: formatDurationSec(speechDurationSec),
-                      silence: `${silenceCutPercent()}%`,
-                    })
-                  : t("settings.history.audioDetailsNoCut", {
-                      total: formatDurationSec(totalDurationSec),
-                      speech: formatDurationSec(speechDurationSec),
-                    })
-                : t("settings.history.audioTotalOnly", {
-                    total: formatDurationSec(totalDurationSec),
-                  })}
+        <Show when={totalDurationSec()}>
+          {(total) => (
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-mid-gray/10 text-text/80 border border-mid-gray/15">
+              <Volume2 class="w-3.5 h-3.5 text-mid-gray" />
+              <span>
+                {speechDurationSec !== null
+                  ? silenceCutPercent() > 0
+                    ? t("settings.history.audioDetails", {
+                        total: formatDurationSec(total()),
+                        speech: formatDurationSec(speechDurationSec),
+                        silence: `${silenceCutPercent()}%`,
+                      })
+                    : t("settings.history.audioDetailsNoCut", {
+                        total: formatDurationSec(total()),
+                        speech: formatDurationSec(speechDurationSec),
+                      })
+                  : t("settings.history.audioTotalOnly", {
+                      total: formatDurationSec(total()),
+                    })}
+              </span>
             </span>
-          </span>
-        )}
+          )}
+        </Show>
 
         {/* Word Count */}
         {wordCount() > 0 && (
@@ -1026,9 +1029,9 @@ const HistoryEntryComponent = ({
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[11px] font-medium">
               <Zap class="w-3 h-3" />
               <span>
-                {entry.transcription_latency_ms >= 1000
-                  ? `${(entry.transcription_latency_ms / 1000).toFixed(1)}s STT`
-                  : `${Math.round(entry.transcription_latency_ms)}ms STT`}
+                {t("settings.history.latencyStt", {
+                  duration: formatLatency(entry.transcription_latency_ms),
+                })}
               </span>
             </span>
           )}
@@ -1039,9 +1042,9 @@ const HistoryEntryComponent = ({
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-medium">
               <Sparkles class="w-3 h-3" />
               <span>
-                {entry.post_processing_latency_ms >= 1000
-                  ? `${(entry.post_processing_latency_ms / 1000).toFixed(1)}s LLM`
-                  : `${Math.round(entry.post_processing_latency_ms)}ms LLM`}
+                {t("settings.history.latencyLlm", {
+                  duration: formatLatency(entry.post_processing_latency_ms),
+                })}
               </span>
             </span>
           )}
@@ -1201,9 +1204,9 @@ const HistoryEntryComponent = ({
                       )}
                       {brain().latency_ms != null && (
                         <span class="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          {(brain().latency_ms ?? 0) >= 1000
-                            ? `${((brain().latency_ms ?? 0) / 1000).toFixed(1)}s LLM`
-                            : `${Math.round(brain().latency_ms ?? 0)}ms LLM`}
+                          {t("settings.history.latencyLlm", {
+                            duration: formatLatency(brain().latency_ms ?? 0),
+                          })}
                         </span>
                       )}
                     </div>

@@ -454,10 +454,17 @@ impl FileTranscriptionManager {
 
         // Load the primary (and, for Multi-STT, the extra) engines once up front.
         let primary_model = settings.selected_model.clone();
-        let preload_error = self
+        let preload = self
             .preload_models(&tm, &settings, &options.mode, &primary_model)
-            .await
-            .err();
+            .await;
+        // The extra slots whose model loaded here. The per-file selection
+        // follows this, not what is resident when a file starts: under an
+        // "Immediately" unload timeout the extras are dropped after each
+        // decode, and the per-segment reload brings them back.
+        let (extra_slots, preload_error) = match preload {
+            Ok(slots) => (slots, None),
+            Err(e) => ([None, None, None], Some(e)),
+        };
 
         for (index, path) in paths.iter().enumerate() {
             let index = index as u32;
@@ -502,6 +509,7 @@ impl FileTranscriptionManager {
                     &settings,
                     &options,
                     &primary_model,
+                    &extra_slots,
                     path,
                     |status, seg, segs| {
                         emit(FileTranscriptionEvent {
@@ -572,7 +580,7 @@ impl FileTranscriptionManager {
         settings: &AppSettings,
         mode: &FileTranscriptionMode,
         primary_model: &str,
-    ) -> Result<(), String> {
+    ) -> Result<[Option<String>; 3], String> {
         if !tm.is_model_loaded() || tm.get_current_model().as_deref() != Some(primary_model) {
             let tm = Arc::clone(tm);
             let model = primary_model.to_string();
@@ -581,24 +589,28 @@ impl FileTranscriptionManager {
                 .map_err(|e| format!("Model load task panicked: {e}"))?
                 .map_err(|e| format!("Failed to load model '{primary_model}': {e}"))?;
         }
+        let mut loaded: [Option<String>; 3] = [None, None, None];
         if uses_extra_models(mode) {
             let mut handles = Vec::new();
-            for model_id in extra_model_ids(settings) {
+            for (slot, model_id) in extra_model_slots(settings).into_iter().enumerate() {
+                let Some(model_id) = model_id else { continue };
                 let tm = Arc::clone(tm);
+                let id = model_id.clone();
                 handles.push((
-                    model_id.clone(),
-                    tauri::async_runtime::spawn_blocking(move || tm.load_extra_model(&model_id)),
+                    slot,
+                    model_id,
+                    tauri::async_runtime::spawn_blocking(move || tm.load_extra_model(&id)),
                 ));
             }
-            for (model_id, handle) in handles {
+            for (slot, model_id, handle) in handles {
                 match handle.await {
-                    Ok(Ok(_)) => {}
+                    Ok(Ok(_)) => loaded[slot] = Some(model_id),
                     Ok(Err(e)) => warn!("Extra model '{model_id}' failed to load: {e}"),
                     Err(e) => warn!("Extra model '{model_id}' load task panicked: {e}"),
                 }
             }
         }
-        Ok(())
+        Ok(loaded)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -609,6 +621,7 @@ impl FileTranscriptionManager {
         settings: &AppSettings,
         options: &FileTranscriptionSettings,
         primary_model: &str,
+        extra_slots: &[Option<String>; 3],
         path: &Path,
         progress: impl Fn(FileJobStatus, Option<u32>, Option<u32>),
     ) -> Result<FileOutcome, JobError> {
@@ -633,18 +646,14 @@ impl FileTranscriptionManager {
         let segment_count = ranges.len() as u32;
         let samples = Arc::new(samples);
 
-        let extra_ids: Vec<String> = if uses_extra_models(&options.mode) {
-            extra_model_ids(settings)
-                .into_iter()
-                .filter(|id| tm.is_extra_model_loaded(id))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        // Slot-positional, like `MultiSttAction`: `${output2}` is always model
+        // 2, so an empty slot, or one whose model failed to load, leaves its
+        // placeholder empty instead of shifting the next model's text into it.
+        // `preload_models` already left every slot `None` in the other modes.
 
         let mut primary_parts: Vec<String> = Vec::with_capacity(ranges.len());
-        let mut extra_parts: Vec<Vec<String>> =
-            vec![Vec::with_capacity(ranges.len()); extra_ids.len()];
+        let mut extra_parts: [Vec<String>; 3] =
+            std::array::from_fn(|_| Vec::with_capacity(ranges.len()));
 
         for (seg_index, (start, end)) in ranges.iter().enumerate() {
             if self.cancelled() {
@@ -666,6 +675,30 @@ impl FileTranscriptionManager {
                     .map_err(|e| JobError::Failed(format!("Model load task panicked: {e}")))?
                     .map_err(|e| JobError::Failed(format!("Failed to reload model: {e}")))?;
             }
+            // Extra engines are dropped the same way unless they are kept
+            // loaded; reload them together so every segment has every slot.
+            let reloads: Vec<_> = extra_slots
+                .iter()
+                .flatten()
+                .filter(|id| !tm.is_extra_model_loaded(id))
+                .map(|id| {
+                    let tm2 = Arc::clone(tm);
+                    let model_id = id.clone();
+                    (
+                        id.as_str(),
+                        tauri::async_runtime::spawn_blocking(move || {
+                            tm2.load_extra_model(&model_id)
+                        }),
+                    )
+                })
+                .collect();
+            for (model_id, handle) in reloads {
+                match handle.await {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => warn!("Extra model '{model_id}' failed to reload: {e}"),
+                    Err(e) => warn!("Extra model '{model_id}' reload task panicked: {e}"),
+                }
+            }
 
             let (start, end) = (*start, *end);
             let primary = {
@@ -675,15 +708,19 @@ impl FileTranscriptionManager {
                     tm.transcribe(samples[start..end].to_vec())
                 })
             };
-            let extras: Vec<_> = extra_ids
+            let extras: Vec<_> = extra_slots
                 .iter()
-                .map(|model_id| {
+                .enumerate()
+                .filter_map(|(slot, model_id)| {
+                    let model_id = model_id.clone()?;
                     let tm = Arc::clone(tm);
                     let samples = Arc::clone(&samples);
-                    let model_id = model_id.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        tm.transcribe_with_extra(&model_id, samples[start..end].to_vec())
-                    })
+                    Some((
+                        slot,
+                        tauri::async_runtime::spawn_blocking(move || {
+                            tm.transcribe_with_extra(&model_id, samples[start..end].to_vec())
+                        }),
+                    ))
                 })
                 .collect();
 
@@ -692,15 +729,16 @@ impl FileTranscriptionManager {
                 .map_err(|e| JobError::Failed(format!("Transcription task panicked: {e}")))?
                 .map_err(|e| JobError::Failed(format!("Transcription failed: {e}")))?;
             primary_parts.push(primary_text);
-            for (slot, handle) in extras.into_iter().enumerate() {
+            for (slot, handle) in extras {
+                let model_id = extra_slots[slot].as_deref().unwrap_or_default();
                 match handle.await {
                     Ok(Ok(text)) => extra_parts[slot].push(text),
                     Ok(Err(e)) => {
-                        warn!("Extra model '{}' failed on a segment: {e}", extra_ids[slot]);
+                        warn!("Extra model '{model_id}' failed on a segment: {e}");
                         extra_parts[slot].push(String::new());
                     }
                     Err(e) => {
-                        warn!("Extra model '{}' task panicked: {e}", extra_ids[slot]);
+                        warn!("Extra model '{model_id}' task panicked: {e}");
                         extra_parts[slot].push(String::new());
                     }
                 }
@@ -711,11 +749,8 @@ impl FileTranscriptionManager {
         let mut text = primary_text.clone();
 
         if uses_extra_models(&options.mode) {
-            let outputs: Vec<String> = extra_parts
-                .iter()
-                .map(|parts| join_segments(parts))
-                .collect();
-            let output = |slot: usize| outputs.get(slot).map(String::as_str).unwrap_or("");
+            let outputs: [String; 3] =
+                std::array::from_fn(|slot| join_segments(&extra_parts[slot]));
             if self.cancelled() {
                 return Err(JobError::Cancelled);
             }
@@ -723,9 +758,9 @@ impl FileTranscriptionManager {
             let merged = crate::actions::multi_stt_merge_transcriptions(
                 settings,
                 &primary_text,
-                output(0),
-                output(1),
-                output(2),
+                &outputs[0],
+                &outputs[1],
+                &outputs[2],
             )
             .await;
             text = match merged {
@@ -797,17 +832,15 @@ fn uses_extra_models(mode: &FileTranscriptionMode) -> bool {
     )
 }
 
-fn extra_model_ids(settings: &AppSettings) -> Vec<String> {
+/// The three Multi-STT extra slots in order (`${output2}`..`${output4}`),
+/// `None` for an unset or blank slot.
+fn extra_model_slots(settings: &AppSettings) -> [Option<String>; 3] {
     [
         &settings.multi_stt_model_2,
         &settings.multi_stt_model_3,
         &settings.multi_stt_model_4,
     ]
-    .into_iter()
-    .flatten()
-    .filter(|id| !id.trim().is_empty())
-    .cloned()
-    .collect()
+    .map(|slot| slot.clone().filter(|id| !id.trim().is_empty()))
 }
 
 /// Join per-segment transcripts with single spaces, skipping empty segments.
@@ -981,6 +1014,18 @@ pub fn list_audio_files(folder: &Path, include_subfolders: bool) -> Result<Vec<P
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extra_slots_keep_their_positions() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.multi_stt_model_2 = None;
+        settings.multi_stt_model_3 = Some("model-three".into());
+        settings.multi_stt_model_4 = Some("  ".into());
+        assert_eq!(
+            extra_model_slots(&settings),
+            [None, Some("model-three".to_string()), None]
+        );
+    }
 
     #[test]
     fn short_input_is_one_segment() {

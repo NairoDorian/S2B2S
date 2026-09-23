@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo } from "solid-js";
+import { createSignal, createEffect, createMemo, untrack } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/components/icons/lucide";
 import type { ModelCardStatus } from "@/components/onboarding";
 import { ModelCard } from "@/components/onboarding";
+import { isLegacySource } from "@/components/onboarding/ModelCard";
 import { useModelStore } from "@/stores/modelStore";
 import {
   getLanguageLabel,
@@ -27,12 +28,6 @@ import { Show } from "solid-js";
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
   return supportsLanguageCode(model.supported_languages, langCode);
 };
-
-// Legacy models are the blob (Url-sourced) .bin/ONNX downloads, superseded by
-// the catalog GGUFs. They stay runnable when already on disk, but we no longer
-// advertise the download.
-const isLegacyModel = (model: ModelInfo): boolean =>
-  typeof model.source === "object" && "Url" in model.source;
 
 const openPluginsFolder = async () => {
   try {
@@ -78,13 +73,20 @@ export const ModelsSettings = () => {
   const verifyingModels = () => store.verifyingModels;
   const loading = () => store.loading;
   const isRescanning = () => store.isRescanning;
+  // Stable action references, read once (see hooks/useSettings.ts).
   const {
     downloadModel,
     cancelDownload,
     selectModel,
     deleteModel,
     rescanLocalModels,
-  } = store;
+  } = untrack(() => ({
+    downloadModel: store.downloadModel,
+    cancelDownload: store.cancelDownload,
+    selectModel: store.selectModel,
+    deleteModel: store.deleteModel,
+    rescanLocalModels: store.rescanLocalModels,
+  }));
 
   // click outside handler for language dropdown
   createEffect(
@@ -118,7 +120,7 @@ export const ModelsSettings = () => {
   // filtered languages for dropdown (exclude "auto")
   const filteredLanguages = createMemo(() => {
     return MODEL_CAPABILITY_LANGUAGES.filter((lang) =>
-      lang.label.toLowerCase().includes(languageSearch()),
+      lang.label.toLowerCase().includes(languageSearch().toLowerCase()),
     );
   });
 
@@ -211,8 +213,10 @@ export const ModelsSettings = () => {
   const filteredModels = createMemo(() => {
     const q = searchQuery().trim().toLowerCase();
     return models().filter((model: ModelInfo) => {
-      // Hide deprecated legacy (.bin/ONNX) downloads unless already on disk.
-      if (isLegacyModel(model) && !model.is_downloaded) return false;
+      // Hide deprecated legacy (Url-sourced .bin/ONNX) downloads, superseded
+      // by the catalog GGUFs, unless already on disk: they stay runnable, but
+      // we no longer advertise the download.
+      if (isLegacySource(model) && !model.is_downloaded) return false;
       if (languageFilter() !== "all") {
         if (!modelSupportsLanguage(model, languageFilter())) return false;
       }

@@ -122,7 +122,9 @@ fn paste_via_clipboard(
             info!("Restoring image to clipboard");
             let _ = clipboard.write_image(&image);
         } else {
-            // Nothing was there to begin with — don't leave the transcription behind.
+            // No text or image to restore (the clipboard was empty, or held a
+            // format this path cannot snapshot, such as files or HTML only):
+            // clear rather than leave the transcription behind.
             let _ = clipboard.clear();
         }
     })

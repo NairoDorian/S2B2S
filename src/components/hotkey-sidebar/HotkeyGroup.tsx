@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { ShortcutBinding } from "@/bindings";
 import { getShortcutAnchorId } from "@/lib/hotkeyGuide";
@@ -13,47 +13,46 @@ interface HotkeyGroupProps {
 }
 
 export const HotkeyGroup = (props: HotkeyGroupProps): JSX.Element | null => {
-  const { title, hotkeys, onHotkeyClick } = props;
   const { t } = useTranslation();
   const osType = useOsType();
 
-  if (hotkeys.length === 0) return null;
-
   return (
-    <div class="mb-4">
-      <h3 class="text-xs font-semibold text-mid-gray uppercase tracking-wider mb-2 px-1">
-        {title}
-      </h3>
-      <div class="flex flex-col gap-1.5">
-        <For each={hotkeys}>
-          {(hotkey) => (
-            <a
-              href={`#${getShortcutAnchorId(hotkey.id)}`}
-              onClick={(event) => {
-                event.preventDefault();
-                onHotkeyClick(hotkey.id);
-              }}
-              title={t("hotkeySidebar.jumpTo", {
-                name: t(
-                  `settings.general.shortcut.bindings.${hotkey.id}.name`,
-                  hotkey.name,
-                ),
-              })}
-              class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-mid-gray/10 hover:bg-accent/15 transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
-            >
-              <span class="min-w-0 flex-1 text-sm text-text truncate">
-                {t(
-                  `settings.general.shortcut.bindings.${hotkey.id}.name`,
-                  hotkey.name,
-                )}
-              </span>
-              <kbd class="text-xs font-mono text-text bg-accent/15 border border-accent/30 px-2 py-1 rounded whitespace-nowrap">
-                {formatKeyCombination(hotkey.current_binding, osType)}
-              </kbd>
-            </a>
-          )}
-        </For>
+    <Show when={props.hotkeys.length > 0}>
+      <div class="mb-4">
+        <h3 class="text-xs font-semibold text-mid-gray uppercase tracking-wider mb-2 px-1">
+          {props.title}
+        </h3>
+        <div class="flex flex-col gap-1.5">
+          <For each={props.hotkeys}>
+            {(hotkey) => (
+              <a
+                href={`#${getShortcutAnchorId(hotkey.id)}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  props.onHotkeyClick(hotkey.id);
+                }}
+                title={t("hotkeySidebar.jumpTo", {
+                  name: t(
+                    `settings.general.shortcut.bindings.${hotkey.id}.name`,
+                    hotkey.name,
+                  ),
+                })}
+                class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-mid-gray/10 hover:bg-accent/15 transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                <span class="min-w-0 flex-1 text-sm text-text truncate">
+                  {t(
+                    `settings.general.shortcut.bindings.${hotkey.id}.name`,
+                    hotkey.name,
+                  )}
+                </span>
+                <kbd class="text-xs font-mono text-text bg-accent/15 border border-accent/30 px-2 py-1 rounded whitespace-nowrap">
+                  {formatKeyCombination(hotkey.current_binding, osType)}
+                </kbd>
+              </a>
+            )}
+          </For>
+        </div>
       </div>
-    </div>
+    </Show>
   );
 };

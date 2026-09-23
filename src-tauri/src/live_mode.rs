@@ -9,8 +9,9 @@
 //! the first pause after 80 % of it, if `prefer_silence_boundary` is on — the
 //! stream is finalized, the recording stopped, the chunk WAV written on a
 //! blocking thread, the finalized text committed to the transcript, and the
-//! next chunk starts immediately. The gap between chunks is the few
-//! milliseconds it takes to restart the recorder.
+//! next chunk starts immediately. The gap between chunks is the stream
+//! finalize plus the recorder restart (plus a batch decode when the stream
+//! produced no text); the WAV is written off-thread so it adds nothing.
 //!
 //! The transcript file has two regions: the committed prefix (finalized
 //! chunks) and the live tail, which is rewritten on every stream update —
@@ -335,13 +336,18 @@ impl LiveModeManager {
         }
 
         let manager = Arc::clone(self);
-        let handle = thread::Builder::new()
+        let spawned = thread::Builder::new()
             .name("live-mode".into())
             .spawn(move || {
                 let outcome = manager.run_session(live, model_id, session_dir);
                 manager.finish_session(outcome.err());
-            })
-            .map_err(|e| format!("Failed to start Live Mode thread: {e}"))?;
+            });
+        // Through `fail` so a spawn failure clears `active` rather than leaving
+        // Live Mode "running" with no worker.
+        let handle = match spawned {
+            Ok(handle) => handle,
+            Err(e) => return fail(format!("Failed to start Live Mode thread: {e}")),
+        };
         *self.worker.lock().unwrap() = Some(handle);
         Ok(())
     }
@@ -477,6 +483,13 @@ impl LiveModeManager {
 
         let mut chunk_index: u32 = 0;
         while !self.stop_requested.load(Ordering::Acquire) {
+            // `finalize_stream()` and `transcribe()` unload the engine when the
+            // unload timeout is "Immediately"; reload so every chunk has a model.
+            if !tm.is_model_loaded() {
+                info!("Live Mode: reloading model '{model_id}'");
+                tm.load_model(&model_id)
+                    .map_err(|e| anyhow!("Failed to reload model '{model_id}': {e}"))?;
+            }
             chunk_index += 1;
             let chunk_started = Instant::now();
             self.update_status(|s| {
@@ -548,6 +561,9 @@ impl LiveModeManager {
             });
 
             // ── finalize the stream, stop the recorder ──
+            // The chunk's speech time, as the dictation paths record it: a
+            // Success row without an audio duration fails validation.
+            statistics.set_speech_audio_duration_ms(rm.last_speech_ms() as i64, 16_000);
             let mut chunk_text = match tm.finalize_stream() {
                 StreamFinalization::Completed(tracked) => {
                     tracked.attempt.finish(StatisticsRunStatus::Success);
@@ -573,16 +589,24 @@ impl LiveModeManager {
             match stop_result {
                 StopRecordingResult::Captured { recorded, .. } => {
                     if chunk_text.is_none() && !recorded.stt_samples.is_empty() {
-                        // Stream never began (e.g. the engine was busy): fall
-                        // back to a batch decode of the captured chunk.
-                        match tm.transcribe(recorded.stt_samples.clone()) {
-                            Ok(text) => chunk_text = Some(text),
-                            Err(e) => warn!("Live Mode: batch fallback failed: {e}"),
-                        }
-                        if statistics.is_terminal() {
-                            // already finished above
-                        } else {
-                            statistics.finish(StatisticsRunStatus::Success);
+                        // No stream text (never started, failed or timed out):
+                        // fall back to a batch decode of the captured chunk.
+                        let fallback_ok = match tm.transcribe(recorded.stt_samples.clone()) {
+                            Ok(text) => {
+                                chunk_text = Some(text);
+                                true
+                            }
+                            Err(e) => {
+                                warn!("Live Mode: batch fallback failed: {e}");
+                                false
+                            }
+                        };
+                        if !statistics.is_terminal() {
+                            statistics.finish(if fallback_ok {
+                                StatisticsRunStatus::Success
+                            } else {
+                                StatisticsRunStatus::Failed
+                            });
                         }
                     } else if !statistics.is_terminal() {
                         statistics.finish(StatisticsRunStatus::Empty);
@@ -601,6 +625,10 @@ impl LiveModeManager {
                         };
                         chunk_info.duration_ms = samples.len() as f64 / rate.max(1) as f64 * 1000.0;
                         chunk_info.path = Some(path.to_string_lossy().to_string());
+                        // List the chunk before the save task can finish, so its
+                        // byte count always has an entry to land in. The next
+                        // status event carries it.
+                        self.status.lock().unwrap().chunks.push(chunk_info.clone());
                         // WAV serialization off the session thread so the next
                         // chunk starts recording right away.
                         let save_path = path.clone();
@@ -670,7 +698,11 @@ impl LiveModeManager {
                 }
                 let stable_len = w.stable_len();
                 self.update_status(|s| {
-                    s.chunks.push(chunk_info);
+                    match s.chunks.iter_mut().find(|c| c.index == chunk_index) {
+                        // Listed before its WAV was written: keep the byte count.
+                        Some(listed) => listed.text_chars = chunk_info.text_chars,
+                        None => s.chunks.push(chunk_info),
+                    }
                     s.transcript_bytes = stable_len as f64;
                 });
             }

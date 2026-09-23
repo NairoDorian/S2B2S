@@ -113,7 +113,9 @@ export const ShowOverlay = (props: ShowOverlayProps): JSX.Element => {
             description={t("settings.advanced.overlay.directSpeed.description")}
             descriptionMode={props.descriptionMode}
             grouped={props.grouped}
-            formatValue={(v) => `${Math.round(v)} chars/s`}
+            formatValue={(v) =>
+              t("common.charsPerSecond", { value: Math.round(v) })
+            }
             onReset={() => updateSetting("overlay_direct_speed", 30)}
             disabled={isUpdating("overlay_direct_speed")}
           />

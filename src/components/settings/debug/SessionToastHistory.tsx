@@ -1,6 +1,6 @@
 import { createMemo, For } from "solid-js";
 import { AlertCircle, AlertTriangle } from "@/components/icons/lucide";
-import { useTranslation } from "@/i18n/useTranslation";
+import { currentLanguage, useTranslation } from "@/i18n/useTranslation";
 import {
   setShowErrors,
   setShowWarnings,
@@ -31,13 +31,15 @@ export const SessionToastHistory = () => {
       .toReversed(),
   );
 
-  const dateTimeFormatter = createMemo(
-    () =>
-      new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
-        dateStyle: "short",
-        timeStyle: "medium",
-      }),
-  );
+  // `currentLanguage()` is the reactive read that re-creates the formatter on
+  // a language change; `i18n.resolvedLanguage` is a plain property.
+  const dateTimeFormatter = createMemo(() => {
+    const language = currentLanguage();
+    return new Intl.DateTimeFormat(i18n.resolvedLanguage ?? language, {
+      dateStyle: "short",
+      timeStyle: "medium",
+    });
+  });
 
   return (
     <SettingsGroup

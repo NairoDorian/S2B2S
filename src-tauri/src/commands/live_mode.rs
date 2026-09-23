@@ -37,10 +37,13 @@ pub fn live_mode_status(manager: State<'_, Arc<LiveModeManager>>) -> LiveModeSta
 /// Past sessions under the configured output folder, newest first.
 #[tauri::command]
 #[specta::specta]
-pub fn live_mode_list_sessions(app: AppHandle) -> Result<Vec<LiveSessionInfo>, String> {
+pub async fn live_mode_list_sessions(app: AppHandle) -> Result<Vec<LiveSessionInfo>, String> {
     let settings = get_settings(&app).live_mode.normalized();
     let root = LiveModeManager::output_root(&app, &settings).map_err(|e| e.to_string())?;
-    Ok(crate::live_mode::list_sessions(&root))
+    // One directory listing per session folder: keep it off the webview thread.
+    tauri::async_runtime::spawn_blocking(move || crate::live_mode::list_sessions(&root))
+        .await
+        .map_err(|e| format!("Session scan task failed: {e}"))
 }
 
 /// The folder used when no output folder is configured, for display.

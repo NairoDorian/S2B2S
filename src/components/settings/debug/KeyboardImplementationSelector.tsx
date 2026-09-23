@@ -18,17 +18,18 @@ interface KeyboardImplementationSelectorProps {
   grouped?: boolean;
 }
 
-export const KeyboardImplementationSelector = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}: KeyboardImplementationSelectorProps) => {
+export const KeyboardImplementationSelector = (
+  props: KeyboardImplementationSelectorProps,
+) => {
   const { t } = useTranslation();
   const { getSetting, isUpdating, refreshSettings } = useSettings();
-  const currentImplementation =
+  // An accessor: after a switch the store is refreshed, and the dropdown (and
+  // the no-op guard below) must see the new value to allow switching back.
+  const currentImplementation = () =>
     getSetting("keyboard_implementation") ?? "tauri";
 
   const handleSelect = async (value: string) => {
-    if (value === currentImplementation) return;
+    if (value === currentImplementation()) return;
 
     try {
       const result = await commands.changeKeyboardImplementationSetting(value);
@@ -58,13 +59,13 @@ export const KeyboardImplementationSelector = ({
     <SettingContainer
       title={t("settings.debug.keyboardImplementation.title")}
       description={t("settings.debug.keyboardImplementation.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode ?? "tooltip"}
+      grouped={props.grouped ?? false}
       layout="horizontal"
     >
       <Dropdown
         options={KEYBOARD_IMPLEMENTATION_OPTIONS}
-        selectedValue={currentImplementation}
+        selectedValue={currentImplementation()}
         onSelect={handleSelect}
         disabled={isUpdating("keyboard_implementation")}
       />

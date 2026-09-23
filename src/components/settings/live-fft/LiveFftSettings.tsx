@@ -15,10 +15,13 @@ import {
   commands,
   type FftBallisticsMode,
   type FftDbReference,
+  type FftKaiserBetaMode,
   type FftLoudnessMode,
   type FftMagnitudeNorm,
+  type FftOutputBinsMode,
   type FftScale,
   type FftSource,
+  type FftWarpAggregation,
   type FftWarpInterp,
   type FftWeighting,
   type FftWindowLengthMode,
@@ -47,8 +50,9 @@ import {
   type HoverInfo,
   type SpectrumStyle,
 } from "./SpectrumCanvas";
-import { SpectrogramCanvas } from "./SpectrogramCanvas";
+import { SpectrogramCanvas, WATERFALL_ROWS } from "./SpectrogramCanvas";
 import { VoiceDetectionGroup } from "./VoiceDetectionGroup";
+import type { SpectralFeatures } from "./liveFftFrame";
 import {
   formatHz,
   formatValue,
@@ -59,8 +63,11 @@ import {
   FFT_SIZES,
   LIVE_FFT_DEFAULTS,
   LIVE_FFT_PRESETS,
+  LIVE_FFT_QUALITY_PRESETS,
   OUTPUT_BIN_CHOICES,
   applyPreset,
+  applyQualityPreset,
+  matchingQualityPreset,
   resolveLiveFft,
   type ResolvedLiveFft,
 } from "./liveFftPresets";
@@ -111,6 +118,13 @@ const PHASE_CLASSES: Record<LiveFftPhase, string> = {
 
 const formatUs = (us: number): string =>
   us >= 1000 ? `${(us / 1000).toFixed(2)} ms` : `${us.toFixed(0)} µs`;
+
+/** A level in dB, or a dash at the features' silence floor (−120). */
+const formatDb = (db: number): string =>
+  Number.isFinite(db) && db > -119.5 ? `${db.toFixed(1)} dB` : "—";
+
+const formatHzPerBin = (hz: number): string =>
+  hz >= 100 ? `${hz.toFixed(0)} Hz` : `${hz.toFixed(hz >= 10 ? 1 : 2)} Hz`;
 
 const opt = (
   value: string,
@@ -189,12 +203,20 @@ export const LiveFftSettings = () => {
     },
   );
 
-  const [readout, setReadout] = createSignal({
+  const [readout, setReadout] = createSignal<{
+    peakHz: number;
+    peakValue: number;
+    silent: boolean;
+    stalled: boolean;
+    dspUs: number;
+    features: SpectralFeatures | null;
+  }>({
     peakHz: 0,
     peakValue: 0,
     silent: false,
     stalled: false,
     dspUs: 0,
+    features: null,
   });
   createEffect(
     () => active(),
@@ -202,13 +224,16 @@ export const LiveFftSettings = () => {
       if (!isActive) return;
       const id = window.setInterval(() => {
         const frame = getLatestFrame();
-        const stalled = Date.now() - getLastFrameAt() > STALL_MS;
+        // A frozen view pauses the poll on purpose: not a stall.
+        const stalled =
+          !store.frozen && Date.now() - getLastFrameAt() > STALL_MS;
         setReadout({
           peakHz: frame?.peakHz ?? 0,
           peakValue: frame?.peakValue ?? 0,
           silent: frame?.silent ?? false,
           stalled,
           dspUs: frame?.dspUs ?? 0,
+          features: frame?.features ?? null,
         });
       }, READOUT_INTERVAL_MS);
       return () => window.clearInterval(id);
@@ -221,18 +246,38 @@ export const LiveFftSettings = () => {
     if (error) toast.error(t("settings.liveFft.errors.start", { error }));
   };
 
+  // A plain invoke: a backend failure rejects instead of returning a result.
   const applyRaw = async () => {
-    const defaults = await commands.liveFftRawDefaults();
-    save(applyPreset(draft(), resolveLiveFft(defaults)));
-    toast.success(t("settings.liveFft.presets.applied"));
+    try {
+      const defaults = await commands.liveFftRawDefaults();
+      save(applyPreset(draft(), resolveLiveFft(defaults)));
+      toast.success(t("settings.liveFft.presets.applied"));
+    } catch (error) {
+      toast.error(String(error));
+    }
   };
 
-  const axisHz = createMemo(() =>
-    Float32Array.from(status().axis_hz, (v) => v ?? 0),
-  );
+  // Replaced only when the backend's axis version moves (a warp, bin count
+  // or rate change), so the canvases repaint their grid only then.
+  const axisHz = () => store.axis.hz;
+  const frameRate = () =>
+    status().update_rate_hz > 0
+      ? status().update_rate_hz
+      : draft().update_rate_hz;
   const canvasLabels = createMemo(() => ({
     idle: t("settings.liveFft.canvas.idle"),
     silence: t("settings.liveFft.canvas.silence"),
+  }));
+  // A string memo: the ~1 Hz status heartbeat recomputes it, but an equal
+  // string stops there instead of repainting the waterfall.
+  const spanLabel = createMemo(() =>
+    t("settings.liveFft.canvas.span", {
+      seconds: (WATERFALL_ROWS / Math.max(1, frameRate())).toFixed(1),
+    }),
+  );
+  const waterfallLabels = createMemo(() => ({
+    now: t("settings.liveFft.canvas.now"),
+    span: spanLabel(),
   }));
 
   const P = "settings.liveFft";
@@ -308,6 +353,19 @@ export const LiveFftSettings = () => {
     opt("coefficient", t(`${P}.loudness.ballisticsMode.coefficient`)),
     opt("milliseconds", t(`${P}.loudness.ballisticsMode.milliseconds`)),
   ]);
+  const binsModeOptions = createMemo<DropdownOption[]>(() => [
+    opt("fixed", t(`${P}.spectrum.outputBinsMode.fixed`)),
+    opt("auto", t(`${P}.spectrum.outputBinsMode.auto`)),
+  ]);
+  const aggregationOptions = createMemo<DropdownOption[]>(() =>
+    (["off", "peak", "rms"] as FftWarpAggregation[]).map((v) =>
+      opt(v, t(`${P}.spectrum.warpAggregation.options.${v}`)),
+    ),
+  );
+  const betaModeOptions = createMemo<DropdownOption[]>(() => [
+    opt("manual", t(`${P}.window.kaiserBetaMode.manual`)),
+    opt("auto", t(`${P}.window.kaiserBetaMode.auto`)),
+  ]);
   const styleOptions = createMemo<DropdownOption[]>(() => [
     opt("bars", t(`${P}.view.bars`)),
     opt("line", t(`${P}.view.line`)),
@@ -335,6 +393,16 @@ export const LiveFftSettings = () => {
       : "—";
   });
   const busy = () => isUpdating("live_fft");
+
+  // Enable states, as Plugin_FFT greys them out (catalog §1.7). Raw bins
+  // fixes the axis, so every axis-shaping control stands down with it.
+  const raw = () => draft().raw_bins;
+  const binsAuto = () => draft().output_bins_mode === "auto";
+  const isKaiser = () => draft().window_type === "kaiser";
+  const betaAuto = () => draft().kaiser_beta_mode === "auto";
+  const loud = () => draft().loudness_mode !== "off";
+  const qualityMatch = () => matchingQualityPreset(draft());
+  const hasTelemetry = () => active() && status().sample_rate > 0;
 
   return (
     <div class="max-w-3xl w-full mx-auto space-y-6 pb-8">
@@ -430,6 +498,55 @@ export const LiveFftSettings = () => {
                   <dt class="text-mid-gray">{t(`${P}.telemetry.dropped`)}</dt>
                   <dd class="font-mono">
                     {active() ? `${status().dropped_samples}` : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-mid-gray">{t(`${P}.telemetry.hzPerBin`)}</dt>
+                  <dd class="font-mono">
+                    {hasTelemetry() && (status().hz_per_bin ?? 0) > 0
+                      ? formatHzPerBin(status().hz_per_bin ?? 0)
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-mid-gray">
+                    {t(`${P}.telemetry.magnitudeBins`)}
+                  </dt>
+                  <dd class="font-mono">
+                    {hasTelemetry()
+                      ? t(`${P}.telemetry.magnitudeBinsValue`, {
+                          used: status().magnitude_bins,
+                          total: status().linear_bins,
+                        })
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-mid-gray">
+                    {t(`${P}.telemetry.aggregated`)}
+                  </dt>
+                  <dd class="font-mono">
+                    {hasTelemetry()
+                      ? `${status().aggregated_bins} / ${status().output_bins}`
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-mid-gray">
+                    {t(`${P}.telemetry.kaiserBeta`)}
+                  </dt>
+                  <dd class="font-mono">
+                    {hasTelemetry() && (status().kaiser_beta ?? 0) > 0
+                      ? (status().kaiser_beta ?? 0).toFixed(2)
+                      : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-mid-gray">{t(`${P}.telemetry.latency`)}</dt>
+                  <dd class="font-mono">
+                    {hasTelemetry() && (status().analysis_latency_ms ?? 0) > 0
+                      ? `${(status().analysis_latency_ms ?? 0).toFixed(1)} ms`
+                      : "—"}
                   </dd>
                 </div>
               </dl>
@@ -539,6 +656,7 @@ export const LiveFftSettings = () => {
                 dbRange={draft().db_range}
                 colormap={view().colormap}
                 running={active()}
+                labels={waterfallLabels()}
                 class="h-36 border-t border-mid-gray/15"
               />
             )}
@@ -563,6 +681,13 @@ export const LiveFftSettings = () => {
               </span>
             )}
           </div>
+          {draft().spectral_features && (
+            <FeaturesReadout
+              features={active() ? readout().features : null}
+              title={t(`${P}.features.title`)}
+              label={(key) => t(`${P}.features.${key}`)}
+            />
+          )}
         </div>
       </SettingsGroup>
 
@@ -595,6 +720,42 @@ export const LiveFftSettings = () => {
             {t(`${P}.presets.raw`)}
           </Button>
         </div>
+        <div class="px-3 pb-3 space-y-2">
+          <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h4 class="text-xs font-medium text-text/80">
+              {t(`${P}.presets.quality.title`)}
+            </h4>
+            <p class="text-xs text-text/50">
+              {t(`${P}.presets.quality.description`)}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <For each={LIVE_FFT_QUALITY_PRESETS}>
+              {(preset) => (
+                <Button
+                  variant={
+                    qualityMatch() === preset.id ? "primary-soft" : "secondary"
+                  }
+                  size="sm"
+                  disabled={busy()}
+                  onClick={() => {
+                    save(applyQualityPreset(draft(), preset.patch));
+                    toast.success(t(`${P}.presets.applied`));
+                  }}
+                >
+                  {t(`${P}.presets.quality.${preset.id}`)}
+                </Button>
+              )}
+            </For>
+            {qualityMatch() && (
+              <span class="text-xs text-text/50">
+                {t(`${P}.presets.quality.active`, {
+                  preset: t(`${P}.presets.quality.${qualityMatch()}`),
+                })}
+              </span>
+            )}
+          </div>
+        </div>
       </SettingsGroup>
 
       <SettingsGroup title={t(`${P}.spectrum.title`)}>
@@ -612,17 +773,27 @@ export const LiveFftSettings = () => {
             class="min-w-[220px]"
           />
         </SettingContainer>
+        <ToggleSwitch
+          checked={draft().raw_bins}
+          onChange={(checked) => save({ raw_bins: checked })}
+          label={t(`${P}.spectrum.rawBins.label`)}
+          description={t(`${P}.spectrum.rawBins.description`)}
+          descriptionMode="tooltip"
+          grouped
+        />
         <SettingContainer
           title={t(`${P}.spectrum.scale.label`)}
           description={t(`${P}.spectrum.scale.description`)}
           descriptionMode="tooltip"
           grouped
           layout="horizontal"
+          disabled={raw()}
         >
           <Dropdown
             options={scaleOptions()}
             selectedValue={draft().scale}
             onSelect={(v) => save({ scale: v as FftScale })}
+            disabled={raw()}
             class="min-w-[200px]"
           />
         </SettingContainer>
@@ -632,11 +803,31 @@ export const LiveFftSettings = () => {
           descriptionMode="tooltip"
           grouped
           layout="horizontal"
+          disabled={raw()}
         >
           <Dropdown
             options={interpOptions()}
             selectedValue={draft().warp_interpolation}
             onSelect={(v) => save({ warp_interpolation: v as FftWarpInterp })}
+            disabled={raw()}
+            class="min-w-[200px]"
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t(`${P}.spectrum.warpAggregation.label`)}
+          description={t(`${P}.spectrum.warpAggregation.description`)}
+          descriptionMode="tooltip"
+          grouped
+          layout="horizontal"
+          disabled={raw()}
+        >
+          <Dropdown
+            options={aggregationOptions()}
+            selectedValue={draft().warp_aggregation}
+            onSelect={(v) =>
+              save({ warp_aggregation: v as FftWarpAggregation })
+            }
+            disabled={raw()}
             class="min-w-[200px]"
           />
         </SettingContainer>
@@ -649,24 +840,43 @@ export const LiveFftSettings = () => {
           }
           value={draft().display_max_hz}
           min={100}
-          max={48000}
+          max={192000}
           step={10}
           log
           unit="Hz"
+          disabled={raw()}
           defaultValue={LIVE_FFT_DEFAULTS.display_max_hz}
           onChange={(v) => save({ display_max_hz: Math.round(v) })}
         />
+        <SettingContainer
+          title={t(`${P}.spectrum.outputBinsMode.label`)}
+          description={t(`${P}.spectrum.outputBinsMode.description`)}
+          descriptionMode="tooltip"
+          grouped
+          layout="horizontal"
+          disabled={raw()}
+        >
+          <Dropdown
+            options={binsModeOptions()}
+            selectedValue={draft().output_bins_mode}
+            onSelect={(v) => save({ output_bins_mode: v as FftOutputBinsMode })}
+            disabled={raw()}
+            class="min-w-[160px]"
+          />
+        </SettingContainer>
         <SettingContainer
           title={t(`${P}.spectrum.outputBins.label`)}
           description={t(`${P}.spectrum.outputBins.description`)}
           descriptionMode="tooltip"
           grouped
           layout="horizontal"
+          disabled={raw() || binsAuto()}
         >
           <Dropdown
             options={binOptions()}
             selectedValue={String(draft().output_bins)}
             onSelect={(v) => save({ output_bins: Number(v) })}
+            disabled={raw() || binsAuto()}
             class="min-w-[110px]"
           />
         </SettingContainer>
@@ -677,6 +887,7 @@ export const LiveFftSettings = () => {
           min={0}
           max={1}
           step={0.001}
+          disabled={raw()}
           defaultValue={LIVE_FFT_DEFAULTS.warp_blend}
           onChange={(v) => save({ warp_blend: v })}
         />
@@ -685,10 +896,11 @@ export const LiveFftSettings = () => {
           description={t(`${P}.spectrum.logFloor.description`)}
           value={draft().log_floor_hz}
           min={1}
-          max={500}
+          max={5000}
           step={1}
           log
           unit="Hz"
+          disabled={raw()}
           defaultValue={LIVE_FFT_DEFAULTS.log_floor_hz}
           onChange={(v) => save({ log_floor_hz: Math.round(v * 10) / 10 })}
         />
@@ -713,7 +925,7 @@ export const LiveFftSettings = () => {
             label={t(`${P}.spectrum.windowSamples.label`)}
             description={t(`${P}.spectrum.windowSamples.description`)}
             value={draft().window_samples}
-            min={16}
+            min={1}
             max={65536}
             step={1}
             log
@@ -726,26 +938,38 @@ export const LiveFftSettings = () => {
             label={t(`${P}.spectrum.windowMs.label`)}
             description={t(`${P}.spectrum.windowMs.description`)}
             value={draft().window_ms}
-            min={1}
-            max={1000}
-            step={0.5}
+            min={0.1}
+            max={5000}
+            step={0.1}
             log
             unit="ms"
             defaultValue={LIVE_FFT_DEFAULTS.window_ms}
-            onChange={(v) => save({ window_ms: Math.round(v * 2) / 2 })}
+            onChange={(v) =>
+              save({ window_ms: Math.max(0.1, Math.round(v * 10) / 10) })
+            }
           />
         )}
+        <ToggleSwitch
+          checked={draft().zero_padding}
+          onChange={(checked) => save({ zero_padding: checked })}
+          label={t(`${P}.spectrum.zeroPadding.label`)}
+          description={t(`${P}.spectrum.zeroPadding.description`)}
+          descriptionMode="tooltip"
+          grouped
+        />
         <SettingContainer
           title={t(`${P}.spectrum.fftSize.label`)}
           description={t(`${P}.spectrum.fftSize.description`)}
           descriptionMode="tooltip"
           grouped
           layout="horizontal"
+          disabled={!draft().zero_padding}
         >
           <Dropdown
             options={fftSizeOptions()}
             selectedValue={String(draft().fft_size)}
             onSelect={(v) => save({ fft_size: Number(v) })}
+            disabled={!draft().zero_padding}
             class="min-w-[110px]"
           />
         </SettingContainer>
@@ -870,17 +1094,36 @@ export const LiveFftSettings = () => {
             class="min-w-[200px]"
           />
         </SettingContainer>
-        {draft().window_type === "kaiser" && (
-          <ParamSlider
-            label={t(`${P}.window.kaiserBeta.label`)}
-            description={t(`${P}.window.kaiserBeta.description`)}
-            value={draft().kaiser_beta}
-            min={0}
-            max={55}
-            step={0.1}
-            defaultValue={LIVE_FFT_DEFAULTS.kaiser_beta}
-            onChange={(v) => save({ kaiser_beta: v })}
-          />
+        {isKaiser() && (
+          <>
+            <SettingContainer
+              title={t(`${P}.window.kaiserBetaMode.label`)}
+              description={t(`${P}.window.kaiserBetaMode.description`)}
+              descriptionMode="tooltip"
+              grouped
+              layout="horizontal"
+            >
+              <Dropdown
+                options={betaModeOptions()}
+                selectedValue={draft().kaiser_beta_mode}
+                onSelect={(v) =>
+                  save({ kaiser_beta_mode: v as FftKaiserBetaMode })
+                }
+                class="min-w-[200px]"
+              />
+            </SettingContainer>
+            <ParamSlider
+              label={t(`${P}.window.kaiserBeta.label`)}
+              description={t(`${P}.window.kaiserBeta.description`)}
+              value={draft().kaiser_beta}
+              min={0}
+              max={100}
+              step={0.1}
+              disabled={betaAuto()}
+              defaultValue={LIVE_FFT_DEFAULTS.kaiser_beta}
+              onChange={(v) => save({ kaiser_beta: v })}
+            />
+          </>
         )}
         <SettingContainer
           title={t(`${P}.window.weighting.label`)}
@@ -927,34 +1170,36 @@ export const LiveFftSettings = () => {
             class="min-w-[200px]"
           />
         </SettingContainer>
-        {draft().loudness_mode !== "off" && (
-          <>
-            <SettingContainer
-              title={t(`${P}.loudness.dbReference.label`)}
-              description={t(`${P}.loudness.dbReference.description`)}
-              descriptionMode="tooltip"
-              grouped
-              layout="horizontal"
-            >
-              <Dropdown
-                options={dbRefOptions()}
-                selectedValue={draft().db_reference}
-                onSelect={(v) => save({ db_reference: v as FftDbReference })}
-                class="min-w-[200px]"
-              />
-            </SettingContainer>
-            <ParamSlider
-              label={t(`${P}.loudness.dbRange.label`)}
-              description={t(`${P}.loudness.dbRange.description`)}
-              value={draft().db_range}
-              min={10}
-              max={160}
-              step={1}
-              unit="dB"
-              defaultValue={LIVE_FFT_DEFAULTS.db_range}
-              onChange={(v) => save({ db_range: Math.round(v) })}
+        {loud() && (
+          <SettingContainer
+            title={t(`${P}.loudness.dbReference.label`)}
+            description={t(`${P}.loudness.dbReference.description`)}
+            descriptionMode="tooltip"
+            grouped
+            layout="horizontal"
+          >
+            <Dropdown
+              options={dbRefOptions()}
+              selectedValue={draft().db_reference}
+              onSelect={(v) => save({ db_reference: v as FftDbReference })}
+              class="min-w-[200px]"
             />
-          </>
+          </SettingContainer>
+        )}
+        {/* The range also sets an auto Kaiser beta, so it stays reachable
+            with the linear mode when that is what it drives. */}
+        {(loud() || (isKaiser() && betaAuto())) && (
+          <ParamSlider
+            label={t(`${P}.loudness.dbRange.label`)}
+            description={t(`${P}.loudness.dbRange.description`)}
+            value={draft().db_range}
+            min={10}
+            max={160}
+            step={1}
+            unit="dB"
+            defaultValue={LIVE_FFT_DEFAULTS.db_range}
+            onChange={(v) => save({ db_range: Math.round(v) })}
+          />
         )}
         <ToggleSwitch
           checked={draft().ballistics_enabled}
@@ -1075,6 +1320,14 @@ export const LiveFftSettings = () => {
           defaultValue={LIVE_FFT_DEFAULTS.update_rate_hz}
           onChange={(v) => save({ update_rate_hz: Math.round(v) })}
         />
+        <ToggleSwitch
+          checked={draft().spectral_features}
+          onChange={(checked) => save({ spectral_features: checked })}
+          label={t(`${P}.performance.features.label`)}
+          description={t(`${P}.performance.features.description`)}
+          descriptionMode="tooltip"
+          grouped
+        />
         <div class="px-3 py-2">
           <p class="text-xs text-text/50">{t(`${P}.performance.note`)}</p>
         </div>
@@ -1082,6 +1335,55 @@ export const LiveFftSettings = () => {
     </div>
   );
 };
+
+type FeatureKey =
+  | "centroid"
+  | "rolloff"
+  | "flatness"
+  | "flux"
+  | "rms"
+  | "bass"
+  | "mid"
+  | "high";
+
+const FEATURE_ROWS: {
+  key: FeatureKey;
+  format: (f: SpectralFeatures) => string;
+}[] = [
+  { key: "centroid", format: (f) => formatHz(f.centroidHz) },
+  { key: "rolloff", format: (f) => formatHz(f.rolloffHz) },
+  { key: "flatness", format: (f) => f.flatness.toFixed(3) },
+  { key: "flux", format: (f) => f.flux.toFixed(3) },
+  { key: "rms", format: (f) => formatDb(f.rmsDb) },
+  { key: "bass", format: (f) => formatDb(f.bassDb) },
+  { key: "mid", format: (f) => formatDb(f.midDb) },
+  { key: "high", format: (f) => formatDb(f.highDb) },
+];
+
+interface FeaturesReadoutProps {
+  features: SpectralFeatures | null;
+  title: string;
+  label: (key: FeatureKey) => string;
+}
+
+/** The eight spectral features of the latest frame (4 Hz readout). */
+const FeaturesReadout = (props: FeaturesReadoutProps) => (
+  <div class="rounded-lg border border-mid-gray/20 bg-background px-3 py-2">
+    <div class="text-[11px] font-medium text-mid-gray mb-1">{props.title}</div>
+    <dl class="grid grid-cols-4 sm:grid-cols-8 gap-x-3 gap-y-1 text-xs">
+      <For each={FEATURE_ROWS}>
+        {(row) => (
+          <div>
+            <dt class="text-mid-gray">{props.label(row.key)}</dt>
+            <dd class="font-mono">
+              {props.features ? row.format(props.features) : "—"}
+            </dd>
+          </div>
+        )}
+      </For>
+    </dl>
+  </div>
+);
 
 interface ToggleChipProps {
   active: boolean;

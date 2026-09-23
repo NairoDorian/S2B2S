@@ -43,7 +43,7 @@ export const getKeyName = (
         case "shift":
           return "shift";
         case "ctrl":
-          return osType === "macos" ? "ctrl" : "ctrl";
+          return "ctrl";
         case "alt":
           return osType === "macos" ? "option" : "alt";
         case "meta":
@@ -127,7 +127,7 @@ export const getKeyName = (
 
     // Handle special key names with OS-specific formatting
     const keyMap: Record<string, string> = {
-      Control: osType === "macos" ? "ctrl" : "ctrl",
+      Control: "ctrl",
       Alt: osType === "macos" ? "option" : "alt",
       Shift: "shift",
       Meta:
@@ -259,3 +259,21 @@ export function isSimulatableKey(token: string): boolean {
   // Single printable character (letters, digits, punctuation).
   return [...key].length === 1;
 }
+
+/**
+ * Every spelling of a modifier key the shortcut recorders can see. A recorded
+ * combination is sorted with these first, so `a+ctrl` is stored as `ctrl+a`.
+ */
+export const MODIFIERS: ReadonlySet<string> = new Set([
+  "ctrl",
+  "control",
+  "shift",
+  "alt",
+  "option",
+  "meta",
+  "command",
+  "cmd",
+  "super",
+  "win",
+  "windows",
+]);

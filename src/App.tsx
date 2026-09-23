@@ -1,7 +1,6 @@
 import {
   createSignal,
   createEffect,
-  onCleanup,
   onSettled,
   Switch,
   Match,
@@ -130,6 +129,9 @@ function App() {
     },
   );
 
+  // Each subscription below returns its cleanup from the apply: `onCleanup`
+  // there has no owner and never runs, so a language change would stack a
+  // second listener (and a second toast) on top of the first.
   createEffect(
     () => undefined,
     () => {
@@ -147,9 +149,9 @@ function App() {
       };
 
       document.addEventListener("keydown", handleKeyDown);
-      onCleanup(() => {
+      return () => {
         document.removeEventListener("keydown", handleKeyDown);
-      });
+      };
     },
   );
 
@@ -174,14 +176,16 @@ function App() {
             });
           } else {
             toast.error(
-              t("errors.recordingFailed", { error: detail ?? "Unknown error" }),
+              t("errors.recordingFailed", {
+                error: detail ?? t("errors.unknownError"),
+              }),
             );
           }
         },
       );
-      onCleanup(() => {
+      return () => {
         unlisten.then((fn) => fn());
-      });
+      };
     },
   );
 
@@ -193,9 +197,9 @@ function App() {
           description: t("errors.pasteFailed"),
         });
       });
-      onCleanup(() => {
+      return () => {
         unlisten.then((fn) => fn());
-      });
+      };
     },
   );
 
@@ -207,9 +211,9 @@ function App() {
           description: event.payload,
         });
       });
-      onCleanup(() => {
+      return () => {
         unlisten.then((fn) => fn());
-      });
+      };
     },
   );
 
@@ -244,9 +248,9 @@ function App() {
           }
         },
       );
-      onCleanup(() => {
+      return () => {
         unlisten.then((fn) => fn());
-      });
+      };
     },
   );
 
@@ -260,9 +264,9 @@ function App() {
           }),
         });
       });
-      onCleanup(() => {
+      return () => {
         unlisten.then((fn) => fn());
-      });
+      };
     },
   );
 

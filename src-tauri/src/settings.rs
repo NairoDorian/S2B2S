@@ -13,7 +13,7 @@ pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 /// User-facing latency preset for native streaming models (Parakeet Buffered,
 /// Nemotron cache-aware). Stored per-model-id in
 /// [`AppSettings::native_streaming_latency_presets`]. `Accurate` is the default
-/// (runtime default â€” no stream extension attached), so it is the unit value.
+/// (runtime default — no stream extension attached), so it is the unit value.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeStreamingLatencyPreset {
@@ -248,25 +248,16 @@ impl Default for PasteMethod {
 }
 
 impl ModelUnloadTimeout {
-    pub fn to_minutes(self) -> Option<u64> {
-        match self {
-            ModelUnloadTimeout::Never => None,
-            ModelUnloadTimeout::Immediately => Some(0), // Special case for immediate unloading
-            ModelUnloadTimeout::Min2 => Some(2),
-            ModelUnloadTimeout::Min5 => Some(5),
-            ModelUnloadTimeout::Min10 => Some(10),
-            ModelUnloadTimeout::Min15 => Some(15),
-            ModelUnloadTimeout::Hour1 => Some(60),
-            ModelUnloadTimeout::Sec15 => Some(0), // Special case for debug - handled separately
-        }
-    }
-
     pub fn to_seconds(self) -> Option<u64> {
         match self {
             ModelUnloadTimeout::Never => None,
             ModelUnloadTimeout::Immediately => Some(0), // Special case for immediate unloading
             ModelUnloadTimeout::Sec15 => Some(15),
-            _ => self.to_minutes().map(|m| m * 60),
+            ModelUnloadTimeout::Min2 => Some(2 * 60),
+            ModelUnloadTimeout::Min5 => Some(5 * 60),
+            ModelUnloadTimeout::Min10 => Some(10 * 60),
+            ModelUnloadTimeout::Min15 => Some(15 * 60),
+            ModelUnloadTimeout::Hour1 => Some(60 * 60),
         }
     }
 }
@@ -392,7 +383,7 @@ pub enum MicIdleTimeoutUnit {
 }
 
 /// Default speech-probability threshold of the Earshot VAD: 0.5 is the
-/// neutral point of its 0â€“1 score. User-adjustable through
+/// neutral point of its 0–1 score. User-adjustable through
 /// `vad_threshold_earshot` (see `VadSensitivity` in the Advanced page): lower
 /// values keep more borderline audio, higher values drop more background noise.
 pub const DEFAULT_VAD_THRESHOLD_EARSHOT: f32 = 0.5;
@@ -453,13 +444,13 @@ pub struct FileTranscriptionSettings {
     /// next to its source audio file.
     pub output_dir: Option<String>,
     pub output_format: TranscriptOutputFormat,
-    /// Replace an existing transcript instead of appending `-2`, `-3`, â€¦.
+    /// Replace an existing transcript instead of appending `-2`, `-3`, ….
     pub overwrite_existing: bool,
     /// When a folder is added, also queue audio files from its sub-folders.
     pub include_subfolders: bool,
     /// Long recordings are decoded in segments of at most this many minutes,
     /// cut at the quietest point near the boundary, so one file never holds
-    /// the engine (or memory) for an hour at a time. 1â€“60.
+    /// the engine (or memory) for an hour at a time. 1–60.
     pub max_segment_minutes: u32,
 }
 
@@ -545,7 +536,7 @@ pub struct LlamaSettings {
     /// When set, replaces the generated arguments entirely (everything after
     /// the executable).
     pub custom_args: Option<String>,
-    /// `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3â€“4 % on short
+    /// `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
     /// prompts in the S2B2S benchmarks).
     pub attn_rot_disable: bool,
     /// Start the server when the app starts.
@@ -570,7 +561,7 @@ pub struct LlamaSettings {
 /// from 49152-65535, and a port inside a reservation cannot be bound by
 /// anything. The previous default, 62966, sat in the middle of one such block
 /// (62940-63039) and made the server fail on startup with nothing to explain
-/// it â€” no process is listening, so the health check correctly reports "not
+/// it — no process is listening, so the health check correctly reports "not
 /// running" and only llama.cpp's stderr hints at the cause.
 pub const DEFAULT_LLAMA_PORT: u16 = 18080;
 
@@ -672,7 +663,7 @@ pub struct LiveModeSettings {
     /// Session folders are created under this directory. `None` uses
     /// `<app data>/live_mode`.
     pub output_dir: Option<String>,
-    /// Target length of one audio chunk / transcript segment in minutes. 1â€“60.
+    /// Target length of one audio chunk / transcript segment in minutes. 1–60.
     pub chunk_minutes: u32,
     pub transcript_format: TranscriptOutputFormat,
     pub granularity: LiveTranscriptGranularity,
@@ -707,13 +698,13 @@ impl LiveModeSettings {
     }
 }
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Live FFT (fork) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ───────────────────────── Live FFT (fork) ───────────────────────── */
 
 /// Which signal the Live FFT page analyses.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FftSource {
-    /// The microphone at its native rate, before noise suppression â€” the
+    /// The microphone at its native rate, before noise suppression — the
     /// full bandwidth the device delivers (24 kHz at 48 kHz).
     #[default]
     Microphone,
@@ -802,7 +793,7 @@ pub enum FftLoudnessMode {
     /// Decibels relative to the reference.
     #[default]
     Db,
-    /// Decibels mapped onto 0â€¦1 over `db_range`.
+    /// Decibels mapped onto 0…1 over `db_range`.
     DbNormalized,
 }
 
@@ -828,13 +819,57 @@ pub enum FftBallisticsMode {
     Milliseconds,
 }
 
+/// How many values a Live FFT frame carries.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftOutputBinsMode {
+    /// Exactly `output_bins` values (the grid may be finer than the FFT's
+    /// own bins; those are interpolated).
+    #[default]
+    Fixed,
+    /// The rfft bin count `N/2 + 1` of the transform actually run.
+    Auto,
+}
+
+/// How an output bin that spans two or more FFT bins is formed.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftWarpAggregation {
+    /// Interpolate only (point sampling): a narrow peak between two taps
+    /// loses level and flickers.
+    Off,
+    /// The loudest FFT bin the output bin owns: never drops a peak.
+    #[default]
+    Peak,
+    /// Power mean (`sqrt(mean(|X|²))`) of the owned FFT bins.
+    Rms,
+}
+
+/// Where the Kaiser window's β comes from.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FftKaiserBetaMode {
+    /// `kaiser_beta` as set.
+    #[default]
+    Manual,
+    /// The β whose sidelobes sit exactly at the dB range floor
+    /// (`db_range`): the narrowest main lobe the display can use.
+    Auto,
+}
+
 /// Zero-padded FFT lengths the page offers.
 pub const FFT_SIZES: [u32; 7] = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
-pub const MIN_FFT_OUTPUT_BINS: u32 = 32;
-/// Upper bound of the per-frame event payload (8192 floats â‰ˆ 70 KB of JSON).
-pub const MAX_FFT_OUTPUT_BINS: u32 = 8192;
-pub const MIN_FFT_WINDOW_SAMPLES: u32 = 16;
+pub const MIN_FFT_OUTPUT_BINS: u32 = 8;
+/// Upper bound of a Fixed output size (a frame is raw f32 bytes, 256 KB at
+/// this size).
+pub const MAX_FFT_OUTPUT_BINS: u32 = 65536;
+/// Analysis window limits, Plugin_FFT's (`Winsamples` 1…65536, `Winms`
+/// 0.1…5000). A 1-sample window is a valid, if useless, transform of N = 2
+/// (or the pad length); every DSP stage handles it.
+pub const MIN_FFT_WINDOW_SAMPLES: u32 = 1;
 pub const MAX_FFT_WINDOW_SAMPLES: u32 = 65536;
+pub const MIN_FFT_WINDOW_MS: f32 = 0.1;
+pub const MAX_FFT_WINDOW_MS: f32 = 5000.0;
 pub const MIN_FFT_UPDATE_RATE_HZ: u32 = 5;
 pub const MAX_FFT_UPDATE_RATE_HZ: u32 = 60;
 
@@ -885,65 +920,65 @@ pub struct OverlayScopeSettings {
     /// Keep a slowly falling marker at each column's recent peak, like the
     /// Live FFT page's peak hold.
     pub peak_hold: bool,
-    /// Samples of raw audio the waveform view covers (256â€¦16384).
+    /// Samples of raw audio the waveform view covers (256…16384).
     pub wave_samples: u32,
     /// Raised-cosine fade at each end of that window, in samples
-    /// (0â€¦half the window), so the trace starts and ends at zero.
+    /// (0…half the window), so the trace starts and ends at zero.
     pub wave_taper_samples: u32,
     /// Auto-gain floor of the waveform as a full-scale fraction: quieter
-    /// signals are not blown up to full height (0.001â€¦0.5).
+    /// signals are not blown up to full height (0.001…0.5).
     pub wave_gain_floor: f32,
-    /// Width of each view in logical pixels (32â€¦160).
+    /// Width of each view in logical pixels (32…160).
     pub view_width: u32,
-    /// Height of the views in logical pixels (14â€¦48).
+    /// Height of the views in logical pixels (14…48).
     pub view_height: u32,
     /// Draw the circular-spectrum view: a third view beside the linear
     /// spectrum and the waveform. The bins are combined with their own
-    /// inversion â€” appended and prepended â€” and the two symmetric signals
+    /// inversion — appended and prepended — and the two symmetric signals
     /// are added into the input signal (the cross-sum of each bin with its
     /// mirror partner, halved into display units). The two branches ride at
-    /// radius 1+s and 1-s around a full 2Ï€ sweep, the whole figure rotated
-    /// 90Â° so the seam straddles the right of the ring.
+    /// radius 1+s and 1-s around a full 2π sweep, the whole figure rotated
+    /// 90° so the seam straddles the right of the ring.
     pub show_circular: bool,
     /// Circular style: radial bars between the inner and outer loop, or the
     /// two loops drawn as lines.
     pub circular_bars: bool,
-    /// Display bins of the circular loop (12â€¦240). The pipeline's bins are
+    /// Display bins of the circular loop (12…240). The pipeline's bins are
     /// peak-pooled down to this many, so fewer bins means chunkier bars.
     pub circular_bins: u32,
-    /// Fixed display gain of the circular loop (0.05â€¦8). The pooled bins are
-    /// multiplied by this and clamped to 0â€¦1 â€” deliberately a fixed scale,
+    /// Fixed display gain of the circular loop (0.05…8). The pooled bins are
+    /// multiplied by this and clamped to 0…1 — deliberately a fixed scale,
     /// not a dynamic normalisation, so the loop's size breathes with the
     /// signal instead of always filling the ring.
     pub circular_gain: f32,
-    /// Floor of the circular loop as a fraction of full scale (0â€¦0.9). Bars
+    /// Floor of the circular loop as a fraction of full scale (0…0.9). Bars
     /// below it are not drawn: without a floor the ambient room tone paints
     /// the whole ring and the loop reads as a filled disc.
     pub circular_floor: f32,
     /// Side of the square circular-spectrum view, in logical pixels
-    /// (32â€¦400).
+    /// (32…400).
     pub circular_size: u32,
     /// Draw the circular spectrum as a full-window background layer behind
     /// the card instead of as its own view in the block.
     pub circular_background: bool,
-    /// Linear spectrum view scale, percent of its base size (50â€¦400).
+    /// Linear spectrum view scale, percent of its base size (50…400).
     pub spectrum_scale: u32,
-    /// Waveform view scale, percent of its base size (50â€¦400).
+    /// Waveform view scale, percent of its base size (50…400).
     pub wave_scale: u32,
-    /// Signal-intensity scale for the linear spectrum (0.1â€¦10). Multiplies the
+    /// Signal-intensity scale for the linear spectrum (0.1…10). Multiplies the
     /// display units before drawing, so the spectrum reads taller without
     /// changing the view's pixel width.
     pub spectrum_signal_scale: f32,
-    /// Signal-intensity scale for the raw-audio waveform (0.1â€¦10). Multiplies
+    /// Signal-intensity scale for the raw-audio waveform (0.1…10). Multiplies
     /// the sample values before drawing, so the trace swings taller without
     /// changing the view's pixel width.
     pub wave_signal_scale: f32,
-    /// Signal-intensity scale for the circular spectrum (0.1â€¦10). Multiplies
+    /// Signal-intensity scale for the circular spectrum (0.1…10). Multiplies
     /// the pooled display units before drawing, so the ring breathes more
     /// dramatically without changing its pixel size.
     pub circular_signal_scale: f32,
-    /// Draw the raw-audio waveform *inside* the circular spectrum â€” a centred
-    /// horizontal trace from the ring's left edge to its right edge â€” instead
+    /// Draw the raw-audio waveform *inside* the circular spectrum — a centred
+    /// horizontal trace from the ring's left edge to its right edge — instead
     /// of as its own view beside it.
     pub wave_inside_circular: bool,
     /// Draw the inner (negative-contracting) loop of the circular spectrum.
@@ -1116,11 +1151,22 @@ impl OverlayScopeSettings {
 pub struct LiveFftSettings {
     pub source: FftSource,
     // --- Spectrum ---
+    /// Output = the rfft magnitudes untouched: `N/2 + 1` bins from DC to
+    /// Nyquist, copied as they are. Overrides the scale (Linear), the warp
+    /// blend (0), the display max (Nyquist), the interpolation (linear), the
+    /// aggregation (off) and the output size (`N/2 + 1`).
+    pub raw_bins: bool,
     pub scale: FftScale,
     pub warp_interpolation: FftWarpInterp,
+    /// Peak / RMS over the FFT bins an output bin owns, where it owns two or
+    /// more (the coarse end of the axis); interpolation everywhere else.
+    pub warp_aggregation: FftWarpAggregation,
     /// Highest frequency on the axis; clamped to Nyquist at run time.
     pub display_max_hz: f32,
-    /// Size of the warped spectrum handed to the page (32â€¦8192).
+    /// Fixed: `output_bins` values; Auto: the transform's `N/2 + 1`.
+    pub output_bins_mode: FftOutputBinsMode,
+    /// Size of the spectrum handed to the page in Fixed mode (8…65536); may
+    /// exceed `N/2 + 1`, the extra points are interpolated.
     pub output_bins: u32,
     /// 0 = linear grid, 1 = fully perceptual.
     pub warp_blend: f32,
@@ -1131,6 +1177,9 @@ pub struct LiveFftSettings {
     pub window_samples: u32,
     /// Analysis window in milliseconds, used when the mode says so.
     pub window_ms: f32,
+    /// Off: the transform is the window itself (length rounded up to even)
+    /// and `fft_size` is ignored.
+    pub zero_padding: bool,
     /// Zero-padded transform length; grown to the next power of two above
     /// the window when that is larger.
     pub fft_size: u32,
@@ -1143,10 +1192,12 @@ pub struct LiveFftSettings {
     pub low_gain_db: f32,
     pub low_cutoff_hz: f32,
     pub eq_q: f32,
-    /// Wet/dry blend of the EQ (0â€¦5).
+    /// Wet/dry blend of the EQ (0…5).
     pub eq_amount: f32,
     // --- Window & Weighting ---
     pub window_type: FftWindowType,
+    /// Manual: `kaiser_beta`; Auto: derived from `db_range`.
+    pub kaiser_beta_mode: FftKaiserBetaMode,
     pub kaiser_beta: f32,
     pub weighting: FftWeighting,
     pub magnitude_norm: FftMagnitudeNorm,
@@ -1157,9 +1208,9 @@ pub struct LiveFftSettings {
     pub db_range: f32,
     pub ballistics_enabled: bool,
     pub ballistics_mode: FftBallisticsMode,
-    /// Per-frame attack coefficient (0â€¦0.99).
+    /// Per-frame attack coefficient (0…0.99).
     pub attack: f32,
-    /// Per-frame release coefficient (0â€¦0.99).
+    /// Per-frame release coefficient (0…0.99).
     pub release: f32,
     pub attack_ms: f32,
     pub release_ms: f32,
@@ -1167,8 +1218,12 @@ pub struct LiveFftSettings {
     /// Run the transform on the analysis worker thread (on) or inline on the
     /// audio consumer thread (off).
     pub async_analysis: bool,
-    /// Spectrum frames per second sent to the page (5â€¦60).
+    /// Spectrum frames per second sent to the page (5…60).
     pub update_rate_hz: u32,
+    /// Compute eight descriptors of each frame (centroid, 85 % rolloff,
+    /// flatness, flux, RMS, bass / mid / high power) from the linear
+    /// magnitude and ship them with it.
+    pub spectral_features: bool,
     // --- Voice detection ---
     /// Run the speech detector on the analysed session and report its
     /// per-frame verdicts to the page (`VadTestEvent`), so the threshold and
@@ -1181,16 +1236,21 @@ impl Default for LiveFftSettings {
     fn default() -> Self {
         Self {
             source: FftSource::Microphone,
+            raw_bins: false,
             scale: FftScale::Log,
             warp_interpolation: FftWarpInterp::Linear,
+            warp_aggregation: FftWarpAggregation::Peak,
             display_max_hz: 24_000.0,
+            output_bins_mode: FftOutputBinsMode::Fixed,
             output_bins: 1024,
             warp_blend: 0.963,
             log_floor_hz: 20.0,
             window_length_mode: FftWindowLengthMode::Samples,
             window_samples: 3175,
             window_ms: 72.0,
-            fft_size: 32_768,
+            zero_padding: true,
+            // Plugin_FFT's Zero-Pad Len default (kPadDefault).
+            fft_size: 16_384,
             eq_enabled: false,
             high_shelf: true,
             low_shelf: true,
@@ -1201,6 +1261,7 @@ impl Default for LiveFftSettings {
             eq_q: 0.707,
             eq_amount: 1.0,
             window_type: FftWindowType::Kaiser,
+            kaiser_beta_mode: FftKaiserBetaMode::Manual,
             kaiser_beta: 15.0,
             weighting: FftWeighting::Off,
             magnitude_norm: FftMagnitudeNorm::CoherentGain,
@@ -1215,6 +1276,7 @@ impl Default for LiveFftSettings {
             release_ms: 250.0,
             async_analysis: true,
             update_rate_hz: 30,
+            spectral_features: false,
             show_vad: false,
         }
     }
@@ -1236,6 +1298,11 @@ impl LiveFftSettings {
         }
     }
 
+    /// Clamps every value to a safe range. The window limits are
+    /// Plugin_FFT's; the upper caps on the dB range, the log floor, the EQ
+    /// and the ballistics times mirror the page's slider ranges, where
+    /// Plugin_FFT only guards from below (e.g. dB Range `max(1e-3, v)`) —
+    /// a slider-driven page cannot reach past them anyway.
     pub fn normalized(mut self) -> Self {
         let finite = |v: f32, fallback: f32| if v.is_finite() { v } else { fallback };
         let d = Self::default();
@@ -1248,7 +1315,8 @@ impl LiveFftSettings {
         self.window_samples = self
             .window_samples
             .clamp(MIN_FFT_WINDOW_SAMPLES, MAX_FFT_WINDOW_SAMPLES);
-        self.window_ms = finite(self.window_ms, d.window_ms).clamp(1.0, 5000.0);
+        self.window_ms =
+            finite(self.window_ms, d.window_ms).clamp(MIN_FFT_WINDOW_MS, MAX_FFT_WINDOW_MS);
         if !FFT_SIZES.contains(&self.fft_size) {
             self.fft_size = d.fft_size;
         }
@@ -1301,7 +1369,7 @@ impl std::ops::DerefMut for SecretMap {
 
 /* still needed for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
-/// guarantees every field â€” including ones added in the future â€” falls back to
+/// guarantees every field — including ones added in the future — falls back to
 /// its `get_default_settings()` value when missing from a stored settings
 /// object, so a partial store can never fail the whole load (#1619).
 /// Field-level defaults below take precedence where present.
@@ -1342,7 +1410,7 @@ pub struct AppSettings {
     /// The app version whose What's New the user has already seen. Fresh installs
     /// default to the current version (nothing is "new" to them). Existing users
     /// upgrading from before this key existed are blanked by the migration so they
-    /// see the current release's notes â€” see `apply_settings_migrations`.
+    /// see the current release's notes — see `apply_settings_migrations`.
     #[serde(default = "default_whats_new_last_seen_version")]
     pub whats_new_last_seen_version: String,
     #[serde(default = "default_model")]
@@ -1434,7 +1502,7 @@ pub struct AppSettings {
     pub theme: Theme,
     #[serde(default)]
     pub custom_accent_color: Option<String>,
-    /// Zoom of the settings window (0.7â€“1.6, 1.0 = native), for screens whose
+    /// Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
     /// OS scaling makes the UI too small or too large. Applied as CSS zoom.
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
@@ -1492,27 +1560,27 @@ pub struct AppSettings {
     /// RNNoise noise suppression on the microphone path, before the VAD and
     /// the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
     /// adds a little latency and can make some voices sound processed; the
-    /// live VAD test in Settings â†’ Advanced shows its effect.
+    /// live VAD test in Settings → Advanced shows its effect.
     #[serde(default)]
     pub denoise_enabled: bool,
-    /// RNNoise wet/dry mix (0â€“1): 1 = the suppressor's output, 0 = the input
+    /// RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
     /// untouched.
     #[serde(default = "default_denoise_strength")]
     pub denoise_strength: f32,
     /// RNNoise's own speech probability below which the suppressor mutes
-    /// the frame (0â€“1); 0 turns the gate off.
+    /// the frame (0–1); 0 turns the gate off.
     #[serde(default)]
     pub denoise_vad_threshold: f32,
     /// How long audio keeps passing after the last frame above that
     /// threshold, in milliseconds.
     #[serde(default = "default_denoise_vad_grace_ms")]
     pub denoise_vad_grace_ms: u32,
-    /// Speech-probability threshold of the Earshot detector (0.05â€“0.95).
+    /// Speech-probability threshold of the Earshot detector (0.05–0.95).
     #[serde(default = "default_vad_threshold_earshot")]
     pub vad_threshold_earshot: f32,
     /// Which recording overlay to show: None / Minimal / Live. Streaming mode is
-    /// not gated on this â€” that follows model capability. Migrated from the old
-    /// `overlay_position` (position `none` â†’ style `None`).
+    /// not gated on this — that follows model capability. Migrated from the old
+    /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
     /// Whether the live streaming overlay should reveal text character-by-character
@@ -1581,6 +1649,14 @@ pub struct AppSettings {
     pub multi_stt_translate_model_4: bool,
     #[serde(default = "default_multi_stt_keep_models")]
     pub multi_stt_keep_extra_models_loaded: bool,
+    // The plain `#[serde(default)]` is `None`, unlike every other field here,
+    // whose field default matches `get_default_settings()`. A store written
+    // before this key existed therefore loads with no merge prompt (the merge
+    // becomes a newline join and streaming-first takes the batch fallback),
+    // while a fresh install, and the salvage path that merges over the
+    // defaults, get `default_multi_stt_merge_prompt()`. Kept as is so an
+    // upgrade never switches a merge on by itself; a prompt the user cleared
+    // is stored as `null` and stays cleared either way.
     #[serde(default)]
     pub multi_stt_merge_prompt: Option<LLMPrompt>,
     /// Multi-STT Performance Mode: when enabled, simulate a keyboard shortcut
@@ -2154,7 +2230,7 @@ pub fn get_default_settings() -> AppSettings {
     #[cfg(target_os = "windows")]
     let default_multi_stt_shortcut = "ctrl+alt+space";
     // `option` and `alt` are the same modifier on macOS, so the old
-    // "option+alt+space" default was really just "option+space" â€” identical to
+    // "option+alt+space" default was really just "option+space" — identical to
     // the primary transcribe shortcut.
     #[cfg(target_os = "macos")]
     let default_multi_stt_shortcut = "ctrl+option+space";
@@ -2370,8 +2446,8 @@ impl AppSettings {
 /// one-time debug dump of the loaded settings.
 pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     let settings = get_settings(app);
-    // The struct is several kilobytes on one line â€” every binding, provider,
-    // prompt and nested settings group â€” so dumping it whole buries the startup
+    // The struct is several kilobytes on one line — every binding, provider,
+    // prompt and nested settings group — so dumping it whole buries the startup
     // console under two walls of text and the lines that matter scroll away.
     // The summary is what a reader wants at DEBUG; the dump is one level down,
     // for when one field's value is the actual question.
@@ -2498,7 +2574,7 @@ fn apply_settings_migrations(
 
     // One-time What's New migration: migrations only run on an existing store
     // (fresh installs stamp the current version via get_default_settings). A
-    // missing key here means a user upgrading from before it existed â€” blank it
+    // missing key here means a user upgrading from before it existed — blank it
     // so they see the current release's What's New, mirroring the onboarding
     // migration's explicit first-run-vs-upgrade decision.
     if settings_value.get("whats_new_last_seen_version").is_none() {
@@ -2547,8 +2623,8 @@ fn apply_settings_migrations(
     }
 
     // One-time overlay migration (only while the new key is absent): the retired
-    // overlay_position `none` meant "hide the overlay" â†’ OverlayStyle::None; any
-    // other position had it visible â†’ Live. The position enum no longer has a
+    // overlay_position `none` meant "hide the overlay" → OverlayStyle::None; any
+    // other position had it visible → Live. The position enum no longer has a
     // `none` variant (legacy "none" deserializes to Bottom via a serde alias), so
     // read the raw stored string to recover the old intent.
     if settings_value.get("overlay_style").is_none() {
@@ -2613,10 +2689,10 @@ fn apply_settings_migrations(
     // conflicts with the Multi-STT performance-mode simulated shortcuts
     // (ctrl+space / ctrl+alt+space). The performance mode simulates these
     // keystrokes, so any global shortcut matching them causes recursive
-    // triggering. We skip transcribe_with_post_process entirely in shortcut
-    // registration now, but we also clear the stored value so the UI doesn't
-    // show a misleading binding and so that future registrations (via
-    // change_binding_setting) default to a non-conflicting slot.
+    // triggering. Registration now skips it only while it conflicts with the
+    // performance-mode shortcuts (`shortcut::should_register_binding`); the
+    // stored value is still cleared so the UI does not show a binding that can
+    // never fire.
     if stored_schema_version < 5 {
         let perf_full = settings
             .multi_stt_performance_mode_full_power_shortcut
@@ -2677,7 +2753,7 @@ fn apply_settings_migrations(
 /// Catalog successor for a retired hard-coded ONNX model id, or `None` for
 /// any other id. The mapping is by architecture: each legacy ONNX bundle has a
 /// GGUF conversion of the same weights in the catalog.
-pub fn legacy_onnx_model_replacement(model_id: &str) -> Option<String> {
+fn legacy_onnx_model_replacement(model_id: &str) -> Option<String> {
     let repo = match model_id {
         "parakeet-tdt-0.6b-v2" => "handy-computer/parakeet-tdt-0.6b-v2-gguf",
         "parakeet-tdt-0.6b-v3" => "handy-computer/parakeet-tdt-0.6b-v3-gguf",
@@ -2697,7 +2773,7 @@ pub fn legacy_onnx_model_replacement(model_id: &str) -> Option<String> {
 
 /// Normalize a hotkey string for comparison: lowercase, sort modifier
 /// tokens, strip `_left`/`_right` suffixes. E.g. "ctrl_left+alt_left+space"
-/// becomes "alt+ctrl+space" â€” same as "ctrl+alt+space".
+/// becomes "alt+ctrl+space" — same as "ctrl+alt+space".
 pub fn normalize_binding(s: &str) -> String {
     let parts: Vec<&str> = s.split('+').map(|p| p.trim()).collect();
     let mut normalized: Vec<String> = parts
@@ -2718,7 +2794,7 @@ pub fn normalize_binding(s: &str) -> String {
 }
 
 /// Update checks are forced off (without touching the persisted setting) when
-/// the `DISABLE_UPDATER` flag is set â€” e.g. by the Nix package, since
+/// the `DISABLE_UPDATER` flag is set — e.g. by the Nix package, since
 /// self-update can't work against an immutable /nix/store install. The full
 /// variable name is `{ENV_PREFIX}DISABLE_UPDATER`; the pre-0.9.7
 /// `HANDY_DISABLE_UPDATER` is still honoured.
@@ -2748,11 +2824,6 @@ pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
     let settings = get_settings(app);
 
     settings.bindings
-}
-
-pub fn get_stored_binding(app: &AppHandle, id: &str) -> ShortcutBinding {
-    let bindings = get_bindings(app);
-    bindings.get(id).unwrap().clone()
 }
 
 pub fn get_history_limit(app: &AppHandle) -> u32 {
@@ -2828,14 +2899,14 @@ mod tests {
     /// (no salvage). Schema migrations may then rewrite fields whose native
     /// meaning changed.
     ///
-    /// If a schema change breaks this test, do NOT just update the fixture â€”
+    /// If a schema change breaks this test, do NOT just update the fixture —
     /// it stands in for the stores on users' machines. Add a
     /// `#[serde(alias)]`/`#[serde(other)]` or a one-time migration in
     /// `apply_settings_migrations` so old values keep loading, and only extend
     /// the fixture alongside that.
     #[test]
     fn frozen_v0_9_store_parses_strictly_then_migrates_device_index() {
-        // Note "log_level": 2 â€” the legacy numeric format, kept deliberately.
+        // Note "log_level": 2 — the legacy numeric format, kept deliberately.
         let stored: serde_json::Value = serde_json::from_str(
             r##"{
             "settings_schema_version": 1,
@@ -3342,7 +3413,7 @@ mod tests {
             serde_json::json!("ctrl+alt+space"),
         );
         // Simulate a user who has manually set the global transcribe and
-        // multi-stt bindings â€” these should be cleared by the schema 3
+        // multi-stt bindings — these should be cleared by the schema 3
         // migration to avoid conflicts with performance-mode simulated
         // shortcuts (ctrl+space / ctrl+alt+space).
         stored["bindings"]["transcribe"]["current_binding"] = serde_json::json!("ctrl+space");
@@ -3460,6 +3531,48 @@ mod tests {
             settings.bindings["transcribe_with_post_process"].current_binding,
             "ctrl+shift+space"
         );
+    }
+
+    /// The zero-pad default moved to Plugin_FFT's 16384; a store that
+    /// already holds a length keeps it (serde's default only fills a missing
+    /// key, and `normalized` only replaces a length it does not offer). The
+    /// window limits are Plugin_FFT's: 1…65536 samples, 0.1…5000 ms.
+    #[test]
+    fn live_fft_settings_keep_a_stored_fft_size_and_plugin_fft_window_limits() {
+        let fresh: LiveFftSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(fresh.normalized().fft_size, 16_384);
+        let stored: LiveFftSettings =
+            serde_json::from_value(serde_json::json!({ "fft_size": 32768 })).unwrap();
+        assert_eq!(stored.normalized().fft_size, 32_768);
+        let app: AppSettings =
+            serde_json::from_value(serde_json::json!({ "live_fft": { "fft_size": 32768 } }))
+                .unwrap();
+        assert_eq!(app.live_fft.normalized().fft_size, 32_768);
+        let odd: LiveFftSettings =
+            serde_json::from_value(serde_json::json!({ "fft_size": 3000 })).unwrap();
+        assert_eq!(odd.normalized().fft_size, 16_384, "not an offered length");
+
+        let tiny = LiveFftSettings {
+            window_samples: 1,
+            window_ms: 0.1,
+            ..LiveFftSettings::default()
+        }
+        .normalized();
+        assert_eq!((tiny.window_samples, tiny.window_ms), (1, 0.1));
+        let below = LiveFftSettings {
+            window_samples: 0,
+            window_ms: 0.01,
+            ..LiveFftSettings::default()
+        }
+        .normalized();
+        assert_eq!((below.window_samples, below.window_ms), (1, 0.1));
+        let above = LiveFftSettings {
+            window_samples: 100_000,
+            window_ms: 9000.0,
+            ..LiveFftSettings::default()
+        }
+        .normalized();
+        assert_eq!((above.window_samples, above.window_ms), (65_536, 5000.0));
     }
 
     #[test]

@@ -565,8 +565,12 @@ export const LiveModeSettings = () => {
                         </p>
                         <p class="text-xs text-mid-gray truncate">
                           {t("settings.liveMode.sessions.item", {
+                            // `formatDateTime` takes Unix seconds;
+                            // `modified_ms` is milliseconds.
                             date: formatDateTime(
-                              String(session.modified_ms ?? 0),
+                              String(
+                                Math.floor((session.modified_ms ?? 0) / 1000),
+                              ),
                               i18n.language,
                             ),
                             chunks: session.chunk_count,

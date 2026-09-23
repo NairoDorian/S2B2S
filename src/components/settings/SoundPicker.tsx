@@ -1,6 +1,7 @@
 import { untrack } from "solid-js";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useSettings } from "../../hooks/useSettings";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Button } from "../ui/Button";
 import { Dropdown, DropdownOption } from "../ui/Dropdown";
 import { PlayIcon } from "@/components/icons/lucide";
@@ -13,6 +14,7 @@ interface SoundPickerProps {
 }
 
 export const SoundPicker = (props: SoundPickerProps): JSX.Element => {
+  const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
   const store = useSettingsStore();
   // The action ref is a stable function; snapshot it explicitly. The custom
@@ -22,11 +24,17 @@ export const SoundPicker = (props: SoundPickerProps): JSX.Element => {
 
   const options = (): DropdownOption[] => {
     const list: DropdownOption[] = [
-      { value: "marimba", label: "Marimba" },
-      { value: "pop", label: "Pop" },
+      {
+        value: "marimba",
+        label: t("settings.debug.soundTheme.options.marimba"),
+      },
+      { value: "pop", label: t("settings.debug.soundTheme.options.pop") },
     ];
     if (store.customSounds.start && store.customSounds.stop) {
-      list.push({ value: "custom", label: "Custom" });
+      list.push({
+        value: "custom",
+        label: t("settings.debug.soundTheme.options.custom"),
+      });
     }
     return list;
   };
@@ -55,7 +63,8 @@ export const SoundPicker = (props: SoundPickerProps): JSX.Element => {
           variant="ghost"
           size="sm"
           onClick={handlePlayBothSounds}
-          title="Preview sound theme (plays start then stop)"
+          title={t("settings.debug.soundTheme.preview")}
+          aria-label={t("settings.debug.soundTheme.preview")}
         >
           <PlayIcon class="h-4 w-4" />
         </Button>

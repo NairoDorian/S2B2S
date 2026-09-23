@@ -149,6 +149,7 @@
     "modelError": "मॉडल में गड़बड़ी",
     "modelUnloaded": "मॉडल अनलोड किया गया",
     "noModelDownloadRequired": "कोई मॉडल नहीं - डाउनलोड करना ज़रूरी है",
+    "statusTitle": "Model status: {{status}}",
     "deleteModel": "{{modelName}} हटाएं",
     "cancel": "रद्द करें",
     "cancelDownload": "डाउनलोड रद्द करें",
@@ -219,6 +220,11 @@
         "increase": "चंक आकार एक मिलीसेकंड बढ़ाएँ",
         "hint": "हर डिकोड से पहले कितना ऑडियो जमा किया जाए। कम मान ज़्यादा तेज़ प्रतिक्रिया देता है पर अधिक गणना माँगता है, क्योंकि मॉडल हर चंक पर अब तक का सारा ऑडियो दोबारा पढ़ता है। अगली रिकॉर्डिंग पर लागू होगा।"
       }
+    },
+    "errors": {
+      "checkStatusFailed": "Failed to check model status",
+      "loadFailed": "Failed to load model",
+      "switchFailed": "Failed to switch model"
     }
   },
   "settings": {
@@ -354,7 +360,7 @@
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp एक्सेलेरेशन",
-          "description": "transcribe.cpp (Whisper-परिवार) मॉडल के लिए हार्डवेयर एक्सेलेरेशन. 'ऑटो' उपलब्ध होने पर GPU का इस्तेमाल करता है (macOS पर Metal, Windows/Linux पर Vulkan)."
+          "description": "transcribe.cpp (Whisper-परिवार) मॉडल के लिए हार्डवेयर एक्सेलेरेशन. 'ऑटो' उपलब्ध होने पर GPU का इस्तेमाल करता है (macOS पर Metal, Windows x86_64/Linux पर CUDA)."
         },
         "gpuDevice": {
           "auto": "ऑटो"
@@ -564,6 +570,7 @@
         "baseUrl": {
           "title": "बेस URL",
           "description": "चुने गए प्रोवाइडर के लिए API बेस URL. केवल कस्टम प्रोवाइडर में बदलाव किया जा सकता है.",
+          "managedByProvider": "Base URL is managed by the selected provider.",
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
@@ -577,6 +584,7 @@
           "descriptionDefault": "चुने गए प्रोवाइडर का कोई मॉडल चुनें.",
           "placeholderWithOptions": "मॉडल खोजें या चुनें",
           "placeholderNoOptions": "मॉडल का नाम लिखें",
+          "useCustom": "Use \"{{value}}\"",
           "refreshModels": "मॉडल रीफ़्रेश करें"
         }
       },
@@ -608,6 +616,7 @@
       "loading": "इतिहास लोड हो रहा है...",
       "empty": "अभी तक कोई ट्रांसक्रिप्शन नहीं है. अपना इतिहास बनाने के लिए रिकॉर्डिंग शुरू करें!",
       "copyToClipboard": "ट्रांसक्रिप्शन क्लिपबोर्ड पर कॉपी करें",
+      "copied": "Copied to clipboard",
       "save": "ट्रांसक्रिप्शन सेव करें",
       "saveToRecall": "File as Recall note",
       "savedToRecall": "Saved to Recall",
@@ -616,6 +625,7 @@
       "deleteError": "एंट्री हटाई नहीं जा सकी. कृपया फिर से कोशिश करें.",
       "retranscribe": "फिर से ट्रांसक्राइब करें",
       "retranscribeError": "फिर से ट्रांसक्राइब नहीं किया जा सका. कृपया फिर से कोशिश करें.",
+      "retranscribeSuccess": "Transcription updated",
       "transcribing": "ट्रांसक्राइब हो रहा है...",
       "transcriptionFailed": "ट्रांसक्रिप्शन नहीं हो सका. आप रीट्राई आइकन से फिर से ट्रांसक्राइब कर सकते हैं.",
       "deleteRecordings": "Delete Recordings",
@@ -633,9 +643,11 @@
       "postProcess": "Post-process (LLM Polish)",
       "postProcessing": "Polishing...",
       "postProcessError": "Failed to post-process transcript.",
+      "postProcessSuccess": "Transcript polished with LLM",
       "multiSttRetranscribe": "Multi-STT Re-transcribe",
       "multiSttTranscribing": "Multi-STT Transcribing...",
       "multiSttError": "Failed to Multi-STT re-transcribe.",
+      "multiSttSuccess": "Multi-STT transcription complete",
       "rawTranscriptTab": "Raw Transcript",
       "polishedTextTab": "Polished (LLM)",
       "mergedTextTab": "Merged Output",
@@ -646,9 +658,10 @@
       "wpmRating": "{{wpm}} WPM",
       "wordCount": "{{count}} words",
       "audioDetails": "{{total}} total : {{speech}} speech ({{silence}} cut)",
-      "latencyStt": "{{latency}} STT",
-      "latencyLlm": "{{latency}} LLM",
+      "latencyStt": "{{duration}} STT",
+      "latencyLlm": "{{duration}} LLM",
       "extraModelsCount": "{{count}} models",
+      "multiSttModelsBadge": "Multi-STT ({{count}} models)",
       "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
@@ -658,11 +671,11 @@
       "multiSttCleanedOutputTab": "Cleaned Output",
       "multiSttRawLogTab": "Raw Log",
       "multiSttModelSlot": "Model {{slot}}",
-      "multiSttBrainLabel": "ðŸ§  Brain LLM",
+      "multiSttBrainLabel": "🧠 Brain LLM",
       "multiSttBrainCleanedOutput": "Cleaned Output",
       "multiSttBrainPromptLabel": "Prompt: {{name}}",
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
-      "multiSttNoOutput": "â€” no output â€”",
+      "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
       "multiSttCopyBrainOutput": "Copy cleaned Brain output"
     },
@@ -686,7 +699,8 @@
         "copied": "कॉपी हो गया",
         "lineCount": "{{count}} लाइनें",
         "empty": "लॉग का इंतज़ार है… ऐप से लॉग आते ही एंट्री यहां दिखेंगी.",
-        "noFilterMatch": "No lines match this tag."
+        "noFilterMatch": "No lines match this tag.",
+        "allTags": "ALL"
       },
       "updateChecks": {
         "label": "अपडेट जांचें",
@@ -709,7 +723,13 @@
       },
       "soundTheme": {
         "label": "साउंड थीम",
-        "description": "रिकॉर्डिंग शुरू और बंद होने के फ़ीडबैक के लिए कोई साउंड थीम चुनें"
+        "description": "रिकॉर्डिंग शुरू और बंद होने के फ़ीडबैक के लिए कोई साउंड थीम चुनें",
+        "options": {
+          "marimba": "Marimba",
+          "pop": "Pop",
+          "custom": "Custom"
+        },
+        "preview": "Preview sound theme (plays start then stop)"
       },
       "wordCorrectionThreshold": {
         "title": "शब्द सुधार की सीमा",
@@ -754,13 +774,6 @@
         "title": "कीबोर्ड बैकएंड",
         "description": "कीबोर्ड शॉर्टकट का बैकएंड चुनें.",
         "bindingsReset": "कीबोर्ड शॉर्टकट संगत नहीं थे, इसलिए उन्हें डिफ़ॉल्ट पर रीसेट कर दिया गया"
-      },
-      "paths": {
-        "title": "Debug Paths",
-        "description": "Absolute paths of the directories this app writes to, for troubleshooting",
-        "appData": "ऐप डेटा:",
-        "models": "मॉडल:",
-        "settings": "सेटिंग:"
       },
       "pasteDelay": {
         "title": "पेस्ट में देरी (पहले)",
@@ -1363,7 +1376,9 @@
       },
       "canvas": {
         "idle": "Start the analyser to see the spectrum",
-        "silence": "digital silence"
+        "silence": "digital silence",
+        "now": "now",
+        "span": "−{{seconds}} s"
       },
       "telemetry": {
         "sampleRate": "Rate (Hz)",
@@ -1375,7 +1390,13 @@
         "threading": "Analysis: {{mode}}",
         "async": "worker thread",
         "inline": "inline on the audio thread",
-        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}"
+        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}",
+        "hzPerBin": "Hz / bin",
+        "magnitudeBins": "Magnitude bins",
+        "magnitudeBinsValue": "{{used}} of {{total}}",
+        "aggregated": "Aggregated",
+        "kaiserBeta": "Kaiser β",
+        "latency": "Latency"
       },
       "view": {
         "title": "Analyser",
@@ -1402,7 +1423,15 @@
         "music": "Music (Log, cubic, Blackman-Harris)",
         "meter": "Fast meter (linear, 60 Hz)",
         "chroma": "Chroma / pitch",
-        "applied": "Preset applied"
+        "applied": "Preset applied",
+        "quality": {
+          "title": "Quality",
+          "description": "Transform length, warp interpolation, Kaiser beta mode and aggregation tuned for a frame budget. Applied on top of the current settings; the output bins are kept.",
+          "visual60": "Visual 60 fps (8K, cubic, auto β)",
+          "visual120": "Visual 120 fps (4K, cubic, auto β)",
+          "analysis": "Analysis (32K, auto β, RMS)",
+          "active": "Matches: {{preset}}"
+        }
       },
       "spectrum": {
         "title": "Spectrum",
@@ -1469,6 +1498,29 @@
         "fftSize": {
           "label": "Zero-pad length",
           "description": "Transform length. The window is centred in a zero-padded frame of this size (grown to the next power of two above the window when that is larger); a longer transform interpolates the spectrum more finely."
+        },
+        "rawBins": {
+          "label": "Raw FFT bins",
+          "description": "Output the transform's magnitude untouched: N/2+1 bins from DC to Nyquist on a linear axis, with no warp, interpolation or aggregation. Scale, display max, warp blend, log floor, output bins and aggregation do not apply while it is on."
+        },
+        "outputBinsMode": {
+          "label": "Output bins mode",
+          "description": "Fixed: the output bin count below. Auto: one output bin per FFT bin, N/2+1 of the transform actually run.",
+          "fixed": "Fixed",
+          "auto": "Auto (N/2+1)"
+        },
+        "warpAggregation": {
+          "label": "Warp aggregation",
+          "description": "Where one output bin spans two or more FFT bins (the top of a log axis), combine them instead of interpolating between two: Peak keeps the loudest, so a narrow peak is never skipped; RMS averages their power. Off interpolates everywhere.",
+          "options": {
+            "off": "Off (interpolate, may skip peaks)",
+            "peak": "Peak (never drops a peak)",
+            "rms": "RMS (power mean)"
+          }
+        },
+        "zeroPadding": {
+          "label": "Zero-padding",
+          "description": "On: the window is centred in a zero-padded transform of the zero-pad length. Off: the transform is the window length itself (rounded up to even), the cheapest option, and the zero-pad length does not apply."
         }
       },
       "eq": {
@@ -1546,6 +1598,12 @@
             "coherent_gain": "Coherent gain (mean(window) = 1)",
             "full_scale": "Full scale (sine amplitude 1 → 1.0)"
           }
+        },
+        "kaiserBetaMode": {
+          "label": "Kaiser beta mode",
+          "description": "Manual: the beta below. Auto: derived from the dB range floor, so the window's side lobes sit just under what the display can show.",
+          "manual": "Manual",
+          "auto": "Auto (from dB range)"
         }
       },
       "loudness": {
@@ -1614,7 +1672,11 @@
           "label": "Update rate",
           "description": "Spectrum frames per second sent to the page."
         },
-        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size.",
+        "features": {
+          "label": "Spectral features",
+          "description": "Compute the centroid, 85 % rolloff, flatness, flux, RMS level and bass / mid / high band levels from the linear spectrum with every frame, shown under the analyser. A few microseconds per frame."
+        }
       },
       "voice": {
         "title": "Voice detection & noise suppression",
@@ -1629,6 +1691,17 @@
       },
       "errors": {
         "start": "Could not start the analyser: {{error}}"
+      },
+      "features": {
+        "title": "Features",
+        "centroid": "Centroid",
+        "rolloff": "Rolloff",
+        "flatness": "Flatness",
+        "flux": "Flux",
+        "rms": "RMS",
+        "bass": "Bass",
+        "mid": "Mid",
+        "high": "High"
       }
     },
     "llama": {
@@ -1695,6 +1768,7 @@
         "bundledRuntime": "{{mb}} MB of bundled CUDA runtime",
         "removeRuntime": "Remove runtime",
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
+        "runtimeFreed": "Freed {{mb}} MB",
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
@@ -1792,7 +1866,13 @@
     "downloadSpeed": "{{speed}} MB/s",
     "downloading": "Downloading...",
     "downloadingCount": "{{count}} downloading...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "play": "चलाएँ",
+    "pause": "रोकें",
+    "moreInformation": "अधिक जानकारी",
+    "selectOption": "Select an option...",
+    "unknownSize": "Unknown size",
+    "charsPerSecond": "{{value}} chars/s"
   },
   "accessibility": {
     "permissionsDescription": "ट्रांसक्राइब किया गया टेक्स्ट टाइप करने के लिए, {{app}} को ऐक्सेसिबिलिटी अनुमतियों की ज़रूरत है.",
@@ -1800,6 +1880,7 @@
   },
   "errors": {
     "loadDirectory": "फ़ोल्डर लोड करने में गड़बड़ी: {{error}}",
+    "loadDirectoryUnknown": "unknown error",
     "micPermissionDeniedTitle": "माइक्रोफ़ोन का ऐक्सेस नहीं दिया गया",
     "micPermissionDenied": {
       "generic": "ऑपरेटिंग सिस्टम ने माइक्रोफ़ोन का ऐक्सेस नहीं दिया. कृपया अपनी सिस्टम सेटिंग में जाकर माइक्रोफ़ोन की अनुमति दें.",
@@ -1814,7 +1895,8 @@
     "modelLoadFailedUnknown": "अज्ञात मॉडल",
     "pasteFailedTitle": "टेक्स्ट पेस्ट नहीं हो सका",
     "pasteFailed": "खुले हुए ऐप्लिकेशन में टेक्स्ट पेस्ट नहीं किया जा सका.",
-    "transcriptionFailedTitle": "ट्रांसक्रिप्शन नहीं हो सका"
+    "transcriptionFailedTitle": "ट्रांसक्रिप्शन नहीं हो सका",
+    "unknownError": "Unknown error"
   },
   "appLanguage": {
     "title": "ऐप्लिकेशन की भाषा",
@@ -1958,6 +2040,9 @@
     "custom": "Custom Color",
     "reset": "Reset to Default",
     "presets": {
+      "cyan": "Neon Cyan",
+      "magenta": "Neon Magenta",
+      "lime": "Terminal Green",
       "gold": "Gold",
       "pink": "Rose",
       "amber": "Amber",

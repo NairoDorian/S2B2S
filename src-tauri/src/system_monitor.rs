@@ -1,9 +1,10 @@
 //! CPU / RAM / GPU meters for the status bar.
 //!
 //! One sampler thread, one second tick, one event — the UI never polls a
-//! command per render (docs/PERFORMANCE.md rule 8). The thread skips the
-//! sampling entirely while the main window is hidden or minimised, so an app
-//! living in the tray costs nothing. GPU figures come from NVML when the
+//! command per render (docs/PERFORMANCE.md rule 8). While the main window is
+//! hidden or minimised the thread only wakes every 3 s to check visibility and
+//! keep the CPU baseline fresh — no RAM or NVML query and no event — so an app
+//! living in the tray costs close to nothing. GPU figures come from NVML when the
 //! driver library is present (NVIDIA on Windows/Linux); otherwise the GPU
 //! fields are `None` and the UI hides that meter.
 

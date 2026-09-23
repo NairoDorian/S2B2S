@@ -33,6 +33,7 @@ use specta::Type;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{Ordering, compiler_fence};
 
 use crate::recall::notes_dir;
 
@@ -75,8 +76,12 @@ pub struct VaultKeyFile {
     pub verifier_ct_hex: String,
 }
 
-/// The derived master key. Only ever exists in memory: the session mutex
-/// below is the whole persistence story.
+/// The derived master key (also the shape of a per-file content key). Only
+/// ever exists in memory: the session mutex below is the whole persistence
+/// story, and every `MasterKey` copy is wiped when it drops. That is
+/// best-effort hygiene, not a guarantee: the short-lived cipher built for each
+/// seal/open holds its own copy (`chacha20poly1305` is built without its
+/// `zeroize` feature), and the KDF's working memory is not wiped either.
 #[derive(Clone)]
 pub struct MasterKey([u8; KEY_LEN]);
 
@@ -84,6 +89,22 @@ impl MasterKey {
     fn cipher(&self) -> XChaCha20Poly1305 {
         XChaCha20Poly1305::new((&self.0).into())
     }
+}
+
+impl Drop for MasterKey {
+    fn drop(&mut self) {
+        wipe(&mut self.0);
+    }
+}
+
+/// Overwrite key material before its memory is released. Volatile writes and
+/// a fence keep the compiler from eliding stores to memory about to be freed.
+fn wipe(bytes: &mut [u8]) {
+    for byte in bytes.iter_mut() {
+        // SAFETY: `byte` is a valid, aligned, exclusive reference to a `u8`.
+        unsafe { std::ptr::write_volatile(byte, 0) };
+    }
+    compiler_fence(Ordering::SeqCst);
 }
 
 /// What [`enable`] reports back to the UI.
@@ -112,7 +133,7 @@ static SESSION_KEY: Mutex<Option<MasterKey>> = Mutex::new(None);
 // session state
 // ---------------------------------------------------------------------------
 
-/// Whether the session holds a derived key. Kept next to `current_key` so
+/// Whether the session holds a derived key. Kept next to `session_key` so
 /// the UI's status read does not clone key material.
 pub fn is_unlocked() -> bool {
     SESSION_KEY.lock().unwrap().is_some()
@@ -182,6 +203,10 @@ fn seal(key: &MasterKey, plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>
     Ok((nonce_bytes, ct))
 }
 
+/// What [`open`] answers when the tag check fails. Only [`verify_passphrase`]
+/// can tell a wrong passphrase from a damaged file, so only it says so.
+const DECRYPT_FAILED: &str = "Decryption failed (wrong key or corrupt file)";
+
 /// Open `(nonce, ct)` under `key`. A wrong key fails the tag check here —
 /// the only passphrase check that exists.
 fn open(key: &MasterKey, nonce: &[u8], ct: &[u8]) -> Result<Vec<u8>, String> {
@@ -191,7 +216,7 @@ fn open(key: &MasterKey, nonce: &[u8], ct: &[u8]) -> Result<Vec<u8>, String> {
     let nonce = XNonce::try_from(nonce).map_err(|_| "Bad nonce length".to_string())?;
     key.cipher()
         .decrypt(&nonce, ct)
-        .map_err(|_| "Wrong passphrase".to_string())
+        .map_err(|_| DECRYPT_FAILED.to_string())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -199,6 +224,10 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
+    // Byte slicing below needs ASCII, and an odd length would drop a nibble.
+    if !hex.len().is_multiple_of(2) || !hex.is_ascii() {
+        return Err("Corrupt vault file: bad hex".to_string());
+    }
     (0..hex.len() / 2)
         .map(|i| {
             u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)
@@ -223,12 +252,27 @@ pub fn is_encrypted(root: &Path) -> bool {
     root.join(KEY_FILE).exists()
 }
 
+/// The key file of an encrypted vault. A `vault.json` that exists but does
+/// not parse is reported as corrupt, not as encryption being off.
+fn existing_key_file(root: &Path) -> Result<VaultKeyFile, String> {
+    if !is_encrypted(root) {
+        return Err("Encryption is not enabled".to_string());
+    }
+    key_file(root).ok_or_else(|| "Corrupt vault key file".to_string())
+}
+
 fn verify_passphrase(file: &VaultKeyFile, passphrase: &str) -> Result<MasterKey, String> {
     let salt = hex_decode(&file.salt_hex)?;
     let key = derive_master_key(passphrase, &salt, &file.kdf)?;
     let nonce = hex_decode(&file.verifier_nonce_hex)?;
     let ct = hex_decode(&file.verifier_ct_hex)?;
-    let plain = open(&key, &nonce, &ct)?;
+    let plain = open(&key, &nonce, &ct).map_err(|e| {
+        if e == DECRYPT_FAILED {
+            "Wrong passphrase".to_string()
+        } else {
+            e
+        }
+    })?;
     if plain != VERIFIER_PLAINTEXT {
         return Err("Wrong passphrase".to_string());
     }
@@ -257,9 +301,10 @@ fn write_key_file(root: &Path, file: &VaultKeyFile) -> Result<(), String> {
 /// the master key — re-keying later re-wraps 32 bytes per file, not the
 /// file bodies.
 pub fn write_encrypted_file(path: &Path, master: &MasterKey, bytes: &[u8]) -> Result<(), String> {
+    // Filled in place, so no unwiped temporary copy of the key is left behind.
     let file_key = MasterKey({
         let mut k = [0u8; KEY_LEN];
-        k.copy_from_slice(&random_bytes(KEY_LEN));
+        rand::rng().fill_bytes(&mut k);
         k
     });
     let (wrapped_nonce, wrapped_ct) = seal(master, &file_key.0)?;
@@ -298,8 +343,15 @@ pub fn read_encrypted_file(path: &Path, master: &MasterKey) -> Result<Vec<u8>, S
     at += KEY_LEN + 16;
     let content_nonce = &file[at..at + NONCE_LEN];
     let content_ct = &file[at + NONCE_LEN..];
-    let file_key_bytes = open(master, wrapped_nonce, wrapped_ct)?;
-    let file_key = MasterKey(file_key_bytes.try_into().map_err(|_| "Bad key length")?);
+    let mut file_key_bytes = open(master, wrapped_nonce, wrapped_ct)?;
+    let file_key = (file_key_bytes.len() == KEY_LEN).then(|| {
+        let mut k = [0u8; KEY_LEN];
+        k.copy_from_slice(&file_key_bytes);
+        MasterKey(k)
+    });
+    // The unwrapped key's heap copy is wiped before the Vec frees it.
+    wipe(&mut file_key_bytes);
+    let file_key = file_key.ok_or("Bad key length")?;
     open(&file_key, content_nonce, content_ct)
 }
 
@@ -356,7 +408,7 @@ pub(crate) fn note_ids_encrypted(root: &Path) -> Result<Vec<String>, String> {
 /// and reported, so the toggle stays a reversible, checkable operation.
 /// The vault is left unlocked — the user just proved the passphrase.
 pub fn enable(root: &Path, passphrase: &str) -> Result<EnableReport, String> {
-    if passphrase.len() < MIN_PASSPHRASE_LEN {
+    if passphrase.chars().count() < MIN_PASSPHRASE_LEN {
         return Err(format!(
             "Use at least {MIN_PASSPHRASE_LEN} characters for the passphrase"
         ));
@@ -371,15 +423,14 @@ pub fn enable(root: &Path, passphrase: &str) -> Result<EnableReport, String> {
     let backup_dir = root
         .join("backup")
         .join(chrono::Local::now().format("%Y%m%d-%H%M%S").to_string());
-    if !ids.is_empty() {
-        fs::create_dir_all(&backup_dir).map_err(|e| format!("Failed to create backup: {e}"))?;
-        for id in &ids {
-            fs::copy(
-                notes_dir(root).join(format!("{id}.md")),
-                backup_dir.join(format!("{id}.md")),
-            )
-            .map_err(|e| format!("Failed to back up note {id}: {e}"))?;
-        }
+    // Created even for an empty vault: the report always names a real folder.
+    fs::create_dir_all(&backup_dir).map_err(|e| format!("Failed to create backup: {e}"))?;
+    for id in &ids {
+        fs::copy(
+            notes_dir(root).join(format!("{id}.md")),
+            backup_dir.join(format!("{id}.md")),
+        )
+        .map_err(|e| format!("Failed to back up note {id}: {e}"))?;
     }
 
     let salt = random_bytes(SALT_LEN);
@@ -495,10 +546,10 @@ fn decrypt_audio_dir(root: &Path, key: &MasterKey) -> Result<u32, String> {
 
 /// The other direction of the toggle, and it must ask for the key it is
 /// giving up: every `.rcl` is decrypted back to its `.md` bytes, the key
-/// file is removed, and the session is locked. The database prior is fully
-/// decrypted *before* encryption counts as disabled.
+/// file is removed, and the session is locked. The vault is fully decrypted
+/// *before* encryption counts as disabled.
 pub fn disable(root: &Path, passphrase: &str) -> Result<u32, String> {
-    let file = key_file(root).ok_or_else(|| "Encryption is not enabled".to_string())?;
+    let file = existing_key_file(root)?;
     let key = verify_passphrase(&file, passphrase)?;
 
     let ids = note_ids_in(root, "rcl")?;
@@ -527,7 +578,7 @@ pub fn disable(root: &Path, passphrase: &str) -> Result<u32, String> {
 /// Verify the passphrase against the key file's verifier and hold the key
 /// in memory until [`session_lock`] or app exit.
 pub fn unlock(root: &Path, passphrase: &str) -> Result<(), String> {
-    let file = key_file(root).ok_or_else(|| "Encryption is not enabled".to_string())?;
+    let file = existing_key_file(root)?;
     let key = verify_passphrase(&file, passphrase)?;
     session_unlock_with(key);
     Ok(())
@@ -695,6 +746,33 @@ mod tests {
         let root = temp_root("short");
         assert!(enable(&root, "short").is_err());
         assert!(!is_encrypted(&root));
+        // Counted in characters: three 3-byte characters are still too short.
+        assert!(enable(&root, "日本語").is_err());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn malformed_hex_is_an_error_not_a_panic() {
+        assert_eq!(hex_decode("0aff").unwrap(), vec![0x0a, 0xff]);
+        assert!(hex_decode("abc").is_err());
+        assert!(hex_decode("é0").is_err());
+        assert!(hex_decode("zz").is_err());
+    }
+
+    #[test]
+    fn unparseable_key_file_is_reported_as_corrupt() {
+        let root = temp_root("corrupt-key");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join(KEY_FILE), "{ not json").unwrap();
+        assert_eq!(unlock(&root, PASS).unwrap_err(), "Corrupt vault key file");
+        assert_eq!(disable(&root, PASS).unwrap_err(), "Corrupt vault key file");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn wipe_zeroes_key_material() {
+        let mut bytes = [0xA5u8; KEY_LEN];
+        wipe(&mut bytes);
+        assert_eq!(bytes, [0u8; KEY_LEN]);
     }
 }

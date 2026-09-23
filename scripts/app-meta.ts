@@ -11,16 +11,18 @@
 //
 //   MIRRORS    a value that has to live inside a file we do not generate —
 //              `package.json`, `Cargo.toml`, `tauri.conf.json`, `Cargo.lock`,
-//              `installer.nsi`. Each mirror is a regex anchored on the value,
-//              and the script refuses to run unless the anchor matches exactly
-//              the expected number of times. A rename that moves one of these
-//              lines is a hard error naming the file and the anchor, never a
-//              silent no-op.
+//              `installer.nsi`, `index.html`, `flake.nix`. Each mirror is a
+//              regex anchored on the value, and the script refuses to run
+//              unless the anchor matches exactly the expected number of
+//              times. A rename that moves one of these lines is a hard error
+//              naming the file and the anchor, never a silent no-op.
 //
 //   GENERATED  whole files written from the constants below, each carrying a
 //              "do not edit" header and checked byte-for-byte by `--check`:
 //                src-tauri/src/app_identity.rs   every Rust call site
 //                src/lib/appIdentity.ts          every frontend call site
+//                nix/module.nix                  the NixOS module
+//                nix/hm-module.nix               the home-manager module
 //
 // Why generate instead of using `env!("CARGO_PKG_*")` alone: Cargo exposes the
 // crate name, version, description and authors, but not the product name, the
@@ -35,8 +37,8 @@
 //   bun run meta:set <x.y.z>   set the version, then sync
 //   bun run meta:bump <level>  major | minor | patch, then sync
 //
-// `scripts/tauri-runner.ts` also calls `syncAppMeta()` before every dev run
-// and build, so a stale generated module cannot survive a `bun run dev`.
+// `bun run precommit` runs `meta:sync` then `meta:check` as its first two
+// steps, and stages exactly the files `identityPaths()` lists afterwards.
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
@@ -418,7 +420,8 @@ function nixosModule(): string {
 # NixOS module for ${APP.name} speech-to-text.
 #
 # Handles system-level configuration that the package wrapper cannot:
-#   - udev rule for /dev/uinput (rdev grab() needs it for virtual input)
+#   - udev rule for /dev/uinput (the handy-keys evdev grab re-injects
+#     through virtual input devices; dotool / ydotool typing uses it too)
 #
 # Note: users must add themselves to the "input" group for evdev hotkey access.
 #
@@ -455,7 +458,7 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
 
-    # rdev grab() creates virtual input devices via /dev/uinput.
+    # handy-keys' evdev grab creates virtual input devices via /dev/uinput.
     # Default permissions are crw------- root root — open it to the input group.
     services.udev.extraRules = ''
       KERNEL=="uinput", GROUP="input", MODE="0660"
@@ -541,6 +544,24 @@ export const GENERATED_PATHS: ReadonlySet<string> = new Set([
   META_TS,
   ...generatedFiles().keys(),
 ]);
+
+/**
+ * Every file `meta:sync` can write: the mirror files, the lockfile root block
+ * and the generated modules.
+ *
+ * The pre-commit gate stages exactly these after its `meta:sync` step — never
+ * `git add -u` over the whole tree, which would sweep every other dirty
+ * tracked file into a commit the user staged selectively.
+ */
+export function identityPaths(): string[] {
+  return [
+    ...new Set([
+      ...mirrors().map((mirror) => mirror.file),
+      "src-tauri/Cargo.lock",
+      ...generatedFiles().keys(),
+    ]),
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // the mirror table
@@ -867,13 +888,14 @@ function splitLockBlocks(text: string): LockBlock[] {
  * `transcribe-cpp` git pin, which `scripts/check-transcribe-deps.ts` manages
  * and a stale resolution would silently move.
  *
- * @returns the two values found, or null when the file has no such block.
+ * @returns the two values found; throws when there is not exactly one
+ * sourceless block.
  */
 function syncLockRoot(
   slug: string,
   version: string,
   dryRun: boolean,
-): { found: { name: string; version: string } } | null {
+): { found: { name: string; version: string } } {
   const file = "src-tauri/Cargo.lock";
   const path = join(root, file);
   const text = readFileSync(path, "utf-8");
@@ -1047,8 +1069,6 @@ export interface MetaReport {
 type SyncOptions = {
   /** Report only; write nothing. */
   dryRun?: boolean;
-  /** One line per file instead of the full table. Used by the build prelude. */
-  quiet?: boolean;
   /**
    * Version to write instead of `APP.version`. `--set` and `--bump` rewrite
    * the constant in this file first, so the module binding is already stale by
@@ -1065,11 +1085,10 @@ type SyncOptions = {
  * Point every mirror at the constants above and regenerate both modules.
  *
  * @param options.dryRun report what would change and write nothing.
- * @param options.quiet  print only what changed (the build prelude's mode).
  * @returns what was already correct, what was rewritten, what was regenerated.
  */
 export function syncAppMeta(options: SyncOptions = {}): MetaReport {
-  const { dryRun = false, quiet = false, versionOverride } = options;
+  const { dryRun = false, versionOverride } = options;
   const report: MetaReport = { inSync: [], drifted: [], stale: [] };
   const version = versionOverride ?? APP.version;
   const { slug } = APP;
@@ -1079,7 +1098,7 @@ export function syncAppMeta(options: SyncOptions = {}): MetaReport {
 
   const width = Math.max(...mirrors().map((m) => m.file.length), 20) + 12;
 
-  if (!quiet) console.log(`${TAG} ${APP.name} ${version} — ${META_TS}`);
+  console.log(`${TAG} ${APP.name} ${version} — ${META_TS}`);
 
   for (const mirror of mirrors()) {
     const wanted = mirror.value(version, slug);
@@ -1087,7 +1106,7 @@ export function syncAppMeta(options: SyncOptions = {}): MetaReport {
     const name = label(mirror.file, mirror.anchor);
     if (read.current === wanted) {
       report.inSync.push(name);
-      if (!quiet) console.log(`${TAG}   ${pad(name, width)}  ${read.current}`);
+      console.log(`${TAG}   ${pad(name, width)}  ${read.current}`);
       continue;
     }
     report.drifted.push({ file: name, was: read.current, now: wanted });
@@ -1099,27 +1118,24 @@ export function syncAppMeta(options: SyncOptions = {}): MetaReport {
   }
 
   // Cargo.lock, by shape rather than by pattern — see syncLockRoot.
-  const lock = syncLockRoot(slug, version, dryRun);
-  if (lock) {
-    const { name, version: held } = lock.found;
-    const lockLabel = label(
-      "src-tauri/Cargo.lock",
-      "the sourceless [[package]] block",
+  const { name, version: held } = syncLockRoot(slug, version, dryRun).found;
+  const lockLabel = label(
+    "src-tauri/Cargo.lock",
+    "the sourceless [[package]] block",
+  );
+  if (name === slug && held === version) {
+    report.inSync.push(lockLabel);
+    console.log(`${TAG}   ${pad(lockLabel, width)}  ${held}`);
+  } else {
+    report.drifted.push({
+      file: lockLabel,
+      was: `${name} ${held}`,
+      now: `${slug} ${version}`,
+    });
+    console.log(
+      `${TAG}   ${pad(lockLabel, width)}  ${name} ${held} -> ${slug} ${version}` +
+        (dryRun ? "  (not written)" : ""),
     );
-    if (name === slug && held === version) {
-      report.inSync.push(lockLabel);
-      if (!quiet) console.log(`${TAG}   ${pad(lockLabel, width)}  ${held}`);
-    } else {
-      report.drifted.push({
-        file: lockLabel,
-        was: `${name} ${held}`,
-        now: `${slug} ${version}`,
-      });
-      console.log(
-        `${TAG}   ${pad(lockLabel, width)}  ${name} ${held} -> ${slug} ${version}` +
-          (dryRun ? "  (not written)" : ""),
-      );
-    }
   }
 
   for (const [file, content] of generatedFiles()) {
@@ -1127,7 +1143,7 @@ export function syncAppMeta(options: SyncOptions = {}): MetaReport {
     const existing = existsSync(path) ? readFileSync(path, "utf-8") : null;
     if (existing === content) {
       report.inSync.push(file);
-      if (!quiet) console.log(`${TAG}   ${pad(file, width)}  generated`);
+      console.log(`${TAG}   ${pad(file, width)}  generated`);
       continue;
     }
     report.stale.push(file);
@@ -1323,21 +1339,26 @@ export function main(argv: string[]): number {
           printUsage();
           return 1;
         }
+        if (mode === "bump" && !["major", "minor", "patch"].includes(value)) {
+          console.error(
+            `${TAG} --bump expects major, minor or patch, got: ${value}`,
+          );
+          return 1;
+        }
         const next =
           mode === "set"
             ? value
             : bumpSemver(APP.version, value as "major" | "minor" | "patch");
         if (!parseSemver(next)) {
           console.error(
-            mode === "set"
-              ? `${TAG} --set expects a plain x.y.z version, got: ${value}`
-              : `${TAG} --bump expects major, minor or patch, got: ${value}`,
+            `${TAG} --set expects a plain x.y.z version, got: ${value}`,
           );
           return 1;
         }
         writeVersion(next, dryRun);
-        // The module binding is stale after the rewrite, and `mirrorValue`
-        // reads APP.version — so pass the new version through explicitly.
+        // The module binding is stale after the rewrite, and `mirror.value`
+        // would otherwise be handed APP.version — so pass the new version
+        // through explicitly.
         syncAppMeta({ dryRun, versionOverride: next });
         return 0;
       }

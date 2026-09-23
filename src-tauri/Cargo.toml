@@ -60,7 +60,6 @@ rusqlite_migration = "2.6.0"
 tauri-plugin-fs = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-rdev = { git = "https://github.com/rustdesk-org/rdev" }
 cpal = "^0.18.2"
 rtrb = "0.4.0"
 anyhow = "1.0.104"
@@ -70,7 +69,6 @@ hound = "3.5.1"
 # page. Same crate + features rodio already pulls in, so no new transitive deps.
 symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
 log = "^0.4.34"
-env_filter = "2.0.0"
 tokio = "1.53.1"
 # Voice activity detection: pure Rust, no model file, no native runtime.
 earshot = "1.2.2"
@@ -139,8 +137,8 @@ webview2-com = "^0.39.1"
 # windows-core 0.62 — same minor as what wry 0.57 + webview2-com 0.39 bring
 # in, so there is a single windows-core version in the graph and the
 # COM `Interface` trait resolves for both our imports and the controller().
-# (tauri itself still uses windows 0.61, which is a separate crate and
-# does not share COM types with our webview2-com interop.)
+# (enigo and tauri-plugin-opener still use windows 0.61, a separate crate
+# that does not share COM types with our webview2-com interop.)
 windows-core = "0.62"
 windows = { version = "^0.62.2", features = [
   "Win32_Media",

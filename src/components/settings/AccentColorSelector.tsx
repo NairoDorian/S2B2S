@@ -17,7 +17,6 @@ interface AccentColorSelectorProps {
 }
 
 export const AccentColorSelector = (props: AccentColorSelectorProps) => {
-  const { descriptionMode = "tooltip", grouped = false } = props;
   const { t } = useTranslation();
   const { settings, updateSetting, isUpdating } = useSettings();
   let colorInputRef: HTMLInputElement | undefined;
@@ -45,8 +44,8 @@ export const AccentColorSelector = (props: AccentColorSelectorProps) => {
     <SettingContainer
       title={t("accentColor.title")}
       description={t("accentColor.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode ?? "tooltip"}
+      grouped={props.grouped ?? false}
       layout="horizontal"
     >
       <div class="flex items-center gap-2 flex-wrap">

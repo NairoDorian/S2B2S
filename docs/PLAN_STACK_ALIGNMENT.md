@@ -63,7 +63,7 @@ asset: http://asset.localhost blob: data:; style-src 'self'
 10. `flex-grow` / `flex-shrink-0` are removed v3 utilities that generate no
     CSS in v4 — the Slider doesn't stretch, the VAD meter doesn't fill.
     Replace with `grow` / `shrink-0` (`Slider.tsx:54`, `VadMeter.tsx:136,159`,
-    `TextDisplay.tsx:67`).
+    `TextDisplay.tsx:67`, a component since deleted as dead code).
 
 **Oxlint** (docs/vendor/oxlint/guide/usage/linter/config.md):
 

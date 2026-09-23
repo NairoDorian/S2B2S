@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
@@ -19,12 +19,19 @@ export const OverlaySettings = () => {
 
   const [previewing, setPreviewing] = createSignal(false);
 
+  // The three preview/position commands return a backend `Err` as
+  // `{ status: "error" }` rather than throwing; the catches only see a thrown
+  // `Error` (IPC failure).
   const startPreview = async () => {
     try {
-      await commands.startOverlayPreview();
+      const result = await commands.startOverlayPreview();
+      if (result.status === "error") {
+        // "Already recording" and friends; the backend started nothing.
+        toast.error(result.error);
+        return;
+      }
       setPreviewing(true);
     } catch (error) {
-      // "Already recording" and friends arrive here; the backend started nothing.
       toast.error(String(error));
     }
   };
@@ -32,7 +39,8 @@ export const OverlaySettings = () => {
   const stopPreview = async () => {
     setPreviewing(false);
     try {
-      await commands.stopOverlayPreview();
+      const result = await commands.stopOverlayPreview();
+      if (result.status === "error") toast.error(result.error);
     } catch (error) {
       toast.error(String(error));
     }
@@ -41,12 +49,16 @@ export const OverlaySettings = () => {
   // The preview is driven from this page, so the page owns its lifetime: a
   // closed page would leave the microphone open behind a button nobody can
   // press any more. (The cancel hotkey and the backend's 10-minute safety cap
-  // cover the other ways this page can go away.)
-  onCleanup(() => {
-    if (previewing()) {
-      void commands.stopOverlayPreview().catch(() => {});
-    }
-  });
+  // cover the other ways this page can go away.) The teardown is returned
+  // from the effect, the Solid 2 shape for unmount work.
+  createEffect(
+    () => undefined,
+    () => () => {
+      if (previewing()) {
+        void commands.stopOverlayPreview().catch(() => {});
+      }
+    },
+  );
 
   return (
     <div class="max-w-3xl w-full mx-auto space-y-6">
@@ -131,7 +143,9 @@ export const OverlaySettings = () => {
               size="md"
               onClick={async () => {
                 try {
-                  await commands.resetRecordingOverlayManualPosition();
+                  const result =
+                    await commands.resetRecordingOverlayManualPosition();
+                  if (result.status === "error") toast.error(result.error);
                 } catch (error) {
                   toast.error(String(error));
                 }

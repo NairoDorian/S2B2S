@@ -8,7 +8,7 @@ export const VolumeSlider = (props: { disabled?: boolean }) => {
 
   return (
     <Slider
-      value={getSetting("audio_feedback_volume") ?? 0.5}
+      value={getSetting("audio_feedback_volume") ?? 1}
       onChange={(value: number) =>
         updateSetting("audio_feedback_volume", value)
       }

@@ -113,7 +113,8 @@ impl RecorderState {
                     self.current_device_index = device_index;
                     println!("Opened recorder in Always-On mode");
                 }
-                self.recorder.start(VadPolicy::Offline, DEFAULT_SPEECH_PAUSE_HOLD_MS)?;
+                self.recorder
+                    .start(VadPolicy::Offline, DEFAULT_SPEECH_PAUSE_HOLD_MS, false)?;
             }
             RecorderMode::OnDemand => {
                 // In on-demand mode, open for each recording
@@ -123,7 +124,8 @@ impl RecorderState {
                 self.recorder.open(device)?;
                 self.is_open = true;
                 self.current_device_index = device_index;
-                self.recorder.start(VadPolicy::Offline, DEFAULT_SPEECH_PAUSE_HOLD_MS)?;
+                self.recorder
+                    .start(VadPolicy::Offline, DEFAULT_SPEECH_PAUSE_HOLD_MS, false)?;
                 println!("Opened and started recorder in On-Demand mode");
             }
         }
@@ -296,16 +298,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "quit" | "exit" | "q" => {
                 println!("Shutting down...");
-                match state.close() {
-                    Ok(_) => {
-                        if state.is_recording {
-                            println!(
-                                "Final recording saved as: recording_{}.wav",
-                                state.recording_index
-                            );
-                        }
-                    }
-                    Err(e) => println!("Error during shutdown: {}", e),
+                // A recording still running is stopped and discarded.
+                if let Err(e) = state.close() {
+                    println!("Error during shutdown: {}", e);
                 }
                 println!("Goodbye!");
                 break;

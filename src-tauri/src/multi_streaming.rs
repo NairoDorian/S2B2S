@@ -139,7 +139,7 @@ pub fn streaming_slots(app: &AppHandle, settings: &AppSettings) -> Vec<(u8, Stri
     slots
 }
 
-/// The extra model this session streams with, and the threads bringing its
+/// The extra models this session streams with, and the threads bringing their
 /// streams up.
 struct Session {
     /// The slots this session streams from, `(stream slot, model id)`, in the
@@ -165,7 +165,7 @@ fn take_session() -> Option<Session> {
     SESSION.lock().unwrap().take()
 }
 
-/// Whether the nested Multi Streaming STT mode own a session. Read by
+/// Whether the nested Multi Streaming STT mode owns a session. Read by
 /// `MultiSttAction` to decide whether the extras are batch-decoded at stop (they
 /// are not, in this mode: they streamed) and whether the session result is the
 /// merged text (it is).

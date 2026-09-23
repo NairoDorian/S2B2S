@@ -6,15 +6,13 @@ import { Button } from "../ui/Button";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { VadMeter, VadStatusChip, useVadFrames } from "./VadMeter";
+import { DEFAULT_THRESHOLD } from "./VadSensitivity";
 import type { JSX } from "@solidjs/web";
 
 interface VadLiveTestProps {
   descriptionMode?: "tooltip" | "inline";
   grouped?: boolean;
 }
-
-/** Mirrors `DEFAULT_VAD_THRESHOLD_EARSHOT` in `src-tauri/src/settings.rs`. */
-const DEFAULT_THRESHOLD = 0.5;
 
 /**
  * Live VAD test next to the threshold slider: opens the microphone, runs the
@@ -24,10 +22,7 @@ const DEFAULT_THRESHOLD = 0.5;
  * the backend swaps the threshold in place on the next frame. The meter
  * itself (`VadMeter`) is shared with the Live FFT page.
  */
-export const VadLiveTest = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}: VadLiveTestProps): JSX.Element => {
+export const VadLiveTest = (props: VadLiveTestProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
 
@@ -77,8 +72,8 @@ export const VadLiveTest = ({
       <SettingContainer
         title={t("settings.advanced.vadLiveTest.title")}
         description={t("settings.advanced.vadLiveTest.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
+        descriptionMode={props.descriptionMode ?? "tooltip"}
+        grouped={props.grouped ?? false}
         layout={running() ? "stacked" : "horizontal"}
       >
         <div class="w-full flex flex-col gap-3">

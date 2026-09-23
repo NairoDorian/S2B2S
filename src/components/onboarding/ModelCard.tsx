@@ -73,83 +73,76 @@ interface ModelCardProps {
 }
 
 const ModelCard = (props: ModelCardProps) => {
-  const {
-    model,
-    variant = "default",
-    status = "downloadable",
-    disabled = false,
-    class: className = "",
-    onSelect,
-    onDownload,
-    onDelete,
-    onCancel,
-    downloadProgress,
-    downloadSpeed,
-    showRecommended = true,
-  } = props;
+  // Props are read through accessors, never destructured: the lists render
+  // cards keyed by model id, so one card instance lives through its model's
+  // whole download → verify → available → active lifecycle.
   const { t } = useTranslation();
-  const debugMode = useSettingsStore().settings?.debug_mode ?? false;
-  const isFeatured = variant === "featured";
-  const isClickable = status === "available" || status === "downloadable";
+  const settingsStore = useSettingsStore();
+  const debugMode = () => settingsStore.settings?.debug_mode ?? false;
+  const status = () => props.status ?? "downloadable";
+  const disabled = () => props.disabled ?? false;
+  const isClickable = () =>
+    status() === "available" || status() === "downloadable";
 
-  const displayName = getTranslatedModelName(model, t);
-  const displayDescription = getTranslatedModelDescription(model, t);
-  const showModelSize =
-    status === "downloadable" || status === "available" || status === "active";
-  const formattedModelSize = formatModelSize(Number(model.size_mb));
-  const quantLabel = getQuantLabel(model.filename);
-  const capabilityLanguages = getUniqueCapabilityLanguages(
-    model.supported_languages,
-  );
+  const displayName = () => getTranslatedModelName(props.model, t);
+  const displayDescription = () =>
+    getTranslatedModelDescription(props.model, t);
+  const showModelSize = () =>
+    status() === "downloadable" ||
+    status() === "available" ||
+    status() === "active";
+  const formattedModelSize = () => formatModelSize(Number(props.model.size_mb));
+  const quantLabel = () => getQuantLabel(props.model.filename);
+  const capabilityLanguages = () =>
+    getUniqueCapabilityLanguages(props.model.supported_languages);
 
   const baseClasses =
     "flex flex-col rounded-xl px-4 py-3 gap-2 text-left transition-all duration-200";
 
   const getVariantClasses = () => {
-    if (status === "active") {
+    if (status() === "active") {
       return "border-2 border-accent/50 bg-accent/10";
     }
-    if (isFeatured) {
+    if (props.variant === "featured") {
       return "border-2 border-accent/25 bg-accent/5";
     }
     return "border-2 border-mid-gray/20";
   };
 
   const getInteractiveClasses = () => {
-    if (!isClickable) return "";
-    if (disabled) return "opacity-50 cursor-not-allowed";
+    if (!isClickable()) return "";
+    if (disabled()) return "opacity-50 cursor-not-allowed";
     return "cursor-pointer hover:border-accent/50 hover:bg-accent/5 hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] group";
   };
 
   const handleClick = () => {
-    if (!isClickable || disabled) return;
-    if (status === "downloadable" && onDownload) {
-      onDownload(model.id);
+    if (!isClickable() || disabled()) return;
+    if (status() === "downloadable" && props.onDownload) {
+      props.onDownload(props.model.id);
     } else {
-      onSelect(model.id);
+      props.onSelect(props.model.id);
     }
   };
 
   const handleDelete = (e: MouseEvent) => {
     e.stopPropagation();
-    onDelete?.(model.id);
+    props.onDelete?.(props.model.id);
   };
 
   // ModelCard is conditionally interactive (when not downloaded/downloading); inner buttons handle secondary actions.
-  // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
   return (
     <div
-      onClick={isClickable ? handleClick : undefined}
+      onClick={handleClick}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && isClickable) handleClick();
+        if (e.key === "Enter" && isClickable()) handleClick();
       }}
-      role={isClickable ? "button" : undefined}
-      tabindex={isClickable ? 0 : undefined}
+      role={isClickable() ? "button" : undefined}
+      tabindex={isClickable() ? 0 : undefined}
       class={[
         baseClasses,
         getVariantClasses(),
         getInteractiveClasses(),
-        className,
+        props.class ?? "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -158,26 +151,26 @@ const ModelCard = (props: ModelCardProps) => {
         <div class="flex flex-col items-start flex-1 min-w-0">
           <div class="flex items-center gap-3 flex-wrap">
             <h3
-              class={`text-base font-semibold text-text ${isClickable ? "group-hover:text-accent" : ""} transition-colors`}
+              class={`text-base font-semibold text-text ${isClickable() ? "group-hover:text-accent" : ""} transition-colors`}
             >
-              {displayName}
+              {displayName()}
             </h3>
-            {showRecommended && model.is_recommended && (
+            {(props.showRecommended ?? true) && props.model.is_recommended && (
               <Badge variant="primary">{t("onboarding.recommended")}</Badge>
             )}
-            {status === "active" && (
+            {status() === "active" && (
               <Badge variant="primary">
                 <Check class="w-3 h-3 mr-1" />
                 {t("modelSelector.active")}
               </Badge>
             )}
-            {model.is_custom && (
+            {props.model.is_custom && (
               <Badge variant="secondary">{t("modelSelector.custom")}</Badge>
             )}
-            {isLegacySource(model) && (
+            {isLegacySource(props.model) && (
               <Badge variant="secondary">{t("modelSelector.legacy")}</Badge>
             )}
-            {status === "switching" && (
+            {status() === "switching" && (
               <Badge variant="secondary">
                 <Loader2 class="w-3 h-3 mr-1 animate-spin" />
                 {t("modelSelector.switching")}
@@ -185,10 +178,10 @@ const ModelCard = (props: ModelCardProps) => {
             )}
           </div>
           <p class="text-text/60 text-sm leading-relaxed">
-            {displayDescription}
+            {displayDescription()}
           </p>
         </div>
-        {(model.accuracy_score! > 0 || model.speed_score! > 0) && (
+        {(props.model.accuracy_score! > 0 || props.model.speed_score! > 0) && (
           <div class="hidden sm:flex items-center ms-4">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
@@ -198,7 +191,7 @@ const ModelCard = (props: ModelCardProps) => {
                 <div class="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
                   <div
                     class="h-full bg-accent rounded-full"
-                    style={{ width: `${model.accuracy_score! * 100}%` }}
+                    style={{ width: `${props.model.accuracy_score! * 100}%` }}
                   />
                 </div>
               </div>
@@ -209,7 +202,7 @@ const ModelCard = (props: ModelCardProps) => {
                 <div class="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
                   <div
                     class="h-full bg-accent rounded-full"
-                    style={{ width: `${model.speed_score! * 100}%` }}
+                    style={{ width: `${props.model.speed_score! * 100}%` }}
                   />
                 </div>
               </div>
@@ -221,20 +214,22 @@ const ModelCard = (props: ModelCardProps) => {
       <hr class="w-full border-mid-gray/20" />
 
       <div class="flex items-center gap-3 w-full -mb-0.5 mt-0.5 h-5">
-        {capabilityLanguages.length > 0 && (
+        {capabilityLanguages().length > 0 && (
           <div
             class="flex items-center gap-1 text-xs text-text/50"
             title={
-              capabilityLanguages.length === 1
+              capabilityLanguages().length === 1
                 ? t("modelSelector.capabilities.singleLanguage")
                 : t("modelSelector.capabilities.languageSelection")
             }
           >
             <Globe class="w-3.5 h-3.5" />
-            <span>{getLanguageDisplayText(model.supported_languages, t)}</span>
+            <span>
+              {getLanguageDisplayText(props.model.supported_languages, t)}
+            </span>
           </div>
         )}
-        {model.supports_translation && (
+        {props.model.supports_translation && (
           <div
             class="flex items-center gap-1 text-xs text-text/50"
             title={t("modelSelector.capabilities.translation")}
@@ -243,7 +238,7 @@ const ModelCard = (props: ModelCardProps) => {
             <span>{t("modelSelector.capabilities.translate")}</span>
           </div>
         )}
-        {model.supports_streaming && (
+        {props.model.supports_streaming && (
           <div
             class="flex items-center gap-1 text-xs text-text/50"
             title={t("modelSelector.capabilities.streaming")}
@@ -252,63 +247,66 @@ const ModelCard = (props: ModelCardProps) => {
             <span>{t("modelSelector.streaming")}</span>
           </div>
         )}
-        {showModelSize && (
+        {showModelSize() && (
           <span class="flex items-center gap-1.5 ms-auto text-xs text-text/50">
-            {status === "downloadable" ? (
+            {status() === "downloadable" ? (
               <Download class="w-3.5 h-3.5" />
             ) : (
               <HardDrive class="w-3.5 h-3.5" />
             )}
-            <span>{formattedModelSize}</span>
-            {debugMode && quantLabel && (
-              <span class="text-text/40">{quantLabel}</span>
+            <span>{formattedModelSize()}</span>
+            {debugMode() && quantLabel() && (
+              <span class="text-text/40">{quantLabel()}</span>
             )}
           </span>
         )}
-        {onDelete && (status === "available" || status === "active") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            title={t("modelSelector.deleteModel", { modelName: displayName })}
-            class="flex items-center gap-1.5 text-accent/85 hover:text-accent hover:bg-accent/10"
-          >
-            <Trash2 class="w-3.5 h-3.5" />
-            <span>{t("common.delete")}</span>
-          </Button>
-        )}
+        {props.onDelete &&
+          (status() === "available" || status() === "active") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              title={t("modelSelector.deleteModel", {
+                modelName: displayName(),
+              })}
+              class="flex items-center gap-1.5 text-accent/85 hover:text-accent hover:bg-accent/10"
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              <span>{t("common.delete")}</span>
+            </Button>
+          )}
       </div>
 
-      {status === "downloading" && downloadProgress !== undefined && (
+      {status() === "downloading" && props.downloadProgress !== undefined && (
         <div class="w-full mt-3">
           <div class="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
             <div
               class="h-full bg-accent rounded-full transition-all duration-300"
-              style={{ width: `${downloadProgress}%` }}
+              style={{ width: `${props.downloadProgress}%` }}
             />
           </div>
           <div class="flex items-center justify-between text-xs mt-1">
             <span class="text-text/50">
               {t("modelSelector.downloading", {
-                percentage: Math.round(downloadProgress),
+                percentage: Math.round(props.downloadProgress ?? 0),
               })}
             </span>
             <div class="flex items-center gap-2">
-              {downloadSpeed !== undefined && downloadSpeed > 0 && (
+              {props.downloadSpeed !== undefined && props.downloadSpeed > 0 && (
                 <span class="tabular-nums text-text/50">
                   {t("common.downloadSpeed", {
-                    speed: downloadSpeed.toFixed(1),
+                    speed: (props.downloadSpeed ?? 0).toFixed(1),
                   })}
                 </span>
               )}
-              {onCancel && (
+              {props.onCancel && (
                 <Button
                   variant="danger-ghost"
                   size="sm"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onCancel(model.id);
+                    props.onCancel?.(props.model.id);
                   }}
                   aria-label={t("modelSelector.cancelDownload")}
                 >
@@ -319,7 +317,7 @@ const ModelCard = (props: ModelCardProps) => {
           </div>
         </div>
       )}
-      {status === "verifying" && (
+      {status() === "verifying" && (
         <div class="w-full mt-3">
           <div class="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
             <div class="h-full bg-accent rounded-full animate-pulse w-full" />

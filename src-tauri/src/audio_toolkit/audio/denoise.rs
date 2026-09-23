@@ -174,6 +174,10 @@ pub struct DenoiseChain {
     to_out: FrameResampler,
     scaled_in: [f32; RNNOISE_FRAME_SAMPLES],
     scaled_out: [f32; RNNOISE_FRAME_SAMPLES],
+    /// The previous frame's scaled input: RNNoise's output lags its input by
+    /// one frame (overlap-add synthesis), so the dry side of the mix is
+    /// delayed to match or a partial strength would comb-filter.
+    dry_delay: [f32; RNNOISE_FRAME_SAMPLES],
     frame_out: [f32; RNNOISE_FRAME_SAMPLES],
     gate: Gate,
 }
@@ -188,6 +192,7 @@ impl DenoiseChain {
             to_out: FrameResampler::new(RNNOISE_SAMPLE_RATE, out_hz, out_frame_dur),
             scaled_in: [0.0; RNNOISE_FRAME_SAMPLES],
             scaled_out: [0.0; RNNOISE_FRAME_SAMPLES],
+            dry_delay: [0.0; RNNOISE_FRAME_SAMPLES],
             frame_out: [0.0; RNNOISE_FRAME_SAMPLES],
             gate: Gate::new(),
         }
@@ -210,12 +215,13 @@ impl DenoiseChain {
             to_out,
             scaled_in,
             scaled_out,
+            dry_delay,
             frame_out,
             gate,
         } = self;
         to_48k.push(src, |frame| {
             let prob = denoise_frame(
-                denoiser, gate, &params, frame, scaled_in, scaled_out, frame_out,
+                denoiser, gate, &params, frame, scaled_in, scaled_out, dry_delay, frame_out,
             );
             on_denoised(frame_out);
             to_out.push(frame_out, |out| emit(out, prob));
@@ -235,13 +241,14 @@ impl DenoiseChain {
             to_out,
             scaled_in,
             scaled_out,
+            dry_delay,
             frame_out,
             gate,
         } = self;
         let mut last_prob = 0.0;
         to_48k.finish(|frame| {
             let prob = denoise_frame(
-                denoiser, gate, &params, frame, scaled_in, scaled_out, frame_out,
+                denoiser, gate, &params, frame, scaled_in, scaled_out, dry_delay, frame_out,
             );
             last_prob = prob;
             on_denoised(frame_out);
@@ -257,12 +264,15 @@ impl DenoiseChain {
         self.to_48k.reset();
         self.to_out.reset();
         self.denoiser = DenoiseState::new();
+        self.dry_delay = [0.0; RNNOISE_FRAME_SAMPLES];
         self.gate.reset();
     }
 }
 
 /// One 48 kHz frame through RNNoise, the wet/dry mix and the gate. Returns
-/// RNNoise's speech probability for the frame.
+/// RNNoise's speech probability for the frame. The output is one frame behind
+/// the input on both sides of the mix (see `DenoiseChain::dry_delay`).
+#[allow(clippy::too_many_arguments)]
 fn denoise_frame(
     denoiser: &mut DenoiseState<'static>,
     gate: &mut Gate,
@@ -270,6 +280,7 @@ fn denoise_frame(
     frame: &[f32],
     scaled_in: &mut [f32; RNNOISE_FRAME_SAMPLES],
     scaled_out: &mut [f32; RNNOISE_FRAME_SAMPLES],
+    dry_delay: &mut [f32; RNNOISE_FRAME_SAMPLES],
     frame_out: &mut [f32; RNNOISE_FRAME_SAMPLES],
 ) -> f32 {
     debug_assert_eq!(frame.len(), RNNOISE_FRAME_SAMPLES);
@@ -282,11 +293,12 @@ fn denoise_frame(
     let dry = 1.0 - wet;
     for ((dst, dry_sample), wet_sample) in frame_out
         .iter_mut()
-        .zip(scaled_in.iter())
+        .zip(dry_delay.iter())
         .zip(scaled_out.iter())
     {
         *dst = (((dry_sample * dry + wet_sample * wet) / I16_SCALE) * gain).clamp(-1.0, 1.0);
     }
+    dry_delay.copy_from_slice(scaled_in);
     prob
 }
 
@@ -390,30 +402,37 @@ mod tests {
     }
 
     #[test]
-    fn strength_zero_passes_the_input_through() {
+    fn strength_zero_passes_the_input_through_one_frame_late() {
+        // The dry side is delayed by the frame RNNoise's output lags, so at
+        // strength 0 the second output is the first input, untouched.
         let mut denoiser = DenoiseState::new();
         let mut gate = Gate::new();
         let params = DenoiseParams {
             strength: 0.0,
             ..DenoiseParams::default()
         };
-        let frame = sine(RNNOISE_FRAME_SAMPLES, 1000.0, 48_000.0, 0.5);
-        let (mut a, mut b, mut out) = (
+        let first = sine(RNNOISE_FRAME_SAMPLES, 1000.0, 48_000.0, 0.5);
+        let second = sine(RNNOISE_FRAME_SAMPLES, 250.0, 48_000.0, 0.25);
+        let (mut a, mut b, mut delay, mut out) = (
+            [0.0; RNNOISE_FRAME_SAMPLES],
             [0.0; RNNOISE_FRAME_SAMPLES],
             [0.0; RNNOISE_FRAME_SAMPLES],
             [0.0; RNNOISE_FRAME_SAMPLES],
         );
-        denoise_frame(
-            &mut denoiser,
-            &mut gate,
-            &params,
-            &frame,
-            &mut a,
-            &mut b,
-            &mut out,
-        );
-        for (x, y) in frame.iter().zip(out.iter()) {
-            assert!((x - y).abs() < 1e-5, "{x} vs {y}");
+        for frame in [&first, &second] {
+            denoise_frame(
+                &mut denoiser,
+                &mut gate,
+                &params,
+                frame,
+                &mut a,
+                &mut b,
+                &mut delay,
+                &mut out,
+            );
+        }
+        for (x, y) in first.iter().zip(out.iter()) {
+            assert!((x - y).abs() < 1e-4, "{x} vs {y}");
         }
     }
 

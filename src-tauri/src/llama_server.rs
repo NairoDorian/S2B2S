@@ -525,9 +525,35 @@ impl LlamaServerManager {
     /// server is up right now; the sync still links when it is merely
     /// startable, because `start_on_demand` will bring it up on the request.
     pub fn relink_custom_provider(&self, running: bool) -> bool {
-        let mut settings = get_settings(&self.app);
-        if !sync_custom_provider_to_local_server(&mut settings, running) {
+        // One relink at a time, and only the two values a link owns are written
+        // back onto a fresh read: the decision can probe a socket for ~1 s, and
+        // a settings edit saved meanwhile (the server fields save on every
+        // keystroke) must not be overwritten by the copy read before it.
+        static RELINK: Mutex<()> = Mutex::new(());
+        let _guard = RELINK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut linked = get_settings(&self.app);
+        if !sync_custom_provider_to_local_server(&mut linked, running) {
             return false;
+        }
+        let mut settings = get_settings(&self.app);
+        let linked_url = linked
+            .post_process_providers
+            .iter()
+            .find(|p| p.id == "custom")
+            .map(|p| p.base_url.clone());
+        if let (Some(url), Some(provider)) = (
+            linked_url,
+            settings
+                .post_process_providers
+                .iter_mut()
+                .find(|p| p.id == "custom"),
+        ) {
+            provider.base_url = url;
+        }
+        if let Some(model) = linked.post_process_models.get("custom") {
+            settings
+                .post_process_models
+                .insert("custom".to_string(), model.clone());
         }
         write_settings(&self.app, settings);
         let _ = self.app.emit(
@@ -550,12 +576,12 @@ pub async fn ensure_ready_for_provider(provider: &PostProcessProvider) {
     // (every request then fails to connect). The startup/ready sync re-points
     // the stale case, so this only has to leave a trail — and it must not probe
     // to tell them apart, because that would put a socket timeout in front of
-    // every request. Warn once per port per session instead.
+    // every request. Warn once per change of the mismatched port instead.
     if let Some(port) = loopback_port(&provider.base_url).filter(|p| *p != settings.port) {
         static WARNED: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
         if WARNED.swap(port, Ordering::Relaxed) != port {
             warn!(
-                "Provider '{}' targets {}/{port} while the local llama-server is on port {}; \
+                "Provider '{}' targets {} (port {port}) while the local llama-server is on port {}; \
                  requests to it only work if another local server is listening there",
                 provider.id, provider.base_url, settings.port
             );
@@ -564,10 +590,18 @@ pub async fn ensure_ready_for_provider(provider: &PostProcessProvider) {
     if !settings.start_on_demand || !targets_local_server(&provider.base_url, settings.port) {
         return;
     }
-    if manager.snapshot().status == LlamaStatus::Ready
-        && (manager.child_alive() || health_ok(settings.port))
-    {
-        return;
+    if manager.snapshot().status == LlamaStatus::Ready {
+        // The health probe is a blocking socket exchange (up to ~1 s against a
+        // dead port on Windows), so it runs on the blocking pool rather than on
+        // this async-runtime worker.
+        let port = settings.port;
+        let alive = manager.child_alive()
+            || tauri::async_runtime::spawn_blocking(move || health_ok(port))
+                .await
+                .unwrap_or(false);
+        if alive {
+            return;
+        }
     }
     let m = Arc::clone(&manager);
     let result = tauri::async_runtime::spawn_blocking(move || m.ensure_ready(START_TIMEOUT))
@@ -899,9 +933,9 @@ pub fn list_gguf_files(dir: &str) -> Vec<GgufFile> {
 
 fn gguf_kind(name: &str) -> &'static str {
     let lower = name.to_lowercase();
-    if lower.starts_with("mmproj") || lower.contains("mmproj") {
+    if lower.contains("mmproj") {
         "mmproj"
-    } else if lower.starts_with("mtp-") || lower.contains("-draft") || lower.contains("mtp") {
+    } else if lower.contains("mtp") || lower.contains("-draft") {
         "draft"
     } else {
         "model"

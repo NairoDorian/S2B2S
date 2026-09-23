@@ -1,5 +1,5 @@
 use crate::managers::history::HistoryManager;
-use crate::managers::model::{ModelInfo, ModelManager};
+use crate::managers::model::{ModelInfo, ModelManager, default_quant_file};
 use crate::managers::transcription::{BenchmarkResult, ModelStateEvent, TranscriptionManager};
 use crate::settings::{
     ModelUnloadTimeout, NativeStreamingLatencyPreset, get_settings, write_settings,
@@ -31,6 +31,9 @@ pub fn get_model_quant_variants(model_id: String) -> Result<Vec<QuantVariant>, S
         .ok_or_else(|| format!("Invalid model id: {}", model_id))?;
     let (descriptor, _) = crate::catalog::file_in_catalog(filename, Some(repo_id))
         .ok_or_else(|| format!("Model '{}' is not a catalog model", model_id))?;
+    let default_filename =
+        default_quant_file(&descriptor.files, descriptor.default_quant.as_deref())
+            .map(|f| f.filename.as_str());
     Ok(descriptor
         .files
         .iter()
@@ -39,7 +42,7 @@ pub fn get_model_quant_variants(model_id: String) -> Result<Vec<QuantVariant>, S
             filename: f.filename.clone(),
             model_id: format!("{}/{}", repo_id, f.filename),
             size_mb: f.size_bytes.div_ceil(1024 * 1024) as u32,
-            is_default: f.quant == descriptor.default_quant.clone().unwrap_or_default(),
+            is_default: Some(f.filename.as_str()) == default_filename,
         })
         .collect())
 }
@@ -176,30 +179,47 @@ pub async fn delete_model(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
 ) -> Result<(), String> {
-    // If deleting the active model, unload it and clear the setting
-    let settings = get_settings(&app_handle);
-    if settings.selected_model == model_id {
-        transcription_manager
-            .unload_model()
-            .map_err(|e| format!("Failed to unload model: {}", e))?;
+    // Dropping a multi-GB engine and removing a model directory both take
+    // real time; keep them off the async runtime's worker threads.
+    let mm = Arc::clone(&*model_manager);
+    let tm = Arc::clone(&*transcription_manager);
+    tauri::async_runtime::spawn_blocking(move || {
+        // If deleting the active model, unload it and clear the setting
+        let settings = get_settings(&app_handle);
+        if settings.selected_model == model_id {
+            tm.unload_model()
+                .map_err(|e| format!("Failed to unload model: {}", e))?;
 
-        let mut settings = get_settings(&app_handle);
-        settings.selected_model = String::new();
-        write_settings(&app_handle, settings);
-    }
+            let mut settings = get_settings(&app_handle);
+            settings.selected_model = String::new();
+            write_settings(&app_handle, settings);
+        }
 
-    // The same file may be resident as a Multi-STT extra engine. Drop it
-    // (or queue the drop if it is leased out) so the memory is released and
-    // a memory-mapped GGUF doesn't block the on-disk delete on Windows.
-    if transcription_manager.is_extra_model_loaded(&model_id) {
-        transcription_manager
-            .unload_extra_model(&model_id)
-            .map_err(|e| format!("Failed to unload extra model: {}", e))?;
-    }
+        // The same file may be resident as a Multi-STT extra engine. Drop it,
+        // or queue the drop if it is leased out, so the memory is released and
+        // a memory-mapped GGUF doesn't block the on-disk delete on Windows. A
+        // leased engine (an in-flight extra decode or a live extra stream) is
+        // not in the map, so `is_extra_model_loaded` cannot see it: a model in
+        // one of the Multi-STT slots is always asked to unload, which records
+        // the request `return_extra_engine` / `transcribe_with_extra` honour
+        // when the lease ends. (A request for a slot model that is not loaded
+        // at all is harmless: the next load clears it.)
+        let in_extra_slot = [
+            &settings.multi_stt_model_2,
+            &settings.multi_stt_model_3,
+            &settings.multi_stt_model_4,
+        ]
+        .into_iter()
+        .any(|slot| slot.as_deref() == Some(model_id.as_str()));
+        if in_extra_slot || tm.is_extra_model_loaded(&model_id) {
+            tm.unload_extra_model(&model_id)
+                .map_err(|e| format!("Failed to unload extra model: {}", e))?;
+        }
 
-    model_manager
-        .delete_model(&model_id)
-        .map_err(|e| e.to_string())
+        mm.delete_model(&model_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Delete task panicked: {}", e))?
 }
 
 /// Shared logic for switching the active model, used by both the Tauri command
@@ -282,7 +302,11 @@ pub async fn set_active_model(
     _transcription_manager: State<'_, Arc<TranscriptionManager>>,
     model_id: String,
 ) -> Result<(), String> {
-    switch_active_model(&app_handle, &model_id)
+    // A model load takes seconds for a large GGUF; keep it off the async
+    // runtime's worker threads.
+    tauri::async_runtime::spawn_blocking(move || switch_active_model(&app_handle, &model_id))
+        .await
+        .map_err(|e| format!("Model switch task panicked: {}", e))?
 }
 
 #[tauri::command]
@@ -300,12 +324,13 @@ pub async fn get_transcription_model_status(
     Ok(transcription_manager.get_current_model())
 }
 
+/// Returns true when no primary model is loaded (not whether a load is in
+/// progress).
 #[tauri::command]
 #[specta::specta]
 pub async fn is_model_loading(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
 ) -> Result<bool, String> {
-    // Check if transcription manager has a loaded model
     let current_model = transcription_manager.get_current_model();
     Ok(current_model.is_none())
 }

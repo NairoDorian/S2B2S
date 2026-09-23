@@ -1,3 +1,4 @@
+import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
 interface ModelStatusButtonProps {
   status: ModelStatus;
@@ -14,7 +15,7 @@ interface ModelStatusButtonProps {
   highlight?: boolean;
 }
 
-type ModelStatus =
+export type ModelStatus =
   | "ready"
   | "loading"
   | "downloading"
@@ -45,11 +46,12 @@ const getStatusColor = (status: ModelStatus): string => {
 };
 
 const ModelStatusButton = (props: ModelStatusButtonProps): JSX.Element => {
+  const { t } = useTranslation();
   return (
     <button
       onClick={() => props.onClick()}
       class={`flex items-center gap-2 hover:text-text/80 transition-colors ${props.class ?? ""}`}
-      title={`Model status: ${props.displayText}`}
+      title={t("modelSelector.statusTitle", { status: props.displayText })}
     >
       <div class={`w-2 h-2 rounded-full ${getStatusColor(props.status)}`} />
       <span

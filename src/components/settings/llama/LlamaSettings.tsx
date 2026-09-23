@@ -1,4 +1,4 @@
-import { createSignal, createEffect, createMemo } from "solid-js";
+import { createSignal, createEffect, createMemo, For, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -24,8 +24,6 @@ import { SettingContainer } from "../../ui/SettingContainer";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Textarea } from "../../ui/Textarea";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
-import { For } from "solid-js";
-import { Show } from "solid-js";
 
 const BACKENDS = ["auto", "cuda-13.4", "cuda-12.4", "vulkan", "cpu"] as const;
 const CHANNELS = ["latest", "stable", "nightly"] as const;
@@ -170,7 +168,9 @@ export const LlamaSettings = () => {
     },
   );
 
-  // GGUF files next to the chosen model, for the pickers.
+  // GGUF files next to the chosen model, for the pickers. The cleanup marks
+  // a listing stale once the folder changes, so a slow answer for the old
+  // folder cannot overwrite the new one.
   createEffect(
     () => dirOf(cfg().model_path),
     (modelDir) => {
@@ -178,10 +178,18 @@ export const LlamaSettings = () => {
         setGgufFiles([]);
         return;
       }
+      let stale = false;
       commands
         .listGgufFiles(modelDir)
-        .then(setGgufFiles)
-        .catch(() => setGgufFiles([]));
+        .then((files) => {
+          if (!stale) setGgufFiles(files);
+        })
+        .catch(() => {
+          if (!stale) setGgufFiles([]);
+        });
+      return () => {
+        stale = true;
+      };
     },
   );
 
@@ -267,6 +275,14 @@ export const LlamaSettings = () => {
       release.assets[0]
     );
   });
+  // Read in JSX, never in the release row's body: that row stays mounted
+  // while a release is shown, so a body-level read would freeze the asset.
+  const latestAssetLabel = () => {
+    const asset = latestAsset();
+    return asset
+      ? ` · ${asset.backend} · ${formatMb(asset.size_bytes ?? 0)}`
+      : "";
+  };
   const latestInstalled = () => {
     const release = latestRelease();
     return !!release && store.installed.some((i) => i.tag === release.tag);
@@ -479,10 +495,8 @@ export const LlamaSettings = () => {
                 label: t(`settings.llama.backend.channel.${c}`),
               }))}
               selectedValue={cfg().channel}
-              onSelect={(v) => {
-                void save({ channel: v });
-                void store.fetchReleases(v, false);
-              }}
+              // The channel effect above refetches the releases.
+              onSelect={(v) => void save({ channel: v })}
             />
           </div>
         </SettingContainer>
@@ -543,40 +557,35 @@ export const LlamaSettings = () => {
           )}
           <ul class="divide-y divide-mid-gray/20 border border-mid-gray/20">
             <Show when={latestRelease()}>
-              {(release) => {
-                const asset = latestAsset();
-                return (
-                  <li class="flex items-center gap-3 px-3 py-2 text-xs">
-                    <span class="font-mono text-text">{release().tag}</span>
-                    <span class="text-text/50 truncate flex-1">
-                      {release().published_at.slice(0, 10)}
-                      {asset
-                        ? ` · ${asset.backend} · ${formatMb(asset.size_bytes ?? 0)}`
-                        : ""}
-                      {latestInstalled()
-                        ? ` · ${t("settings.llama.backend.alreadyInstalled")}`
-                        : ""}
+              {(release) => (
+                <li class="flex items-center gap-3 px-3 py-2 text-xs">
+                  <span class="font-mono text-text">{release().tag}</span>
+                  <span class="text-text/50 truncate flex-1">
+                    {release().published_at.slice(0, 10)}
+                    {latestAssetLabel()}
+                    {latestInstalled()
+                      ? ` · ${t("settings.llama.backend.alreadyInstalled")}`
+                      : ""}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={downloading() || latestInstalled()}
+                    onClick={() =>
+                      void store.install(
+                        release().tag,
+                        cfg().backend,
+                        cfg().include_cudart,
+                      )
+                    }
+                  >
+                    <span class="inline-flex items-center gap-1.5">
+                      <Download class="w-3.5 h-3.5" />
+                      {t("settings.llama.backend.install")}
                     </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={downloading() || latestInstalled()}
-                      onClick={() =>
-                        void store.install(
-                          release().tag,
-                          cfg().backend,
-                          cfg().include_cudart,
-                        )
-                      }
-                    >
-                      <span class="inline-flex items-center gap-1.5">
-                        <Download class="w-3.5 h-3.5" />
-                        {t("settings.llama.backend.install")}
-                      </span>
-                    </Button>
-                  </li>
-                );
-              }}
+                  </Button>
+                </li>
+              )}
             </Show>
             {!store.releasesLoading && !latestRelease() && (
               <li class="px-3 py-2 text-xs text-text/50">
@@ -755,8 +764,11 @@ export const LlamaSettings = () => {
               step={step}
               value={cfg()[key]}
               onInput={(e) => {
-                const n = Number(e.currentTarget.value);
-                if (Number.isFinite(n)) void save({ [key]: n } as Partial<Cfg>);
+                // An emptied field (`Number("") === 0`) is mid-edit, not 0.
+                const raw = e.currentTarget.value;
+                const n = Number(raw);
+                if (raw.trim() !== "" && Number.isFinite(n))
+                  void save({ [key]: n } as Partial<Cfg>);
               }}
             />
           </SettingContainer>
@@ -781,10 +793,13 @@ export const LlamaSettings = () => {
               min={min}
               max={max}
               step={step}
-              value={cfg()[key] ?? 0}
+              value={cfg()[key]}
               onInput={(e) => {
-                const n = Number(e.currentTarget.value);
-                if (Number.isFinite(n)) void save({ [key]: n } as Partial<Cfg>);
+                // An emptied field (`Number("") === 0`) is mid-edit, not 0.
+                const raw = e.currentTarget.value;
+                const n = Number(raw);
+                if (raw.trim() !== "" && Number.isFinite(n))
+                  void save({ [key]: n } as Partial<Cfg>);
               }}
             />
           </SettingContainer>

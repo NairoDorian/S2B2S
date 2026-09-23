@@ -146,6 +146,79 @@ export function formatValue(v: number, mode: FftLoudnessMode): string {
   return v < 0.01 ? v.toExponential(2) : v.toFixed(3);
 }
 
+/**
+ * The frame period the per-frame display constants were tuned at (30 Hz).
+ * Decays are expressed per millisecond from it, so the picture falls at the
+ * same speed whatever `update_rate_hz` is.
+ */
+export const REFERENCE_FRAME_MS = 1000 / 30;
+/** Peak hold: 0.0045 of the drawing range per 30 Hz frame, per ms. */
+export const PEAK_HOLD_DECAY_PER_MS = 0.0045 / REFERENCE_FRAME_MS;
+/** Linear auto-range: ceiling ×0.995 per 30 Hz frame. */
+export const CEILING_DECAY_PER_FRAME = 0.995;
+/** Longest gap a decay step spans (a stall must not wipe the display). */
+const MAX_DECAY_STEP_MS = 1000;
+
+/** Milliseconds between two frame timestamps, clamped for a decay step. */
+export function decayStepMs(now: number, previous: number): number {
+  if (!(previous > 0)) return REFERENCE_FRAME_MS;
+  const dt = now - previous;
+  return dt > 0 ? Math.min(dt, MAX_DECAY_STEP_MS) : 0;
+}
+
+/** The linear-mode ceiling after `dtMs`, following a new frame maximum. */
+export function decayCeiling(ceiling: number, max: number, dtMs: number) {
+  const decayed =
+    ceiling * Math.pow(CEILING_DECAY_PER_FRAME, dtMs / REFERENCE_FRAME_MS);
+  return Math.max(max, decayed, 1e-6);
+}
+
+/** What the units pass reads from a frame. */
+export interface UnitsSource {
+  bins: Float32Array;
+  receivedAt: number;
+}
+
+/**
+ * The 0…1 drawing units of a frame, computed once and shared by every view
+ * of it (spectrum + waterfall): keyed on the frame object and the scale, so
+ * a second view of the same frame is a cache hit. The linear ceiling moves
+ * once per new frame, by the time elapsed since the previous one.
+ */
+export class FrameUnitsCache {
+  private frame: UnitsSource | null = null;
+  private mode: FftLoudnessMode | null = null;
+  private dbRange = NaN;
+  private ceilingFrame: UnitsSource | null = null;
+  private ceilingAt = 0;
+  private buffer = new Float32Array(0);
+  readonly scale: ValueScale = { mode: "db", dbRange: 90, ceiling: 1e-6 };
+
+  units(frame: UnitsSource, mode: FftLoudnessMode, dbRange: number) {
+    if (frame === this.frame && mode === this.mode && dbRange === this.dbRange)
+      return this.buffer;
+    const bins = frame.bins;
+    const n = bins.length;
+    if (this.buffer.length !== n) this.buffer = new Float32Array(n);
+    this.scale.mode = mode;
+    this.scale.dbRange = dbRange;
+    if (mode === "off" && frame !== this.ceilingFrame) {
+      let max = 0;
+      for (let i = 0; i < n; i++) if (bins[i] > max) max = bins[i];
+      const dt = decayStepMs(frame.receivedAt, this.ceilingAt);
+      this.scale.ceiling = decayCeiling(this.scale.ceiling, max, dt);
+      this.ceilingFrame = frame;
+      this.ceilingAt = frame.receivedAt;
+    }
+    const out = this.buffer;
+    for (let i = 0; i < n; i++) out[i] = valueToUnit(bins[i], this.scale);
+    this.frame = frame;
+    this.mode = mode;
+    this.dbRange = dbRange;
+    return out;
+  }
+}
+
 /** Reduce `bins` to `columns` values, keeping the maximum per column. */
 export function maxPerColumn(
   bins: Float32Array,
@@ -233,11 +306,4 @@ export function cssColor(name: string, fallback: string): string {
   } catch {
     return fallback;
   }
-}
-
-/** `#rrggbb` → `rgba(r, g, b, a)`; other inputs get an approximate fallback. */
-export function withAlpha(color: string, alpha: number): string {
-  const rgb = parseHex(color);
-  if (rgb) return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
-  return color;
 }

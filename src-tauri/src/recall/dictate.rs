@@ -31,16 +31,12 @@ pub const DICTATE_BINDING: &str = "recall_dictate";
 /// Below this much measured speech the take is refused, not transcribed —
 /// the same guard every paste path uses, since a silent decode would only
 /// invite a model hallucination into the note.
-const MIN_SPEECH_MS: u64 = 200;
+const MIN_SPEECH_MS: u64 = crate::actions::MIN_SPEECH_MS_TO_TRANSCRIBE;
 
 static DICTATE_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// The cancel generation captured at start, so a hotkey cancel during the
 /// stop path's extra-buffer wait is honored by `stop_recording`.
 static DICTATE_CANCEL_GEN: Mutex<Option<u64>> = Mutex::new(None);
-
-pub fn is_active() -> bool {
-    DICTATE_ACTIVE.load(Ordering::Acquire)
-}
 
 /// Start the dictate recording. Fails while anything else records.
 pub fn start(app: &AppHandle) -> Result<(), String> {
@@ -111,6 +107,7 @@ pub fn cancel(app: &AppHandle) -> Result<(), String> {
     app.state::<Arc<AudioRecordingManager>>()
         .cancel_recording_if_binding(DICTATE_BINDING);
     finish_session(app);
+    unload_if_immediate(app);
     info!("Recall dictate cancelled");
     Ok(())
 }
@@ -121,6 +118,13 @@ fn finish_session(app: &AppHandle) {
     crate::shortcut::unregister_cancel_shortcut(app);
     crate::overlay::hide_recording_overlay(app);
     set_tray_state(app, TrayIconState::Idle);
+}
+
+/// Honor an "Immediately" unload timeout on the paths that end without a
+/// completed decode. A take that is transcribed is unloaded by
+/// `transcribe()` itself, after the decode — unloading before it would leave
+/// the decode no model.
+fn unload_if_immediate(app: &AppHandle) {
     app.state::<Arc<TranscriptionManager>>()
         .maybe_unload_immediately("recall dictate stop");
 }
@@ -152,24 +156,38 @@ pub async fn stop_and_transcribe(app: &AppHandle) -> Result<String, String> {
     let recorded = match stop_res {
         crate::managers::audio::StopRecordingResult::Captured { recorded, .. } => recorded,
         crate::managers::audio::StopRecordingResult::Cancelled => {
+            unload_if_immediate(app);
             return Err("Dictation was cancelled".to_string());
         }
         crate::managers::audio::StopRecordingResult::NotActive => {
+            unload_if_immediate(app);
             return Err("No dictation is running".to_string());
         }
-        crate::managers::audio::StopRecordingResult::Failed(e) => return Err(e),
+        crate::managers::audio::StopRecordingResult::Failed(e) => {
+            unload_if_immediate(app);
+            return Err(e);
+        }
     };
 
     if recorded.stt_samples.is_empty() || speech_ms < MIN_SPEECH_MS {
+        unload_if_immediate(app);
         return Err("Recording contains no speech".to_string());
     }
 
     let tm_for_task = Arc::clone(&tm);
-    let text =
+    let decoded =
         tauri::async_runtime::spawn_blocking(move || tm_for_task.transcribe(recorded.stt_samples))
             .await
-            .map_err(|e| format!("Transcription task panicked: {e}"))?
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Transcription task panicked: {e}"))
+            .and_then(|result| result.map_err(|e| e.to_string()));
+    let text = match decoded {
+        Ok(text) => text,
+        Err(e) => {
+            // A failed decode returns before `transcribe()` unloads.
+            unload_if_immediate(app);
+            return Err(e);
+        }
+    };
 
     if text.trim().is_empty() {
         return Err("Recording contains no speech".to_string());
@@ -180,7 +198,7 @@ pub async fn stop_and_transcribe(app: &AppHandle) -> Result<String, String> {
 
     info!(
         "Recall dictate finished: {} chars{}",
-        processed.final_text.len(),
+        processed.final_text.chars().count(),
         if post_process { ", post-processed" } else { "" }
     );
     Ok(processed.final_text)

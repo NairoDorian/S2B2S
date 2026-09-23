@@ -73,7 +73,7 @@ export const Dropdown = (props: DropdownProps): JSX.Element => {
       >
         <span class="truncate">
           {selectedOption()?.label ||
-            (props.placeholder ?? "Select an option...")}
+            (props.placeholder ?? t("common.selectOption"))}
         </span>
         <svg
           class={`w-4 h-4 transition-transform duration-200 ${isOpen() ? "transform rotate-180" : ""}`}

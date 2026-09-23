@@ -327,13 +327,28 @@ impl HistoryManager {
     }
 
     fn backfill_legacy_entries(&self, conn: &mut Connection) -> Result<()> {
+        // Only rows the backfill can still complete. A failed transcription is
+        // saved with empty text, so its word count stays NULL for good; once
+        // its durations are filled it must not be selected (and its WAV
+        // re-decoded) on every launch, on the startup path.
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, transcription_text, post_processed_text FROM transcription_history WHERE audio_duration_ms IS NULL OR word_count IS NULL OR speech_duration_ms IS NULL",
+            "SELECT id, file_name, transcription_text, post_processed_text,
+                    audio_duration_ms IS NULL OR speech_duration_ms IS NULL AS needs_audio
+             FROM transcription_history
+             WHERE audio_duration_ms IS NULL OR speech_duration_ms IS NULL
+                OR (word_count IS NULL
+                    AND trim(COALESCE(post_processed_text, transcription_text)) != '')",
         )?;
 
-        let entries_to_update: Vec<(i32, String, String, Option<String>)> = stmt
+        let entries_to_update: Vec<(i32, String, String, Option<String>, bool)> = stmt
             .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })?
             .filter_map(|res| res.ok())
             .collect();
@@ -344,41 +359,44 @@ impl HistoryManager {
                 entries_to_update.len()
             );
 
-            for (id, file_name, transcription_text, post_processed_text) in entries_to_update {
+            for (id, file_name, transcription_text, post_processed_text, needs_audio) in
+                entries_to_update
+            {
                 let wav_path = self.recordings_dir.join(&file_name);
-                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) = if wav_path.exists() {
-                    if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
-                        let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
-                        let speech_dur =
-                            if let Ok(mut vad) = crate::audio_toolkit::EarshotVad::new(0.5) {
-                                let mut voiced = 0;
-                                let total = samples_16k.len()
-                                    / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
-                                #[allow(clippy::chunks_exact_to_as_chunks)]
-                                for chunk in samples_16k.chunks_exact(
-                                    crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
-                                ) {
-                                    if let Ok(frame) = vad.push_frame(chunk)
-                                        && frame.is_speech()
-                                    {
-                                        voiced += 1;
+                let (audio_duration_ms, speech_duration_ms, sample_rate_hz) =
+                    if needs_audio && wav_path.exists() {
+                        if let Ok(samples_16k) = crate::audio_toolkit::read_wav_samples(&wav_path) {
+                            let dur = (samples_16k.len() as f64 * 1000.0) / 16000.0;
+                            let speech_dur =
+                                if let Ok(mut vad) = crate::audio_toolkit::EarshotVad::new(0.5) {
+                                    let mut voiced = 0;
+                                    let total = samples_16k.len()
+                                        / crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES;
+                                    #[allow(clippy::chunks_exact_to_as_chunks)]
+                                    for chunk in samples_16k.chunks_exact(
+                                        crate::audio_toolkit::vad::earshot::EARSHOT_FRAME_SAMPLES,
+                                    ) {
+                                        if let Ok(frame) = vad.push_frame(chunk)
+                                            && frame.is_speech()
+                                        {
+                                            voiced += 1;
+                                        }
                                     }
-                                }
-                                if total > 0 && voiced > 0 {
-                                    (voiced as f64) * 16.0
+                                    if total > 0 && voiced > 0 {
+                                        (voiced as f64) * 16.0
+                                    } else {
+                                        dur
+                                    }
                                 } else {
                                     dur
-                                }
-                            } else {
-                                dur
-                            };
-                        (Some(dur), Some(speech_dur), Some(16000))
+                                };
+                            (Some(dur), Some(speech_dur), Some(16000))
+                        } else {
+                            (None, None, None)
+                        }
                     } else {
                         (None, None, None)
-                    }
-                } else {
-                    (None, None, None)
-                };
+                    };
 
                 let text_for_words = post_processed_text.unwrap_or(transcription_text);
                 let word_count = if !text_for_words.trim().is_empty() {
@@ -574,7 +592,11 @@ impl HistoryManager {
 
         debug!("Saved history entry with id {}", entry.id);
 
-        self.cleanup_old_entries()?;
+        // The row is already stored: a failed retention pass must not turn the
+        // save into an error or keep the History page from hearing about it.
+        if let Err(e) = self.cleanup_old_entries() {
+            error!("History retention cleanup failed: {e}");
+        }
 
         // Emit typed event for real-time frontend updates
         if let Err(e) = (HistoryUpdatePayload::Added {
@@ -586,30 +608,6 @@ impl HistoryManager {
         }
 
         Ok(entry)
-    }
-
-    /// Update an existing history entry with new transcription results (used by retry).
-    #[allow(dead_code)]
-    pub fn update_transcription(
-        &self,
-        id: i32,
-        transcription_text: String,
-        post_processed_text: Option<String>,
-        post_process_prompt: Option<String>,
-    ) -> Result<HistoryEntry> {
-        self.update_entry_full(
-            id,
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
     }
 
     /// Update an existing history entry with complete updated details.
@@ -722,6 +720,8 @@ impl HistoryManager {
         }
     }
 
+    /// Delete the given rows and their WAV files. Returns the number of rows
+    /// deleted (a row whose recording is already gone still counts).
     fn delete_entries_and_files(&self, entries: &[(i32, String)]) -> Result<u32> {
         if entries.is_empty() {
             return Ok(0);
@@ -729,6 +729,7 @@ impl HistoryManager {
 
         let conn = self.get_connection()?;
         let mut deleted_count = 0;
+        let mut files_removed = 0;
 
         for (id, file_name) in entries {
             // Delete database entry
@@ -736,6 +737,7 @@ impl HistoryManager {
                 "DELETE FROM transcription_history WHERE id = ?1",
                 params![id],
             )?;
+            deleted_count += 1;
 
             // Delete WAV file
             let file_path = self.recordings_dir.join(file_name);
@@ -744,16 +746,15 @@ impl HistoryManager {
                     error!("Failed to delete WAV file {}: {}", file_name, e);
                 } else {
                     debug!("Deleted old WAV file: {}", file_name);
-                    deleted_count += 1;
+                    files_removed += 1;
                 }
             }
         }
 
-        if deleted_count > 0
-            && let Err(e) = conn.execute("VACUUM", [])
-        {
+        if let Err(e) = conn.execute("VACUUM", []) {
             error!("Failed to VACUUM database after deleting entries: {}", e);
         }
+        debug!("Deleted {deleted_count} history entries and {files_removed} recording files");
 
         Ok(deleted_count)
     }
@@ -950,6 +951,10 @@ impl HistoryManager {
     }
 
     pub async fn get_entry_by_id(&self, id: i32) -> Result<Option<HistoryEntry>> {
+        self.entry_by_id(id)
+    }
+
+    fn entry_by_id(&self, id: i32) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
         let query = format!("SELECT {HISTORY_COLUMNS} FROM transcription_history WHERE id = ?1");
         let mut stmt = conn.prepare(&query)?;
@@ -959,11 +964,12 @@ impl HistoryManager {
         Ok(entry)
     }
 
-    pub async fn delete_entry(&self, id: i32) -> Result<()> {
+    /// Blocking (file delete + VACUUM): callers run it on the blocking pool.
+    pub fn delete_entry(&self, id: i32) -> Result<()> {
         let conn = self.get_connection()?;
 
         // Get the entry to find the file name
-        if let Some(entry) = self.get_entry_by_id(id).await? {
+        if let Some(entry) = self.entry_by_id(id)? {
             // Delete the audio file first
             let file_path = self.get_audio_file_path(&entry.file_name);
             if file_path.exists()
@@ -997,7 +1003,9 @@ impl HistoryManager {
         Ok(())
     }
 
-    pub async fn delete_all_recordings(&self) -> Result<()> {
+    /// Blocking (every recording deleted + VACUUM): callers run it on the
+    /// blocking pool.
+    pub fn delete_all_recordings(&self) -> Result<()> {
         // Clear all files and subdirectories in the recordings directory, keeping the folder itself
         if self.recordings_dir.exists() {
             match fs::read_dir(&self.recordings_dir) {
@@ -1024,13 +1032,11 @@ impl HistoryManager {
             fs::create_dir_all(&self.recordings_dir)?;
         }
 
-        // Clear database table and reset autoincrement sequence
+        // Clear the table. The AUTOINCREMENT sequence is deliberately kept:
+        // statistics rows keep their `source_history_id`, and a reused id
+        // would join an old retry run to an unrelated new recording.
         let conn = self.get_connection()?;
         conn.execute("DELETE FROM transcription_history", [])?;
-        let _ = conn.execute(
-            "DELETE FROM sqlite_sequence WHERE name = 'transcription_history'",
-            [],
-        );
 
         // VACUUM to shrink the database file on disk down to minimal schema size
         if let Err(e) = conn.execute("VACUUM", []) {
@@ -1188,10 +1194,6 @@ mod tests {
 
         conn.execute("DELETE FROM transcription_history", [])
             .expect("delete all entries");
-        let _ = conn.execute(
-            "DELETE FROM sqlite_sequence WHERE name = 'transcription_history'",
-            [],
-        );
         conn.execute("VACUUM", []).expect("vacuum database");
 
         let count_after: i64 = conn
@@ -1203,5 +1205,10 @@ mod tests {
 
         let latest = HistoryManager::get_latest_entry_with_conn(&conn).expect("fetch latest entry");
         assert!(latest.is_none());
+
+        // Ids are never reused after a clear: statistics rows still refer to
+        // the old ones through `source_history_id`.
+        insert_entry(&conn, 300.0, "entry 3", None);
+        assert_eq!(conn.last_insert_rowid(), 3);
     }
 }

@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { SidebarSection } from "../Sidebar";
 import { openHelp } from "../../stores/navigationStore";
@@ -33,27 +34,30 @@ const QUICK_HELP: Partial<
   debug: { copyKey: "quickHelp.debug", anchor: "help-troubleshooting" },
 };
 
-export const QuickHelp = ({ activeSection }: QuickHelpProps): JSX.Element => {
+export const QuickHelp = (props: QuickHelpProps): JSX.Element => {
   const { t } = useTranslation();
-  const help = QUICK_HELP[activeSection];
-
-  if (!help) return null;
+  // An accessor: App mounts the banner once and swaps only `activeSection`.
+  const help = () => QUICK_HELP[props.activeSection];
 
   return (
-    <div class="max-w-3xl w-full mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-mid-gray/20 bg-mid-gray/5 px-3 py-2">
-      <p class="min-w-0 flex-1 text-xs leading-relaxed text-text/70">
-        {t(help.copyKey)}
-      </p>
-      <a
-        href={`#${help.anchor}`}
-        onClick={(event) => {
-          event.preventDefault();
-          openHelp(help.anchor);
-        }}
-        class="shrink-0 rounded-md px-1 text-xs font-medium text-accent underline decoration-accent/50 underline-offset-2 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-      >
-        {t("quickHelp.learnMore")}
-      </a>
-    </div>
+    <Show when={help()}>
+      {(h) => (
+        <div class="max-w-3xl w-full mx-auto flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-mid-gray/20 bg-mid-gray/5 px-3 py-2">
+          <p class="min-w-0 flex-1 text-xs leading-relaxed text-text/70">
+            {t(h().copyKey)}
+          </p>
+          <a
+            href={`#${h().anchor}`}
+            onClick={(event) => {
+              event.preventDefault();
+              openHelp(h().anchor);
+            }}
+            class="shrink-0 rounded-md px-1 text-xs font-medium text-accent underline decoration-accent/50 underline-offset-2 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+          >
+            {t("quickHelp.learnMore")}
+          </a>
+        </div>
+      )}
+    </Show>
   );
 };

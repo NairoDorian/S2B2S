@@ -1,8 +1,9 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, Match, Switch } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import {
   getKeyName,
   formatKeyCombination,
+  MODIFIERS,
   normalizeKey,
 } from "../../lib/utils/keyboard";
 import { ResetButton } from "../ui/ResetButton";
@@ -19,12 +20,7 @@ interface GlobalShortcutInputProps {
   disabled?: boolean;
 }
 
-export const GlobalShortcutInput = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-  shortcutId,
-  disabled = false,
-}: GlobalShortcutInputProps) => {
+export const GlobalShortcutInput = (props: GlobalShortcutInputProps) => {
   const { t } = useTranslation();
   const { getSetting, updateBinding, resetBinding, isUpdating, isLoading } =
     useSettings();
@@ -37,14 +33,17 @@ export const GlobalShortcutInput = ({
   const shortcutRefs = new Map<string, HTMLDivElement | null>();
   const osType = useOsType();
 
-  const bindings = getSetting("bindings") || {};
+  const descriptionMode = () => props.descriptionMode ?? "tooltip";
+  const grouped = () => props.grouped ?? false;
+  const bindings = () => getSetting("bindings") || {};
+  const binding = () => bindings()[props.shortcutId];
 
   const startRecording = async (id: string) => {
     if (editingShortcutId() === id) return;
 
     await commands.suspendAllBindings().catch(console.error);
 
-    setOriginalBinding(bindings[id]?.current_binding || "");
+    setOriginalBinding(bindings()[id]?.current_binding || "");
     setEditingShortcutId(id);
     setKeyPressed([]);
     setRecordedKeys([]);
@@ -62,9 +61,8 @@ export const GlobalShortcutInput = ({
   };
 
   createEffect(
-    () => undefined,
-    () => {
-      const id = editingShortcutId();
+    () => editingShortcutId(),
+    (id) => {
       if (id === null) return;
 
       let cleanup = false;
@@ -96,29 +94,16 @@ export const GlobalShortcutInput = ({
 
         const updatedKeyPressed = keyPressed().filter((k) => k !== key);
         if (updatedKeyPressed.length === 0 && recordedKeys().length > 0) {
-          const modifiers = new Set([
-            "ctrl",
-            "control",
-            "shift",
-            "alt",
-            "option",
-            "meta",
-            "command",
-            "cmd",
-            "super",
-            "win",
-            "windows",
-          ]);
           const sortedKeys = recordedKeys().toSorted((a, b) => {
-            const aIsModifier = modifiers.has(a.toLowerCase());
-            const bIsModifier = modifiers.has(b.toLowerCase());
+            const aIsModifier = MODIFIERS.has(a.toLowerCase());
+            const bIsModifier = MODIFIERS.has(b.toLowerCase());
             if (aIsModifier && !bIsModifier) return -1;
             if (!aIsModifier && bIsModifier) return 1;
             return 0;
           });
           const newShortcut = sortedKeys.join("+");
 
-          if (bindings[id]) {
+          if (bindings()[id]) {
             try {
               await updateBinding(id, newShortcut);
             } catch (error) {
@@ -181,92 +166,73 @@ export const GlobalShortcutInput = ({
     },
   );
 
-  if (isLoading()) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div class="text-sm text-mid-gray">
-          {t("settings.general.shortcut.loading")}
-        </div>
-      </SettingContainer>
-    );
-  }
-
-  if (Object.keys(bindings).length === 0) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div class="text-sm text-mid-gray">
-          {t("settings.general.shortcut.none")}
-        </div>
-      </SettingContainer>
-    );
-  }
-
-  const binding = bindings[shortcutId];
-  if (!binding) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.notFound")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div class="text-sm text-mid-gray">
-          {t("settings.general.shortcut.none")}
-        </div>
-      </SettingContainer>
-    );
-  }
-
-  const translatedName = t(
-    `settings.general.shortcut.bindings.${shortcutId}.name`,
-    binding.name,
-  );
-  const translatedDescription = t(
-    `settings.general.shortcut.bindings.${shortcutId}.description`,
-    binding.description,
+  // One placeholder for the three "nothing to edit" states. The body runs
+  // once, so each state is a `Match` rather than an early return: settings
+  // load after mount and bindings change under the component.
+  const placeholder = (description: string) => (
+    <SettingContainer
+      title={t("settings.general.shortcut.title")}
+      description={description}
+      descriptionMode={descriptionMode()}
+      grouped={grouped()}
+    >
+      <div class="text-sm text-mid-gray">
+        {isLoading()
+          ? t("settings.general.shortcut.loading")
+          : t("settings.general.shortcut.none")}
+      </div>
+    </SettingContainer>
   );
 
   return (
-    <SettingContainer
-      title={translatedName}
-      description={translatedDescription}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
-      disabled={disabled}
-      layout="horizontal"
-    >
-      <div class="flex items-center space-x-1">
-        {editingShortcutId() === shortcutId ? (
-          <div
-            ref={(ref) => setShortcutRef(shortcutId, ref)}
-            class="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
+    <Switch>
+      <Match when={isLoading() || Object.keys(bindings()).length === 0}>
+        {placeholder(t("settings.general.shortcut.description"))}
+      </Match>
+      <Match when={!binding()}>
+        {placeholder(t("settings.general.shortcut.notFound"))}
+      </Match>
+      <Match when={binding()}>
+        {(b) => (
+          <SettingContainer
+            title={t(
+              `settings.general.shortcut.bindings.${props.shortcutId}.name`,
+              b().name,
+            )}
+            description={t(
+              `settings.general.shortcut.bindings.${props.shortcutId}.description`,
+              b().description,
+            )}
+            descriptionMode={descriptionMode()}
+            grouped={grouped()}
+            disabled={props.disabled ?? false}
+            layout="horizontal"
           >
-            {formatCurrentKeys()}
-          </div>
-        ) : (
-          <button
-            type="button"
-            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent text-start"
-            onClick={() => startRecording(shortcutId)}
-          >
-            {formatKeyCombination(binding.current_binding, osType)}
-          </button>
+            <div class="flex items-center space-x-1">
+              {editingShortcutId() === props.shortcutId ? (
+                <div
+                  ref={(ref) => setShortcutRef(props.shortcutId, ref)}
+                  class="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
+                >
+                  {formatCurrentKeys()}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent text-start"
+                  onClick={() => startRecording(props.shortcutId)}
+                >
+                  {formatKeyCombination(b().current_binding, osType)}
+                </button>
+              )}
+              <ResetButton
+                onClick={() => resetBinding(props.shortcutId)}
+                disabled={isUpdating(`binding_${props.shortcutId}`)}
+              />
+            </div>
+          </SettingContainer>
         )}
-        <ResetButton
-          onClick={() => resetBinding(shortcutId)}
-          disabled={isUpdating(`binding_${shortcutId}`)}
-        />
-      </div>
-    </SettingContainer>
+      </Match>
+    </Switch>
   );
 };

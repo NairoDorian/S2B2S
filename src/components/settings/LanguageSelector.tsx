@@ -18,12 +18,7 @@ interface LanguageSelectorProps {
   supportsLanguageDetection?: boolean;
 }
 
-export const LanguageSelector = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-  supportedLanguages,
-  supportsLanguageDetection = true,
-}: LanguageSelectorProps): JSX.Element => {
+export const LanguageSelector = (props: LanguageSelectorProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
   const [isOpen, setIsOpen] = createSignal(false);
@@ -31,12 +26,16 @@ export const LanguageSelector = ({
   let dropdownRef: HTMLDivElement | null = null;
   let searchInputRef: HTMLInputElement | null = null;
 
-  const intent = getSetting("selected_language") || "auto";
-  const selectedLanguage = effectiveLanguage(
-    intent,
-    supportedLanguages ?? [],
-    supportsLanguageDetection,
-  );
+  // Accessors, not consts: the selector stays mounted across a model switch
+  // (new supported languages) and across a language pick.
+  const supportsLanguageDetection = () =>
+    props.supportsLanguageDetection ?? true;
+  const selectedLanguage = () =>
+    effectiveLanguage(
+      getSetting("selected_language") || "auto",
+      props.supportedLanguages ?? [],
+      supportsLanguageDetection(),
+    );
 
   createEffect(
     () => undefined,
@@ -65,11 +64,12 @@ export const LanguageSelector = ({
   );
 
   const availableLanguages = createMemo(() => {
+    const supportedLanguages = props.supportedLanguages;
     if (!supportedLanguages || supportedLanguages.length === 0)
       return SELECTABLE_LANGUAGES;
     return SELECTABLE_LANGUAGES.filter((lang) =>
       lang.value === "auto"
-        ? supportsLanguageDetection
+        ? supportsLanguageDetection()
         : supportsLanguageCode(supportedLanguages, lang.value),
     );
   });
@@ -80,8 +80,8 @@ export const LanguageSelector = ({
     ),
   );
 
-  const selectedLanguageName =
-    getLanguageLabel(selectedLanguage) || t("settings.general.language.auto");
+  const selectedLanguageName = () =>
+    getLanguageLabel(selectedLanguage()) || t("settings.general.language.auto");
 
   const handleLanguageSelect = async (languageCode: string) => {
     await updateSetting("selected_language", languageCode);
@@ -115,8 +115,8 @@ export const LanguageSelector = ({
     <SettingContainer
       title={t("settings.general.language.title")}
       description={t("settings.general.language.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode ?? "tooltip"}
+      grouped={props.grouped ?? false}
     >
       <div class="flex items-center space-x-1">
         <div
@@ -135,7 +135,7 @@ export const LanguageSelector = ({
             onClick={handleToggle}
             disabled={isUpdating("selected_language")}
           >
-            <span class="truncate">{selectedLanguageName}</span>
+            <span class="truncate">{selectedLanguageName()}</span>
             <svg
               class={`w-4 h-4 ms-2 transition-transform duration-200 ${
                 isOpen() ? "transform rotate-180" : ""
@@ -183,7 +183,7 @@ export const LanguageSelector = ({
                       <button
                         type="button"
                         class={`w-full px-2 py-1 text-sm text-start hover:bg-accent/10 transition-colors duration-150 ${
-                          selectedLanguage === language().value
+                          selectedLanguage() === language().value
                             ? "bg-accent/20 text-accent font-semibold"
                             : ""
                         }`}

@@ -8,6 +8,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "windows")]
@@ -337,6 +338,10 @@ pub fn is_recording(app: AppHandle) -> bool {
 /// it unmounts; this covers a webview that went away without doing so.
 const VAD_TEST_MAX_DURATION: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
+/// Bumped by every live VAD test start, so a safety thread only ever stops
+/// the test that armed it, never a later one.
+static VAD_TEST_SESSION: AtomicU64 = AtomicU64::new(0);
+
 /// Start the live VAD test from Settings → Advanced: microphone + detector
 /// only, streaming `VadTestEvent`s. No model is involved.
 #[tauri::command]
@@ -347,12 +352,13 @@ pub async fn start_vad_test(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || starter.start_vad_test())
         .await
         .map_err(|e| format!("audio task join failed: {e}"))??;
+    let session = VAD_TEST_SESSION.fetch_add(1, Ordering::SeqCst) + 1;
 
     // Safety net: never leave the microphone open indefinitely. A plain
     // thread, so no tokio timer feature is needed.
     std::thread::spawn(move || {
         std::thread::sleep(VAD_TEST_MAX_DURATION);
-        if manager.is_vad_test_running() {
+        if VAD_TEST_SESSION.load(Ordering::SeqCst) == session && manager.is_vad_test_running() {
             warn!(
                 "Live VAD test still running after {:?}; stopping it",
                 VAD_TEST_MAX_DURATION
@@ -375,6 +381,10 @@ pub async fn stop_vad_test(app: AppHandle) -> Result<(), String> {
 
 const OVERLAY_PREVIEW_MAX_DURATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Bumped by every overlay preview start, so a safety thread only ever stops
+/// the preview that armed it, never a later one.
+static OVERLAY_PREVIEW_SESSION: AtomicU64 = AtomicU64::new(0);
+
 /// Start the overlay preview from Settings → Overlay: a real recording of the
 /// primary model (streaming live text when it can), whose only output is the
 /// overlay itself — nothing is typed or pasted, and the audio is discarded.
@@ -383,12 +393,15 @@ const OVERLAY_PREVIEW_MAX_DURATION: std::time::Duration = std::time::Duration::f
 #[specta::specta]
 pub async fn start_overlay_preview(app: AppHandle) -> Result<(), String> {
     crate::overlay_preview::start(&app)?;
+    let session = OVERLAY_PREVIEW_SESSION.fetch_add(1, Ordering::SeqCst) + 1;
 
     // Safety net: never leave the microphone open indefinitely from a
     // settings-page button. A plain thread, so no tokio timer is needed.
     std::thread::spawn(move || {
         std::thread::sleep(OVERLAY_PREVIEW_MAX_DURATION);
-        if crate::overlay_preview::is_active() {
+        if OVERLAY_PREVIEW_SESSION.load(Ordering::SeqCst) == session
+            && crate::overlay_preview::is_active()
+        {
             warn!(
                 "Overlay preview still running after {:?}; stopping it",
                 OVERLAY_PREVIEW_MAX_DURATION

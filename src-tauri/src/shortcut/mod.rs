@@ -102,7 +102,7 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
 
 /// The three bindings that start a transcription and therefore could be
 /// retriggered by the Multi-STT performance-mode simulated keystrokes.
-const TRANSCRIPTION_TRIGGER_IDS: [&str; 3] = [
+pub(crate) const TRANSCRIPTION_TRIGGER_IDS: [&str; 3] = [
     "transcribe",
     "multi_stt_transcribe",
     "transcribe_with_post_process",
@@ -256,7 +256,7 @@ pub fn change_binding(
     if let Err(e) = validate_shortcut_for_implementation(&binding, settings.keyboard_implementation)
     {
         warn!("change_binding validation error: {}", e);
-        restore_registration(&app, &binding_to_modify);
+        restore_registration(&app, &settings, &binding_to_modify);
         return Err(e);
     }
 
@@ -269,7 +269,7 @@ pub fn change_binding(
             binding
         );
         warn!("change_binding rejected: {}", error_msg);
-        restore_registration(&app, &binding_to_modify);
+        restore_registration(&app, &settings, &binding_to_modify);
         return Ok(BindingResponse {
             success: false,
             binding: None,
@@ -289,7 +289,7 @@ pub fn change_binding(
     {
         let error_msg = format!("Failed to register shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
-        restore_registration(&app, &binding_to_modify);
+        restore_registration(&app, &settings, &binding_to_modify);
         return Ok(BindingResponse {
             success: false,
             binding: None,
@@ -313,8 +313,17 @@ pub fn change_binding(
 }
 
 /// Best-effort re-register of the previous binding after a failed change,
-/// so a failure leaves the user's shortcut working exactly as before.
-fn restore_registration(app: &AppHandle, binding: &ShortcutBinding) {
+/// so a failure leaves the user's shortcut working exactly as before. A
+/// binding [`should_register_binding`] refuses (empty, feature off, or a
+/// performance-mode conflict) was not live before the change and stays off.
+fn restore_registration(
+    app: &AppHandle,
+    settings: &settings::AppSettings,
+    binding: &ShortcutBinding,
+) {
+    if !should_register_binding(settings, binding) {
+        return;
+    }
     if let Err(e) = register_shortcut(app, binding.clone()) {
         error!(
             "Failed to restore previous binding '{}' ({}): {}",
@@ -326,7 +335,10 @@ fn restore_registration(app: &AppHandle, binding: &ShortcutBinding) {
 #[tauri::command]
 #[specta::specta]
 pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, String> {
-    let binding = settings::get_stored_binding(&app, &id);
+    let binding = settings::get_bindings(&app)
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| format!("Binding with id '{}' not found", id))?;
     change_binding(app, id, binding.default_binding)
 }
 
@@ -569,6 +581,13 @@ fn register_all_shortcuts_for_implementation(
                 .bindings
                 .insert(id.clone(), binding.clone());
             reset_bindings.push(id.clone());
+
+            // The default may itself be unbound (`transcribe` and
+            // `multi_stt_transcribe` ship empty) or collide with the
+            // performance-mode shortcuts, so re-apply the registration rule.
+            if !should_register_binding(&current_settings, &binding) {
+                continue;
+            }
         }
 
         // Register with the appropriate implementation
@@ -1253,7 +1272,7 @@ pub fn change_custom_accent_color_setting(
 pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_enabled = enabled;
-    settings::write_settings(&app, settings.clone());
+    settings::write_settings(&app, settings);
 
     // The Multi-STT hotkey is a normal global shortcut gated on this flag
     // (see `should_register_binding`), so it must follow the toggle at runtime
@@ -1555,7 +1574,7 @@ pub fn change_mic_idle_timeout_settings(
 pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.post_process_enabled = enabled;
-    settings::write_settings(&app, settings.clone());
+    settings::write_settings(&app, settings);
 
     // The post-processing hotkey is gated on this flag (see
     // `should_register_binding`), so (un)register it now rather than at the
@@ -2048,7 +2067,7 @@ pub fn set_model_backend_setting(
     model_id: String,
     backend: settings::ModelBackendSetting,
 ) -> Result<(), String> {
-    let available = crate::managers::transcription::available_model_backend_names();
+    let available = crate::managers::transcription::available_model_backends();
     if !available.iter().any(|name| name == backend.as_str()) {
         return Err(format!(
             "The {} backend is not available in this build; available backends: {}",

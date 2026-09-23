@@ -3,21 +3,12 @@ import { useTranslation } from "@/i18n/useTranslation";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { useSettings } from "@/hooks/useSettings";
 import {
+  BACKEND_ORDER,
   backendLabel,
   loadAvailableBackends,
 } from "@/components/model-selector/ModelBackendPanel";
 import type { ModelBackendSetting } from "@/bindings";
 import type { JSX } from "@solidjs/web";
-
-/** The order the choices are offered in, `auto` (the default) first. */
-const BACKEND_ORDER = [
-  "auto",
-  "cpu",
-  "cuda",
-  "vulkan",
-  "metal",
-  "rocm",
-] as const;
 
 interface ModelBackendDropdownProps {
   /** The model this row pins. `null` (no model chosen) renders nothing. */

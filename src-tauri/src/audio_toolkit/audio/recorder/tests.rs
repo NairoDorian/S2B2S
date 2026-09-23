@@ -1,6 +1,7 @@
 use super::{
     AudioRecorder, CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig,
     VadPolicy, is_microphone_access_denied, is_no_input_device_error, run_consumer,
+    usable_input_channel,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
@@ -56,7 +57,6 @@ fn resampler_frame_size_follows_the_vad_frame() {
     let mut processor = CaptureProcessor::new(
         16_000,
         Some(vad),
-        None,
         Some(Arc::new(move |frame: &[f32]| {
             observed.lock().unwrap().push(frame.len())
         })),
@@ -74,7 +74,7 @@ fn resampler_frame_size_follows_the_vad_frame() {
 
 #[test]
 fn idle_chunks_are_discarded_without_reaching_the_recording() {
-    let mut processor = CaptureProcessor::new(16_000, None, None, None, Instant::now());
+    let mut processor = CaptureProcessor::new(16_000, None, None, Instant::now());
     processor.process_raw_chunk(&[1.0; 480], ChunkDisposition::Discard);
     assert!(processor.finish_recording().is_empty());
 }
@@ -86,7 +86,7 @@ fn shutdown_is_processed_without_audio_samples() {
     let (done_tx, done_rx) = mpsc::channel();
     let worker = thread::spawn(move || {
         run_consumer(
-            CaptureProcessor::new(48_000, None, None, None, Instant::now()),
+            CaptureProcessor::new(48_000, None, None, Instant::now()),
             consumer,
             cmd_rx,
             Arc::new(CaptureTransportState::default()),
@@ -142,6 +142,28 @@ fn callback_downmixes_or_selects_multichannel_input() {
         .pop_entire_slice(&mut selected)
         .expect("selected samples");
     assert_eq!(selected, [3.0, 1.0]);
+}
+
+#[test]
+fn out_of_range_selected_channel_averages_instead_of_indexing_past_the_frame() {
+    // Channel 4 persisted from a 4-channel interface, now on a stereo mic.
+    assert_eq!(usable_input_channel(Some(3), 2), None);
+    assert_eq!(usable_input_channel(Some(1), 2), Some(1));
+    assert_eq!(usable_input_channel(None, 2), None);
+
+    let transport = CaptureTransportState::default();
+    let (mut tx, mut rx) = RingBuffer::<f32>::new(4);
+    AudioRecorder::write_input_to_ring(
+        &[1.0f32, 3.0, -1.0, 1.0],
+        2,
+        usable_input_channel(Some(3), 2),
+        &mut tx,
+        &transport,
+    );
+    let mut averaged = [0.0; 2];
+    rx.pop_entire_slice(&mut averaged)
+        .expect("averaged samples");
+    assert_eq!(averaged, [2.0, 0.0]);
 }
 
 #[test]
@@ -245,7 +267,6 @@ fn repeated_start_stop_cycles_resume_capture_without_leaking_samples() {
     let worker = thread::spawn(move || {
         let processor = CaptureProcessor::new(
             16_000,
-            None,
             None,
             Some(Arc::new(move |frame: &[f32]| {
                 streamed_cb.lock().unwrap().extend_from_slice(frame)
@@ -366,7 +387,7 @@ fn missing_callback_at_stop_marks_stream_for_rebuild_and_returns_samples() {
     let worker_transport = Arc::clone(&transport);
     let worker = thread::spawn(move || {
         run_consumer(
-            CaptureProcessor::new(16_000, None, None, None, Instant::now()),
+            CaptureProcessor::new(16_000, None, None, Instant::now()),
             consumer,
             cmd_rx,
             worker_transport,

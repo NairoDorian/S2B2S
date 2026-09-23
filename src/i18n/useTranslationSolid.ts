@@ -3,22 +3,15 @@ import type { TFunction } from "i18next";
 import i18n from "./index";
 
 /**
- * The Solid counterpart to `./useTranslation.tsx` — the same two names at the
- * same call sites, but built on Solid's reactivity instead of React's.
+ * The app's `useTranslation()`, re-exported by `./useTranslation.tsx` so the
+ * call sites keep their import path. (It replaced a React hook built on
+ * `useSyncExternalStore` during the React → Solid 2 migration; see CHANGELOG.)
  *
- * Phase 1 of docs/PLAN_SOLIDJS_2.md replaced `react-i18next` with the React hook
- * next door; Phase 2 makes `src/overlay/` Solid and that hook cannot cross the
- * boundary. This one is deliberately tiny, because the two runtimes need
- * opposite things from it:
- *
- * - **React** has to be *told* a translation changed. `useTranslation.tsx`
- *   therefore subscribes the component with `useSyncExternalStore` and hands out
- *   a memoized `t`, and every one of its 116 call sites re-renders on a language
- *   change.
- * - **Solid** has to be told nothing. A component body runs once, and a
- *   `t("…")` written in JSX is compiled into its own computation — so all this
- *   hook has to do is *read something reactive while that computation runs*,
- *   and the text node updates itself when the language changes.
+ * It is deliberately tiny, because Solid has to be told nothing. A component
+ * body runs once, and a `t("…")` written in JSX is compiled into its own
+ * computation — so all this hook has to do is *read something reactive while
+ * that computation runs*, and the text node updates itself when the language
+ * changes.
  *
  * That read is the `language()` call inside `t` below, and it is the whole
  * mechanism: `i18n.t` is a live function that resolves against `i18n.language`

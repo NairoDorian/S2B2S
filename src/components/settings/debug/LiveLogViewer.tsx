@@ -221,7 +221,7 @@ export const LiveLogViewer = (props: LiveLogViewerProps) => {
               : "border-mid-gray/20 text-mid-gray hover:border-mid-gray/50"
           }`}
         >
-          ALL
+          {t("settings.debug.liveLogs.allTags")}
         </button>
         <For each={TAGS}>
           {(tag) => (

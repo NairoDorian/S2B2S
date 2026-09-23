@@ -61,7 +61,7 @@ function renderInline(nodes: Inline[]): (string | JSX.Element)[] {
           </code>
         );
       case "image":
-        if (!node.src || !isSafeImageSrc(node.src)) return null as any;
+        if (!node.src || !isSafeImageSrc(node.src)) return null;
 
         return (
           <img

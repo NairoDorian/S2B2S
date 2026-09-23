@@ -2,7 +2,7 @@
 // without opening an image viewer. Chromium does the decoding.
 //
 //   bun scripts/png-inspect.ts <file.png> [columns]
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
@@ -18,8 +18,9 @@ const dataUrl =
   "data:image/png;base64," + readFileSync(resolve(file)).toString("base64");
 
 // The pinned Playwright alpha expects a browser build newer than the one in
-// the local cache, so the executable is named explicitly. Chromium is only
-// used as a rasteriser/decoder here, so the exact revision does not matter.
+// the maintainer's local cache, so that Windows build is named explicitly when
+// it exists; anywhere else Playwright's own resolution is used. Chromium is
+// only a rasteriser/decoder here, so the exact revision does not matter.
 const CHROME = join(
   homedir(),
   "AppData",
@@ -29,7 +30,9 @@ const CHROME = join(
   "chrome-win64",
   "chrome.exe",
 );
-const browser = await chromium.launch({ executablePath: CHROME });
+const browser = await chromium.launch(
+  existsSync(CHROME) ? { executablePath: CHROME } : {},
+);
 const page = await browser.newPage();
 const out = await page.evaluate(async (src) => {
   const img = new Image();

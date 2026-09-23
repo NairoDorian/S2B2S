@@ -31,7 +31,9 @@ pub struct CliArgs {
     #[arg(long)]
     pub cancel: bool,
 
-    /// Enable debug mode with verbose logging
+    /// Accepted for compatibility. Logging is always captured at Trace (see
+    /// docs/LOGGING.md); the flag only shows in the startup log line and does
+    /// not turn on the in-app debug mode.
     #[arg(long)]
     pub debug: bool,
 
@@ -48,7 +50,7 @@ pub struct CliArgs {
 
     /// Hard-select the compute device for --transcribe-file by its registry
     /// index (see --list-devices). Omit to use the persisted accelerator
-    /// setting. transcribe-cpp (whisper-family) models only.
+    /// setting. Applies to every model (all run on transcribe-cpp).
     #[arg(long, value_name = "N")]
     pub device_index: Option<usize>,
 

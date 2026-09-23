@@ -1,12 +1,5 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
-import {
-  createSignal,
-  createEffect,
-  createMemo,
-  For,
-  Show,
-  onCleanup,
-} from "solid-js";
+import { createSignal, createEffect, createMemo, For, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { Keyboard, X } from "@/components/icons/lucide";
 import { useSettings } from "@/hooks/useSettings";
@@ -28,7 +21,9 @@ export const HotkeySidebar = (): JSX.Element => {
   let rootRef: HTMLDivElement | null = null;
 
   const categories = createMemo(() => buildHotkeyGuideCategories(settings()));
-  const hasAnyHotkeys = categories().length > 0;
+  // Accessors, not consts: the sidebar is mounted for the app's lifetime and
+  // must follow the user setting (or clearing) a shortcut.
+  const hasAnyHotkeys = () => categories().length > 0;
 
   const close = () => setIsOpen(false);
   const handleHotkeyClick = (shortcutId: string) => {
@@ -60,15 +55,14 @@ export const HotkeySidebar = (): JSX.Element => {
       };
       window.addEventListener("keydown", onKey);
       window.addEventListener("mousedown", onPointer);
-      onCleanup(() => {
+      return () => {
         window.removeEventListener("keydown", onKey);
         window.removeEventListener("mousedown", onPointer);
-      });
+      };
     },
   );
-  const toggleLabel = isOpen()
-    ? t("hotkeySidebar.closeSidebar")
-    : t("hotkeySidebar.openSidebar");
+  const toggleLabel = () =>
+    isOpen() ? t("hotkeySidebar.closeSidebar") : t("hotkeySidebar.openSidebar");
 
   return (
     <div
@@ -82,12 +76,12 @@ export const HotkeySidebar = (): JSX.Element => {
         onClick={() => setIsOpen((prev) => !prev)}
         aria-controls="hotkey-overlay-panel"
         aria-expanded={isOpen() ? "true" : "false"}
-        aria-label={toggleLabel}
-        title={toggleLabel}
+        aria-label={toggleLabel()}
+        title={toggleLabel()}
         class={`flex items-center gap-1.5 h-8 px-2 border text-xs font-medium cursor-pointer transition-colors ${isOpen() ? "border-accent bg-accent/15 text-accent" : "border-mid-gray/30 bg-background text-text/70 hover:border-accent hover:text-text"}`}
       >
         <Keyboard class="w-4 h-4" />
-        {!hasAnyHotkeys && (
+        {!hasAnyHotkeys() && (
           <span class="w-1.5 h-1.5 bg-warning" aria-hidden="true" />
         )}
       </button>
@@ -113,7 +107,7 @@ export const HotkeySidebar = (): JSX.Element => {
             </button>
           </div>
           <div class="flex-1 overflow-y-auto px-3 py-3">
-            <Show when={hasAnyHotkeys}>
+            <Show when={hasAnyHotkeys()}>
               <For each={categories()}>
                 {(category) => (
                   <HotkeyGroup
@@ -124,7 +118,7 @@ export const HotkeySidebar = (): JSX.Element => {
                 )}
               </For>
             </Show>
-            <Show when={!hasAnyHotkeys}>
+            <Show when={!hasAnyHotkeys()}>
               <div class="flex flex-col gap-3 border border-warning/30 bg-warning/10 p-3">
                 <p class="text-sm font-medium text-text">
                   {t("hotkeySidebar.empty.title")}

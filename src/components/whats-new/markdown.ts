@@ -2,9 +2,9 @@
  * A small Markdown parser for the release-notes modal.
  *
  * Why this is not `react-markdown` any more: that package is a React component
- * library, and Phase 1 of the Solid 2 migration (docs/PLAN_SOLIDJS_2.md) removes
- * every React-only dependency *while the app still runs on React*, so each
- * removal ships on its own instead of riding the framework swap.
+ * library, and the first phase of the Solid 2 migration (see CHANGELOG) removed
+ * every React-only dependency *while the app still ran on React*, so each
+ * removal shipped on its own instead of riding the framework swap.
  *
  * The subset below is not a guess. It is what
  * `src/content/release-notes/README.md` documents the notes support —

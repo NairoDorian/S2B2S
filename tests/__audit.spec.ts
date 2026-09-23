@@ -5,6 +5,7 @@ import { test } from "./harness/fixtures";
 const SECTIONS = [
   "General",
   "History",
+  "Recall",
   "Statistics",
   "Models",
   "Multi STT",

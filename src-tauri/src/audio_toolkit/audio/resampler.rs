@@ -124,10 +124,13 @@ impl FrameResampler {
     }
 
     fn process_chunk(&mut self) -> Option<Vec<f32>> {
-        let frames = self.in_buf.len();
-        let input_data = self.in_buf.clone();
-        let resampler = self.resampler.as_mut()?;
-        let input = InterleavedSlice::new(&input_data, 1, frames).ok()?;
+        // Split the borrow so the input is read in place, without a per-chunk
+        // copy of `in_buf` on the audio consumer thread.
+        let Self {
+            resampler, in_buf, ..
+        } = self;
+        let resampler = resampler.as_mut()?;
+        let input = InterleavedSlice::new(in_buf.as_slice(), 1, in_buf.len()).ok()?;
         match resampler.process(&input, None) {
             Ok(out) => {
                 let n = out.frames();

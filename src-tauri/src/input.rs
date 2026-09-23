@@ -187,20 +187,12 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> 
     let (modifier_key, v_key_code) = (Key::Control, Key::Unicode('v'));
 
     // Press modifier + V
-    enigo
-        .key(modifier_key, enigo::Direction::Press)
-        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
-    enigo
-        .key(v_key_code, enigo::Direction::Click)
-        .map_err(|e| format!("Failed to click V key: {}", e))?;
-
-    std::thread::sleep(std::time::Duration::from_millis(hold_ms));
-
-    enigo
-        .key(modifier_key, enigo::Direction::Release)
-        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
-
-    Ok(())
+    send_chord(
+        enigo,
+        &[(modifier_key, "modifier key")],
+        &[(v_key_code, "V key")],
+        Some(std::time::Duration::from_millis(hold_ms)),
+    )
 }
 
 /// Sends a Ctrl+Shift+V paste command.
@@ -216,52 +208,80 @@ pub fn send_paste_ctrl_shift_v(enigo: &mut Enigo, hold_ms: u64) -> Result<(), St
     let (modifier_key, v_key_code) = (Key::Control, Key::Unicode('v'));
 
     // Press Ctrl/Cmd + Shift + V
-    enigo
-        .key(modifier_key, enigo::Direction::Press)
-        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
-    enigo
-        .key(Key::Shift, enigo::Direction::Press)
-        .map_err(|e| format!("Failed to press Shift key: {}", e))?;
-    enigo
-        .key(v_key_code, enigo::Direction::Click)
-        .map_err(|e| format!("Failed to click V key: {}", e))?;
-
-    std::thread::sleep(std::time::Duration::from_millis(hold_ms));
-
-    enigo
-        .key(Key::Shift, enigo::Direction::Release)
-        .map_err(|e| format!("Failed to release Shift key: {}", e))?;
-    enigo
-        .key(modifier_key, enigo::Direction::Release)
-        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
-
-    Ok(())
+    send_chord(
+        enigo,
+        &[(modifier_key, "modifier key"), (Key::Shift, "Shift key")],
+        &[(v_key_code, "V key")],
+        Some(std::time::Duration::from_millis(hold_ms)),
+    )
 }
 
 /// Sends a Shift+Insert paste command (Windows and Linux only).
 /// This is more universal for terminal applications and legacy software.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
 pub fn send_paste_shift_insert(enigo: &mut Enigo, hold_ms: u64) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    let insert_key_code = Key::Other(0x2D); // VK_INSERT
-    #[cfg(not(target_os = "windows"))]
-    let insert_key_code = Key::Other(0x76); // XK_Insert (keycode 118 / 0x76, also used as fallback)
+    // VK_INSERT on Windows, the XK_Insert keysym on Linux (enigo reads
+    // `Key::Other` as a keysym there, where 0x76 would be XK_v).
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    let insert_key_code = Key::Insert;
+    #[cfg(target_os = "macos")]
+    let insert_key_code = Key::Other(0x76); // unused: Shift+Insert is not offered on macOS
 
     // Press Shift + Insert
-    enigo
-        .key(Key::Shift, enigo::Direction::Press)
-        .map_err(|e| format!("Failed to press Shift key: {}", e))?;
-    enigo
-        .key(insert_key_code, enigo::Direction::Click)
-        .map_err(|e| format!("Failed to click Insert key: {}", e))?;
+    send_chord(
+        enigo,
+        &[(Key::Shift, "Shift key")],
+        &[(insert_key_code, "Insert key")],
+        Some(std::time::Duration::from_millis(hold_ms)),
+    )
+}
 
-    std::thread::sleep(std::time::Duration::from_millis(hold_ms));
+/// Presses `modifiers` in order, clicks `keys`, waits `hold` (if any), then
+/// releases the modifiers that were pressed, in reverse order.
+///
+/// The releases run even when a press or a click fails, so an error never
+/// leaves Ctrl, Cmd or Shift latched system-wide. Returns the first error.
+fn send_chord(
+    enigo: &mut Enigo,
+    modifiers: &[(Key, &str)],
+    keys: &[(Key, &str)],
+    hold: Option<std::time::Duration>,
+) -> Result<(), String> {
+    let mut first_error: Option<String> = None;
+    let mut pressed = 0;
+    for (key, name) in modifiers {
+        match enigo.key(*key, enigo::Direction::Press) {
+            Ok(()) => pressed += 1,
+            Err(e) => {
+                first_error = Some(format!("Failed to press {name}: {e}"));
+                break;
+            }
+        }
+    }
 
-    enigo
-        .key(Key::Shift, enigo::Direction::Release)
-        .map_err(|e| format!("Failed to release Shift key: {}", e))?;
+    if first_error.is_none() {
+        for (key, name) in keys {
+            if let Err(e) = enigo.key(*key, enigo::Direction::Click) {
+                first_error = Some(format!("Failed to click {name}: {e}"));
+                break;
+            }
+        }
+        if first_error.is_none()
+            && let Some(hold) = hold
+        {
+            std::thread::sleep(hold);
+        }
+    }
 
-    Ok(())
+    for (key, name) in modifiers[..pressed].iter().rev() {
+        if let Err(e) = enigo.key(*key, enigo::Direction::Release)
+            && first_error.is_none()
+        {
+            first_error = Some(format!("Failed to release {name}: {e}"));
+        }
+    }
+
+    first_error.map_or(Ok(()), Err)
 }
 
 /// Pastes text directly using the enigo text method.
@@ -333,16 +353,16 @@ fn is_modifier_key(key: &Key) -> bool {
 pub fn simulate_shortcut(enigo: &mut Enigo, shortcut: &str) -> Result<(), String> {
     let parts: Vec<&str> = shortcut.split('+').map(|p| p.trim()).collect();
 
-    let mut modifiers: Vec<Key> = Vec::new();
-    let mut main_keys: Vec<Key> = Vec::new();
+    let mut modifiers: Vec<(Key, &str)> = Vec::new();
+    let mut main_keys: Vec<(Key, &str)> = Vec::new();
 
     for part in &parts {
         if part.is_empty() {
             continue;
         }
         match parse_key_token(part) {
-            Some(key) if is_modifier_key(&key) => modifiers.push(key),
-            Some(key) => main_keys.push(key),
+            Some(key) if is_modifier_key(&key) => modifiers.push((key, "modifier key")),
+            Some(key) => main_keys.push((key, "key")),
             None => warn!("simulate_shortcut: unknown key token '{}'", part),
         }
     }
@@ -351,26 +371,7 @@ pub fn simulate_shortcut(enigo: &mut Enigo, shortcut: &str) -> Result<(), String
         return Err("Shortcut must contain at least one non-modifier key".into());
     }
 
-    // Press modifiers
-    for modifier in &modifiers {
-        enigo
-            .key(*modifier, enigo::Direction::Press)
-            .map_err(|e| format!("Failed to press modifier key: {}", e))?;
-    }
-
-    // Click main keys (non-modifiers)
-    for key in &main_keys {
-        enigo
-            .key(*key, enigo::Direction::Click)
-            .map_err(|e| format!("Failed to click key: {}", e))?;
-    }
-
-    // Release modifiers in reverse order
-    for modifier in modifiers.iter().rev() {
-        enigo
-            .key(*modifier, enigo::Direction::Release)
-            .map_err(|e| format!("Failed to release modifier key: {}", e))?;
-    }
-
-    Ok(())
+    // Press the modifiers, click the main keys, release the modifiers in
+    // reverse order — also when a press or a click fails.
+    send_chord(enigo, &modifiers, &main_keys, None)
 }

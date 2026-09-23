@@ -63,7 +63,10 @@ impl DirectStreamWriter {
                 .send(DirectStreamCmd::Flush(final_text, reply_tx))
                 .is_ok()
             {
-                // Wait briefly for flush to complete (up to 3 seconds)
+                // Wait for the worker to type the remainder. This is not the
+                // bound on the call: the join below waits for the worker to
+                // exit whatever this returns. It is fast in practice, because
+                // the flush types the remainder in one paste.
                 let _ = reply_rx.recv_timeout(Duration::from_secs(3));
             }
         }
@@ -97,6 +100,39 @@ fn common_prefix_char_len(a: &str, b: &str) -> usize {
         .count()
 }
 
+/// Backspace whatever `typed` holds beyond its common prefix with `target`, and
+/// cut `typed` back to that prefix. `what` names the caller in the warning a
+/// failed backspace logs.
+fn retract_to_common_prefix(
+    target: &str,
+    typed: &mut String,
+    app_handle: &AppHandle,
+    #[cfg(target_os = "linux")] typing_tool: crate::settings::TypingTool,
+    what: &str,
+) {
+    let common_chars = common_prefix_char_len(typed, target);
+    let typed_char_count = typed.chars().count();
+    if typed_char_count <= common_chars {
+        return;
+    }
+
+    let backspaces = typed_char_count - common_chars;
+    if let Err(e) = backspace_direct(
+        backspaces,
+        app_handle,
+        #[cfg(target_os = "linux")]
+        typing_tool,
+    ) {
+        warn!("DirectStreamWriter: failed to backspace{}: {}", what, e);
+    }
+    let byte_pos = typed
+        .char_indices()
+        .nth(common_chars)
+        .map(|(idx, _)| idx)
+        .unwrap_or(typed.len());
+    typed.truncate(byte_pos);
+}
+
 fn step_typewriter(
     target: &str,
     typed: &mut String,
@@ -108,28 +144,17 @@ fn step_typewriter(
         return;
     }
 
-    let common_chars = common_prefix_char_len(typed, target);
-    let typed_char_count = typed.chars().count();
     let target_char_count = target.chars().count();
 
     // If typed has characters beyond the common prefix, backspace them out
-    if typed_char_count > common_chars {
-        let backspaces = typed_char_count - common_chars;
-        if let Err(e) = backspace_direct(
-            backspaces,
-            app_handle,
-            #[cfg(target_os = "linux")]
-            typing_tool,
-        ) {
-            warn!("DirectStreamWriter: failed to backspace: {}", e);
-        }
-        let byte_pos = typed
-            .char_indices()
-            .nth(common_chars)
-            .map(|(idx, _)| idx)
-            .unwrap_or(typed.len());
-        typed.truncate(byte_pos);
-    }
+    retract_to_common_prefix(
+        target,
+        typed,
+        app_handle,
+        #[cfg(target_os = "linux")]
+        typing_tool,
+        "",
+    );
 
     // Advance 1, 2, or 3 characters from target
     let current_char_count = typed.chars().count();
@@ -174,26 +199,14 @@ fn sync_to_target(
         return;
     }
 
-    let common_chars = common_prefix_char_len(typed, target);
-    let typed_char_count = typed.chars().count();
-
-    if typed_char_count > common_chars {
-        let backspaces = typed_char_count - common_chars;
-        if let Err(e) = backspace_direct(
-            backspaces,
-            app_handle,
-            #[cfg(target_os = "linux")]
-            typing_tool,
-        ) {
-            warn!("DirectStreamWriter: failed to backspace on sync: {}", e);
-        }
-        let byte_pos = typed
-            .char_indices()
-            .nth(common_chars)
-            .map(|(idx, _)| idx)
-            .unwrap_or(typed.len());
-        typed.truncate(byte_pos);
-    }
+    retract_to_common_prefix(
+        target,
+        typed,
+        app_handle,
+        #[cfg(target_os = "linux")]
+        typing_tool,
+        " on sync",
+    );
 
     let current_char_count = typed.chars().count();
     let chunk: String = target.chars().skip(current_char_count).collect();
@@ -298,31 +311,37 @@ fn run_direct_stream_worker(
     );
 
     // Trailing space
-    if settings.append_trailing_space {
-        let _ = paste_direct(
+    if settings.append_trailing_space
+        && let Err(e) = paste_direct(
             " ",
             &app_handle,
             #[cfg(target_os = "linux")]
             settings.typing_tool,
-        );
+        )
+    {
+        warn!("DirectStreamWriter: failed to type trailing space: {}", e);
     }
 
     // Trailing newline
-    if settings.append_trailing_newline {
-        let _ = paste_direct(
+    if settings.append_trailing_newline
+        && let Err(e) = paste_direct(
             "\n",
             &app_handle,
             #[cfg(target_os = "linux")]
             settings.typing_tool,
-        );
+        )
+    {
+        warn!("DirectStreamWriter: failed to type trailing newline: {}", e);
     }
 
     // Auto submit
     if settings.auto_submit {
         thread::sleep(Duration::from_millis(50));
-        let _ = crate::clipboard::with_enigo(&app_handle, |enigo| {
+        if let Err(e) = crate::clipboard::with_enigo(&app_handle, |enigo| {
             crate::clipboard::send_return_key(enigo, settings.auto_submit_key)
-        });
+        }) {
+            warn!("DirectStreamWriter: failed to auto-submit: {}", e);
+        }
     }
 
     if let Some(reply) = flush_reply {

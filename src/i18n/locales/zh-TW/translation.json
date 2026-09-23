@@ -148,6 +148,7 @@
     "modelError": "模型錯誤",
     "modelUnloaded": "模型已卸載",
     "noModelDownloadRequired": "無模型 - 需要下載",
+    "statusTitle": "Model status: {{status}}",
     "deleteModel": "刪除 {{modelName}}",
     "cancel": "取消",
     "cancelDownload": "取消下載",
@@ -219,6 +220,11 @@
         "increase": "將分塊大小增加一毫秒",
         "hint": "每次解碼前累積的音訊長度。數值越小反應越快，但運算開銷越大，因為模型每處理一個分塊都會重新讀取截至目前的所有音訊。從下次錄音開始生效。"
       }
+    },
+    "errors": {
+      "checkStatusFailed": "Failed to check model status",
+      "loadFailed": "Failed to load model",
+      "switchFailed": "Failed to switch model"
     }
   },
   "settings": {
@@ -354,7 +360,7 @@
       "acceleration": {
         "transcribe": {
           "title": "Whisper 加速",
-          "description": "Whisper 模型的硬體加速。自動模式在可用時使用 GPU（macOS 上使用 Metal，Windows/Linux 上使用 Vulkan）。"
+          "description": "Whisper 模型的硬體加速。自動模式在可用時使用 GPU（macOS 上使用 Metal，Windows x86_64/Linux 上使用 CUDA）。"
         },
         "gpuDevice": {
           "auto": "自動"
@@ -564,6 +570,7 @@
         "baseUrl": {
           "title": "基礎網址",
           "description": "所選供應商的 API 基礎網址，僅自訂供應商可編輯",
+          "managedByProvider": "Base URL is managed by the selected provider.",
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
@@ -577,6 +584,7 @@
           "descriptionDefault": "從所選供應商的可用模型中選擇",
           "placeholderWithOptions": "搜尋或選擇模型",
           "placeholderNoOptions": "輸入模型名稱",
+          "useCustom": "Use \"{{value}}\"",
           "refreshModels": "重新整理模型"
         }
       },
@@ -608,6 +616,7 @@
       "loading": "載入歷史紀錄中...",
       "empty": "還沒有轉錄紀錄。開始錄製以建立您的歷史紀錄！",
       "copyToClipboard": "複製轉錄到剪貼簿",
+      "copied": "Copied to clipboard",
       "save": "儲存轉錄",
       "saveToRecall": "File as Recall note",
       "savedToRecall": "Saved to Recall",
@@ -616,6 +625,7 @@
       "deleteError": "刪除條目失敗，請重試",
       "retranscribe": "重新轉錄",
       "retranscribeError": "重新轉錄失敗，請重試。",
+      "retranscribeSuccess": "Transcription updated",
       "transcribing": "轉錄中...",
       "transcriptionFailed": "轉錄失敗。您可以使用重試圖示重新轉錄。",
       "deleteRecordings": "Delete Recordings",
@@ -633,9 +643,11 @@
       "postProcess": "Post-process (LLM Polish)",
       "postProcessing": "Polishing...",
       "postProcessError": "Failed to post-process transcript.",
+      "postProcessSuccess": "Transcript polished with LLM",
       "multiSttRetranscribe": "Multi-STT Re-transcribe",
       "multiSttTranscribing": "Multi-STT Transcribing...",
       "multiSttError": "Failed to Multi-STT re-transcribe.",
+      "multiSttSuccess": "Multi-STT transcription complete",
       "rawTranscriptTab": "Raw Transcript",
       "polishedTextTab": "Polished (LLM)",
       "mergedTextTab": "Merged Output",
@@ -646,9 +658,10 @@
       "wpmRating": "{{wpm}} WPM",
       "wordCount": "{{count}} words",
       "audioDetails": "{{total}} total : {{speech}} speech ({{silence}} cut)",
-      "latencyStt": "{{latency}} STT",
-      "latencyLlm": "{{latency}} LLM",
+      "latencyStt": "{{duration}} STT",
+      "latencyLlm": "{{duration}} LLM",
       "extraModelsCount": "{{count}} models",
+      "multiSttModelsBadge": "Multi-STT ({{count}} models)",
       "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
@@ -658,11 +671,11 @@
       "multiSttCleanedOutputTab": "Cleaned Output",
       "multiSttRawLogTab": "Raw Log",
       "multiSttModelSlot": "Model {{slot}}",
-      "multiSttBrainLabel": "ðŸ§  Brain LLM",
+      "multiSttBrainLabel": "🧠 Brain LLM",
       "multiSttBrainCleanedOutput": "Cleaned Output",
       "multiSttBrainPromptLabel": "Prompt: {{name}}",
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
-      "multiSttNoOutput": "â€” no output â€”",
+      "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
       "multiSttCopyBrainOutput": "Copy cleaned Brain output"
     },
@@ -686,7 +699,8 @@
         "copied": "已複製",
         "lineCount": "{{count}} 行",
         "empty": "正在等待日誌…… 應用程式產生日誌時會顯示於此。",
-        "noFilterMatch": "No lines match this tag."
+        "noFilterMatch": "No lines match this tag.",
+        "allTags": "ALL"
       },
       "updateChecks": {
         "label": "檢查更新",
@@ -695,7 +709,13 @@
       },
       "soundTheme": {
         "label": "聲音主題",
-        "description": "選擇錄製開始和停止回饋的聲音主題"
+        "description": "選擇錄製開始和停止回饋的聲音主題",
+        "options": {
+          "marimba": "Marimba",
+          "pop": "Pop",
+          "custom": "Custom"
+        },
+        "preview": "Preview sound theme (plays start then stop)"
       },
       "wordCorrectionThreshold": {
         "title": "詞彙修正閾值",
@@ -740,13 +760,6 @@
         "title": "鍵盤實作",
         "description": "選擇鍵盤快捷鍵的後端",
         "bindingsReset": "鍵盤快捷鍵不相容，已重設為預設值"
-      },
-      "paths": {
-        "title": "Debug Paths",
-        "description": "Absolute paths of the directories this app writes to, for troubleshooting",
-        "appData": "應用程式資料:",
-        "models": "模型:",
-        "settings": "設定:"
       },
       "pasteDelay": {
         "title": "貼上延遲（前）",
@@ -1363,7 +1376,9 @@
       },
       "canvas": {
         "idle": "Start the analyser to see the spectrum",
-        "silence": "digital silence"
+        "silence": "digital silence",
+        "now": "now",
+        "span": "−{{seconds}} s"
       },
       "telemetry": {
         "sampleRate": "Rate (Hz)",
@@ -1375,7 +1390,13 @@
         "threading": "Analysis: {{mode}}",
         "async": "worker thread",
         "inline": "inline on the audio thread",
-        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}"
+        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}",
+        "hzPerBin": "Hz / bin",
+        "magnitudeBins": "Magnitude bins",
+        "magnitudeBinsValue": "{{used}} of {{total}}",
+        "aggregated": "Aggregated",
+        "kaiserBeta": "Kaiser β",
+        "latency": "Latency"
       },
       "view": {
         "title": "Analyser",
@@ -1402,7 +1423,15 @@
         "music": "Music (Log, cubic, Blackman-Harris)",
         "meter": "Fast meter (linear, 60 Hz)",
         "chroma": "Chroma / pitch",
-        "applied": "Preset applied"
+        "applied": "Preset applied",
+        "quality": {
+          "title": "Quality",
+          "description": "Transform length, warp interpolation, Kaiser beta mode and aggregation tuned for a frame budget. Applied on top of the current settings; the output bins are kept.",
+          "visual60": "Visual 60 fps (8K, cubic, auto β)",
+          "visual120": "Visual 120 fps (4K, cubic, auto β)",
+          "analysis": "Analysis (32K, auto β, RMS)",
+          "active": "Matches: {{preset}}"
+        }
       },
       "spectrum": {
         "title": "Spectrum",
@@ -1469,6 +1498,29 @@
         "fftSize": {
           "label": "Zero-pad length",
           "description": "Transform length. The window is centred in a zero-padded frame of this size (grown to the next power of two above the window when that is larger); a longer transform interpolates the spectrum more finely."
+        },
+        "rawBins": {
+          "label": "Raw FFT bins",
+          "description": "Output the transform's magnitude untouched: N/2+1 bins from DC to Nyquist on a linear axis, with no warp, interpolation or aggregation. Scale, display max, warp blend, log floor, output bins and aggregation do not apply while it is on."
+        },
+        "outputBinsMode": {
+          "label": "Output bins mode",
+          "description": "Fixed: the output bin count below. Auto: one output bin per FFT bin, N/2+1 of the transform actually run.",
+          "fixed": "Fixed",
+          "auto": "Auto (N/2+1)"
+        },
+        "warpAggregation": {
+          "label": "Warp aggregation",
+          "description": "Where one output bin spans two or more FFT bins (the top of a log axis), combine them instead of interpolating between two: Peak keeps the loudest, so a narrow peak is never skipped; RMS averages their power. Off interpolates everywhere.",
+          "options": {
+            "off": "Off (interpolate, may skip peaks)",
+            "peak": "Peak (never drops a peak)",
+            "rms": "RMS (power mean)"
+          }
+        },
+        "zeroPadding": {
+          "label": "Zero-padding",
+          "description": "On: the window is centred in a zero-padded transform of the zero-pad length. Off: the transform is the window length itself (rounded up to even), the cheapest option, and the zero-pad length does not apply."
         }
       },
       "eq": {
@@ -1546,6 +1598,12 @@
             "coherent_gain": "Coherent gain (mean(window) = 1)",
             "full_scale": "Full scale (sine amplitude 1 → 1.0)"
           }
+        },
+        "kaiserBetaMode": {
+          "label": "Kaiser beta mode",
+          "description": "Manual: the beta below. Auto: derived from the dB range floor, so the window's side lobes sit just under what the display can show.",
+          "manual": "Manual",
+          "auto": "Auto (from dB range)"
         }
       },
       "loudness": {
@@ -1614,7 +1672,11 @@
           "label": "Update rate",
           "description": "Spectrum frames per second sent to the page."
         },
-        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size.",
+        "features": {
+          "label": "Spectral features",
+          "description": "Compute the centroid, 85 % rolloff, flatness, flux, RMS level and bass / mid / high band levels from the linear spectrum with every frame, shown under the analyser. A few microseconds per frame."
+        }
       },
       "voice": {
         "title": "Voice detection & noise suppression",
@@ -1629,6 +1691,17 @@
       },
       "errors": {
         "start": "Could not start the analyser: {{error}}"
+      },
+      "features": {
+        "title": "Features",
+        "centroid": "Centroid",
+        "rolloff": "Rolloff",
+        "flatness": "Flatness",
+        "flux": "Flux",
+        "rms": "RMS",
+        "bass": "Bass",
+        "mid": "Mid",
+        "high": "High"
       }
     },
     "llama": {
@@ -1695,6 +1768,7 @@
         "bundledRuntime": "{{mb}} MB of bundled CUDA runtime",
         "removeRuntime": "Remove runtime",
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
+        "runtimeFreed": "Freed {{mb}} MB",
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
@@ -1789,7 +1863,13 @@
     "downloadSpeed": "{{speed}} MB/s",
     "downloading": "Downloading...",
     "downloadingCount": "{{count}} downloading...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "play": "播放",
+    "pause": "暫停",
+    "moreInformation": "更多資訊",
+    "selectOption": "Select an option...",
+    "unknownSize": "Unknown size",
+    "charsPerSecond": "{{value}} chars/s"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} 需要輔助使用權限才能輸入轉錄的文字",
@@ -1797,6 +1877,7 @@
   },
   "errors": {
     "loadDirectory": "載入目錄時發生錯誤: {{error}}",
+    "loadDirectoryUnknown": "unknown error",
     "micPermissionDeniedTitle": "麥克風存取被拒絕",
     "micPermissionDenied": {
       "generic": "作業系統拒絕了麥克風存取。請在系統設定中授予麥克風權限。",
@@ -1811,7 +1892,8 @@
     "modelLoadFailedUnknown": "未知模型",
     "pasteFailedTitle": "貼上文字失敗",
     "pasteFailed": "無法將文字貼上至目前作用中的應用程式。",
-    "transcriptionFailedTitle": "轉錄失敗"
+    "transcriptionFailedTitle": "轉錄失敗",
+    "unknownError": "Unknown error"
   },
   "appLanguage": {
     "title": "應用程式語言",
@@ -1958,6 +2040,9 @@
     "custom": "Custom Color",
     "reset": "Reset to Default",
     "presets": {
+      "cyan": "Neon Cyan",
+      "magenta": "Neon Magenta",
+      "lime": "Terminal Green",
       "gold": "Gold",
       "pink": "Rose",
       "amber": "Amber",

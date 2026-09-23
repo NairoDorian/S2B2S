@@ -9,11 +9,18 @@
 //!   is open, one `try_lock` on an uncontended mutex and a memcpy. Nothing
 //!   on that thread ever waits for this module.
 //! * A `live-fft` worker thread drains the ring, runs the pipeline at
-//!   `update_rate_hz` and emits one [`LiveFftFrameEvent`] per frame to the
-//!   main window only (`emit_to`, like the meters). Latest wins: a slow
-//!   webview never backs up the analysis.
+//!   `update_rate_hz` and encodes each frame as raw little-endian bytes
+//!   ([`encode_frame`]) into a slot the page polls with the `live_fft_frame`
+//!   command (like the overlay's scope): no JSON, no event per frame, and a
+//!   poll that already has the newest frame gets a 32-byte header. Latest
+//!   wins: a slow webview never backs up the analysis. The Hz of every
+//!   output bin is fetched separately (`live_fft_axis`) when a frame's axis
+//!   version changes.
 //! * With `async_analysis` off the pipeline runs inline on the consumer
-//!   thread; the worker then only supervises.
+//!   thread; the worker then only supervises. On that thread every lock is
+//!   a `try_lock` (a contended settings refresh, status write or frame
+//!   publish is skipped and retried on the next frame) and nothing is
+//!   emitted.
 //! * The worker also checks once a second that the recording is still ours
 //!   (the cancel hotkey ends it), that the main window is visible (frames
 //!   are not computed for a hidden window, and a session hidden for two
@@ -21,20 +28,21 @@
 //!   publishes a status heartbeat.
 //!
 //! A session is a normal recording under the `live_fft` binding with
-//! the VAD off and the captured audio discarded (nothing is transcribed or
-//! saved), so the transcription hotkeys get "Already recording" while it
+//! the VAD off (or in `Streaming` policy when `show_vad` drives the
+//! voice-detection view) and the captured audio discarded (nothing is
+//! transcribed or saved), so the transcription hotkeys get "Already recording" while it
 //! runs, exactly like the live VAD test.
 
 pub mod dsp;
 pub mod scope;
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use log::{debug, info, warn};
-use rtrb::{Consumer, Producer, RingBuffer};
+use rtrb::{Consumer, CopyToUninit, Producer, RingBuffer};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Manager};
@@ -117,8 +125,23 @@ pub struct LiveFftStatus {
     pub dsp_us_avg: f32,
     pub dsp_us_max: f32,
     pub started_at_ms: Option<f64>,
-    /// Frequency of every output bin (rebuilt with the warp tables).
-    pub axis_hz: Vec<f32>,
+    /// Version of the output axis (`LiveFftAxis.version`); bumps whenever
+    /// the Hz of the output bins change.
+    pub axis_version: u32,
+    /// `display_max_hz / (output_bins − 1)`: the spacing of a uniform axis,
+    /// the mean spacing of a perceptual one (0 below two bins).
+    pub hz_per_bin: f32,
+    /// Output bins formed by peak / RMS aggregation over the FFT bins they
+    /// own rather than by interpolation.
+    pub aggregated_bins: u32,
+    /// β of the Kaiser window in use, after the Auto rule (0 for any other
+    /// window).
+    pub kaiser_beta: f32,
+    /// Half the window plus, with async analysis, one frame period: how
+    /// far behind the audio a frame's centre is.
+    pub analysis_latency_ms: f32,
+    /// The frames are the raw rfft magnitudes.
+    pub raw_bins: bool,
 }
 
 /// Emitted on every phase change and roughly once a second while running.
@@ -127,17 +150,154 @@ pub struct LiveFftStateEvent {
     pub status: LiveFftStatus,
 }
 
-/// One analysed frame: `output_bins` values in the unit the loudness mode
-/// selects (linear magnitude, dB, or 0…1). Sent to the main window only,
-/// at `update_rate_hz`.
-#[derive(Serialize, Deserialize, Clone, Debug, Type, tauri_specta::Event)]
-pub struct LiveFftFrameEvent {
+/// The frequency of every output bin, fetched by the page when a frame's
+/// axis version differs from the one it holds.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, Type)]
+pub struct LiveFftAxis {
+    /// Matches word 3 of a frame header; 0 = no axis yet.
+    pub version: u32,
+    /// Centre frequency of each output bin, in Hz.
+    pub hz: Vec<f32>,
+}
+
+/* ───────────────────────── frame transport ───────────────────────── */
+
+/// Words (u32 / f32, little-endian) in a page frame header.
+pub const FRAME_HEADER_WORDS: usize = 8;
+/// Header flag: the analysed window was digital silence.
+pub const FRAME_FLAG_SILENT: u32 = 1;
+/// Header flag: a running session produced the frame.
+pub const FRAME_FLAG_ACTIVE: u32 = 2;
+/// Header flag: the spectral features follow the bins.
+pub const FRAME_FLAG_HAS_FEATURES: u32 = 4;
+/// Spectral features per frame when they are shipped.
+pub const FRAME_FEATURES: usize = 8;
+
+/// What a page frame carries besides its arrays.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FrameHeader {
     pub seq: u32,
-    pub bins: Vec<f32>,
+    pub flags: u32,
+    pub axis_version: u32,
     pub peak_hz: f32,
+    /// In output units (linear, dB or 0…1).
     pub peak_value: f32,
-    pub silent: bool,
     pub dsp_us: f32,
+}
+
+/// Append `values` as little-endian f32 bytes, in one copy on a
+/// little-endian target.
+pub(crate) fn extend_f32_le(out: &mut Vec<u8>, values: &[f32]) {
+    #[cfg(target_endian = "little")]
+    {
+        // SAFETY: `f32` has no padding and no invalid bit patterns as bytes,
+        // `u8` has alignment 1, and the byte slice covers exactly the memory
+        // of `values`, which outlives it.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
+        };
+        out.extend_from_slice(bytes);
+    }
+    #[cfg(not(target_endian = "little"))]
+    for v in values {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+}
+
+/// Encode a page frame: [`FRAME_HEADER_WORDS`] little-endian words — seq,
+/// flags, bins length, axis version, peak Hz (f32), peak value (f32), DSP
+/// time in µs (f32), features length (0 or 8) — then the bins and the
+/// features (centroid Hz, rolloff Hz, flatness, flux, RMS dB, bass / mid /
+/// high dB) as f32. The page maps `Float32Array` views onto the buffer.
+pub fn encode_frame(
+    out: &mut Vec<u8>,
+    header: &FrameHeader,
+    bins: &[f32],
+    features: Option<&[f32; FRAME_FEATURES]>,
+) {
+    let features: &[f32] = match features {
+        Some(f) => f,
+        None => &[],
+    };
+    out.clear();
+    out.reserve((FRAME_HEADER_WORDS + bins.len() + features.len()) * 4);
+    for word in [
+        header.seq,
+        header.flags,
+        bins.len() as u32,
+        header.axis_version,
+        header.peak_hz.to_bits(),
+        header.peak_value.to_bits(),
+        header.dsp_us.to_bits(),
+        features.len() as u32,
+    ] {
+        out.extend_from_slice(&word.to_le_bytes());
+    }
+    extend_f32_le(out, bins);
+    extend_f32_le(out, features);
+}
+
+/// The header of an encoded frame alone, with the payload-length words
+/// `len_words` set to 0: the reply to a poll that already holds this seq.
+pub(crate) fn header_only(frame: &[u8], len_words: &[usize]) -> Vec<u8> {
+    let mut out = frame[..frame.len().min(FRAME_HEADER_WORDS * 4)].to_vec();
+    for &w in len_words {
+        if let Some(word) = out.get_mut(w * 4..w * 4 + 4) {
+            word.fill(0);
+        }
+    }
+    out
+}
+
+/// Word 0 of an encoded frame.
+pub(crate) fn frame_seq(frame: &[u8]) -> u32 {
+    frame
+        .get(..4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .unwrap_or(0)
+}
+
+/// Header-only frame with no ACTIVE flag: what the page reads before the
+/// first frame and after a session.
+fn idle_frame(seq: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    encode_frame(
+        &mut out,
+        &FrameHeader {
+            seq,
+            ..FrameHeader::default()
+        },
+        &[],
+        None,
+    );
+    out
+}
+
+/// Process-wide frame numbers (never 0, which means "no frame"), so a poll
+/// carrying a seq from an earlier session can never match a new frame.
+static NEXT_FRAME_SEQ: AtomicU32 = AtomicU32::new(1);
+
+fn next_frame_seq() -> u32 {
+    loop {
+        let v = NEXT_FRAME_SEQ.fetch_add(1, Ordering::Relaxed);
+        if v != 0 {
+            return v;
+        }
+    }
+}
+
+/// `lock()` that shrugs off poisoning (the data is plain telemetry).
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// `try_lock()` that shrugs off poisoning; `None` only when contended.
+fn try_lock<T>(m: &Mutex<T>) -> Option<MutexGuard<'_, T>> {
+    match m.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(TryLockError::Poisoned(p)) => Some(p.into_inner()),
+        Err(TryLockError::WouldBlock) => None,
+    }
 }
 
 /* ───────────────────────── the tap ───────────────────────── */
@@ -178,7 +338,6 @@ pub struct AnalysisTap {
     source: AtomicU8,
     inline: AtomicBool,
     sample_rate: AtomicU32,
-    pushed: AtomicU64,
     dropped: AtomicU64,
     /// Only the audio consumer thread locks this, so it is never contended;
     /// `try_lock` keeps the guarantee that the thread cannot block here.
@@ -204,7 +363,6 @@ impl AnalysisTap {
             source: AtomicU8::new(TapSource::Native as u8),
             inline: AtomicBool::new(false),
             sample_rate: AtomicU32::new(0),
-            pushed: AtomicU64::new(0),
             dropped: AtomicU64::new(0),
             producer: Mutex::new(producer),
             consumer: Mutex::new(Some(consumer)),
@@ -215,7 +373,6 @@ impl AnalysisTap {
     fn arm(&self, source: TapSource, inline: bool, runner: Option<Box<dyn InlineRunner>>) {
         self.source.store(source as u8, Ordering::Relaxed);
         self.inline.store(inline, Ordering::Relaxed);
-        self.pushed.store(0, Ordering::Relaxed);
         self.dropped.store(0, Ordering::Relaxed);
         *self.inline_engine.lock().unwrap() = runner;
         // Stale audio from a previous session must not reach the new one.
@@ -277,8 +434,6 @@ impl AnalysisSink for AnalysisTap {
 
     fn push(&self, samples: &[f32], sample_rate: u32) {
         self.sample_rate.store(sample_rate, Ordering::Relaxed);
-        self.pushed
-            .fetch_add(samples.len() as u64, Ordering::Relaxed);
         if self.inline.load(Ordering::Relaxed) {
             if let Ok(mut runner) = self.inline_engine.try_lock()
                 && let Some(runner) = runner.as_mut()
@@ -294,9 +449,16 @@ impl AnalysisSink for AnalysisTap {
         };
         let writable = producer.slots().min(samples.len());
         if writable > 0
-            && let Ok(chunk) = producer.write_chunk_uninit(writable)
+            && let Ok(mut chunk) = producer.write_chunk_uninit(writable)
         {
-            chunk.fill_from_iter(samples[..writable].iter().copied());
+            // Two slice copies (the ring may wrap), not one push per sample.
+            let (first, second) = chunk.as_mut_slices();
+            let split = first.len();
+            samples[..split].copy_to_uninit(first);
+            samples[split..writable].copy_to_uninit(second);
+            // SAFETY: the two slices, i.e. every slot of the chunk, were
+            // just written.
+            unsafe { chunk.commit_all() };
         }
         if writable < samples.len() {
             self.dropped
@@ -317,12 +479,47 @@ struct Shared {
     /// Cleared while the main window is hidden: frames are neither computed
     /// nor sent (docs/PERFORMANCE.md rule 4 / 9).
     emit_enabled: AtomicBool,
+    /// The latest encoded page frame ([`encode_frame`]); swapped in whole by
+    /// the engine, copied out by the `live_fft_frame` poll.
+    frame: Mutex<Vec<u8>>,
+    /// The Hz of every output bin, rewritten when the axis version changes.
+    axis: Mutex<LiveFftAxis>,
 }
 
 impl Shared {
+    fn new(settings: LiveFftSettings) -> Self {
+        Self {
+            settings: Mutex::new(settings),
+            settings_version: AtomicU64::new(1),
+            status: Mutex::new(LiveFftStatus::default()),
+            active: AtomicBool::new(false),
+            stop_requested: AtomicBool::new(false),
+            reset_requested: AtomicBool::new(false),
+            emit_enabled: AtomicBool::new(true),
+            frame: Mutex::new(idle_frame(0)),
+            axis: Mutex::new(LiveFftAxis::default()),
+        }
+    }
+
     fn settings_snapshot(&self) -> (LiveFftSettings, u64) {
         let version = self.settings_version.load(Ordering::Acquire);
-        (self.settings.lock().unwrap().clone(), version)
+        (lock(&self.settings).clone(), version)
+    }
+
+    /// [`Shared::settings_snapshot`] that gives up instead of waiting.
+    fn try_settings_snapshot(&self) -> Option<(LiveFftSettings, u64)> {
+        let version = self.settings_version.load(Ordering::Acquire);
+        try_lock(&self.settings).map(|s| (s.clone(), version))
+    }
+
+    /// The latest frame, or its bare header when the caller already has it.
+    fn frame_reply(&self, known_seq: Option<u32>) -> Vec<u8> {
+        let frame = lock(&self.frame);
+        if known_seq.is_some_and(|seq| seq == frame_seq(&frame)) {
+            header_only(&frame, &[2, 7])
+        } else {
+            frame.clone()
+        }
     }
 }
 
@@ -331,58 +528,93 @@ impl Shared {
 /// Pipeline + settings snapshot + telemetry; owned by the worker (async)
 /// or parked inside the tap (inline).
 struct Engine {
-    app: AppHandle,
     shared: Arc<Shared>,
+    /// Runs on the audio consumer thread: every lock is a `try_lock`.
+    inline: bool,
     pipeline: SpectrumPipeline,
     settings: LiveFftSettings,
     settings_version: u64,
     period: Duration,
     out: Vec<f32>,
-    seq: u32,
+    /// Reused encode buffer; swapped with the shared slot on publish.
+    encoded: Vec<u8>,
     last_process: Option<Instant>,
     frames: u32,
     dsp_avg: f32,
     dsp_max: f32,
     status_version_seen: u64,
     last_status_write: Instant,
+    /// Axis version last written to the shared axis.
+    axis_published: u32,
 }
 
 impl Engine {
-    fn new(app: AppHandle, shared: Arc<Shared>) -> Self {
+    fn new(shared: Arc<Shared>, inline: bool) -> Self {
         let (settings, settings_version) = shared.settings_snapshot();
         let period = Duration::from_secs_f64(1.0 / f64::from(settings.update_rate_hz.max(1)));
         Self {
-            app,
             shared,
+            inline,
             pipeline: SpectrumPipeline::new(),
             settings,
             settings_version,
             period,
             out: Vec::new(),
-            seq: 0,
+            encoded: Vec::new(),
             last_process: None,
             frames: 0,
             dsp_avg: 0.0,
             dsp_max: 0.0,
             status_version_seen: u64::MAX,
             last_status_write: Instant::now(),
+            axis_published: 0,
+        }
+    }
+
+    /// Lock a shared slot: blocking on the worker, `try_lock` inline.
+    fn guard<'a, T>(&self, m: &'a Mutex<T>) -> Option<MutexGuard<'a, T>> {
+        if self.inline {
+            try_lock(m)
+        } else {
+            Some(lock(m))
         }
     }
 
     fn refresh_settings(&mut self) {
         let version = self.shared.settings_version.load(Ordering::Acquire);
         if version != self.settings_version {
-            let (settings, version) = self.shared.settings_snapshot();
-            self.settings = settings;
-            self.settings_version = version;
-            self.period =
-                Duration::from_secs_f64(1.0 / f64::from(self.settings.update_rate_hz.max(1)));
+            let snapshot = if self.inline {
+                // Contended (a settings write is in flight): keep the
+                // previous snapshot and try again on the next call.
+                self.shared.try_settings_snapshot()
+            } else {
+                Some(self.shared.settings_snapshot())
+            };
+            if let Some((settings, version)) = snapshot {
+                self.settings = settings;
+                self.settings_version = version;
+                self.period =
+                    Duration::from_secs_f64(1.0 / f64::from(self.settings.update_rate_hz.max(1)));
+            }
         }
     }
 
     fn ingest(&mut self, samples: &[f32], sample_rate: u32) {
         self.refresh_settings();
+        // Before the EQ filters these samples, so a Reset clears its state
+        // at once (Plugin_FFT's Reset pulse) rather than one frame late.
+        self.apply_pending_reset();
         self.pipeline.ingest(samples, sample_rate, &self.settings);
+    }
+
+    /// Consume a pending Reset (the page's button). Called from both
+    /// `ingest` and `process`, which run on the same thread; the swap
+    /// consumes each request exactly once, whichever comes first, and a
+    /// request made between the two is taken by `process`.
+    fn apply_pending_reset(&mut self) {
+        if self.shared.reset_requested.swap(false, Ordering::AcqRel) {
+            self.pipeline.reset_state();
+        }
     }
 
     /// Time until the next frame is due (zero when it is).
@@ -404,9 +636,7 @@ impl Engine {
 
     fn process(&mut self, now: Instant) {
         self.refresh_settings();
-        if self.shared.reset_requested.swap(false, Ordering::AcqRel) {
-            self.pipeline.reset_state();
-        }
+        self.apply_pending_reset();
         let dt_ms = self
             .last_process
             .map(|last| now.duration_since(last).as_secs_f64() * 1000.0)
@@ -420,7 +650,6 @@ impl Engine {
         }
 
         let stats = self.pipeline.process(&self.settings, dt_ms, &mut self.out);
-        self.seq = self.seq.wrapping_add(1);
         self.frames = self.frames.saturating_add(1);
         self.dsp_max = self.dsp_max.max(stats.dsp_us);
         self.dsp_avg = if self.frames == 1 {
@@ -429,27 +658,64 @@ impl Engine {
             self.dsp_avg + (stats.dsp_us - self.dsp_avg) * 0.05
         };
 
-        let _ = LiveFftFrameEvent {
-            seq: self.seq,
-            bins: self.out.clone(),
+        // The axis goes out before the first frame that refers to it, so a
+        // page fetching it on a version change finds it.
+        let axis_version = self.pipeline.axis_version();
+        if axis_version != self.axis_published {
+            self.publish_axis(axis_version);
+        }
+
+        let features = stats.features.map(|f| f.to_array());
+        let header = FrameHeader {
+            seq: next_frame_seq(),
+            flags: FRAME_FLAG_ACTIVE
+                | if stats.silent { FRAME_FLAG_SILENT } else { 0 }
+                | if features.is_some() {
+                    FRAME_FLAG_HAS_FEATURES
+                } else {
+                    0
+                },
+            axis_version,
             peak_hz: stats.peak_hz,
             peak_value: stats.peak_value,
-            silent: stats.silent,
             dsp_us: stats.dsp_us,
+        };
+        encode_frame(&mut self.encoded, &header, &self.out, features.as_ref());
+        // Latest wins: a frame whose slot is busy (inline only) is dropped.
+        if let Some(mut slot) = self.guard(&self.shared.frame) {
+            std::mem::swap(&mut *slot, &mut self.encoded);
         }
-        .emit_to(&self.app, "main");
 
         // Telemetry into the shared status: on every rebuild, else ~1 Hz.
         let rebuilt = self.pipeline.status_version() != self.status_version_seen;
-        if rebuilt || now.duration_since(self.last_status_write) >= SUPERVISE_TICK {
-            self.write_status(rebuilt, stats.dsp_us);
+        if (rebuilt || now.duration_since(self.last_status_write) >= SUPERVISE_TICK)
+            && self.write_status(rebuilt, stats.dsp_us)
+        {
             self.last_status_write = now;
         }
     }
 
-    fn write_status(&mut self, rebuilt: bool, dsp_us_last: f32) {
+    /// Rewrite the shared axis in place (its buffer is reused). Retried on
+    /// the next frame when the slot is busy.
+    fn publish_axis(&mut self, version: u32) {
+        let Some(mut axis) = self.guard(&self.shared.axis) else {
+            return;
+        };
+        axis.version = version;
+        axis.hz.clear();
+        axis.hz
+            .extend(self.pipeline.target_hz().iter().map(|hz| *hz as f32));
+        drop(axis);
+        self.axis_published = version;
+    }
+
+    /// Returns false when the status was busy (inline) and nothing was
+    /// written; the caller retries on the next frame.
+    fn write_status(&mut self, rebuilt: bool, dsp_us_last: f32) -> bool {
         let ps = self.pipeline.status(&self.settings);
-        let mut status = self.shared.status.lock().unwrap();
+        let Some(mut status) = self.guard(&self.shared.status) else {
+            return false;
+        };
         status.sample_rate = ps.sample_rate;
         status.fft_size = ps.fft_size;
         status.window_samples = ps.window_samples;
@@ -467,24 +733,39 @@ impl Engine {
         status.dsp_us_last = dsp_us_last;
         status.dsp_us_avg = self.dsp_avg;
         status.dsp_us_max = self.dsp_max;
+        status.axis_version = ps.axis_version;
+        status.hz_per_bin = ps.hz_per_bin;
+        status.aggregated_bins = ps.aggregated_bins;
+        status.kaiser_beta = ps.kaiser_beta;
+        status.raw_bins = ps.raw_bins;
+        let half_window_ms = if ps.sample_rate > 0 {
+            0.5 * ps.window_samples as f32 / ps.sample_rate as f32 * 1000.0
+        } else {
+            0.0
+        };
+        status.analysis_latency_ms = half_window_ms
+            + if self.settings.async_analysis {
+                self.period.as_secs_f32() * 1000.0
+            } else {
+                0.0
+            };
+        drop(status);
         if rebuilt {
-            status.axis_hz = self
-                .pipeline
-                .target_hz()
-                .iter()
-                .map(|hz| *hz as f32)
-                .collect();
             self.status_version_seen = self.pipeline.status_version();
             debug!(
-                "Live FFT: transform rebuilt — {} Hz, N={}, window {} samples, {} bins ({} magnitudes computed, identity={})",
+                "Live FFT: transform / window / warp rebuilt — {} Hz, N={}, window {} samples, β {:.2}, {} bins ({} magnitudes computed, {} aggregated, identity={}, raw={})",
                 ps.sample_rate,
                 ps.fft_size,
                 ps.window_samples,
+                ps.kaiser_beta,
                 ps.output_bins,
                 ps.magnitude_bins,
-                ps.identity_warp
+                ps.aggregated_bins,
+                ps.identity_warp,
+                ps.raw_bins
             );
         }
+        true
     }
 }
 
@@ -513,15 +794,7 @@ impl LiveFftManager {
         let overlay_scope = all.overlay_scope;
         Self {
             app,
-            shared: Arc::new(Shared {
-                settings: Mutex::new(settings),
-                settings_version: AtomicU64::new(1),
-                status: Mutex::new(LiveFftStatus::default()),
-                active: AtomicBool::new(false),
-                stop_requested: AtomicBool::new(false),
-                reset_requested: AtomicBool::new(false),
-                emit_enabled: AtomicBool::new(true),
-            }),
+            shared: Arc::new(Shared::new(settings)),
             worker: Mutex::new(None),
             scope: Arc::new(ScopeShared::new(overlay_scope)),
             scope_worker: Mutex::new(None),
@@ -534,6 +807,17 @@ impl LiveFftManager {
 
     pub fn status(&self) -> LiveFftStatus {
         self.shared.status.lock().unwrap().clone()
+    }
+
+    /// The latest page frame, encoded (see [`encode_frame`]); only its
+    /// header when `known_seq` is already the newest.
+    pub fn frame(&self, known_seq: Option<u32>) -> Vec<u8> {
+        self.shared.frame_reply(known_seq)
+    }
+
+    /// The Hz of every output bin of the current axis.
+    pub fn axis(&self) -> LiveFftAxis {
+        lock(&self.shared.axis).clone()
     }
 
     /// Adopt new settings; the running engine picks them up on its next
@@ -662,9 +946,10 @@ impl LiveFftManager {
         self.join_scope_worker();
     }
 
-    /// The latest overlay frame, encoded (see `scope::encode_scope_frame`).
-    pub fn scope_frame(&self) -> Vec<u8> {
-        self.scope.frame_bytes()
+    /// The latest overlay frame, encoded (see `scope::encode_scope_frame`);
+    /// only its header when `known_seq` is already the newest.
+    pub fn scope_frame(&self, known_seq: Option<u32>) -> Vec<u8> {
+        self.scope.frame_bytes(known_seq)
     }
 
     /// The overlay's picture settings changed (waveform window, fade); a
@@ -737,7 +1022,7 @@ impl LiveFftManager {
         });
 
         let inline = !settings.async_analysis;
-        let engine = Engine::new(self.app.clone(), Arc::clone(&self.shared));
+        let engine = Engine::new(Arc::clone(&self.shared), inline);
         let (worker_engine, tap_runner): (Option<Engine>, Option<Box<dyn InlineRunner>>) = if inline
         {
             (None, Some(Box::new(engine)))
@@ -875,6 +1160,8 @@ impl LiveFftManager {
         set_vad_reporting(VAD_REPORT_LIVE_FFT, false);
         let rm = self.app.state::<Arc<AudioRecordingManager>>();
         rm.cancel_recording_if_binding(LIVE_FFT_BINDING);
+        // A fresh seq, no ACTIVE flag: a poll after the session sees it end.
+        *lock(&self.shared.frame) = idle_frame(next_frame_seq());
         self.shared.active.store(false, Ordering::Release);
         self.publish_status(|s| {
             s.phase = LiveFftPhase::Idle;
@@ -949,6 +1236,70 @@ mod tests {
         assert_eq!(tap.dropped(), 0);
         let mut consumer = tap.take_consumer().expect("consumer parked");
         assert!(drain(&mut consumer).is_empty());
+    }
+
+    /// A Reset clears the EQ state before the next chunk is filtered (like
+    /// Plugin_FFT's Reset pulse), not one frame later: after a Reset, a
+    /// window's worth of new samples gives bit for bit what a fresh pipeline
+    /// gives. The request is consumed once — by `ingest` here — and a request
+    /// made between `ingest` and `process` is taken by `process`.
+    #[test]
+    fn engine_reset_clears_the_eq_before_the_next_ingest() {
+        use crate::settings::{FftLoudnessMode, FftWindowType};
+        let settings = LiveFftSettings {
+            eq_enabled: true,
+            high_gain_db: 12.0,
+            low_gain_db: -9.0,
+            // Rectangular: the window's first samples (where a stale EQ
+            // state would show) weigh as much as any other.
+            window_type: FftWindowType::Rectangular,
+            loudness_mode: FftLoudnessMode::Off,
+            ballistics_enabled: false,
+            fft_size: 4096,
+            window_samples: 2048,
+            ..LiveFftSettings::default()
+        }
+        .normalized();
+        let rate = 48_000u32;
+        let tone = |hz: f32, n: usize| -> Vec<f32> {
+            (0..n)
+                .map(|i| 0.5 * (2.0 * std::f32::consts::PI * hz * i as f32 / rate as f32).sin())
+                .collect()
+        };
+        let shared = Arc::new(Shared::new(settings.clone()));
+        let mut engine = Engine::new(Arc::clone(&shared), false);
+        // Build up EQ state with a loud low tone.
+        engine.ingest(&tone(90.0, 4800), rate);
+        engine.process(Instant::now());
+
+        shared.reset_requested.store(true, Ordering::Release);
+        let fresh_block = tone(7000.0, 2048);
+        engine.ingest(&fresh_block, rate);
+        assert!(
+            !shared.reset_requested.load(Ordering::Acquire),
+            "ingest consumed the request"
+        );
+        engine.process(Instant::now());
+
+        let mut reference = SpectrumPipeline::new();
+        let mut want = Vec::new();
+        reference.ingest(&fresh_block, rate, &settings);
+        reference.process(&settings, 33.0, &mut want);
+        assert_eq!(engine.out, want, "the EQ restarted from zero state");
+
+        // Without a Reset the stale state shows: the same block after the
+        // low tone differs from the fresh pipeline.
+        let mut stale = Engine::new(Arc::new(Shared::new(settings.clone())), false);
+        stale.ingest(&tone(90.0, 4800), rate);
+        stale.process(Instant::now());
+        stale.ingest(&fresh_block, rate);
+        stale.process(Instant::now());
+        assert_ne!(stale.out, want, "the test can see a stale EQ state");
+
+        // A request made after ingest is applied by process, once.
+        shared.reset_requested.store(true, Ordering::Release);
+        engine.process(Instant::now());
+        assert!(!shared.reset_requested.load(Ordering::Acquire));
     }
 
     #[test]

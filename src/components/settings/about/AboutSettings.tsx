@@ -20,17 +20,12 @@ export const AboutSettings = () => {
   createEffect(
     () => undefined,
     () => {
-      const fetchVersion = async () => {
-        try {
-          const appVersion = await getVersion();
-          setVersion(appVersion);
-        } catch (error) {
+      getVersion()
+        .then(setVersion)
+        .catch((error) => {
           console.error("Failed to get app version:", error);
           setVersion("");
-        }
-      };
-
-      fetchVersion();
+        });
     },
   );
 

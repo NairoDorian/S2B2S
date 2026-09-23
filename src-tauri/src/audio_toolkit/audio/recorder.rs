@@ -17,8 +17,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use crate::audio_toolkit::{
     VoiceActivityDetector,
     audio::{
-        AudioVisualiser, ChunkTap, DenoiseChain, DenoiseControls, DenoiseParams, FrameResampler,
-        RNNOISE_SAMPLE_RATE,
+        ChunkTap, DenoiseChain, DenoiseControls, DenoiseParams, FrameResampler, RNNOISE_SAMPLE_RATE,
     },
     constants,
     vad::{self, VadFrame},
@@ -146,7 +145,6 @@ impl VadConfig {
 /// Callback invoked with each 16 kHz mono frame that passes the active capture
 /// policy while recording. Used to feed a live streaming transcription as audio arrives.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
-pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 
 /// A snapshot of how much of this recording has actually been speech.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,9 +189,12 @@ pub type VadFrameCallback = Arc<dyn Fn(VadFrameReport) + Send + Sync + 'static>;
 /// (the Live FFT page). Three tap points: the native-rate mono chunk, before
 /// resampling and noise suppression; the 48 kHz frames as they leave RNNoise
 /// (the native chunk again while suppression is off, so toggling it is a
-/// direct A/B); and the 16 kHz frames after both and before the VAD. The `wants_*` checks run per chunk / per frame on the
-/// audio consumer thread, so implementations gate with atomics, and `push`
-/// must never block or allocate on that thread.
+/// direct A/B); and the 16 kHz frames after both and before the VAD. The
+/// `wants_*` checks run per chunk / per frame on the audio consumer thread, so
+/// implementations gate with atomics, and `push` must never block on that
+/// thread; it must not allocate either, except in the opt-in inline analysis
+/// mode (Live FFT's `async_analysis` off), which runs the transform and emits
+/// its frame event there on purpose.
 pub trait AnalysisSink: Send + Sync {
     fn wants_native(&self) -> bool;
     fn wants_denoised(&self) -> bool;
@@ -347,7 +348,6 @@ pub struct AudioRecorder {
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker_handle: Option<std::thread::JoinHandle<()>>,
     vad: Option<VadConfig>,
-    level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
     vad_frame_cb: Option<VadFrameCallback>,
@@ -379,7 +379,6 @@ impl AudioRecorder {
             cmd_tx: None,
             worker_handle: None,
             vad: None,
-            level_cb: None,
             audio_cb: None,
             speech_cb: None,
             vad_frame_cb: None,
@@ -395,8 +394,9 @@ impl AudioRecorder {
     }
 
     /// Attach the Live FFT tap. It sees the native-rate chunk (before
-    /// resampling and noise suppression) or the 16 kHz frames after them,
-    /// whichever it asks for, and only while a recording is active.
+    /// resampling and noise suppression), the 48 kHz frames after RNNoise, or
+    /// the 16 kHz frames the model hears, whichever it asks for, and only while
+    /// a recording is active.
     pub fn with_analysis_sink(mut self, sink: AnalysisSinkRef) -> Self {
         self.analysis = Some(sink);
         self
@@ -428,14 +428,6 @@ impl AudioRecorder {
             streaming_hangover_frames,
             onset_frames,
         });
-        self
-    }
-
-    pub fn with_level_callback<F>(mut self, cb: F) -> Self
-    where
-        F: Fn(Vec<f32>) + Send + Sync + 'static,
-    {
-        self.level_cb = Some(Arc::new(cb));
         self
     }
 
@@ -539,7 +531,6 @@ impl AudioRecorder {
 
         let thread_device = device.clone();
         let vad = self.vad.clone();
-        let level_cb = self.level_cb.clone();
         let audio_cb = self.audio_cb.clone();
         let speech_cb = self.speech_cb.clone();
         let vad_frame_cb = self.vad_frame_cb.clone();
@@ -578,6 +569,10 @@ impl AudioRecorder {
                     let sample_rate = config.sample_rate();
                     let sample_format = config.sample_format();
                     let channels = config.channels() as usize;
+                    // The persisted channel outlives a microphone change; an
+                    // index past this device's channels would panic in the
+                    // callback, so it averages instead (the log below says so).
+                    let usable_channel = usable_input_channel(selected_channel, channels);
 
                     log::info!(
                         "Using device: {:?} (sample rate {}, channels {}, format {:?})",
@@ -607,7 +602,7 @@ impl AudioRecorder {
                             &thread_device,
                             &config,
                             channels,
-                            selected_channel,
+                            usable_channel,
                             Arc::clone(&transport),
                             Arc::clone(&stream_error),
                         ),
@@ -615,7 +610,7 @@ impl AudioRecorder {
                             &thread_device,
                             &config,
                             channels,
-                            selected_channel,
+                            usable_channel,
                             Arc::clone(&transport),
                             Arc::clone(&stream_error),
                         ),
@@ -623,7 +618,7 @@ impl AudioRecorder {
                             &thread_device,
                             &config,
                             channels,
-                            selected_channel,
+                            usable_channel,
                             Arc::clone(&transport),
                             Arc::clone(&stream_error),
                         ),
@@ -631,7 +626,7 @@ impl AudioRecorder {
                             &thread_device,
                             &config,
                             channels,
-                            selected_channel,
+                            usable_channel,
                             Arc::clone(&transport),
                             Arc::clone(&stream_error),
                         ),
@@ -639,7 +634,7 @@ impl AudioRecorder {
                             &thread_device,
                             &config,
                             channels,
-                            selected_channel,
+                            usable_channel,
                             Arc::clone(&transport),
                             Arc::clone(&stream_error),
                         ),
@@ -679,7 +674,6 @@ impl AudioRecorder {
                         sample_rate,
                         sample_format,
                         vad,
-                        level_cb,
                         audio_cb,
                         speech_cb,
                         vad_frame_cb,
@@ -971,6 +965,12 @@ impl AudioRecorder {
     }
 }
 
+/// The channel the callback may index: `selected` when the device has it,
+/// otherwise `None` (average all channels).
+fn usable_input_channel(selected: Option<usize>, channels: usize) -> Option<usize> {
+    selected.filter(|&channel| channel < channels)
+}
+
 fn acknowledge_pause_after_write(transport: &CaptureTransportState) {
     if transport.pause_requested.load(Ordering::Acquire) {
         transport.pause_acknowledged.store(true, Ordering::Release);
@@ -1111,7 +1111,6 @@ pub(crate) struct CaptureProcessor {
     in_sample_rate: u32,
     in_sample_format: cpal::SampleFormat,
     vad: Option<VadConfig>,
-    level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
     speech_cb: Option<SpeechActivityCallback>,
     vad_frame_cb: Option<VadFrameCallback>,
@@ -1121,7 +1120,6 @@ pub(crate) struct CaptureProcessor {
     chunk_tap: Option<Arc<ChunkTap>>,
     speech_clock: SpeechClock,
     stream_running_at: Instant,
-    visualizer: AudioVisualiser,
     /// Direct path: native rate → 16 kHz VAD frames.
     frame_resampler: FrameResampler,
     /// Denoised path: native rate → 48 kHz → RNNoise → 16 kHz VAD frames.
@@ -1159,7 +1157,6 @@ impl CaptureProcessor {
     pub(crate) fn new(
         in_sample_rate: u32,
         vad: Option<VadConfig>,
-        level_cb: Option<LevelCallback>,
         audio_cb: Option<AudioFrameCallback>,
         stream_running_at: Instant,
     ) -> Self {
@@ -1167,7 +1164,6 @@ impl CaptureProcessor {
             in_sample_rate,
             cpal::SampleFormat::F32,
             vad,
-            level_cb,
             audio_cb,
             None,
             None,
@@ -1187,7 +1183,6 @@ impl CaptureProcessor {
         in_sample_rate: u32,
         in_sample_format: cpal::SampleFormat,
         vad: Option<VadConfig>,
-        level_cb: Option<LevelCallback>,
         audio_cb: Option<AudioFrameCallback>,
         speech_cb: Option<SpeechActivityCallback>,
         vad_frame_cb: Option<VadFrameCallback>,
@@ -1219,14 +1214,6 @@ impl CaptureProcessor {
             frame_duration,
         );
 
-        const BUCKETS: usize = 16;
-        let target_window = (f64::from(in_sample_rate) / 30.0).round() as usize;
-        let window_size = [256usize, 512, 1024, 2048]
-            .into_iter()
-            .min_by_key(|w| w.abs_diff(target_window))
-            .unwrap();
-        let visualizer = AudioVisualiser::new(in_sample_rate, window_size, BUCKETS, 400.0, 4000.0);
-
         let max_drain_samples =
             ((in_sample_rate as u128 * MAX_DRAIN_CHUNK.as_millis()) / 1_000).max(1) as usize;
 
@@ -1234,7 +1221,6 @@ impl CaptureProcessor {
             in_sample_rate,
             in_sample_format,
             vad,
-            level_cb,
             audio_cb,
             speech_cb,
             vad_frame_cb,
@@ -1242,7 +1228,6 @@ impl CaptureProcessor {
             chunk_tap,
             speech_clock,
             stream_running_at,
-            visualizer,
             frame_resampler,
             denoise: None,
             denoise_active: denoise_enabled.load(Ordering::Relaxed),
@@ -1296,7 +1281,6 @@ impl CaptureProcessor {
         self.frame_elapsed = std::time::Duration::ZERO;
         self.chunk_max_elapsed = std::time::Duration::ZERO;
         self.timed_frames = 0;
-        self.visualizer.reset();
         self.frame_resampler.reset();
         if let Some(chain) = &mut self.denoise {
             chain.reset();
@@ -1344,15 +1328,6 @@ impl CaptureProcessor {
         let pipeline_start = Instant::now();
         if self.capture_raw {
             self.raw_captured_samples.extend_from_slice(raw);
-        }
-
-        // The 16-bucket level meter runs only for a registered callback; the
-        // overlay draws the Live FFT scope instead (live_fft::scope), so the
-        // app registers none and this costs one branch.
-        if let Some(callback) = &self.level_cb
-            && let Some(buckets) = self.visualizer.feed(raw)
-        {
-            callback(buckets);
         }
 
         // Live FFT native tap: the untouched microphone chunk, like the raw

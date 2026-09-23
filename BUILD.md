@@ -19,7 +19,8 @@ bun run precommit:full  # the gate plus clippy and the Rust test suite
 
 `bun run precommit` runs, in order: identity mirrors (`meta:sync`), identity in
 sync (`meta:check`), no stale product name (`check:identity`), translations
-complete, `lint`, `typecheck`, `format:check`, and the repomix pack. The
+complete, `lint`, `typecheck`, the unit checks (`test:unit`), `format:check`,
+and the repomix pack. The
 `--full` variant adds `lint:backend` (clippy) and `test:backend` (the Rust test
 suite), which is what `pre-commit` itself deliberately omits — see the header of
 `scripts/pre-commit.ts` for why.
@@ -164,7 +165,7 @@ pure Rust — and speech models come from the in-app catalog on first run.
 
 ### 4. Build for Production
 
-ZER0 provides two release build commands:
+ZER0 provides three release build commands:
 
 ```bash
 # Fast local build (auto-detects and compiles CUDA kernels only for your local GPU):
@@ -172,10 +173,14 @@ bun run build:fast
 
 # Full distribution build (compiles complete multi-architecture CUDA matrix):
 bun run build:full
+
+# CPU-only smoke build (no CUDA at all):
+bun run build:cpu
 ```
 
 - **`build:fast` (`bun run build:fast` or `bun run tauri build --fast`)**: Ideal for local development release testing. Automatically sets `TRANSCRIBE_CUDA_ARCHITECTURES=auto` to target solely the active system GPU, dramatically cutting compile time.
-- **`build:full` (`bun run build:full` or `bun run tauri build`)**: Used for releasing distribution packages. Compiles the full matrix of CUDA architectures to run across all supported NVIDIA GPU generations.
+- **`build:full` (`bun run build:full` or `bun run tauri build --full`)**: Used for releasing distribution packages. Compiles the full matrix of CUDA architectures to run across all supported NVIDIA GPU generations. A bare `bun run tauri build` is the fast local build, not this one.
+- **`build:cpu` (`bun run build:cpu` or `bun run tauri build --cpu`)**: Turns CUDA off at configure time; the app runs on the CPU backend. A quick check that a release build still compiles and bundles.
 
 This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; NSIS installer and MSI on Windows). Windows binaries are not Authenticode-signed (upstream's `signCommand`, Azure Trusted Signing, was removed — see the troubleshooting note below). **Updater artifacts are signed**: `createUpdaterArtifacts` is on and every release bundle produces `.sig` files and an updater manifest with the project's own minisign key.
 
@@ -231,7 +236,7 @@ $env:ZER0_NO_PRUNE = "1"          # skip the automatic run for this shell
 
 ## Linux Install (from source)
 
-The raw binary (`src-tauri/target/release/zer0`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
+The raw binary (`src-tauri/target/release/zer0`) cannot run standalone — it needs Tauri resource files (tray icons, sounds) to be co-located at the expected path.
 
 **Install from the deb bundle** (works on any Linux distro):
 
@@ -245,14 +250,14 @@ sudo cp -r usr/share/icons/hicolor/* /usr/share/icons/hicolor/
 sudo cp usr/share/applications/ZER0.desktop /usr/share/applications/
 ```
 
-The runtime libraries live in the app-private `/usr/usr/lib/ZER0/` (on the binary's rpath), so no `ldconfig` step is needed.
+The runtime libraries live in the app-private `/usr/lib/ZER0/` (on the binary's rpath), so no `ldconfig` step is needed.
 
 After subsequent rebuilds, copy the binary and any refreshed runtime libraries:
 
 ```bash
 sudo cp src-tauri/target/release/zer0 /usr/bin/
-sudo mkdir -p /usr/usr/lib/ZER0
-sudo cp -a src-tauri/transcribe-libs/. /usr/usr/lib/ZER0/
+sudo mkdir -p /usr/lib/ZER0
+sudo cp -a src-tauri/transcribe-libs/. /usr/lib/ZER0/
 ```
 
 Resources only need re-copying if they change upstream (new icons, sounds, models, etc.).

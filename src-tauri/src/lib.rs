@@ -245,7 +245,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     ));
 
     // Initialize the transcribe-cpp native backend (logging + backend module
-    // registration) once, before any whisper model is loaded.
+    // registration) once, before any model is loaded.
     managers::transcription::init_transcribe_backend();
     managers::arch_plugins::init_arch_plugin_dirs(app_handle);
 
@@ -637,10 +637,14 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         eprintln!("error: no model selected (pass --model or pick one in the app)");
         return 2;
     }
+    // Checked before the cold load, which can take minutes for a large GGUF.
+    if args.repeat.is_some_and(|runs| runs != 3) {
+        eprintln!("error: benchmarks require exactly 3 runs (warm-up, measured, measured)");
+        return 2;
+    }
 
     // --device-index hard-selects a compute device by its --list-devices registry
-    // index (transcribe-cpp / whisper-family models only; not persisted). Omit it
-    // to use the persisted accelerator setting.
+    // index (not persisted). Omit it to use the persisted accelerator setting.
     let device_index = args.device_index;
     let requested_device = match device_index {
         Some(idx) => format!("index {}", idx),
@@ -656,10 +660,6 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     let load_ms = load_start.elapsed().as_millis() as u64;
     let bound_backend = tm.current_backend();
 
-    if args.repeat.is_some_and(|runs| runs != 3) {
-        eprintln!("error: benchmarks require exactly 3 runs (warm-up, measured, measured)");
-        return 2;
-    }
     let runs = 3;
     let mut times_ms: Vec<f64> = Vec::new();
     let mut pipeline_runs = Vec::new();
@@ -680,10 +680,8 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
                     text
                 })
         } else {
-            tm.transcribe(samples.clone()).map(|text| {
-                pipeline_runs.push(tm.pipeline_metrics());
-                text
-            })
+            tm.transcribe(samples.clone())
+                .inspect(|_| pipeline_runs.push(tm.pipeline_metrics()))
         };
         match result {
             Ok(out) => text = out,
@@ -1011,6 +1009,7 @@ pub fn run(cli_args: CliArgs) {
             commands::live_fft::live_fft_status,
             commands::live_fft::live_fft_reset,
             commands::live_fft::live_fft_raw_defaults,
+            commands::live_fft::live_fft_axis,
             overlay::overlay_stream_text_height,
             overlay::remember_recording_overlay_window_position,
             overlay::reset_recording_overlay_manual_position,
@@ -1029,7 +1028,6 @@ pub fn run(cli_args: CliArgs) {
             live_mode::LiveModeStateEvent,
             live_mode::LiveModeTranscriptEvent,
             live_fft::LiveFftStateEvent,
-            live_fft::LiveFftFrameEvent,
             multi_stt_stream::MultiSttStreamChunkFailedEvent,
             recall::insertion::RecallInsertTextEvent,
         ]);
@@ -1040,18 +1038,23 @@ pub fn run(cli_args: CliArgs) {
         .expect("Failed to export typescript bindings");
 
     let typed_handler = specta_builder.invoke_handler();
-    // `overlay_scope_frame` answers with raw bytes (`tauri::ipc::Response`),
-    // which tauri-specta cannot type, so it is dispatched beside the typed
-    // commands instead of through `collect_commands!`. The helper hands the
-    // macro closure the signature it needs to infer the runtime type.
+    // `overlay_scope_frame` and `live_fft_frame` answer with raw bytes
+    // (`tauri::ipc::Response`), which tauri-specta cannot type, so they are
+    // dispatched beside the typed commands instead of through
+    // `collect_commands!`. The helper hands the macro closure the signature
+    // it needs to infer the runtime type.
     fn handler_for_runtime<F: Fn(tauri::ipc::Invoke<tauri::DynRuntime>) -> bool>(f: F) -> F {
         f
     }
     let binary_handler = handler_for_runtime(tauri::generate_handler![
-        commands::live_fft::overlay_scope_frame
+        commands::live_fft::overlay_scope_frame,
+        commands::live_fft::live_fft_frame
     ]);
     let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::DynRuntime>| -> bool {
-        if invoke.message.command() == "overlay_scope_frame" {
+        if matches!(
+            invoke.message.command(),
+            "overlay_scope_frame" | "live_fft_frame"
+        ) {
             binary_handler(invoke)
         } else {
             typed_handler(invoke)
@@ -1128,6 +1131,8 @@ pub fn run(cli_args: CliArgs) {
     #[allow(unused_mut)]
     let mut app = builder
         .plugin(tauri_plugin_fs::init())
+        // `relaunch()` after an installed update (UpdateChecker.tsx).
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -1200,12 +1205,11 @@ pub fn run(cli_args: CliArgs) {
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title(app_identity::NAME)
-                    // Sized so the 13-entry sidebar is fully visible without
-                    // scrolling (13 × 44 px + logo) and the status bar — model
-                    // pill, quantization, streaming latency, brain, CPU / RAM /
-                    // GPU / VRAM meters, updater — fits on one line next to the
-                    // default 208 px sidebar (≈ 1010 px of bar + sidebar). The
-                    // sidebar scrolls and collapses below that anyway.
+                    // Sized so the status bar — model pill, quantization,
+                    // streaming latency, brain, CPU / RAM / GPU / VRAM meters,
+                    // updater — fits on one line next to the default 208 px
+                    // sidebar (≈ 1010 px of bar + sidebar). The sidebar
+                    // scrolls and collapses below that anyway.
                     .inner_size(1060.0, 720.0)
                     .min_inner_size(1060.0, 720.0)
                     .resizable(true)
@@ -1244,33 +1248,7 @@ pub fn run(cli_args: CliArgs) {
             // cycling. DevTools stays enabled; only the F12 accelerator is
             // lost.
             #[cfg(target_os = "windows")]
-            {
-                let main_window_label = main_window.label().to_string();
-                let _ = main_window.with_webview(move |webview| unsafe {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    // In Tauri 3 the app runs under the type-erased DynRuntime,
-                    // so `with_webview` hands us a PlatformWebview<DynRuntime>.
-                    // Downcast to the concrete wry Webview to reach `controller()`
-                    // and the WebView2 COM interfaces.
-                    use windows_core::Interface;
-
-                    let Some(webview) = webview.downcast_ref::<tauri_runtime_wry::Webview>() else {
-                        log::warn!("Failed to downcast webview to wry runtime for '{}'", main_window_label);
-                        return;
-                    };
-
-                    let result = webview
-                        .controller()
-                        .CoreWebView2()
-                        .and_then(|core| core.Settings())
-                        .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
-                        .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
-
-                    if let Err(error) = result {
-                        log::warn!("Failed to disable WebView2 browser accelerators: {error}");
-                    }
-                });
-            }
+            webview_hardening::disable_accelerators_now(&main_window);
 
             let mut settings = get_settings(app.handle());
 
@@ -1281,7 +1259,9 @@ pub fn run(cli_args: CliArgs) {
             #[cfg(any(target_os = "windows", target_os = "macos"))]
             shortcut::apply_window_theme(app.handle(), settings.theme);
 
-            // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)
+            // CLI --debug flag: this local copy only feeds the startup log lines
+            // below. Capture is always Trace and the frontend reads `debug_mode`
+            // from the store, so it changes neither (docs/LOGGING.md).
             if cli_args.debug {
                 settings.debug_mode = true;
                 settings.log_level = settings::LogLevel::Trace;
@@ -1328,7 +1308,9 @@ pub fn run(cli_args: CliArgs) {
                 settings.overlay_style != settings::OverlayStyle::None,
             );
             overlay::update_speech_stats_enabled_cache(settings.overlay_speech_stats);
-            overlay::update_overlay_scope_cache(&settings.overlay_scope);
+            // Normalized like `change_overlay_scope_settings` does: the store is
+            // user-editable, and the geometry is u32 arithmetic.
+            overlay::update_overlay_scope_cache(&settings.overlay_scope.clone().normalized());
 
             // Pre-warm GPU/accelerator enumeration on a background thread. The first
             // get_available_accelerators call enumerates transcribe-cpp compute

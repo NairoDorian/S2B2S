@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 import { APP } from "./app-meta";
+import { appEnvVar } from "./lib/env-flag";
 
 /**
  * Ultimate All-Inclusive Dependency Updater & Sub-Dependency Tracker for this
@@ -15,9 +16,11 @@ import { APP } from "./app-meta";
  * 3. Direct Dependency Upgrading (package.json & src-tauri/Cargo.toml)
  * 4. Transitive Sub-Dependency & Sub-Sub-Dependency Upgrading (bun update --latest & cargo update)
  * 5. Full Inventory Audit & Diff Tracking (Cargo.lock & node_modules)
- * 6. TypeScript Static Type Checking (bun x tsc -b)
- * 7. Vite Production Frontend Build Validation (bun run vite:build)
- * 8. Native Cargo Backend Compilation Verification (cargo check)
+ *
+ * Validation (the run's steps 5-7):
+ * - TypeScript Static Type Checking (bun x tsc -b)
+ * - Vite Production Frontend Build Validation (bun run vite:build)
+ * - Native Cargo Backend Compilation Verification (cargo check)
  *
  * CLI flags:
  *   (no args)      Stable @latest pipeline (default — only `latest` dist-tags,
@@ -88,9 +91,8 @@ const SHOW_HELP = cliArgs.has("--help") || cliArgs.has("-h");
  * deadline is simply not upgraded this run — the same outcome as a package that
  * is already current.
  */
-const QUERY_DEADLINE_MS = Number(
-  process.env["ZER0_UPDATE_QUERY_TIMEOUT_MS"] ?? 30_000,
-);
+const QUERY_DEADLINE_MS =
+  Number(appEnvVar("UPDATE_QUERY_TIMEOUT_MS") ?? 30_000) || 30_000;
 
 /**
  * Crates that stay on their STABLE line even under --prerelease.
@@ -268,7 +270,7 @@ interface NpmResolveOptions {
  *
  * So the **line** is pinned, not the version: follow `tag`, refuse anything off
  * the accepted major, refuse a downgrade. Today that resolves to the installed
- * versions (rc.8 / rc.8 / next.43), and it follows the line forward by itself
+ * rc / next versions, and it follows the line forward by itself
  * when Solid publishes the next RC — which is the point, because the app is
  * built against a release candidate that is still moving. Delete these entries
  * when 2.0 goes stable and the three can sit on `latest` like everything else.
@@ -340,13 +342,13 @@ interface DependencyStatus {
   prerelease: boolean;
   /** Set for a package held to one prerelease line; carries the reason. */
   linePin?: LinePin;
-  /** Set for a package that may not move past this major. */
-  majorCeiling?: number;
+  /** The version prefix a package may not move past (see ceilingPrefix). */
+  majorCeiling?: readonly number[];
   /**
    * Why this package is ceilinged, when the reason is specific to it. The
    * prefix rule (`NPM_MAJOR_LOCKED_PREFIXES`) explains itself once for the
    * whole group and leaves this unset; a named Cargo hold
-   * (`CARGO_MAJOR_LOCKED`) sets it, because "gtk" and "objc2" would be held
+   * (`CARGO_MAJOR_LOCKED`) sets it, because "gtk" and "webview2-com" are held
    * for entirely different reasons.
    */
   holdReason?: string;
@@ -626,7 +628,7 @@ async function fetchLatestCrateVersion(
     const response = await fetch(
       `https://crates.io/api/v1/crates/${crateName}`,
       {
-        headers: { "User-Agent": "HandyAppUpdater/1.0" },
+        headers: { "User-Agent": `${APP.slug}-deps-updater` },
       },
     );
     if (response.ok) {
@@ -1558,7 +1560,6 @@ async function updateEverything() {
 
   // --- Snapshot Sub-Dependency States AFTER Lockfile Refresh ---
   const afterCargoLock = parseCargoLock(cargoLockPath);
-  const afterBunLock = parseBunInstalledVersions();
 
   // --- Step 4b: Re-pin Prerelease Pins (Clobber Guard) ---
   // `bun update --latest` resolves the `latest` dist-tag and REWRITES package.json
@@ -1625,6 +1626,9 @@ async function updateEverything() {
     }
   }
 
+  // Read after step 4b, so the audit reports what the run left installed
+  // rather than the version `bun update --latest` briefly clobbered it to.
+  const afterBunLock = parseBunInstalledVersions();
   const subDepChanges: SubDepDiff[] = [];
 
   // Track Bun Sub-dependency changes

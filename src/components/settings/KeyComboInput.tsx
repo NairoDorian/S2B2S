@@ -4,6 +4,7 @@ import {
   getKeyName,
   formatKeyCombination,
   isSimulatableKey,
+  MODIFIERS,
   normalizeKey,
 } from "../../lib/utils/keyboard";
 import { ResetButton } from "../ui/ResetButton";
@@ -12,20 +13,6 @@ import { useOsType } from "../../hooks/useOsType";
 import { commands } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
 import type { JSX } from "@solidjs/web";
-
-const MODIFIERS = new Set([
-  "ctrl",
-  "control",
-  "shift",
-  "alt",
-  "option",
-  "meta",
-  "command",
-  "cmd",
-  "super",
-  "win",
-  "windows",
-]);
 
 interface KeyComboInputProps {
   settingKey: StringSettingKey;
@@ -41,16 +28,15 @@ const DEFAULT_SHORTCUTS: Record<StringSettingKey, string> = {
   multi_stt_performance_mode_normal_shortcut: "ctrl+alt+space",
 };
 
-export const KeyComboInput = ({
-  settingKey,
-  grouped = false,
-}: KeyComboInputProps): JSX.Element => {
+export const KeyComboInput = (props: KeyComboInputProps): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
   const osType = useOsType();
 
-  const bindingValue = getSetting(settingKey) as string | undefined;
-  const displayValue = bindingValue ?? "";
+  // An accessor: the body runs once, and the stored combination changes both
+  // here (a recorded shortcut) and from the reset button.
+  const displayValue = () =>
+    (getSetting(props.settingKey) as string | undefined) ?? "";
 
   const [editing, setEditing] = createSignal(false);
   const [keyPressed, setKeyPressed] = createSignal<string[]>([]);
@@ -60,8 +46,8 @@ export const KeyComboInput = ({
 
   createEffect(
     () => editing(),
-    () => {
-      if (!editing()) return;
+    (isEditing) => {
+      if (!isEditing) return;
 
       let cleanup = false;
 
@@ -114,7 +100,7 @@ export const KeyComboInput = ({
               }),
             );
             if (originalValue()) {
-              void updateSetting(settingKey, originalValue());
+              void updateSetting(props.settingKey, originalValue());
             }
             await commands.resumeAllBindings().catch(console.error);
             setEditing(false);
@@ -125,7 +111,7 @@ export const KeyComboInput = ({
           }
 
           try {
-            await updateSetting(settingKey, newShortcut);
+            await updateSetting(props.settingKey, newShortcut);
           } catch (error) {
             console.error("Failed to change setting:", error);
             toast.error(
@@ -148,7 +134,7 @@ export const KeyComboInput = ({
         if (cleanup) return;
         if (inputRef && !inputRef.contains(e.target as Node)) {
           if (originalValue()) {
-            void updateSetting(settingKey, originalValue());
+            void updateSetting(props.settingKey, originalValue());
           }
           void commands.resumeAllBindings().catch(console.error);
           setEditing(false);
@@ -176,7 +162,7 @@ export const KeyComboInput = ({
 
     await commands.suspendAllBindings().catch(console.error);
 
-    setOriginalValue(displayValue);
+    setOriginalValue(displayValue());
     setEditing(true);
     setKeyPressed([]);
     setRecordedKeys([]);
@@ -190,7 +176,7 @@ export const KeyComboInput = ({
   };
 
   const handleReset = () => {
-    void updateSetting(settingKey, DEFAULT_SHORTCUTS[settingKey]);
+    void updateSetting(props.settingKey, DEFAULT_SHORTCUTS[props.settingKey]);
   };
 
   return (
@@ -198,24 +184,27 @@ export const KeyComboInput = ({
       ref={(ref) => {
         inputRef = ref;
       }}
-      class={`flex items-center gap-2 ${grouped ? "" : "py-2"}`}
+      class={`flex items-center gap-2 ${props.grouped ? "" : "py-2"}`}
     >
       <button
         type="button"
         class={`px-3 py-1.5 text-sm font-mono font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent transition-colors min-w-[200px] text-start ${
           editing() ? "border-accent bg-accent/30" : ""
-        } ${isUpdating(settingKey) ? "opacity-50" : ""}`}
+        } ${isUpdating(props.settingKey) ? "opacity-50" : ""}`}
         onClick={editing() ? undefined : startEditing}
         onDblClick={editing() ? undefined : startEditing}
       >
         {editing()
           ? formatCurrentKeys()
-          : displayValue
-            ? formatKeyCombination(displayValue, osType)
+          : displayValue()
+            ? formatKeyCombination(displayValue(), osType)
             : ""}
       </button>
       {!editing() && (
-        <ResetButton onClick={handleReset} disabled={isUpdating(settingKey)} />
+        <ResetButton
+          onClick={handleReset}
+          disabled={isUpdating(props.settingKey)}
+        />
       )}
     </div>
   );

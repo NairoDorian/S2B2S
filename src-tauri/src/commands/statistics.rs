@@ -4,23 +4,28 @@ use tauri::State;
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_statistics_summary(
+pub async fn get_statistics_summary(
     statistics_manager: State<'_, Arc<StatisticsManager>>,
     range: StatisticsRange,
 ) -> Result<StatisticsSummary, String> {
     range.validate().map_err(|error| error.to_string())?;
-    statistics_manager
-        .summarize(range)
+    // SQLite I/O: keep it off the webview thread.
+    let manager = Arc::clone(statistics_manager.inner());
+    tauri::async_runtime::spawn_blocking(move || manager.summarize(range))
+        .await
+        .map_err(|error| format!("Statistics task failed: {error}"))?
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn reset_statistics(
+pub async fn reset_statistics(
     statistics_manager: State<'_, Arc<StatisticsManager>>,
 ) -> Result<(), String> {
-    statistics_manager
-        .reset()
+    let manager = Arc::clone(statistics_manager.inner());
+    tauri::async_runtime::spawn_blocking(move || manager.reset())
+        .await
+        .map_err(|error| format!("Statistics task failed: {error}"))?
         .map(|_| ())
         .map_err(|error| error.to_string())
 }

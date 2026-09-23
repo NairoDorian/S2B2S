@@ -148,6 +148,7 @@
     "modelError": "模型错误",
     "modelUnloaded": "模型已卸载",
     "noModelDownloadRequired": "无模型 - 需要下载",
+    "statusTitle": "Model status: {{status}}",
     "deleteModel": "删除 {{modelName}}",
     "capabilities": {
       "languageSelection": "支持多种输入语言",
@@ -219,6 +220,11 @@
         "increase": "将分块大小增加一毫秒",
         "hint": "每次解码前累积的音频长度。数值越小响应越快，但计算开销越大，因为模型每处理一个分块都会重新读取迄今的全部音频。从下次录音开始生效。"
       }
+    },
+    "errors": {
+      "checkStatusFailed": "Failed to check model status",
+      "loadFailed": "Failed to load model",
+      "switchFailed": "Failed to switch model"
     }
   },
   "settings": {
@@ -354,7 +360,7 @@
       "acceleration": {
         "transcribe": {
           "title": "Whisper 加速",
-          "description": "Whisper 模型的硬件加速。自动模式在可用时使用 GPU（macOS 上使用 Metal，Windows/Linux 上使用 Vulkan）。"
+          "description": "Whisper 模型的硬件加速。自动模式在可用时使用 GPU（macOS 上使用 Metal，Windows x86_64/Linux 上使用 CUDA）。"
         },
         "gpuDevice": {
           "auto": "自动"
@@ -564,6 +570,7 @@
         "baseUrl": {
           "title": "基础 URL",
           "description": "所选提供商的 API 基础 URL。仅自定义提供商可编辑。",
+          "managedByProvider": "Base URL is managed by the selected provider.",
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
@@ -577,6 +584,7 @@
           "descriptionDefault": "选择所选提供商提供的模型。",
           "placeholderWithOptions": "搜索或选择模型",
           "placeholderNoOptions": "输入模型名称",
+          "useCustom": "Use \"{{value}}\"",
           "refreshModels": "刷新模型"
         }
       },
@@ -608,6 +616,7 @@
       "loading": "加载历史记录中...",
       "empty": "还没有转录记录。开始录制以建立您的历史记录！",
       "copyToClipboard": "复制转录到剪贴板",
+      "copied": "Copied to clipboard",
       "save": "保存转录",
       "saveToRecall": "File as Recall note",
       "savedToRecall": "Saved to Recall",
@@ -616,6 +625,7 @@
       "deleteError": "删除条目失败，请重试。",
       "retranscribe": "重新转录",
       "retranscribeError": "重新转录失败。请重试。",
+      "retranscribeSuccess": "Transcription updated",
       "transcribing": "转录中...",
       "transcriptionFailed": "转录失败。您可以使用重试图标重新转录。",
       "deleteRecordings": "Delete Recordings",
@@ -633,9 +643,11 @@
       "postProcess": "大模型润色",
       "postProcessing": "润色中...",
       "postProcessError": "文本润色失败。",
+      "postProcessSuccess": "Transcript polished with LLM",
       "multiSttRetranscribe": "多模型重新转录",
       "multiSttTranscribing": "多模型转录中...",
       "multiSttError": "多模型重新转录失败。",
+      "multiSttSuccess": "Multi-STT transcription complete",
       "rawTranscriptTab": "原始文本",
       "polishedTextTab": "润色结果 (LLM)",
       "mergedTextTab": "融合结果",
@@ -646,9 +658,10 @@
       "wpmRating": "{{wpm}} 词/分",
       "wordCount": "{{count}} 词",
       "audioDetails": "{{total}} 总计 : {{speech}} 语音 (移除 {{silence}} 静音)",
-      "latencyStt": "{{latency}} 语音识别",
-      "latencyLlm": "{{latency}} 大模型",
+      "latencyStt": "{{duration}} 语音识别",
+      "latencyLlm": "{{duration}} 大模型",
       "extraModelsCount": "{{count}} 个模型",
+      "multiSttModelsBadge": "Multi-STT ({{count}} models)",
       "promptTooltip": "提示词: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
@@ -658,11 +671,11 @@
       "multiSttCleanedOutputTab": "Cleaned Output",
       "multiSttRawLogTab": "Raw Log",
       "multiSttModelSlot": "Model {{slot}}",
-      "multiSttBrainLabel": "ðŸ§  Brain LLM",
+      "multiSttBrainLabel": "🧠 Brain LLM",
       "multiSttBrainCleanedOutput": "Cleaned Output",
       "multiSttBrainPromptLabel": "Prompt: {{name}}",
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
-      "multiSttNoOutput": "â€” no output â€”",
+      "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
       "multiSttCopyBrainOutput": "Copy cleaned Brain output"
     },
@@ -686,7 +699,8 @@
         "copied": "已复制",
         "lineCount": "{{count}} 行",
         "empty": "正在等待日志…… 应用产生日志时将显示在此处。",
-        "noFilterMatch": "No lines match this tag."
+        "noFilterMatch": "No lines match this tag.",
+        "allTags": "ALL"
       },
       "updateChecks": {
         "label": "检查更新",
@@ -695,7 +709,13 @@
       },
       "soundTheme": {
         "label": "声音主题",
-        "description": "选择录制开始和停止反馈的声音主题"
+        "description": "选择录制开始和停止反馈的声音主题",
+        "options": {
+          "marimba": "Marimba",
+          "pop": "Pop",
+          "custom": "Custom"
+        },
+        "preview": "Preview sound theme (plays start then stop)"
       },
       "wordCorrectionThreshold": {
         "title": "词汇修正阈值",
@@ -740,13 +760,6 @@
         "title": "键盘实现",
         "description": "选择键盘快捷键的后端。",
         "bindingsReset": "键盘快捷键不兼容，已重置为默认值"
-      },
-      "paths": {
-        "title": "Debug Paths",
-        "description": "Absolute paths of the directories this app writes to, for troubleshooting",
-        "appData": "应用数据:",
-        "models": "模型:",
-        "settings": "设置:"
       },
       "pasteDelay": {
         "title": "粘贴延迟（前）",
@@ -1363,7 +1376,9 @@
       },
       "canvas": {
         "idle": "Start the analyser to see the spectrum",
-        "silence": "digital silence"
+        "silence": "digital silence",
+        "now": "now",
+        "span": "−{{seconds}} s"
       },
       "telemetry": {
         "sampleRate": "Rate (Hz)",
@@ -1375,7 +1390,13 @@
         "threading": "Analysis: {{mode}}",
         "async": "worker thread",
         "inline": "inline on the audio thread",
-        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}"
+        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}",
+        "hzPerBin": "Hz / bin",
+        "magnitudeBins": "Magnitude bins",
+        "magnitudeBinsValue": "{{used}} of {{total}}",
+        "aggregated": "Aggregated",
+        "kaiserBeta": "Kaiser β",
+        "latency": "Latency"
       },
       "view": {
         "title": "Analyser",
@@ -1402,7 +1423,15 @@
         "music": "Music (Log, cubic, Blackman-Harris)",
         "meter": "Fast meter (linear, 60 Hz)",
         "chroma": "Chroma / pitch",
-        "applied": "Preset applied"
+        "applied": "Preset applied",
+        "quality": {
+          "title": "Quality",
+          "description": "Transform length, warp interpolation, Kaiser beta mode and aggregation tuned for a frame budget. Applied on top of the current settings; the output bins are kept.",
+          "visual60": "Visual 60 fps (8K, cubic, auto β)",
+          "visual120": "Visual 120 fps (4K, cubic, auto β)",
+          "analysis": "Analysis (32K, auto β, RMS)",
+          "active": "Matches: {{preset}}"
+        }
       },
       "spectrum": {
         "title": "Spectrum",
@@ -1469,6 +1498,29 @@
         "fftSize": {
           "label": "Zero-pad length",
           "description": "Transform length. The window is centred in a zero-padded frame of this size (grown to the next power of two above the window when that is larger); a longer transform interpolates the spectrum more finely."
+        },
+        "rawBins": {
+          "label": "Raw FFT bins",
+          "description": "Output the transform's magnitude untouched: N/2+1 bins from DC to Nyquist on a linear axis, with no warp, interpolation or aggregation. Scale, display max, warp blend, log floor, output bins and aggregation do not apply while it is on."
+        },
+        "outputBinsMode": {
+          "label": "Output bins mode",
+          "description": "Fixed: the output bin count below. Auto: one output bin per FFT bin, N/2+1 of the transform actually run.",
+          "fixed": "Fixed",
+          "auto": "Auto (N/2+1)"
+        },
+        "warpAggregation": {
+          "label": "Warp aggregation",
+          "description": "Where one output bin spans two or more FFT bins (the top of a log axis), combine them instead of interpolating between two: Peak keeps the loudest, so a narrow peak is never skipped; RMS averages their power. Off interpolates everywhere.",
+          "options": {
+            "off": "Off (interpolate, may skip peaks)",
+            "peak": "Peak (never drops a peak)",
+            "rms": "RMS (power mean)"
+          }
+        },
+        "zeroPadding": {
+          "label": "Zero-padding",
+          "description": "On: the window is centred in a zero-padded transform of the zero-pad length. Off: the transform is the window length itself (rounded up to even), the cheapest option, and the zero-pad length does not apply."
         }
       },
       "eq": {
@@ -1546,6 +1598,12 @@
             "coherent_gain": "Coherent gain (mean(window) = 1)",
             "full_scale": "Full scale (sine amplitude 1 → 1.0)"
           }
+        },
+        "kaiserBetaMode": {
+          "label": "Kaiser beta mode",
+          "description": "Manual: the beta below. Auto: derived from the dB range floor, so the window's side lobes sit just under what the display can show.",
+          "manual": "Manual",
+          "auto": "Auto (from dB range)"
         }
       },
       "loudness": {
@@ -1614,7 +1672,11 @@
           "label": "Update rate",
           "description": "Spectrum frames per second sent to the page."
         },
-        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size.",
+        "features": {
+          "label": "Spectral features",
+          "description": "Compute the centroid, 85 % rolloff, flatness, flux, RMS level and bass / mid / high band levels from the linear spectrum with every frame, shown under the analyser. A few microseconds per frame."
+        }
       },
       "voice": {
         "title": "Voice detection & noise suppression",
@@ -1629,6 +1691,17 @@
       },
       "errors": {
         "start": "Could not start the analyser: {{error}}"
+      },
+      "features": {
+        "title": "Features",
+        "centroid": "Centroid",
+        "rolloff": "Rolloff",
+        "flatness": "Flatness",
+        "flux": "Flux",
+        "rms": "RMS",
+        "bass": "Bass",
+        "mid": "Mid",
+        "high": "High"
       }
     },
     "llama": {
@@ -1695,6 +1768,7 @@
         "bundledRuntime": "{{mb}} MB of bundled CUDA runtime",
         "removeRuntime": "Remove runtime",
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
+        "runtimeFreed": "Freed {{mb}} MB",
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
@@ -1789,7 +1863,13 @@
     "downloadSpeed": "{{speed}} MB/s",
     "downloading": "Downloading...",
     "downloadingCount": "{{count}} downloading...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "play": "播放",
+    "pause": "暂停",
+    "moreInformation": "更多信息",
+    "selectOption": "Select an option...",
+    "unknownSize": "Unknown size",
+    "charsPerSecond": "{{value}} chars/s"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} 需要辅助功能权限才能输入转录的文字。",
@@ -1797,6 +1877,7 @@
   },
   "errors": {
     "loadDirectory": "加载目录时出错: {{error}}",
+    "loadDirectoryUnknown": "unknown error",
     "micPermissionDeniedTitle": "麦克风访问被拒绝",
     "micPermissionDenied": {
       "generic": "操作系统拒绝了麦克风访问。请在系统设置中授予麦克风权限。",
@@ -1811,7 +1892,8 @@
     "modelLoadFailedUnknown": "未知模型",
     "pasteFailedTitle": "粘贴文本失败",
     "pasteFailed": "无法将文本粘贴到当前活动的应用程序中。",
-    "transcriptionFailedTitle": "转录失败"
+    "transcriptionFailedTitle": "转录失败",
+    "unknownError": "Unknown error"
   },
   "appLanguage": {
     "title": "应用语言",
@@ -1958,6 +2040,9 @@
     "custom": "Custom Color",
     "reset": "Reset to Default",
     "presets": {
+      "cyan": "Neon Cyan",
+      "magenta": "Neon Magenta",
+      "lime": "Terminal Green",
       "gold": "Gold",
       "pink": "Rose",
       "amber": "Amber",

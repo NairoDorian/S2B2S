@@ -18,24 +18,23 @@ export const AppDataDirectory = (props: AppDataDirectoryProps) => {
   createEffect(
     () => undefined,
     () => {
-      const loadAppDirectory = async () => {
-        try {
-          const result = await commands.getAppDirPath();
+      commands
+        .getAppDirPath()
+        .then((result) => {
           if (result.status === "ok") {
             setAppDirPath(result.data);
           } else {
             setError(result.error);
           }
-        } catch (err) {
+        })
+        .catch((err) => {
           setError(
-            err instanceof Error ? err.message : "Failed to load app directory",
+            err instanceof Error
+              ? err.message
+              : t("errors.loadDirectoryUnknown"),
           );
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      loadAppDirectory();
+        })
+        .finally(() => setLoading(false));
     },
   );
 

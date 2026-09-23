@@ -4,9 +4,9 @@
 // `docs/vendor/<source>/` as plain Markdown, and report what changed since the
 // last run. This is the grounding step of the stack-watch loop: the app's own
 // conventions are authoritative, but the frameworks underneath it move — Solid
-// 2 is an RC, Tauri 2 and Bun release weekly — and the only way to notice an
-// improvement (or a deprecation this codebase already commits) is to read what
-// the projects publish, refreshed and diffed locally.
+// 2 is an RC, Tauri (on its 3.x alpha here) and Bun release weekly — and the
+// only way to notice an improvement (or a deprecation this codebase already
+// commits) is to read what the projects publish, refreshed and diffed locally.
 //
 // The loop this serves (see docs/STACK_WATCH.md):
 //   bun run docs:fetch          refresh the mirrors, print new/changed pages
@@ -47,6 +47,7 @@ import { join, dirname, resolve } from "path";
 import * as cheerio from "cheerio";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
+import { APP, REPO_URL } from "./app-meta";
 
 const TAG = "[docs]";
 const ROOT = resolve(import.meta.dirname, "..");
@@ -101,7 +102,7 @@ const SOURCES: Source[] = [
     id: "tauri",
     repo: "tauri-apps/tauri-docs",
     prefix: "src/content/docs",
-    note: "Tauri 2 — windowing, IPC, plugins, permissions, bundling: the shell the app runs in.",
+    note: "Tauri — windowing, IPC, plugins, permissions, bundling: the shell the app runs in. The app is on the 3.x alpha; tauri-docs HEAD documents v2, so read API details against the v3 branch.",
   },
   {
     kind: "github",
@@ -170,8 +171,7 @@ const SCRAPED_ON = new Date().toLocaleDateString("en-CA"); // local date, YYYY-M
 // ---------------------------------------------------------------------------
 
 const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (compatible; zer0-stack-docs/1.0; +https://github.com/NairoDorian/S2B2S)",
+  "User-Agent": `Mozilla/5.0 (compatible; ${APP.slug}-stack-docs/1.0; +${REPO_URL})`,
   Accept: "text/html,application/xml,text/plain,application/json",
 };
 
@@ -219,9 +219,14 @@ const sha256 = (text: string) =>
 // kind: site — server-rendered docs pages (SolidJS v2)
 // ---------------------------------------------------------------------------
 
-// expressive-code encodes newlines inside its copy-to-clipboard attribute as
-// U+007F (DEL) — decoding it reproduces the author's source byte for byte.
-const DEL = "";
+// expressive-code encodes newlines inside its copy-to-clipboard attribute as a
+// control character — decoding it reproduces the source byte for byte.
+// Unresolved: expressive-code's own copy script names U+007F (DEL), while this
+// constant has always held U+001F (Unit Separator), written here as an escape
+// so the value is visible. The mirrored pages contain neither, so the
+// `.ec-line` fallback is what produces the code blocks today; check one
+// `data-code` attribute before changing it.
+const DEL = "\u001f";
 
 const turndown = new TurndownService({
   headingStyle: "atx",
@@ -594,35 +599,44 @@ async function mirrorGitHub(
   await runPool(
     work,
     async (file) => {
-      const ref = source.ref ?? "HEAD";
-      const raw = await fetchText(
-        `https://raw.githubusercontent.com/${source.repo}/${ref}/${file.path}`,
-      );
-      const prefix = source.prefix
-        ? `${source.prefix.replace(/\/+$/, "")}/`
-        : "";
-      const rel =
-        file.path
-          .slice(prefix.length)
-          // SolidJS's docs repo encodes page order as `(0)`, `(1)`… folder and
-          // file prefixes; strip them so the mirror is readable paths.
-          .split("/")
-          .map((segment) => segment.replace(/^\(\d+\)/, ""))
-          .join("/")
-          .replace(/\.mdx?$/, "") + ".md";
-      const provenance = [
-        "---",
-        `source_repo: "${source.repo}"`,
-        `source_path: "${file.path}"`,
-        `source: "https://github.com/${source.repo}/blob/HEAD/${file.path}"`,
-        `scraped: "${SCRAPED_ON}"`,
-        "---",
-        "",
-      ].join("\n");
-      pages.set(
-        rel,
-        `${provenance}${stripFrontmatter(raw).replace(/\r\n/g, "\n").trim()}\n`,
-      );
+      // One failed file is reported and skipped, as `scrapeSite` does for a
+      // page — it must not abort the whole source after its retries.
+      try {
+        const ref = source.ref ?? "HEAD";
+        const raw = await fetchText(
+          `https://raw.githubusercontent.com/${source.repo}/${ref}/${file.path}`,
+        );
+        const prefix = source.prefix
+          ? `${source.prefix.replace(/\/+$/, "")}/`
+          : "";
+        const rel =
+          file.path
+            .slice(prefix.length)
+            // SolidJS's docs repo encodes page order as `(0)`, `(1)`… folder
+            // and file prefixes; strip them so the mirror is readable paths.
+            .split("/")
+            .map((segment) => segment.replace(/^\(\d+\)/, ""))
+            .join("/")
+            .replace(/\.mdx?$/, "") + ".md";
+        const provenance = [
+          "---",
+          `source_repo: "${source.repo}"`,
+          `source_path: "${file.path}"`,
+          `source: "https://github.com/${source.repo}/blob/${ref}/${file.path}"`,
+          `scraped: "${SCRAPED_ON}"`,
+          "---",
+          "",
+        ].join("\n");
+        pages.set(
+          rel,
+          `${provenance}${stripFrontmatter(raw).replace(/\r\n/g, "\n").trim()}\n`,
+        );
+      } catch (err) {
+        failures.push({
+          path: file.path,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       done++;
       if (done % 40 === 0 || done === work.length) {
         console.log(`${TAG} ${source.id}: ${done}/${work.length} files`);
@@ -669,7 +683,9 @@ async function writeState(state: VendorState): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
-  console.log(`${TAG} ZER0 stack docs -> ${VENDOR_DIR}/ (${SCRAPED_ON})`);
+  console.log(
+    `${TAG} ${APP.name} stack docs -> ${VENDOR_DIR}/ (${SCRAPED_ON})`,
+  );
   const previous = await readState();
   // Start from the previous state, not from zero: a `--source` or `--limit`
   // run refreshes only what it fetched and must leave every other source's
@@ -798,12 +814,19 @@ async function main(): Promise<number> {
     "",
     "| Source | Pages | Covers |",
     "| ------ | ----- | ------ |",
-    ...deltas.map(
-      (d) =>
-        `| [${d.source}](./${d.source}/INDEX.md) | ${d.total} | ${
-          SOURCES.find((s) => s.id === d.source)?.note ?? ""
-        } |`,
-    ),
+    // Every mirrored source, not only the ones this run fetched: a `--source`
+    // run keeps the others' files, so their rows keep last run's page count.
+    ...SOURCES.map((s) => ({
+      s,
+      total:
+        deltas.find((d) => d.source === s.id)?.total ??
+        Object.keys(nextHashes).filter((k) => k.startsWith(`${s.id}/`)).length,
+    }))
+      .filter(({ total }) => total > 0)
+      .map(
+        ({ s, total }) =>
+          `| [${s.id}](./${s.id}/INDEX.md) | ${total} | ${s.note} |`,
+      ),
     "",
   ].join("\n");
   await mkdir(join(ROOT, VENDOR_DIR), { recursive: true });

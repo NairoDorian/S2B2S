@@ -25,6 +25,9 @@ use tauri_nspanel::{CollectionBehavior, PanelBuilder, PanelLevel, StyleMask, tau
 use crate::utils;
 
 #[cfg(target_os = "linux")]
+use crate::app_identity;
+
+#[cfg(target_os = "linux")]
 use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
 #[cfg(target_os = "macos")]
@@ -380,19 +383,6 @@ fn is_mouse_within_monitor(
         && mouse_y < (monitor_y + monitor_height as i32)
 }
 
-/// Returns overlay position in logical coordinates (points on macOS).
-///
-/// The Bottom anchor uses the macOS work area (visibleFrame) so the overlay
-/// tracks the Dock — above it when shown, at the screen edge when hidden.
-/// This relies on tauri 2.11's work_area.position.y fix (#14655), the same
-/// bug that led PR #969 to abandon work_area for full monitor bounds. Top and
-/// the other platforms keep full monitor bounds plus the fixed offsets
-/// (work_area is unreliable on Wayland; Windows' offset clears the taskbar).
-///
-/// We must use LogicalPosition (not PhysicalPosition) because Tauri/tao
-/// converts PhysicalPosition using the scale factor of the monitor the window
-/// is *currently* on, which is wrong when moving cross-monitor. Windows uses
-/// `place_windows_overlay` instead (no single logical space across mixed DPI).
 /// Finds the monitor whose physical-pixel bounds contain the given point,
 /// falling back to the cursor's monitor.
 fn get_monitor_for_physical_point(
@@ -416,6 +406,19 @@ fn get_monitor_for_physical_point(
     get_monitor_with_cursor(app_handle)
 }
 
+/// Returns overlay position in logical coordinates (points on macOS).
+///
+/// The Bottom anchor uses the macOS work area (visibleFrame) so the overlay
+/// tracks the Dock — above it when shown, at the screen edge when hidden.
+/// This relies on tauri 2.11's work_area.position.y fix (#14655), the same
+/// bug that led PR #969 to abandon work_area for full monitor bounds. Top and
+/// the other platforms keep full monitor bounds plus the fixed offsets
+/// (work_area is unreliable on Wayland; Windows' offset clears the taskbar).
+///
+/// We must use LogicalPosition (not PhysicalPosition) because Tauri/tao
+/// converts PhysicalPosition using the scale factor of the monitor the window
+/// is *currently* on, which is wrong when moving cross-monitor. Windows uses
+/// `place_windows_overlay` instead (no single logical space across mixed DPI).
 fn calculate_overlay_position(
     app_handle: &AppHandle,
     width: f64,
@@ -432,8 +435,8 @@ fn calculate_overlay_position(
     {
         let px = settings.recording_overlay_custom_x_px as f64;
         let py = settings.recording_overlay_custom_y_px as f64;
-        let monitor = get_monitor_for_physical_point(app_handle, px, py)
-            .or_else(|| get_monitor_with_cursor(app_handle))?;
+        // Falls back to the cursor's monitor itself.
+        let monitor = get_monitor_for_physical_point(app_handle, px, py)?;
         let scale = monitor.scale_factor();
         return Some((px / scale, py / scale));
     }
@@ -521,11 +524,11 @@ fn windows_overlay_bounds(
     (x, y, width, height)
 }
 
-/// Moves, sizes and re-asserts topmost in ONE native SetWindowPos, bypassing
-/// tao's current-DPI logical conversion that mislands cross-monitor moves.
-/// The atomic form matters: with separate place-then-topmost calls the
-/// window can briefly render with stale geometry or below the target z-order
-/// between them (AIVORelay's `apply_recording_overlay_geometry_native`).
+/// Moves and sizes in ONE native SetWindowPos, bypassing tao's current-DPI
+/// logical conversion that mislands cross-monitor moves (after AIVORelay's
+/// `apply_recording_overlay_geometry_native`). Z-order is untouched:
+/// `SWP_NOZORDER` drops the `HWND_TOPMOST` argument, and
+/// `force_overlay_topmost` is what handles z-order.
 #[cfg(target_os = "windows")]
 fn place_windows_overlay(
     app_handle: &AppHandle,
@@ -545,9 +548,15 @@ fn place_windows_overlay(
     let (x, y, width, height, scale) = if settings.recording_overlay_use_manual_position
         && settings.recording_overlay_has_saved_custom_position
     {
-        let monitor = get_monitor_with_cursor(app_handle).ok_or_else(|| {
-            "failed to determine the monitor for manual overlay position".to_string()
-        })?;
+        // Scale by the monitor the saved point is on, not the cursor's: with
+        // mixed DPI the window would otherwise be sized for the wrong monitor
+        // and clip the card. Falls back to the cursor's monitor.
+        let monitor = get_monitor_for_physical_point(
+            app_handle,
+            settings.recording_overlay_custom_x_px as f64,
+            settings.recording_overlay_custom_y_px as f64,
+        )
+        .ok_or_else(|| "failed to determine the monitor for manual overlay position".to_string())?;
         let scale = monitor.scale_factor();
         let width = (logical_width * scale * text_scale).round() as i32;
         let height = (logical_height * scale * text_scale).round() as i32;
@@ -578,8 +587,6 @@ fn place_windows_overlay(
         .map_err(|error| format!("failed to get overlay window handle: {error}"))?;
 
     unsafe {
-        // hwnd comes from tao (windows 0.61.3), cast to our windows 0.62.2 HWND
-        let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&hwnd);
         SetWindowPos(
             hwnd,
             Some(HWND_TOPMOST),
@@ -618,10 +625,8 @@ fn force_overlay_topmost(overlay_window: &tauri::webview::WebviewWindow) {
 
     let overlay_clone = overlay_window.clone();
     let _ = overlay_clone.clone().run_on_main_thread(move || {
-        if let Ok(raw_hwnd) = overlay_clone.hwnd() {
+        if let Ok(hwnd) = overlay_clone.hwnd() {
             unsafe {
-                // hwnd comes from tao (windows 0.61.3), cast to our windows 0.62.2 HWND
-                let hwnd: windows::Win32::Foundation::HWND = std::mem::transmute_copy(&raw_hwnd);
                 // Force Z-order without SWP_NOZORDER so HWND_TOPMOST actually takes
                 // effect. Unlike place_windows_overlay this doesn't move or resize.
                 let _ = SetWindowPos(
@@ -746,8 +751,9 @@ fn show_overlay_state(app_handle: &AppHandle, state: &str) {
     // Whether the overlay shows at all is governed by overlay_style; position
     // only chooses Top vs Bottom placement. Checked here (off the main thread)
     // so the common overlay-disabled case never pays for a main-thread hop.
+    // The overlay preview forces it on (see `overlay_preview`).
     let settings = settings::get_settings(app_handle);
-    if settings.overlay_style == OverlayStyle::None {
+    if settings.overlay_style == OverlayStyle::None && !crate::overlay_preview::is_active() {
         return;
     }
 
@@ -839,7 +845,9 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 
             // Show the window first (tao needs it mapped before SetWindowPos can
             // reach its HWND on Windows).
+            let show_started = std::time::Instant::now();
             let _ = overlay_window.show();
+            let show_elapsed = show_started.elapsed();
 
             // On Windows, aggressively re-assert "topmost" in the native Z-order
             // after showing. `place_windows_overlay` passes `SWP_NOZORDER`, which
@@ -850,25 +858,22 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 
             // Re-assert bounds after show(): the pre-show move crosses the DPI
             // boundary, and tao's `WM_DPICHANGED` reflow clobbers the first
-            // placement. The re-place also re-asserts topmost — same atomic
-            // SetWindowPos, so no frame can appear between the two.
+            // placement. The re-place leaves z-order alone (`SWP_NOZORDER`).
             #[cfg(target_os = "windows")]
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
                 log::error!("Failed to re-assert recording overlay position: {error}");
             }
 
-            let show_started = std::time::Instant::now();
+            // The show / topmost / re-place sequence runs a second time. It may
+            // be what defeats a `WM_DPICHANGED` reflow landing after the first
+            // re-place on mixed-DPI setups, so it stays until a mixed-DPI
+            // two-monitor setup shows it is redundant. (On macOS and Linux this
+            // is a second, harmless `show()`.)
             let _ = overlay_window.show();
-            let show_elapsed = show_started.elapsed();
 
-            // On Windows, aggressively re-assert "topmost" in the native Z-order
-            // after showing the second time.
             #[cfg(target_os = "windows")]
             force_overlay_topmost(&overlay_window);
 
-            // Re-assert bounds after show(): the pre-show move crosses the DPI
-            // boundary, and tao's `WM_DPICHANGED` reflow clobbers the first
-            // placement.
             #[cfg(target_os = "windows")]
             if let Err(error) = place_windows_overlay(app_handle, &overlay_window, width, height) {
                 log::error!("Failed to re-assert recording overlay position: {error}");
@@ -890,9 +895,10 @@ fn show_overlay_state_on_main(app_handle: &AppHandle, state: &str) {
 
 /// Notify the visible recording overlay that the input stream has delivered its
 /// first sample chunk. Audio feedback uses the same backend readiness signal,
-/// but this targeted event is skipped when overlays are disabled.
+/// but this targeted event is skipped when overlays are disabled (unless the
+/// overlay preview forces the overlay on).
 pub fn emit_recording_ready(app_handle: &AppHandle) {
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) && !crate::overlay_preview::is_active() {
         return;
     }
 
@@ -1042,9 +1048,9 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
-// Cached "overlay is enabled" flag, kept in sync with overlay_style. Avoids
-// reading the Tauri store on every audio callback (~24 Hz during recording).
-// Defaults to false so the audio path doesn't emit until lib.rs::setup
+// Cached "overlay is enabled" flag, kept in sync with overlay_style. Avoids a
+// store read on the speech-activity path (one candidate per 16 ms frame) and
+// the recording-ready emit. Defaults to false so the audio path doesn't emit until lib.rs::setup
 // populates the cache from initial settings.
 static OVERLAY_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -1128,9 +1134,12 @@ pub fn overlay_stream_text_height(app: AppHandle, height_px: u32) -> u32 {
 /// ~70 % of the monitor it is on, minus the card's own chrome.
 ///
 /// The frontend's reported height is in CSS px and the window is sized in logical
-/// px, which are the same length on every platform (WebView2's accessibility text
-/// scale zooms both together, see `windows_text_scale_factor`), so the conversion
-/// is the monitor's device pixel ratio and nothing else.
+/// px, which are the same length on every platform. On Windows both are also
+/// multiplied by the accessibility text scale (WebView2 zooms the CSS, and
+/// `place_windows_overlay` grows the window with it, see
+/// `windows_text_scale_factor`), so the monitor height is divided by the text
+/// scale as well as the device pixel ratio there — otherwise the 70 % cap would
+/// grow past the monitor at a large text size.
 fn streaming_text_cap(app: &AppHandle) -> u32 {
     let (_, base_height) = streaming_dimensions_baseline();
     let logical_monitor_height = app
@@ -1144,7 +1153,12 @@ fn streaming_text_cap(app: &AppHandle) -> u32 {
         })
         .map(|monitor| {
             let scale = monitor.scale_factor();
-            f64::from(monitor.size().height) / if scale > 0.0 { scale } else { 1.0 }
+            let scale = if scale > 0.0 { scale } else { 1.0 };
+            #[cfg(target_os = "windows")]
+            let text_scale = windows_text_scale_factor();
+            #[cfg(not(target_os = "windows"))]
+            let text_scale = 1.0;
+            f64::from(monitor.size().height) / (scale * text_scale)
         })
         // No monitor to measure (the window is gone): leave the card at its base
         // size rather than inventing a screen big enough for anything.
@@ -1246,8 +1260,10 @@ pub struct SpeechActivityEvent {
 pub fn emit_speech_activity(app_handle: &AppHandle, activity: SpeechActivity) {
     // The overlay window exists even when it is never shown, and every event
     // delivered to it costs WebKit allocations that accumulate (issue #1279).
-    // No overlay, or stats turned off, means no event.
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) || !SPEECH_STATS_ENABLED.load(Ordering::Relaxed) {
+    // No overlay (and no preview forcing it on), or stats turned off, means no
+    // event.
+    let overlay_on = OVERLAY_ENABLED.load(Ordering::Relaxed) || crate::overlay_preview::is_active();
+    if !overlay_on || !SPEECH_STATS_ENABLED.load(Ordering::Relaxed) {
         return;
     }
 

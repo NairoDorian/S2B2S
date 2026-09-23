@@ -1,10 +1,6 @@
-/** @jsxImportSource @solidjs/web */
-// ^ This file is Solid; see the note in `main.tsx` for why the pragma is
-// per-file rather than tree-wide.
-//
-// Phase 2 of docs/PLAN_SOLIDJS_2.md made this Solid, and the port is shaped by
-// three things Solid does differently from React — each one a place where the
-// mechanical translation would have been wrong:
+// The React → Solid 2 migration (see CHANGELOG) made this Solid, and the port
+// is shaped by three things Solid does differently from React — each one a
+// place where the mechanical translation would have been wrong:
 //
 // - **The component body runs once.** Every value derived from state is a
 //   function (see `hasText`, `quiet`, `wpm`), never a `const`, and every one of
@@ -87,22 +83,25 @@ const direction = () => getLanguageDirection(currentLanguage());
 const fmtTime = (s: number) =>
   `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-const CancelButton = () => (
-  <button
-    class="sx"
-    aria-label="cancel"
-    onClick={() => commands.cancelOperation()}
-  >
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M4 4 L12 12 M12 4 L4 12"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-      />
-    </svg>
-  </button>
-);
+const CancelButton = () => {
+  const { t } = useTranslation();
+  return (
+    <button
+      class="sx"
+      aria-label={t("common.cancel")}
+      onClick={() => commands.cancelOperation()}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M4 4 L12 12 M12 4 L4 12"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
+  );
+};
 
 const WorkingRow = (props: { label: string; showCancel: boolean }) => (
   <div class="sbase">
@@ -582,8 +581,9 @@ const RecordingOverlay = () => {
         },
       );
 
-      // Live overlay-position change — drop any drag-grip offset so the card
-      // snaps back to the new anchor (Top/Bottom) without a restart.
+      // Live overlay-position change — the backend has already cleared any
+      // drag-grip position and re-anchored the window; flip the panel's growth
+      // direction to match.
       const unlistenPos = await listen(
         "overlay-position-changed",
         (event: { payload: string }) => {
@@ -797,16 +797,22 @@ const RecordingOverlay = () => {
    * when startDragging() can't activate the window (WS_EX_NOACTIVATE on Windows).
    */
   const startManualDrag = (event: PointerEvent) => {
-    void windowRef.outerPosition().then((pos) => {
-      if (!dragGripArmed) return;
-      manualDragActive = true;
-      manualDragStart = {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        winX: pos.x,
-        winY: pos.y,
-      };
-    });
+    // `outerPosition()` is physical pixels while the pointer deltas below are
+    // CSS (logical) pixels, so the start is converted once here and every move
+    // is a `LogicalPosition`; mixing the two jumped the window at any display
+    // scale other than 100 %.
+    void Promise.all([windowRef.outerPosition(), windowRef.scaleFactor()]).then(
+      ([pos, scale]) => {
+        if (!dragGripArmed) return;
+        manualDragActive = true;
+        manualDragStart = {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          winX: pos.x / scale,
+          winY: pos.y / scale,
+        };
+      },
+    );
 
     manualDragMoveHandler = (e: PointerEvent) => {
       if (!manualDragActive) return;
@@ -837,15 +843,12 @@ const RecordingOverlay = () => {
         dragGripFallbackTimer = null;
       }
       // For manual drag the onMoved event may not have fired for the final
-      // setPosition() call, so save the position directly.
+      // setPosition() call, so save the position directly. `outerPosition()`
+      // is already physical pixels — what the backend stores, and what the
+      // native path saves from `onMoved` — so it is saved unscaled.
       if (wasMoved) {
         void windowRef.outerPosition().then((pos) => {
-          void windowRef.scaleFactor().then((scale) => {
-            saveOverlayPosition(
-              Math.round(pos.x * scale),
-              Math.round(pos.y * scale),
-            );
-          });
+          saveOverlayPosition(Math.round(pos.x), Math.round(pos.y));
         });
       }
       dragGripArmed = false;
@@ -991,9 +994,18 @@ const RecordingOverlay = () => {
   );
 
   // The miniature analyser: an area spectrum and the last 4096 samples as a
-  // line, both computed with the Live FFT page's settings (OverlayScope).
+  // line, both computed with the Live FFT page's settings (OverlayScope), plus
+  // the circular view when it sits in the block rather than behind the card.
+  // The condition matches the views `overlayScopeBlockWidth` reserves room for,
+  // so a circular-only picture is drawn instead of leaving an empty gap.
   const Waveform = () => (
-    <Show when={scopeConfig().show_spectrum || scopeConfig().show_wave}>
+    <Show
+      when={
+        scopeConfig().show_spectrum ||
+        scopeConfig().show_wave ||
+        (scopeConfig().show_circular && !scopeConfig().circular_background)
+      }
+    >
       <div
         class={[
           "swave",
@@ -1249,7 +1261,8 @@ const RecordingOverlay = () => {
 
   // `show` on the stage and `leaving` on the card are both constant while the
   // branch is mounted (React returned `null` rather than rendering an invisible
-  // card), so they are kept as literal classes rather than as dead expressions.
+  // card). They are kept as expressions mirroring React's class list, which is
+  // why they read as `isVisible()` and `!isVisible()` inside this `Show`.
   return (
     <Show when={isVisible()}>
       <Show

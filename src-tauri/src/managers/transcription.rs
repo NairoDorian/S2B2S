@@ -102,8 +102,8 @@ pub struct StreamTextEvent {
     /// Which live stream this text came from. Absent on every path but the
     /// experimental Multi Streaming STT mode, so the plain path serializes
     /// byte-identically: `None` is the primary model's stream (what the overlay
-    /// has always shown), `Some(1)` the streaming second model the mode runs
-    /// beside it. The overlay renders the two as side-by-side columns and
+    /// has always shown), `Some(n)` (n = 1..STREAM_SLOTS-1) an extra model
+    /// streaming beside it. The overlay renders each as its own column and
     /// routes every other reader of this event to the primary only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<u8>,
@@ -162,8 +162,8 @@ enum StreamCmd {
         pcm: Vec<f32>,
         queued_at: Instant,
     },
-    /// Flush the stream and reply with the final text, or `None` if no stream
-    /// was ever active (caller should fall back to batch transcription).
+    /// Flush the stream and reply with the outcome (`NeverStarted` if no
+    /// stream was ever active — the caller falls back to batch).
     Finalize(mpsc::Sender<StreamWorkerResult>),
     Cancel,
 }
@@ -204,9 +204,9 @@ pub const PRIMARY_STREAM_SLOT: u8 = 0;
 /// follow it in the order the user configured them, so stream slot `n` carries
 /// `multi_stt_model_{n + 1}`. A mode that runs "two or more" streaming models
 /// therefore has a slot for each of them rather than a hardcoded pair — which is
-/// all this costs: the per-slot state below is four atomics and an `Option` per
-/// slot, and a slot that no model occupies is never opened, never leased and
-/// never fed.
+/// all this costs: the per-slot state below is three atomics and an `Option` per
+/// slot (plus one shared router flag), and a slot that no model occupies is
+/// never opened, never leased and never fed.
 pub const STREAM_SLOTS: usize = 4;
 
 /// How often [`TranscriptionManager::start_extra_stream_when_loaded`] looks for a
@@ -398,11 +398,12 @@ pub struct TranscriptionManager {
     /// True only while a transcribe-cpp `Stream` is actually in flight (set by
     /// the worker once `stream()` succeeds). Used for overlay/UI decisions.
     stream_active: Arc<[AtomicBool; STREAM_SLOTS]>,
-    /// Streaming uses four independent flags per slot: router open = frames
-    /// should route, worker active = no second worker may start on that slot,
-    /// engine lease = engine is out of the mutex, stream active = UI should show
-    /// a live session. One entry per slot, because the experimental Multi
-    /// Streaming STT mode runs the primary and a streaming extra side by side.
+    /// Streaming uses four independent flags (the router's is shared, the other
+    /// three are per slot): router open = frames should route, worker active =
+    /// no second worker may start on that slot, engine lease = engine is out of
+    /// the mutex, stream active = UI should show a live session. One entry per
+    /// slot, because the experimental Multi Streaming STT mode runs the primary
+    /// and its streaming extras side by side.
     ///
     /// Monotonic id source for stream workers; zero means "no worker".
     next_stream_worker_id: Arc<AtomicU64>,
@@ -452,10 +453,10 @@ pub struct TranscriptionManager {
 ///
 /// `audio_committed_ms` is the family's own statement of how much audio the
 /// committed text accounts for — a *hint* with family-dependent granularity,
-/// not a byte boundary into `committed` — which is what the Multi-STT streaming
-/// coordinator anchors its audio cuts to. `input_received_ms` is the total audio
-/// the stream has been fed since it began, which is what lets that coordinator
-/// check its own copy of the same signal is still in step.
+/// not a byte boundary into `committed` — which the Multi-STT streaming
+/// coordinator reads as a drain hint (never as a cut point). `input_received_ms`
+/// is the total audio the stream has been fed since it began, which, differenced
+/// with `audio_committed_ms`, is the un-drained audio the close gate tests.
 pub type StreamTextSink = Arc<dyn Fn(u8, &str, &str, i64, i64) + Send + Sync>;
 
 impl TranscriptionManager {
@@ -691,8 +692,8 @@ impl TranscriptionManager {
     /// Like [`load_model`](Self::load_model), but lets a caller hard-select the
     /// compute device for this one load by its `transcribe_cpp::devices()`
     /// registry index (the index shown by `--list-devices`). `None` keeps the
-    /// persisted accelerator setting (which may be Auto). Only affects
-    /// transcribe-cpp (whisper-family) models; the selection is not persisted.
+    /// persisted accelerator setting (which may be Auto). The selection is not
+    /// persisted.
     pub fn load_model_with_device(
         &self,
         model_id: &str,
@@ -789,41 +790,19 @@ impl TranscriptionManager {
                 .unwrap_or_else(|| "automatic".to_string());
             let model_options = ModelOptions { backend, device };
 
-            // If the model belongs to an architecture requiring an external dynamic plugin,
-            // ensure the plugin is activated/loaded from the registered plugin directories.
-            if let Some(info) = self.model_manager.get_model_info(model_id) {
-                let arch_hint = crate::catalog::file_in_catalog(&info.filename, None)
-                    .and_then(|(d, _)| d.caps.architecture.clone())
-                    .unwrap_or_default();
-                if !arch_hint.is_empty() {
-                    let _ = crate::managers::arch_plugins::ensure_arch_plugin_for_model(
-                        &arch_hint,
-                        &self.app_handle,
-                    );
-                }
-            }
-
-            let model = Model::load_with(&model_path, &model_options).map_err(|e| {
-                let err_str = e.to_string();
-                let error_msg = if err_str.contains("unsupported architecture") || err_str.contains("-9") {
-                    format!(
-                        "Failed to load model {}: architecture requires a dynamic plugin (transcribe-arch-*.dll) in your plugins directory. Error: {}",
-                        model_id, e
-                    )
-                } else {
-                    format!("Failed to load whisper model {}: {}", model_id, e)
-                };
-                emit_loading_failed(&error_msg);
-                anyhow::anyhow!(error_msg)
-            })?;
+            let model = self
+                .load_transcribe_model(
+                    model_id,
+                    Some(&model_info.filename),
+                    &model_path,
+                    &model_options,
+                )
+                .inspect_err(|e| emit_loading_failed(&e.to_string()))?;
             // The bound backend may differ from the request (e.g. CPU
             // fallback under Auto); log what actually loaded.
             let bound_backend = model.backend();
             let session = model.session().map_err(|e| {
-                let error_msg = format!(
-                    "Failed to create session for whisper model {}: {}",
-                    model_id, e
-                );
+                let error_msg = format!("Failed to create session for model {}: {}", model_id, e);
                 emit_loading_failed(&error_msg);
                 anyhow::anyhow!(error_msg)
             })?;
@@ -844,7 +823,7 @@ impl TranscriptionManager {
                 .map(|device| transcribe_device_label(&device))
                 .unwrap_or_else(|_| "unknown".to_string());
             info!(
-                "Loaded whisper model '{}' (requested {:?}, requested device '{}', \
+                "Loaded model '{}' (requested {:?}, requested device '{}', \
                      bound backend '{}', bound device '{}', supports_streaming={}, \
                      supports_translate={}, supports_language_detect={})",
                 model_id,
@@ -929,8 +908,8 @@ impl TranscriptionManager {
 
     /// The compute backend the currently-loaded engine is bound to, for
     /// diagnostics (e.g. confirming `--device-index` actually bound a GPU rather
-    /// than falling back to CPU/auto). transcribe-cpp (whisper-family) reports
-    /// its real backend string; `None` when no model is loaded.
+    /// than falling back to CPU/auto). transcribe-cpp reports its real backend
+    /// string; `None` when no model is loaded.
     pub fn current_backend(&self) -> Option<String> {
         self.lock_engine()
             .as_ref()
@@ -959,13 +938,13 @@ impl TranscriptionManager {
     /// Non-blocking: spawns a worker that waits for any in-progress model load,
     /// verifies the model supports streaming, then begins the stream. If the
     /// model can't stream, the worker idles until finalize/cancel and reports
-    /// `None` so the caller falls back to batch transcription. Frames sent
-    /// before the stream begins queue on the channel and are not lost.
-    /// Start the live stream worker. `live_typing` allows the worker to type
-    /// the live text into the foreground app when the paste method is
-    /// `DirectStreaming`; pass `false` for post-processing / Multi-STT, where
-    /// the stream is only a preview for the overlay and the final text is
-    /// pasted afterwards.
+    /// `NeverStarted` so the caller falls back to batch transcription. Frames
+    /// sent before the stream begins queue on the channel and are not lost.
+    ///
+    /// `live_typing` allows the worker to type the live text into the
+    /// foreground app when the paste method is `DirectStreaming`; pass `false`
+    /// for post-processing / Multi-STT, where the stream is only a preview for
+    /// the overlay and the final text is pasted afterwards.
     pub fn start_stream(&self, live_typing: bool, statistics: StatisticsRunContext) {
         self.start_stream_on(PRIMARY_STREAM_SLOT, live_typing, statistics, None);
     }
@@ -1091,13 +1070,13 @@ impl TranscriptionManager {
             };
         }
 
-        // The test is per slot, deliberately. `router.is_open()` says *a* stream
-        // is running and cannot be the guard here: the whole point of the slot
-        // array is that the primary's stream may already be open when an extra's
-        // starts, and testing the router as a whole would refuse the extra on
-        // every multi-streaming session — silently, since the caller's only
-        // signal is an empty column. One worker per slot is what has to hold, and
-        // that is what the second half tests.
+        // The test is per slot, deliberately. The router's shared `open` flag
+        // says *a* stream is running and cannot be the guard here: the whole
+        // point of the slot array is that the primary's stream may already be
+        // open when an extra's starts, and testing the router as a whole would
+        // refuse the extra on every multi-streaming session — silently, since
+        // the caller's only signal is an empty column. One worker per slot is
+        // what has to hold, and that is what the second half tests.
         let index = slot as usize;
         if self.active_stream_worker[index].load(Ordering::Acquire) != 0 {
             warn!(
@@ -1712,9 +1691,9 @@ impl TranscriptionManager {
         self.finalize_stream_on(PRIMARY_STREAM_SLOT)
     }
 
-    /// Finalize one slot's stream and post-process its text. The second slot is
-    /// the experimental Multi Streaming STT mode's extra; its text is a column of
-    /// its own and never becomes the session's transcript.
+    /// Finalize one slot's stream and post-process its text. Every non-primary
+    /// slot is an experimental Multi Streaming STT mode extra; its text is a
+    /// column of its own and never becomes the session's transcript.
     pub fn finalize_stream_on(&self, slot: u8) -> StreamFinalization {
         let index = slot as usize;
         let Some(tx) = self.router.take(slot) else {
@@ -2069,7 +2048,7 @@ impl TranscriptionManager {
             return Ok((String::new(), None));
         }
 
-        // Check if model is loaded, if not try to load it
+        // Wait for any in-progress load, then require a loaded engine.
         {
             // If the model is loading, wait for it to complete.
             let mut is_loading = self.is_loading.lock().unwrap();
@@ -2108,11 +2087,6 @@ impl TranscriptionManager {
             );
         }
 
-        // Whether the loaded transcribe-cpp model advertises
-        // Feature::InitialPrompt. Informational (logged below); the whisper
-        // run extension and the fuzzy-correction skip are gated on
-        // `model_is_whisper` instead, since non-whisper archs can advertise
-        // the feature while rejecting the whisper-kind extension.
         // Whether the loaded model is actually whisper-family (arch string).
         // Non-whisper archs (e.g. Voxtral Small) can advertise
         // Feature::InitialPrompt yet reject the whisper-kind run extension
@@ -2133,7 +2107,7 @@ impl TranscriptionManager {
                 Some(e) => e,
                 None => {
                     return Err(anyhow::anyhow!(
-                        "Model failed to load after auto-load attempt. Please check your model settings."
+                        "Model is not available for transcription (unloaded or in use). Please try again."
                     ));
                 }
             };
@@ -2174,7 +2148,7 @@ impl TranscriptionManager {
                 model_is_whisper = model.arch() == "whisper";
                 debug!(
                     "transcribe-cpp model '{}' on '{}': initial_prompt={}, translate={}, languages={:?}",
-                    settings.selected_model,
+                    active_model,
                     model.backend(),
                     model_takes_initial_prompt,
                     caps.supports_translate,
@@ -2329,11 +2303,12 @@ impl TranscriptionManager {
         );
 
         let et = std::time::Instant::now();
-        let translation_note = if settings.translate_to_english {
-            " (translated)"
-        } else {
-            ""
-        };
+        let translation_note =
+            if matches!(output_language, OutputLanguageEvidence::TranslatedToEnglish) {
+                " (translated)"
+            } else {
+                ""
+            };
         // Real-time factor. Input PCM is 16 kHz mono, so audio length in seconds
         // is samples / 16000. `speedup` is audio_secs / elapsed_secs — e.g. 4.00x
         // means transcribed 4x faster than real time
@@ -3085,7 +3060,6 @@ impl TranscriptionManager {
 
     /// Transcribe audio with one of the extra model engines.
     /// The engine is temporarily removed from the map, used, and returned.
-    #[allow(dead_code)]
     pub fn transcribe_with_extra(&self, model_id: &str, audio: Vec<f32>) -> Result<String> {
         self.transcribe_with_extra_internal(model_id, audio, None)
             .map(|(text, _)| text)
@@ -3457,7 +3431,11 @@ impl TranscriptionManager {
 
         let settings = get_settings(&self.app_handle);
         let audio_secs = benchmark_audio_secs(audio);
-        let default_quant = descriptor.default_quant.clone().unwrap_or_default();
+        let default_filename = crate::managers::model::default_quant_file(
+            &descriptor.files,
+            descriptor.default_quant.as_deref(),
+        )
+        .map(|f| f.filename.as_str());
 
         // Remember whether the user had a model resident so we can restore it
         // once the run is over instead of leaving them with a cold start.
@@ -3537,7 +3515,7 @@ impl TranscriptionManager {
             let result = Self::summarize_benchmark(
                 file,
                 &variant_id,
-                file.quant == default_quant,
+                Some(file.filename.as_str()) == default_filename,
                 &times_ms,
                 audio_secs,
             );
@@ -3641,7 +3619,11 @@ impl TranscriptionManager {
         let result = Self::summarize_benchmark(
             file,
             model_id,
-            file.quant == descriptor.default_quant.clone().unwrap_or_default(),
+            crate::managers::model::default_quant_file(
+                &descriptor.files,
+                descriptor.default_quant.as_deref(),
+            )
+            .is_some_and(|default| default.filename == file.filename),
             &times_ms,
             audio_secs,
         );
@@ -3670,47 +3652,67 @@ impl TranscriptionManager {
         extra.contains_key(model_id)
     }
 
-    /// Create a LoadedEngine for a model file (shared helper for primary and extra models).
-    fn create_engine(&self, model_id: &str, model_path: &std::path::Path) -> Result<LoadedEngine> {
-        use transcribe_cpp::{Model, ModelOptions};
-
+    /// Load a transcribe-cpp model file — the one `Model::load_with` wrapper,
+    /// shared by the primary load and [`Self::create_engine`].
+    ///
+    /// When the catalog names an architecture for `filename`, its external
+    /// plugin is activated first (a no-op in every shipped posture, where
+    /// arch-dl is off). A load failure that looks like a missing plugin is
+    /// reported as such; anything else as a plain load failure.
+    fn load_transcribe_model(
+        &self,
+        model_id: &str,
+        filename: Option<&str>,
+        model_path: &std::path::Path,
+        model_options: &ModelOptions,
+    ) -> Result<Model> {
+        let arch_hint = filename
+            .and_then(|filename| crate::catalog::file_in_catalog(filename, None))
+            .and_then(|(descriptor, _)| descriptor.caps.architecture.clone())
+            .unwrap_or_default();
+        if !arch_hint.is_empty()
+            && let Err(e) = crate::managers::arch_plugins::ensure_arch_plugin_for_model(
+                &arch_hint,
+                &self.app_handle,
+            )
         {
-            // Same resolution as the primary load, so a per-model backend
-            // override applies to a Multi-STT extra exactly as it does to the
-            // primary model.
-            let (backend, device) =
-                resolve_model_backend(&get_settings(&self.app_handle), model_id);
-            let model_options = ModelOptions { backend, device };
-
-            // Ensure architecture plugin is activated if required
-            if let Some(info) = self.model_manager.get_model_info(model_id) {
-                let arch_hint = crate::catalog::file_in_catalog(&info.filename, None)
-                    .and_then(|(d, _)| d.caps.architecture.clone())
-                    .unwrap_or_default();
-                if !arch_hint.is_empty() {
-                    let _ = crate::managers::arch_plugins::ensure_arch_plugin_for_model(
-                        &arch_hint,
-                        &self.app_handle,
-                    );
-                }
-            }
-
-            let model = Model::load_with(model_path, &model_options).map_err(|e| {
-                let err_str = e.to_string();
-                if err_str.contains("unsupported architecture") || err_str.contains("-9") {
-                    anyhow::anyhow!(
-                        "Failed to load model {}: architecture requires a dynamic plugin (transcribe-arch-*.dll) in your plugins directory. Error: {}",
-                        model_id, e
-                    )
-                } else {
-                    anyhow::anyhow!("Failed to load model {}: {}", model_id, e)
-                }
-            })?;
-            let session = model
-                .session()
-                .map_err(|e| anyhow::anyhow!("Failed to create session for {}: {}", model_id, e))?;
-            Ok(LoadedEngine::TranscribeCpp(session))
+            warn!(
+                "Architecture plugin for '{}' could not be loaded: {}",
+                arch_hint, e
+            );
         }
+
+        Model::load_with(model_path, model_options).map_err(|e| {
+            let err_str = e.to_string();
+            if err_str.contains("unsupported architecture") || err_str.contains("-9") {
+                anyhow::anyhow!(
+                    "Failed to load model {}: architecture requires a dynamic plugin (transcribe-arch-*.dll) in your plugins directory. Error: {}",
+                    model_id,
+                    e
+                )
+            } else {
+                anyhow::anyhow!("Failed to load model {}: {}", model_id, e)
+            }
+        })
+    }
+
+    /// Create a LoadedEngine for a Multi-STT extra model file.
+    fn create_engine(&self, model_id: &str, model_path: &std::path::Path) -> Result<LoadedEngine> {
+        // Same resolution as the primary load, so a per-model backend override
+        // applies to a Multi-STT extra exactly as it does to the primary model.
+        let (backend, device) = resolve_model_backend(&get_settings(&self.app_handle), model_id);
+        let model_options = ModelOptions { backend, device };
+
+        let filename = self
+            .model_manager
+            .get_model_info(model_id)
+            .map(|info| info.filename);
+        let model =
+            self.load_transcribe_model(model_id, filename.as_deref(), model_path, &model_options)?;
+        let session = model
+            .session()
+            .map_err(|e| anyhow::anyhow!("Failed to create session for {}: {}", model_id, e))?;
+        Ok(LoadedEngine::TranscribeCpp(session))
     }
 }
 
@@ -3803,11 +3805,8 @@ fn transcribe_with_engine(
     })
 }
 
-/// Initialize the transcribe-cpp native backend once at startup: route native +
-/// ggml diagnostics into the `log` facade and register compute backend modules.
-/// In a static build (macOS Metal) `init_backends_default` is a harmless no-op;
-/// in a `dynamic-backends` build it loads the per-ISA CPU / GPU modules. Must run
-/// before the first model load.
+/// The native library's build id (a process-lifetime static string), or
+/// "unknown".
 pub fn native_build_identity() -> String {
     // Native API returns a process-lifetime static string.
     let ptr = unsafe { transcribe_cpp::sys::transcribe_build_id() };
@@ -3820,6 +3819,11 @@ pub fn native_build_identity() -> String {
         .to_string()
 }
 
+/// Initialize the transcribe-cpp native backend once at startup: route native +
+/// ggml diagnostics into the `log` facade and register compute backend modules.
+/// In a static build (macOS Metal) `init_backends_default` is a harmless no-op;
+/// in a `dynamic-backends` build it loads the per-ISA CPU / GPU modules. Must run
+/// before the first model load.
 pub fn init_transcribe_backend() {
     transcribe_cpp::init_logging();
     info!(target: "pipeline", "native={} executable={:?}",
@@ -3900,7 +3904,7 @@ fn resolve_device_index(index: usize) -> Result<(Backend, Option<Device>)> {
     Ok((Backend::Auto, Some(device)))
 }
 
-/// Map the whisper accelerator setting to a transcribe-cpp [`Backend`].
+/// Map the transcribe accelerator setting to a transcribe-cpp [`Backend`].
 ///
 /// `Auto` lets the library pick the best device (with CPU fallback). `Cpu` forces
 /// strict CPU. `Gpu` requests the platform GPU backend, but only if a device for
@@ -3997,8 +4001,7 @@ fn model_backend_kind(setting: ModelBackendSetting) -> Option<Backend> {
 /// this build or this machine does not have would fail to load outright. So an
 /// unavailable request is refused here, with a warning naming the model, and the
 /// global policy is applied instead — a preference is not worth a dead model.
-/// Only `Auto`/`Cpu` reach the engine from an override; the GPU variants pass
-/// `device: None` and let the library pick the device for that backend, since
+/// An override never carries a device: the GPU variants pass `device: None` and let the library pick the device for that backend, since
 /// `transcribe_gpu_device` is an identity for the global GPU choice, not a
 /// per-model one.
 fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Option<Device>) {
@@ -4162,7 +4165,12 @@ fn cached_gpu_devices() -> &'static [GpuDeviceOption] {
 /// — which is the same predicate `resolve_model_backend` checks before honouring
 /// an override, so what the dropdown offers and what a load will accept cannot
 /// drift apart.
-fn available_model_backends() -> Vec<String> {
+///
+/// Also validates a stored choice (`set_model_backend_setting`). Cheap by
+/// construction — `backend_available` reads the backend registry, it does not
+/// enumerate devices, so this does not pay the first-call GPU probe that
+/// `get_available_accelerators` does.
+pub fn available_model_backends() -> Vec<String> {
     let mut out = vec!["auto".to_string(), "cpu".to_string()];
     if transcribe_gpu_disabled_for_host() {
         return out;
@@ -4178,15 +4186,6 @@ fn available_model_backends() -> Vec<String> {
         }
     }
     out
-}
-
-/// The per-model backend wire names this process can honour, for validating a
-/// stored choice (`set_model_backend_setting`). Cheap by construction —
-/// `backend_available` reads the backend registry, it does not enumerate
-/// devices, so this does not pay the first-call GPU probe that
-/// `get_available_accelerators` does.
-pub fn available_model_backend_names() -> Vec<String> {
-    available_model_backends()
 }
 
 #[derive(Serialize, Clone, Debug, Type)]
@@ -4213,10 +4212,11 @@ impl Drop for TranscriptionManager {
     fn drop(&mut self) {
         // Skip shutdown unless this is the very last clone. TranscriptionManager
         // is cloned by initiate_model_load() and the watcher thread — those
-        // clones dropping must not kill the watcher. The watcher thread holds
-        // its own clone, so engine's strong_count is always >= 2 while the
-        // watcher is alive. When it reaches 1, only this instance remains
-        // and we can safely shut down.
+        // clones dropping must not kill the watcher. The idle watcher owns a
+        // clone for its whole life, so strong_count never drops to 1 while it
+        // runs and this early return always fires; the watcher is torn down
+        // with the process. Kept as a guard in case the watcher ever stops
+        // holding a clone.
         if Arc::strong_count(&self.engine) > 1 {
             return;
         }
@@ -4615,10 +4615,12 @@ mod tests {
     /// name, and both failures are silent.
     #[test]
     fn multi_stt_slots_and_models_resolve_to_each_other() {
-        let mut settings = AppSettings::default();
-        settings.multi_stt_model_2 = Some("model-two".into());
-        settings.multi_stt_model_3 = Some("model-three".into());
-        settings.multi_stt_model_4 = Some("model-four".into());
+        let mut settings = AppSettings {
+            multi_stt_model_2: Some("model-two".into()),
+            multi_stt_model_3: Some("model-three".into()),
+            multi_stt_model_4: Some("model-four".into()),
+            ..Default::default()
+        };
 
         // The primary is not one of the panel's models: its stream is the app's
         // own transcription, so nothing may be attributed to it.

@@ -23,8 +23,9 @@ const GGUF_SUFFIX = /\.gguf$/;
 /**
  * The id as it should appear in a list: no org, no extension.
  *
- * `whisper-large-v3-turbo-Q8_0` rather than
- * `handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf`.
+ * `whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0` rather than
+ * `handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf`
+ * — only the org prefix and the extension are dropped; the repo name stays.
  * An id that matches neither pattern — a custom model, or a value from an older
  * release — is returned unchanged, so this can never lose information.
  */

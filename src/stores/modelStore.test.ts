@@ -1,6 +1,6 @@
 /// <reference types="bun-types/test-globals" />
-// Standalone assert check (no JS unit-test runner in this repo). Run with:
-//   bun src/stores/modelStore.test.ts
+// Standalone assert check, run by `bun test` (bunfig.toml roots discovery at
+// src/).
 //
 // This file pins the two things about `modelStore.ts` that the browser suite
 // cannot reach: its `get_available_models` fixture is the empty list, so the
@@ -213,7 +213,7 @@ test("cancelDownload clears the model and keeps the rest", async () => {
 // backend reported it or progress exists for it. Cancelling a model that is
 // not downloading is the shortest path to it — a no-op in every one of the
 // three maps the cleanup writes.
-{
+test("clearing an absent key is a no-op", async () => {
   store.setDownloadingModels({});
   store.setVerifyingModels({});
   store.setDownloadProgress({ other: progressFor("other") });
@@ -242,7 +242,4 @@ test("cancelDownload clears the model and keeps the rest", async () => {
     downloadingBefore,
     "clearing an absent key must not replace the map it is absent from",
   );
-  console.log("ok 5 — clearing an absent key is a no-op");
-}
-
-console.log("\n5 checks passed");
+});

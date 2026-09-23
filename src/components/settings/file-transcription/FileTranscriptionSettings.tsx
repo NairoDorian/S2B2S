@@ -306,8 +306,10 @@ export const FileTranscriptionSettings = () => {
     }
   };
 
+  // Installed once for the page's lifetime; the handler itself ignores drops
+  // while a run is in progress.
   createEffect(
-    () => store.running,
+    () => undefined,
     () => {
       let disposed = false;
       let unlisten: (() => void) | null = null;

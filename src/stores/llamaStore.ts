@@ -9,6 +9,9 @@ import {
   type LlamaServerStateEvent,
 } from "@/bindings";
 import { sessionToast as toast } from "@/lib/sessionToast";
+import { useTranslation } from "@/i18n/useTranslation";
+
+const { t } = useTranslation();
 
 /**
  * In-app llama.cpp server: supervised state (pushed by the backend), logs
@@ -171,7 +174,9 @@ const llamaState = createSolidStore<LlamaStore>((set, get) => ({
       toast.error(String(result.error));
       return;
     }
-    toast.success(`Freed ${result.data} MB`);
+    toast.success(
+      t("settings.llama.backend.runtimeFreed", { mb: result.data }),
+    );
     await get().refreshInstalled();
   },
   removeInstalled: async (dir) => {
@@ -189,18 +194,3 @@ export function useLlamaStore() {
 }
 
 export const initialize = () => useLlamaStore().initialize();
-export const refreshState = () => useLlamaStore().refreshState();
-export const refreshLogs = () => useLlamaStore().refreshLogs();
-export const refreshInstalled = () => useLlamaStore().refreshInstalled();
-export const refreshPreview = () => useLlamaStore().refreshPreview();
-export const fetchReleases = (channel: string, force: boolean) =>
-  useLlamaStore().fetchReleases(channel, force);
-export const start = () => useLlamaStore().start();
-export const stop = () => useLlamaStore().stop();
-export const restart = () => useLlamaStore().restart();
-export const install = (tag: string, backend: string, includeCudart: boolean) =>
-  useLlamaStore().install(tag, backend, includeCudart);
-export const removeCudaRuntime = (dir: string) =>
-  useLlamaStore().removeCudaRuntime(dir);
-export const removeInstalled = (dir: string) =>
-  useLlamaStore().removeInstalled(dir);

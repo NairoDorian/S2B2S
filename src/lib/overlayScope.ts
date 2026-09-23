@@ -206,6 +206,57 @@ export function circularSignalAt(k: number, bins: ArrayLike<number>): number {
   return (bins[j] + bins[n - 1 - j]) / 2;
 }
 
+// ---- Waveform envelope ------------------------------------------------------
+//
+// The waveform view is ~48 px wide and carries 4096 (up to 16384) samples, so
+// a polyline through every sample is ~85–340 segments per pixel column. The
+// rasteriser paints exactly the column's min…max span for such a polyline,
+// so the painter draws that span directly: one vertical stroke per column,
+// joined to the next, which looks the same at a fraction of the path cost.
+
+/**
+ * Min/max of `samples` per pixel column. Column x covers the samples
+ * `[floor(x·n/columns), floor((x+1)·n/columns))` (at least one), the same
+ * partition as `maxPerColumn`. Fills `outMin` / `outMax` (length ≥ columns)
+ * and returns the largest |sample|, which the auto-gain needs anyway.
+ */
+export function waveEnvelope(
+  samples: ArrayLike<number>,
+  columns: number,
+  outMin: Float32Array,
+  outMax: Float32Array,
+): number {
+  const n = samples.length;
+  let peak = 0;
+  if (n === 0 || columns <= 0) return peak;
+  for (let x = 0; x < columns; x++) {
+    const start = Math.min(n - 1, Math.floor((x * n) / columns));
+    let end = Math.floor(((x + 1) * n) / columns);
+    if (end <= start) end = start + 1;
+    if (end > n) end = n;
+    let lo = samples[start];
+    let hi = lo;
+    for (let i = start + 1; i < end; i++) {
+      const v = samples[i];
+      if (v < lo) lo = v;
+      else if (v > hi) hi = v;
+    }
+    outMin[x] = lo;
+    outMax[x] = hi;
+    const a = hi > -lo ? hi : -lo;
+    if (a > peak) peak = a;
+  }
+  return peak;
+}
+
+/**
+ * Whether the envelope is worth it: only when a column holds at least two
+ * samples. Fewer samples than pixels keep the per-sample polyline.
+ */
+export function waveEnvelopeApplies(samples: number, columns: number): boolean {
+  return columns > 0 && samples >= columns * 2;
+}
+
 /**
  * Publish the geometry as the CSS custom properties RecordingOverlay.css
  * reads, so the card and its animations follow the setting.

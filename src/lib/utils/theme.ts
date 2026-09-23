@@ -9,13 +9,14 @@ import { computeAccentPalette, DEFAULT_ACCENT_COLOR, parseHex } from "./color";
  * The app ships a full light palette and a full dark palette (see `App.css`).
  * This module lets the user pick which one is used instead of always following
  * the OS:
- *  - `system` removes the override so the `prefers-color-scheme` media query
- *    governs (the historical behaviour).
+ *  - `system` resolves the OS scheme to an explicit `data-theme` on the
+ *    document root and follows it live.
  *  - `light` / `dark` set `data-theme` on the document root, whose
- *    higher-specificity CSS selectors win over the media query.
+ *    higher-specificity CSS selectors win over the media query, and stop
+ *    following the OS.
  *
  * The choice is persisted in `AppSettings` (source of truth) and mirrored to
- * localStorage so it can be applied synchronously on boot, before React mounts,
+ * localStorage so it can be applied synchronously on boot, before the app renders,
  * avoiding a flash of the wrong palette.
  *
  * The mirror keys are suffixes, not names: `readPref` / `writePref` apply the
@@ -32,7 +33,6 @@ export const THEME_OPTIONS: Theme[] = ["system", "light", "dark"];
 const isTheme = (value: unknown): value is Theme =>
   value === "system" || value === "light" || value === "dark";
 
-/** Apply a theme to the document root and remember it for the next launch. */
 const OS_DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /** Resolve `system` to an explicit `data-theme` from the OS setting. */
@@ -46,8 +46,22 @@ const applySystemTheme = (): void => {
 /** The OS dark-mode listener, installed once for the `system` theme. */
 let systemThemeQuery: MediaQueryList | null = null;
 
+/**
+ * Whether the listener may write `data-theme`. It is installed the first time
+ * `system` is applied and never removed, so a later explicit `light` / `dark`
+ * has to switch it off here — or the next OS scheme change would override the
+ * user's choice.
+ */
+let followSystem = false;
+
+const onSystemThemeChange = (): void => {
+  if (followSystem) applySystemTheme();
+};
+
+/** Apply a theme to the document root and remember it for the next launch. */
 export const applyTheme = (theme: Theme): void => {
   const root = document.documentElement;
+  followSystem = theme === "system";
   if (theme === "system") {
     // `system` resolves to an explicit attribute rather than removing the
     // override: the Tailwind `dark:` variant keys on `[data-theme="dark"]`
@@ -59,7 +73,7 @@ export const applyTheme = (theme: Theme): void => {
     applySystemTheme();
     if (!systemThemeQuery) {
       systemThemeQuery = window.matchMedia(OS_DARK_QUERY);
-      systemThemeQuery.addEventListener("change", applySystemTheme);
+      systemThemeQuery.addEventListener("change", onSystemThemeChange);
     }
   } else {
     root.dataset.theme = theme;

@@ -11,6 +11,7 @@ import type {
   LLMPrompt,
   MicIdleTimeoutUnit,
   ModelBackendSetting,
+  ModelUnloadTimeout,
   NativeStreamingLatencyPreset,
   ShortcutActivation,
 } from "@/bindings";
@@ -67,7 +68,7 @@ interface SettingsStore {
     modelId: string,
     backend: ModelBackendSetting,
   ) => Promise<void>;
-  resetSetting: (key: keyof Settings) => Promise<void>;
+  resetSetting: <K extends keyof Settings>(key: K) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
   refreshOutputDevices: () => Promise<void>;
@@ -139,6 +140,26 @@ const withBindingValue = (
       [id]: { ...existing, current_binding: currentBinding },
     },
   };
+};
+
+/**
+ * Throw when a command resolved an error `Result`.
+ *
+ * tauri-specta's `typedError` wrappers resolve `{ status: "error", error }`
+ * rather than rejecting, so without this a backend refusal would skip the
+ * caller's `catch` and leave the optimistic value on screen although it was
+ * never persisted. Anything that is not an error `Result` (`undefined` from
+ * the updaters that check their own result, `{ status: "ok" }`) passes.
+ */
+const throwIfErrorResult = (result: unknown): void => {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "status" in result &&
+    result.status === "error"
+  ) {
+    throw new Error(String("error" in result ? result.error : result.status));
+  }
 };
 
 const settingUpdaters: {
@@ -226,7 +247,6 @@ const settingUpdaters: {
     commands.changeAppendTrailingSpaceSetting(value as boolean),
   append_trailing_newline: (value) =>
     commands.changeAppendTrailingNewlineSetting(value as boolean),
-  log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
   theme: (value) => commands.changeThemeSetting(value as string),
   ui_scale: (value) => commands.changeUiScaleSetting(value as number),
@@ -269,6 +289,8 @@ const settingUpdaters: {
     commands.changeFillerWordRemovalEnabledSetting(value as boolean),
   show_tray_icon: (value) =>
     commands.changeShowTrayIconSetting(value as boolean),
+  model_unload_timeout: (value) =>
+    commands.setModelUnloadTimeout(value as ModelUnloadTimeout),
   native_streaming_latency_presets: () => Promise.resolve(),
   // Same shape as the preset map above: this field has no generic
   // `updateSetting` dispatch — it is written only through the dedicated
@@ -344,8 +366,9 @@ const settingUpdaters: {
       settingsState.settings?.mic_idle_timeout_unit ?? "seconds",
       value as boolean,
     ),
-  // The detector is rebuilt from the new threshold; a rejected rebuild
-  // (mid-recording) rolls the slider back through the throw.
+  // Swapped into the live detector in place (no rebuild, works mid-recording);
+  // an error (a failed blocking-task join) rolls the slider back through the
+  // throw.
   vad_threshold_earshot: async (value) => {
     const result = await commands.changeVadThresholdSetting(value as number);
     if (result.status === "error") {
@@ -497,27 +520,37 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
 
       const updater = settingUpdaters[key];
       if (updater) {
-        await updater(value);
+        throwIfErrorResult(await updater(value));
       } else if (key !== "bindings" && key !== "selected_model") {
         console.warn(`No handler for setting: ${String(key)}`);
       }
     } catch (error) {
       console.error(`Failed to update setting ${String(key)}:`, error);
-      if (settings) {
-        set({ settings: { ...settings, [key]: originalValue } });
-      }
+      // Restore only this key on the current settings: the pre-update
+      // snapshot would also undo whatever another update or a
+      // `settings-changed` refresh wrote in the meantime.
+      set((state) => ({
+        settings: state.settings
+          ? { ...state.settings, [key]: originalValue }
+          : null,
+      }));
+      // Then let the backend's copy win: a few commands persist the value
+      // before a later step fails (e.g. the microphone change saves, then
+      // cannot open the device), so the rollback alone could show a value
+      // that is not the saved one.
+      void get().refreshSettings();
     } finally {
       setUpdating(updateKey, false);
     }
   },
 
   // Reset a setting to its default value
-  resetSetting: async (key) => {
+  resetSetting: async <K extends keyof Settings>(key: K) => {
     const { defaultSettings } = get();
     if (defaultSettings) {
       const defaultValue = defaultSettings[key];
       if (defaultValue !== undefined) {
-        await get().updateSetting(key, defaultValue as any);
+        await get().updateSetting(key, defaultValue);
       }
     }
   },
@@ -686,8 +719,10 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
     } catch (error) {
       console.error(`Failed to update binding ${id}:`, error);
 
-      // Rollback on error
-      if (originalBinding) {
+      // Rollback on error. `!== undefined`, not truthiness: an unbound
+      // shortcut (the shipped default for transcribe) is `""`, and a rejected
+      // first binding must still fall back to it.
+      if (originalBinding !== undefined) {
         set((state) => {
           const next = withBindingValue(state.settings, id, originalBinding);
           return next ? { settings: next } : {};
@@ -709,7 +744,7 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
     setUpdating(updateKey, true);
 
     try {
-      await commands.resetBinding(id);
+      throwIfErrorResult(await commands.resetBinding(id));
       await refreshSettings();
     } catch (error) {
       console.error(`Failed to reset binding ${id}:`, error);
@@ -743,7 +778,7 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
     setPostProcessModelOptions(providerId, []);
 
     try {
-      await commands.setPostProcessProvider(providerId);
+      throwIfErrorResult(await commands.setPostProcessProvider(providerId));
       await refreshSettings();
     } catch (error) {
       console.error("Failed to set post-process provider:", error);
@@ -772,11 +807,17 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
 
     try {
       if (settingType === "base_url") {
-        await commands.changePostProcessBaseUrlSetting(providerId, value);
+        throwIfErrorResult(
+          await commands.changePostProcessBaseUrlSetting(providerId, value),
+        );
       } else if (settingType === "api_key") {
-        await commands.changePostProcessApiKeySetting(providerId, value);
+        throwIfErrorResult(
+          await commands.changePostProcessApiKeySetting(providerId, value),
+        );
       } else if (settingType === "model") {
-        await commands.changePostProcessModelSetting(providerId, value);
+        throwIfErrorResult(
+          await commands.changePostProcessModelSetting(providerId, value),
+        );
       }
       await refreshSettings();
     } catch (error) {

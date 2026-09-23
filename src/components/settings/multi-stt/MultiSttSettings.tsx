@@ -89,8 +89,8 @@ const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
 
   const placeholder = (modelInfo: ModelInfo) =>
     modelInfo.supports_language_detection
-      ? (getLanguageLabel("auto") ?? "Auto")
-      : (getLanguageLabel(effectiveLang()) ?? "Select language");
+      ? (getLanguageLabel("auto") ?? t("settings.general.language.auto"))
+      : (getLanguageLabel(effectiveLang()) ?? t("multiStt.models.notSelected"));
 
   return (
     <Show when={props.modelId && props.modelInfo ? props.modelInfo : undefined}>
@@ -702,12 +702,9 @@ export const MultiSttSettings = () => {
               descriptionMode="tooltip"
               grouped={true}
             />
-          </SettingsGroup>
-
-          {((getSetting("multi_stt_performance_mode_enabled") as boolean) ??
-          false) ? (
-            <SettingsGroup title={t("multiStt.performanceMode.title")}>
-              <div class="space-y-3">
+            {((getSetting("multi_stt_performance_mode_enabled") as boolean) ??
+            false) ? (
+              <>
                 <ToggleSwitch
                   checked={
                     (getSetting(
@@ -752,19 +749,21 @@ export const MultiSttSettings = () => {
                 >
                   <KeyComboInput settingKey="multi_stt_performance_mode_normal_shortcut" />
                 </SettingContainer>
-              </div>
-            </SettingsGroup>
-          ) : null}
+              </>
+            ) : null}
+          </SettingsGroup>
 
           <SettingsGroup title={t("multiStt.mergePrompt.title")}>
             <SettingContainer
               title={t("multiStt.mergePrompt.description")}
+              // The tooltip renders plain text; the tip's <code> markup is
+              // only rendered by the TranslatedMarkup copy below.
               description={t("multiStt.mergePrompt.promptTip", {
                 output: "${output}",
                 output2: "${output2}",
                 output3: "${output3}",
                 output4: "${output4}",
-              })}
+              }).replace(/<\/?code>/g, "")}
               descriptionMode="tooltip"
               layout="stacked"
               grouped={true}

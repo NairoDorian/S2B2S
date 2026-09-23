@@ -110,7 +110,11 @@ fn play_audio_file(
 
             let mut found_device = None;
             for device in devices {
-                let desc = device.description()?;
+                // An endpoint that cannot describe itself (disabled, just
+                // unplugged) is skipped, not fatal to the whole chime.
+                let Ok(desc) = device.description() else {
+                    continue;
+                };
                 if desc.name() == device_name {
                     found_device = Some(device);
                     break;

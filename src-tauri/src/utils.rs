@@ -8,7 +8,6 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 // Re-export all utility modules for easy access
-// pub use crate::audio_feedback::*;
 pub use crate::clipboard::*;
 pub use crate::overlay::*;
 pub use crate::tray::*;
@@ -33,21 +32,23 @@ pub fn redact_text(text: &str) -> &str {
 /// out, so a chunk's slots and the merge's answer can be read against each
 /// other.
 ///
-/// `redact_text` keeps the body out of a release log while leaving a debug
-/// build — the only one whose console carries these lines — intact, and the
-/// level check keeps the payload from being formatted at all when nobody is
-/// listening.
+/// Capture runs at every level in every build profile (docs/LOGGING.md), so
+/// release builds carry these lines too: there `redact_text` replaces the body
+/// with `[REDACTED]` and only the size is logged. The size is counted on the
+/// original text — counts are not content — so a release log still says how
+/// big each payload was. The level check only skips the formatting if a
+/// logger that filters Debug out is ever installed.
 pub fn log_multiline(label: &str, text: &str) {
     if !log::log_enabled!(log::Level::Debug) {
         return;
     }
-    let text = redact_text(text);
     debug!(
         "{} — {} chars, {} line(s)",
         label,
         text.chars().count(),
         text.lines().count()
     );
+    let text = redact_text(text);
     for (index, line) in text.lines().enumerate() {
         debug!("  {:>3}| {}", index + 1, line);
     }
@@ -209,10 +210,10 @@ pub fn is_gnome_wayland() -> bool {
     is_wayland() && is_gnome()
 }
 
-/// Truthiness of a flag *value*: "1", "true", "yes" and "on" are true;
-/// "0", "false", "no", "off" and the empty string are false, case-insensitively.
+/// Truthiness of a flag *value*: "", "0", "false", "no" and "off"
+/// (case-insensitive, trimmed) are false; anything else is true.
 ///
-/// Shared by [`env_flag_enabled`] and [`app_env_var`] so the two entry points
+/// Shared by [`env_flag_enabled`] and [`app_env_flag`] so the two entry points
 /// cannot drift apart on what "set to true" means.
 fn env_flag_truthy(value: &str) -> bool {
     !matches!(

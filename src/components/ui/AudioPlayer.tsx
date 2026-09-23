@@ -8,6 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { Play, Pause } from "@/components/icons/lucide";
+import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
 
 interface AudioPlayerProps {
@@ -54,6 +55,7 @@ const formatTime = (time: number): string => {
 };
 
 export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
+  const { t } = useTranslation();
   const group = useContext(AudioPlayerGroupContext);
   const [isPlaying, setIsPlaying] = createSignal(false);
   const [duration, setDuration] = createSignal(0);
@@ -250,7 +252,7 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
         onClick={togglePlay}
         disabled={isLoading()}
         class="transition-colors cursor-pointer text-text hover:text-accent disabled:opacity-50"
-        aria-label={isPlaying() ? "Pause" : "Play"}
+        aria-label={isPlaying() ? t("common.pause") : t("common.play")}
       >
         <Show
           when={isPlaying()}

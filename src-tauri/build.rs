@@ -176,14 +176,9 @@ fn stage_vc_runtime_dlls() {
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_string();
-            let lower = name.to_lowercase();
-            let wanted = lower.ends_with(".dll")
-                && (lower.starts_with("msvcp140")
-                    || lower.starts_with("vcruntime140")
-                    || lower.starts_with("vcomp140"));
-            if wanted {
+            if is_vc_runtime_dll(&name) {
                 copy_if_changed(&src, &dest.join(&name));
-                copied.push(lower);
+                copied.push(name.to_lowercase());
             }
         }
     }
@@ -238,7 +233,8 @@ fn stage_transcribe_runtime_libs() {
     // transcribe-cpp publishes its runtime layout in up to two directories:
     //   RUNTIME_DIR : the shared libs to load (transcribe + core ggml / ggml-base)
     //   MODULE_DIR  : the dlopen'd ggml backend modules (the per-ISA ggml-cpu-*
-    //                 and ggml-vulkan), dynamic-backends only. Often — but not
+    //                 and the GPU backend: ggml-cuda here, ggml-vulkan
+    //                 upstream), dynamic-backends only. Often — but not
     //                 always — the SAME directory as RUNTIME_DIR (it is on Linux).
     // BOTH must sit next to the executable, or init_backends_default() finds the
     // core libs but zero loadable compute backends and registers no devices.
@@ -326,21 +322,7 @@ fn stage_transcribe_runtime_libs() {
             let target = profile.join(sub);
             std::fs::create_dir_all(&target).expect("create runtime directory");
             for (name, src) in &desired {
-                let dst = target.join(name);
-                let source = std::fs::metadata(src).expect("native library metadata");
-                let fresh = std::fs::metadata(&dst).is_ok_and(|current| {
-                    current.len() == source.len()
-                        && current
-                            .modified()
-                            .ok()
-                            .zip(source.modified().ok())
-                            .is_some_and(|(current, source)| current >= source)
-                });
-                if !fresh {
-                    std::fs::copy(src, &dst).unwrap_or_else(|e| {
-                        panic!("refresh native runtime {}: {e}", dst.display())
-                    });
-                }
+                copy_if_changed(src, &target.join(name));
             }
         }
     }

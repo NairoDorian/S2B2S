@@ -36,7 +36,10 @@
 //      and gets its own commit message.
 //      `bun run precommit:routine` is this step and the next one, in order.
 //   2. `bun run precommit:full` — the gate below, plus clippy and the tests.
-//   3. Commit. `bun run precommit` runs again from the hook, on the staged tree.
+//   3. Commit. `bun run precommit` runs again from the hook. Its checks read
+//      the working tree, not the index, so stage what you mean to commit and
+//      keep the rest of the tree clean or stashed; the gate itself only ever
+//      stages the identity files `meta:sync` rewrites (see `stagePaths`).
 //
 // ## The gate, in order
 //
@@ -48,10 +51,10 @@
 //      from its anchor (a changed anchor matches nothing, and `sync` would
 //      rather skip than write a wrong value).
 //   2. **The cheap correctness gates**, cheapest first, so a broken commit
-//      fails in seconds rather than after a full typecheck. The standalone
-//      assert checks (`*.test.ts` under `src/`, run by `test-unit.ts`) sit
-//      here: they are the only automated check that reads the app's own modules
-//      instead of the build's output, and each costs one `bun` process start.
+//      fails in seconds rather than after a full typecheck. The unit checks
+//      (`*.test.ts` under `src/`, run by `bun test` with bunfig's
+//      `[test] root = "src"`) sit here: they are the only automated check that
+//      reads the app's own modules instead of the build's output.
 //   3. **Repomix last.** It packs the whole working tree; regenerating it
 //      before the checks would pack a tree that is about to change.
 //
@@ -67,6 +70,7 @@
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { identityPaths } from "./app-meta";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 const TAG = "[precommit]";
@@ -149,14 +153,35 @@ function runScript(step: Step): boolean {
   return true;
 }
 
-/** Stage whatever the generator just rewrote, so the commit carries it. */
-function stageGenerated(): void {
-  // `git add -u` stages modifications to *tracked* files only. A generator that
-  // creates a file it has never written before (`app_identity.rs` on the first
-  // run after a rename) would be missed by `-u` and must not be added blindly
-  // either — an untracked file at this point is a decision for the committer,
-  // so it is reported instead of staged.
-  const staged = spawnSync("git", ["add", "-u"], { cwd: REPO_ROOT });
+/**
+ * The files `bun run update` rewrites: the two manifests, their lockfiles and
+ * the Nix mirror of `bun.lock` that `postinstall` regenerates.
+ */
+const ROUTINE_PATHS = [
+  "package.json",
+  "bun.lock",
+  "src-tauri/Cargo.toml",
+  "src-tauri/Cargo.lock",
+  ".nix/bun.nix",
+  ".nix/bun-lock-hash",
+];
+
+/**
+ * Stage the files a writing step just rewrote, so the commit carries them —
+ * and nothing else.
+ *
+ * The path list is explicit on purpose. The hook's index changes go into the
+ * commit, so a blanket `git add -u` would sweep every other dirty tracked file
+ * into a commit the user staged selectively (`git add -p`, one file of two).
+ * `-u` with a pathspec stages modifications to those *tracked* files only. A
+ * generator that creates a file it has never written before (`app_identity.rs`
+ * on the first run after a rename) is therefore not added — an untracked file
+ * at this point is a decision for the committer, so it is reported instead.
+ */
+function stagePaths(paths: readonly string[]): void {
+  const staged = spawnSync("git", ["add", "-u", "--", ...paths], {
+    cwd: REPO_ROOT,
+  });
   if (staged.status !== 0) {
     console.error(
       `${TAG} could not stage the regenerated files; stage them by hand`,
@@ -218,15 +243,17 @@ if (routine) {
 const startedAll = Date.now();
 if (routine) {
   if (!runScript(ROUTINE_DEPS)) process.exit(1);
-  // The manifests and lockfiles just changed; `stageGenerated` is what makes
-  // the routine's own output reviewable in `git diff --cached` before the
-  // commit it is preparing.
-  stageGenerated();
+  // The manifests and lockfiles just changed; staging them is what makes the
+  // routine's own output reviewable in `git diff --cached` before the commit
+  // it is preparing. Only those files: the routine is run by hand, but the
+  // same rule holds — a selective staging is never widened behind the user.
+  stagePaths(ROUTINE_PATHS);
 }
 for (const step of selected.filter((s) => !s.last)) {
   if (!runScript(step)) process.exit(1);
 }
-if (selected.some((s) => s.writes)) stageGenerated();
+// `meta:sync` is the gate's only writing step, so its files are the list.
+if (selected.some((s) => s.writes)) stagePaths(identityPaths());
 for (const step of selected.filter((s) => s.last)) {
   if (!runScript(step)) process.exit(1);
 }

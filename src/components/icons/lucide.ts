@@ -7,17 +7,17 @@
  * taken, so nothing else about the package is needed to keep these rendering.
  *
  * Why they are vendored rather than depended on: `lucide-react` is a React
- * component library, and Phase 1 of the Solid 2 migration (docs/PLAN_SOLIDJS_2.md)
- * removes every React-only dependency *before* the framework swap, so each
- * removal is a shippable improvement on its own. The app already hand-writes
+ * component library, and the first phase of the Solid 2 migration (see
+ * CHANGELOG) removed every React-only dependency *before* the framework swap,
+ * so each removal was a shippable improvement on its own. The app already hand-writes
  * the rest of its SVGs (components/icons/), so this is the same trade the
  * `ui/Dropdown` and `ui/Dialog` rewrites make: own the 60 lines you use
  * instead of the framework binding you do not.
  *
  * Rendering is deliberately data-driven — one `createElement` loop over the
  * node data — rather than 58 hand-generated JSX trees. It keeps this
- * file readable, keeps attribute-name conversion in one place, and ports to
- * Solid's `createElement` unchanged in Phase 3.
+ * file readable, keeps attribute-name conversion in one place, and carried
+ * over to Solid's `createElement` unchanged when the app moved to Solid.
  *
  * Attribute names, defaults, the `lucide lucide-<name>` class and the
  * `aria-hidden` rule are copied from lucide-react's own renderer

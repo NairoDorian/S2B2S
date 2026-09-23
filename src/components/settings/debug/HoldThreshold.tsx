@@ -24,7 +24,9 @@ export const HoldThreshold = (props: HoldThresholdProps) => {
       description={t("settings.debug.holdThreshold.description")}
       descriptionMode={props.descriptionMode}
       grouped={props.grouped}
-      formatValue={(v) => `${v}ms`}
+      formatValue={(v) =>
+        t("settings.statistics.units.milliseconds", { value: v })
+      }
     />
   );
 };

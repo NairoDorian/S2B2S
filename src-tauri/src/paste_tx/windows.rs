@@ -32,6 +32,7 @@ use crate::clipboard::send_return_key;
 use crate::input::EnigoState;
 use crate::settings::{AutoSubmitKey, ClipboardHandling, PasteMethod};
 use windows::Win32::Foundation::GlobalFree;
+use windows::Win32::Graphics::Gdi::{DeleteObject, HGDIOBJ};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardOwner,
     GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
@@ -97,6 +98,26 @@ pub(super) struct WinTxShared {
     /// ClipboardHandling::CopyToClipboard — settle by leaving the transcript
     /// on the clipboard as plain text instead of restoring the snapshot.
     preserve_transcript: bool,
+}
+
+impl Drop for WinTxShared {
+    /// Frees the copied HBITMAP if it was never handed to the clipboard
+    /// (CopyToClipboard settle, clipboard changed externally, or a failed
+    /// `SetClipboardData`). A bitmap `restore_snapshot` gave away is owned by
+    /// the clipboard and is no longer in the slot.
+    fn drop(&mut self) {
+        let bitmap = match self.saved_bitmap.get_mut() {
+            Ok(slot) => slot.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        if let Some(raw) = bitmap {
+            // SAFETY: `raw` is the HBITMAP `CopyImage` created for this
+            // transaction; nothing else references it.
+            unsafe {
+                let _ = DeleteObject(HGDIOBJ(raw as *mut _));
+            }
+        }
+    }
 }
 
 /// The transaction currently holding the clipboard, if any. A new
@@ -232,8 +253,11 @@ fn ensure_window_class(hinstance: HINSTANCE) {
 
 /// If a previous transaction is still holding the clipboard, settle it now so
 /// the snapshot below captures the user's original clipboard content. The
-/// previous worker observes `cancelled` on its next timer tick and tears down
-/// without restoring.
+/// previous worker observes `cancelled` on its next timer tick and tears down;
+/// its own settle is skipped because the flush already changed the clipboard
+/// sequence. (A tick landing between `cancelled = true` and the flush's settle
+/// can still restore from both threads; the new snapshot then races that
+/// restore, and a failed OpenClipboard falls back to the legacy paste.)
 fn flush_pending() {
     let previous = match PENDING.lock() {
         Ok(mut slot) => slot.take(),
@@ -309,8 +333,10 @@ unsafe fn restore_snapshot(shared: &WinTxShared) {
     }
     if let Ok(mut bitmap) = shared.saved_bitmap.lock()
         && let Some(raw) = bitmap.take()
+        && SetClipboardData(CF_BITMAP.0 as u32, Some(HANDLE(raw as *mut _))).is_err()
     {
-        let _ = SetClipboardData(CF_BITMAP.0 as u32, Some(HANDLE(raw as *mut _)));
+        // Not taken by the clipboard: keep it so `Drop` frees it.
+        *bitmap = Some(raw);
     }
     let _ = CloseClipboard();
     info!("[reliable-paste] restored previous clipboard");

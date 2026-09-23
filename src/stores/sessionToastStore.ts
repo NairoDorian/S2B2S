@@ -47,10 +47,3 @@ export const setShowWarnings = (showWarnings: boolean) => {
 };
 
 export const useSessionToastStore = () => sessionToastStore;
-
-useSessionToastStore.getState = () => ({
-  ...sessionToastStore,
-  addToast,
-  setShowErrors,
-  setShowWarnings,
-});

@@ -107,7 +107,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
             if scut == &shortcut {
                 let shortcut_string = scut.into_string();
                 let is_pressed = event.state == ShortcutState::Pressed;
-                // Mirrors the handy-keys event log line; the distinct prefix
+                // Mirrors the native-keys event log line; the distinct prefix
                 // makes it possible to tell which backend fired a shortcut
                 // (e.g. when diagnosing the Secure Input fallback)
                 debug!(
@@ -147,6 +147,16 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
             return Err(error_msg);
         }
     };
+
+    // Callers (the resync after a feature toggle, `change_binding`) unregister
+    // bindings that may never have been registered; that is not an error.
+    if !app.global_shortcut().is_registered(shortcut) {
+        debug!(
+            "unregister_tauri_shortcut: '{}' was not registered",
+            binding.current_binding
+        );
+        return Ok(());
+    }
 
     app.global_shortcut().unregister(shortcut).map_err(|e| {
         let error_msg = format!(

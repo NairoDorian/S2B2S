@@ -534,8 +534,10 @@ pub struct TranscriptionCoordinator {
     tx: Sender<Command>,
 }
 
+/// Whether `id` is one of the bindings that start a transcription. The list
+/// lives once, in [`crate::shortcut::TRANSCRIPTION_TRIGGER_IDS`].
 pub fn is_transcribe_binding(id: &str) -> bool {
-    id == "transcribe" || id == "transcribe_with_post_process" || id == "multi_stt_transcribe"
+    crate::shortcut::TRANSCRIPTION_TRIGGER_IDS.contains(&id)
 }
 
 impl TranscriptionCoordinator {

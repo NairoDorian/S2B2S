@@ -70,14 +70,14 @@ export const OverlayScopeGroup = () => {
     },
   );
 
-  const busy = isUpdating("overlay_scope");
+  const busy = () => isUpdating("overlay_scope");
   const styleOptions = createMemo<DropdownOption[]>(() =>
     OVERLAY_SCOPE_STYLES.map((style) => ({
       value: style,
       label: t(`${P}.style.options.${style}`),
     })),
   );
-  const anyView =
+  const anyView = () =>
     draft().show_spectrum || draft().show_wave || draft().show_circular;
 
   return (
@@ -85,7 +85,7 @@ export const OverlayScopeGroup = () => {
       <ToggleSwitch
         checked={draft().show_spectrum}
         onChange={(checked) => save({ show_spectrum: checked })}
-        isUpdating={busy}
+        isUpdating={busy()}
         label={t(`${P}.showSpectrum.label`)}
         description={t(`${P}.showSpectrum.description`)}
         descriptionMode="tooltip"
@@ -105,13 +105,13 @@ export const OverlayScopeGroup = () => {
               onSelect={(value) =>
                 save({ spectrum_style: value as OverlayScopeStyle })
               }
-              disabled={busy}
+              disabled={busy()}
             />
           </SettingContainer>
           <ToggleSwitch
             checked={draft().spectrum_mirror}
             onChange={(checked) => save({ spectrum_mirror: checked })}
-            isUpdating={busy}
+            isUpdating={busy()}
             label={t(`${P}.mirror.label`)}
             description={t(`${P}.mirror.description`)}
             descriptionMode="tooltip"
@@ -120,7 +120,7 @@ export const OverlayScopeGroup = () => {
           <ToggleSwitch
             checked={draft().peak_hold}
             onChange={(checked) => save({ peak_hold: checked })}
-            isUpdating={busy}
+            isUpdating={busy()}
             label={t(`${P}.peakHold.label`)}
             description={t(`${P}.peakHold.description`)}
             descriptionMode="tooltip"
@@ -154,7 +154,7 @@ export const OverlayScopeGroup = () => {
       <ToggleSwitch
         checked={draft().show_wave}
         onChange={(checked) => save({ show_wave: checked })}
-        isUpdating={busy}
+        isUpdating={busy()}
         label={t(`${P}.showWave.label`)}
         description={t(`${P}.showWave.description`)}
         descriptionMode="tooltip"
@@ -228,7 +228,7 @@ export const OverlayScopeGroup = () => {
       <ToggleSwitch
         checked={draft().show_circular}
         onChange={(checked) => save({ show_circular: checked })}
-        isUpdating={busy}
+        isUpdating={busy()}
         label={t(`${P}.showCircular.label`)}
         description={t(`${P}.showCircular.description`)}
         descriptionMode="tooltip"
@@ -239,7 +239,7 @@ export const OverlayScopeGroup = () => {
           <ToggleSwitch
             checked={draft().circular_background}
             onChange={(checked) => save({ circular_background: checked })}
-            isUpdating={busy}
+            isUpdating={busy()}
             label={t(`${P}.circularBackground.label`)}
             description={t(`${P}.circularBackground.description`)}
             descriptionMode="tooltip"
@@ -263,7 +263,7 @@ export const OverlayScopeGroup = () => {
           <ToggleSwitch
             checked={draft().circular_bars}
             onChange={(checked) => save({ circular_bars: checked })}
-            isUpdating={busy}
+            isUpdating={busy()}
             label={t(`${P}.circularBars.label`)}
             description={t(`${P}.circularBars.description`)}
             descriptionMode="tooltip"
@@ -318,7 +318,7 @@ export const OverlayScopeGroup = () => {
           <ToggleSwitch
             checked={draft().wave_inside_circular}
             onChange={(checked) => save({ wave_inside_circular: checked })}
-            isUpdating={busy}
+            isUpdating={busy()}
             label={t(`${P}.waveInsideCircular.label`)}
             description={t(`${P}.waveInsideCircular.description`)}
             descriptionMode="tooltip"
@@ -327,7 +327,7 @@ export const OverlayScopeGroup = () => {
           <ToggleSwitch
             checked={draft().circular_show_inner}
             onChange={(checked) => save({ circular_show_inner: checked })}
-            isUpdating={busy}
+            isUpdating={busy()}
             label={t(`${P}.circularShowInner.label`)}
             description={t(`${P}.circularShowInner.description`)}
             descriptionMode="tooltip"
@@ -335,7 +335,7 @@ export const OverlayScopeGroup = () => {
           />
         </>
       )}
-      {anyView && (
+      {anyView() && (
         <>
           <ParamSlider
             label={t(`${P}.viewWidth.label`)}

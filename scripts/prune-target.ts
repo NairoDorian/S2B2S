@@ -22,7 +22,8 @@
 //     at a version / revision no longer in Cargo.lock; for the app crate,
 //     every run but the two newest.
 //   - .fingerprint/<crate>-<hash> of everything removed above.
-//   - bundle/**: installers of a version other than tauri.conf.json's.
+//   - bundle/**: installers of a version other than tauri.conf.json's
+//     (an unversioned artefact is kept: it cannot be proven stale).
 //
 // Nothing current is touched, so the next build is no slower than it would
 // have been. The only guess is "newest two" for the app crate; a wrong guess
@@ -193,7 +194,7 @@ class Pruner {
     return bytes;
   }
 
-  /** incremental/<crate>-<key>: keep the newest key per crate. */
+  /** incremental/<crate>-<key>: keep the two newest keys per crate. */
   pruneIncremental(profileDir: string): number {
     const dir = join(profileDir, "incremental");
     if (!existsSync(dir)) return 0;
@@ -242,7 +243,8 @@ class Pruner {
       };
       unit.files.push(path);
       unit.newest = Math.max(unit.newest, mtimeOf(path));
-      if (ext === ".exe") unit.exe = true;
+      // A binary is `.exe` on Windows and has no extension on Linux/macOS.
+      if (ext === ".exe" || ext === undefined) unit.exe = true;
       if (ext === ".rlib") unit.rlib = true;
       if (ext === ".d") {
         unit.depInfo = path;
@@ -374,7 +376,15 @@ class Pruner {
       const kindDir = join(dir, kind.name);
       for (const entry of readdirSync(kindDir, { withFileTypes: true })) {
         if (!entry.isFile()) continue;
-        if (entry.name.includes(`_${version}`)) continue;
+        // `_<version>` (msi, nsis, deb, AppImage, dmg) or `-<version>-` (rpm)
+        // is this version; a name with no version at all (the macOS updater
+        // `.app.tar.gz` / `.sig`) cannot be proven stale and is kept.
+        if (
+          entry.name.includes(`_${version}`) ||
+          entry.name.includes(`-${version}-`) ||
+          !/\d+\.\d+\.\d+/.test(entry.name)
+        )
+          continue;
         freed += this.remove(
           join(kindDir, entry.name),
           "installer of another version",

@@ -35,7 +35,9 @@ export const PasteDelay = (props: PasteDelayProps) => {
       )}
       descriptionMode={props.descriptionMode}
       grouped={props.grouped}
-      formatValue={(v) => `${v}ms`}
+      formatValue={(v) =>
+        t("settings.statistics.units.milliseconds", { value: v })
+      }
     />
   );
 };

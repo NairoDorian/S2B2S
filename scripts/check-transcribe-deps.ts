@@ -180,8 +180,6 @@ export function checkTranscribeDeps(): CheckOutcome {
   return "up-to-date";
 }
 
-export const checkGitDeps = checkTranscribeDeps;
-
 if (import.meta.main) {
   checkTranscribeDeps();
   process.exit(0);

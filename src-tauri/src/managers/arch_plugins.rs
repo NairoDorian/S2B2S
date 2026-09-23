@@ -16,9 +16,9 @@
 //! `register_arch_dir`), and reporting what is installed ([`list_arch_plugins`]).
 //!
 //! A model whose family is not in the build's set fails to load with
-//! "unsupported architecture"; the two `Model::load_with` call sites in
-//! `managers/transcription.rs` turn that into a message naming the plugin
-//! directory where one would go.
+//! "unsupported architecture"; the `Model::load_with` wrapper in
+//! `managers/transcription.rs` (`load_transcribe_model`) turns that into a
+//! message pointing at the plugins directory.
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};

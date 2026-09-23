@@ -25,7 +25,7 @@ use download::{DOWNLOAD_STALL_TIMEOUT, HttpDownloadOutcome};
 /// for downloading and on-disk resolution.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum ModelSource {
-    /// Direct HTTP download from a URL (the catalog's own hosting).
+    /// Direct HTTP download from a URL (the legacy .bin table's own hosting).
     Url {
         url: String,
         /// Expected SHA-256 for integrity verification; `None` skips it.
@@ -363,15 +363,9 @@ pub struct DownloadProgress {
     pub percentage: f64,
 }
 
-/// Resolve a Hugging Face model file in the shared HF cache, if already present.
-/// Uses hf-hub's stock location (HF_HOME or ~/.cache/huggingface/hub) so
-/// downloads are shared with other tools.
-///
-/// hf-hub resolves purely through `refs/<revision>`. Pinned downloads write
-/// `refs/<commit-sha>`, but caches populated before pinning — or by other
-/// tools, which download via `main` — only have `refs/main`, so lookup falls
-/// back to it. Grandfathered `main` copies may predate the pin; per policy a
-/// working local model is never invalidated by routine catalog regeneration.
+/// Root of the shared Hugging Face cache (`HF_HUB_CACHE`, else `HF_HOME/hub`,
+/// else `~/.cache/huggingface/hub`) — hf-hub's stock location, so downloads are
+/// shared with other tools.
 pub fn hf_cache_dir() -> PathBuf {
     if let Ok(cache) = std::env::var("HF_HUB_CACHE") {
         PathBuf::from(cache)
@@ -387,6 +381,14 @@ pub fn hf_cache_dir() -> PathBuf {
     }
 }
 
+/// Resolve a Hugging Face model file in the shared HF cache
+/// ([`hf_cache_dir`]), if already present.
+///
+/// hf-hub resolves purely through `refs/<revision>`. Pinned downloads write
+/// `refs/<commit-sha>`, but caches populated before pinning — or by other
+/// tools, which download via `main` — only have `refs/main`, so lookup falls
+/// back to it. Grandfathered `main` copies may predate the pin; per policy a
+/// working local model is never invalidated by routine catalog regeneration.
 fn hf_cached_path(repo_id: &str, revision: &str, filename: &str) -> Option<PathBuf> {
     let cache_dir = hf_cache_dir();
     let repo_folder = format!("models--{}", repo_id.replace('/', "--"));
@@ -681,7 +683,7 @@ impl ModelManager {
 
         let mut available_models = HashMap::new();
 
-        // Whisper supported languages (99 languages from tokenizer)
+        // Whisper supported languages (100 codes from the large-v3 tokenizer, incl. yue)
         let whisper_languages: Vec<String> = vec![
             "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar",
             "sv", "it", "id", "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu",
@@ -1225,7 +1227,7 @@ impl ModelManager {
         Ok(())
     }
 
-    /// Discover custom Whisper-family models in the models directory: legacy
+    /// Discover custom transcribe-cpp models in the models directory: legacy
     /// GGML `.bin` files and `.gguf` files (both load through transcribe-cpp).
     /// Skips files that match predefined model filenames.
     fn discover_custom_transcribe_models(
@@ -1269,7 +1271,7 @@ impl ModelManager {
                 continue;
             }
 
-            // Only process Whisper-family model files: legacy GGML `.bin` or
+            // Only process transcribe-cpp model files: legacy GGML `.bin` or
             // GGUF `.gguf` (both load through transcribe-cpp). Anything else —
             // including `.partial` downloads like "model.bin.partial" — is
             // skipped, since it ends in neither extension. The model ID is the

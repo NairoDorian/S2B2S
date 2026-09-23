@@ -1,5 +1,6 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { Tooltip } from "./Tooltip";
+import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
 
 interface SettingContainerProps {
@@ -14,6 +15,7 @@ interface SettingContainerProps {
 }
 
 export const SettingContainer = (props: SettingContainerProps): JSX.Element => {
+  const { t } = useTranslation();
   const [showTooltip, setShowTooltip] = createSignal(false);
   let tooltipRef: HTMLDivElement | null = null;
 
@@ -84,7 +86,7 @@ export const SettingContainer = (props: SettingContainerProps): JSX.Element => {
           type="button"
           onClick={toggleTooltip}
           class="text-mid-gray cursor-help hover:text-accent transition-colors duration-200 select-none p-0 border-0 bg-transparent flex items-center justify-center"
-          aria-label="More information"
+          aria-label={t("common.moreInformation")}
         >
           <svg
             class="w-4 h-4"

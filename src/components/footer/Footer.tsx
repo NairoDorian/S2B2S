@@ -10,17 +10,13 @@ function Footer() {
   const [version, setVersion] = createSignal("");
 
   onSettled(() => {
-    const fetchVersion = async () => {
-      try {
-        const appVersion = await getVersion();
-        setVersion(appVersion);
-      } catch (error) {
+    getVersion()
+      .then(setVersion)
+      .catch((error) => {
+        // Show no version rather than a made-up one.
         console.error("Failed to get app version:", error);
-        setVersion("0.1.2");
-      }
-    };
-
-    fetchVersion();
+        setVersion("");
+      });
   });
 
   return (
@@ -35,7 +31,7 @@ function Footer() {
         <div class="flex shrink-0 items-center gap-1 ms-auto">
           <UpdateChecker />
           <span>•</span>
-          <span>{`v${version()}`}</span>
+          <span>{version() ? `v${version()}` : null}</span>
         </div>
       </div>
     </div>

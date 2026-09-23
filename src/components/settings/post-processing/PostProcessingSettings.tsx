@@ -12,6 +12,7 @@ import { ResetButton } from "../../ui/ResetButton";
 import { Input } from "../../ui/Input";
 import { RefreshCcw } from "@/components/icons/lucide";
 import { commands } from "@/bindings";
+import { sessionToast as toast } from "@/lib/sessionToast";
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
 import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
@@ -185,11 +186,14 @@ const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
         draftName().trim(),
         draftText().trim(),
       );
-      if (result.status === "ok") {
-        await refreshSettings();
-        updateSetting("post_process_selected_prompt_id", result.data.id);
-        setIsCreating(false);
+      if (result.status === "error") {
+        console.error("Failed to create prompt:", result.error);
+        toast.error(result.error);
+        return;
       }
+      await refreshSettings();
+      updateSetting("post_process_selected_prompt_id", result.data.id);
+      setIsCreating(false);
     } catch (error) {
       console.error("Failed to create prompt:", error);
     }
@@ -199,12 +203,18 @@ const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
     if (!selectedPromptId() || !draftName().trim() || !draftText().trim())
       return;
 
+    // A backend `Err` is returned as `{ status: "error" }`, not thrown.
     try {
-      await commands.updatePostProcessPrompt(
+      const result = await commands.updatePostProcessPrompt(
         selectedPromptId(),
         draftName().trim(),
         draftText().trim(),
       );
+      if (result.status === "error") {
+        console.error("Failed to update prompt:", result.error);
+        toast.error(result.error);
+        return;
+      }
       await refreshSettings();
     } catch (error) {
       console.error("Failed to update prompt:", error);
@@ -215,7 +225,12 @@ const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
     if (!promptId) return;
 
     try {
-      await commands.deletePostProcessPrompt(promptId);
+      const result = await commands.deletePostProcessPrompt(promptId);
+      if (result.status === "error") {
+        console.error("Failed to delete prompt:", result.error);
+        toast.error(result.error);
+        return;
+      }
       await refreshSettings();
       setIsCreating(false);
     } catch (error) {
@@ -421,12 +436,10 @@ const PostProcessingSettingsPromptsComponent = (): JSX.Element => {
 export const PostProcessingSettingsApi = (): JSX.Element => {
   return <PostProcessingSettingsApiComponent />;
 };
-PostProcessingSettingsApi.displayName = "PostProcessingSettingsApi";
 
 export const PostProcessingSettingsPrompts = (): JSX.Element => {
   return <PostProcessingSettingsPromptsComponent />;
 };
-PostProcessingSettingsPrompts.displayName = "PostProcessingSettingsPrompts";
 
 export const PostProcessingSettings = (): JSX.Element => {
   const { t } = useTranslation();

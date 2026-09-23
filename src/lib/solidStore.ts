@@ -16,8 +16,8 @@ export type StoreSet<T> = (update: StoreUpdate<T>) => void;
 /**
  * Create a module-level Solid store with zustand's `set`/`get` ergonomics.
  *
- * Why this exists. `docs/PLAN_SOLIDJS_2.md` (D5) converts the nine zustand
- * stores to `createStore`. The stores carry real logic — `settingsStore` alone
+ * Why this exists. The React → Solid 2 migration (see CHANGELOG) converted the
+ * nine zustand stores to `createStore`. The stores carry real logic — `settingsStore` alone
  * is 815 lines of async IPC sequencing — and rewriting every `set(...)` /
  * `get()` call inside those bodies into draft mutations would have been a
  * large, mechanical, easy-to-get-subtly-wrong diff with no behavioural upside.

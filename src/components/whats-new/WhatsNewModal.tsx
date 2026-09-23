@@ -10,21 +10,20 @@ interface WhatsNewModalProps {
 }
 
 export const WhatsNewModal = (props: WhatsNewModalProps) => {
-  const { note, open, onDismiss } = props;
   const { t } = useTranslation();
   const initialFocusRef: { current: HTMLElement | null } = { current: null };
 
   return (
     <Dialog
-      open={open}
-      title={t("whatsNew.title", { version: note.version })}
+      open={props.open}
+      title={t("whatsNew.title", { version: props.note.version })}
       closeLabel={t("common.close")}
       initialFocusRef={initialFocusRef}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) onDismiss();
+        if (!nextOpen) props.onDismiss();
       }}
     >
-      <MarkdownContent markdown={note.markdown} />
+      <MarkdownContent markdown={props.note.markdown} />
     </Dialog>
   );
 };

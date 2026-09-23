@@ -30,10 +30,10 @@ build.yml` installs the Vulkan SDK on every platform, installs no CUDA
   toolkit, and `test.yml` apt-installs Vulkan dev packages for the Linux build,
   while `src-tauri/Cargo.toml` asks for the `cuda` feature on Windows x86_64
   and Linux. A release build on this branch will fail in CI until either CUDA
-  runners/steps are added or CI keeps `vulkan` for itself. (The workflow files
-  already carry uncommitted fixes for a separate set of problems — frozen
-  lockfile installs, the clippy step, `test:unit` in code-quality, Playwright
-  `--with-deps` — but the Vulkan/CUDA split is untouched.)
+  runners/steps are added or CI keeps `vulkan` for itself. (A separate set of
+  workflow problems is fixed — frozen-lockfile installs, the clippy step,
+  `test:unit` in code-quality, Playwright `--with-deps` — but the Vulkan/CUDA
+  split is untouched.)
 - **All workflows trigger on `main` only.** The fork develops and releases
   from `Handy_Multi_STT`, so push-triggered CI does not run on the branch
   where the work actually happens. Either add the branch to the triggers or
@@ -61,10 +61,12 @@ build.yml` installs the Vulkan SDK on every platform, installs no CUDA
   them by hand.
 - **Earshot was never benchmarked in noisy rooms** before becoming the only
   VAD (quiet-room agreement with Silero was 97.7 %). If speech gets clipped in
-  noise, `vad_threshold_earshot` is the knob; adding a second detector back is
+  noise, `vad_threshold_earshot` is the knob (speech below Earshot's −45 dBFS
+  energy pre-gate needs microphone gain instead); adding a second detector back is
   a larger change.
-- `audio_toolkit/bin/cli.rs` is not a build target (`[[bin]]` commented out,
-  as upstream) and therefore not compiled by CI. It compiles as of
+- `audio_toolkit/bin/cli.rs` is not a build target (there is no `[[bin]]` entry
+  in `Cargo.toml`, and it sits outside `src/bin/`, so Cargo does not discover
+  it) and therefore not compiled by CI. It compiles as of
   2026-08-26; either register the bin or accept that it can rot.
 
 ## Tooling

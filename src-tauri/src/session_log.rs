@@ -18,9 +18,7 @@ fn new_session_stem() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    // Human-readable date from the unix millis without a chrono dependency:
-    // fall back to the raw stamp if the civil conversion fails (never will
-    // for post-1970 epochs, but keep the path valid regardless).
+    // Human-readable UTC date from the unix millis without a chrono dependency.
     let (y, mo, d, h, mi, s, ms) = civil_from_unix_ms(now);
     format!("{RECORDING_BASENAME}-{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}-{ms:03}")
 }
@@ -67,8 +65,8 @@ mod tests {
         let a = init();
         let b = init();
         assert_eq!(a, b);
-        assert!(a.starts_with("zer0-"));
-        assert!(a.ends_with(".log") == false);
+        assert!(a.starts_with(&format!("{RECORDING_BASENAME}-")));
+        assert!(!a.ends_with(".log"));
     }
 
     #[test]

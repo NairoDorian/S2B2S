@@ -116,10 +116,17 @@ impl VoiceActivityDetector for SmoothedVad {
                     self.hangover_counter = self.hangover_frames;
                     self.onset_counter = 0; // Reset for next time
 
-                    // Collect prefill + current frame
+                    // Collect prefill + current frame. Slots already sent
+                    // (the previous utterance's hangover tail, when the pause
+                    // was shorter than the pre-roll) are skipped so no audio
+                    // is emitted twice; the current frame is never marked, so
+                    // the output is never empty.
                     self.temp_out.clear();
                     for i in 0..self.buffered_count {
                         let idx = (self.head_idx + i) % self.capacity_frames;
+                        if self.buffer_slots[idx].emitted {
+                            continue;
+                        }
                         let s = idx * self.slot_samples;
                         self.temp_out
                             .extend_from_slice(&self.buffer_samples[s..s + self.slot_samples]);
@@ -270,6 +277,32 @@ mod tests {
         assert_eq!(report.withheld_voiced_frames, 1);
         assert_eq!(report.onset_counter, 1);
         assert!(!report.in_speech);
+    }
+
+    #[test]
+    fn onset_prefill_does_not_re_emit_the_previous_hangover_tail() {
+        // prefill 3, hangover 2, onset 2. Speech, a pause one frame past the
+        // hangover, then speech again: the new onset's pre-roll still holds
+        // hangover frames that were already sent and must not repeat them.
+        let hangover = 2;
+        let onset = 2;
+        let mut script = vec![true; 2];
+        script.extend(std::iter::repeat_n(false, hangover + 1));
+        script.extend(std::iter::repeat_n(true, onset));
+        let mut vad = smoothed(&script, onset);
+
+        let mut emitted = Vec::new();
+        for i in 0..script.len() {
+            let input = frame(i as f32);
+            if let VadFrame::Speech(buf) = vad.push_frame(&input).unwrap() {
+                emitted.extend_from_slice(buf);
+            }
+        }
+
+        // Every frame is emitted exactly once: the first onset, the hangover,
+        // the one withheld silent frame (as pre-roll) and the new onset.
+        let expected: Vec<f32> = (0..script.len()).flat_map(|i| frame(i as f32)).collect();
+        assert_eq!(emitted, expected);
     }
 
     #[test]

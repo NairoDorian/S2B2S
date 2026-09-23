@@ -12,10 +12,7 @@ interface WhatsNewPreviewProps {
   grouped?: boolean;
 }
 
-export const WhatsNewPreview = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}: WhatsNewPreviewProps) => {
+export const WhatsNewPreview = (props: WhatsNewPreviewProps) => {
   const { t } = useTranslation();
   const [note, setNote] = createSignal<ReleaseNote | null>(null);
   const [isLoading, setIsLoading] = createSignal(false);
@@ -45,8 +42,8 @@ export const WhatsNewPreview = ({
       <SettingContainer
         title={t("settings.debug.whatsNewPreview.title")}
         description={t("settings.debug.whatsNewPreview.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
+        descriptionMode={props.descriptionMode ?? "tooltip"}
+        grouped={props.grouped ?? false}
       >
         <Button
           variant="secondary"

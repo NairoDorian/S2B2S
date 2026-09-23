@@ -95,8 +95,10 @@ display = closed chunks' current text + the open chunk's
 A merge replaces only its own chunk, so the rough streaming text degrades into
 the polished one in place and earlier chunks are untouched. On merge failure the
 chunk keeps the extras' outputs joined by newlines, is counted in
-`failed_chunks`, and is retried at the next break — the failure is never put in
-the text (with `DirectStreaming` that text is typed into the user's document);
+`failed_chunks`, and is retried after the next break, once that break's own
+merge has landed (one merge in flight at a time; a retry still pending at stop
+is not run, and that chunk keeps its fallback text) — the failure is never put
+in the text (with `DirectStreaming` that text is typed into the user's document);
 the overlay badge and `MultiSttStreamChunkFailedEvent` carry it.
 
 ---
@@ -271,7 +273,7 @@ extras produced. Two guards live there, in `actions.rs`:
 - **No slot carries a word** (`slots_carry_words`): whitespace, `.`, `…` are a
   decoder emitting a fragment, not text to reconcile. The call is skipped. On
   the streaming path this is deliberately **not** `failed`: a failure is retried
-  at the next close, and retrying a chunk with no words in it re-decodes the
+  after the next close, and retrying a chunk with no words in it re-decodes the
   extras for the same nothing. The chunk keeps the streaming model's own text.
 - **The reply is not a transcript** (`merge_response_rejection`): a model handed
   nothing to reconcile answers _the request_, and the sentence it writes is text
@@ -290,7 +292,9 @@ according to your strict rules.`
 
 ## 6. Cost
 
-- **Threads**: one 50 ms tick thread per recording, in this mode only.
+- **Threads**: one 50 ms tick thread per recording, in this mode only, plus up
+  to three short-lived waiter threads and three extra stream workers in the
+  nested Multi Streaming STT mode.
 - **Audio path**: one mutex lock and one memcpy per 16 ms frame (≈62/s) while
   the tap is armed, one relaxed atomic load while it is off.
 - **Per break**: three decodes of the **window** (`context_chunks + 1` chunks, at
@@ -313,7 +317,7 @@ No new dependency, no new poll.
 
 | Line                                                                                                              | Means                                                                                                                                                                                                                 |
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chunk n closed — … ms of audio, … chars, … ms of context, … ms of it left un-drained (tolerance 500 ms)`         | A normal close. The un-drained figure should be in the tens of ms; crawling towards the tolerance is the mode working near its edge, above it means the feed or the model is falling behind.                          |
+| `chunk n closed — … ms of audio, … chars, … ms of context, … ms of it left un-drained (tolerance 500 ms)`         | A normal close. The un-drained figure is the same backlog the close gate tested, so it is always within the tolerance at a close: tens of ms is normal, a figure near 500 ms is the model barely keeping up.          |
 | `chunk n was still owed its own text … — … chars of it, and … ms of audio the stream decodes but has not drained` | The retire path. The two figures are the two conditions of §3; which one is large says whether the model is slow (drain) or committing nothing (chars).                                                               |
 | `Live preview perf`                                                                                               | The primary's own stream: `input_received`, `committed_audio`, `buffered`, revision, real-time factor.                                                                                                                |
 | `the audio tap is N samples ahead of the stream`                                                                  | A structural mismatch between the tap and the stream feed. One warning per session, and the correction is deliberately **not** applied — a worker-thread lag of a frame or two is indistinguishable from a real lead. |

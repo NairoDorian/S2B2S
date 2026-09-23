@@ -1,4 +1,5 @@
 import { createSignal, createEffect, createMemo, For, Show } from "solid-js";
+import { Dynamic, type JSX } from "@solidjs/web";
 import {
   Activity,
   AudioLines,
@@ -9,7 +10,6 @@ import {
   RotateCw,
   Type,
   WandSparkles,
-  type LucideIcon,
 } from "@/components/icons/lucide";
 import { useTranslation } from "@/i18n/useTranslation";
 import {
@@ -87,9 +87,12 @@ export const StatisticsSettings = () => {
     },
   );
 
+  // The compute tracks the range, so choosing another range reloads the
+  // summary (the apply runs untracked and would otherwise run once). The load
+  // waits for the listener so an update landing in between is not missed.
   createEffect(
-    () => undefined,
-    () => {
+    () => selectedRange(),
+    (range) => {
       const unlisten = events.statisticsUpdatedEvent.listen(() => {
         if (suppressNextUpdateRef) {
           suppressNextUpdateRef = false;
@@ -98,10 +101,10 @@ export const StatisticsSettings = () => {
         void loadStatistics(selectedRange(), false);
       });
       void unlisten
-        .then(() => loadStatistics(selectedRange()))
+        .then(() => loadStatistics(range))
         .catch((error) => {
           console.error("Failed to listen for statistics updates:", error);
-          void loadStatistics(selectedRange());
+          void loadStatistics(range);
         });
 
       return () => {
@@ -264,11 +267,16 @@ export const StatisticsSettings = () => {
           {loadState() === "error" && (
             <ErrorState onRetry={() => void loadStatistics(selectedRange())} />
           )}
+          {/* A live `statistics-updated` reload replaces `statistics()` without
+              unmounting this child, so everything below reads `stats()` in
+              JSX (the empty-state switch included) and the cards take props
+              without destructuring them. */}
           <Show when={loadState() === "ready" ? statistics() : null}>
-            {(stats) =>
-              stats().transcription_count === 0 ? (
-                <EmptyState />
-              ) : (
+            {(stats) => (
+              <Show
+                when={stats().transcription_count !== 0}
+                fallback={<EmptyState />}
+              >
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <MetricCard
                     icon={Mic2}
@@ -362,8 +370,8 @@ export const StatisticsSettings = () => {
                     )}
                   />
                 </div>
-              )
-            }
+              </Show>
+            )}
           </Show>
         </div>
       </section>
@@ -447,36 +455,40 @@ export const StatisticsSettings = () => {
   );
 };
 
+/** A card icon, narrowed to the props the cards pass (as `Alert` does for `Dynamic`). */
+type CardIcon = (props: {
+  class?: string;
+  "aria-hidden"?: string;
+}) => JSX.Element;
+
 interface MetricCardProps {
-  icon: LucideIcon;
+  icon: CardIcon;
   title: string;
   value: string;
   unit?: string;
   detail: string;
 }
 
-const MetricCard = ({
-  icon: Icon,
-  title,
-  value,
-  unit,
-  detail,
-}: MetricCardProps) => (
+const MetricCard = (props: MetricCardProps) => (
   <article class="rounded-lg border border-mid-gray/20 bg-mid-gray/5 p-4">
     <div class="mb-4 flex items-center gap-2 text-mid-gray">
-      <Icon class="h-4 w-4 shrink-0" aria-hidden="true" />
-      <h3 class="text-xs font-medium uppercase tracking-wide">{title}</h3>
+      <Dynamic
+        component={props.icon}
+        class="h-4 w-4 shrink-0"
+        aria-hidden="true"
+      />
+      <h3 class="text-xs font-medium uppercase tracking-wide">{props.title}</h3>
     </div>
     <div class="flex flex-wrap items-baseline gap-1.5">
-      <p class="text-2xl font-semibold tabular-nums">{value}</p>
-      {unit && <span class="text-sm text-mid-gray">{unit}</span>}
+      <p class="text-2xl font-semibold tabular-nums">{props.value}</p>
+      {props.unit && <span class="text-sm text-mid-gray">{props.unit}</span>}
     </div>
-    <p class="mt-2 text-xs text-mid-gray">{detail}</p>
+    <p class="mt-2 text-xs text-mid-gray">{props.detail}</p>
   </article>
 );
 
 interface LatencyCardProps {
-  icon: LucideIcon;
+  icon: CardIcon;
   title: string;
   description: string;
   summary: DurationMetricSummary;
@@ -485,75 +497,72 @@ interface LatencyCardProps {
   unavailableDescription: string;
 }
 
-const LatencyCard = ({
-  icon: Icon,
-  title,
-  description,
-  summary,
-  formatLatency,
-  formatNumber,
-  unavailableDescription,
-}: LatencyCardProps) => {
+const LatencyCard = (props: LatencyCardProps) => {
   const { t } = useTranslation();
-  const { sample_count, minimum_ms, average_ms, maximum_ms } = summary;
-  const available =
-    sample_count > 0 &&
-    minimum_ms != null &&
-    average_ms != null &&
-    maximum_ms != null;
+  const available = () =>
+    props.summary.sample_count > 0 &&
+    props.summary.minimum_ms != null &&
+    props.summary.average_ms != null &&
+    props.summary.maximum_ms != null;
 
   return (
     <article class="rounded-lg border border-mid-gray/20 bg-mid-gray/5 p-4 sm:col-span-2">
       <div class="flex items-start gap-3">
         <div class="rounded-md bg-accent/15 p-2 text-text">
-          <Icon class="h-4 w-4" aria-hidden="true" />
+          <Dynamic component={props.icon} class="h-4 w-4" aria-hidden="true" />
         </div>
         <div class="min-w-0 flex-1">
-          <h3 class="text-sm font-semibold">{title}</h3>
-          <p class="mt-0.5 text-xs text-mid-gray">{description}</p>
+          <h3 class="text-sm font-semibold">{props.title}</h3>
+          <p class="mt-0.5 text-xs text-mid-gray">{props.description}</p>
         </div>
       </div>
 
-      {available ? (
-        <>
-          <dl class="mt-4 grid grid-cols-3 gap-2 border-y border-mid-gray/20 py-3">
-            <LatencyValue
-              label={t("settings.statistics.latency.minimum")}
-              value={formatLatency(minimum_ms ?? 0)}
-            />
-            <LatencyValue
-              label={t("settings.statistics.latency.average")}
-              value={formatLatency(average_ms ?? 0)}
-            />
-            <LatencyValue
-              label={t("settings.statistics.latency.maximum")}
-              value={formatLatency(maximum_ms ?? 0)}
-            />
-          </dl>
-          <p class="mt-2 text-xs text-mid-gray">
-            {t("settings.statistics.latency.samples", {
-              count: sample_count,
-              formattedCount: formatNumber(sample_count),
-            })}
-          </p>
-        </>
-      ) : (
-        <div class="mt-4 rounded-md border border-mid-gray/20 bg-background p-3">
-          <p class="text-sm font-medium">
-            {t("settings.statistics.latency.unavailable")}
-          </p>
-          <p class="mt-1 text-xs text-mid-gray">{unavailableDescription}</p>
-        </div>
-      )}
+      <Show
+        when={available()}
+        fallback={
+          <div class="mt-4 rounded-md border border-mid-gray/20 bg-background p-3">
+            <p class="text-sm font-medium">
+              {t("settings.statistics.latency.unavailable")}
+            </p>
+            <p class="mt-1 text-xs text-mid-gray">
+              {props.unavailableDescription}
+            </p>
+          </div>
+        }
+      >
+        <dl class="mt-4 grid grid-cols-3 gap-2 border-y border-mid-gray/20 py-3">
+          <LatencyValue
+            label={t("settings.statistics.latency.minimum")}
+            value={props.formatLatency(props.summary.minimum_ms ?? 0)}
+          />
+          <LatencyValue
+            label={t("settings.statistics.latency.average")}
+            value={props.formatLatency(props.summary.average_ms ?? 0)}
+          />
+          <LatencyValue
+            label={t("settings.statistics.latency.maximum")}
+            value={props.formatLatency(props.summary.maximum_ms ?? 0)}
+          />
+        </dl>
+        <p class="mt-2 text-xs text-mid-gray">
+          {t("settings.statistics.latency.samples", {
+            count: props.summary.sample_count,
+            formattedCount: props.formatNumber(props.summary.sample_count),
+          })}
+        </p>
+      </Show>
     </article>
   );
 };
 
-const LatencyValue = ({ label, value }: { label: string; value: string }) => (
+const LatencyValue = (props: { label: string; value: string }) => (
   <div class="min-w-0 text-center">
-    <dt class="text-xs text-mid-gray">{label}</dt>
-    <dd class="mt-1 truncate text-sm font-semibold tabular-nums" title={value}>
-      {value}
+    <dt class="text-xs text-mid-gray">{props.label}</dt>
+    <dd
+      class="mt-1 truncate text-sm font-semibold tabular-nums"
+      title={props.value}
+    >
+      {props.value}
     </dd>
   </div>
 );
@@ -599,7 +608,7 @@ const EmptyState = () => {
   );
 };
 
-const ErrorState = ({ onRetry }: { onRetry: () => void }) => {
+const ErrorState = (props: { onRetry: () => void }) => {
   const { t } = useTranslation();
 
   return (
@@ -613,7 +622,7 @@ const ErrorState = ({ onRetry }: { onRetry: () => void }) => {
       <Button
         type="button"
         variant="secondary"
-        onClick={onRetry}
+        onClick={() => props.onRetry()}
         class="flex items-center gap-2"
       >
         <RotateCw class="h-3.5 w-3.5" aria-hidden="true" />

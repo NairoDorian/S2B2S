@@ -15,40 +15,30 @@ type ModelSelectProps = {
   className?: string;
 };
 
-export const ModelSelect = ({
-  value,
-  options,
-  disabled,
-  placeholder,
-  isLoading,
-  onSelect,
-  onCreate,
-  onBlur,
-  className = "flex-1 min-w-[360px]",
-}: ModelSelectProps): JSX.Element => {
+export const ModelSelect = (props: ModelSelectProps): JSX.Element => {
   const { t } = useTranslation();
 
   const handleCreate = (inputValue: string) => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
-    onCreate(trimmed);
+    props.onCreate(trimmed);
   };
-
-  const computedClassName = `text-sm ${className}`;
 
   return (
     <Select
-      class={computedClassName}
-      value={value || null}
-      options={options}
-      onChange={(selected) => onSelect(selected ?? "")}
+      class={`text-sm ${props.className ?? "flex-1 min-w-[360px]"}`}
+      value={props.value || null}
+      options={props.options}
+      onChange={(selected) => props.onSelect(selected ?? "")}
       onCreateOption={handleCreate}
-      onBlur={onBlur}
-      placeholder={placeholder}
-      disabled={disabled}
-      isLoading={isLoading}
+      onBlur={() => props.onBlur()}
+      placeholder={props.placeholder}
+      disabled={props.disabled}
+      isLoading={props.isLoading}
       isCreatable
-      formatCreateLabel={(input) => `Use "${input}"`}
+      formatCreateLabel={(input) =>
+        t("settings.postProcessing.api.model.useCustom", { value: input })
+      }
       ariaLabel={t("settings.postProcessing.api.model.title")}
     />
   );

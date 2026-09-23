@@ -171,7 +171,9 @@ fn restore_normal_power(app: &AppHandle, normal_shortcut: String) {
 ///
 /// `TranscribeAction::start` carries an inline copy of this sequence (kept
 /// inline there to stay diff-compatible with upstream); `MultiSttAction` and
-/// the overlay preview use this helper so the paths cannot drift apart again.
+/// the overlay preview use this helper. The two differ in one place only: the
+/// inline copy also has the debug-only `DEBUG_MIC_READY_DELAY_MS` preview hook,
+/// which this helper does not.
 pub(crate) fn spawn_recording_ready_cue(
     app: &AppHandle,
     rm: &Arc<AudioRecordingManager>,
@@ -303,7 +305,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             let result = strip_invisible_chars(&result);
                             debug!(
                                 "Apple Intelligence post-processing succeeded. Output length: {} chars",
-                                result.len()
+                                result.chars().count()
                             );
                             Some(result)
                         }
@@ -358,7 +360,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             debug!(
                                 "Structured output post-processing succeeded for provider '{}'. Output length: {} chars",
                                 provider.id,
-                                result.len()
+                                result.chars().count()
                             );
                             return Some(result);
                         } else {
@@ -391,7 +393,10 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
 
     // Legacy mode: Replace ${output} variable in the prompt with the actual text
     let processed_prompt = prompt.replace("${output}", transcription);
-    debug!("Processed prompt length: {} chars", processed_prompt.len());
+    debug!(
+        "Processed prompt length: {} chars",
+        processed_prompt.chars().count()
+    );
 
     match crate::llm_client::send_chat_completion(
         &provider,
@@ -407,7 +412,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             debug!(
                 "LLM post-processing succeeded for provider '{}'. Output length: {} chars",
                 provider.id,
-                content.len()
+                content.chars().count()
             );
             Some(content)
         }
@@ -560,7 +565,7 @@ pub(crate) async fn process_transcription_output(
 ///
 /// With VAD disabled every frame counts as speech, so this can never suppress a
 /// recording the user made with filtering turned off.
-const MIN_SPEECH_MS_TO_TRANSCRIBE: u64 = 200;
+pub(crate) const MIN_SPEECH_MS_TO_TRANSCRIBE: u64 = 200;
 
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
@@ -571,7 +576,7 @@ impl ShortcutAction for TranscribeAction {
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
-        // Load ASR model and VAD model in parallel
+        // Load the ASR model and build the recorder (Earshot VAD) in parallel
         let kickoff_started = Instant::now();
         tm.initiate_model_load();
         let rm_clone = Arc::clone(&rm);
@@ -761,7 +766,10 @@ impl ShortcutAction for TranscribeAction {
         // spinner while the stream finalizes. Non-streaming paths use the
         // compact transcribing pill (None no-ops in show_*).
         let stop_settings = get_settings(app);
-        let preview_only = live_stream_is_preview_only(&stop_settings, self.post_process);
+        // The same test `start` used, Recall insertion included, so the stop
+        // path targets the overlay that was actually shown.
+        let preview_only = live_stream_is_preview_only(&stop_settings, self.post_process)
+            || crate::recall::insertion::is_armed();
         let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
         // Capture this before finalizing the stream so every later working state
         // targets the same overlay that was shown for this transcription.
@@ -1176,7 +1184,7 @@ struct TestAction;
 impl ShortcutAction for TestAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         log::info!(
-            "Shortcut ID '{}': Started - {} (App: {})", // Changed "Pressed" to "Started" for consistency
+            "Shortcut ID '{}': Started - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
@@ -1185,7 +1193,7 @@ impl ShortcutAction for TestAction {
 
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         log::info!(
-            "Shortcut ID '{}': Stopped - {} (App: {})", // Changed "Released" to "Stopped" for consistency
+            "Shortcut ID '{}': Stopped - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
@@ -1324,7 +1332,7 @@ pub(crate) fn format_multi_stt_history_transcript(
 ///
 /// Shared with the streaming coordinator, which asks this before dispatching a
 /// merge at all: there, "no merge" has to be told apart from "the merge failed",
-/// because a failure is retried at the next close.
+/// because a failure is retried after the next close.
 pub(crate) fn slots_carry_words(slots: &[&str]) -> bool {
     slots
         .iter()
@@ -1473,7 +1481,7 @@ pub(crate) async fn multi_stt_merge_transcriptions(
 
     debug!(
         "Multi-STT merge prompt prepared, length: {} chars",
-        prompt.len()
+        prompt.chars().count()
     );
     // One line per model's answer for the same audio. These are what the merge
     // reconciles, so they are the first thing to read when the merged text comes
@@ -1566,8 +1574,8 @@ pub(crate) async fn multi_stt_merge_transcriptions(
                 None => {
                     debug!(
                         "Multi-STT merge succeeded. Output length: {} chars, raw length: {} chars",
-                        cleaned_text.len(),
-                        raw_content.len()
+                        cleaned_text.chars().count(),
+                        raw_content.chars().count()
                     );
                     // The text the app will actually paste, after the <think>
                     // strip and the trim. It is logged separately from the raw
@@ -1699,13 +1707,6 @@ impl ShortcutAction for MultiSttAction {
         } else {
             Vec::new()
         };
-        if settings.multi_stt_streaming_multi_enabled && multi_streaming_slots.is_empty() {
-            warn!(
-                "Multi streaming STT: none of the Multi-STT slots holds a streaming-capable model, \
-                 so there is no second live text to merge"
-            );
-        }
-
         if settings.multi_stt_enabled {
             let tm_pre = Arc::clone(&tm);
             let model_2 = settings.multi_stt_model_2.clone();
@@ -1857,11 +1858,10 @@ impl ShortcutAction for MultiSttAction {
             if settings.multi_stt_performance_mode_enabled
                 && settings.multi_stt_performance_mode_trigger_on_start
             {
-                let normal_shortcut = settings.multi_stt_performance_mode_normal_shortcut.clone();
-                let app_clone = app.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    crate::clipboard::simulate_key_combination(&app_clone, &normal_shortcut);
-                });
+                restore_normal_power(
+                    app,
+                    settings.multi_stt_performance_mode_normal_shortcut.clone(),
+                );
             }
             if let Some(err) = recording_error {
                 let error_type = if is_microphone_access_denied(&err) {
@@ -1888,6 +1888,11 @@ impl ShortcutAction for MultiSttAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        // Prevent a slow microphone from emitting a ready event or start chime
+        // after the user has already requested stop (as `TranscribeAction`).
+        app.state::<Arc<AudioRecordingManager>>()
+            .invalidate_recording_readiness();
+
         // Unregister cancel shortcut
         shortcut::unregister_cancel_shortcut(app);
 
@@ -1912,9 +1917,9 @@ impl ShortcutAction for MultiSttAction {
         // coordinator: it is showing the session's text, and a working phase
         // event would replace it with a spinner while the last chunk merges.
         let coordinator_active = crate::multi_stt_stream::is_active();
-        // The nested multi-streaming mode owns no overlay text — both its columns
-        // are the streams' own — so it takes the ordinary stream working phase
-        // like any other streaming session, and only changes which decodes run.
+        // The nested multi-streaming mode runs this same coordinator, so
+        // `coordinator_active` covers it; `multi_streaming_active` is read below
+        // to decide which decodes run.
         let multi_streaming_active = crate::multi_streaming::is_active();
         let preview_only = live_stream_is_preview_only(&stop_settings, true);
         let style = effective_overlay_style(&stop_settings, preview_only, tm.is_streaming());
@@ -1960,16 +1965,10 @@ impl ShortcutAction for MultiSttAction {
                     if perf_settings.multi_stt_performance_mode_enabled
                         && perf_settings.multi_stt_performance_mode_trigger_on_start
                     {
-                        let normal_shortcut = perf_settings
-                            .multi_stt_performance_mode_normal_shortcut
-                            .clone();
-                        let ah_for_normal = ah.clone();
-                        tauri::async_runtime::spawn_blocking(move || {
-                            crate::clipboard::simulate_key_combination(
-                                &ah_for_normal,
-                                &normal_shortcut,
-                            );
-                        });
+                        restore_normal_power(
+                            &ah,
+                            perf_settings.multi_stt_performance_mode_normal_shortcut,
+                        );
                     }
                     return;
                 }
@@ -1979,6 +1978,10 @@ impl ShortcutAction for MultiSttAction {
                 }
                 StopRecordingResult::Failed(err) => {
                     statistics.finish(StatisticsRunStatus::Failed);
+                    // An armed coordinator would keep the tap and the exclusive
+                    // text sink, and the next plain recording would draw no
+                    // overlay text.
+                    crate::multi_stt_stream::cancel();
                     crate::multi_streaming::cancel(&tm);
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
@@ -2053,9 +2056,11 @@ impl ShortcutAction for MultiSttAction {
                     .unwrap_or_default()
                 } else {
                     // No session outcome is coming — the primary's stream did not
-                    // complete, so the batch path takes this recording over. The
-                    // extras are released rather than finalized with it, below: their
-                    // attempts belong to a session that is not what gets reported.
+                    // complete. The extras are released rather than finalized with
+                    // it, below: their attempts belong to a session that is not
+                    // what gets reported. In the nested mode nothing batch-decodes
+                    // them either, so the result degrades to the primary model
+                    // alone.
                     Default::default()
                 };
 
@@ -2113,10 +2118,12 @@ impl ShortcutAction for MultiSttAction {
             if multi_streaming_active && stream_tracked.is_none() {
                 // The nested mode's result *is* its session's merged text, which is
                 // built on the primary's live text, so a primary stream that did
-                // not complete leaves it with nothing to report and the batch path
-                // takes over. The session is released either way: an armed waiter
-                // would open a second stream on the next recording, and the extra's
-                // engine would stay leased.
+                // not complete leaves it with nothing to report. The extras are not
+                // batch-decoded in this mode (see the load below), so the result
+                // degrades to the primary model alone, decoded from the recording.
+                // The session is released either way: an armed waiter would open
+                // a second stream on the next recording, and the extra's engine
+                // would stay leased.
                 crate::multi_streaming::cancel(&tm);
             }
 
@@ -2130,16 +2137,10 @@ impl ShortcutAction for MultiSttAction {
                 if perf_settings.multi_stt_performance_mode_enabled
                     && perf_settings.multi_stt_performance_mode_trigger_on_start
                 {
-                    let normal_shortcut = perf_settings
-                        .multi_stt_performance_mode_normal_shortcut
-                        .clone();
-                    let ah_for_normal = ah.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        crate::clipboard::simulate_key_combination(
-                            &ah_for_normal,
-                            &normal_shortcut,
-                        );
-                    });
+                    restore_normal_power(
+                        &ah,
+                        perf_settings.multi_stt_performance_mode_normal_shortcut,
+                    );
                 }
                 return;
             }
@@ -2166,16 +2167,10 @@ impl ShortcutAction for MultiSttAction {
                 if perf_settings.multi_stt_performance_mode_enabled
                     && perf_settings.multi_stt_performance_mode_trigger_on_start
                 {
-                    let normal_shortcut = perf_settings
-                        .multi_stt_performance_mode_normal_shortcut
-                        .clone();
-                    let ah_for_normal = ah.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        crate::clipboard::simulate_key_combination(
-                            &ah_for_normal,
-                            &normal_shortcut,
-                        );
-                    });
+                    restore_normal_power(
+                        &ah,
+                        perf_settings.multi_stt_performance_mode_normal_shortcut,
+                    );
                 }
                 return;
             }
@@ -2233,9 +2228,9 @@ impl ShortcutAction for MultiSttAction {
             });
 
             // === LOAD EXTRA MODELS IN PARALLEL (fastest first-run) ===
-            // Both models load concurrently on the blocking pool so the async
-            // worker stays free for events/UI. Models already loaded (e.g. by
-            // the pre-load in start()) are skipped immediately.
+            // The extra models load concurrently on the blocking pool so the
+            // async worker stays free for events/UI. Models already loaded (e.g.
+            // by the pre-load in start()) are skipped immediately.
             //
             // The nested multi-streaming mode runs no batch decode at all: its
             // second column is a live stream, and the engine behind it is leased
@@ -2245,109 +2240,58 @@ impl ShortcutAction for MultiSttAction {
             // loading them here would be exactly the work this mode exists to
             // skip.
             let settings = get_settings(&ah);
-            let (extra_model_2, extra_model_3, extra_model_4) = if multi_streaming_active {
+            let extra_models: [Option<String>; 3] = if multi_streaming_active {
                 debug!(
                     "Multi streaming STT: no batch decode — the second column is the extra's live \
                      stream, not a re-decode of the recording"
                 );
-                (None, None, None)
+                Default::default()
             } else {
-                (
+                [
                     settings.multi_stt_model_2.clone(),
                     settings.multi_stt_model_3.clone(),
                     settings.multi_stt_model_4.clone(),
-                )
+                ]
             };
 
-            let need_load_2 = extra_model_2
-                .as_ref()
-                .is_some_and(|id| !tm.is_extra_model_loaded(id));
-            let need_load_3 = extra_model_3
-                .as_ref()
-                .is_some_and(|id| !tm.is_extra_model_loaded(id));
-            let need_load_4 = extra_model_4
-                .as_ref()
-                .is_some_and(|id| !tm.is_extra_model_loaded(id));
-
-            if !need_load_2 && let Some(ref id) = extra_model_2 {
-                info!("Multi-STT: extra model 2 '{}' already loaded, skipping", id);
-            }
-            if !need_load_3 && let Some(ref id) = extra_model_3 {
-                info!("Multi-STT: extra model 3 '{}' already loaded, skipping", id);
-            }
-            if !need_load_4 && let Some(ref id) = extra_model_4 {
-                info!("Multi-STT: extra model 4 '{}' already loaded, skipping", id);
-            }
-
-            let tm_load_2 = Arc::clone(&tm);
-            let tm_load_3 = Arc::clone(&tm);
-            let tm_load_4 = Arc::clone(&tm);
+            // Every load is spawned before any is awaited — they run concurrently
+            // in the blocking pool, so the total time is the slowest load's.
+            // Model N is Multi-STT slot N, the numbering the settings page and
+            // the history row use.
             let load_start = Instant::now();
-
-            let load_handle_2 = if need_load_2 {
-                let model_id = extra_model_2.clone().unwrap();
-                Some(tauri::async_runtime::spawn_blocking(move || {
-                    info!("Multi-STT: loading extra model 2: {}", model_id);
-                    match tm_load_2.load_extra_model(&model_id) {
-                        Ok(name) => {
-                            info!("Multi-STT: extra model 2 '{}' loaded successfully", name)
-                        }
+            let mut load_handles = Vec::new();
+            for (model_number, model_id) in (2_usize..).zip(extra_models.iter()) {
+                let Some(model_id) = model_id else {
+                    continue;
+                };
+                if tm.is_extra_model_loaded(model_id) {
+                    info!(
+                        "Multi-STT: extra model {} '{}' already loaded, skipping",
+                        model_number, model_id
+                    );
+                    continue;
+                }
+                let tm = Arc::clone(&tm);
+                let model_id = model_id.clone();
+                load_handles.push(tauri::async_runtime::spawn_blocking(move || {
+                    info!(
+                        "Multi-STT: loading extra model {}: {}",
+                        model_number, model_id
+                    );
+                    match tm.load_extra_model(&model_id) {
+                        Ok(name) => info!(
+                            "Multi-STT: extra model {} '{}' loaded successfully",
+                            model_number, name
+                        ),
                         Err(e) => error!(
-                            "Multi-STT: failed to load extra model 2 '{}': {}",
-                            model_id, e
+                            "Multi-STT: failed to load extra model {} '{}': {}",
+                            model_number, model_id, e
                         ),
                     }
-                }))
-            } else {
-                None
-            };
-
-            let load_handle_3 = if need_load_3 {
-                let model_id = extra_model_3.clone().unwrap();
-                Some(tauri::async_runtime::spawn_blocking(move || {
-                    info!("Multi-STT: loading extra model 3: {}", model_id);
-                    match tm_load_3.load_extra_model(&model_id) {
-                        Ok(name) => {
-                            info!("Multi-STT: extra model 3 '{}' loaded successfully", name)
-                        }
-                        Err(e) => error!(
-                            "Multi-STT: failed to load extra model 3 '{}': {}",
-                            model_id, e
-                        ),
-                    }
-                }))
-            } else {
-                None
-            };
-
-            let load_handle_4 = if need_load_4 {
-                let model_id = extra_model_4.clone().unwrap();
-                Some(tauri::async_runtime::spawn_blocking(move || {
-                    info!("Multi-STT: loading extra model 4: {}", model_id);
-                    match tm_load_4.load_extra_model(&model_id) {
-                        Ok(name) => {
-                            info!("Multi-STT: extra model 4 '{}' loaded successfully", name)
-                        }
-                        Err(e) => error!(
-                            "Multi-STT: failed to load extra model 4 '{}': {}",
-                            model_id, e
-                        ),
-                    }
-                }))
-            } else {
-                None
-            };
-
-            // All loads are spawned before awaiting — they run concurrently
-            // in the blocking pool, so total time = max(load_2, load_3, load_4).
-            if let Some(h) = load_handle_2 {
-                let _ = h.await;
+                }));
             }
-            if let Some(h) = load_handle_3 {
-                let _ = h.await;
-            }
-            if let Some(h) = load_handle_4 {
-                let _ = h.await;
+            for handle in load_handles {
+                let _ = handle.await;
             }
 
             info!(
@@ -2361,17 +2305,8 @@ impl ShortcutAction for MultiSttAction {
             let transcribe_start = Instant::now();
 
             let tm1 = Arc::clone(&tm);
-            let tm2 = Arc::clone(&tm);
-            let tm3 = Arc::clone(&tm);
-            let tm4 = Arc::clone(&tm);
             let s1 = samples.clone();
-            let s2 = samples.clone();
-            let s3 = samples.clone();
-            let s4 = samples.clone();
             let stats1 = statistics.clone();
-            let stats2 = statistics.clone();
-            let stats3 = statistics.clone();
-            let stats4 = statistics.clone();
 
             // In the streaming mode the stream was already finalized (the
             // coordinator needed its last words), so the tracked result is used
@@ -2409,90 +2344,57 @@ impl ShortcutAction for MultiSttAction {
                 },
             });
 
-            let task2 = if multi_streaming_active {
-                // No batch decode for the extras in this mode: their engines were
-                // leased by their own live stream workers and went home with them
-                // in `finish_extras` above. Each model's text is already in hand
-                // (`multi_extras`), so there is nothing for this task to wait on.
-                None
-            } else if let Some(ref model_id) = extra_model_2 {
-                let model_id = model_id.clone();
+            // One batch decode per configured extra slot. The nested mode has
+            // none: `extra_models` is empty there (see above), because the
+            // extras' engines were leased by their own live stream workers and
+            // went home with them in `finish_extras`, and each model's text is
+            // already in hand (`multi_extras`).
+            let extra_tasks: [_; 3] = std::array::from_fn(|index| {
+                let model_id = extra_models[index].clone()?;
+                let model_number = index + 2;
+                let tm = Arc::clone(&tm);
+                let samples = samples.clone();
+                let stats = statistics.clone();
                 Some(tauri::async_runtime::spawn_blocking(move || {
-                    if tm2.is_extra_model_loaded(&model_id) {
-                        tm2.transcribe_with_extra_tracked(&model_id, s2, stats2)
+                    if tm.is_extra_model_loaded(&model_id) {
+                        tm.transcribe_with_extra_tracked(&model_id, samples, stats)
                             .ok()
                     } else {
-                        warn!("Multi-STT: Model 2 '{}' not loaded, skipping", model_id);
+                        warn!(
+                            "Multi-STT: Model {} '{}' not loaded, skipping",
+                            model_number, model_id
+                        );
                         None
                     }
                 }))
-            } else {
-                None
-            };
-
-            let task3 = if let Some(ref model_id) = extra_model_3 {
-                let model_id = model_id.clone();
-                Some(tauri::async_runtime::spawn_blocking(move || {
-                    if tm3.is_extra_model_loaded(&model_id) {
-                        tm3.transcribe_with_extra_tracked(&model_id, s3, stats3)
-                            .ok()
-                    } else {
-                        warn!("Multi-STT: Model 3 '{}' not loaded, skipping", model_id);
-                        None
-                    }
-                }))
-            } else {
-                None
-            };
-
-            let task4 = if let Some(ref model_id) = extra_model_4 {
-                let model_id = model_id.clone();
-                Some(tauri::async_runtime::spawn_blocking(move || {
-                    if tm4.is_extra_model_loaded(&model_id) {
-                        tm4.transcribe_with_extra_tracked(&model_id, s4, stats4)
-                            .ok()
-                    } else {
-                        warn!("Multi-STT: Model 4 '{}' not loaded, skipping", model_id);
-                        None
-                    }
-                }))
-            } else {
-                None
-            };
+            });
 
             let mut tracked1 = task1.await.unwrap_or(None);
-            let mut tracked2 = match task2 {
-                Some(t) => t.await.unwrap_or(None),
-                // The nested mode: the extra's own live text, taken beside the
-                // primary's finalize so the history row holds both columns.
-                None => multi_extras[0].take(),
-            };
-            let mut tracked3 = match task3 {
-                Some(t) => t.await.unwrap_or(None),
-                None => multi_extras[1].take(),
-            };
-            let mut tracked4 = match task4 {
-                Some(t) => t.await.unwrap_or(None),
-                None => multi_extras[2].take(),
-            };
-            if let Some(t) = &tracked2 {
-                info!(
-                    "Multi streaming STT: Model 2 (live) transcription: '{}'",
-                    utils::redact_text(&t.text)
-                );
+            let mut tracked_extras: [Option<TrackedTranscription>; 3] = Default::default();
+            for (index, task) in extra_tasks.into_iter().enumerate() {
+                tracked_extras[index] = match task {
+                    Some(t) => t.await.unwrap_or(None),
+                    // The nested mode: the extra's own live text, taken beside the
+                    // primary's finalize so the history row holds every column.
+                    None => multi_extras[index].take(),
+                };
             }
-            if let Some(t) = &tracked3 {
-                info!(
-                    "Multi streaming STT: Model 3 (live) transcription: '{}'",
-                    utils::redact_text(&t.text)
-                );
+            let source = if multi_streaming_active {
+                "live"
+            } else {
+                "batch"
+            };
+            for (model_number, tracked) in (2_usize..).zip(tracked_extras.iter()) {
+                if let Some(t) = tracked {
+                    info!(
+                        "Multi-STT: Model {} ({}) transcription: '{}'",
+                        model_number,
+                        source,
+                        utils::redact_text(&t.text)
+                    );
+                }
             }
-            if let Some(t) = &tracked4 {
-                info!(
-                    "Multi streaming STT: Model 4 (live) transcription: '{}'",
-                    utils::redact_text(&t.text)
-                );
-            }
+            let [mut tracked2, mut tracked3, mut tracked4] = tracked_extras;
 
             // === EXPERIMENTAL STREAMING MODE: THE SESSION'S OWN RESULT ===
             // The chunks were decoded and merged while the user spoke, so this
@@ -2521,7 +2423,7 @@ impl ShortcutAction for MultiSttAction {
             });
 
             let output1 = match &streaming_final {
-                Some((final_text, ..)) => final_text.clone(),
+                Some((_, outputs, ..)) => outputs[0].clone(),
                 None => tracked1
                     .as_ref()
                     .map(|t| t.text.as_str())
@@ -2561,10 +2463,10 @@ impl ShortcutAction for MultiSttAction {
 
             info!(
                 "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars, Output4={} chars",
-                output1.len(),
-                output2.len(),
-                output3.len(),
-                output4.len()
+                output1.chars().count(),
+                output2.chars().count(),
+                output3.chars().count(),
+                output4.chars().count()
             );
 
             let multi_transcription_latency_ms = transcribe_start.elapsed().as_secs_f64() * 1000.0;
@@ -2597,9 +2499,11 @@ impl ShortcutAction for MultiSttAction {
             // In the streaming mode there is nothing left to merge here: every
             // chunk already went through the extras and the LLM, and the session's
             // assembled text is the final one. `llm_merge_succeeded` means the
-            // whole session merged — a single failed chunk has already fallen back
-            // to the visible concatenation, so the power restore waits for the
-            // retry to clear it.
+            // whole session merged. A chunk whose merge failed shows the
+            // concatenation fallback and is retried after the next break; one that
+            // still shows it at stop (the retry failed too, or no break came after
+            // the failure) counts the session as not merged, which moves the power
+            // restore to after the paste, as a failed batch merge does.
             let merge_start = Instant::now();
             let settings_for_merge = get_settings(&ah);
             let (merged, brain_details, llm_merge_succeeded, merge_latency_ms) = if let Some((
@@ -2679,49 +2583,14 @@ impl ShortcutAction for MultiSttAction {
                         warn!(
                             "Multi-STT: Merge prompt failed or not configured, concatenating outputs"
                         );
-                        let mut combined = output1.clone();
-                        if !output2.is_empty() {
-                            if !combined.is_empty() {
-                                combined.push('\n');
-                            }
-                            combined.push_str(&output2);
-                        }
-                        if !output3.is_empty() {
-                            if !combined.is_empty() {
-                                combined.push('\n');
-                            }
-                            combined.push_str(&output3);
-                        }
-                        if !output4.is_empty() {
-                            if !combined.is_empty() {
-                                combined.push('\n');
-                            }
-                            combined.push_str(&output4);
-                        }
+                        let combined =
+                            join_nonempty_lines(&[&output1, &output2, &output3, &output4]);
                         (combined, None, false, Some(latency))
                     }
                 }
             } else {
                 // No merge prompt: concatenate
-                let mut combined = output1.clone();
-                if !output2.is_empty() {
-                    if !combined.is_empty() {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&output2);
-                }
-                if !output3.is_empty() {
-                    if !combined.is_empty() {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&output3);
-                }
-                if !output4.is_empty() {
-                    if !combined.is_empty() {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&output4);
-                }
+                let combined = join_nonempty_lines(&[&output1, &output2, &output3, &output4]);
                 (combined, None, false, None)
             };
 
@@ -2749,13 +2618,12 @@ impl ShortcutAction for MultiSttAction {
             // immediately after merge completes.
             let normal_settings = get_settings(&ah);
             if normal_settings.multi_stt_performance_mode_enabled && llm_merge_succeeded {
-                let normal_shortcut = normal_settings
-                    .multi_stt_performance_mode_normal_shortcut
-                    .clone();
-                let ah_for_normal = ah.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    crate::clipboard::simulate_key_combination(&ah_for_normal, &normal_shortcut);
-                });
+                restore_normal_power(
+                    &ah,
+                    normal_settings
+                        .multi_stt_performance_mode_normal_shortcut
+                        .clone(),
+                );
             }
 
             // The WAV was written concurrently with the decode; only record
@@ -2818,16 +2686,12 @@ impl ShortcutAction for MultiSttAction {
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
-                    let normal_shortcut = normal_settings
-                        .multi_stt_performance_mode_normal_shortcut
-                        .clone();
-                    let ah_for_normal = ah.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        crate::clipboard::simulate_key_combination(
-                            &ah_for_normal,
-                            &normal_shortcut,
-                        );
-                    });
+                    restore_normal_power(
+                        &ah,
+                        normal_settings
+                            .multi_stt_performance_mode_normal_shortcut
+                            .clone(),
+                    );
                 }
                 return;
             }
@@ -2906,32 +2770,24 @@ impl ShortcutAction for MultiSttAction {
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
-                    let normal_shortcut = normal_settings
-                        .multi_stt_performance_mode_normal_shortcut
-                        .clone();
-                    let ah_for_normal = ah.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        crate::clipboard::simulate_key_combination(
-                            &ah_for_normal,
-                            &normal_shortcut,
-                        );
-                    });
+                    restore_normal_power(
+                        &ah,
+                        normal_settings
+                            .multi_stt_performance_mode_normal_shortcut
+                            .clone(),
+                    );
                 }
             } else if merged.is_empty() {
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
                 // LLM didn't respond and nothing to paste — still restore power.
                 if normal_settings.multi_stt_performance_mode_enabled && !llm_merge_succeeded {
-                    let normal_shortcut = normal_settings
-                        .multi_stt_performance_mode_normal_shortcut
-                        .clone();
-                    let ah_for_normal = ah.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        crate::clipboard::simulate_key_combination(
-                            &ah_for_normal,
-                            &normal_shortcut,
-                        );
-                    });
+                    restore_normal_power(
+                        &ah,
+                        normal_settings
+                            .multi_stt_performance_mode_normal_shortcut
+                            .clone(),
+                    );
                 }
             } else {
                 let ah_clone = ah.clone();
@@ -2966,11 +2822,7 @@ impl ShortcutAction for MultiSttAction {
                     }
                     // LLM didn't respond — restore normal power after paste.
                     if need_normal_mode {
-                        let ah_for_normal = ah_clone.clone();
-                        let shortcut = normal_shortcut.clone();
-                        tauri::async_runtime::spawn_blocking(move || {
-                            crate::clipboard::simulate_key_combination(&ah_for_normal, &shortcut);
-                        });
+                        restore_normal_power(&ah_clone, normal_shortcut.clone());
                     }
                     utils::hide_recording_overlay(&ah_clone);
                     set_tray_state(&ah_clone, TrayIconState::Idle);
@@ -2991,6 +2843,20 @@ impl ShortcutAction for MultiSttAction {
             stop_time.elapsed()
         );
     }
+}
+
+/// The Multi-STT fallback when there is no merged text: every non-empty output
+/// on its own line, in slot order. Shared with `multi_stt_stream`, whose failed
+/// chunks read exactly like a failed Multi-STT run.
+pub(crate) fn join_nonempty_lines(parts: &[&str]) -> String {
+    let mut combined = String::new();
+    for part in parts.iter().filter(|part| !part.is_empty()) {
+        if !combined.is_empty() {
+            combined.push('\n');
+        }
+        combined.push_str(part);
+    }
+    combined
 }
 
 /// Whether a merge prompt is configured at all. Shared with

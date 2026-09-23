@@ -55,10 +55,13 @@ bun run precommit:routine  # dependencies to newest, then precommit:full — run
 
 `bun run precommit` runs, in order: `meta:sync` (regenerate the identity
 mirrors), `meta:check` (they are in sync), `check:identity` (no stale product
-name anywhere), `check:translations`, `lint`, `typecheck`, `test:unit` (the
-standalone assert checks — `*.test.ts` under `src/`, each run by `bun` in its
-own process), `format:check`, and the repomix pack. `precommit:full` adds `lint:backend` (clippy) and
-`test:backend` (cargo test). The hook deliberately does **not** run clippy and
+name anywhere), `check:translations`, `lint`, `typecheck`, `test:unit`
+(`bun test --parallel` over `*.test.ts` under `src/`, rooted by `bunfig.toml`'s
+`[test] root`), `format:check`, and the repomix pack. `precommit:full` adds
+`lint:backend` (clippy) and `test:backend` (cargo test). The checks read the
+working tree, not the index; the only files the gate stages itself are the
+identity mirrors `meta:sync` rewrites (`identityPaths()` in `app-meta.ts`), so
+a selective `git add -p` is never widened behind your back. The hook deliberately does **not** run clippy and
 the Rust suite by default — a ten-minute hook is a hook everyone bypasses with
 `--no-verify`; run `precommit:full` before a release or a PR.
 
@@ -70,7 +73,7 @@ the gate is what git then enforces:
 ```bash
 bun run update             # 1. rtk → latest, EVERY dep to its newest PRERELEASE, then repomix
 bun run precommit:full     # 2. the gate, plus clippy and the Rust suite
-git commit                 # 3. the hook runs `bun run precommit` on the staged tree
+git commit                 # 3. the hook runs `bun run precommit` (on the working tree)
 ```
 
 **Step 1 always goes to prerelease, for every dependency, Solid included.**
@@ -80,10 +83,10 @@ published" that skips prereleases would not be tracking the newest of anything.
 This is not a detail: for part of the stack the newest is _only ever_ a
 prerelease, so a stable-only update would silently hold those packages back.
 `solid-js`'s `latest` dist-tag is still the 1.x major; the entire Solid 2
-toolchain (`solid-js@2.0.0-rc.8`, `@solidjs/web@2.0.0-rc.8`,
-`@solidjs/vite-plugin@3.0.0-next.43`) exists only on prerelease lines, as does
-`typescript`'s dev build. See `update-deps.ts`'s `NPM_LINE_PINNED` for the two
-packages where that has to be resolved from one named dist-tag rather than
+toolchain (`solid-js` and `@solidjs/web` 2.0 release candidates,
+`@solidjs/vite-plugin` 3.0 `next` builds) exists only on prerelease lines, as
+does `typescript`'s dev build. See `update-deps.ts`'s `NPM_LINE_PINNED` for the
+three packages that have to be held to one prerelease line rather than
 "newest tag wins".
 
 Step 1 is **manual and deliberately not in the hook.** It reaches two
@@ -114,10 +117,12 @@ Solid included — so the next release is tested against what is actually newest
 A few packages cannot be resolved by "newest published" alone and are held
 deliberately, with the reason printed in the report: **`NPM_LINE_PINNED`** holds
 a package to one prerelease _line_ resolved from one dist-tag (`solid-js`,
-`@solidjs/web` and `@solidjs/vite-plugin` follow `next`, because `latest` for all
-three is either the previous major or a downgrade), and the ceilings —
-`NPM_MAJOR_LOCKED_PREFIXES` for `@tauri-apps/*`, whose `@tauri-apps/api`
-publishes a 3.x alpha against a Tauri 2 backend, and `CARGO_MAJOR_LOCKED` for
+`@solidjs/web` and `@solidjs/vite-plugin` follow `next` within their major and
+refuse a downgrade, because `latest` is the previous major for `solid-js`, a
+downgrade for `@solidjs/web`, and the vite plugin's `next` tag lags its
+`latest`), and the ceilings — `NPM_MAJOR_LOCKED_PREFIXES` for `@tauri-apps/*`,
+which must stay on the backend's major (the 3.x alpha today) so a JS API never
+crosses the IPC to a different Tauri, and `CARGO_MAJOR_LOCKED` for
 crates that cannot move without breaking a sibling pin — cap a bump at the
 version already installed.
 
@@ -161,7 +166,7 @@ bun run preview    # Preview built frontend
 
 ```bash
 bun run typecheck         # tsc -b
-bun run test:unit         # the standalone assert checks (`*.test.ts` under src/, run by bun)
+bun run test:unit         # bun test over *.test.ts under src/ (bunfig [test] root)
 bun run lint              # oxlint (loads eslint-plugin-i18next through jsPlugins)
 bun run lint:fix          # oxlint with auto-fix
 bun run format            # Prettier + cargo fmt
@@ -174,16 +179,29 @@ cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 
 **Maintenance scripts (`scripts/`):**
 
-| Script                     | Invoked by                                                                   | Purpose                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tauri-runner.ts`          | `bun run tauri`, `dev:cpu`, `dev:fast`, `dev:full`, `build:*`                | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; sets the build posture — `--fast` → `TRANSCRIBE_CUDA_ARCHITECTURES=auto`, `--full` → `=default`, `--cpu` → `TRANSCRIBE_CMAKE_ARGS=-DTRANSCRIBE_CUDA=OFF` plus a private cache root. Every lane packs the full family set                                                                             |
-| `check-transcribe-deps.ts` | `tauri-runner.ts` (imported), or run directly                                | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` (`main`) and `tauri-plugin-*` (`tauri-apps/plugins-workspace`, `v3`) git pins in `Cargo.lock` when remote branches move; never fails, never blocks a build                                                                                                                                                       |
-| `prune-target.ts`          | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]` | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `ZER0_NO_PRUNE=1` skips it                        |
-| `check-translations.ts`    | `bun run check:translations`, CI                                             | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                          |
-| `check-nix-deps.ts`        | `postinstall`                                                                | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                    |
-| `update-deps.ts`           | `bun run update-deps [--prerelease]`                                         | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD) |
-| `update-rtk.ts`            | `bun run update:rtk`                                                         | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                       |
-| `gen_catalog.py`           | manual                                                                       | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                |
+| Script                             | Invoked by                                                                                     | Purpose                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tauri-runner.ts`                  | `bun run tauri`, `dev:cpu`, `dev:fast`, `dev:full`, `build:*`                                  | Wraps the Tauri CLI; runs the transcribe.cpp pin check first; sets the build posture — `--fast` → `TRANSCRIBE_CUDA_ARCHITECTURES=auto`, `--full` → `=default`, `--cpu` → `TRANSCRIBE_CMAKE_ARGS=-DTRANSCRIBE_CUDA=OFF` plus a private cache root. Every lane packs the full family set                                                                             |
+| `check-transcribe-deps.ts`         | `tauri-runner.ts` (imported), or run directly                                                  | Bumps the `transcribe-cpp` / `transcribe-cpp-sys` (`main`) and `tauri-plugin-*` (`tauri-apps/plugins-workspace`, `v3`) git pins in `Cargo.lock` when remote branches move; never fails, never blocks a build                                                                                                                                                       |
+| `prune-target.ts`                  | `tauri-runner.ts` (imported), `bun run prune:target [--dry-run] [--verbose]`                   | Removes stale artifacts from `src-tauri/target` before every run: `deps` units and build-script outputs of versions / git revisions no longer in `Cargo.lock`, superseded incremental caches, older builds of the workspace crates (newest two kept), installers of another version. Nothing current is touched. `ZER0_NO_PRUNE=1` skips it                        |
+| `check-translations.ts`            | `bun run check:translations`, CI                                                               | Compares every locale's key set with `en`                                                                                                                                                                                                                                                                                                                          |
+| `check-nix-deps.ts`                | `postinstall`                                                                                  | Regenerates `.nix/bun.nix` via bun2nix when available (no-op on Windows). Re-run on a Nix machine after changing `package.json`                                                                                                                                                                                                                                    |
+| `update-deps.ts`                   | `bun run update-deps [--prerelease]`                                                           | Bumps npm and Cargo dependencies with validation steps. A `cargo update` conflict is parsed, the direct crate at fault is held back with the reason printed once, and the final report lists held crates and transitive crates pinned behind latest. `libc` stays on 0.2 even with `--prerelease`. Run it from the repository root (paths resolve against the CWD) |
+| `update-rtk.ts`                    | `bun run update:rtk`                                                                           | Updates the RTK CLI used by the maintainer's Claude Code hook — tooling, not part of the app                                                                                                                                                                                                                                                                       |
+| `gen_catalog.py`                   | manual                                                                                         | Regenerates `src-tauri/src/catalog/catalog.json` (upstream tooling)                                                                                                                                                                                                                                                                                                |
+| `app-meta.ts`                      | `meta:sync` / `meta:check` (gate, CI) / `meta:set <x.y.z>` / `meta:bump <major\|minor\|patch>` | The single source of identity and version. Rewrites the mirrors in `package.json`, `Cargo.toml` `[package]`, `Cargo.lock`'s root block, `tauri.conf.json`, `index.html`, `flake.nix` and `installer.nsi`, and generates `app_identity.rs`, `appIdentity.ts`, `nix/module.nix` and `nix/hm-module.nix`; `--check` fails on drift                                    |
+| `check-identity.ts`                | `check:identity` (gate)                                                                        | Scans tracked files for the legacy name / identifier and, in `src/` + `src-tauri/src/` code, a hand-written current name; per-file exemptions with reasons                                                                                                                                                                                                         |
+| `check-model-language-coverage.ts` | `check:model-languages` (CI code-quality; not in the gate)                                     | Every catalog model language code must map to exactly one frontend language intent                                                                                                                                                                                                                                                                                 |
+| `pre-commit.ts`                    | `precommit` / `precommit:full` / `precommit:routine`, `.githooks/pre-commit`                   | The gate described above; `--full` adds clippy + cargo test, `--routine` runs `update` first. Stages only the files it rewrote                                                                                                                                                                                                                                     |
+| `update-all.ts`                    | `bun run update [--dry-run]`                                                                   | `update:rtk` → `update-deps -- --prerelease` → `repomix`                                                                                                                                                                                                                                                                                                           |
+| `repomix.ts`                       | `repomix` (gate, last) / `repomix:check`                                                       | Packs the tree with a pinned `repomix` into the gitignored `repomix-output.xml`; `--check` compares mtimes                                                                                                                                                                                                                                                         |
+| `fetch-stack-docs.ts`              | `docs:fetch [--source <id>] [--limit N]`                                                       | Mirrors the stack's docs into the gitignored `docs/vendor/` and reports new / changed / removed pages ([docs/STACK_WATCH.md](docs/STACK_WATCH.md))                                                                                                                                                                                                                 |
+| `bench-stt.ts`                     | `bench:stt -- --exe … --wav … --output … [--model …] [--baseline …]`                           | Replays a WAV through the headless `--transcribe-file --repeat 3 --json` path per installed model × {cpu, cuda}; flags regressions and transcript changes against a baseline                                                                                                                                                                                       |
+| `gen-icons.ts`                     | `icons:generate [app\|tray]`                                                                   | App icons via `tauri icon` from an SVG built from `src/lib/brandMark.ts`; tray PNGs via the SDF rasteriser (`lib/sdf.ts`, `lib/png.ts`)                                                                                                                                                                                                                            |
+| `png-inspect.ts`                   | manual                                                                                         | Prints a PNG as ASCII coverage / luminance maps and a colour histogram (decoded by Playwright's Chromium)                                                                                                                                                                                                                                                          |
+| `lib/env-flag.ts`                  | imported                                                                                       | The `<PREFIX>` env-flag reader, mirroring `utils.rs` (legacy-prefix fallback with a warning)                                                                                                                                                                                                                                                                       |
+| `mirror_models.py`                 | manual (`uv run`)                                                                              | Mirrors the catalog's GGUF files to R2 blob storage (upstream tooling)                                                                                                                                                                                                                                                                                             |
+| `ci/stage-transcribe-libs.sh`      | nothing (see [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md))                                     | Linux runtime-library staging helper, currently unreferenced                                                                                                                                                                                                                                                                                                       |
 
 **Forked dependencies:** three crates in this graph are forks under
 `NairoDorian` rather than their upstream projects (`tauri-specta`,
@@ -212,7 +230,7 @@ For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
 ## Architecture Overview
 
-ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + Solid 2 / TypeScript frontend — migrated from React on 2026-09-13; see the Solid 2 conventions under Code Style).
+ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 alpha (Rust backend + Solid 2 / TypeScript frontend — migrated from React on 2026-09-13; see the Solid 2 conventions under Code Style). The `tauri` crate is on the 3.0 alpha line, and the `@tauri-apps/*` JS packages are capped at its 3.x major.
 
 ### Backend Structure (src-tauri/src/)
 
@@ -223,7 +241,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
 - `managers/` - Core business logic:
   - `audio.rs` - Audio recording and device management (`AudioRecordingManager`:
     recording state machine, readiness generation, lazy mic close / idle
-    timeout, VAD backend switching, `last_speech_ms()`)
+    timeout, in-place VAD threshold and denoise updates, `last_speech_ms()`)
   - `model.rs` - Model catalog, downloading (HF hub or mirror), quantization
     variants; `model/download.rs` is the HTTP downloader
   - `model_capabilities.rs`, `gguf_meta.rs` - Per-model capability detection
@@ -234,12 +252,15 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
     worker, `extra_engines` (Multi-STT), idle unload watcher
   - `history.rs` - Transcription history storage (SQLite), WAV files, vacuum
   - `statistics.rs` - Metrics tracking (independent SQLite table, streak calculation, stop-relative transcription and LLM post-processing latency distributions)
+  - `arch_plugins.rs` - transcribe.cpp per-family architecture-plugin
+    directories and listing (`get_arch_plugins`, `load_arch_plugin`,
+    `register_arch_dir`, `open_plugins_folder`); the `arch-dl` feature is off
+    in every shipped posture, so it normally reports nothing
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling, WAV read/write
     (`utils.rs`: `save_wav_file`, `save_raw_wav_file`, `read_wav_samples`,
-    `verify_wav_file`), `visualizer.rs` (the 16-bucket level meter; only
-    runs for a registered callback, and the app registers none since the
-    overlay draws the Live FFT scope)
+    `verify_wav_file`). There is no level-meter path: the overlay draws the
+    Live FFT scope
     - `device.rs` resolves the system default to the concrete endpoint
       (`default_input_endpoint` / `default_output_endpoint`) for the recorder,
       the channel query and the feedback sounds. cpal 0.18's virtual default
@@ -248,35 +269,55 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
       notification thread; after the first callback every activation in the
       process failed with RPC_E_CHANGED_MODE ("Cannot change thread mode
       after it is set") until restart. A changed system default is therefore
-      followed at the next open (idle close, stream rebuild), not live
+      followed at the next open (idle close, stream rebuild), not live. A
+      microphone picked in settings while a recording runs is persisted at
+      once and switched to when that recording ends
+      (`AudioRecordingManager::apply_pending_device_change`, one short-lived
+      thread per deferred change), so capture never restarts mid-recording
     - `recorder.rs` also hosts `SpeechClock`, which measures how long the user
       has actually been speaking (see Speech Stats below)
     - `recorder.rs` also defines `AnalysisSink`, the trait the Live FFT tap
       implements: `CaptureProcessor` offers it the native-rate chunk (after
-      the raw tap and the level meter) and the 16 kHz frames (before the
-      VAD), each behind a `wants_*` atomic check. `Cmd::Start.discard_audio`
+      the raw tap), the 48 kHz frames leaving RNNoise and the 16 kHz frames
+      (before the VAD), each behind a `wants_*` atomic check. `Cmd::Start.discard_audio`
       keeps a session from accumulating audio it will never return (VAD test,
       Live FFT)
   - `vad/` - Voice Activity Detection — see Voice Activity Detection below;
     `earshot.rs` wraps the pure-Rust Earshot detector, `smoothed.rs` adds
     prefill / hangover / onset smoothing, `mod.rs` holds the `Hysteresis` gate
     and the millisecond timing constants
-  - `chunk_tap.rs` - The drainable mid-recording copy of the VAD-filtered
+  - `audio/chunk_tap.rs` - The drainable mid-recording copy of the VAD-filtered
     16 kHz frames the experimental Multi-STT streaming mode decodes its chunks
     from, plus the session token that keeps a stale holder off the next
     recording's audio. Process-wide, like the Live FFT tap; inert while the
     mode is off
   - `lang_id.rs`, `text.rs` - Language-detection heuristics and text post-filters
-  - `bin/cli.rs` - Standalone recorder demo. **Not a build target** (the
-    `[[bin]]` in `Cargo.toml` is commented out); keep it compiling by hand
+  - `bin/cli.rs` - Standalone recorder demo. **Not a build target** (there is
+    no `[[bin]]` entry in `Cargo.toml`, and it sits outside `src/bin/`, so
+    Cargo does not discover it); keep it compiling by hand
 - `commands/` - Tauri command handlers for frontend communication
   (`audio.rs`, `history.rs`, `models.rs`, `statistics.rs`, `transcription.rs`,
-  `file_transcription.rs`, `live_mode.rs`, `mod.rs`)
+  `file_transcription.rs`, `live_mode.rs`, `live_fft.rs`, `llama.rs`,
+  `recall.rs`, `system.rs` — `get_system_stats`, the latest
+  `SystemStatsEvent` sample for a freshly mounted footer — and `mod.rs`)
 - `cli.rs` - CLI argument definitions (clap derive)
+- `app_identity.rs` - Generated identity constants (name, slug, identifier,
+  env prefix, legacy names, recording file names) from `scripts/app-meta.ts`;
+  never edit by hand
+- `session_log.rs` - Freezes one durable log-file stem per app session
+  (`<slug>-YYYYMMDD-HHMMSS-mmm`) before the log plugin opens its file; shared
+  with `commands::current_log_file` (see [docs/LOGGING.md](docs/LOGGING.md))
+- `webview_hardening.rs` - Disables WebView2's browser accelerator keys (F5,
+  Ctrl+F, F12, …) on Windows: on the main window in every build profile
+  (`disable_accelerators_now`), on the overlay windows in release builds only
+  (`disable_browser_accelerator_keys`); adapted from AivoRelay (MIT)
 - `shortcut/` - Global keyboard shortcut handling. `mod.rs` holds the
   settings-change commands and `should_register_binding`, the single rule for
   which bindings are live (feature gates + performance-mode conflicts);
-  `tauri_impl.rs` and `handy_keys.rs` are the two backends; `handler.rs`
+  `tauri_impl.rs` (`tauri-plugin-global-shortcut`) and `native_keys.rs` (the
+  `handy-keys` crate: a manager thread owns `HotkeyManager`, and a recording
+  listener emits `native-keys-event` for the shortcut recorder; the persisted
+  setting value stays `"handy_keys"`) are the two backends; `handler.rs`
   dispatches to actions
 - `transcription_coordinator.rs` - Pure state machine that turns key presses
   / external inputs into start/stop/cancel decisions (toggle vs push-to-talk)
@@ -299,11 +340,13 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   `LiveModeStateEvent` / `LiveModeTranscriptEvent`; see Live Mode below
 - `live_fft/` - "Live FFT" page backend (fork): `mod.rs` holds the
   `AnalysisTap` (the wait-free ring the recorder pushes into), the
-  `LiveFftManager` worker and the `LiveFftStateEvent` / `LiveFftFrameEvent`;
+  `LiveFftManager` worker, the `LiveFftStateEvent` and the binary frame slot
+  the page polls through `live_fft_frame`;
   `scope.rs` is the recording overlay's miniature analyser (same tap and
   pipeline, binary frames polled through `overlay_scope_frame`);
-  `dsp.rs` is the pure DSP (FIFO, RBJ EQ, windows, warp, weighting, dB,
-  ballistics on a `realfft` transform); see Live FFT below
+  `dsp.rs` is the pure DSP (FIFO, RBJ EQ, windows, warp + band
+  aggregation, weighting, dB, ballistics, spectral features on a `realfft`
+  transform); see Live FFT below
 - `direct_stream_writer.rs` - Types the live transcript into the target app
   for `PasteMethod::DirectStreaming`; also the reconciler the experimental
   Multi-STT streaming mode retypes through; see Direct Streaming below
@@ -311,6 +354,17 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   coordinator (fork): the break-delimited chunk model, the bounded merge window
   and the merge jobs that replace the live text in place; see Multi-STT
   Streaming First below
+- `multi_streaming.rs` - The experimental **Multi Streaming STT** mode (fork),
+  nested under streaming-first; see Multi Streaming STT below
+- `overlay_preview.rs` - The Overlay page's "Preview" button: a real recording
+  whose only output is the overlay (audio discarded, nothing pasted, saved or
+  typed), started and stopped by `start_overlay_preview` /
+  `stop_overlay_preview`
+- `recall/` - "Recall" page backend (fork): the Markdown note vault. `mod.rs`
+  is the vault and its notes, `crypto.rs` the optional encryption,
+  `dictate.rs` records and returns text to the editor, `insertion.rs` routes
+  hotkey transcriptions into the focused note; commands in
+  `commands/recall.rs`; see Recall below
 - `llama_server.rs` - In-app llama.cpp supervisor (fork): builds the
   `llama-server` command line from `settings.llama` (defaults = the
   maintainer's `launch_server_E2B_Q4.ps1`: Gemma 4 E2B Q4 + MTP draft, 8k
@@ -321,7 +375,9 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   a request targets the local port. `adopt_detected_install_if_unconfigured`
   picks up an existing `<home>/Downloads/PROJECTS/Llama.cpp` layout on
   first run. Stopped on `RunEvent::Exit` and, on Windows, by a job object
-  (`job_object.rs`) if Handy dies
+  if the app dies
+- `job_object.rs` - The Windows job object (kill-on-close) that ties
+  `llama-server` to the app's lifetime; a no-op elsewhere
 - `llama_releases.rs` - GitHub release discovery (10-minute cache), backend
   detection via nvidia-smi, streamed download with `LlamaDownloadEvent`
   progress, pure-Rust zip extraction into `<app data>/llama_cpp/<backend>-<tag>`
@@ -335,8 +391,9 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   PATH when it is not. `remove_bundled_cuda_runtime` trims the DLLs from an
   existing install
 - `system_monitor.rs` - One sampler thread, 1 Hz, CPU + RAM (sysinfo) and
-  GPU / VRAM / temperature (NVML when present) as `SystemStatsEvent`; idle
-  while the main window is hidden
+  GPU / VRAM / temperature (NVML when present) as `SystemStatsEvent`; while
+  the main window is hidden it only wakes every 3 s to keep the CPU baseline
+  fresh — no NVML query and no event
 - `llm_client.rs` - OpenAI-compatible API client for post-processing and Multi-STT merge
   - Includes `erase_llama_server_conversations()` for llama.cpp conversation cleanup (only called for the `custom` provider)
 - `clipboard.rs`, `paste_tx/` - Paste strategies (clipboard, direct typing,
@@ -347,8 +404,8 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
 - `autostart.rs`, `portable.rs`, `apple_intelligence.rs`, `audio_feedback.rs`,
   `memory.rs`, `helpers/clamshell.rs` - Platform helpers
 - `catalog/` - Bundled model catalog (`catalog.json`)
-- `utils.rs` - Platform detection helpers, `cancel_current_operation`,
-  Windows real-time process setup (`init_windows_process_performance`)
+- `utils.rs` - Platform detection helpers, `cancel_current_operation`, the
+  `app_env_var` / `app_env_flag` readers
 - `tests/vad_speech_clock_probe.rs` - Opt-in VAD regression probe (`ZER0_PROBE_WAV`)
 
 ### Frontend Structure (src/)
@@ -375,10 +432,11 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
 - `components/settings/help/` - Help page (`helpContent.ts` is the list of
   sections/anchors, copy under `help.*`); `settings/QuickHelp.tsx` maps
   each page to a one-line summary and a Help anchor
-- `lib/sessionToast.ts` + `stores/sessionToastStore.ts` - `sessionToast`
-  wraps sonner and records error/warning toasts for the Debug page's
-  `SessionToastHistory`; import it (as `toast`) instead of sonner in app
-  code, so no error disappears unread
+- `lib/sessionToast.ts` + `stores/sessionToastStore.ts` - `sessionToast` is
+  the app's toast API (rendered by `components/ui/Toaster.tsx` from
+  `stores/toastStore.ts`; there is no sonner) and records error/warning
+  toasts for the Debug page's `SessionToastHistory`; import it (as `toast`)
+  in app code, so no error disappears unread
 - `components/` - Solid UI components:
   - `settings/` - Settings UI, grouped by page (`general/`, `advanced/`,
     `models/`, `history/`, `statistics/`, `post-processing/`, `about/`, `debug/`) plus the
@@ -414,17 +472,20 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
   - `update-checker/` - App update notifications (`portableInstaller.ts`)
   - `shared/`, `ui/`, `icons/`, `footer/` - Shared components
 - `hooks/useSettings.ts` - Settings state management hook; `hooks/useOsType.ts`
-- `stores/settingsStore.ts` - Zustand store for settings. **Every settings key
-  needs an entry in `settingUpdaters`** — a key without one logs
-  `No handler for setting` and is never persisted
-- `stores/modelStore.ts` - Model store with load/unload operations
+- `stores/settingsStore.ts` - Solid store (`createSolidStore`,
+  `lib/solidStore.ts`) for settings. **Every settings key needs an entry in
+  `settingUpdaters`** — a key without one logs `No handler for setting` and is
+  never persisted
+- `stores/modelStore.ts` - Model store: lists, selects, downloads, cancels
+  downloads and deletes models (loading is the backend's job)
 - `stores/fileTranscriptionStore.ts`, `stores/liveModeStore.ts` - Queue /
   session state of the two fork pages. They live outside the page components
   because both jobs keep running in the backend while the user browses other
   pages; each installs its typed event listeners once (`events.*.listen`)
 - `stores/liveFftStore.ts` - Live FFT session state. Spectrum frames stay
-  outside the reactive store (a module-level holder the canvases read from
-  their animation loops), so a 60 Hz stream never re-renders the page
+  outside the reactive store (a module-level holder fed by the
+  `live_fft_frame` poller; the canvases subscribe and paint only on a new
+  frame), so a 60 Hz stream never re-renders the page
 - `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta; written
   by `bun run tauri dev` in debug builds). When a command or settings field is
   added or removed, the file must be regenerated or hand-edited to match
@@ -443,7 +504,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
 
 **Pipeline Processing:** Audio → (RNNoise, optional) → VAD → transcribe.cpp model → Text output → Clipboard/Paste
 
-**State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
+**State Flow:** Solid store → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
 ### Technology Stack
 
@@ -458,7 +519,9 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 2.x
 - `nnnoiseless` - RNNoise noise suppression (pure Rust, weights compiled in;
   optional, off by default)
 - `enigo` - Keystroke simulation for the performance-mode shortcuts
-- `rdev` - Global keyboard shortcuts
+- `handy-keys` (native backend, the default on Windows and macOS) /
+  `tauri-plugin-global-shortcut` (the default on Linux) - Global keyboard
+  shortcuts
 - `rubato` - Audio resampling
 - `rodio` - Audio playback for feedback sounds
 
@@ -501,7 +564,9 @@ every second of dropped silence is a second the model doesn't spend decoding.
 - **Frame size** is `constants::VAD_FRAME_SAMPLES` (256 samples = 16 ms at
   16 kHz, `VAD_FRAME_MS`). The capture pipeline frames itself to the
   detector's `frame_samples()` so one resampled frame is exactly one VAD
-  decision (480 / 30 ms with VAD off). Hangover, prefill and onset are
+  decision (with `vad_enabled` off the recorder still carries the detector
+  and frames stay 256 samples; the 480 / 30 ms fallback exists only for a
+  recorder built without one, i.e. tests). Hangover, prefill and onset are
   millisecond constants in `vad/mod.rs` converted with
   `frames_for_duration_ms` (rounding up), so a change of frame size never
   shortens them: `VAD_STREAMING_HANGOVER_MS` = 1650 → 104 frames,
@@ -511,6 +576,10 @@ every second of dropped silence is a second the model doesn't spend decoding.
   `EarshotVad` clamps resampler overshoot for the prediction only (the audio
   passed downstream is untouched) and rejects non-finite samples and wrong
   frame sizes with an error rather than a silent wrong answer.
+- **Energy pre-gate**: while not already in speech, a frame whose RMS is below
+  −45 dBFS is scored 0 without running the model (a cost saving on deep
+  silence). The live VAD test's "raw score" is that synthetic 0 for such
+  frames, and a very quiet microphone needs gain, not a lower threshold.
 - **Thresholding uses hysteresis** (`Hysteresis` in `vad/mod.rs`, a pure
   struct with its own unit tests): speech is entered at the threshold
   (`vad_threshold_earshot`, default 0.5) but only left once the score falls
@@ -528,14 +597,15 @@ every second of dropped silence is a second the model doesn't spend decoding.
   VAD silently degraded into a pass-through for an unknown period. It only
   surfaced when Speech Stats became the first consumer of the raw per-frame
   verdict, which a pass-through cannot fake.
-- **History**: until 2026-09-10 Handy shipped Silero VAD v6.2 through `ort`
+- **History**: until 2026-09-10 the app shipped Silero VAD v6.2 through `ort`
   with Earshot as an optional backend. Measured side by side on the
   maintainer's recordings (18 s, quiet room) the two agreed on 97.7 % of
   frames and kept identical audio (13.3 s), with Earshot ≈ 2–3× cheaper per
   frame and 109 ms → 9 µs to construct, so Silero, `ort`, `ndarray` and the
-  2.2 MB model file were removed (`docs/PLAN_TRANSCRIBE_CPP_ONLY.md`). Noisy
-  rooms were never benchmarked; if Earshot clips speech there, lower
-  `vad_threshold_earshot` first. `earshot` is pinned to `opt-level = 3` in
+  2.2 MB model file were removed (see CHANGELOG, the transcribe.cpp-only
+  change of 2026-09-10). Noisy rooms were never benchmarked; if Earshot clips
+  speech there, lower `vad_threshold_earshot` first — unless the speech is
+  below the −45 dBFS pre-gate, which no threshold reaches. `earshot` is pinned to `opt-level = 3` in
   the dev profile so debug builds pay the real (small) cost.
 
 **Recordings with no speech never reach a decoder.** `SpeechClock` publishes its
@@ -588,9 +658,9 @@ Settings:
 - `save_raw_audio` - Save raw uncompressed microphone audio before resampling and VAD filtering
 
 **Raw Uncompressed Audio Recording** (fork addition):
-When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow$ History, Handy saves audio in its native captured format:
+When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow$ History, the app saves audio in its native captured format:
 
-- **Pre-resampling / pre-VAD capture**: Raw samples are tapped in the capture callback after channel selection/averaging (so the file is always mono) but before resampling to 16 kHz and before Silero VAD filtering. The tap only accumulates when the setting is on — at 48 kHz float it is ~11 MB per minute.
+- **Pre-resampling / pre-VAD capture**: Raw samples are tapped on the audio consumer thread (`CaptureProcessor::process_raw_chunk`) after the callback's channel selection/averaging (so the file is always mono) but before noise suppression, resampling to 16 kHz and VAD filtering. The tap only accumulates when the setting is on — at 48 kHz float it is ~11 MB per minute.
 - **Format follows the opened stream**: Saves 32-bit float (`F32`), 24-bit PCM (`I32`), or 16-bit PCM (`I16`) WAV files at the sample rate and format `get_preferred_config` opened the device with (F32 preferred, then I16, then I32; WASAPI shared mode is typically F32 at the mix rate, e.g. 48 kHz).
 - **Zero latency impact**: WAV serialization runs asynchronously on background blocking threads via `tauri::async_runtime::spawn_blocking`, allowing model transcription inference to execute immediately in parallel with no latency overhead. Both actions still await and `verify_wav_file` the result before recording a history row.
 - **Universal reader**: `read_wav_samples` decodes 16-bit, 24-bit, and 32-bit float WAVs, automatically downsampling to 16 kHz for playback, acoustic model inference, and benchmarks.
@@ -604,7 +674,7 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
 - `multi_stt_keep_extra_models_loaded` - Keep extra models resident between uses (default on). Only consulted when `model_unload_timeout` is `Immediately`; with any other timeout the idle watcher unloads extra engines together with the primary model
 - `multi_stt_merge_prompt` - LLM prompt for merging outputs (`${output}`, `${output2}`, `${output3}`, `${output4}`; `${output1}` is an alias of `${output}`)
 - `multi_stt_performance_mode_enabled` / `multi_stt_performance_mode_trigger_on_start` - Simulate a "full power" shortcut when a Multi-STT recording ends (or starts, with trigger-on-start) and a "normal" shortcut after the merge/paste, for external power-profile tools
-- `multi_stt_performance_mode_full_power_shortcut` (default `ctrl+space`) / `multi_stt_performance_mode_normal_shortcut` (default `ctrl+alt+space`) - The simulated key combinations. While performance mode is enabled, a transcription hotkey equal to either is not registered (`shortcut::should_register_binding`) and the shortcut recorder rejects it, so the simulated keys can never retrigger Handy
+- `multi_stt_performance_mode_full_power_shortcut` (default `ctrl+space`) / `multi_stt_performance_mode_normal_shortcut` (default `ctrl+alt+space`) - The simulated key combinations. While performance mode is enabled, a transcription hotkey equal to either is not registered (`shortcut::should_register_binding`) and the shortcut recorder rejects it, so the simulated keys can never retrigger the app
 - `multi_stt_streaming_first_enabled` (default off) / `multi_stt_streaming_pause_ms`
   (default 1000, settable 100–10000) / `multi_stt_streaming_context_chunks`
   (default 1, settable 0–3) - The experimental streaming-first mode: the pause
@@ -614,6 +684,11 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
   refresh — it retires the same way the text-catchup grace does, handing the
   overlay back the primary's own live text — so a mode the user just switched
   off cannot keep closing chunks at every pause
+- `multi_stt_streaming_multi_enabled` (default off) - The nested Multi
+  Streaming STT mode under streaming-first (see below)
+- `multi_stt_streaming_multi_debug_view` (default off) - That mode's debug
+  view: one overlay block per live model plus the merged block, instead of the
+  single corrected text
 
 Extra models are managed by `TranscriptionManager` (`extra_engines` HashMap) with explicit
 load/unload lifecycle, separate from the primary model. They are unloaded when Multi-STT is
@@ -644,6 +719,25 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
 - `custom_accent_color` - `#rrggbb` or `null` for the neon-cyan default; persisted through `change_custom_accent_color_setting`
 - `native_streaming_latency_presets` - Per-model-family latency preset (`fastest` → `accurate`)
+- `native_streaming_chunk_ms` - Per-model R2T2 stream chunk in milliseconds
+  (80–2000, default 320 when absent); R2T2's latency control is continuous,
+  so it is a separate map from the presets
+- `per_model_backends` - Per-model backend override keyed by model id; an
+  absent or `Auto` entry follows `transcribe_accelerator`. Applied on the
+  model's next load
+- `shortcut_activation` (`toggle` / `push_to_talk` / `hold_or_toggle`, default
+  hold-or-toggle) / `hold_threshold_ms` (default 300) - How a hotkey press is
+  read; in hold-or-toggle a press held at least the threshold is push-to-talk,
+  a shorter tap locks recording on. Replaces the old `push_to_talk` bool
+- `ui_scale` (0.7–1.6, default 1.0) - CSS zoom of the settings window
+- `overlay_window_fade_ms` (0–2000, default 300) /
+  `overlay_window_corner_radius` (0–25, default 0) - The overlay window's
+  fade and corner radius
+- `reliable_paste` (debug-gated, macOS and Windows) - Receipt-sequenced paste
+  (`paste_tx`): restore the clipboard only after the target app has read the
+  transcript, instead of after a fixed delay
+- `recall` - One nested `RecallSettings` struct (`output_dir`, the vault root;
+  default `<app data>/recall`); see Recall
 - `vad_threshold_earshot` (default 0.5) - Speech-probability threshold the
   detector is built with (0.05–0.95; lower = more sensitive).
   `create_audio_recorder` reads it, so `change_vad_threshold_setting` writes
@@ -656,7 +750,7 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
   pure-Rust `nnnoiseless` crate (`audio_toolkit/audio/denoise.rs`,
   `DenoiseChain`: native rate → 48 kHz 10 ms frames → RNNoise → 16 kHz VAD
   frames). It sits in `CaptureProcessor::process_raw_chunk` after the raw
-  tap and the overlay level meter and before `handle_frame`, so the VAD, the
+  tap and before `handle_frame`, so the VAD, the
   speech clock, streaming and the model all get the denoised signal while
   saved raw audio and the native analysis tap stay untouched. The flag is an
   `Arc<AtomicBool>` read per chunk (`AudioRecorder::set_denoise_enabled`,
@@ -714,8 +808,10 @@ vad_grace}_setting`): `denoise_strength` (wet/dry mix), `denoise_vad_threshold`
   window geometry (`overlay::update_overlay_scope_cache`) and hands the
   waveform window to the running scope
 - `live_fft` - One nested `LiveFftSettings` struct: the analyser
-  parameters (source, scale, warp, window length, zero-pad, EQ, window &
-  weighting, loudness & ballistics, async analysis, update rate) persisted
+  parameters (source, raw bins, scale, warp + aggregation, output bins and
+  their Auto/Fixed mode, window length, zero-padding, EQ, window & Kaiser β
+  mode, weighting, loudness & ballistics, spectral features, async analysis,
+  update rate) persisted
   through `change_live_fft_settings`; see Live FFT
 
 ### Transcribe Files (fork addition)
@@ -772,7 +868,7 @@ while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
   (default `<app data>/live_mode`) holding `transcript.txt|md` and
   `chunk_0001.wav`, `chunk_0002.wav`, …
 - **Chunk loop** (`LiveModeManager::run_session`, its own thread): each chunk
-  is a normal Handy recording — `try_start_recording_with_raw(.., Some(save_audio))`
+  is a normal recording — `try_start_recording_with_raw(.., Some(save_audio))`
   forces the native-rate raw tap on regardless of `save_raw_audio`, and
   `start_stream(false, ..)` runs the model's native live stream. A chunk ends
   at `chunk_minutes`, or (with `prefer_silence_boundary`) on the first ≥1.2 s
@@ -780,8 +876,11 @@ while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
   Rotation = `finalize_stream` → `stop_recording` → WAV written on a blocking
   thread (raw samples at native rate/format via `save_raw_wav_file`, or the 16
   kHz STT samples if the raw tap is empty) → text committed → next chunk
-  starts immediately. If the stream never began (`NeverStarted`), the chunk's
-  STT samples are batch-transcribed instead. VAD policy follows `vad_enabled`
+  starts. Audio spoken during the finalize and restart (plus a batch decode,
+  below) is not captured; the WAV write adds nothing. If the stream produced
+  no text (`NeverStarted`, failed or timed out), the chunk's STT samples are
+  batch-transcribed instead, and the chunk's statistics run is `Failed` when
+  that decode fails too. VAD policy follows `vad_enabled`
   (`Streaming` or `Disabled`).
 - **Transcript file** (`TranscriptWriter`): an append-only committed prefix
   plus a live tail rewritten in place (`seek` + `write` + `set_len`) on every
@@ -799,8 +898,9 @@ while you speak. Backend: `live_mode.rs` + `commands/live_mode.rs`; frontend:
   "Already recording" from the audio manager. The cancel hotkey / tray cancel
   stops the recorder under Live Mode; the loop notices (`!rm.is_recording()`),
   loses that chunk's audio, logs a warning and starts the next chunk. Each chunk
-  is a `begin_normal_run("live_mode")` statistics run, so Live Mode sessions do
-  show up in Statistics.
+  is a `begin_normal_run("live_mode")` statistics run that records the chunk's
+  speech duration before finalizing, so Live Mode sessions do show up in
+  Statistics.
 
 ### Live FFT (fork addition)
 
@@ -812,23 +912,52 @@ Backend: `live_fft/mod.rs` (plumbing) + `live_fft/dsp.rs` (DSP, unit-tested) +
   last `window_samples` → RBJ high/low shelf EQ applied at **ingest** to new
   samples only (stateful, time order) → window (Kaiser / Hann / Hamming /
   Blackman / Blackman-Harris / Rectangular, coherent-gain or full-scale
-  normalisation) centred 8-float-aligned in a zero-padded frame → `realfft`
-  R2C → magnitude of only the bins the warp reads → psychoacoustic warp (Log /
+  normalisation; Kaiser β manual or derived from `db_range`) centred
+  8-float-aligned in a zero-padded frame (`zero_padding` off: the transform
+  is the window, rounded up to even) → `realfft` R2C → magnitude
+  (`sqrt(re²+im²)`) of only the bins the warp reads → psychoacoustic warp (Log /
   Mel / ERB / Bark / Chroma / Linear / Melog, `warp_blend`, linear or
-  Catmull-Rom, memcpy when the grid is exactly 1:1) → A / C / ITU-R 468
-  weighting → dB against frame peak / 0 dBFS / slow AGC → attack/release
-  ballistics (per-frame coefficients or milliseconds). No SIMD intrinsics
-  and libm `log10` instead of a lookup table: at ≤ 8192 bins the scalar loops
-  cost less than the JSON emit. `realfft` was already a transitive dependency
-  (rubato), so no new crate is compiled.
+  Catmull-Rom, memcpy when the grid is exactly 1:1) with **band aggregation**
+  (`warp_aggregation` Peak / RMS over the FFT bins an output bin owns, so a
+  coarse bin never drops a narrow partial) → A / C / ITU-R 468 weighting → dB
+  against frame peak / 0 dBFS / slow AGC (`FastLog2Seg`, an 8-segment
+  quadratic of the mantissa, < 0.0002 dB; the portable fallback uses a
+  2048-entry mantissa table) → attack/release ballistics (per-frame
+  coefficients or milliseconds, in place). Output bins: Fixed
+  (`output_bins`, 8–65536, interpolated above N/2+1), Auto (N/2+1 of the
+  transform run) or `raw_bins` (the rfft magnitude itself, identity copy).
+  `spectral_features` adds centroid, 85 % rolloff, flatness, flux, RMS and
+  bass/mid/high band levels from the linear magnitude. A digitally silent
+  window skips the FFT in every mode and yields exactly what the full chain
+  would (`silence_shortcut_equals_the_full_chain_bit_for_bit`). Steady-state
+  `ingest` + `process` allocate nothing, pinned like Plugin_FFT's allocation
+  gate by a test-only counting allocator
+  (`steady_state_ingest_and_process_allocate_nothing`). The page's Reset
+  clears the EQ state before the next chunk is filtered. This is a
+  port of the owner's Plugin_FFT (TouchDesigner CHOP) v2.11, minus what does
+  not apply here (channel modes, FFTW planner / wisdom / backend, worker
+  priority), including v2.12's measured performance pass. Three kernels are
+  explicit AVX2 + FMA (`std::arch`, runtime-detected by `avx2_fma`, each
+  tested against its portable twin): the warp's load + permute, the dB
+  conversion and the feature band sums. Everything else is portable code that
+  auto-vectorises; a kernel was only made explicit when an interleaved A/B
+  measured it faster (the magnitude stayed on `sqrt`: every AVX2 variant,
+  rsqrt + Newton included, was slower). `realfft` was
+  already a transitive dependency (rubato), so no new crate is compiled.
 - **Threading** ("Async analysis" on the page): the audio consumer thread
   pushes each chunk into a wait-free `rtrb` ring through `AnalysisTap` (an
   `AnalysisSink`; one atomic load per chunk while the page is closed, a
   `try_lock` on an uncontended mutex plus a memcpy while it is open — the
   consumer thread never waits). The `live-fft` worker drains the ring, runs
-  the pipeline at `update_rate_hz` (5–60) and emits `LiveFftFrameEvent`
-  (`output_bins` × f32) with `emit_to("main")`. With `async_analysis` off the
-  pipeline runs inline on the consumer thread and the worker only supervises.
+  the pipeline at `update_rate_hz` (5–60) and encodes each frame into a
+  binary slot (8-word header: seq, flags, bin count, axis version, peak Hz,
+  peak value, DSP µs, feature count; then f32 bins and features) that the page
+  polls with `live_fft_frame(known_seq)`, a raw `tauri::ipc::Response` command
+  like `overlay_scope_frame`: an unchanged seq answers with the 32-byte header
+  only. The frequency axis is fetched with `live_fft_axis` only when a frame's
+  axis version changes. With `async_analysis` off the pipeline runs inline on
+  the consumer thread (every lock there is a `try_lock`, nothing is emitted)
+  and the worker only supervises.
   The tap is a process-wide `LazyLock` so the always-on microphone, opened on
   its own thread during startup, is wired to it before the manager exists.
 - **Gates**: frames are neither computed nor sent while the main window is
@@ -849,11 +978,14 @@ WindowHidden`); the page stops the session on unmount; the worker notices
   toggle, the threshold slider and the RNNoise toggle. Toggling `show_vad`
   restarts a running session, like a threading change.
 - **Presets**: the page's "Raw" preset (`live_fft_raw_defaults`) restores
-  linear magnitude, frame-peak reference and no ballistics; Handy's own
+  linear magnitude, frame-peak reference and no ballistics; the app's own
   defaults differ only in the display choices (dB / 0 dBFS / 90 dB,
-  ballistics 15 ms / 250 ms). There is no FFT planner policy (rustfft plans
-  instantly), no poll interval (settings are pushed) and no channel menu
-  (Handy's capture ring is already mono); the analysis frame rate is
+  ballistics 15 ms / 250 ms). The transform defaults and limits are
+  Plugin_FFT's: zero-pad length 16384 (a store that already holds a length
+  keeps it), window 1…65536 samples or 0.1…5000 ms. There is no FFT planner
+  policy (rustfft plans instantly), no poll interval (settings are pushed)
+  and no channel menu
+  (the app's capture ring is already mono); the analysis frame rate is
   `update_rate_hz`.
 - **Recording overlay scope** (`scope.rs`, `overlay/OverlayScope.tsx`): the
   overlay's old 16-bucket level bars are replaced by a miniature area
@@ -870,7 +1002,11 @@ WindowHidden`); the page stops the session on unmount; the worker notices
   endian) and returned as `tauri::ipc::Response` by `overlay_scope_frame`,
   a command registered beside the typed ones in `lib.rs` because
   tauri-specta cannot type raw bytes; the overlay polls it at
-  `update_rate_hz` and maps `Float32Array` views onto the buffer. The
+  `update_rate_hz` with its last seq (header-only reply when unchanged; the
+  block and circular-background instances share one poll) and maps
+  `Float32Array` views onto the buffer. The scope computes at most 8192 bins
+  (`OVERLAY_MAX_BINS`; a capped Raw grid becomes a peak-aggregated linear
+  axis) whatever the page asks for. The
   spectrum is the page's spectrum: the scope engine runs the same
   `SpectrumPipeline` on the same `Shared` settings snapshot (EQ shelves,
   window, weighting, scale / warp, dB reference and range, ballistics,
@@ -885,11 +1021,18 @@ WindowHidden`); the page stops the session on unmount; the worker notices
   the two never disagree.
 - **Frontend**: `SpectrumCanvas` (bars / line / area, peak hold, grid, hover
   readout with note name, peak marker) and `SpectrogramCanvas` (waterfall,
-  inferno / accent / ice colormaps) run their own `requestAnimationFrame`
-  loops reading the module-level frame holder in `liveFftStore.ts`; the
-  status event (≤ 1 Hz) carries the axis frequencies and telemetry.
-  Display preferences live in localStorage
-  (`handy.live_fft.view`); everything else is `settings.live_fft`.
+  inferno / accent / ice colormaps, a ring of rows rather than a scrolling
+  blit) paint on demand — a new frame, hover, resize or a prop change — from
+  one shared units pass over the frame holder in `liveFftStore.ts`; peak-hold
+  and ceiling decays are per millisecond. The status event (≤ 1 Hz) carries
+  telemetry only (Hz per bin, magnitude bins, aggregated bins, effective β,
+  latency). Plugin_FFT's quality presets Visual 60 / Visual 120 / Analysis
+  are one-shot buttons, not a persisted mode, and change only the transform
+  size, interpolation, β mode and aggregation — never the output size
+  (`liveFftPresets.test.ts`).
+  Display preferences live in localStorage (`live_fft.view` under the app's
+  storage prefix, through `readPref`, which falls back to the pre-rename
+  prefix once); everything else is `settings.live_fft`.
 
 ### Direct Streaming (fork addition)
 
@@ -1049,7 +1192,9 @@ close-gate defect described below, is in
   A merge replaces only its own chunk, so the rough streaming text degrades
   into the polished one in place and earlier chunks are untouched. On merge
   failure the chunk keeps the extras' outputs joined by newlines, is counted in
-  `failed_chunks`, and is retried on the next break; the failure is never put
+  `failed_chunks`, and is retried after the next break, once that break's own
+  merge has landed (one merge in flight at a time; a retry still pending at
+  stop is not run, and that chunk keeps its fallback text); the failure is never put
   in the text (with `DirectStreaming` that text is typed into the user's
   document) — the overlay badge and `MultiSttStreamChunkFailedEvent` carry it.
 - **Output, and the two ways the mode reaches the app.** The mode is built
@@ -1067,14 +1212,17 @@ close-gate defect described below, is in
   `is_caught_up()` so a revision never outruns the typewriter. `flush` at stop
   types the remainder and applies the trailing space / newline / auto-submit
   behaviour. `owns_typing` is carried on the session outcome so `MultiSttAction`
-  knows the text is already delivered and pastes nothing.
+  knows the text is already delivered and pastes nothing. The history row's
+  "Model 1" column is the primary's own session text either way.
 - **Overlay**: the mode's events carry `whole_session` (grow the card with the
   transcript) and `failed_chunks` (the badge). The card reports its height in
   24 px steps through `overlay_stream_text_height`, which `overlay.rs` adds to
   the streaming window's height, clamped to 70 % of the monitor — past that the
   card scrolls back, so the whole session stays readable, never hidden.
-  `whole_session` is set by exactly one emitter (`emit_composed_stream_text`, the
-  exclusive-sink path), so it _is_ "this payload is the mode's preview": the
+  `whole_session` is set by exactly one emitter (`emit_composed_stream_text`,
+  the coordinator's own path: the production view with an exclusive sink, or
+  the Multi Streaming STT debug view's merged block on `MERGE_BLOCK_SLOT`), so
+  it _is_ "this payload is the mode's preview": the
   overlay applies such an update as one block, stopping the typewriter first.
   A merge replaces text that is already on screen, and a character-by-character
   reveal could only retype its way back to every correction — one
@@ -1134,7 +1282,67 @@ of once per tick. Each publish carries the whole session's text (the same shape
 the plain streaming path already emits, bounded by `TICK` at ≤ 20/s, deduped
 against the last publish), and composes it into a fresh `String` per changed tick
 — O(session) memcpy at a few KB for a realistic session, which is not the cost
-here.
+here. The nested Multi Streaming STT mode below adds up to three short-lived
+waiter threads and up to three extra stream workers per recording.
+
+### Multi Streaming STT (experimental, fork addition)
+
+`multi_stt_streaming_multi_enabled`, nested under the streaming-first mode.
+Backend: `multi_streaming.rs`. It is not a second coordinator: it arms
+`multi_stt_stream`'s own coordinator with `TextSource::Live` instead of
+`ReDecode`, so every streaming-capable Multi-STT slot (models 2–4, in list
+order, via `streaming_slots`) runs its own live stream on stream slots 1–3
+beside the primary's slot 0. Each pause merges the models' _live_ texts for the
+chunk with one LLM call and no re-decode, and nothing is batch-decoded at stop
+either. A slot that cannot stream is skipped and not even preloaded; with no
+streaming-capable slot the mode refuses and the parent mode arms with batch
+extras.
+
+- **The module's own job is the extras' lifecycle.** One waiter thread per slot
+  (`wait_for_engine_and_start`, up to `LOAD_WAIT` = 120 s) leases the extra
+  engine once its preload finishes and opens the stream. Frames queue in
+  `StreamRouter` until then, so a late stream still hears the whole recording.
+- **Stop and cancel.** `finish_extras` finalizes those streams at stop,
+  strictly after the primary's finalize and before `multi_stt_stream::finish`;
+  `cancel` releases them.
+- **Display.** `multi_stt_streaming_multi_debug_view` makes the sink
+  non-exclusive and shows one overlay column per live model plus the merged
+  block on `MERGE_BLOCK_SLOT`; off, the overlay shows the parent mode's single
+  corrected text. The merge, the pauses, the result and the paste are
+  identical either way.
+
+### Recall (fork addition)
+
+The **Recall** page is a note vault that is a plain folder, with no database.
+Backend: `recall/` + `commands/recall.rs`. The root is
+`settings.recall.output_dir`, or `<app data>/recall` by default.
+
+- **Layout**: each note is `notes/<YYYY-MM-DD-slug>.md` with a small
+  `key: value` frontmatter (title, created, updated, tags, source, audio) above
+  a Markdown body. `index.json` is a disposable tag-count cache, rebuilt after
+  every plain-vault mutation; `audio/` holds copies of the recordings behind
+  notes.
+- **Save to Recall** on a History entry (`recall_save_transcription`) files the
+  text as a new note and copies its WAV into `audio/`.
+- **Dictate** (`recall/dictate.rs`, `recall_dictate_start/stop/cancel`) records
+  under the `recall_dictate` binding, batch-transcribes with the primary model
+  (post-processing when enabled; under 200 ms of speech is refused) and returns
+  the text to the editor's caret. Nothing is pasted and no History row or
+  statistics run is written; the cancel hotkey ends it through
+  `cancel_current_operation`.
+- **Insertion mode** (`recall/insertion.rs`) is an atomic flag the page arms
+  while the editor has focus. While armed, the Transcribe and Multi-STT hotkeys
+  emit `RecallInsertTextEvent` instead of pasting, write no History row, and
+  move their WAV into the vault's `audio/`.
+- **Encryption** (`recall/crypto.rs`, optional and reversible): the passphrase
+  goes through Argon2id (64 MiB, t=3, p=4; parameters, salt and a sealed
+  verifier in `vault.json`) to a master key held only in process memory while
+  unlocked. Every note and recording becomes `<name>.rcl` = magic ‖ per-file
+  XChaCha20-Poly1305 key wrapped by the master key ‖ nonce ‖ ciphertext.
+  Enabling writes a one-time plaintext backup to `backup/<timestamp>/` and
+  deletes `index.json`; disabling needs the passphrase, restores byte-identical
+  files and rebuilds the index. Changing the vault folder locks the session;
+  while locked, a vault lists only note ids and every write is refused.
 
 ### Single Instance Architecture
 
@@ -1147,7 +1355,8 @@ All user-facing strings must use i18next translations. oxlint enforces this thro
 Locale files load on demand: `src/i18n/index.ts` registers a small i18next
 backend over a non-eager `import.meta.glob`, so each `translation.json` is its
 own chunk imported the first time that language is used (eager bundling put
-all 24, 2.1 MB of JSON, into the startup chunk of both windows). `i18nReady`
+every locale — 26 today, about 2.8 MB of JSON — into the startup chunk of
+both windows). `i18nReady`
 resolves once the fallback bundle is loaded and the language is synced from
 settings; `main.tsx` and `overlay/main.tsx` wait for it before the first
 render so no raw keys are painted.
@@ -1165,13 +1374,19 @@ render so no raw keys are painted.
 > - `jsPlugins` is an alpha oxlint API. If it ever stops loading the plugin,
 >   oxlint fails the config outright (exit 1) rather than silently skipping the
 >   rule, so a regression surfaces in CI instead of leaking hardcoded strings.
-> - `src/` carries **no lint suppressions at all**, and it should stay that way.
+> - `src/` carries **no `i18next/no-literal-string` suppressions at all**, and
+>   it should stay that way. (The only suppressions are file-level `jsx-a11y`
+>   ones on custom widgets — `ui/Dialog.tsx`, `ui/Select.tsx`,
+>   `ui/Toaster.tsx`, `Sidebar.tsx`, `HotkeySidebar.tsx`,
+>   `onboarding/ModelCard.tsx` and the status-bar popovers — and one
+>   `oxc/approx-constant` on `liveFftPresets.ts`.)
 >   `// eslint-disable-next-line i18next/no-literal-string` is unreliable here
 >   anyway — oxlint honours it for JSX text on a single line but not when the
->   flagged element spans multiple lines. For literal data (file paths, version
->   strings) use a JSX expression container instead: `{"%APPDATA%/handy"}` or
->   ``{`v${version}`}``. It needs no suppression, works in every linter, and
->   reads as "data, not prose". See `settings/debug/DebugPaths.tsx`.
+>   flagged element spans multiple lines. For literal data (symbols, indices,
+>   units, version strings) use a JSX expression container instead: `{"—"}` or
+>   ``{`#${chunk.index}`}``. It needs no suppression, works in every linter, and
+>   reads as "data, not prose". See `overlay/RecordingOverlay.tsx` and
+>   `settings/live-mode/LiveModeSettings.tsx`.
 
 **Adding new text:**
 
@@ -1220,19 +1435,20 @@ ZER0 supports command-line parameters on all platforms for integration with scri
 
 **Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
 
-| Flag                              | Description                                                                                            |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `--toggle-transcription`          | Toggle recording on/off on a running instance                                                          |
-| `--toggle-post-process`           | Toggle recording with post-processing on/off                                                           |
-| `--cancel`                        | Cancel the current operation on a running instance                                                     |
-| `--start-hidden`                  | Launch without showing the main window (tray icon visible)                                             |
-| `--no-tray`                       | Launch without system tray (closing window quits the app)                                              |
-| `--debug`                         | Enable debug mode with verbose (Trace) logging                                                         |
-| `-f`, `--transcribe-file <WAV>`   | Headless: transcribe a mono WAV (16/24-bit PCM or 32-bit float, any rate) with the batch path and exit |
-| `--model <ID>`                    | Headless: model to use instead of the selected one                                                     |
-| `--device-index <N>`              | Headless: GPU device index for GGUF models                                                             |
-| `--list-devices`, `--list-models` | Headless: print GPU devices / installed models and exit                                                |
-| `--repeat <N>`, `--json`          | Headless: timing runs / machine-readable output                                                        |
+| Flag                                              | Description                                                                                                                                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--toggle-transcription`                          | Toggle recording on/off on a running instance                                                                                                                                              |
+| `--toggle-post-process`                           | Toggle recording with post-processing on/off                                                                                                                                               |
+| `--cancel`                                        | Cancel the current operation on a running instance                                                                                                                                         |
+| `--start-hidden`                                  | Launch without showing the main window (tray icon visible)                                                                                                                                 |
+| `--no-tray`                                       | Launch without system tray (closing window quits the app)                                                                                                                                  |
+| `--debug`                                         | Accepted for compatibility: logging is always captured at Trace (see [docs/LOGGING.md](docs/LOGGING.md)); it only shows in the startup log line and does not turn on the in-app debug mode |
+| `-f`, `--transcribe-file <WAV>`                   | Headless: transcribe a mono WAV (16/24-bit PCM or 32-bit float, any rate) with the batch path and exit                                                                                     |
+| `--model <ID>`                                    | Headless: model to use instead of the selected one                                                                                                                                         |
+| `--device-index <N>`                              | Headless: GPU device index for GGUF models                                                                                                                                                 |
+| `--list-devices`, `--list-models`                 | Headless: print GPU devices / installed models and exit                                                                                                                                    |
+| `--stream-chunk-ms <N>`, `--stream-att-right <N>` | Headless: replay the WAV through native streaming in N-ms feeds (1–10000), with an optional Nemotron right context                                                                         |
+| `--repeat <N>`, `--json`                          | Headless: benchmark runs (must be 3: warm-up discarded, runs 2–3 averaged) / machine-readable output                                                                                       |
 
 **Key design decisions:**
 

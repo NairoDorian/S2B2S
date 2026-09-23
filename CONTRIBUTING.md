@@ -78,12 +78,13 @@ Every change goes through one gate, and you set it up once:
 ```bash
 bun run hooks:install   # once per clone: points git at .githooks/
 bun run precommit       # the gate — identity, translations, lint, types,
-                        # format, and the repomix pack, in ~10 s
+                        # unit checks, format, and the repomix pack, in ~10 s
 bun run precommit:full  # the same, plus clippy and the Rust test suite
 ```
 
-CI runs the same checks, so a green `precommit` locally is a green CI. Use
-`precommit:full` before a release or a PR to a release branch.
+CI runs these checks plus `check:model-languages` (and the Rust suite), so run
+`precommit:full` and `bun run check:model-languages` before a release or a PR
+to a release branch.
 
 Two house rules come with it:
 
@@ -116,15 +117,15 @@ ZER0 follows a clean architecture pattern:
 - `llm_client.rs` - LLM API client for post-processing and multi-STT merge
 - `settings.rs` - Application settings management (includes multi-STT settings)
 
-**Frontend (React/TypeScript - `src/`):**
+**Frontend (Solid 2/TypeScript - `src/`):**
 
 - `App.tsx` - Main application component
-- `components/` - React UI components
+- `components/` - Solid UI components
   - `settings/multi-stt/MultiSttSettings.tsx` - Multi-STT configuration UI
-- `hooks/` - Reusable React hooks
+- `hooks/` - Reusable Solid hooks (`useSettings`, `useOsType`)
 - `lib/types/events.ts` - Shared TypeScript event payload types
 - `stores/settingsStore.ts` - Settings store; every settings key needs a `settingUpdaters` entry
-- `stores/modelStore.ts` - Model store with load/unload for extra models
+- `stores/modelStore.ts` - Model store: list, select, download, cancel and delete models
 
 For more details, see the Architecture section in [README.md](README.md) or [AGENTS.md](AGENTS.md).
 
@@ -287,11 +288,14 @@ In your PR description, please include:
 - Add doc comments for public APIs
 - Handle errors explicitly (avoid unwrap in production code)
 
-**TypeScript/React:**
+**TypeScript/Solid 2:**
 
 - Use TypeScript strictly, avoid `any` types
-- Follow React hooks best practices
-- Use functional components
+- Never destructure props in a component body: the body runs once, so a
+  destructured prop is a mount-time snapshot
+- Read reactive values inside JSX bindings, not in component bodies
+- Use the `createEffect(compute, apply)` form and return the cleanup from
+  `apply`; use `Dynamic` for reactively-switched components
 - Keep components small and focused
 - Use Tailwind CSS for styling
 
@@ -312,13 +316,15 @@ In your PR description, please include:
 - Test with different audio devices
 - Try various transcription scenarios
 
-**Automated checks (CI runs the same):**
+**Automated checks (CI runs these):**
 
 ```bash
 bun run typecheck            # tsc
+bun run test:unit            # bun test over *.test.ts under src/
 bun run lint                 # oxlint + i18next/no-literal-string
 bun run format:check         # prettier + cargo fmt
 bun run check:translations   # locale key parity with en
+bun run check:model-languages # catalog language codes map to the UI's languages
 cd src-tauri && cargo clippy --all-targets && cargo test --all-targets
 ```
 

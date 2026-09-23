@@ -67,7 +67,6 @@ This fork adds **Multi-STT** — run up to four speech-to-text models simultaneo
 - **Speech stats in the overlay**: speaking/paused indicator, a timer that only runs while you talk, and live words-per-minute with streaming models
 - **Direct streaming paste**: type the live transcript character by character into the target app as it is committed, with a speed control. Plain transcription only — with post-processing or Multi-STT the live stream is shown in the Live overlay as a preview and the processed result is pasted once with Ctrl+V
 - **Raw uncompressed audio saving**: keep recordings at the captured sample rate and format (32-bit float, 24-bit or 16-bit PCM) before resampling and VAD filtering, with no latency impact
-- **Windows real-time low latency**: high priority process class, EcoQoS opt-out, 1 ms multimedia timer resolution, MMCSS capture thread scheduling, and hardware buffer size minimization
 - **CUDA GPU backend** on Windows x86_64 and Linux (via the `NairoDorian/transcribe.cpp` fork) instead of Vulkan; `bun run build:fast` compiles kernels for your GPU only
 - **Status-bar model controls**: switch models, pick a quantization (with an in-place benchmark against your latest recording), and choose a native streaming latency preset
 - **History tools**: delete all recordings, vacuum the database, open the models folder
@@ -103,7 +102,7 @@ ZER0 is built as a Tauri application combining:
   - `cpal`: Cross-platform audio I/O
   - `earshot`: pure-Rust voice activity detection
   - `nnnoiseless`: pure-Rust RNNoise noise suppression (optional)
-  - `rdev`: Global keyboard shortcuts and system events
+  - `handy-keys` / `tauri-plugin-global-shortcut`: Global keyboard shortcuts
   - `rubato`: Audio resampling
 
 ## Sponsors (Upstream)
@@ -330,7 +329,7 @@ We're actively working on several features and improvements. Contributions and f
 - Cleanup and refactor settings system which is becoming bloated and messy
 - Implement better abstractions for settings management
 
-Debug logging (file logs with a configurable level — see [docs/LOGGING.md](docs/LOGGING.md)) and typed Tauri command bindings (tauri-specta) have shipped; the ideas parked there are done.
+Debug logging (durable per-session file logs, always captured at Trace — see [docs/LOGGING.md](docs/LOGGING.md)) and typed Tauri command bindings (tauri-specta) have shipped; the ideas parked there are done.
 
 ## Release Integrity
 
@@ -374,15 +373,18 @@ The typical paths are:
 
 - **macOS**: `~/Library/Application Support/com.nairodorian.zer0/`
 - **Windows**: `C:\Users\{username}\AppData\Roaming\com.nairodorian.zer0\`
-- **Linux**: `~/.config/com.nairodorian.zer0/`
+- **Linux**: `~/.local/share/com.nairodorian.zer0/` (under `$XDG_DATA_HOME` when it is set)
 
 #### Step 2: Create Models Directory
 
 Inside your app data directory, create a `models` folder if it doesn't already exist:
 
 ```bash
-# macOS/Linux
+# macOS
 mkdir -p ~/Library/Application\ Support/com.nairodorian.zer0/models
+
+# Linux
+mkdir -p ~/.local/share/com.nairodorian.zer0/models
 
 # Windows (PowerShell)
 New-Item -ItemType Directory -Force -Path "$env:APPDATA\com.nairodorian.zer0\models"

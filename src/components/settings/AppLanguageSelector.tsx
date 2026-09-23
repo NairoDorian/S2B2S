@@ -14,7 +14,6 @@ interface AppLanguageSelectorProps {
 }
 
 export const AppLanguageSelector = (props: AppLanguageSelectorProps) => {
-  const { descriptionMode = "tooltip", grouped = false } = props;
   const { t, i18n } = useTranslation();
   const { settings, updateSetting } = useSettings();
 
@@ -36,8 +35,8 @@ export const AppLanguageSelector = (props: AppLanguageSelectorProps) => {
     <SettingContainer
       title={t("appLanguage.title")}
       description={t("appLanguage.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode ?? "tooltip"}
+      grouped={props.grouped ?? false}
     >
       <Dropdown
         options={languageOptions}

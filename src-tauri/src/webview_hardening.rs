@@ -1,8 +1,11 @@
 // Adapted from AivoRelay (MaxITService/AIVORelay), MIT License.
 // Source: src-tauri/src/webview_hardening.rs — Webview Hardening (2026-06-19).
 
-#[cfg(all(target_os = "windows", not(debug_assertions)))]
-pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
+/// Disable the WebView2 browser accelerator keys (F5, F6, Ctrl+F, F12, …) of
+/// `window`, in every build profile. The main window calls this directly; the
+/// overlays go through the release-only [`disable_browser_accelerator_keys`].
+#[cfg(target_os = "windows")]
+pub fn disable_accelerators_now(window: &tauri::WebviewWindow) {
     let label = window.label().to_string();
     if let Err(err) = window.with_webview(move |webview| unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
@@ -38,6 +41,11 @@ pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
             err
         );
     }
+}
+
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+pub fn disable_browser_accelerator_keys(window: &tauri::WebviewWindow) {
+    disable_accelerators_now(window);
 }
 
 #[cfg(any(not(target_os = "windows"), debug_assertions))]

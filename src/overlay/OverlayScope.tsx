@@ -1,11 +1,11 @@
-/** @jsxImportSource @solidjs/web */
-// ^ This file is Solid; see the note in `main.tsx` for why the pragma is
-// per-file rather than tree-wide.
 import { createEffect, createMemo } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { FftLoudnessMode } from "@/bindings";
 import {
+  PEAK_HOLD_DECAY_PER_MS,
   cssColor,
+  decayCeiling,
+  decayStepMs,
   maxPerColumn,
   valueToUnit,
   type ValueScale,
@@ -17,6 +17,8 @@ import {
   circularSignalAt,
   spectrumViewH,
   spectrumViewW,
+  waveEnvelope,
+  waveEnvelopeApplies,
   waveViewH,
   waveViewW,
 } from "@/lib/overlayScope";
@@ -29,7 +31,7 @@ import {
 // mirroring, peak hold, the waveform window and its display gain. This file
 // only maps values to pixels.
 //
-// Phase 2 of docs/PLAN_SOLIDJS_2.md made this Solid. Everything below the poll
+// The React → Solid 2 migration (see CHANGELOG) made this Solid. Everything below the poll
 // loop is framework-free and ports verbatim — the decode, the geometry, the
 // canvas maths — because `live_fft/scope.rs`'s
 // `scope_bins_equal_the_page_pipeline_for_the_same_settings` asserts the bins
@@ -42,12 +44,8 @@ const HEADER_WORDS = 8;
 const FLAG_SILENT = 1;
 const FLAG_ACTIVE = 2;
 const MODES: FftLoudnessMode[] = ["off", "db", "db_normalized"];
-/** Linear auto-range: how fast the spectrum ceiling follows a quieter signal. */
-const CEILING_DECAY = 0.995;
 /** Waveform auto-gain: how fast its ceiling follows a quieter signal. */
 const WAVE_CEILING_DECAY = 0.97;
-/** Peak-hold fall per frame, in units of the drawing range (as on the page). */
-const PEAK_DECAY = 0.0045;
 
 interface ScopeFrame {
   seq: number;
@@ -57,6 +55,8 @@ interface ScopeFrame {
   dbRange: number;
   bins: Float32Array;
   wave: Float32Array;
+  /** performance.now() when the reply carrying it arrived. */
+  receivedAt: number;
 }
 
 const decode = (buffer: ArrayBuffer): ScopeFrame | null => {
@@ -76,6 +76,77 @@ const decode = (buffer: ArrayBuffer): ScopeFrame | null => {
     dbRange: floats[5],
     bins: new Float32Array(buffer, binsOffset, binsLength),
     wave: new Float32Array(buffer, waveOffset, waveLength),
+    receivedAt: performance.now(),
+  };
+};
+
+// ---- One shared poll --------------------------------------------------------
+//
+// The block view and the circular-background view (two OverlayScope
+// instances) draw the same frame, so one poll serves both: each instance
+// subscribes with its period and the feed polls at the shortest one, one
+// request in flight. `knownSeq` makes the backend answer an unchanged frame
+// with its 32-byte header alone (no copy of the bins and samples), which the
+// feed reads as "nothing new" and answers with the frame it already holds.
+
+type ScopeListener = (frame: ScopeFrame | null) => void;
+
+const scopeFeed = {
+  listeners: new Map<ScopeListener, number>(),
+  timer: null as ReturnType<typeof setTimeout> | null,
+  inFlight: false,
+  knownSeq: null as number | null,
+  last: null as ScopeFrame | null,
+};
+
+const feedPeriod = (): number => {
+  let period = Infinity;
+  for (const p of scopeFeed.listeners.values()) period = Math.min(period, p);
+  return Number.isFinite(period) ? period : 1000;
+};
+
+const feedTick = async () => {
+  scopeFeed.timer = null;
+  if (scopeFeed.listeners.size === 0 || scopeFeed.inFlight) return;
+  scopeFeed.inFlight = true;
+  try {
+    const known = scopeFeed.knownSeq;
+    const buffer = await invoke<ArrayBuffer>("overlay_scope_frame", {
+      knownSeq: known,
+    });
+    if (scopeFeed.listeners.size === 0) return;
+    const seq =
+      buffer.byteLength >= 4 ? new Uint32Array(buffer, 0, 1)[0] : undefined;
+    if (known === null || seq !== known) {
+      const frame = decode(buffer);
+      scopeFeed.last = frame;
+      scopeFeed.knownSeq = frame ? frame.seq : null;
+    }
+    for (const listener of scopeFeed.listeners.keys()) {
+      listener(scopeFeed.last);
+    }
+  } catch {
+    // The command only fails while the app is shutting down.
+  } finally {
+    scopeFeed.inFlight = false;
+    if (scopeFeed.listeners.size > 0 && scopeFeed.timer === null) {
+      scopeFeed.timer = setTimeout(feedTick, feedPeriod());
+    }
+  }
+};
+
+const subscribeScope = (listener: ScopeListener, period: number) => {
+  scopeFeed.listeners.set(listener, period);
+  if (scopeFeed.timer === null && !scopeFeed.inFlight) void feedTick();
+  return () => {
+    scopeFeed.listeners.delete(listener);
+    if (scopeFeed.listeners.size === 0) {
+      if (scopeFeed.timer !== null) clearTimeout(scopeFeed.timer);
+      scopeFeed.timer = null;
+      // A later recording restarts the scope's sequence: forget this one.
+      scopeFeed.knownSeq = null;
+      scopeFeed.last = null;
+    }
   };
 };
 
@@ -193,8 +264,6 @@ export function OverlayScope(props: OverlayScopeProps) {
     if (!sctx && !wctx && !cctx) return;
 
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let inFlight = false;
     let paintedKey = "";
     let colors = readColors();
     let colorsAt = 0;
@@ -203,7 +272,15 @@ export function OverlayScope(props: OverlayScopeProps) {
     let columns = new Float32Array(0);
     let held = new Float32Array(0);
     let heldSeq = -1;
+    let heldAt = 0;
+    let ceilingAt = 0;
     let columnsHeld = new Float32Array(0);
+    let waveMin = new Float32Array(0);
+    let waveMax = new Float32Array(0);
+    // The intensity-scaled copies the spectrum paints from, reused across
+    // frames like `columns` and reallocated only when the column count changes.
+    let scaledValues = new Float32Array(0);
+    let scaledHeld = new Float32Array(0);
     let circPooled = new Float32Array(0);
     const period = Math.max(16, Math.round(1000 / Math.max(1, props.rateHz)));
 
@@ -227,13 +304,74 @@ export function OverlayScope(props: OverlayScopeProps) {
         ceiling,
       };
       if (frame.mode === "off") {
+        // Per millisecond, like the page, so the range relaxes at the same
+        // speed whatever the update rate.
         let max = 0;
         for (let i = 0; i < n; i++) if (bins[i] > max) max = bins[i];
-        ceiling = Math.max(max, ceiling * CEILING_DECAY, 1e-6);
+        const dt = decayStepMs(frame.receivedAt, ceilingAt);
+        ceiling = decayCeiling(ceiling, max, dt);
+        ceilingAt = frame.receivedAt;
         scale.ceiling = ceiling;
       }
       for (let i = 0; i < n; i++) unitsCache[i] = valueToUnit(bins[i], scale);
       return unitsCache;
+    };
+
+    /**
+     * Trace `samples` across [x0, x0 + width] about `mid`, with the gain
+     * `gainFor(peak)` returns for their largest |sample|. With two or more
+     * samples per pixel column it draws each column's min…max span as one
+     * vertical stroke joined to the next (the pixels a per-sample polyline
+     * covers, at a fraction of the path length); otherwise the per-sample
+     * polyline. The envelope pass also yields the peak, so the samples are
+     * read once.
+     */
+    const traceWave = (
+      ctx: CanvasRenderingContext2D,
+      samples: Float32Array,
+      x0: number,
+      width: number,
+      mid: number,
+      gainFor: (peak: number) => number,
+    ) => {
+      const n = samples.length;
+      const cols = Math.max(1, Math.floor(width));
+      ctx.beginPath();
+      if (!waveEnvelopeApplies(n, cols)) {
+        let peak = 0;
+        for (let i = 0; i < n; i++) {
+          const a = Math.abs(samples[i]);
+          if (a > peak) peak = a;
+        }
+        const gain = gainFor(peak);
+        const step = width / (n - 1);
+        ctx.moveTo(x0, mid - samples[0] * gain);
+        for (let i = 1; i < n; i++) {
+          ctx.lineTo(x0 + i * step, mid - samples[i] * gain);
+        }
+        return;
+      }
+      if (waveMin.length < cols) {
+        waveMin = new Float32Array(cols);
+        waveMax = new Float32Array(cols);
+      }
+      const gain = gainFor(waveEnvelope(samples, cols, waveMin, waveMax));
+      const colW = width / cols;
+      // Enter each column from the end nearer the previous one, so the
+      // joins stay short, as the polyline's would.
+      let lastY = mid;
+      for (let x = 0; x < cols; x++) {
+        const cx = x0 + (x + 0.5) * colW;
+        const yHi = mid - waveMax[x] * gain;
+        const yLo = mid - waveMin[x] * gain;
+        const hiFirst = Math.abs(yHi - lastY) <= Math.abs(yLo - lastY);
+        const first = hiFirst ? yHi : yLo;
+        const second = hiFirst ? yLo : yHi;
+        if (x === 0) ctx.moveTo(cx, first);
+        else ctx.lineTo(cx, first);
+        ctx.lineTo(cx, second);
+        lastY = second;
+      }
     };
 
     const paintSpectrum = (frame: ScopeFrame | null) => {
@@ -255,15 +393,19 @@ export function OverlayScope(props: OverlayScopeProps) {
       }
       const units = frameUnits(frame);
       const n = units.length;
-      // Peak hold advances once per new frame, like the page's.
+      // Peak hold advances once per new frame and falls per millisecond,
+      // like the page's.
       if (held.length !== n) {
         held = new Float32Array(n);
         heldSeq = -1;
       }
       if (frame.seq !== heldSeq) {
         heldSeq = frame.seq;
+        const fall =
+          PEAK_HOLD_DECAY_PER_MS * decayStepMs(frame.receivedAt, heldAt);
+        heldAt = frame.receivedAt;
         for (let i = 0; i < n; i++) {
-          const fallen = held[i] - PEAK_DECAY;
+          const fallen = held[i] - fall;
           held[i] = units[i] > fallen ? units[i] : fallen;
         }
       }
@@ -281,8 +423,12 @@ export function OverlayScope(props: OverlayScopeProps) {
       // display units so the gain-style alpha stays well-behaved.
       const sigScale = props.config.spectrum_signal_scale;
       const scaled = (v: number) => Math.min(1, v * sigScale);
-      const scaledValues = new Float32Array(values.length);
-      const scaledHeld = new Float32Array(heldValues.length);
+      if (scaledValues.length !== values.length) {
+        scaledValues = new Float32Array(values.length);
+      }
+      if (scaledHeld.length !== heldValues.length) {
+        scaledHeld = new Float32Array(heldValues.length);
+      }
       for (let i = 0; i < values.length; i++)
         scaledValues[i] = scaled(values[i]);
       for (let i = 0; i < heldValues.length; i++)
@@ -365,8 +511,9 @@ export function OverlayScope(props: OverlayScopeProps) {
     // mirrored about their centre and joined end-to-end (`[p, reversed(p)]`
     // — symmetric by construction), and that ONE mirrored signal is laid
     // over the WHOLE circle — D = 2·p points across a full 2π sweep,
-    // starting and ending at the top of the ring (12 o'clock), where the
-    // spectrum's low edge meets its mirrored tail. The mirrored signal's
+    // starting and ending half a step either side of 3 o'clock (the right of
+    // the ring, canvas angle 0), where the spectrum's low edge meets its
+    // mirrored tail. The mirrored signal's
     // own symmetry is what closes the loop without a seam. The two paths
     // ±p ride at radius 1+p (outer) and 1-p (inner). The gain is a fixed
     // scale — no dynamic normalisation — so the loop breathes with the
@@ -504,32 +651,28 @@ export function OverlayScope(props: OverlayScopeProps) {
         const samples = frame.wave;
         const n = samples.length;
         if (n >= 2) {
-          // Track the wave ceiling from the raw analyser samples — same
-          // source the linear waveform view reads — so the trace fills the
-          // ring's horizontal span for the loudest recent swing.
-          let peak = 0;
-          for (let i = 0; i < n; i++) {
-            const a = Math.abs(samples[i]);
-            if (a > peak) peak = a;
-          }
-          const waveCeil = Math.max(peak, cfg.wave_gain_floor);
-          // The ring's usable horizontal span: from inner-radius left edge to
-          // outer-radius right edge at the centre line. The inner radius is
-          // S * (1 - maxSignal); use the full diameter so the trace touches
-          // the ring's left and right extremes.
+          // The ring's usable horizontal span: the trace runs ±0.85·S about
+          // the centre, so it stays inside the base ring rather than touching
+          // its left and right extremes.
           const innerR = S * 0.15; // keep the trace inside the loops
           const span = S - innerR;
-          const gain = (span / waveCeil) * cfg.wave_signal_scale;
           ctx.strokeStyle = color;
           ctx.globalAlpha = 0.85;
           ctx.lineWidth = 1;
           ctx.lineJoin = "round";
-          ctx.beginPath();
-          const step = (2 * span) / (n - 1);
-          ctx.moveTo(cx - span, cy - samples[0] * gain);
-          for (let i = 1; i < n; i++) {
-            ctx.lineTo(cx - span + i * step, cy - samples[i] * gain);
-          }
+          // Track the wave ceiling from the raw analyser samples — same
+          // source the linear waveform view reads — so the trace fills the
+          // ring's horizontal span for the loudest recent swing.
+          traceWave(
+            ctx,
+            samples,
+            cx - span,
+            2 * span,
+            cy,
+            (peak) =>
+              (span / Math.max(peak, cfg.wave_gain_floor)) *
+              cfg.wave_signal_scale,
+          );
           ctx.stroke();
           ctx.globalAlpha = 1;
         }
@@ -553,30 +696,19 @@ export function OverlayScope(props: OverlayScopeProps) {
         wctx.globalAlpha = 1;
         return;
       }
-      const samples = frame.wave;
-      const n = samples.length;
       // Auto-gain: the trace fills the box for the loudest recent swing and
       // relaxes as the signal quiets, never amplifying below the floor.
       // The intensity scale multiplies the raw samples before the peak search,
       // so the trace swings taller without changing the view's pixel width.
       const wScale = props.config.wave_signal_scale;
-      let peak = 0;
-      for (let i = 0; i < n; i++) {
-        const a = Math.abs(samples[i] * wScale);
-        if (a > peak) peak = a;
-      }
-      waveCeiling = Math.max(
-        peak,
-        waveCeiling * WAVE_CEILING_DECAY,
-        props.config.wave_gain_floor,
-      );
-      const gain = (mid - 1) / waveCeiling;
-      const step = w / (n - 1);
-      wctx.beginPath();
-      wctx.moveTo(0, mid - samples[0] * wScale * gain);
-      for (let i = 1; i < n; i++) {
-        wctx.lineTo(i * step, mid - samples[i] * wScale * gain);
-      }
+      traceWave(wctx, frame.wave, 0, w, mid, (peak) => {
+        waveCeiling = Math.max(
+          peak * Math.abs(wScale),
+          waveCeiling * WAVE_CEILING_DECAY,
+          props.config.wave_gain_floor,
+        );
+        return ((mid - 1) / waveCeiling) * wScale;
+      });
       wctx.stroke();
     };
 
@@ -606,39 +738,29 @@ export function OverlayScope(props: OverlayScopeProps) {
       }
     };
 
-    const tick = async () => {
+    // Called by the shared feed on every poll, with the frame it holds (an
+    // unchanged one when the reply was header-only). The key also carries
+    // the props, so a ready/quiet/config change repaints on the next poll.
+    const onFrame = (frame: ScopeFrame | null) => {
       if (disposed) return;
-      if (!inFlight) {
-        inFlight = true;
-        try {
-          const buffer = await invoke<ArrayBuffer>("overlay_scope_frame");
-          if (disposed) return;
-          const frame = decode(buffer);
-          const live = frame?.active ? frame : null;
-          const c = props.config;
-          const key = `${live?.seq ?? -1}:${props.ready}:${props.quiet}:${c.spectrum_style}:${c.spectrum_mirror}:${c.peak_hold}:${c.wave_gain_floor}:${c.spectrum_signal_scale}:${c.wave_signal_scale}:${c.circular_signal_scale}:${c.wave_inside_circular}:${c.circular_show_inner}:${c.show_circular}:${c.circular_bars}:${c.circular_bins}:${c.circular_gain}:${c.circular_floor}`;
-          if (key !== paintedKey) {
-            paintedKey = key;
-            paint(live);
-          }
-        } catch {
-          // The command only fails while the app is shutting down.
-        } finally {
-          inFlight = false;
-        }
+      const live = frame?.active ? frame : null;
+      const c = props.config;
+      const key = `${live?.seq ?? -1}:${props.ready}:${props.quiet}:${c.spectrum_style}:${c.spectrum_mirror}:${c.peak_hold}:${c.wave_gain_floor}:${c.spectrum_signal_scale}:${c.wave_signal_scale}:${c.circular_signal_scale}:${c.wave_inside_circular}:${c.circular_show_inner}:${c.show_circular}:${c.circular_bars}:${c.circular_bins}:${c.circular_gain}:${c.circular_floor}`;
+      if (key !== paintedKey) {
+        paintedKey = key;
+        paint(live);
       }
-      if (!disposed) timer = setTimeout(tick, period);
     };
 
     paint(null);
-    tick();
+    const unsubscribe = subscribeScope(onFrame, period);
 
     // Returned, not registered with `onCleanup`: in Solid 2 the effect's
     // apply returns its own teardown, and it is the only way to tie it to this
     // run of the loop rather than to the component.
     return () => {
       disposed = true;
-      if (timer !== null) clearTimeout(timer);
+      unsubscribe();
     };
   });
 

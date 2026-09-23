@@ -59,11 +59,11 @@ export const HelpSettings = () => {
     "idle",
   );
 
-  // A QuickHelp banner or the hotkey sidebar opened Help at a section.
+  // A QuickHelp banner opened Help at a section. Tracked, so an `openHelp`
+  // issued while this page is already showing is honoured too.
   createEffect(
-    () => undefined,
-    () => {
-      const anchor = pendingHelpAnchor();
+    () => pendingHelpAnchor(),
+    (anchor) => {
       if (!anchor) return;
       const frame = window.requestAnimationFrame(() => {
         scrollToAnchor(anchor);

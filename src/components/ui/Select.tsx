@@ -148,19 +148,21 @@ export const Select = (props: SelectProps): JSX.Element => {
     ];
   });
 
+  // Only the compute tracks: the reads have to happen there, or the effect
+  // runs once at mount and never again.
   createEffect(
-    () => undefined,
-    () => {
-      setFocusedIndex(items().findIndex((item) => !item.disabled));
+    () => items(),
+    (list) => {
+      setFocusedIndex(list.findIndex((item) => !item.disabled));
     },
   );
 
   createEffect(
-    () => undefined,
-    () => {
-      if (!isOpen() || focusedIndex() < 0) return;
+    () => [isOpen(), focusedIndex()] as const,
+    ([open, index]) => {
+      if (!open || index < 0) return;
       listRef
-        ?.querySelector(`[data-index="${focusedIndex()}"]`)
+        ?.querySelector(`[data-index="${index}"]`)
         ?.scrollIntoView({ block: "nearest" });
     },
   );
@@ -293,13 +295,14 @@ export const Select = (props: SelectProps): JSX.Element => {
     if (!isOpen()) openMenu("first");
   };
 
-  const showClear =
+  const showClear = () =>
     isClearable() &&
     selectedOption() !== null &&
     !props.disabled &&
     !props.isLoading;
 
-  const controlClass = `flex min-h-10 w-full items-center rounded-md border text-sm transition-all duration-150 ${props.disabled ? "cursor-not-allowed border-mid-gray/80 bg-mid-gray/10" : `cursor-text ${focused() || isOpen() ? "border-accent bg-accent/20 ring-1 ring-accent" : "border-mid-gray/80 bg-mid-gray/10 hover:border-accent hover:bg-accent/12"}`}`;
+  const controlClass = () =>
+    `flex min-h-10 w-full items-center rounded-md border text-sm transition-all duration-150 ${props.disabled ? "cursor-not-allowed border-mid-gray/80 bg-mid-gray/10" : `cursor-text ${focused() || isOpen() ? "border-accent bg-accent/20 ring-1 ring-accent" : "border-mid-gray/80 bg-mid-gray/10 hover:border-accent hover:bg-accent/12"}`}`;
   const indicatorClass =
     "flex p-2 transition-colors duration-150 disabled:cursor-not-allowed";
 
@@ -313,7 +316,7 @@ export const Select = (props: SelectProps): JSX.Element => {
     >
       <div
         role="presentation"
-        class={controlClass}
+        class={controlClass()}
         onMouseDown={handleControlMouseDown}
       >
         <div class="relative min-w-0 flex-1 px-2.5 py-1.5">
@@ -358,7 +361,7 @@ export const Select = (props: SelectProps): JSX.Element => {
           />
         </div>
 
-        {showClear && (
+        {showClear() && (
           <button
             type="button"
             aria-hidden="true"

@@ -127,6 +127,7 @@ mod imp {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
+    use tauri::Emitter;
 
     /// How often the monitor thread polls.
     const POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -135,7 +136,7 @@ mod imp {
     const SUSTAIN_THRESHOLD: Duration = Duration::from_secs(3);
 
     #[link(name = "Carbon", kind = "framework")]
-    extern "C" {
+    unsafe extern "C" {
         // Carbon HIToolbox; Boolean is an unsigned char
         fn IsSecureEventInputEnabled() -> u8;
     }

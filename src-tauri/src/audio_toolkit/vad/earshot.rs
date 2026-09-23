@@ -1,8 +1,10 @@
 use anyhow::Result;
 
 use super::{Hysteresis, VadFrame, VoiceActivityDetector};
+use crate::audio_toolkit::constants;
 
-pub const EARSHOT_FRAME_SAMPLES: usize = 256;
+/// Earshot's fixed prediction size: 256 samples, 16 ms at 16 kHz.
+pub const EARSHOT_FRAME_SAMPLES: usize = constants::VAD_FRAME_SAMPLES;
 
 /// Pure-Rust Earshot VAD adapter.
 ///

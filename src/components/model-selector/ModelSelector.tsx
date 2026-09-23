@@ -11,7 +11,7 @@ import type {
 import { getTranslatedModelName } from "../../lib/utils/modelTranslation";
 import { useModelStore, selectModel } from "../../stores/modelStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import ModelStatusButton from "./ModelStatusButton";
+import ModelStatusButton, { type ModelStatus } from "./ModelStatusButton";
 import ModelDropdown from "./ModelDropdown";
 import DownloadProgressDisplay from "./DownloadProgressDisplay";
 import StatusBarPopover from "./StatusBarPopover";
@@ -28,15 +28,6 @@ import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
 import { ModelStateEvent } from "@/lib/types/events";
 import type { JSX } from "@solidjs/web";
 
-type ModelStatus =
-  | "ready"
-  | "loading"
-  | "downloading"
-  | "verifying"
-  | "error"
-  | "unloaded"
-  | "none";
-
 type StatusPanel = "model" | "quant" | "latency" | "backend";
 
 interface ModelSelectorProps {
@@ -45,7 +36,6 @@ interface ModelSelectorProps {
 
 const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   const { t } = useTranslation();
-  const { onError } = props;
   const modelStore = useModelStore();
   const settingsStore = useSettingsStore();
 
@@ -86,20 +76,27 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
         setModelStatus("none");
         return;
       }
-      const checkStatus = async () => {
-        try {
-          const statusResult = await commands.getTranscriptionModelStatus();
+      // A reply for the previous model that lands after a switch must not
+      // overwrite the status of the new one.
+      let cancelled = false;
+      commands
+        .getTranscriptionModelStatus()
+        .then((statusResult) => {
+          if (cancelled) return;
           if (statusResult.status === "ok") {
             setModelStatus(
               statusResult.data === current ? "ready" : "unloaded",
             );
           }
-        } catch {
+        })
+        .catch(() => {
+          if (cancelled) return;
           setModelStatus("error");
-          setModelError("Failed to check model status");
-        }
+          setModelError(t("modelSelector.errors.checkStatusFailed"));
+        });
+      return () => {
+        cancelled = true;
       };
-      checkStatus();
     },
   );
 
@@ -122,7 +119,7 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
               break;
             case "loading_failed":
               setModelStatus("error");
-              setModelError(error || "Failed to load model");
+              setModelError(error || t("modelSelector.errors.loadFailed"));
               setPendingModelId(null);
               break;
             case "unloaded":
@@ -262,8 +259,8 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     if (!success) {
       setPendingModelId(null);
       setModelStatus("error");
-      setModelError("Failed to switch model");
-      onError?.("Failed to switch model");
+      setModelError(t("modelSelector.errors.switchFailed"));
+      props.onError?.(t("modelSelector.errors.switchFailed"));
     }
   };
 
@@ -275,8 +272,8 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       if (!success) {
         setPendingModelId(null);
         setModelStatus("error");
-        setModelError("Failed to switch model");
-        onError?.("Failed to switch model");
+        setModelError(t("modelSelector.errors.switchFailed"));
+        props.onError?.(t("modelSelector.errors.switchFailed"));
       }
     });
   };
@@ -496,7 +493,7 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           </div>
         </StatusBarPopover>
       </Show>
-      <Show when={latencyKind}>
+      <Show when={latencyKind()}>
         <StatusBarPopover
           open={openPanel() === "latency"}
           onToggle={() => togglePanel("latency")}

@@ -204,6 +204,12 @@ export const commands = {
 	/**
 	 *  Persist the llama settings. A running server keeps its current command
 	 *  line until it is restarted; the UI offers that explicitly.
+	 * 
+	 *  Deliberately synchronous: the server fields save on every keystroke, and
+	 *  running on the main thread keeps those writes in the order they were typed.
+	 *  Only the provider relink, which can probe a socket for ~1 s, goes to the
+	 *  blocking pool; it re-reads the settings it writes (see
+	 *  `LlamaServerManager::relink_custom_provider`), so it cannot undo an edit.
 	 */
 	changeLlamaSettings: (settings: LlamaSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_llama_settings", { settings })),
 	/**  The command line the current settings would launch, for the page preview. */
@@ -242,7 +248,7 @@ export const commands = {
 	 *  attached, so without the file the panel's history would depend entirely on
 	 *  when the page happened to be open. The tail read is capped at 512 KiB —
 	 *  plenty for any realistic line count at ~100 bytes a line, and it keeps a
-	 *  500 MB rotated log from being read whole.
+	 *  log near its 10 MB rotation size from being read whole.
 	 */
 	getRecentLogs: (limit: number) => typedError<string, string>(__TAURI_INVOKE("get_recent_logs", { limit })),
 	/**
@@ -306,6 +312,10 @@ export const commands = {
 	setActiveModel: (modelId: string) => typedError<null, string>(__TAURI_INVOKE("set_active_model", { modelId })),
 	getCurrentModel: () => typedError<string, string>(__TAURI_INVOKE("get_current_model")),
 	getTranscriptionModelStatus: () => typedError<string | null, string>(__TAURI_INVOKE("get_transcription_model_status")),
+	/**
+	 *  Returns true when no primary model is loaded (not whether a load is in
+	 *  progress).
+	 */
 	isModelLoading: () => typedError<boolean, string>(__TAURI_INVOKE("is_model_loading")),
 	/**
 	 *  Re-scan local sources (custom models dir + shared HF cache) for models added
@@ -458,14 +468,15 @@ export const commands = {
 	recallDisableEncryption: (passphrase: string) => typedError<number, string>(__TAURI_INVOKE("recall_disable_encryption", { passphrase })),
 	/**
 	 *  Persist the page's parameters and hand them to the running analysis,
-	 *  which applies them on its next frame. A threading-mode change restarts
-	 *  the session, which can reopen the microphone, so the hand-off runs on a
-	 *  blocking thread.
+	 *  which applies them on its next frame. A threading-mode or
+	 *  voice-detection (`show_vad`) change restarts the session, which can
+	 *  reopen the microphone, so the hand-off runs on a blocking thread.
 	 */
 	changeLiveFftSettings: (settings: LiveFftSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_live_fft_settings", { settings })),
 	/**
 	 *  Start the analyser: opens the microphone (a device open can block, so
-	 *  this stays off the webview thread) and streams `LiveFftFrameEvent`s.
+	 *  this stays off the webview thread). Frames are then polled with
+	 *  `live_fft_frame`.
 	 */
 	liveFftStart: () => typedError<null, string>(__TAURI_INVOKE("live_fft_start")),
 	liveFftStop: () => typedError<null, string>(__TAURI_INVOKE("live_fft_stop")),
@@ -474,6 +485,13 @@ export const commands = {
 	liveFftReset: () => __TAURI_INVOKE<void>("live_fft_reset"),
 	/**  The "Raw" preset: linear magnitude, frame-peak reference, no ballistics. */
 	liveFftRawDefaults: () => __TAURI_INVOKE<LiveFftSettings_Serialize>("live_fft_raw_defaults"),
+	/**
+	 *  The Hz of every output bin of the current axis. The page fetches it when
+	 *  a frame's axis version (header word 3) differs from the one it holds; if
+	 *  the returned `version` is still not the frame's, it keeps the old axis
+	 *  and asks again on the next frame.
+	 */
+	liveFftAxis: () => typedError<LiveFftAxis, string>(__TAURI_INVOKE("live_fft_axis")),
 	/**
 	 *  Report the streaming card's transcript height (logical px) and grow the native
 	 *  window to fit it. Returns the height the frontend may render before scrolling.
@@ -498,7 +516,6 @@ export const commands = {
 export const events = {
 	fileTranscriptionEvent: makeEvent<FileTranscriptionEvent_Serialize, FileTranscriptionEvent_Deserialize>("file-transcription-event"),
 	historyUpdatePayload: makeEvent<HistoryUpdatePayload_Serialize, HistoryUpdatePayload_Deserialize>("history-update-payload"),
-	liveFftFrameEvent: makeEvent<LiveFftFrameEvent, LiveFftFrameEvent>("live-fft-frame-event"),
 	liveFftStateEvent: makeEvent<LiveFftStateEvent_Serialize, LiveFftStateEvent_Deserialize>("live-fft-state-event"),
 	liveModeStateEvent: makeEvent<LiveModeStateEvent_Serialize, LiveModeStateEvent_Deserialize>("live-mode-state-event"),
 	liveModeTranscriptEvent: makeEvent<LiveModeTranscriptEvent, LiveModeTranscriptEvent>("live-mode-transcript-event"),
@@ -517,7 +534,7 @@ export const events = {
 /* Types */
 /**
  *  The container-level `serde(default)` (backed by the `Default` impl below)
- *  guarantees every field â€” including ones added in the future â€” falls back to
+ *  guarantees every field — including ones added in the future — falls back to
  *  its `get_default_settings()` value when missing from a stored settings
  *  object, so a partial store can never fail the whole load (#1619).
  *  Field-level defaults below take precedence where present.
@@ -526,7 +543,7 @@ export type AppSettings = AppSettings_Serialize | AppSettings_Deserialize;
 
 /**
  *  The container-level `serde(default)` (backed by the `Default` impl below)
- *  guarantees every field â€” including ones added in the future â€” falls back to
+ *  guarantees every field — including ones added in the future — falls back to
  *  its `get_default_settings()` value when missing from a stored settings
  *  object, so a partial store can never fail the whole load (#1619).
  *  Field-level defaults below take precedence where present.
@@ -564,7 +581,7 @@ export type AppSettings_Deserialize = {
 	 *  The app version whose What's New the user has already seen. Fresh installs
 	 *  default to the current version (nothing is "new" to them). Existing users
 	 *  upgrading from before this key existed are blanked by the migration so they
-	 *  see the current release's notes â€” see `apply_settings_migrations`.
+	 *  see the current release's notes — see `apply_settings_migrations`.
 	 */
 	whats_new_last_seen_version?: string,
 	selected_model?: string,
@@ -619,7 +636,7 @@ export type AppSettings_Deserialize = {
 	theme?: Theme,
 	custom_accent_color?: string | null,
 	/**
-	 *  Zoom of the settings window (0.7â€“1.6, 1.0 = native), for screens whose
+	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
 	 *  OS scaling makes the UI too small or too large. Applied as CSS zoom.
 	 */
 	ui_scale?: number | null,
@@ -664,17 +681,17 @@ export type AppSettings_Deserialize = {
 	 *  RNNoise noise suppression on the microphone path, before the VAD and
 	 *  the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
 	 *  adds a little latency and can make some voices sound processed; the
-	 *  live VAD test in Settings â†’ Advanced shows its effect.
+	 *  live VAD test in Settings → Advanced shows its effect.
 	 */
 	denoise_enabled?: boolean,
 	/**
-	 *  RNNoise wet/dry mix (0â€“1): 1 = the suppressor's output, 0 = the input
+	 *  RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
 	 *  untouched.
 	 */
 	denoise_strength?: number | null,
 	/**
 	 *  RNNoise's own speech probability below which the suppressor mutes
-	 *  the frame (0â€“1); 0 turns the gate off.
+	 *  the frame (0–1); 0 turns the gate off.
 	 */
 	denoise_vad_threshold?: number | null,
 	/**
@@ -682,12 +699,12 @@ export type AppSettings_Deserialize = {
 	 *  threshold, in milliseconds.
 	 */
 	denoise_vad_grace_ms?: number,
-	/**  Speech-probability threshold of the Earshot detector (0.05â€“0.95). */
+	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot?: number | null,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
-	 *  not gated on this â€” that follows model capability. Migrated from the old
-	 *  `overlay_position` (position `none` â†’ style `None`).
+	 *  not gated on this — that follows model capability. Migrated from the old
+	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style?: OverlayStyle,
 	/**
@@ -863,7 +880,7 @@ export type AppSettings_Deserialize = {
 
 /**
  *  The container-level `serde(default)` (backed by the `Default` impl below)
- *  guarantees every field â€” including ones added in the future â€” falls back to
+ *  guarantees every field — including ones added in the future — falls back to
  *  its `get_default_settings()` value when missing from a stored settings
  *  object, so a partial store can never fail the whole load (#1619).
  *  Field-level defaults below take precedence where present.
@@ -901,7 +918,7 @@ export type AppSettings_Serialize = {
 	 *  The app version whose What's New the user has already seen. Fresh installs
 	 *  default to the current version (nothing is "new" to them). Existing users
 	 *  upgrading from before this key existed are blanked by the migration so they
-	 *  see the current release's notes â€” see `apply_settings_migrations`.
+	 *  see the current release's notes — see `apply_settings_migrations`.
 	 */
 	whats_new_last_seen_version: string,
 	selected_model: string,
@@ -956,7 +973,7 @@ export type AppSettings_Serialize = {
 	theme: Theme,
 	custom_accent_color: string | null,
 	/**
-	 *  Zoom of the settings window (0.7â€“1.6, 1.0 = native), for screens whose
+	 *  Zoom of the settings window (0.7–1.6, 1.0 = native), for screens whose
 	 *  OS scaling makes the UI too small or too large. Applied as CSS zoom.
 	 */
 	ui_scale: number | null,
@@ -1001,17 +1018,17 @@ export type AppSettings_Serialize = {
 	 *  RNNoise noise suppression on the microphone path, before the VAD and
 	 *  the model (`audio_toolkit::audio::DenoiseChain`). Off by default: it
 	 *  adds a little latency and can make some voices sound processed; the
-	 *  live VAD test in Settings â†’ Advanced shows its effect.
+	 *  live VAD test in Settings → Advanced shows its effect.
 	 */
 	denoise_enabled: boolean,
 	/**
-	 *  RNNoise wet/dry mix (0â€“1): 1 = the suppressor's output, 0 = the input
+	 *  RNNoise wet/dry mix (0–1): 1 = the suppressor's output, 0 = the input
 	 *  untouched.
 	 */
 	denoise_strength: number | null,
 	/**
 	 *  RNNoise's own speech probability below which the suppressor mutes
-	 *  the frame (0â€“1); 0 turns the gate off.
+	 *  the frame (0–1); 0 turns the gate off.
 	 */
 	denoise_vad_threshold: number | null,
 	/**
@@ -1019,12 +1036,12 @@ export type AppSettings_Serialize = {
 	 *  threshold, in milliseconds.
 	 */
 	denoise_vad_grace_ms: number,
-	/**  Speech-probability threshold of the Earshot detector (0.05â€“0.95). */
+	/**  Speech-probability threshold of the Earshot detector (0.05–0.95). */
 	vad_threshold_earshot: number | null,
 	/**
 	 *  Which recording overlay to show: None / Minimal / Live. Streaming mode is
-	 *  not gated on this â€” that follows model capability. Migrated from the old
-	 *  `overlay_position` (position `none` â†’ style `None`).
+	 *  not gated on this — that follows model capability. Migrated from the old
+	 *  `overlay_position` (position `none` → style `None`).
 	 */
 	overlay_style: OverlayStyle,
 	/**
@@ -1377,12 +1394,22 @@ export type FftDbReference =
 /**  0 dB = a slow peak follower (1.5 s release). */
 "agc";
 
+/**  Where the Kaiser window's β comes from. */
+export type FftKaiserBetaMode = 
+/**  `kaiser_beta` as set. */
+"manual" | 
+/**
+ *  The β whose sidelobes sit exactly at the dB range floor
+ *  (`db_range`): the narrowest main lobe the display can use.
+ */
+"auto";
+
 export type FftLoudnessMode = 
 /**  Linear magnitude. */
 "off" | 
 /**  Decibels relative to the reference. */
 "db" | 
-/**  Decibels mapped onto 0â€¦1 over `db_range`. */
+/**  Decibels mapped onto 0…1 over `db_range`. */
 "db_normalized";
 
 export type FftMagnitudeNorm = 
@@ -1390,6 +1417,16 @@ export type FftMagnitudeNorm =
 "coherent_gain" | 
 /**  `sum(window) == 2`; a sine of amplitude 1 reads 1.0. */
 "full_scale";
+
+/**  How many values a Live FFT frame carries. */
+export type FftOutputBinsMode = 
+/**
+ *  Exactly `output_bins` values (the grid may be finer than the FFT's
+ *  own bins; those are interpolated).
+ */
+"fixed" | 
+/**  The rfft bin count `N/2 + 1` of the transform actually run. */
+"auto";
 
 /**  Frequency axis of the spectrum. */
 export type FftScale = "log" | "mel" | "erb" | "bark" | "chroma" | "linear" | 
@@ -1399,7 +1436,7 @@ export type FftScale = "log" | "mel" | "erb" | "bark" | "chroma" | "linear" |
 /**  Which signal the Live FFT page analyses. */
 export type FftSource = 
 /**
- *  The microphone at its native rate, before noise suppression â€” the
+ *  The microphone at its native rate, before noise suppression — the
  *  full bandwidth the device delivers (24 kHz at 48 kHz).
  */
 "microphone" | 
@@ -1414,6 +1451,18 @@ export type FftSource =
  *  suppression, before the VAD. Bandwidth stops at 8 kHz.
  */
 "processed";
+
+/**  How an output bin that spans two or more FFT bins is formed. */
+export type FftWarpAggregation = 
+/**
+ *  Interpolate only (point sampling): a narrow peak between two taps
+ *  loses level and flickers.
+ */
+"off" | 
+/**  The loudest FFT bin the output bin owns: never drops a peak. */
+"peak" | 
+/**  Power mean (`sqrt(mean(|X|²))`) of the owned FFT bins. */
+"rms";
 
 export type FftWarpInterp = 
 /**  Two taps. */
@@ -1518,14 +1567,14 @@ export type FileTranscriptionSettings_Deserialize = {
 	 */
 	output_dir?: string | null,
 	output_format?: TranscriptOutputFormat,
-	/**  Replace an existing transcript instead of appending `-2`, `-3`, â€¦. */
+	/**  Replace an existing transcript instead of appending `-2`, `-3`, …. */
 	overwrite_existing?: boolean,
 	/**  When a folder is added, also queue audio files from its sub-folders. */
 	include_subfolders?: boolean,
 	/**
 	 *  Long recordings are decoded in segments of at most this many minutes,
 	 *  cut at the quietest point near the boundary, so one file never holds
-	 *  the engine (or memory) for an hour at a time. 1â€“60.
+	 *  the engine (or memory) for an hour at a time. 1–60.
 	 */
 	max_segment_minutes?: number,
 };
@@ -1542,14 +1591,14 @@ export type FileTranscriptionSettings_Serialize = {
 	 */
 	output_dir: string | null,
 	output_format: TranscriptOutputFormat,
-	/**  Replace an existing transcript instead of appending `-2`, `-3`, â€¦. */
+	/**  Replace an existing transcript instead of appending `-2`, `-3`, …. */
 	overwrite_existing: boolean,
 	/**  When a folder is added, also queue audio files from its sub-folders. */
 	include_subfolders: boolean,
 	/**
 	 *  Long recordings are decoded in segments of at most this many minutes,
 	 *  cut at the quietest point near the boundary, so one file never holds
-	 *  the engine (or memory) for an hour at a time. 1â€“60.
+	 *  the engine (or memory) for an hour at a time. 1–60.
 	 */
 	max_segment_minutes: number,
 };
@@ -1721,17 +1770,14 @@ export type LiveChunkInfo_Serialize = {
 };
 
 /**
- *  One analysed frame: `output_bins` values in the unit the loudness mode
- *  selects (linear magnitude, dB, or 0…1). Sent to the main window only,
- *  at `update_rate_hz`.
+ *  The frequency of every output bin, fetched by the page when a frame's
+ *  axis version differs from the one it holds.
  */
-export type LiveFftFrameEvent = {
-	seq: number,
-	bins: (number | null)[],
-	peak_hz: number | null,
-	peak_value: number | null,
-	silent: boolean,
-	dsp_us: number | null,
+export type LiveFftAxis = {
+	/**  Matches word 3 of a frame header; 0 = no axis yet. */
+	version: number,
+	/**  Centre frequency of each output bin, in Hz. */
+	hz: (number | null)[],
 };
 
 export type LiveFftPhase = "idle" | "starting" | "running" | "stopping" | "error";
@@ -1754,11 +1800,28 @@ export type LiveFftSettings = LiveFftSettings_Serialize | LiveFftSettings_Deseri
  */
 export type LiveFftSettings_Deserialize = {
 	source?: FftSource,
+	/**
+	 *  Output = the rfft magnitudes untouched: `N/2 + 1` bins from DC to
+	 *  Nyquist, copied as they are. Overrides the scale (Linear), the warp
+	 *  blend (0), the display max (Nyquist), the interpolation (linear), the
+	 *  aggregation (off) and the output size (`N/2 + 1`).
+	 */
+	raw_bins?: boolean,
 	scale?: FftScale,
 	warp_interpolation?: FftWarpInterp,
+	/**
+	 *  Peak / RMS over the FFT bins an output bin owns, where it owns two or
+	 *  more (the coarse end of the axis); interpolation everywhere else.
+	 */
+	warp_aggregation?: FftWarpAggregation,
 	/**  Highest frequency on the axis; clamped to Nyquist at run time. */
 	display_max_hz?: number | null,
-	/**  Size of the warped spectrum handed to the page (32â€¦8192). */
+	/**  Fixed: `output_bins` values; Auto: the transform's `N/2 + 1`. */
+	output_bins_mode?: FftOutputBinsMode,
+	/**
+	 *  Size of the spectrum handed to the page in Fixed mode (8…65536); may
+	 *  exceed `N/2 + 1`, the extra points are interpolated.
+	 */
 	output_bins?: number,
 	/**  0 = linear grid, 1 = fully perceptual. */
 	warp_blend?: number | null,
@@ -1769,6 +1832,11 @@ export type LiveFftSettings_Deserialize = {
 	window_samples?: number,
 	/**  Analysis window in milliseconds, used when the mode says so. */
 	window_ms?: number | null,
+	/**
+	 *  Off: the transform is the window itself (length rounded up to even)
+	 *  and `fft_size` is ignored.
+	 */
+	zero_padding?: boolean,
 	/**
 	 *  Zero-padded transform length; grown to the next power of two above
 	 *  the window when that is larger.
@@ -1782,9 +1850,11 @@ export type LiveFftSettings_Deserialize = {
 	low_gain_db?: number | null,
 	low_cutoff_hz?: number | null,
 	eq_q?: number | null,
-	/**  Wet/dry blend of the EQ (0â€¦5). */
+	/**  Wet/dry blend of the EQ (0…5). */
 	eq_amount?: number | null,
 	window_type?: FftWindowType,
+	/**  Manual: `kaiser_beta`; Auto: derived from `db_range`. */
+	kaiser_beta_mode?: FftKaiserBetaMode,
 	kaiser_beta?: number | null,
 	weighting?: FftWeighting,
 	magnitude_norm?: FftMagnitudeNorm,
@@ -1794,9 +1864,9 @@ export type LiveFftSettings_Deserialize = {
 	db_range?: number | null,
 	ballistics_enabled?: boolean,
 	ballistics_mode?: FftBallisticsMode,
-	/**  Per-frame attack coefficient (0â€¦0.99). */
+	/**  Per-frame attack coefficient (0…0.99). */
 	attack?: number | null,
-	/**  Per-frame release coefficient (0â€¦0.99). */
+	/**  Per-frame release coefficient (0…0.99). */
 	release?: number | null,
 	attack_ms?: number | null,
 	release_ms?: number | null,
@@ -1805,8 +1875,14 @@ export type LiveFftSettings_Deserialize = {
 	 *  audio consumer thread (off).
 	 */
 	async_analysis?: boolean,
-	/**  Spectrum frames per second sent to the page (5â€¦60). */
+	/**  Spectrum frames per second sent to the page (5…60). */
 	update_rate_hz?: number,
+	/**
+	 *  Compute eight descriptors of each frame (centroid, 85 % rolloff,
+	 *  flatness, flux, RMS, bass / mid / high power) from the linear
+	 *  magnitude and ship them with it.
+	 */
+	spectral_features?: boolean,
 	/**
 	 *  Run the speech detector on the analysed session and report its
 	 *  per-frame verdicts to the page (`VadTestEvent`), so the threshold and
@@ -1825,11 +1901,28 @@ export type LiveFftSettings_Deserialize = {
  */
 export type LiveFftSettings_Serialize = {
 	source: FftSource,
+	/**
+	 *  Output = the rfft magnitudes untouched: `N/2 + 1` bins from DC to
+	 *  Nyquist, copied as they are. Overrides the scale (Linear), the warp
+	 *  blend (0), the display max (Nyquist), the interpolation (linear), the
+	 *  aggregation (off) and the output size (`N/2 + 1`).
+	 */
+	raw_bins: boolean,
 	scale: FftScale,
 	warp_interpolation: FftWarpInterp,
+	/**
+	 *  Peak / RMS over the FFT bins an output bin owns, where it owns two or
+	 *  more (the coarse end of the axis); interpolation everywhere else.
+	 */
+	warp_aggregation: FftWarpAggregation,
 	/**  Highest frequency on the axis; clamped to Nyquist at run time. */
 	display_max_hz: number | null,
-	/**  Size of the warped spectrum handed to the page (32â€¦8192). */
+	/**  Fixed: `output_bins` values; Auto: the transform's `N/2 + 1`. */
+	output_bins_mode: FftOutputBinsMode,
+	/**
+	 *  Size of the spectrum handed to the page in Fixed mode (8…65536); may
+	 *  exceed `N/2 + 1`, the extra points are interpolated.
+	 */
 	output_bins: number,
 	/**  0 = linear grid, 1 = fully perceptual. */
 	warp_blend: number | null,
@@ -1840,6 +1933,11 @@ export type LiveFftSettings_Serialize = {
 	window_samples: number,
 	/**  Analysis window in milliseconds, used when the mode says so. */
 	window_ms: number | null,
+	/**
+	 *  Off: the transform is the window itself (length rounded up to even)
+	 *  and `fft_size` is ignored.
+	 */
+	zero_padding: boolean,
 	/**
 	 *  Zero-padded transform length; grown to the next power of two above
 	 *  the window when that is larger.
@@ -1853,9 +1951,11 @@ export type LiveFftSettings_Serialize = {
 	low_gain_db: number | null,
 	low_cutoff_hz: number | null,
 	eq_q: number | null,
-	/**  Wet/dry blend of the EQ (0â€¦5). */
+	/**  Wet/dry blend of the EQ (0…5). */
 	eq_amount: number | null,
 	window_type: FftWindowType,
+	/**  Manual: `kaiser_beta`; Auto: derived from `db_range`. */
+	kaiser_beta_mode: FftKaiserBetaMode,
 	kaiser_beta: number | null,
 	weighting: FftWeighting,
 	magnitude_norm: FftMagnitudeNorm,
@@ -1865,9 +1965,9 @@ export type LiveFftSettings_Serialize = {
 	db_range: number | null,
 	ballistics_enabled: boolean,
 	ballistics_mode: FftBallisticsMode,
-	/**  Per-frame attack coefficient (0â€¦0.99). */
+	/**  Per-frame attack coefficient (0…0.99). */
 	attack: number | null,
-	/**  Per-frame release coefficient (0â€¦0.99). */
+	/**  Per-frame release coefficient (0…0.99). */
 	release: number | null,
 	attack_ms: number | null,
 	release_ms: number | null,
@@ -1876,8 +1976,14 @@ export type LiveFftSettings_Serialize = {
 	 *  audio consumer thread (off).
 	 */
 	async_analysis: boolean,
-	/**  Spectrum frames per second sent to the page (5â€¦60). */
+	/**  Spectrum frames per second sent to the page (5…60). */
 	update_rate_hz: number,
+	/**
+	 *  Compute eight descriptors of each frame (centroid, 85 % rolloff,
+	 *  flatness, flux, RMS, bass / mid / high power) from the linear
+	 *  magnitude and ship them with it.
+	 */
+	spectral_features: boolean,
 	/**
 	 *  Run the speech detector on the analysed session and report its
 	 *  per-frame verdicts to the page (`VadTestEvent`), so the threshold and
@@ -1932,8 +2038,33 @@ export type LiveFftStatus_Deserialize = {
 	dsp_us_avg: number | null,
 	dsp_us_max: number | null,
 	started_at_ms?: number | null,
-	/**  Frequency of every output bin (rebuilt with the warp tables). */
-	axis_hz: (number | null)[],
+	/**
+	 *  Version of the output axis (`LiveFftAxis.version`); bumps whenever
+	 *  the Hz of the output bins change.
+	 */
+	axis_version: number,
+	/**
+	 *  `display_max_hz / (output_bins − 1)`: the spacing of a uniform axis,
+	 *  the mean spacing of a perceptual one (0 below two bins).
+	 */
+	hz_per_bin: number | null,
+	/**
+	 *  Output bins formed by peak / RMS aggregation over the FFT bins they
+	 *  own rather than by interpolation.
+	 */
+	aggregated_bins: number,
+	/**
+	 *  β of the Kaiser window in use, after the Auto rule (0 for any other
+	 *  window).
+	 */
+	kaiser_beta: number | null,
+	/**
+	 *  Half the window plus, with async analysis, one frame period: how
+	 *  far behind the audio a frame's centre is.
+	 */
+	analysis_latency_ms: number | null,
+	/**  The frames are the raw rfft magnitudes. */
+	raw_bins: boolean,
 };
 
 /**  Status snapshot — the telemetry rows the page shows. */
@@ -1965,8 +2096,33 @@ export type LiveFftStatus_Serialize = {
 	dsp_us_avg: number | null,
 	dsp_us_max: number | null,
 	started_at_ms: number | null,
-	/**  Frequency of every output bin (rebuilt with the warp tables). */
-	axis_hz: (number | null)[],
+	/**
+	 *  Version of the output axis (`LiveFftAxis.version`); bumps whenever
+	 *  the Hz of the output bins change.
+	 */
+	axis_version: number,
+	/**
+	 *  `display_max_hz / (output_bins − 1)`: the spacing of a uniform axis,
+	 *  the mean spacing of a perceptual one (0 below two bins).
+	 */
+	hz_per_bin: number | null,
+	/**
+	 *  Output bins formed by peak / RMS aggregation over the FFT bins they
+	 *  own rather than by interpolation.
+	 */
+	aggregated_bins: number,
+	/**
+	 *  β of the Kaiser window in use, after the Auto rule (0 for any other
+	 *  window).
+	 */
+	kaiser_beta: number | null,
+	/**
+	 *  Half the window plus, with async analysis, one frame period: how
+	 *  far behind the audio a frame's centre is.
+	 */
+	analysis_latency_ms: number | null,
+	/**  The frames are the raw rfft magnitudes. */
+	raw_bins: boolean,
 };
 
 /**  Why the last session ended on its own. */
@@ -1988,7 +2144,7 @@ export type LiveModeSettings_Deserialize = {
 	 *  `<app data>/live_mode`.
 	 */
 	output_dir?: string | null,
-	/**  Target length of one audio chunk / transcript segment in minutes. 1â€“60. */
+	/**  Target length of one audio chunk / transcript segment in minutes. 1–60. */
 	chunk_minutes?: number,
 	transcript_format?: TranscriptOutputFormat,
 	granularity?: LiveTranscriptGranularity,
@@ -2008,7 +2164,7 @@ export type LiveModeSettings_Serialize = {
 	 *  `<app data>/live_mode`.
 	 */
 	output_dir: string | null,
-	/**  Target length of one audio chunk / transcript segment in minutes. 1â€“60. */
+	/**  Target length of one audio chunk / transcript segment in minutes. 1–60. */
 	chunk_minutes: number,
 	transcript_format: TranscriptOutputFormat,
 	granularity: LiveTranscriptGranularity,
@@ -2297,7 +2453,7 @@ export type LlamaSettings_Deserialize = {
 	 */
 	custom_args?: string | null,
 	/**
-	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3â€“4 % on short
+	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
 	 *  prompts in the S2B2S benchmarks).
 	 */
 	attn_rot_disable?: boolean,
@@ -2361,7 +2517,7 @@ export type LlamaSettings_Serialize = {
 	 */
 	custom_args: string | null,
 	/**
-	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3â€“4 % on short
+	 *  `LLAMA_ATTN_ROT_DISABLE=1` in the server environment (+3–4 % on short
 	 *  prompts in the S2B2S benchmarks).
 	 */
 	attn_rot_disable: boolean,
@@ -2482,7 +2638,7 @@ export type ModelSource = ModelSource_Serialize | ModelSource_Deserialize;
  *  for downloading and on-disk resolution.
  */
 export type ModelSource_Deserialize = 
-/**  Direct HTTP download from a URL (the catalog's own hosting). */
+/**  Direct HTTP download from a URL (the legacy .bin table's own hosting). */
 ({ Url: {
 	url: string,
 	/**  Expected SHA-256 for integrity verification; `None` skips it. */
@@ -2508,7 +2664,7 @@ export type ModelSource_Deserialize =
  *  for downloading and on-disk resolution.
  */
 export type ModelSource_Serialize = 
-/**  Direct HTTP download from a URL (the catalog's own hosting). */
+/**  Direct HTTP download from a URL (the legacy .bin table's own hosting). */
 ({ Url: {
 	url: string,
 	/**  Expected SHA-256 for integrity verification; `None` skips it. */
@@ -2575,7 +2731,7 @@ export type NativeStreamingLatencyKind = "parakeet_buffered" | "nemotron_3_5_cac
  *  User-facing latency preset for native streaming models (Parakeet Buffered,
  *  Nemotron cache-aware). Stored per-model-id in
  *  [`AppSettings::native_streaming_latency_presets`]. `Accurate` is the default
- *  (runtime default â€” no stream extension attached), so it is the unit value.
+ *  (runtime default — no stream extension attached), so it is the unit value.
  */
 export type NativeStreamingLatencyPreset = "fastest" | "fast" | "balanced" | "accurate";
 
@@ -2615,30 +2771,30 @@ export type OverlayScopeSettings_Deserialize = {
 	 *  Live FFT page's peak hold.
 	 */
 	peak_hold?: boolean,
-	/**  Samples of raw audio the waveform view covers (256â€¦16384). */
+	/**  Samples of raw audio the waveform view covers (256…16384). */
 	wave_samples?: number,
 	/**
 	 *  Raised-cosine fade at each end of that window, in samples
-	 *  (0â€¦half the window), so the trace starts and ends at zero.
+	 *  (0…half the window), so the trace starts and ends at zero.
 	 */
 	wave_taper_samples?: number,
 	/**
 	 *  Auto-gain floor of the waveform as a full-scale fraction: quieter
-	 *  signals are not blown up to full height (0.001â€¦0.5).
+	 *  signals are not blown up to full height (0.001…0.5).
 	 */
 	wave_gain_floor?: number | null,
-	/**  Width of each view in logical pixels (32â€¦160). */
+	/**  Width of each view in logical pixels (32…160). */
 	view_width?: number,
-	/**  Height of the views in logical pixels (14â€¦48). */
+	/**  Height of the views in logical pixels (14…48). */
 	view_height?: number,
 	/**
 	 *  Draw the circular-spectrum view: a third view beside the linear
 	 *  spectrum and the waveform. The bins are combined with their own
-	 *  inversion â€” appended and prepended â€” and the two symmetric signals
+	 *  inversion — appended and prepended — and the two symmetric signals
 	 *  are added into the input signal (the cross-sum of each bin with its
 	 *  mirror partner, halved into display units). The two branches ride at
-	 *  radius 1+s and 1-s around a full 2Ï€ sweep, the whole figure rotated
-	 *  90Â° so the seam straddles the right of the ring.
+	 *  radius 1+s and 1-s around a full 2π sweep, the whole figure rotated
+	 *  90° so the seam straddles the right of the ring.
 	 */
 	show_circular?: boolean,
 	/**
@@ -2647,26 +2803,26 @@ export type OverlayScopeSettings_Deserialize = {
 	 */
 	circular_bars?: boolean,
 	/**
-	 *  Display bins of the circular loop (12â€¦240). The pipeline's bins are
+	 *  Display bins of the circular loop (12…240). The pipeline's bins are
 	 *  peak-pooled down to this many, so fewer bins means chunkier bars.
 	 */
 	circular_bins?: number,
 	/**
-	 *  Fixed display gain of the circular loop (0.05â€¦8). The pooled bins are
-	 *  multiplied by this and clamped to 0â€¦1 â€” deliberately a fixed scale,
+	 *  Fixed display gain of the circular loop (0.05…8). The pooled bins are
+	 *  multiplied by this and clamped to 0…1 — deliberately a fixed scale,
 	 *  not a dynamic normalisation, so the loop's size breathes with the
 	 *  signal instead of always filling the ring.
 	 */
 	circular_gain?: number | null,
 	/**
-	 *  Floor of the circular loop as a fraction of full scale (0â€¦0.9). Bars
+	 *  Floor of the circular loop as a fraction of full scale (0…0.9). Bars
 	 *  below it are not drawn: without a floor the ambient room tone paints
 	 *  the whole ring and the loop reads as a filled disc.
 	 */
 	circular_floor?: number | null,
 	/**
 	 *  Side of the square circular-spectrum view, in logical pixels
-	 *  (32â€¦400).
+	 *  (32…400).
 	 */
 	circular_size?: number,
 	/**
@@ -2674,31 +2830,31 @@ export type OverlayScopeSettings_Deserialize = {
 	 *  the card instead of as its own view in the block.
 	 */
 	circular_background?: boolean,
-	/**  Linear spectrum view scale, percent of its base size (50â€¦400). */
+	/**  Linear spectrum view scale, percent of its base size (50…400). */
 	spectrum_scale?: number,
-	/**  Waveform view scale, percent of its base size (50â€¦400). */
+	/**  Waveform view scale, percent of its base size (50…400). */
 	wave_scale?: number,
 	/**
-	 *  Signal-intensity scale for the linear spectrum (0.1â€¦10). Multiplies the
+	 *  Signal-intensity scale for the linear spectrum (0.1…10). Multiplies the
 	 *  display units before drawing, so the spectrum reads taller without
 	 *  changing the view's pixel width.
 	 */
 	spectrum_signal_scale?: number | null,
 	/**
-	 *  Signal-intensity scale for the raw-audio waveform (0.1â€¦10). Multiplies
+	 *  Signal-intensity scale for the raw-audio waveform (0.1…10). Multiplies
 	 *  the sample values before drawing, so the trace swings taller without
 	 *  changing the view's pixel width.
 	 */
 	wave_signal_scale?: number | null,
 	/**
-	 *  Signal-intensity scale for the circular spectrum (0.1â€¦10). Multiplies
+	 *  Signal-intensity scale for the circular spectrum (0.1…10). Multiplies
 	 *  the pooled display units before drawing, so the ring breathes more
 	 *  dramatically without changing its pixel size.
 	 */
 	circular_signal_scale?: number | null,
 	/**
-	 *  Draw the raw-audio waveform *inside* the circular spectrum â€” a centred
-	 *  horizontal trace from the ring's left edge to its right edge â€” instead
+	 *  Draw the raw-audio waveform *inside* the circular spectrum — a centred
+	 *  horizontal trace from the ring's left edge to its right edge — instead
 	 *  of as its own view beside it.
 	 */
 	wave_inside_circular?: boolean,
@@ -2732,30 +2888,30 @@ export type OverlayScopeSettings_Serialize = {
 	 *  Live FFT page's peak hold.
 	 */
 	peak_hold: boolean,
-	/**  Samples of raw audio the waveform view covers (256â€¦16384). */
+	/**  Samples of raw audio the waveform view covers (256…16384). */
 	wave_samples: number,
 	/**
 	 *  Raised-cosine fade at each end of that window, in samples
-	 *  (0â€¦half the window), so the trace starts and ends at zero.
+	 *  (0…half the window), so the trace starts and ends at zero.
 	 */
 	wave_taper_samples: number,
 	/**
 	 *  Auto-gain floor of the waveform as a full-scale fraction: quieter
-	 *  signals are not blown up to full height (0.001â€¦0.5).
+	 *  signals are not blown up to full height (0.001…0.5).
 	 */
 	wave_gain_floor: number | null,
-	/**  Width of each view in logical pixels (32â€¦160). */
+	/**  Width of each view in logical pixels (32…160). */
 	view_width: number,
-	/**  Height of the views in logical pixels (14â€¦48). */
+	/**  Height of the views in logical pixels (14…48). */
 	view_height: number,
 	/**
 	 *  Draw the circular-spectrum view: a third view beside the linear
 	 *  spectrum and the waveform. The bins are combined with their own
-	 *  inversion â€” appended and prepended â€” and the two symmetric signals
+	 *  inversion — appended and prepended — and the two symmetric signals
 	 *  are added into the input signal (the cross-sum of each bin with its
 	 *  mirror partner, halved into display units). The two branches ride at
-	 *  radius 1+s and 1-s around a full 2Ï€ sweep, the whole figure rotated
-	 *  90Â° so the seam straddles the right of the ring.
+	 *  radius 1+s and 1-s around a full 2π sweep, the whole figure rotated
+	 *  90° so the seam straddles the right of the ring.
 	 */
 	show_circular: boolean,
 	/**
@@ -2764,26 +2920,26 @@ export type OverlayScopeSettings_Serialize = {
 	 */
 	circular_bars: boolean,
 	/**
-	 *  Display bins of the circular loop (12â€¦240). The pipeline's bins are
+	 *  Display bins of the circular loop (12…240). The pipeline's bins are
 	 *  peak-pooled down to this many, so fewer bins means chunkier bars.
 	 */
 	circular_bins: number,
 	/**
-	 *  Fixed display gain of the circular loop (0.05â€¦8). The pooled bins are
-	 *  multiplied by this and clamped to 0â€¦1 â€” deliberately a fixed scale,
+	 *  Fixed display gain of the circular loop (0.05…8). The pooled bins are
+	 *  multiplied by this and clamped to 0…1 — deliberately a fixed scale,
 	 *  not a dynamic normalisation, so the loop's size breathes with the
 	 *  signal instead of always filling the ring.
 	 */
 	circular_gain: number | null,
 	/**
-	 *  Floor of the circular loop as a fraction of full scale (0â€¦0.9). Bars
+	 *  Floor of the circular loop as a fraction of full scale (0…0.9). Bars
 	 *  below it are not drawn: without a floor the ambient room tone paints
 	 *  the whole ring and the loop reads as a filled disc.
 	 */
 	circular_floor: number | null,
 	/**
 	 *  Side of the square circular-spectrum view, in logical pixels
-	 *  (32â€¦400).
+	 *  (32…400).
 	 */
 	circular_size: number,
 	/**
@@ -2791,31 +2947,31 @@ export type OverlayScopeSettings_Serialize = {
 	 *  the card instead of as its own view in the block.
 	 */
 	circular_background: boolean,
-	/**  Linear spectrum view scale, percent of its base size (50â€¦400). */
+	/**  Linear spectrum view scale, percent of its base size (50…400). */
 	spectrum_scale: number,
-	/**  Waveform view scale, percent of its base size (50â€¦400). */
+	/**  Waveform view scale, percent of its base size (50…400). */
 	wave_scale: number,
 	/**
-	 *  Signal-intensity scale for the linear spectrum (0.1â€¦10). Multiplies the
+	 *  Signal-intensity scale for the linear spectrum (0.1…10). Multiplies the
 	 *  display units before drawing, so the spectrum reads taller without
 	 *  changing the view's pixel width.
 	 */
 	spectrum_signal_scale: number | null,
 	/**
-	 *  Signal-intensity scale for the raw-audio waveform (0.1â€¦10). Multiplies
+	 *  Signal-intensity scale for the raw-audio waveform (0.1…10). Multiplies
 	 *  the sample values before drawing, so the trace swings taller without
 	 *  changing the view's pixel width.
 	 */
 	wave_signal_scale: number | null,
 	/**
-	 *  Signal-intensity scale for the circular spectrum (0.1â€¦10). Multiplies
+	 *  Signal-intensity scale for the circular spectrum (0.1…10). Multiplies
 	 *  the pooled display units before drawing, so the ring breathes more
 	 *  dramatically without changing its pixel size.
 	 */
 	circular_signal_scale: number | null,
 	/**
-	 *  Draw the raw-audio waveform *inside* the circular spectrum â€” a centred
-	 *  horizontal trace from the ring's left edge to its right edge â€” instead
+	 *  Draw the raw-audio waveform *inside* the circular spectrum — a centred
+	 *  horizontal trace from the ring's left edge to its right edge — instead
 	 *  of as its own view beside it.
 	 */
 	wave_inside_circular: boolean,
@@ -3179,8 +3335,8 @@ export type StreamTextEvent_Deserialize = {
 	 *  Which live stream this text came from. Absent on every path but the
 	 *  experimental Multi Streaming STT mode, so the plain path serializes
 	 *  byte-identically: `None` is the primary model's stream (what the overlay
-	 *  has always shown), `Some(1)` the streaming second model the mode runs
-	 *  beside it. The overlay renders the two as side-by-side columns and
+	 *  has always shown), `Some(n)` (n = 1..STREAM_SLOTS-1) an extra model
+	 *  streaming beside it. The overlay renders each as its own column and
 	 *  routes every other reader of this event to the primary only.
 	 */
 	slot?: number | null,
@@ -3215,8 +3371,8 @@ export type StreamTextEvent_Serialize = {
 	 *  Which live stream this text came from. Absent on every path but the
 	 *  experimental Multi Streaming STT mode, so the plain path serializes
 	 *  byte-identically: `None` is the primary model's stream (what the overlay
-	 *  has always shown), `Some(1)` the streaming second model the mode runs
-	 *  beside it. The overlay renders the two as side-by-side columns and
+	 *  has always shown), `Some(n)` (n = 1..STREAM_SLOTS-1) an extra model
+	 *  streaming beside it. The overlay renders each as its own column and
 	 *  routes every other reader of this event to the primary only.
 	 */
 	slot?: number,

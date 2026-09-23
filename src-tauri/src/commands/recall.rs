@@ -1,4 +1,14 @@
 //! Tauri commands of the "Recall" page (fork feature).
+//!
+//! Every command that touches the vault runs on the blocking pool (`vault`):
+//! unlocking runs Argon2id over 64 MiB, and toggling encryption rewrites every
+//! note and recording, none of which may stall the webview. Those commands are
+//! also serialised by one process-wide lock. They used to run one at a time on
+//! the main thread, and enabling or disabling encryption is a multi-step
+//! rewrite that a concurrent save, unlock or folder change must not interleave
+//! with (a note written mid-disable would stay encrypted after the key file is
+//! gone). Dictation only records and transcribes, so it takes a plain
+//! `spawn_blocking` and never waits behind a long toggle.
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -11,23 +21,53 @@ fn vault_root_or_err(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     recall::vault_root(app, &settings)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn change_recall_settings(app: AppHandle, settings: RecallSettings) -> Result<(), String> {
-    let mut current = get_settings(&app);
-    current.recall = settings.normalized();
-    write_settings(&app, current);
-    // The session key belongs to whichever vault it was derived for; after
-    // the vault folder changes, the user unlocks the new one explicitly.
-    crypto::session_lock();
-    Ok(())
+/// Serialises every vault operation (see the module doc).
+static VAULT_OP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Run `task` on the blocking pool and flatten its result.
+async fn blocking<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|e| format!("Recall task panicked: {e}"))?
+}
+
+/// Run a vault operation on the blocking pool, one at a time.
+async fn vault<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    blocking(move || {
+        // A panic in an earlier operation poisons the lock but leaves nothing
+        // half-held that a later one could trip over; carry on.
+        let _guard = VAULT_OP.lock().unwrap_or_else(|e| e.into_inner());
+        task()
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_vault_info(app: AppHandle) -> Result<RecallVaultInfo, String> {
-    let root = vault_root_or_err(&app)?;
-    recall::vault_info(&root)
+pub async fn change_recall_settings(
+    app: AppHandle,
+    settings: RecallSettings,
+) -> Result<(), String> {
+    vault(move || {
+        let mut current = get_settings(&app);
+        current.recall = settings.normalized();
+        write_settings(&app, current);
+        // The session key belongs to whichever vault it was derived for; after
+        // the vault folder changes, the user unlocks the new one explicitly.
+        crypto::session_lock();
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn recall_vault_info(app: AppHandle) -> Result<RecallVaultInfo, String> {
+    vault(move || recall::vault_info(&vault_root_or_err(&app)?)).await
 }
 
 /// The folder used when none is configured, for display.
@@ -39,47 +79,43 @@ pub fn recall_default_vault_dir(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_list_notes(app: AppHandle) -> Result<Vec<RecallNoteMeta>, String> {
-    let root = vault_root_or_err(&app)?;
-    Ok(recall::list_notes_any(&root)?.0)
+pub async fn recall_list_notes(app: AppHandle) -> Result<Vec<RecallNoteMeta>, String> {
+    vault(move || Ok(recall::list_notes_any(&vault_root_or_err(&app)?)?.0)).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_read_note(app: AppHandle, id: String) -> Result<RecallNoteContent, String> {
-    let root = vault_root_or_err(&app)?;
-    recall::read_note_any(&root, &id)
+pub async fn recall_read_note(app: AppHandle, id: String) -> Result<RecallNoteContent, String> {
+    vault(move || recall::read_note_any(&vault_root_or_err(&app)?, &id)).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_create_note(
+pub async fn recall_create_note(
     app: AppHandle,
     title: String,
     tags: Vec<String>,
 ) -> Result<RecallNoteMeta, String> {
-    let root = vault_root_or_err(&app)?;
-    recall::create_note_any(&root, &title, &tags)
+    vault(move || recall::create_note_any(&vault_root_or_err(&app)?, &title, &tags)).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_write_note(
+pub async fn recall_write_note(
     app: AppHandle,
     id: String,
     title: String,
     tags: Vec<String>,
     body: String,
 ) -> Result<RecallNoteMeta, String> {
-    let root = vault_root_or_err(&app)?;
-    recall::write_note_any(&root, &id, &title, &tags, &body)
+    vault(move || recall::write_note_any(&vault_root_or_err(&app)?, &id, &title, &tags, &body))
+        .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_delete_note(app: AppHandle, id: String) -> Result<(), String> {
-    let root = vault_root_or_err(&app)?;
-    recall::delete_note_any(&root, &id)
+pub async fn recall_delete_note(app: AppHandle, id: String) -> Result<(), String> {
+    vault(move || recall::delete_note_any(&vault_root_or_err(&app)?, &id)).await
 }
 
 /// File a transcription (or post-processed text) as a new note — the
@@ -88,7 +124,7 @@ pub fn recall_delete_note(app: AppHandle, id: String) -> Result<(), String> {
 /// is self-contained.
 #[tauri::command]
 #[specta::specta]
-pub fn recall_save_transcription(
+pub async fn recall_save_transcription(
     app: AppHandle,
     text: String,
     title: Option<String>,
@@ -99,32 +135,38 @@ pub fn recall_save_transcription(
     if text.trim().is_empty() {
         return Err("Nothing to save: the text is empty".to_string());
     }
-    let root = vault_root_or_err(&app)?;
-    let audio_source = audio_file.as_ref().and_then(|file_name| {
-        let path = app
-            .state::<std::sync::Arc<crate::managers::history::HistoryManager>>()
-            .get_audio_file_path(file_name);
-        path.exists().then_some(path)
-    });
-    recall::save_transcription_any(
-        &root,
-        &text,
-        title,
-        source,
-        audio_file,
-        &tags,
-        audio_source.as_deref(),
-    )
+    vault(move || {
+        let root = vault_root_or_err(&app)?;
+        let audio_source = audio_file.as_ref().and_then(|file_name| {
+            let path = app
+                .state::<std::sync::Arc<crate::managers::history::HistoryManager>>()
+                .get_audio_file_path(file_name);
+            path.exists().then_some(path)
+        });
+        recall::save_transcription_any(
+            &root,
+            &text,
+            title,
+            source,
+            audio_file,
+            &tags,
+            audio_source.as_deref(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_open_vault_folder(app: AppHandle) -> Result<(), String> {
-    let root = vault_root_or_err(&app)?;
-    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    app.opener()
-        .open_path(root.to_string_lossy().to_string(), None::<&str>)
-        .map_err(|e| e.to_string())
+pub async fn recall_open_vault_folder(app: AppHandle) -> Result<(), String> {
+    vault(move || {
+        let root = vault_root_or_err(&app)?;
+        std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        app.opener()
+            .open_path(root.to_string_lossy().to_string(), None::<&str>)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -133,49 +175,54 @@ pub fn recall_open_vault_folder(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn recall_encryption_status(app: AppHandle) -> Result<crypto::RecallEncryptionStatus, String> {
-    let root = vault_root_or_err(&app)?;
-    Ok(crypto::RecallEncryptionStatus {
-        enabled: crypto::is_encrypted(&root),
-        unlocked: crypto::is_unlocked(),
+pub async fn recall_encryption_status(
+    app: AppHandle,
+) -> Result<crypto::RecallEncryptionStatus, String> {
+    vault(move || {
+        let root = vault_root_or_err(&app)?;
+        Ok(crypto::RecallEncryptionStatus {
+            enabled: crypto::is_encrypted(&root),
+            unlocked: crypto::is_unlocked(),
+        })
     })
+    .await
 }
 
 /// Turn encryption on: passphrase → key file + every note becomes `.rcl`.
 /// A plaintext backup is written and reported in the reply.
 #[tauri::command]
 #[specta::specta]
-pub fn recall_enable_encryption(
+pub async fn recall_enable_encryption(
     app: AppHandle,
     passphrase: String,
 ) -> Result<crypto::EnableReport, String> {
-    let root = vault_root_or_err(&app)?;
-    crypto::enable(&root, &passphrase)
+    vault(move || crypto::enable(&vault_root_or_err(&app)?, &passphrase)).await
 }
 
 /// Verify the passphrase and hold the key in memory until locked or exit.
 #[tauri::command]
 #[specta::specta]
-pub fn recall_unlock_vault(app: AppHandle, passphrase: String) -> Result<(), String> {
-    let root = vault_root_or_err(&app)?;
-    crypto::unlock(&root, &passphrase)
+pub async fn recall_unlock_vault(app: AppHandle, passphrase: String) -> Result<(), String> {
+    vault(move || crypto::unlock(&vault_root_or_err(&app)?, &passphrase)).await
 }
 
 /// Drop the in-memory key. Notes stay encrypted on disk.
 #[tauri::command]
 #[specta::specta]
-pub fn recall_lock_vault() -> Result<(), String> {
-    crypto::session_lock();
-    Ok(())
+pub async fn recall_lock_vault() -> Result<(), String> {
+    vault(|| {
+        crypto::session_lock();
+        Ok(())
+    })
+    .await
 }
 
 /// Turn encryption off: verify the passphrase, decrypt every note back to
 /// plain Markdown, remove the key file, lock the session.
 #[tauri::command]
 #[specta::specta]
-pub fn recall_disable_encryption(app: AppHandle, passphrase: String) -> Result<u32, String> {
-    let root = vault_root_or_err(&app)?;
-    crypto::disable(&root, &passphrase)
+pub async fn recall_disable_encryption(app: AppHandle, passphrase: String) -> Result<u32, String> {
+    vault(move || crypto::disable(&vault_root_or_err(&app)?, &passphrase)).await
 }
 
 /// Start a dictate recording: audio accumulates, nothing is typed or pasted.
@@ -183,9 +230,7 @@ pub fn recall_disable_encryption(app: AppHandle, passphrase: String) -> Result<u
 #[specta::specta]
 pub async fn recall_dictate_start(app: AppHandle) -> Result<(), String> {
     // Stream open can block (device I/O), so it never runs on the webview loop.
-    tauri::async_runtime::spawn_blocking(move || dictate::start(&app))
-        .await
-        .map_err(|e| format!("Start task panicked: {e}"))?
+    blocking(move || dictate::start(&app)).await
 }
 
 /// Stop the dictate recording and transcribe it. The text comes back to the
@@ -199,8 +244,9 @@ pub async fn recall_dictate_stop(app: AppHandle) -> Result<String, String> {
 /// Cancel the dictate recording and discard the take.
 #[tauri::command]
 #[specta::specta]
-pub fn recall_dictate_cancel(app: AppHandle) -> Result<(), String> {
-    dictate::cancel(&app)
+pub async fn recall_dictate_cancel(app: AppHandle) -> Result<(), String> {
+    // Stopping the recorder takes the audio manager's lock: off the webview loop.
+    blocking(move || dictate::cancel(&app)).await
 }
 
 /// Arm/disarm Recall insertion mode: while armed, the transcription and

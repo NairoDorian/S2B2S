@@ -8,18 +8,13 @@ interface ProviderSelectProps {
   disabled?: boolean;
 }
 
-export const ProviderSelect = ({
-  options,
-  value,
-  onChange,
-  disabled,
-}: ProviderSelectProps): JSX.Element => {
+export const ProviderSelect = (props: ProviderSelectProps): JSX.Element => {
   return (
     <Dropdown
-      options={options}
-      selectedValue={value}
-      onSelect={onChange}
-      disabled={disabled}
+      options={props.options}
+      selectedValue={props.value}
+      onSelect={(value) => props.onChange(value)}
+      disabled={props.disabled}
       class="flex-1"
     />
   );

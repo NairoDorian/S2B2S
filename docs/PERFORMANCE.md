@@ -13,16 +13,16 @@ dependency or a thread.**
 
 ## The budget
 
-| Path                            | Target                                           | Where it is measured                                             |
-| ------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| Hotkey → first captured sample  | < 30 ms warm mic, < 150 ms cold open             | `first captured samples … after Cmd::Start` debug log            |
-| Audio callback                  | allocation-free, lock-free, log-free             | `write_input_to_ring` — never touch it casually                  |
-| Consumer thread per 16 ms frame | ≪ 16 ms (VAD ≈ 30 µs, RNNoise ≈ 100 µs)          | `tests/vad_speech_clock_probe.rs`, debug timings                 |
-| Stop → text pasted (batch)      | model bound; everything else < 20 ms             | Statistics page latency distributions                            |
-| Stream → overlay text           | one frame; events ≤ ~30 Hz                       | `StreamTextEvent`, `VadTestEvent` throttles                      |
-| LLM post-processing / merge     | provider bound; local llama.cpp, warm            | `post_processing_latency_ms` in history                          |
-| Settings UI interaction         | no synchronous Tauri call on the main thread     | commands are `async` + `spawn_blocking`                          |
-| Live FFT frame                  | ≤ 0.5 ms DSP at N = 32768 on the worker; 5–60 Hz | `dsp_us` in `LiveFftFrameEvent`, `dropped_samples` in the status |
+| Path                            | Target                                           | Where it is measured                                                     |
+| ------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| Hotkey → first captured sample  | < 30 ms warm mic, < 150 ms cold open             | `first captured samples … after Cmd::Start` debug log                    |
+| Audio callback                  | allocation-free, lock-free, log-free             | `write_input_to_ring` — never touch it casually                          |
+| Consumer thread per 16 ms frame | ≪ 16 ms (VAD ≈ 30 µs, RNNoise ≈ 100 µs)          | `tests/vad_speech_clock_probe.rs`, debug timings                         |
+| Stop → text pasted (batch)      | model bound; everything else < 20 ms             | Statistics page latency distributions                                    |
+| Stream → overlay text           | one frame; events ≤ ~30 Hz                       | `StreamTextEvent`, `VadTestEvent` throttles                              |
+| LLM post-processing / merge     | provider bound; local llama.cpp, warm            | `post_processing_latency_ms` in history                                  |
+| Settings UI interaction         | no synchronous Tauri call on the main thread     | commands are `async` + `spawn_blocking`                                  |
+| Live FFT frame                  | ≤ 0.5 ms DSP at N = 32768 on the worker; 5–60 Hz | `dsp_us` in the `live_fft_frame` header, `dropped_samples` in the status |
 
 ## Rules
 
@@ -55,7 +55,8 @@ dependency or a thread.**
    toggle never waits on a rebuild. Serialize only what shares a resource.
 7. **Long-lived child processes run detached on their own thread.** The
    llama.cpp server is spawned by a supervisor thread that owns the child,
-   pipes its stderr to the log at line granularity, polls readiness on
+   captures its stdout/stderr line by line into a 400-line ring buffer shown
+   on the Local LLM page (not the app log), polls readiness on
    `/health` with backoff, and kills it on app exit. The request path only
    ever talks HTTP to a server that is already warm.
 8. **System meters must be cheap.** CPU / RAM / GPU readings come from one
@@ -87,20 +88,25 @@ Anything added to startup goes after that line or on its own thread.
 - The Live FFT tap costs the audio consumer thread one atomic load per
   chunk while the page is closed and a `try_lock` + memcpy into a 768 KB ring
   while it runs (never a wait). The `live-fft` worker exists only during a
-  session; each frame is a JSON event of `output_bins` floats (≈ 10 KB at
-  1024 bins, ≈ 300 KB/s at 30 Hz), sent to the main window only and skipped
-  while it is hidden. Inline mode (`async_analysis` off) moves the transform
-  onto the consumer thread on purpose and is bounded by the same 16 ms frame
-  budget.
+  session; each frame is encoded once into a binary slot (32-byte header +
+  `output_bins` raw f32, ≈ 4 KB at 1024 bins) that the page polls with
+  `live_fft_frame(known_seq)`: a poll that finds nothing new costs a 32-byte
+  reply, and the page stops polling while frozen, stopped or hidden. The axis
+  is fetched separately, once per axis change. Output bins go up to 65536
+  (256 KB per changed frame) — the cost of the page's own choice, not of the
+  overlay, which is capped at 8192. Inline mode (`async_analysis` off) moves
+  the transform onto the consumer thread on purpose and is bounded by the
+  same 16 ms frame budget; every lock it takes there is a `try_lock`.
 - The recording overlay's scope (`live_fft::scope`) is the same tap and
   pipeline on an `overlay-scope` thread that exists only while the overlay
   shows a recording; it always runs off the audio thread whatever
   `async_analysis` says. The overlay polls `overlay_scope_frame` at
-  `update_rate_hz`: one memcpy per poll of the bins plus the waveform window
-  as raw f32 (no JSON, no event): ~20 KB with 1024 bins and the default 4096
+  `update_rate_hz`: one memcpy per changed poll of the bins (at most 8192,
+  `OVERLAY_MAX_BINS`) plus the waveform window as raw f32 (no JSON, no event;
+  an unchanged seq returns the 32-byte header only): ~20 KB with 1024 bins and the default 4096
   samples, ≈ 600 KB/s at 30 Hz; `overlay_scope.wave_samples` can raise the
   window to 16384 samples (64 KB per poll). The 16-bucket level
-  meter it replaced no longer runs (no callback is registered).
+  meter it replaced has been removed from the recorder.
 - FFT resampling adds ~20 ms of buffering per stage; the denoise chain is
   two stages when the microphone is not 48 kHz. Prefer a 48 kHz device.
 - The first RNNoise frames after a reset are transient; the chain is reset
@@ -122,6 +128,36 @@ Anything added to startup goes after that line or on its own thread.
 - Local llama.cpp with MTP speculative decoding (`--spec-type draft-mtp`) is
   the fastest configuration measured for the merge/clean prompts; keep the
   draft model on the same device as the main model.
+
+## Live FFT: measured before/after the Plugin_FFT port (2026-09-23)
+
+i9-13900H, CPU lane (`dev:cpu` posture), dev profile with opt-level 3 for the
+app crate and the FFT crates. The pre-port pipeline and the current one ran in
+one binary, interleaved ABBA, 8 rounds of 300 frames (after 60 warm-up
+frames) per configuration, median per round. Three separate processes, each
+pinned to one core at high priority; every round's ratio stayed within ±4 %
+of its run's median. Numbers are the median of the three runs, µs per
+`process()` at 48 kHz.
+
+| Configuration                                               | Before | After | Speed-up |
+| ----------------------------------------------------------- | ------ | ----- | -------- |
+| N 32768 (the previous default), same work (aggregation off) | 82.7   | 44.3  | ×1.84    |
+| N 32768 (the previous default), peak aggregation            | 82.7   | 47.1  | ×1.75    |
+| N 8192, cubic, 2048 bins                                    | 32.2   | 11.3  | ×2.85    |
+| Full chain: EQ + A-weighting + dB AGC + ballistics          | 80.8   | 42.7  | ×1.87    |
+| Mel, Hann, N 4096, 256 bins                                 | 11.7   | 4.7   | ×2.49    |
+| Digital silence, defaults (dB + ballistics)                 | 80.8   | 0.3   | ×~270    |
+| Frame encode, 1024 bins (JSON event → binary slot)          | 150.5  | < 0.1 | —        |
+| Frame encode, 8192 bins                                     | 1216.4 | 0.5   | ×~2400   |
+
+The encode rows time only the serialisation; the old path also paid Tauri's
+event IPC and a `JSON.parse` plus a `Float32Array` copy in the webview, which
+the binary poll does not. Timings are quantised to the 0.1 µs timer, so the
+silence and small-encode ratios are approximate. Rows that name no N ran at
+N 32768, the default at the time (the default is now Plugin_FFT's 16384; not
+re-measured), and that configuration is dominated by its 32K transform. The
+per-kernel A/B results of the v2.12 port (kept and rejected) are recorded
+with the change.
 
 ## Scheduling and repeatable STT measurements
 

@@ -14,6 +14,20 @@ fn manager(app: &AppHandle) -> Arc<LlamaServerManager> {
     app.state::<Arc<LlamaServerManager>>().inner().clone()
 }
 
+/// Run a filesystem- or process-bound command body on the blocking pool, so
+/// it never runs on the main thread (docs/PERFORMANCE.md rule 3). For the
+/// commands whose return type is not a `Result` (the generated bindings must
+/// keep their shape): a panic in `f` is logged and yields `fallback`.
+async fn off_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static, fallback: T) -> T {
+    match tauri::async_runtime::spawn_blocking(f).await {
+        Ok(value) => value,
+        Err(e) => {
+            log::error!("llama command task failed: {e}");
+            fallback
+        }
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_llama_server_state(app: AppHandle) -> LlamaServerStateEvent {
@@ -55,6 +69,12 @@ pub async fn restart_llama_server(app: AppHandle) -> Result<(), String> {
 
 /// Persist the llama settings. A running server keeps its current command
 /// line until it is restarted; the UI offers that explicitly.
+///
+/// Deliberately synchronous: the server fields save on every keystroke, and
+/// running on the main thread keeps those writes in the order they were typed.
+/// Only the provider relink, which can probe a socket for ~1 s, goes to the
+/// blocking pool; it re-reads the settings it writes (see
+/// `LlamaServerManager::relink_custom_provider`), so it cannot undo an edit.
 #[tauri::command]
 #[specta::specta]
 pub fn change_llama_settings(app: AppHandle, settings: LlamaSettings) -> Result<(), String> {
@@ -68,9 +88,11 @@ pub fn change_llama_settings(app: AppHandle, settings: LlamaSettings) -> Result<
     let relink = current.llama.port != previous.port || current.llama.alias != previous.alias;
     write_settings(&app, current);
     if relink {
-        let m = manager(&app);
-        let running = m.snapshot().status == LlamaStatus::Ready;
-        m.relink_custom_provider(running);
+        tauri::async_runtime::spawn_blocking(move || {
+            let m = manager(&app);
+            let running = m.snapshot().status == LlamaStatus::Ready;
+            m.relink_custom_provider(running);
+        });
     }
     Ok(())
 }
@@ -99,14 +121,14 @@ pub fn get_llama_command_preview(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn list_gguf_files(dir: String) -> Vec<GgufFile> {
-    llama_server::list_gguf_files(&dir)
+pub async fn list_gguf_files(dir: String) -> Vec<GgufFile> {
+    off_main(move || llama_server::list_gguf_files(&dir), Vec::new()).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn detect_llama_install() -> Option<LlamaDetectedInstall> {
-    llama_server::detect_existing_install()
+pub async fn detect_llama_install() -> Option<LlamaDetectedInstall> {
+    off_main(llama_server::detect_existing_install, None).await
 }
 
 #[tauri::command]
@@ -126,14 +148,16 @@ pub async fn fetch_llama_releases(
 
 #[tauri::command]
 #[specta::specta]
-pub fn detect_llama_backend() -> String {
-    llama_releases::detect_backend()
+pub async fn detect_llama_backend() -> String {
+    // The first call runs `nvidia-smi` and waits for it; "cpu" is also what a
+    // failed detection reports.
+    off_main(llama_releases::detect_backend, "cpu".to_string()).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn list_installed_llama_servers(app: AppHandle) -> Vec<InstalledLlamaServer> {
-    llama_releases::list_installed(&app)
+pub async fn list_installed_llama_servers(app: AppHandle) -> Vec<InstalledLlamaServer> {
+    off_main(move || llama_releases::list_installed(&app), Vec::new()).await
 }
 
 /// Download + unpack a release; progress arrives as `LlamaDownloadEvent`.
@@ -156,20 +180,26 @@ pub async fn install_llama_release(
 
 #[tauri::command]
 #[specta::specta]
-pub fn remove_installed_llama_server(app: AppHandle, dir: String) -> Result<(), String> {
-    llama_releases::remove_installed(&app, &dir)
+pub async fn remove_installed_llama_server(app: AppHandle, dir: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || llama_releases::remove_installed(&app, &dir))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// The installed CUDA toolkit whose runtime DLLs a CUDA build can use.
 #[tauri::command]
 #[specta::specta]
-pub fn detect_cuda_toolkit() -> Option<llama_releases::CudaToolkitInfo> {
-    llama_releases::detect_cuda_toolkit()
+pub async fn detect_cuda_toolkit() -> Option<llama_releases::CudaToolkitInfo> {
+    off_main(llama_releases::detect_cuda_toolkit, None).await
 }
 
 /// Delete the bundled cudart/cuBLAS DLLs from an install; returns MB freed.
 #[tauri::command]
 #[specta::specta]
-pub fn remove_bundled_cuda_runtime(app: AppHandle, dir: String) -> Result<u32, String> {
-    llama_releases::remove_bundled_cuda_runtime(&app, &dir)
+pub async fn remove_bundled_cuda_runtime(app: AppHandle, dir: String) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        llama_releases::remove_bundled_cuda_runtime(&app, &dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

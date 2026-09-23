@@ -31,7 +31,7 @@ import { VadLiveTest } from "../VadLiveTest";
 export const AdvancedSettings = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
-  const experimentalEnabled = getSetting("experimental_enabled") || false;
+  const experimentalEnabled = () => getSetting("experimental_enabled") || false;
 
   return (
     <div class="max-w-3xl w-full mx-auto space-y-6">
@@ -71,7 +71,7 @@ export const AdvancedSettings = () => {
         />
       </SettingsGroup>
 
-      {experimentalEnabled && (
+      {experimentalEnabled() && (
         <SettingsGroup title={t("settings.advanced.groups.experimental")}>
           <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
           <KeyboardImplementationSelector

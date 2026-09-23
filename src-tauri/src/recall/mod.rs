@@ -1,8 +1,9 @@
 //! Recall — the note vault (fork feature).
 //!
 //! A plain folder of Markdown files: one note per `.md` file under
-//! `notes/`, with the recordings that produced them linked (never copied)
-//! from `audio/`. There is deliberately no database: the folder *is* the
+//! `notes/`, with the recordings behind them copied into `audio/`
+//! (encrypted with the notes when the vault is). There is deliberately no
+//! database: the folder *is* the
 //! format, greppable, syncable and readable with any editor, and the
 //! derived `index.json` is a cache that can be deleted at any time.
 //!
@@ -14,7 +15,7 @@ pub mod crypto;
 pub mod dictate;
 pub mod insertion;
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
@@ -260,7 +261,13 @@ fn parse_note(id: &str, raw: &str, file_updated_ms: i64) -> RecallNoteContent {
             let Some((key, value)) = line.split_once(':') else {
                 continue;
             };
-            let value = value.trim().trim_matches('"');
+            // Strip one surrounding pair of quotes only: a value that merely
+            // starts or ends with a quote (`He said "hi"`) must round-trip.
+            let value = value.trim();
+            let value = value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .unwrap_or(value);
             match key.trim() {
                 KEY_TITLE => title = value.to_string(),
                 KEY_CREATED => created_ms = value.parse().ok(),
@@ -349,14 +356,13 @@ pub fn read_note(root: &Path, id: &str) -> Result<RecallNoteContent, String> {
     Ok(parse_note(id, &raw, file_updated_ms(&path)))
 }
 
-pub fn create_note(root: &Path, title: &str, tags: &[String]) -> Result<RecallNoteMeta, String> {
-    ensure_dirs(root)?;
+/// Metadata of a new, empty note (`create_note` / `create_note_any`).
+fn created_meta(root: &Path, title: &str, tags: &[String]) -> RecallNoteMeta {
     let title = title.trim();
     let title = if title.is_empty() { "Untitled" } else { title };
-    let id = fresh_note_id(root, title);
     let now = now_ms();
-    let meta = RecallNoteMeta {
-        id: id.clone(),
+    RecallNoteMeta {
+        id: fresh_note_id(root, title),
         title: title.to_string(),
         created_ms: now,
         updated_ms: now,
@@ -364,9 +370,95 @@ pub fn create_note(root: &Path, title: &str, tags: &[String]) -> Result<RecallNo
         word_count: 0,
         source: Some("manual".to_string()),
         audio_file: None,
-    };
-    write_note_file(root, &meta, "")?;
-    rebuild_index(root)?;
+    }
+}
+
+/// Metadata of an edited note: an empty title keeps the existing one, and
+/// creation time, source and recording carry over.
+fn updated_meta(
+    id: &str,
+    existing: RecallNoteMeta,
+    title: &str,
+    tags: &[String],
+    body: &str,
+) -> RecallNoteMeta {
+    let title = title.trim();
+    RecallNoteMeta {
+        id: id.to_string(),
+        title: if title.is_empty() {
+            existing.title
+        } else {
+            title.to_string()
+        },
+        created_ms: existing.created_ms,
+        updated_ms: now_ms(),
+        tags: tags.to_vec(),
+        word_count: count_words(body),
+        source: existing.source,
+        audio_file: existing.audio_file,
+    }
+}
+
+/// A saved transcription's title: the one given, else the text's first line
+/// (up to 60 characters), else `Transcription`.
+fn guess_title(title: Option<String>, text: &str) -> String {
+    title
+        .filter(|t| !t.trim().is_empty())
+        .map(|t| t.trim().to_string())
+        .unwrap_or_else(|| {
+            let first_line = text.lines().next().unwrap_or("").trim();
+            let guessed: String = first_line.chars().take(60).collect();
+            if guessed.is_empty() {
+                "Transcription".to_string()
+            } else {
+                guessed
+            }
+        })
+}
+
+/// Metadata of a saved transcription (`save_transcription_any`).
+fn transcription_meta(
+    root: &Path,
+    text: &str,
+    title: String,
+    source: Option<String>,
+    audio_file: Option<String>,
+    tags: &[String],
+) -> RecallNoteMeta {
+    let now = now_ms();
+    RecallNoteMeta {
+        id: fresh_note_id(root, &title),
+        title,
+        created_ms: now,
+        updated_ms: now,
+        tags: tags.to_vec(),
+        word_count: count_words(text),
+        source: source.or_else(|| Some("transcription".to_string())),
+        audio_file,
+    }
+}
+
+/// Write a note to a plain vault and refresh the derived index.
+fn persist_plain(root: &Path, meta: &RecallNoteMeta, body: &str) -> Result<(), String> {
+    write_note_file(root, meta, body)?;
+    rebuild_index(root)
+}
+
+/// Write a note in whichever form the vault holds: plain Markdown (index
+/// refreshed), or ciphertext under the session key (no index to refresh).
+fn persist(root: &Path, meta: &RecallNoteMeta, body: &str) -> Result<(), String> {
+    if !crypto::is_encrypted(root) {
+        return persist_plain(root, meta, body);
+    }
+    let key = crypto::session_key()?;
+    let raw = serialize_note(meta, body);
+    crypto::write_note_encrypted(root, &meta.id, &key, raw.as_bytes())
+}
+
+pub fn create_note(root: &Path, title: &str, tags: &[String]) -> Result<RecallNoteMeta, String> {
+    ensure_dirs(root)?;
+    let meta = created_meta(root, title, tags);
+    persist_plain(root, &meta, "")?;
     Ok(meta)
 }
 
@@ -379,63 +471,8 @@ pub fn write_note(
 ) -> Result<RecallNoteMeta, String> {
     let id = sanitize_id(id)?;
     let existing = read_note(root, id)?;
-    let title = title.trim();
-    let meta = RecallNoteMeta {
-        id: id.to_string(),
-        title: if title.is_empty() {
-            existing.meta.title
-        } else {
-            title.to_string()
-        },
-        created_ms: existing.meta.created_ms,
-        updated_ms: now_ms(),
-        tags: tags.to_vec(),
-        word_count: count_words(body),
-        source: existing.meta.source,
-        audio_file: existing.meta.audio_file,
-    };
-    write_note_file(root, &meta, body)?;
-    rebuild_index(root)?;
-    Ok(meta)
-}
-
-/// Append transcription text as a new note — the "Save to Recall" path.
-/// The recording itself is referenced by file name, never copied.
-pub fn save_transcription(
-    root: &Path,
-    text: &str,
-    title: Option<String>,
-    source: Option<String>,
-    audio_file: Option<String>,
-    tags: &[String],
-) -> Result<RecallNoteMeta, String> {
-    ensure_dirs(root)?;
-    let first_line = text.lines().next().unwrap_or("").trim();
-    let title = title
-        .filter(|t| !t.trim().is_empty())
-        .map(|t| t.trim().to_string())
-        .unwrap_or_else(|| {
-            let guessed: String = first_line.chars().take(60).collect();
-            if guessed.is_empty() {
-                "Transcription".to_string()
-            } else {
-                guessed
-            }
-        });
-    let id = fresh_note_id(root, &title);
-    let now = now_ms();
-    let meta = RecallNoteMeta {
-        id: id.clone(),
-        title,
-        created_ms: now,
-        updated_ms: now,
-        tags: tags.to_vec(),
-        word_count: count_words(text),
-        source: source.or_else(|| Some("transcription".to_string())),
-        audio_file,
-    };
-    write_note_file(root, &meta, text)?;
-    rebuild_index(root)?;
+    let meta = updated_meta(id, existing.meta, title, tags, body);
+    persist_plain(root, &meta, body)?;
     Ok(meta)
 }
 
@@ -475,7 +512,12 @@ fn locked_meta(id: &str) -> RecallNoteMeta {
 fn note_bytes_to_content(id: &str, bytes: &[u8], root: &Path) -> Result<RecallNoteContent, String> {
     let raw = String::from_utf8(bytes.to_vec())
         .map_err(|_| format!("Corrupt note {id}: not valid UTF-8"))?;
-    Ok(parse_note(id, &raw, file_updated_ms(&note_path(root, id))))
+    // Only encrypted notes come through here: their file is the `.rcl`.
+    Ok(parse_note(
+        id,
+        &raw,
+        file_updated_ms(&crypto::encrypted_note_path(root, id)),
+    ))
 }
 
 /// `(metas, locked)`: when locked, the metas are opaque placeholders and
@@ -484,10 +526,16 @@ pub fn list_notes_any(root: &Path) -> Result<(Vec<RecallNoteMeta>, bool), String
     if crypto::is_encrypted(root) {
         match crypto::session_key() {
             Ok(key) => {
+                // Like `list_notes`: one unreadable note is skipped, never
+                // allowed to hide the rest of the vault.
                 let mut notes = Vec::new();
                 for id in crypto::note_ids_encrypted(root)? {
-                    let bytes = crypto::read_note_encrypted(root, &id, &key)?;
-                    notes.push(note_bytes_to_content(&id, &bytes, root)?.meta);
+                    match crypto::read_note_encrypted(root, &id, &key)
+                        .and_then(|bytes| note_bytes_to_content(&id, &bytes, root))
+                    {
+                        Ok(content) => notes.push(content.meta),
+                        Err(e) => log::warn!("Recall: skipping unreadable note {id}: {e}"),
+                    }
                 }
                 notes.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms).then(a.id.cmp(&b.id)));
                 Ok((notes, false))
@@ -525,28 +573,9 @@ pub fn write_note_any(
     body: &str,
 ) -> Result<RecallNoteMeta, String> {
     let id = sanitize_id(id)?;
-    if !crypto::is_encrypted(root) {
-        return write_note(root, id, title, tags, body);
-    }
-    let key = crypto::session_key()?;
     let existing = read_note_any(root, id)?;
-    let title = title.trim();
-    let meta = RecallNoteMeta {
-        id: id.to_string(),
-        title: if title.is_empty() {
-            existing.meta.title
-        } else {
-            title.to_string()
-        },
-        created_ms: existing.meta.created_ms,
-        updated_ms: now_ms(),
-        tags: tags.to_vec(),
-        word_count: count_words(body),
-        source: existing.meta.source,
-        audio_file: existing.meta.audio_file,
-    };
-    let raw = serialize_note(&meta, body);
-    crypto::write_note_encrypted(root, id, &key, raw.as_bytes())?;
+    let meta = updated_meta(id, existing.meta, title, tags, body);
+    persist(root, &meta, body)?;
     Ok(meta)
 }
 
@@ -556,26 +585,8 @@ pub fn create_note_any(
     tags: &[String],
 ) -> Result<RecallNoteMeta, String> {
     ensure_dirs(root)?;
-    if !crypto::is_encrypted(root) {
-        return create_note(root, title, tags);
-    }
-    let key = crypto::session_key()?;
-    let title = title.trim();
-    let title = if title.is_empty() { "Untitled" } else { title };
-    let id = fresh_note_id(root, title);
-    let now = now_ms();
-    let meta = RecallNoteMeta {
-        id: id.clone(),
-        title: title.to_string(),
-        created_ms: now,
-        updated_ms: now,
-        tags: tags.to_vec(),
-        word_count: 0,
-        source: Some("manual".to_string()),
-        audio_file: None,
-    };
-    let raw = serialize_note(&meta, "");
-    crypto::write_note_encrypted(root, &meta.id, &key, raw.as_bytes())?;
+    let meta = created_meta(root, title, tags);
+    persist(root, &meta, "")?;
     Ok(meta)
 }
 
@@ -609,6 +620,7 @@ pub fn attach_audio_file(root: &Path, source: &Path) -> Result<Option<String>, S
 /// encryption-aware like every writer. `audio_source` is the recording the
 /// text came from; it is *copied* into the vault's `audio/` folder, so the
 /// vault is self-contained (and its audio encrypted with the notes).
+/// `audio_file` is the frontmatter reference used when there is no copy.
 pub fn save_transcription_any(
     root: &Path,
     text: &str,
@@ -619,41 +631,14 @@ pub fn save_transcription_any(
     audio_source: Option<&Path>,
 ) -> Result<RecallNoteMeta, String> {
     ensure_dirs(root)?;
-    let first_line = text.lines().next().unwrap_or("").trim();
-    let title = title
-        .filter(|t| !t.trim().is_empty())
-        .map(|t| t.trim().to_string())
-        .unwrap_or_else(|| {
-            let guessed: String = first_line.chars().take(60).collect();
-            if guessed.is_empty() {
-                "Transcription".to_string()
-            } else {
-                guessed
-            }
-        });
+    let title = guess_title(title, text);
     let vault_audio = match audio_source {
         Some(path) => attach_audio_file(root, path)?,
         None => None,
     };
     let audio_ref = vault_audio.or(audio_file);
-    if !crypto::is_encrypted(root) {
-        return save_transcription(root, text, Some(title), model_source, audio_ref, tags);
-    }
-    let key = crypto::session_key()?;
-    let id = fresh_note_id(root, &title);
-    let now = now_ms();
-    let meta = RecallNoteMeta {
-        id: id.clone(),
-        title,
-        created_ms: now,
-        updated_ms: now,
-        tags: tags.to_vec(),
-        word_count: count_words(text),
-        source: model_source.or_else(|| Some("transcription".to_string())),
-        audio_file: audio_ref,
-    };
-    let raw = serialize_note(&meta, text);
-    crypto::write_note_encrypted(root, &meta.id, &key, raw.as_bytes())?;
+    let meta = transcription_meta(root, text, title, model_source, audio_ref, tags);
+    persist(root, &meta, text)?;
     Ok(meta)
 }
 
@@ -757,13 +742,6 @@ pub fn rebuild_index(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// ISO timestamp for display (used by the UI's note list tooltips).
-pub fn format_timestamp_ms(ms: i64) -> String {
-    DateTime::from_timestamp_millis(ms)
-        .map(|t| t.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -840,6 +818,16 @@ mod tests {
         assert_eq!(note.meta.tags, vec!["a".to_string(), "b".to_string()]);
         assert_eq!(note.meta.source.as_deref(), Some("whisper-large-turbo"));
         assert_eq!(note.meta.audio_file.as_deref(), Some("zer0-1.wav"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn titles_with_edge_quotes_round_trip() {
+        let root = temp_root("quotes");
+        for title in [r#"He said "hi""#, r#""Quoted" start"#] {
+            let meta = create_note(&root, title, &[]).unwrap();
+            assert_eq!(read_note(&root, &meta.id).unwrap().meta.title, title);
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

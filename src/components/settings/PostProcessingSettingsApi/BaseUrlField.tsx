@@ -1,4 +1,5 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, untrack } from "solid-js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { Input } from "../../ui/Input";
 import type { JSX } from "@solidjs/web";
 
@@ -10,37 +11,34 @@ interface BaseUrlFieldProps {
   className?: string;
 }
 
-export const BaseUrlField = ({
-  value,
-  onBlur,
-  disabled,
-  placeholder,
-  className = "",
-}: BaseUrlFieldProps): JSX.Element => {
-  const [localValue, setLocalValue] = createSignal(value);
+export const BaseUrlField = (props: BaseUrlFieldProps): JSX.Element => {
+  const { t } = useTranslation();
+  const [localValue, setLocalValue] = createSignal(untrack(() => props.value));
 
+  // Re-sync the draft whenever the stored URL changes, including a switch to
+  // another provider while the field stays mounted.
   createEffect(
-    () => undefined,
-    () => {
+    () => props.value,
+    (value) => {
       setLocalValue(value);
     },
   );
-
-  const disabledMessage = disabled
-    ? "Base URL is managed by the selected provider."
-    : undefined;
 
   return (
     <Input
       type="text"
       value={localValue()}
       onInput={(e) => setLocalValue(e.target.value)}
-      onBlur={() => onBlur(localValue())}
-      placeholder={placeholder}
+      onBlur={() => props.onBlur(localValue())}
+      placeholder={props.placeholder}
       variant="compact"
-      disabled={disabled}
-      class={`flex-1 min-w-[360px] ${className}`}
-      title={disabledMessage}
+      disabled={props.disabled}
+      class={`flex-1 min-w-[360px] ${props.className ?? ""}`}
+      title={
+        props.disabled
+          ? t("settings.postProcessing.api.baseUrl.managedByProvider")
+          : undefined
+      }
     />
   );
 };

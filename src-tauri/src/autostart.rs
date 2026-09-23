@@ -117,6 +117,7 @@ mod macos {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::app_identity;
 
         /// Validates the assumption `login_item_api_available` rests on: the
         /// ServiceManagement framework is linked into the binary, so the

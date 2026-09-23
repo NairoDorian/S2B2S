@@ -1,9 +1,3 @@
-/** @jsxImportSource @solidjs/web */
-// ^ This is the overlay's whole opt-in to Solid. `tsconfig.json` keeps
-// `jsxImportSource: "react"` as the tree-wide default because the settings
-// window is still React (Phase 3 inverts that and deletes these pragmas); a
-// file that opts out declares it here, and `vite.config.ts` routes the same
-// directory to the Solid compiler.
 import { render } from "@solidjs/web";
 import { listen } from "@tauri-apps/api/event";
 import RecordingOverlay from "./RecordingOverlay";

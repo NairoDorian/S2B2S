@@ -135,7 +135,9 @@ export const PasteMethodSetting = (props: PasteMethodProps): JSX.Element => {
           )}
           descriptionMode={props.descriptionMode}
           grouped={props.grouped}
-          formatValue={(v) => `${Math.round(v)} chars/s`}
+          formatValue={(v) =>
+            t("common.charsPerSecond", { value: Math.round(v) })
+          }
           onReset={() => updateSetting("direct_streaming_speed", 30)}
           disabled={isUpdating("direct_streaming_speed")}
         />

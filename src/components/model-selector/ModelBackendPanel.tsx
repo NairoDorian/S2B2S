@@ -17,7 +17,7 @@ import type { TFunction } from "i18next";
  * honest about the binary it is running in, not about what the engine
  * supports in principle.
  */
-const BACKEND_ORDER: ModelBackendSetting[] = [
+export const BACKEND_ORDER: ModelBackendSetting[] = [
   "auto",
   "cpu",
   "cuda",
@@ -71,9 +71,10 @@ interface ModelBackendPanelProps {
 /**
  * Radio list of the backends one model may run on.
  *
- * Rendered inside the status-bar popover for the primary model and as a
- * compact dropdown beside a Multi-STT slot; both are the same choice over the
- * same map, so both write through `settingsStore.setModelBackend`.
+ * Rendered inside the status-bar popover for the primary model. The Multi-STT
+ * slots use `ModelBackendDropdown` instead, which shares
+ * `loadAvailableBackends` / `backendLabel` and writes the same map through
+ * `settingsStore.setModelBackend`.
  */
 export const ModelBackendPanel = (
   props: ModelBackendPanelProps,
@@ -100,23 +101,24 @@ export const ModelBackendPanel = (
     <ul role="radiogroup" class="py-1">
       <For each={backends()}>
         {(backend) => {
-          const isSelected = backend === props.selected;
+          // An accessor: the row outlives a change of selection.
+          const isSelected = () => backend === props.selected;
           return (
             <li>
               <button
                 type="button"
                 role="radio"
-                aria-checked={isSelected ? "true" : "false"}
+                aria-checked={isSelected() ? "true" : "false"}
                 disabled={props.modelId === null}
                 onClick={() => props.onSelect(backend)}
-                class={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSelected ? "bg-accent/10" : "hover:bg-mid-gray/10"}`}
+                class={`mx-1 flex w-[calc(100%-0.5rem)] items-start gap-2 rounded-md px-2 py-1.5 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isSelected() ? "bg-accent/10" : "hover:bg-mid-gray/10"}`}
               >
                 <Check
-                  class={`mt-0.5 h-3 w-3 shrink-0 ${isSelected ? "text-accent" : "text-transparent"}`}
+                  class={`mt-0.5 h-3 w-3 shrink-0 ${isSelected() ? "text-accent" : "text-transparent"}`}
                 />
                 <span class="min-w-0">
                   <span
-                    class={`block font-medium ${isSelected ? "text-accent" : "text-text/85"}`}
+                    class={`block font-medium ${isSelected() ? "text-accent" : "text-text/85"}`}
                   >
                     {backendLabel(backend, t)}
                   </span>

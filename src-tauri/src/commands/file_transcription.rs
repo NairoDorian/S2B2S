@@ -27,18 +27,23 @@ pub fn change_file_transcription_settings(
 
 #[tauri::command]
 #[specta::specta]
-pub fn list_audio_files_in_folder(
+pub async fn list_audio_files_in_folder(
     folder: String,
     include_subfolders: bool,
 ) -> Result<Vec<String>, String> {
-    crate::file_transcription::list_audio_files(Path::new(&folder), include_subfolders)
-        .map(|paths| {
-            paths
-                .into_iter()
-                .map(|p| p.to_string_lossy().to_string())
-                .collect()
-        })
-        .map_err(|e| e.to_string())
+    // A recursive walk of a large folder is disk I/O: keep it off the webview thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::file_transcription::list_audio_files(Path::new(&folder), include_subfolders)
+            .map(|paths| {
+                paths
+                    .into_iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect()
+            })
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Folder scan task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -89,18 +94,23 @@ pub fn reveal_path_in_file_manager(app: AppHandle, path: String) -> Result<(), S
 /// rather than rejected so a partially written live transcript still shows.
 #[tauri::command]
 #[specta::specta]
-pub fn read_text_file(path: String) -> Result<String, String> {
-    let target = PathBuf::from(&path);
-    let meta = std::fs::metadata(&target).map_err(|e| format!("Cannot read {path}: {e}"))?;
-    if !meta.is_file() {
-        return Err(format!("Not a file: {path}"));
-    }
-    if meta.len() > MAX_TEXT_FILE_BYTES {
-        return Err(format!(
-            "File is too large to display ({} MB)",
-            meta.len() / (1024 * 1024)
-        ));
-    }
-    let bytes = std::fs::read(&target).map_err(|e| format!("Cannot read {path}: {e}"))?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+pub async fn read_text_file(path: String) -> Result<String, String> {
+    // Up to `MAX_TEXT_FILE_BYTES` of disk I/O: keep it off the webview thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = PathBuf::from(&path);
+        let meta = std::fs::metadata(&target).map_err(|e| format!("Cannot read {path}: {e}"))?;
+        if !meta.is_file() {
+            return Err(format!("Not a file: {path}"));
+        }
+        if meta.len() > MAX_TEXT_FILE_BYTES {
+            return Err(format!(
+                "File is too large to display ({} MB)",
+                meta.len() / (1024 * 1024)
+            ));
+        }
+        let bytes = std::fs::read(&target).map_err(|e| format!("Cannot read {path}: {e}"))?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    })
+    .await
+    .map_err(|e| format!("Read task failed: {e}"))?
 }

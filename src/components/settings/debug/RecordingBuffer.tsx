@@ -28,7 +28,9 @@ export const RecordingBuffer = (props: RecordingBufferProps) => {
       description={t("settings.debug.recordingBuffer.description")}
       descriptionMode={props.descriptionMode}
       grouped={props.grouped}
-      formatValue={(v) => `${v}ms`}
+      formatValue={(v) =>
+        t("settings.statistics.units.milliseconds", { value: v })
+      }
     />
   );
 };

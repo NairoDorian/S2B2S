@@ -34,7 +34,6 @@ function decodeTranscribeValue(value: string): {
 }
 
 export const AccelerationSelector = (props: AccelerationSelectorProps) => {
-  const { descriptionMode = "tooltip", grouped = false } = props;
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
 
@@ -76,20 +75,26 @@ export const AccelerationSelector = (props: AccelerationSelectorProps) => {
     },
   );
 
-  const currentAccelerator = getSetting("transcribe_accelerator") ?? "auto";
-  const currentGpuDevice = getSetting("transcribe_gpu_device") ?? null;
-  const currentTranscribe = encodeTranscribeValue(
-    currentAccelerator as TranscribeAcceleratorSetting,
-    currentGpuDevice as string | null,
-  );
-  const displayedTranscribe = transcribeOptions().some(
-    (option) => option.value === currentTranscribe,
-  )
-    ? currentTranscribe
-    : currentAccelerator === "gpu" &&
-        transcribeOptions().some((option) => option.value === "gpu")
-      ? "gpu"
-      : (transcribeOptions()[0]?.value ?? null);
+  // Accessors, not consts: the options load asynchronously after mount and
+  // the stored choice changes with every pick.
+  const currentAccelerator = () =>
+    getSetting("transcribe_accelerator") ?? "auto";
+  const currentTranscribe = () =>
+    encodeTranscribeValue(
+      currentAccelerator() as TranscribeAcceleratorSetting,
+      (getSetting("transcribe_gpu_device") ?? null) as string | null,
+    );
+  const displayedTranscribe = () => {
+    const options = transcribeOptions();
+    const current = currentTranscribe();
+    if (options.some((option) => option.value === current)) return current;
+    if (
+      currentAccelerator() === "gpu" &&
+      options.some((option) => option.value === "gpu")
+    )
+      return "gpu";
+    return options[0]?.value ?? null;
+  };
 
   const handleTranscribeChange = async (value: string) => {
     const { accelerator, gpuDevice } = decodeTranscribeValue(value);
@@ -101,13 +106,13 @@ export const AccelerationSelector = (props: AccelerationSelectorProps) => {
     <SettingContainer
       title={t("settings.advanced.acceleration.transcribe.title")}
       description={t("settings.advanced.acceleration.transcribe.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode ?? "tooltip"}
+      grouped={props.grouped ?? false}
       layout="horizontal"
     >
       <Dropdown
         options={transcribeOptions()}
-        selectedValue={displayedTranscribe}
+        selectedValue={displayedTranscribe()}
         onSelect={handleTranscribeChange}
         disabled={
           isUpdating("transcribe_accelerator") ||

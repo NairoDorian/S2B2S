@@ -100,7 +100,10 @@ pub trait VoiceActivityDetector: Send + Sync {
     /// Raw 0–1 speech score of the most recently pushed frame, before the
     /// hysteresis gate and any smoothing. `None` for detectors that do not
     /// expose one. Read by the live VAD test in Settings → Advanced so the
-    /// user can see how far a frame sits from the threshold.
+    /// user can see how far a frame sits from the threshold. Earshot reports
+    /// 0.0 without running its model for a frame below -45 dBFS RMS while it
+    /// is not already in speech (its energy pre-gate), so a very quiet
+    /// microphone needs gain rather than a lower threshold.
     fn last_frame_score(&self) -> Option<f32> {
         None
     }

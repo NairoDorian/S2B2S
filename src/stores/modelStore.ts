@@ -17,7 +17,8 @@ interface DownloadStats {
   speed: number; // MB/s
 }
 
-// Using Record instead of Set/Map for Immer compatibility
+// Records rather than Set/Map: a Solid store keeps a Map or Set raw and
+// untracked, so a membership change would never reach the UI.
 interface ModelsStore {
   models: ModelInfo[];
   currentModel: string;
@@ -381,20 +382,7 @@ export function useModelStore() {
 export const selectModel = (modelId: string) =>
   useModelStore().selectModel(modelId);
 export const loadModels = () => useModelStore().loadModels();
-export const loadCurrentModel = () => useModelStore().loadCurrentModel();
-export const rescanLocalModels = () => useModelStore().rescanLocalModels();
 export const downloadModel = (modelId: string) =>
   useModelStore().downloadModel(modelId);
 export const cancelDownload = (modelId: string) =>
   useModelStore().cancelDownload(modelId);
-export const deleteModel = (modelId: string) =>
-  useModelStore().deleteModel(modelId);
-export const getModelInfo = (modelId: string) =>
-  useModelStore().getModelInfo(modelId);
-export const isModelDownloading = (modelId: string) =>
-  useModelStore().isModelDownloading(modelId);
-export const isModelVerifying = (modelId: string) =>
-  useModelStore().isModelVerifying(modelId);
-export const getDownloadProgress = (modelId: string) =>
-  useModelStore().getDownloadProgress(modelId);
-export const initialize = () => useModelStore().initialize();

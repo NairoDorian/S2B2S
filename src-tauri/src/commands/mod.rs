@@ -68,9 +68,10 @@ pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
 /// The log file the plugin's file target writes to for this process:
 /// `<log dir>/<basename>-<session-stamp>.log`.
 ///
-/// The basename is fixed for the process lifetime (set once at startup by
-/// `LogBuilder`), so the debug console and `clear_logs` always resolve the
-/// same path the writer opened — even though each app open gets a fresh file.
+/// The basename is fixed for the process lifetime (frozen once at startup by
+/// `session_log::init`), so the debug console and `clear_logs` always resolve
+/// the same path the writer opened — even though each app open gets a fresh
+/// file.
 fn current_log_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let log_dir = crate::portable::app_log_dir(app)
         .map_err(|e| format!("Failed to get log directory: {}", e))?;
@@ -86,7 +87,7 @@ fn current_log_file(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// attached, so without the file the panel's history would depend entirely on
 /// when the page happened to be open. The tail read is capped at 512 KiB —
 /// plenty for any realistic line count at ~100 bytes a line, and it keeps a
-/// 500 MB rotated log from being read whole.
+/// log near its 10 MB rotation size from being read whole.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_recent_logs(app: AppHandle, limit: u32) -> Result<String, String> {
@@ -100,7 +101,7 @@ fn read_log_tail(path: &std::path::Path, limit: u32) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
 
     let mut file =
-        std::fs::File::open(&path).map_err(|e| format!("Failed to open log file: {}", e))?;
+        std::fs::File::open(path).map_err(|e| format!("Failed to open log file: {}", e))?;
 
     const TAIL_CAP: u64 = 512 * 1024;
     let len = file
@@ -315,7 +316,7 @@ pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
     match EnigoState::new() {
         Ok(enigo_state) => {
             app.manage(enigo_state);
-            log::info!("Enigo initialized successfully after permission grant");
+            log::info!("Enigo initialized");
             Ok(())
         }
         Err(e) => {

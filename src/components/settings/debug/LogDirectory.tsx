@@ -9,10 +9,7 @@ interface LogDirectoryProps {
   grouped?: boolean;
 }
 
-export const LogDirectory = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-}: LogDirectoryProps) => {
+export const LogDirectory = (props: LogDirectoryProps) => {
   const { t } = useTranslation();
   const [logDir, setLogDir] = createSignal<string>("");
   const [loading, setLoading] = createSignal(true);
@@ -21,26 +18,23 @@ export const LogDirectory = ({
   createEffect(
     () => undefined,
     () => {
-      const loadLogDirectory = async () => {
-        try {
-          const result = await commands.getLogDirPath();
+      commands
+        .getLogDirPath()
+        .then((result) => {
           if (result.status === "ok") {
             setLogDir(result.data);
           } else {
             setError(result.error);
           }
-        } catch (err) {
-          const errorMessage =
+        })
+        .catch((err) => {
+          setError(
             err && typeof err === "object" && "message" in err
               ? String(err.message)
-              : "Failed to load log directory";
-          setError(errorMessage);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      loadLogDirectory();
+              : t("errors.loadDirectoryUnknown"),
+          );
+        })
+        .finally(() => setLoading(false));
     },
   );
 
@@ -57,16 +51,18 @@ export const LogDirectory = ({
     <SettingContainer
       title={t("settings.debug.logDirectory.title")}
       description={t("settings.debug.logDirectory.description")}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
+      descriptionMode={props.descriptionMode ?? "tooltip"}
+      grouped={props.grouped ?? false}
       layout="stacked"
     >
+      {/* Theme tokens, not hardcoded grays / reds that glow on the dark
+          theme — the same classes AppDataDirectory uses. */}
       {loading() ? (
         <div class="animate-pulse">
-          <div class="h-8 bg-gray-100 rounded" />
+          <div class="h-8 bg-mid-gray/10 rounded" />
         </div>
       ) : error() ? (
-        <div class="p-3 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+        <div class="p-3 bg-red-500/10 border border-red-200/30 rounded text-xs text-red-400">
           {t("errors.loadDirectory", { error: error() })}
         </div>
       ) : (

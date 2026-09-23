@@ -4,12 +4,12 @@
 //! being "paste into whatever has focus + write a history row" and become
 //! "insert into the note at the caret". The text travels to the webview as
 //! [`RecallInsertTextEvent`]; nothing is pasted, nothing is typed, no
-//! history row and no recording file is written — the note the caret sits
-//! in *is* the destination, and its content lives in the vault only.
+//! history row is written and the recording moves into the vault's
+//! `audio/` ([`absorb_recording`]) — the note the caret sits in *is* the
+//! destination, and its content lives in the vault only.
 //!
-//! The flag is armed by the frontend on editor focus and disarmed on blur
-//! (and by the backend when the vault folder changes), so an ordinary
-//! dictation anywhere else behaves exactly as always.
+//! The flag is armed by the frontend on editor focus and disarmed on blur,
+//! so an ordinary dictation anywhere else behaves exactly as always.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -68,6 +68,10 @@ pub fn absorb_recording(app: &AppHandle, wav_path: &Path, saved: bool) {
         return discard("Unusable recording file name");
     };
     let audio_dir = root.join(super::AUDIO_SUBDIR);
+    // Both branches need it: enabling encryption never creates `audio/`.
+    if let Err(e) = fs::create_dir_all(&audio_dir) {
+        return discard(&format!("Failed to create audio folder: {e}"));
+    }
     if super::crypto::is_encrypted(&root) {
         match super::crypto::session_key() {
             Ok(key) => {
@@ -86,14 +90,20 @@ pub fn absorb_recording(app: &AppHandle, wav_path: &Path, saved: bool) {
             Err(_) => return discard("Vault is locked"),
         }
     } else {
-        if let Err(e) = fs::create_dir_all(&audio_dir) {
-            return discard(&format!("Failed to create audio folder: {e}"));
-        }
-        if let Err(e) = fs::rename(wav_path, audio_dir.join(&name)) {
+        let dest = audio_dir.join(&name);
+        // A rename cannot cross volumes (a vault on another drive): fall back
+        // to a copy, and the source is removed below like the encrypted one.
+        if fs::rename(wav_path, &dest).is_err()
+            && let Err(e) = fs::copy(wav_path, &dest)
+        {
             return discard(&format!("Failed to move recording: {e}"));
         }
     }
-    if let Err(e) = fs::remove_file(wav_path) {
+    // Gone already after a successful rename; otherwise this is the copy the
+    // vault now holds a version of.
+    if wav_path.exists()
+        && let Err(e) = fs::remove_file(wav_path)
+    {
         warn!(
             "Recall insert: failed to remove recording copy {}: {e}",
             wav_path.display()

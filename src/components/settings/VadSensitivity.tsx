@@ -9,7 +9,8 @@ interface VadSensitivityProps {
   alwaysShow?: boolean;
 }
 
-const DEFAULT_THRESHOLD = 0.5;
+/** Mirrors `DEFAULT_VAD_THRESHOLD_EARSHOT` in `src-tauri/src/settings.rs`. */
+export const DEFAULT_THRESHOLD = 0.5;
 const MIN_THRESHOLD = 0.05;
 const MAX_THRESHOLD = 0.95;
 

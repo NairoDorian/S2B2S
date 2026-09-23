@@ -149,6 +149,7 @@
     "modelError": "Kesalahan Model",
     "modelUnloaded": "Model Dikeluarkan dari Memori",
     "noModelDownloadRequired": "Model Belum Tersedia — Perlu Diunduh",
+    "statusTitle": "Model status: {{status}}",
     "deleteModel": "Hapus {{modelName}}",
     "cancel": "Batal",
     "cancelDownload": "Batalkan unduhan",
@@ -219,6 +220,11 @@
         "increase": "Tambah ukuran chunk satu milidetik",
         "hint": "Berapa banyak audio yang dikumpulkan sebelum setiap dekode. Nilai lebih rendah lebih responsif tetapi lebih berat secara komputasi, karena model membaca ulang seluruh audio sejauh ini pada setiap chunk. Berlaku untuk rekaman berikutnya."
       }
+    },
+    "errors": {
+      "checkStatusFailed": "Failed to check model status",
+      "loadFailed": "Failed to load model",
+      "switchFailed": "Failed to switch model"
     }
   },
   "settings": {
@@ -354,7 +360,7 @@
       "acceleration": {
         "transcribe": {
           "title": "Akselerasi transcribe.cpp",
-          "description": "Akselerasi perangkat keras untuk model transcribe.cpp (keluarga Whisper). Otomatis menggunakan GPU jika tersedia (Metal di macOS, Vulkan di Windows/Linux)."
+          "description": "Akselerasi perangkat keras untuk model transcribe.cpp (keluarga Whisper). Otomatis menggunakan GPU jika tersedia (Metal di macOS, CUDA di Windows x86_64/Linux)."
         },
         "gpuDevice": {
           "auto": "Otomatis"
@@ -564,6 +570,7 @@
         "baseUrl": {
           "title": "URL Dasar",
           "description": "URL dasar API untuk penyedia yang dipilih. Hanya penyedia kustom yang dapat diedit.",
+          "managedByProvider": "Base URL is managed by the selected provider.",
           "placeholder": "https://api.openai.com/v1"
         },
         "apiKey": {
@@ -577,6 +584,7 @@
           "descriptionDefault": "Pilih model yang disediakan oleh penyedia yang dipilih.",
           "placeholderWithOptions": "Cari atau pilih model",
           "placeholderNoOptions": "Ketik nama model",
+          "useCustom": "Use \"{{value}}\"",
           "refreshModels": "Segarkan model"
         }
       },
@@ -608,6 +616,7 @@
       "loading": "Memuat riwayat...",
       "empty": "Belum ada transkripsi. Mulai merekam untuk mengisi riwayat Anda!",
       "copyToClipboard": "Salin transkripsi ke papan klip",
+      "copied": "Copied to clipboard",
       "save": "Simpan transkripsi",
       "saveToRecall": "File as Recall note",
       "savedToRecall": "Saved to Recall",
@@ -616,6 +625,7 @@
       "deleteError": "Gagal menghapus entri. Silakan coba lagi.",
       "retranscribe": "Transkripsikan ulang",
       "retranscribeError": "Gagal mentranskripsikan ulang. Silakan coba lagi.",
+      "retranscribeSuccess": "Transcription updated",
       "transcribing": "Mentranskripsikan...",
       "transcriptionFailed": "Transkripsi gagal. Anda dapat mentranskripsikan ulang menggunakan ikon coba lagi.",
       "deleteRecordings": "Delete Recordings",
@@ -633,9 +643,11 @@
       "postProcess": "Post-process (LLM Polish)",
       "postProcessing": "Polishing...",
       "postProcessError": "Failed to post-process transcript.",
+      "postProcessSuccess": "Transcript polished with LLM",
       "multiSttRetranscribe": "Multi-STT Re-transcribe",
       "multiSttTranscribing": "Multi-STT Transcribing...",
       "multiSttError": "Failed to Multi-STT re-transcribe.",
+      "multiSttSuccess": "Multi-STT transcription complete",
       "rawTranscriptTab": "Raw Transcript",
       "polishedTextTab": "Polished (LLM)",
       "mergedTextTab": "Merged Output",
@@ -646,9 +658,10 @@
       "wpmRating": "{{wpm}} WPM",
       "wordCount": "{{count}} words",
       "audioDetails": "{{total}} total : {{speech}} speech ({{silence}} cut)",
-      "latencyStt": "{{latency}} STT",
-      "latencyLlm": "{{latency}} LLM",
+      "latencyStt": "{{duration}} STT",
+      "latencyLlm": "{{duration}} LLM",
       "extraModelsCount": "{{count}} models",
+      "multiSttModelsBadge": "Multi-STT ({{count}} models)",
       "promptTooltip": "Prompt: {{prompt}}",
       "noMatch": "No transcriptions match your filter criteria.",
       "promptUsed": "LLM Prompt Used",
@@ -686,7 +699,8 @@
         "copied": "Disalin",
         "lineCount": "{{count}} baris",
         "empty": "Menunggu log… Entri akan muncul di sini saat aplikasi menghasilkannya.",
-        "noFilterMatch": "No lines match this tag."
+        "noFilterMatch": "No lines match this tag.",
+        "allTags": "ALL"
       },
       "updateChecks": {
         "label": "Periksa Pembaruan",
@@ -709,7 +723,13 @@
       },
       "soundTheme": {
         "label": "Tema Suara",
-        "description": "Pilih tema suara untuk umpan balik saat perekaman dimulai dan dihentikan"
+        "description": "Pilih tema suara untuk umpan balik saat perekaman dimulai dan dihentikan",
+        "options": {
+          "marimba": "Marimba",
+          "pop": "Pop",
+          "custom": "Custom"
+        },
+        "preview": "Preview sound theme (plays start then stop)"
       },
       "wordCorrectionThreshold": {
         "title": "Ambang Koreksi Kata",
@@ -754,13 +774,6 @@
         "title": "Implementasi Keyboard",
         "description": "Pilih backend pintasan keyboard.",
         "bindingsReset": "Pintasan keyboard tidak kompatibel dan telah dikembalikan ke nilai awal"
-      },
-      "paths": {
-        "appData": "Data Aplikasi:",
-        "models": "Model:",
-        "settings": "Pengaturan:",
-        "title": "Debug Paths",
-        "description": "Absolute paths of the directories this app writes to, for troubleshooting"
       },
       "pasteDelay": {
         "title": "Jeda Tempel (Sebelum)",
@@ -1363,7 +1376,9 @@
       },
       "canvas": {
         "idle": "Start the analyser to see the spectrum",
-        "silence": "digital silence"
+        "silence": "digital silence",
+        "now": "now",
+        "span": "−{{seconds}} s"
       },
       "telemetry": {
         "sampleRate": "Rate (Hz)",
@@ -1375,7 +1390,13 @@
         "threading": "Analysis: {{mode}}",
         "async": "worker thread",
         "inline": "inline on the audio thread",
-        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}"
+        "frame": "{{bins}} bins · {{rate}} Hz · last frame {{dsp}}",
+        "hzPerBin": "Hz / bin",
+        "magnitudeBins": "Magnitude bins",
+        "magnitudeBinsValue": "{{used}} of {{total}}",
+        "aggregated": "Aggregated",
+        "kaiserBeta": "Kaiser β",
+        "latency": "Latency"
       },
       "view": {
         "title": "Analyser",
@@ -1402,7 +1423,15 @@
         "music": "Music (Log, cubic, Blackman-Harris)",
         "meter": "Fast meter (linear, 60 Hz)",
         "chroma": "Chroma / pitch",
-        "applied": "Preset applied"
+        "applied": "Preset applied",
+        "quality": {
+          "title": "Quality",
+          "description": "Transform length, warp interpolation, Kaiser beta mode and aggregation tuned for a frame budget. Applied on top of the current settings; the output bins are kept.",
+          "visual60": "Visual 60 fps (8K, cubic, auto β)",
+          "visual120": "Visual 120 fps (4K, cubic, auto β)",
+          "analysis": "Analysis (32K, auto β, RMS)",
+          "active": "Matches: {{preset}}"
+        }
       },
       "spectrum": {
         "title": "Spectrum",
@@ -1469,6 +1498,29 @@
         "fftSize": {
           "label": "Zero-pad length",
           "description": "Transform length. The window is centred in a zero-padded frame of this size (grown to the next power of two above the window when that is larger); a longer transform interpolates the spectrum more finely."
+        },
+        "rawBins": {
+          "label": "Raw FFT bins",
+          "description": "Output the transform's magnitude untouched: N/2+1 bins from DC to Nyquist on a linear axis, with no warp, interpolation or aggregation. Scale, display max, warp blend, log floor, output bins and aggregation do not apply while it is on."
+        },
+        "outputBinsMode": {
+          "label": "Output bins mode",
+          "description": "Fixed: the output bin count below. Auto: one output bin per FFT bin, N/2+1 of the transform actually run.",
+          "fixed": "Fixed",
+          "auto": "Auto (N/2+1)"
+        },
+        "warpAggregation": {
+          "label": "Warp aggregation",
+          "description": "Where one output bin spans two or more FFT bins (the top of a log axis), combine them instead of interpolating between two: Peak keeps the loudest, so a narrow peak is never skipped; RMS averages their power. Off interpolates everywhere.",
+          "options": {
+            "off": "Off (interpolate, may skip peaks)",
+            "peak": "Peak (never drops a peak)",
+            "rms": "RMS (power mean)"
+          }
+        },
+        "zeroPadding": {
+          "label": "Zero-padding",
+          "description": "On: the window is centred in a zero-padded transform of the zero-pad length. Off: the transform is the window length itself (rounded up to even), the cheapest option, and the zero-pad length does not apply."
         }
       },
       "eq": {
@@ -1546,6 +1598,12 @@
             "coherent_gain": "Coherent gain (mean(window) = 1)",
             "full_scale": "Full scale (sine amplitude 1 → 1.0)"
           }
+        },
+        "kaiserBetaMode": {
+          "label": "Kaiser beta mode",
+          "description": "Manual: the beta below. Auto: derived from the dB range floor, so the window's side lobes sit just under what the display can show.",
+          "manual": "Manual",
+          "auto": "Auto (from dB range)"
         }
       },
       "loudness": {
@@ -1614,7 +1672,11 @@
           "label": "Update rate",
           "description": "Spectrum frames per second sent to the page."
         },
-        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size."
+        "note": "{{app}} analyses one channel: the selected input channel or the average of all (see General → Input channel). Settings apply as soon as they change, and FFT plans are cached per size.",
+        "features": {
+          "label": "Spectral features",
+          "description": "Compute the centroid, 85 % rolloff, flatness, flux, RMS level and bass / mid / high band levels from the linear spectrum with every frame, shown under the analyser. A few microseconds per frame."
+        }
       },
       "voice": {
         "title": "Voice detection & noise suppression",
@@ -1629,6 +1691,17 @@
       },
       "errors": {
         "start": "Could not start the analyser: {{error}}"
+      },
+      "features": {
+        "title": "Features",
+        "centroid": "Centroid",
+        "rolloff": "Rolloff",
+        "flatness": "Flatness",
+        "flux": "Flux",
+        "rms": "RMS",
+        "bass": "Bass",
+        "mid": "Mid",
+        "high": "High"
       }
     },
     "llama": {
@@ -1695,6 +1768,7 @@
         "bundledRuntime": "{{mb}} MB of bundled CUDA runtime",
         "removeRuntime": "Remove runtime",
         "removeRuntimeTitle": "Delete the bundled cudart / cuBLAS DLLs from this install. Only safe when the CUDA toolkit is installed.",
+        "runtimeFreed": "Freed {{mb}} MB",
         "includeCudartOnPath": "That folder is on PATH.",
         "includeCudartOffPath": "That folder is not on PATH; {{app}} adds it for llama-server when it starts it.",
         "includeCudartNoCublas": "cuBLAS was not found next to it — turn this on, the server needs cublas64 and cublasLt64 too.",
@@ -1792,7 +1866,13 @@
     "downloading": "Downloading...",
     "downloadingCount": "{{count}} downloading...",
     "downloadSpeed": "{{speed}} MB/s",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "play": "Putar",
+    "pause": "Jeda",
+    "moreInformation": "Informasi lebih lanjut",
+    "selectOption": "Select an option...",
+    "unknownSize": "Unknown size",
+    "charsPerSecond": "{{value}} chars/s"
   },
   "accessibility": {
     "permissionsDescription": "{{app}} memerlukan izin aksesibilitas untuk mengetik teks hasil transkripsi.",
@@ -1800,6 +1880,7 @@
   },
   "errors": {
     "loadDirectory": "Kesalahan saat memuat direktori: {{error}}",
+    "loadDirectoryUnknown": "unknown error",
     "micPermissionDeniedTitle": "Akses Mikrofon Ditolak",
     "micPermissionDenied": {
       "generic": "Akses mikrofon ditolak oleh sistem operasi. Berikan izin mikrofon di pengaturan sistem Anda.",
@@ -1814,7 +1895,8 @@
     "modelLoadFailedUnknown": "model tidak dikenal",
     "pasteFailedTitle": "Gagal Menempelkan Teks",
     "pasteFailed": "Teks tidak dapat ditempelkan ke aplikasi aktif.",
-    "transcriptionFailedTitle": "Transkripsi Gagal"
+    "transcriptionFailedTitle": "Transkripsi Gagal",
+    "unknownError": "Unknown error"
   },
   "appLanguage": {
     "title": "Bahasa Aplikasi",
@@ -1857,6 +1939,9 @@
     "custom": "Custom Color",
     "reset": "Reset to Default",
     "presets": {
+      "cyan": "Neon Cyan",
+      "magenta": "Neon Magenta",
+      "lime": "Terminal Green",
       "gold": "Gold",
       "pink": "Rose",
       "amber": "Amber",

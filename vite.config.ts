@@ -5,13 +5,10 @@ import { resolve } from "path";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// Phase 3 of docs/PLAN_SOLIDJS_2.md: the main window is now Solid, so
-// `@vitejs/plugin-react` is gone and the Solid plugin covers all of `src/`.
+// Since the React → Solid 2 migration (see CHANGELOG, 2026-09-13) both windows
+// are Solid, so the Solid plugin covers all of `src/`.
 // `tsconfig.json` still uses `jsx: "preserve"` so esbuild passes untransformed
 // JSX to the Solid plugin — both entry points go through the same compiler.
-// The overlay's per-file `/** @jsxImportSource @solidjs/web */` pragma is now
-// redundant (the default matches), but harmless; it stays in for clarity until
-// Phase 4 cleans up.
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({

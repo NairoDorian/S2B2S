@@ -1,6 +1,10 @@
+import { useTranslation } from "@/i18n/useTranslation";
+
+const { t } = useTranslation();
+
 export const formatModelSize = (sizeMb: number | null | undefined): string => {
   if (!sizeMb || !Number.isFinite(sizeMb) || sizeMb <= 0) {
-    return "Unknown size";
+    return t("common.unknownSize");
   }
 
   if (sizeMb >= 1024) {

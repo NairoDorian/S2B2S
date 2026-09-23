@@ -241,7 +241,7 @@ fn restore_mute(prev_muted: Option<bool>) {
     }
 }
 
-const WHISPER_SAMPLE_RATE: usize = 16000;
+const WHISPER_SAMPLE_RATE: usize = crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as usize;
 
 pub enum StopRecordingResult {
     Captured {
@@ -289,10 +289,12 @@ enum DesiredMicrophone {
 }
 
 /// Result of resolving the persisted preference to a live cpal device.
-/// `device: None` only when no input endpoint resolved at all (the recorder
-/// then falls back to cpal's default). The unavailable
-/// name is populated only when enumeration succeeded and confirmed that the
-/// user's regular selected microphone is missing.
+/// `device: None` when nothing resolved: no system default, or a named
+/// microphone that enumeration did not find (or enumeration failed). The
+/// recorder then opens the concrete default endpoint
+/// (`default_input_endpoint`), never cpal's virtual default handle. The
+/// unavailable name is populated only when enumeration succeeded and confirmed
+/// that the user's regular selected microphone is missing.
 struct MicrophoneResolution {
     device: Option<cpal::Device>,
     unavailable_selected_microphone: Option<String>,
@@ -392,9 +394,10 @@ fn create_audio_recorder(
         frame_samples, threshold
     );
 
-    // Recorder with VAD, a spectrum-level callback that forwards level updates to
-    // the frontend, and an audio-frame callback that feeds live streaming via a
-    // shared `StreamRouter` (captured directly, not via Tauri state — see its docs).
+    // Recorder with VAD, speech-activity and VAD-report callbacks, the Live FFT
+    // and Multi-STT taps, and an audio-frame callback that feeds live streaming
+    // via a shared `StreamRouter` (captured directly, not via Tauri state — see
+    // its docs).
     let recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
         .with_vad(
@@ -512,6 +515,10 @@ pub struct AudioRecordingManager {
     /// so the retry re-enumerates. The system-default case is never cached —
     /// the recorder resolves the current default itself, cheaply.
     cached_device: Arc<Mutex<Option<(String, cpal::Device)>>>,
+    /// A microphone change that arrived during a recording; the stream is
+    /// restarted on the new device once that recording ends (see
+    /// `update_selected_device`).
+    device_change_pending: Arc<AtomicBool>,
 }
 
 impl AudioRecordingManager {
@@ -543,6 +550,7 @@ impl AudioRecordingManager {
             recording_active: Arc::new(AtomicBool::new(false)),
             capture_generation: Arc::new(AtomicU64::new(0)),
             cached_device: Arc::new(Mutex::new(None)),
+            device_change_pending: Arc::new(AtomicBool::new(false)),
         };
 
         // An always-on microphone is opened by `open_if_always_on`, which the
@@ -1052,9 +1060,6 @@ impl AudioRecordingManager {
         }
     }
 
-    /// Turn RNNoise suppression on or off on the live recorder. Applies from
-    /// the next chunk, mid-recording included, so the live VAD test shows the
-    /// effect immediately. A recorder built later reads the persisted setting.
     /// Push RNNoise's strength / gate to the live recorder; applies from
     /// the next chunk. A recorder built later reads the persisted settings.
     pub fn set_denoise_params(&self, params: DenoiseParams) {
@@ -1073,6 +1078,9 @@ impl AudioRecordingManager {
         }
     }
 
+    /// Turn RNNoise suppression on or off on the live recorder. Applies from
+    /// the next chunk, mid-recording included, so the live VAD test shows the
+    /// effect immediately. A recorder built later reads the persisted setting.
     pub fn set_denoise_enabled(&self, enabled: bool) {
         if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
             rec.set_denoise_enabled(enabled);
@@ -1148,13 +1156,54 @@ impl AudioRecordingManager {
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
         // Device settings changed; re-enumerate the device and restart capture.
         self.invalidate_device_cache();
+        // Serialize against recording start/stop, like update_selected_channel:
+        // restarting an active capture would discard its samples and leave the
+        // manager's recording state out of sync with the new recorder. The
+        // setting is already persisted; the restart waits for the recording to
+        // end (`apply_pending_device_change`), and any later open resolves the
+        // new device anyway.
+        let state = self.state.lock().unwrap();
+        if !matches!(*state, RecordingState::Idle) {
+            self.device_change_pending.store(true, Ordering::SeqCst);
+            debug!("Microphone changed during a recording; switching when it ends");
+            return Ok(());
+        }
+        self.device_change_pending.store(false, Ordering::SeqCst);
         let was_open = *self.is_open.lock().unwrap();
         if was_open {
             self.close_generation.fetch_add(1, Ordering::SeqCst);
             self.stop_microphone_stream();
             self.start_microphone_stream()?;
+            // Bumping the generation cancelled any pending lazy close. In
+            // on-demand mode an idle open stream is only ever a lazily-closing
+            // one, so re-arm that close for the new device rather than leaving
+            // the microphone (and the OS privacy indicator) on indefinitely.
+            if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+                if get_settings(&self.app_handle).lazy_stream_close {
+                    self.schedule_lazy_close(get_idle_timeout(&self.app_handle));
+                } else {
+                    self.stop_microphone_stream();
+                }
+            }
         }
+        drop(state);
         Ok(())
+    }
+
+    /// Apply a microphone change `update_selected_device` deferred because a
+    /// recording was active. Runs on its own short-lived thread: the callers
+    /// are the stop / cancel paths, which must not wait for a device reopen.
+    fn apply_pending_device_change(&self) {
+        if !self.device_change_pending.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        let app = self.app_handle.clone();
+        std::thread::spawn(move || {
+            let rm = app.state::<Arc<AudioRecordingManager>>();
+            if let Err(e) = rm.update_selected_device() {
+                warn!("Failed to switch to the newly selected microphone: {e}");
+            }
+        });
     }
 
     pub fn update_selected_channel(
@@ -1270,6 +1319,7 @@ impl AudioRecordingManager {
                         self.stop_microphone_stream();
                     }
                 }
+                self.apply_pending_device_change();
 
                 if self.was_cancelled_since(cancel_generation) {
                     debug!("Recording stop cancelled; discarding captured samples");
@@ -1335,6 +1385,7 @@ impl AudioRecordingManager {
                         self.stop_microphone_stream();
                     }
                 }
+                self.apply_pending_device_change();
             }
             RecordingState::Stopping => {
                 debug!("Cancellation requested while recording is stopping");

@@ -28,6 +28,7 @@
 //   bun run dev:cpu        no CUDA, every family     the usual working loop
 //   bun run dev:fast       local CUDA arch           when the GPU path changed
 //   bun run dev:full       full CUDA matrix          release-shaped dev build
+//   bun run build:cpu      no CUDA, every family     smoke build
 //   bun run build:fast     local CUDA arch           local release
 //   bun run build:full     full CUDA matrix          distribution
 //
@@ -43,8 +44,8 @@
 // unset falls back to the profile, and a dev profile probes the local GPU.
 //
 // `--full` / `--fast` / `--cpu` are the primitives; `dev:full` / `build:cpu`
-// and the bare `:full` / `:fast` / `:cpu` spellings are accepted as sugar so
-// `bun run tauri build:full` behaves like `bun run build:full`.
+// style tokens are accepted as sugar so `bun run tauri build:full` behaves
+// like `bun run build:full`.
 
 import { existsSync, readFileSync } from "fs";
 import { resolve, join } from "path";
@@ -90,10 +91,8 @@ function cpuCacheRoot(): string {
   return join(base, "handy", "transcribe_cpp_cache", "cpu-only");
 }
 
-/** Resolve a `dev:full` / `build:cpu` style subcommand token into argv + posture. */
-function expandModeToken(
-  arg: string,
-): { args: string[]; posture?: Partial<Posture> } | null {
+/** Resolve a `dev:full` / `build:cpu` style subcommand token into argv. */
+function expandModeToken(arg: string): { args: string[] } | null {
   const [command, mode] = arg.split(":");
   if (!mode || (command !== "dev" && command !== "build")) {
     return null;

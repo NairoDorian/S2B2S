@@ -227,7 +227,9 @@ mod tests {
         verify_wav_file(path, original.len()).unwrap();
 
         let decoded = read_wav_samples(path).unwrap();
-        assert_eq!(decoded.len(), 512); // Padded to one 512-sample frame
+        // 160 samples at 16 kHz + the resampler delay, padded to two
+        // 256-sample VAD frames.
+        assert_eq!(decoded.len(), 512);
     }
 
     #[test]

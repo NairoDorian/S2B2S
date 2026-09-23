@@ -5,7 +5,8 @@
 # NixOS module for ZER0 speech-to-text.
 #
 # Handles system-level configuration that the package wrapper cannot:
-#   - udev rule for /dev/uinput (rdev grab() needs it for virtual input)
+#   - udev rule for /dev/uinput (the handy-keys evdev grab re-injects
+#     through virtual input devices; dotool / ydotool typing uses it too)
 #
 # Note: users must add themselves to the "input" group for evdev hotkey access.
 #
@@ -42,7 +43,7 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ cfg.package ];
 
-    # rdev grab() creates virtual input devices via /dev/uinput.
+    # handy-keys' evdev grab creates virtual input devices via /dev/uinput.
     # Default permissions are crw------- root root — open it to the input group.
     services.udev.extraRules = ''
       KERNEL=="uinput", GROUP="input", MODE="0660"

@@ -16,20 +16,24 @@
  *     booting the entry, `platform()` reading its injected global.
  *
  * It is deliberately NOT part of `bun run test:playwright`: it needs a running
- * dev build and a live backend, so it is a manual check for Phase 2 and Phase 3
- * (docs/PLAN_SOLIDJS_2.md §11.3 — "a browser-only check is not sufficient").
+ * dev build and a live backend, so it is a manual check — a browser-only check
+ * was not sufficient for the React → Solid 2 migration (see CHANGELOG,
+ * 2026-09-13), and is not for any change the native window owns.
  *
  * No dependencies: Bun has a global `WebSocket`, so it speaks CDP directly.
  * Zero-arg, exits 1 with the reason on any mismatch.
  */
 
-const PORT = Number(process.env.ZER0_CDP_PORT ?? 9222);
+import { appEnvVar } from "../scripts/lib/env-flag";
+
+const PORT = Number(appEnvVar("CDP_PORT") ?? 9222);
 
 // Same anchors the Playwright net uses — roles and headings, never framework
 // internals — so this survives the React → Solid swap unchanged.
 const SECTIONS = [
   "General",
   "History",
+  "Recall",
   "Statistics",
   "Models",
   "Multi STT",

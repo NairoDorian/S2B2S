@@ -160,7 +160,7 @@ impl ModelManager {
     /// The one resumable HTTP downloader, shared by the mirror fallback and
     /// URL-sourced models: fetch `url` into `partial_path`, resuming what's
     /// already there, and leave verified bytes in `partial_path` on success —
-    /// finalizing (rename / extract) is the caller's job. Takes progress and
+    /// finalizing (the rename) is the caller's job. Takes progress and
     /// verification notifications as a callback instead of touching Tauri, so
     /// the failure-mode behavior below is exercised by tests against a local
     /// socket server.
@@ -243,9 +243,13 @@ impl ModelManager {
         if resume_from > 0 && response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
             if expected_size.is_some() || expected_sha256.is_none() {
                 let _ = fs::remove_file(partial_path);
-                return Err(anyhow::anyhow!(
-                    "server object ends before the expected size (HTTP 416)"
-                ));
+                return Err(if expected_size.is_some() {
+                    anyhow::anyhow!("server object ends before the expected size (HTTP 416)")
+                } else {
+                    anyhow::anyhow!(
+                        "server rejected the resume range and no hash can verify the partial (HTTP 416)"
+                    )
+                });
             }
             Self::verify_file_with_events(model_id, partial_path, expected_sha256, emit).await?;
             return Ok(HttpDownloadOutcome::Completed);

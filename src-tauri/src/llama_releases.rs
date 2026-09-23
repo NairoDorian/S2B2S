@@ -11,7 +11,7 @@
 //! window — into `<app data>/llama_cpp/<backend>-<tag>/`.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -650,7 +650,13 @@ fn unzip_flat(zip_path: &Path, dest: &Path) -> Result<(), String> {
                 .to_string(),
             None => raw.clone(),
         };
-        if rel.is_empty() || rel.contains("..") {
+        // Only plain relative names: `..`, a root, a drive letter or a UNC
+        // prefix would let `dest.join` escape the destination (zip-slip).
+        if rel.is_empty()
+            || !Path::new(&rel)
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)))
+        {
             continue;
         }
         let out_path = dest.join(&rel);
@@ -711,7 +717,7 @@ fn dir_has_cublas(dir: &Path) -> bool {
     (has("cublas64_") && has("cublaslt64_")) || (has("libcublas.so") && has("libcublaslt.so"))
 }
 
-/// `v13.4` / `CUDA\v12.8` → `13.4`; the `CUDA_PATH_V13_4` env name → `13.4`.
+/// `…\v13.4\bin\x64` / `CUDA\v12.8\bin` → `13.4` / `12.8` (from the folder name).
 fn cuda_version_from_dir(dir: &Path) -> Option<String> {
     dir.ancestors().find_map(|p| {
         let name = p.file_name()?.to_string_lossy();
@@ -721,6 +727,12 @@ fn cuda_version_from_dir(dir: &Path) -> Option<String> {
             && rest.chars().next().is_some_and(|c| c.is_ascii_digit());
         ok.then(|| rest.to_string())
     })
+}
+
+/// `13.4` / `13_4` → `[13, 4]`, the ordering key for "newest toolkit first";
+/// `None` when any part is not a number.
+fn cuda_version_key(version: &str) -> Option<Vec<u32>> {
+    version.split(['.', '_']).map(|p| p.parse().ok()).collect()
 }
 
 fn path_entries() -> Vec<PathBuf> {
@@ -740,8 +752,8 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 }
 
 /// Locate the CUDA runtime of an installed toolkit. Looked up, in order: the
-/// `CUDA_PATH` root (and every `CUDA_PATH_V*`, newest first), each PATH
-/// entry, then the default install folder — so a toolkit is found even when
+/// `CUDA_PATH` root, every `CUDA_PATH_V*` (newest first), then the default
+/// install folder, then each PATH entry — so a toolkit is found even when
 /// the installer's environment variables are missing or stale. Inside a
 /// root both `bin\x64` (CUDA 13) and `bin` (CUDA ≤ 12) are checked.
 pub fn detect_cuda_toolkit() -> Option<CudaToolkitInfo> {
@@ -755,7 +767,13 @@ pub fn detect_cuda_toolkit() -> Option<CudaToolkitInfo> {
             k.starts_with("CUDA_PATH_V").then(|| (k, PathBuf::from(v)))
         })
         .collect();
-    versioned.sort_by(|a, b| b.0.cmp(&a.0));
+    // Newest first by parsed version: a string sort puts `_V9_2` above `_V13_4`.
+    let env_key = |name: &str| name.strip_prefix("CUDA_PATH_V").and_then(cuda_version_key);
+    versioned.sort_by(|a, b| {
+        env_key(&b.0)
+            .cmp(&env_key(&a.0))
+            .then_with(|| b.0.cmp(&a.0))
+    });
     roots.extend(versioned.into_iter().map(|(_, p)| p));
     #[cfg(windows)]
     {
@@ -771,8 +789,14 @@ pub fn detect_cuda_toolkit() -> Option<CudaToolkitInfo> {
             .map(|e| e.path())
             .filter(|p| p.is_dir())
             .collect();
-        versions.sort();
-        versions.reverse();
+        // Newest first by parsed version (`v13.4` before `v9.2`).
+        let dir_key = |p: &Path| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix('v'))
+                .and_then(cuda_version_key)
+        };
+        versions.sort_by(|a, b| dir_key(b).cmp(&dir_key(a)).then_with(|| b.cmp(a)));
         roots.extend(versions);
     }
     #[cfg(not(windows))]
@@ -808,6 +832,16 @@ pub fn detect_cuda_toolkit() -> Option<CudaToolkitInfo> {
     })
 }
 
+/// Whether `path` is one install folder this app made: a direct child of the
+/// servers root, with no `..` component. `starts_with` alone is lexical, so
+/// `<root>\..\..\Documents` and `<root>` itself would both pass it.
+fn is_install_dir(root: &Path, path: &Path) -> bool {
+    path.parent() == Some(root)
+        && !path
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+}
+
 /// Megabytes taken by a bundled CUDA runtime inside `dir`, 0 when absent.
 pub fn bundled_cuda_runtime_mb(dir: &str) -> u32 {
     let bytes: u64 = std::fs::read_dir(dir)
@@ -829,7 +863,7 @@ pub fn bundled_cuda_runtime_mb(dir: &str) -> u32 {
 pub fn remove_bundled_cuda_runtime(app: &AppHandle, dir: &str) -> Result<u32, String> {
     let root = servers_root(app)?;
     let path = PathBuf::from(dir);
-    if !path.starts_with(&root) {
+    if !is_install_dir(&root, &path) {
         return Err("Only installs made by this app can be trimmed here".into());
     }
     let freed = bundled_cuda_runtime_mb(dir);
@@ -850,7 +884,7 @@ pub fn remove_bundled_cuda_runtime(app: &AppHandle, dir: &str) -> Result<u32, St
 pub fn remove_installed(app: &AppHandle, dir: &str) -> Result<(), String> {
     let root = servers_root(app)?;
     let path = PathBuf::from(dir);
-    if !path.starts_with(&root) {
+    if !is_install_dir(&root, &path) {
         return Err("Only installs made by this app can be removed here".into());
     }
     let settings = crate::settings::get_settings(app);
@@ -885,6 +919,49 @@ mod tests {
             Path::new(r"C:\CUDA\bin"),
             Path::new(r"C:\CUDA\bin\x64")
         ));
+    }
+
+    #[test]
+    fn cuda_versions_order_numerically_not_lexically() {
+        assert!(cuda_version_key("13_4") > cuda_version_key("9_2"));
+        assert!(cuda_version_key("12.10") > cuda_version_key("12.9"));
+        assert_eq!(cuda_version_key("13.4"), Some(vec![13, 4]));
+        assert_eq!(cuda_version_key("13.x"), None);
+    }
+
+    #[test]
+    fn install_dirs_are_direct_children_of_the_root() {
+        let root = Path::new(r"C:\data\llama_cpp");
+        assert!(is_install_dir(root, &root.join("cuda-13.4-b1")));
+        assert!(!is_install_dir(root, root));
+        assert!(!is_install_dir(root, &root.join("a").join("b")));
+        assert!(!is_install_dir(root, &root.join("..")));
+        assert!(!is_install_dir(
+            root,
+            &root.join("..").join("..").join("Documents")
+        ));
+    }
+
+    #[test]
+    fn unzip_flat_skips_entries_that_escape_the_destination() {
+        use std::io::Write;
+        let tmp = crate::utils::temp_test_dir("unzip-slip-test");
+        let archive = tmp.join("release.zip");
+        {
+            let file = std::fs::File::create(&archive).unwrap();
+            let mut w = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default();
+            w.start_file("ok.txt", opts).unwrap();
+            w.write_all(b"ok").unwrap();
+            w.start_file("../escape.txt", opts).unwrap();
+            w.write_all(b"bad").unwrap();
+            w.finish().unwrap();
+        }
+        let dest = tmp.join("out");
+        unzip_flat(&archive, &dest).unwrap();
+        assert_eq!(std::fs::read(dest.join("ok.txt")).unwrap(), b"ok");
+        assert!(!tmp.join("escape.txt").exists());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// Diagnostic: `cargo test -- --ignored --nocapture print_detected_cuda_toolkit`

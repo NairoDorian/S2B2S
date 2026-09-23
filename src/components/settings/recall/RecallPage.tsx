@@ -17,8 +17,9 @@ import { MarkdownContent } from "@/components/whats-new/MarkdownContent";
 import { useRecallStore } from "@/stores/recallStore";
 import { commands, events, type RecallNoteMeta } from "@/bindings";
 
-const formatDate = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, {
+/** Note timestamp in the app language (not the OS locale), like every other page. */
+const formatNoteDate = (ms: number, locale: string) =>
+  new Date(ms).toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -29,7 +30,7 @@ const inputClass =
   "w-full rounded-lg border border-mid-gray/20 bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-accent/50";
 
 export const RecallPage = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const store = useRecallStore();
   const { getSetting, updateSetting } = useSettings();
   const [mode, setMode] = createSignal<"write" | "preview">("write");
@@ -245,9 +246,8 @@ export const RecallPage = () => {
 
   const noteLabel = (note: RecallNoteMeta) => {
     const tags = note.tags.join(", ");
-    return tags
-      ? `${formatDate(note.updated_ms)} · ${tags}`
-      : formatDate(note.updated_ms);
+    const date = formatNoteDate(note.updated_ms, i18n.language);
+    return tags ? `${date} · ${tags}` : date;
   };
 
   return (

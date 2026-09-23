@@ -14,7 +14,7 @@
 //! It always runs on its own thread, whatever `async_analysis` says, so a
 //! dictation never carries the transform on the audio consumer thread.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,7 +23,7 @@ use log::debug;
 use rtrb::Consumer;
 
 use super::dsp::SpectrumPipeline;
-use super::{MAX_DRAIN, MAX_NAP, Shared, TAP};
+use super::{MAX_DRAIN, MAX_NAP, Shared, TAP, extend_f32_le, frame_seq, header_only};
 use crate::managers::audio::AudioRecordingManager;
 use crate::settings::{FftLoudnessMode, LiveFftSettings, OverlayScopeSettings};
 
@@ -164,9 +164,8 @@ pub fn encode_scope_frame(out: &mut Vec<u8>, header: &ScopeHeader, bins: &[f32],
     out.extend_from_slice(&header.db_range.to_le_bytes());
     out.extend_from_slice(&header.sample_rate.to_le_bytes());
     out.extend_from_slice(&header.full_scale_ref.to_le_bytes());
-    for v in bins.iter().chain(wave.iter()) {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
+    extend_f32_le(out, bins);
+    extend_f32_le(out, wave);
 }
 
 /// The frame the command returns while no scope runs.
@@ -187,6 +186,9 @@ pub struct ScopeShared {
     /// The latest encoded frame; swapped in whole by the worker, cloned by
     /// the command. Held for a memcpy either way.
     frame: Mutex<Vec<u8>>,
+    /// Frame numbers continue across scope sessions (never 0), so an
+    /// overlay poll carrying an old seq never matches a new frame.
+    next_seq: AtomicU32,
 }
 
 impl ScopeShared {
@@ -197,6 +199,16 @@ impl ScopeShared {
             overlay: Mutex::new(overlay.normalized()),
             overlay_version: AtomicU64::new(1),
             frame: Mutex::new(idle_frame()),
+            next_seq: AtomicU32::new(1),
+        }
+    }
+
+    fn next_seq(&self) -> u32 {
+        loop {
+            let v = self.next_seq.fetch_add(1, Ordering::Relaxed);
+            if v != 0 {
+                return v;
+            }
         }
     }
 
@@ -210,8 +222,15 @@ impl ScopeShared {
         (self.overlay.lock().unwrap().clone(), version)
     }
 
-    pub fn frame_bytes(&self) -> Vec<u8> {
-        self.frame.lock().unwrap().clone()
+    /// The latest frame, or only its header (bins and wave lengths 0) when
+    /// the caller already holds `known_seq`.
+    pub fn frame_bytes(&self, known_seq: Option<u32>) -> Vec<u8> {
+        let frame = self.frame.lock().unwrap();
+        if known_seq.is_some_and(|seq| seq == frame_seq(&frame)) {
+            header_only(&frame, &[2, 3])
+        } else {
+            frame.clone()
+        }
     }
 
     fn publish(&self, encoded: &mut Vec<u8>) {
@@ -239,19 +258,33 @@ pub(super) struct ScopeEngine {
     wave: WaveRing,
     wave_out: Vec<f32>,
     encoded: Vec<u8>,
-    seq: u32,
     last_process: Option<Instant>,
+}
+
+/// Most bins the overlay scope computes and ships per frame. The page may
+/// ask for up to 65536 (Auto or Raw at N = 65536, or a large Fixed count),
+/// but the overlay draws a few hundred columns during every dictation, so
+/// anything above this is capped (see `SpectrumPipeline::with_output_bin_cap`)
+/// to keep a changed poll near the ~32 KB it cost before the ceiling was raised.
+const OVERLAY_MAX_BINS: usize = 8192;
+
+/// The page's settings as the scope runs them: the overlay never shows the
+/// spectral features, so they are not computed for it.
+fn scope_settings(mut settings: LiveFftSettings) -> LiveFftSettings {
+    settings.spectral_features = false;
+    settings
 }
 
 impl ScopeEngine {
     pub(super) fn new(shared: Arc<Shared>, scope: Arc<ScopeShared>) -> Self {
         let (settings, settings_version) = shared.settings_snapshot();
+        let settings = scope_settings(settings);
         let (overlay, overlay_version) = scope.overlay_snapshot();
         let period = Duration::from_secs_f64(1.0 / f64::from(settings.update_rate_hz.max(1)));
         Self {
             shared,
             scope,
-            pipeline: SpectrumPipeline::new(),
+            pipeline: SpectrumPipeline::new().with_output_bin_cap(OVERLAY_MAX_BINS),
             settings,
             settings_version,
             overlay_version,
@@ -263,7 +296,6 @@ impl ScopeEngine {
             ),
             wave_out: Vec::with_capacity(overlay.wave_samples as usize),
             encoded: Vec::new(),
-            seq: 0,
             last_process: None,
         }
     }
@@ -274,7 +306,7 @@ impl ScopeEngine {
         let version = self.shared.settings_version.load(Ordering::Acquire);
         if version != self.settings_version {
             let (settings, version) = self.shared.settings_snapshot();
-            self.settings = settings;
+            self.settings = scope_settings(settings);
             self.settings_version = version;
             self.period =
                 Duration::from_secs_f64(1.0 / f64::from(self.settings.update_rate_hz.max(1)));
@@ -319,9 +351,8 @@ impl ScopeEngine {
         let stats = self.pipeline.process(&self.settings, dt_ms, &mut self.bins);
         self.wave.snapshot(&mut self.wave_out);
         let status = self.pipeline.status(&self.settings);
-        self.seq = self.seq.wrapping_add(1);
         let header = ScopeHeader {
-            seq: self.seq,
+            seq: self.scope.next_seq(),
             flags: SCOPE_FLAG_ACTIVE | if stats.silent { SCOPE_FLAG_SILENT } else { 0 },
             loudness_mode: self.settings.loudness_mode,
             db_range: self.settings.db_range,
@@ -469,17 +500,8 @@ mod tests {
 
     #[test]
     fn engine_publishes_a_frame_with_the_page_settings_and_a_tapered_wave() {
-        use std::sync::atomic::AtomicU64;
         let settings = LiveFftSettings::default();
-        let shared = Arc::new(Shared {
-            settings: Mutex::new(settings.clone()),
-            settings_version: AtomicU64::new(1),
-            status: Mutex::new(super::super::LiveFftStatus::default()),
-            active: AtomicBool::new(false),
-            stop_requested: AtomicBool::new(false),
-            reset_requested: AtomicBool::new(false),
-            emit_enabled: AtomicBool::new(true),
-        });
+        let shared = Arc::new(Shared::new(settings.clone()));
         let scope = Arc::new(ScopeShared::new(OverlayScopeSettings::default()));
         let mut engine = ScopeEngine::new(Arc::clone(&shared), Arc::clone(&scope));
         // 200 ms of a 1 kHz sine at 48 kHz in 10 ms chunks (10 whole cycles
@@ -493,10 +515,17 @@ mod tests {
         }
         engine.maybe_process(Instant::now());
 
-        let bytes = scope.frame_bytes();
+        let bytes = scope.frame_bytes(None);
         let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
         let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
         assert_eq!(word(1) & SCOPE_FLAG_ACTIVE, SCOPE_FLAG_ACTIVE);
+        // A poll that already holds this frame gets the bare header.
+        let again = scope.frame_bytes(Some(word(0)));
+        assert_eq!(again.len(), SCOPE_HEADER_WORDS * 4);
+        assert_eq!(again[..8], bytes[..8], "same seq and flags");
+        assert_eq!(again[8..16], [0u8; 8], "bins and wave lengths zeroed");
+        assert_eq!(again[16..], bytes[16..SCOPE_HEADER_WORDS * 4]);
+        assert_eq!(scope.frame_bytes(Some(word(0).wrapping_add(1))), bytes);
         assert_eq!(word(2), settings.output_bins);
         assert_eq!(word(3), OverlayScopeSettings::default().wave_samples);
         assert_eq!(word(4), 1, "the default loudness mode is dB");
@@ -528,35 +557,35 @@ mod tests {
     /// The overlay must show exactly what the Live FFT page would show for
     /// the same settings: same pipeline, same snapshot, same frame timing.
     /// Feeds one signal to a page pipeline and to a scope engine and compares
-    /// the bins bit for bit, with the EQ shelves, an A-weighting, a Hann
-    /// window, a Mel scale and millisecond ballistics all switched on.
+    /// the bins bit for bit, with the EQ shelves, an A-weighting, a Kaiser
+    /// window with auto β, a Mel scale with cubic interpolation and RMS
+    /// aggregation, an Auto output size over an unpadded transform and
+    /// millisecond ballistics all switched on.
     #[test]
     fn scope_bins_equal_the_page_pipeline_for_the_same_settings() {
         use crate::settings::{
-            FftBallisticsMode, FftScale, FftWeighting, FftWindowType, LiveFftSettings,
+            FftBallisticsMode, FftKaiserBetaMode, FftOutputBinsMode, FftScale, FftWarpAggregation,
+            FftWarpInterp, FftWeighting, FftWindowType, LiveFftSettings,
         };
         let settings = LiveFftSettings {
             eq_enabled: true,
             high_gain_db: 12.0,
             low_gain_db: -6.0,
             weighting: FftWeighting::A,
-            window_type: FftWindowType::Hann,
+            window_type: FftWindowType::Kaiser,
+            kaiser_beta_mode: FftKaiserBetaMode::Auto,
             scale: FftScale::Mel,
-            output_bins: 256,
+            warp_interpolation: FftWarpInterp::Cubic,
+            warp_aggregation: FftWarpAggregation::Rms,
+            output_bins_mode: FftOutputBinsMode::Auto,
+            zero_padding: false,
+            spectral_features: true,
             ballistics_enabled: true,
             ballistics_mode: FftBallisticsMode::Milliseconds,
             ..LiveFftSettings::default()
         }
         .normalized();
-        let shared = Arc::new(Shared {
-            settings: Mutex::new(settings.clone()),
-            settings_version: AtomicU64::new(1),
-            status: Mutex::new(super::super::LiveFftStatus::default()),
-            active: AtomicBool::new(false),
-            stop_requested: AtomicBool::new(false),
-            reset_requested: AtomicBool::new(false),
-            emit_enabled: AtomicBool::new(true),
-        });
+        let shared = Arc::new(Shared::new(settings.clone()));
         let scope = Arc::new(ScopeShared::new(OverlayScopeSettings::default()));
         let mut engine = ScopeEngine::new(shared, Arc::clone(&scope));
         let mut page = SpectrumPipeline::new();
@@ -585,8 +614,10 @@ mod tests {
             &mut page_bins,
         );
         engine.maybe_process(Instant::now());
+        // 3175-sample window, no padding: N = 3176, Auto = 1589 bins.
+        assert_eq!(page_bins.len(), 1589);
 
-        let bytes = scope.frame_bytes();
+        let bytes = scope.frame_bytes(None);
         let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
         let float = |i: usize| f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
         assert_eq!(word(2) as usize, page_bins.len());

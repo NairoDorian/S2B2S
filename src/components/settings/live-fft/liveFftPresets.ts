@@ -13,16 +13,20 @@ export type ResolvedLiveFft = {
 /** Mirrors `LiveFftSettings::default()` in `src-tauri/src/settings.rs`. */
 export const LIVE_FFT_DEFAULTS: ResolvedLiveFft = {
   source: "microphone",
+  raw_bins: false,
   scale: "log",
   warp_interpolation: "linear",
+  warp_aggregation: "peak",
   display_max_hz: 24000,
+  output_bins_mode: "fixed",
   output_bins: 1024,
   warp_blend: 0.963,
   log_floor_hz: 20,
   window_length_mode: "samples",
   window_samples: 3175,
   window_ms: 72,
-  fft_size: 32768,
+  zero_padding: true,
+  fft_size: 16384,
   eq_enabled: false,
   high_shelf: true,
   low_shelf: true,
@@ -33,6 +37,7 @@ export const LIVE_FFT_DEFAULTS: ResolvedLiveFft = {
   eq_q: 0.707,
   eq_amount: 1,
   window_type: "kaiser",
+  kaiser_beta_mode: "manual",
   kaiser_beta: 15,
   weighting: "off",
   magnitude_norm: "coherent_gain",
@@ -47,6 +52,7 @@ export const LIVE_FFT_DEFAULTS: ResolvedLiveFft = {
   release_ms: 250,
   async_analysis: true,
   update_rate_hz: 30,
+  spectral_features: false,
   show_vad: false,
 };
 
@@ -64,8 +70,13 @@ export function resolveLiveFft(
 
 /** The FFT lengths the backend accepts (`FFT_SIZES` in settings.rs). */
 export const FFT_SIZES = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
-/** Output bin counts offered by the page (backend range 32…8192). */
-export const OUTPUT_BIN_CHOICES = [64, 128, 256, 512, 1024, 2048, 4096, 8192];
+/**
+ * Output bin counts offered by the page in Fixed mode (backend range
+ * 8…65536; a count above the transform's N/2+1 is interpolated).
+ */
+export const OUTPUT_BIN_CHOICES = [
+  8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+];
 
 export interface LiveFftPreset {
   id: "analyzer" | "voice" | "music" | "meter" | "chroma";
@@ -144,6 +155,79 @@ export function applyPreset(
     ...patch,
     source: current.source,
     async_analysis: current.async_analysis,
+    spectral_features: current.spectral_features,
     show_vad: current.show_vad,
   };
+}
+
+/** The fields a quality preset sets; everything else is left as it is. */
+export type QualityPatch = Pick<
+  ResolvedLiveFft,
+  "fft_size" | "warp_interpolation" | "kaiser_beta_mode" | "warp_aggregation"
+>;
+
+export interface LiveFftQualityPreset {
+  id: "visual60" | "visual120" | "analysis";
+  patch: QualityPatch;
+}
+
+/**
+ * Plugin_FFT's quality presets (catalog §1.6): transform length, warp
+ * interpolation, Kaiser β mode and warp aggregation, tuned for a frame
+ * budget. Unlike the starting points above they apply on top of the
+ * current settings and never change the output bin count or its mode.
+ */
+export const LIVE_FFT_QUALITY_PRESETS: LiveFftQualityPreset[] = [
+  {
+    id: "visual60",
+    patch: {
+      fft_size: 8192,
+      warp_interpolation: "cubic",
+      kaiser_beta_mode: "auto",
+      warp_aggregation: "peak",
+    },
+  },
+  {
+    id: "visual120",
+    patch: {
+      fft_size: 4096,
+      warp_interpolation: "cubic",
+      kaiser_beta_mode: "auto",
+      warp_aggregation: "peak",
+    },
+  },
+  {
+    id: "analysis",
+    patch: {
+      fft_size: 32768,
+      warp_interpolation: "linear",
+      kaiser_beta_mode: "auto",
+      warp_aggregation: "rms",
+    },
+  },
+];
+
+export function applyQualityPreset(
+  current: ResolvedLiveFft,
+  patch: QualityPatch,
+): ResolvedLiveFft {
+  return { ...current, ...patch };
+}
+
+/** Which quality preset the settings currently match, if any. */
+export function matchingQualityPreset(
+  current: ResolvedLiveFft,
+): LiveFftQualityPreset["id"] | null {
+  for (const preset of LIVE_FFT_QUALITY_PRESETS) {
+    const p = preset.patch;
+    if (
+      current.fft_size === p.fft_size &&
+      current.warp_interpolation === p.warp_interpolation &&
+      current.kaiser_beta_mode === p.kaiser_beta_mode &&
+      current.warp_aggregation === p.warp_aggregation
+    ) {
+      return preset.id;
+    }
+  }
+  return null;
 }

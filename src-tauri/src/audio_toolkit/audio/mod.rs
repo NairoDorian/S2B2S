@@ -5,7 +5,6 @@ mod device;
 mod recorder;
 mod resampler;
 mod utils;
-mod visualizer;
 
 pub use chunk_tap::{ChunkTap, tap as chunk_tap};
 pub use denoise::{
@@ -22,4 +21,3 @@ pub use recorder::{
 };
 pub use resampler::FrameResampler;
 pub use utils::{read_wav_samples, save_raw_wav_file, save_wav_file, verify_wav_file};
-pub use visualizer::AudioVisualiser;

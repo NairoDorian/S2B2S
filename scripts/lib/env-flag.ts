@@ -48,8 +48,3 @@ export function appEnvFlag(suffix: string): boolean {
   const value = appEnvVar(suffix);
   return value === undefined ? false : envFlagTruthy(value);
 }
-
-/** The current spelling of a flag, for messages that tell the user to set it. */
-export function appEnvFlagName(suffix: string): string {
-  return `${APP.envPrefix}${suffix}`;
-}

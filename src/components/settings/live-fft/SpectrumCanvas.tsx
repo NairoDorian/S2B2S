@@ -1,18 +1,26 @@
 import { createEffect } from "solid-js";
 
 import type { FftLoudnessMode } from "@/bindings";
-import { getLatestFrame, type SpectrumFrame } from "@/stores/liveFftStore";
 import {
+  getLatestFrame,
+  subscribeFrames,
+  type SpectrumFrame,
+} from "@/stores/liveFftStore";
+import {
+  FrameUnitsCache,
+  PEAK_HOLD_DECAY_PER_MS,
   axisPosition,
   cssColor,
+  decayStepMs,
   formatHz,
   formatValue,
   frequencyTicks,
   maxPerColumn,
   noteName,
   valueTicks,
-  valueToUnit,
+  type AxisTick,
   type ValueScale,
+  type ValueTick,
 } from "./liveFftMath";
 
 export type SpectrumStyle = "bars" | "line" | "area";
@@ -36,12 +44,19 @@ interface SpectrumCanvasProps {
   class?: string;
 }
 
+/**
+ * The 0…1 units of the latest frame, shared by the spectrum and the
+ * waterfall: whichever paints first computes them, the other reads the
+ * cache (one pass per frame instead of one per canvas).
+ */
+export const pageUnits = new FrameUnitsCache();
+
 const PAD_LEFT = 36;
 const PAD_RIGHT = 8;
 const PAD_TOP = 8;
 const PAD_BOTTOM = 18;
-const PEAK_DECAY = 0.0045;
-const CEILING_DECAY = 0.995;
+/** Bar opacity is quantised into this many levels, one fill per level. */
+const ALPHA_LEVELS = 16;
 
 interface Colors {
   accent: string;
@@ -53,10 +68,33 @@ const readColors = (): Colors => ({
   text: cssColor("--color-text", "#e6e6e6"),
 });
 
+/**
+ * Watch the document root for a theme or accent change (the `data-theme`
+ * attribute and the accent properties on its inline style), so a canvas
+ * that is not repainting on its own still picks the new colours up.
+ */
+export const observeTheme = (onChange: () => void): (() => void) => {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme", "style", "class"],
+  });
+  return () => observer.disconnect();
+};
+
+const noop = () => {};
+
+/** Element-wise identity of two prop snapshots. */
+export const sameValues = (a: unknown[], b: unknown[]): boolean =>
+  a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+
 export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
   let canvasRef: HTMLCanvasElement | undefined;
   let hoverRef: number | null = null;
   let propsVersion = 0;
+  // Set by the paint loop once it exists; a no-op before mount.
+  let requestPaint = noop;
+  let lastProps: unknown[] = [];
 
   createEffect(
     () => [
@@ -69,8 +107,13 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
       props.running,
       props.labels,
     ],
-    () => {
+    (next) => {
+      // The getters may re-run for an unrelated settings change (they read
+      // the page's whole draft); repaint only when a value really moved.
+      if (sameValues(next, lastProps)) return;
+      lastProps = next;
       propsVersion += 1;
+      requestPaint();
     },
   );
 
@@ -82,26 +125,124 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      // Painting is event-driven: a rAF is requested only when a frame
+      // arrives, the pointer moves, a prop changes, the box resizes or the
+      // theme changes. An idle or stopped analyser costs nothing.
       let raf = 0;
       let drawnSeq = -2;
       let drawnHover: number | null = null;
       let drawnVersion = -1;
       let width = 0;
       let height = 0;
+      let sizeDirty = true;
       let colors = readColors();
-      let colorsAt = 0;
-      let ceiling = 1e-6;
-      let units = new Float32Array(0);
+      let colorsDirty = false;
       let held = new Float32Array(0);
-      let heldSeq = -1;
+      let heldFrame: SpectrumFrame | null = null;
+      let heldAt = 0;
       let columns = new Float32Array(0);
       let columnsHeld = new Float32Array(0);
+      let levels = new Uint8Array(0);
+      let order = new Int32Array(0);
+      const levelStart = new Int32Array(ALPHA_LEVELS + 1);
+      const fillAt = new Int32Array(ALPHA_LEVELS);
       let lastHoverInfo: HoverInfo | null = null;
+      let freqTicks: AxisTick[] = [];
+      let freqTicksAxis: ArrayLike<number> | null = null;
+      let valTicks: ValueTick[] = [];
+      let valTicksKey = "";
+      const idleScale: ValueScale = { mode: "db", dbRange: 90, ceiling: 1 };
 
-      const observer = new ResizeObserver(() => {
-        width = 0;
+      const schedule = () => {
+        if (raf === 0) raf = requestAnimationFrame(render);
+      };
+      requestPaint = schedule;
+
+      const observer = new ResizeObserver((entries) => {
+        const box = entries[entries.length - 1]?.contentRect;
+        if (!box) return;
+        width = Math.max(1, Math.round(box.width));
+        height = Math.max(1, Math.round(box.height));
+        sizeDirty = true;
+        schedule();
       });
       observer.observe(canvas);
+      const stopTheme = observeTheme(() => {
+        colorsDirty = true;
+        schedule();
+      });
+      const unsubscribe = subscribeFrames(schedule);
+
+      const frequencyGrid = (axis: ArrayLike<number>) => {
+        if (axis !== freqTicksAxis) {
+          freqTicks = frequencyTicks(axis);
+          freqTicksAxis = axis;
+        }
+        return freqTicks;
+      };
+      const valueGrid = (scale: ValueScale) => {
+        const key = `${scale.mode}:${scale.dbRange}:${scale.mode === "off" ? scale.ceiling : 0}`;
+        if (key !== valTicksKey) {
+          valTicks = valueTicks(scale);
+          valTicksKey = key;
+        }
+        return valTicks;
+      };
+
+      const paintBars = (
+        values: Float32Array,
+        count: number,
+        plotX: number,
+        plotY: number,
+        plotW: number,
+        plotH: number,
+      ) => {
+        // One fill per opacity level instead of one fillRect + alpha change
+        // per column: bucket the columns by level (counting sort), then add
+        // each level's rectangles to one path.
+        const colW = plotW / count;
+        const gap = colW > 3 ? 1 : 0;
+        const barW = Math.max(1, colW - gap);
+        if (levels.length < count) {
+          levels = new Uint8Array(count);
+          order = new Int32Array(count);
+        }
+        levelStart.fill(0);
+        for (let i = 0; i < count; i++) {
+          const v = values[i];
+          // `v > 0` also sends a NaN to level 0, keeping the counts exact.
+          const level =
+            v > 0
+              ? Math.min(ALPHA_LEVELS - 1, Math.floor(v * ALPHA_LEVELS))
+              : 0;
+          levels[i] = level;
+          levelStart[level + 1] += 1;
+        }
+        for (let l = 0; l < ALPHA_LEVELS; l++) {
+          levelStart[l + 1] += levelStart[l];
+        }
+        fillAt.set(levelStart.subarray(0, ALPHA_LEVELS));
+        for (let i = 0; i < count; i++) order[fillAt[levels[i]]++] = i;
+        ctx.fillStyle = colors.accent;
+        for (let l = 0; l < ALPHA_LEVELS; l++) {
+          const from = levelStart[l];
+          const to = levelStart[l + 1];
+          if (to <= from) continue;
+          ctx.beginPath();
+          let any = false;
+          for (let k = from; k < to; k++) {
+            const i = order[k];
+            const barH = values[i] * plotH;
+            if (barH <= 0) continue;
+            ctx.rect(plotX + i * colW, plotY + plotH - barH, barW, barH);
+            any = true;
+          }
+          if (!any) continue;
+          ctx.globalAlpha = 0.35 + (0.65 * (l + 0.5)) / ALPHA_LEVELS;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      };
 
       const paint = (frame: SpectrumFrame | null, hover: number | null) => {
         const p = props;
@@ -116,13 +257,21 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
           "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
         ctx.textBaseline = "middle";
 
-        const scale: ValueScale = { mode: p.mode, dbRange: p.dbRange, ceiling };
+        // One units pass per frame, shared with the waterfall.
+        const units = frame ? pageUnits.units(frame, p.mode, p.dbRange) : null;
+        let scale: ValueScale = pageUnits.scale;
+        if (!units) {
+          idleScale.mode = p.mode;
+          idleScale.dbRange = p.dbRange;
+          idleScale.ceiling = pageUnits.scale.ceiling;
+          scale = idleScale;
+        }
 
         if (p.grid) {
           ctx.strokeStyle = colors.text;
           ctx.fillStyle = colors.text;
           ctx.lineWidth = 1;
-          for (const tick of valueTicks(scale)) {
+          for (const tick of valueGrid(scale)) {
             const y = Math.round(plotY + plotH * (1 - tick.y)) + 0.5;
             ctx.globalAlpha = 0.12;
             ctx.beginPath();
@@ -133,7 +282,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
             ctx.textAlign = "right";
             ctx.fillText(tick.label, plotX - 4, y);
           }
-          for (const tick of frequencyTicks(p.axisHz)) {
+          for (const tick of frequencyGrid(p.axisHz)) {
             const x = Math.round(plotX + plotW * tick.x) + 0.5;
             ctx.globalAlpha = 0.12;
             ctx.beginPath();
@@ -147,7 +296,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
           ctx.globalAlpha = 1;
         }
 
-        if (!frame) {
+        if (!frame || !units) {
           ctx.globalAlpha = 0.45;
           ctx.fillStyle = colors.text;
           ctx.textAlign = "center";
@@ -158,23 +307,20 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
 
         const bins = frame.bins;
         const n = bins.length;
-        if (units.length !== n) units = new Float32Array(n);
-        if (p.mode === "off") {
-          let max = 0;
-          for (let i = 0; i < n; i++) if (bins[i] > max) max = bins[i];
-          ceiling = Math.max(max, ceiling * CEILING_DECAY, 1e-6);
-          scale.ceiling = ceiling;
-        }
-        for (let i = 0; i < n; i++) units[i] = valueToUnit(bins[i], scale);
 
+        // Peak hold advances once per new frame and falls per millisecond,
+        // so it drops at the same speed whatever the update rate.
         if (held.length !== n) {
           held = new Float32Array(n);
-          heldSeq = -1;
+          heldFrame = null;
         }
-        if (frame.seq !== heldSeq) {
-          heldSeq = frame.seq;
+        if (frame !== heldFrame) {
+          const fall =
+            PEAK_HOLD_DECAY_PER_MS * decayStepMs(frame.receivedAt, heldAt);
+          heldFrame = frame;
+          heldAt = frame.receivedAt;
           for (let i = 0; i < n; i++) {
-            const fallen = held[i] - PEAK_DECAY;
+            const fallen = held[i] - fall;
             held[i] = units[i] > fallen ? units[i] : fallen;
           }
         }
@@ -185,32 +331,12 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
           columnsHeld = new Float32Array(cols);
         }
         const values = n > cols ? maxPerColumn(units, cols, columns) : units;
-        const heldValues =
-          n > cols ? maxPerColumn(held, cols, columnsHeld) : held;
         const count = values.length;
-        const colW = plotW / count;
+        const colW = plotW / Math.max(1, count);
 
-        const gradient = ctx.createLinearGradient(0, plotY, 0, plotY + plotH);
-        gradient.addColorStop(0, colors.accent);
-        gradient.addColorStop(1, colors.accent);
-
-        if (p.style === "bars") {
-          ctx.fillStyle = colors.accent;
-          const gap = colW > 3 ? 1 : 0;
-          for (let i = 0; i < count; i++) {
-            const barH = values[i] * plotH;
-            if (barH <= 0) continue;
-            const x = plotX + i * colW;
-            ctx.globalAlpha = 0.35 + 0.65 * values[i];
-            ctx.fillRect(
-              x,
-              plotY + plotH - barH,
-              Math.max(1, colW - gap),
-              barH,
-            );
-          }
-          ctx.globalAlpha = 1;
-        } else {
+        if (count > 0 && p.style === "bars") {
+          paintBars(values, count, plotX, plotY, plotW, plotH);
+        } else if (count > 0) {
           ctx.beginPath();
           for (let i = 0; i < count; i++) {
             const x = plotX + (i + 0.5) * colW;
@@ -223,7 +349,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
             ctx.lineTo(plotX + 0.5 * colW, plotY + plotH);
             ctx.closePath();
             ctx.globalAlpha = 0.28;
-            ctx.fillStyle = gradient;
+            ctx.fillStyle = colors.accent;
             ctx.fill();
             ctx.globalAlpha = 1;
             ctx.beginPath();
@@ -240,13 +366,18 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
           ctx.stroke();
         }
 
-        if (p.peakHold) {
+        if (p.peakHold && count > 0) {
+          const heldValues =
+            n > cols ? maxPerColumn(held, cols, columnsHeld) : held;
+          const markW = Math.max(1, colW - 1);
           ctx.fillStyle = colors.text;
           ctx.globalAlpha = 0.7;
+          ctx.beginPath();
           for (let i = 0; i < count; i++) {
             const y = plotY + plotH * (1 - heldValues[i]);
-            ctx.fillRect(plotX + i * colW, y - 1, Math.max(1, colW - 1), 1.5);
+            ctx.rect(plotX + i * colW, y - 1, markW, 1.5);
           }
+          ctx.fill();
           ctx.globalAlpha = 1;
         }
 
@@ -311,35 +442,29 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
         }
         if (
           (info?.bin ?? -1) !== (lastHoverInfo?.bin ?? -1) ||
-          (info?.value ?? NaN) !== (lastHoverInfo?.value ?? NaN)
+          // Object.is: with no hover on either side both are NaN, and
+          // NaN !== NaN would re-send null on every painted frame.
+          !Object.is(info?.value ?? NaN, lastHoverInfo?.value ?? NaN)
         ) {
           lastHoverInfo = info;
           p.onHover?.(info);
         }
       };
 
-      const loop = () => {
-        raf = requestAnimationFrame(loop);
-        const rect = canvas.getBoundingClientRect();
+      const render = () => {
+        raf = 0;
+        if (width === 0 || height === 0) return;
         const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.round(rect.width));
-        const h = Math.max(1, Math.round(rect.height));
         let dirty = false;
-        if (
-          w !== width ||
-          h !== height ||
-          canvas.width !== Math.round(w * dpr)
-        ) {
-          canvas.width = Math.round(w * dpr);
-          canvas.height = Math.round(h * dpr);
-          width = w;
-          height = h;
+        if (sizeDirty || canvas.width !== Math.round(width * dpr)) {
+          canvas.width = Math.round(width * dpr);
+          canvas.height = Math.round(height * dpr);
+          sizeDirty = false;
           dirty = true;
         }
-        const now = performance.now();
-        if (now - colorsAt > 1000) {
+        if (colorsDirty) {
           colors = readColors();
-          colorsAt = now;
+          colorsDirty = false;
           dirty = true;
         }
         const frame = props.running ? getLatestFrame() : null;
@@ -359,11 +484,13 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         paint(frame, hover);
       };
-      raf = requestAnimationFrame(loop);
 
       return () => {
-        cancelAnimationFrame(raf);
+        requestPaint = noop;
+        if (raf !== 0) cancelAnimationFrame(raf);
         observer.disconnect();
+        stopTheme();
+        unsubscribe();
       };
     },
   );
@@ -371,10 +498,11 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
   const updateHover = (
     event: MouseEvent & { currentTarget: HTMLCanvasElement },
   ) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const plotW = rect.width - PAD_LEFT - PAD_RIGHT;
-    const x = (event.clientX - rect.left - PAD_LEFT) / Math.max(1, plotW);
+    // offsetX is relative to the canvas box, so no layout read is needed.
+    const plotW = event.currentTarget.clientWidth - PAD_LEFT - PAD_RIGHT;
+    const x = (event.offsetX - PAD_LEFT) / Math.max(1, plotW);
     hoverRef = x >= 0 && x <= 1 ? x : null;
+    requestPaint();
   };
 
   return (
@@ -384,6 +512,7 @@ export const SpectrumCanvas = (props: SpectrumCanvasProps) => {
       onMouseMove={updateHover}
       onMouseLeave={() => {
         hoverRef = null;
+        requestPaint();
       }}
     />
   );

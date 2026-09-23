@@ -88,12 +88,6 @@ const EXEMPTIONS: Exemption[] = [
     reason: "This file: the patterns and reasons it matches against.",
   },
   {
-    file: "src-tauri/src/portable.rs",
-    allow: new RegExp(`(${LEGACY.identifier}|${LEGACY.dataDirName})`),
-    reason:
-      "The 0.9.x portable/data-dir migration reads the old marker on purpose.",
-  },
-  {
     file: "src-tauri/nsis/installer.nsi",
     allow: new RegExp(LEGACY.portableMarker, "i"),
     reason:
@@ -116,27 +110,6 @@ const EXEMPTIONS: Exemption[] = [
     allow: /handy-computer\//,
     reason:
       "Model ids in the catalog and in the migration table, carrying the external HF org. Renaming them would break every download.",
-  },
-  {
-    file: "src-tauri/src/shortcut/mod.rs",
-    allow: /handy_keys/,
-    reason: 'Reads and writes the frozen `"handy_keys"` wire value above.',
-  },
-  {
-    file: "src/components/settings/debug/KeyboardImplementationSelector.tsx",
-    allow: /handy_keys/,
-    reason:
-      'The `"handy_keys"` wire value shown as an option id (the label is ours).',
-  },
-  {
-    file: "src/components/settings/ShortcutInput.tsx",
-    allow: /handy_keys/,
-    reason: 'Dispatches on the `"handy_keys"` wire value.',
-  },
-  {
-    file: "src/components/settings/NativeKeysShortcutInput.tsx",
-    allow: /handy_keys/,
-    reason: 'Listens for the `"handy_keys"` event channel.',
   },
   {
     file: "src/bindings.ts",
@@ -270,31 +243,15 @@ const EXEMPTIONS: Exemption[] = [
       "Design docs and plans that record the fork's history against upstream.",
   },
   {
-    file: "CRUSH.md",
-    allow: /[Hh]andy/,
-    reason: "Agent instructions that describe the fork's origin.",
-  },
-  {
     file: "CONTRIBUTING.md",
     allow: /[Hh]andy/,
     reason: "Contributor guide; names upstream where the lineage matters.",
-  },
-  {
-    file: "CONTRIBUTING_TRANSLATIONS.md",
-    allow: /[Hh]andy/,
-    reason: "Same, for the translation workflow.",
   },
   {
     file: "BUILD.md",
     allow: /[Hh]andy/,
     reason:
       "The fork note names upstream as the source, and the `Handy_Multi_STT` branch is named. Every build path, bundle name and binary in this file is ZER0's own.",
-  },
-  {
-    file: ".github/ISSUE_TEMPLATE/",
-    allow: /[Hh]andy|cjpais/,
-    reason:
-      "Templates that must disclose the fork's origin to outside contributors — an issue filed here should say which project it is a fork of. Funding links are deleted, not exempted.",
   },
   {
     file: ".github/PULL_REQUEST_TEMPLATE.md",

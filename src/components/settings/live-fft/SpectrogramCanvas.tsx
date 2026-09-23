@@ -1,15 +1,15 @@
 import { createEffect } from "solid-js";
 import type { FftLoudnessMode } from "@/bindings";
-import { getLatestFrame } from "@/stores/liveFftStore";
+import { getLatestFrame, subscribeFrames } from "@/stores/liveFftStore";
 import {
   buildColormap,
   cssColor,
   frequencyTicks,
   maxPerColumn,
-  valueToUnit,
+  type AxisTick,
   type ColormapKind,
-  type ValueScale,
 } from "./liveFftMath";
+import { observeTheme, pageUnits, sameValues } from "./SpectrumCanvas";
 
 interface SpectrogramCanvasProps {
   axisHz: ArrayLike<number>;
@@ -17,17 +17,43 @@ interface SpectrogramCanvasProps {
   dbRange: number;
   colormap: ColormapKind;
   running: boolean;
+  /**
+   * Translated canvas text (drawn, so lint cannot see it). `span` labels the
+   * top edge: how long ago its row was, `WATERFALL_ROWS` frames back.
+   */
+  labels: { now: string; span: string };
   class?: string;
 }
 
-const ROWS = 240;
+/** Rows of history the waterfall keeps: one per analysed frame. */
+export const WATERFALL_ROWS = 240;
 const MAX_COLUMNS = 2048;
 const PAD_LEFT = 36;
 const PAD_RIGHT = 8;
-const CEILING_DECAY = 0.995;
+const noop = () => {};
 
 export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
   let canvasRef: HTMLCanvasElement | undefined;
+  let propsVersion = 0;
+  let requestPaint = noop;
+  let lastProps: unknown[] = [];
+
+  createEffect(
+    () => [
+      props.axisHz,
+      props.mode,
+      props.dbRange,
+      props.colormap,
+      props.running,
+      props.labels,
+    ],
+    (next) => {
+      if (sameValues(next, lastProps)) return;
+      lastProps = next;
+      propsVersion += 1;
+      requestPaint();
+    },
+  );
 
   createEffect(
     () => undefined,
@@ -36,29 +62,52 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      // The history lives in an offscreen ring: row `head` is the next one
+      // written (so the oldest), `head - 1` the newest. A new frame writes
+      // one row in place; painting draws the ring in two slices (older rows
+      // on top, newer below). Nothing is ever scrolled or copied.
       const off = document.createElement("canvas");
-      off.height = ROWS;
+      off.height = WATERFALL_ROWS;
       const offCtx = off.getContext("2d");
       if (!offCtx) return;
 
       let raf = 0;
+      let head = 0;
+      let pushedSeq = -2;
       let drawnSeq = -2;
+      let drawnVersion = -1;
       let width = 0;
       let height = 0;
+      let sizeDirty = true;
+      let colorsDirty = true;
       let lut: Uint8ClampedArray = new Uint8ClampedArray(0);
       let lutKind: ColormapKind | null = null;
       let lutAccent = "";
-      let colorsAt = 0;
       let textColor = "#e6e6e6";
-      let ceiling = 1e-6;
-      let units = new Float32Array(0);
       let columns = new Float32Array(0);
       let row: ImageData | null = null;
+      let ticks: AxisTick[] = [];
+      let ticksAxis: ArrayLike<number> | null = null;
 
-      const observer = new ResizeObserver(() => {
-        width = 0;
+      const schedule = () => {
+        if (raf === 0) raf = requestAnimationFrame(render);
+      };
+      requestPaint = schedule;
+
+      const observer = new ResizeObserver((entries) => {
+        const box = entries[entries.length - 1]?.contentRect;
+        if (!box) return;
+        width = Math.max(1, Math.round(box.width));
+        height = Math.max(1, Math.round(box.height));
+        sizeDirty = true;
+        schedule();
       });
       observer.observe(canvas);
+      const stopTheme = observeTheme(() => {
+        colorsDirty = true;
+        schedule();
+      });
+      const unsubscribe = subscribeFrames(schedule);
 
       const ensureLut = () => {
         const accent = cssColor("--color-accent", "#1FE0FF");
@@ -70,27 +119,20 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
         }
       };
 
-      const pushFrame = (bins: Float32Array) => {
-        const n = bins.length;
+      const pushRow = (units: Float32Array) => {
+        const n = units.length;
         if (n === 0) return;
-        const p = props;
         const cols = Math.min(n, MAX_COLUMNS);
         if (off.width !== cols) {
+          // A new bin count restarts the history (the old rows describe a
+          // different axis).
           off.width = cols;
-          offCtx.clearRect(0, 0, cols, ROWS);
+          offCtx.clearRect(0, 0, cols, WATERFALL_ROWS);
           row = null;
+          head = 0;
           columns = new Float32Array(cols);
         }
         if (!row) row = offCtx.createImageData(cols, 1);
-        if (units.length !== n) units = new Float32Array(n);
-        const scale: ValueScale = { mode: p.mode, dbRange: p.dbRange, ceiling };
-        if (p.mode === "off") {
-          let max = 0;
-          for (let i = 0; i < n; i++) if (bins[i] > max) max = bins[i];
-          ceiling = Math.max(max, ceiling * CEILING_DECAY, 1e-6);
-          scale.ceiling = ceiling;
-        }
-        for (let i = 0; i < n; i++) units[i] = valueToUnit(bins[i], scale);
         const values = n > cols ? maxPerColumn(units, cols, columns) : units;
         const data = row.data;
         for (let x = 0; x < cols; x++) {
@@ -100,8 +142,8 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
           data[x * 4 + 2] = lut[idx * 3 + 2];
           data[x * 4 + 3] = 255;
         }
-        offCtx.drawImage(off, 0, -1);
-        offCtx.putImageData(row, 0, ROWS - 1);
+        offCtx.putImageData(row, 0, head);
+        head = (head + 1) % WATERFALL_ROWS;
       };
 
       const paint = () => {
@@ -112,7 +154,34 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
         ctx.clearRect(0, 0, w, h);
         if (off.width > 0) {
           ctx.imageSmoothingEnabled = true;
-          ctx.drawImage(off, plotX, 0, plotW, h);
+          const rowH = h / WATERFALL_ROWS;
+          const older = WATERFALL_ROWS - head;
+          if (older > 0) {
+            ctx.drawImage(
+              off,
+              0,
+              head,
+              off.width,
+              older,
+              plotX,
+              0,
+              plotW,
+              older * rowH,
+            );
+          }
+          if (head > 0) {
+            ctx.drawImage(
+              off,
+              0,
+              0,
+              off.width,
+              head,
+              plotX,
+              older * rowH,
+              plotW,
+              head * rowH,
+            );
+          }
         }
         ctx.font =
           "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -121,9 +190,13 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
         ctx.strokeStyle = textColor;
         ctx.textAlign = "right";
         ctx.globalAlpha = 0.5;
-        ctx.fillText("now", plotX - 4, h - 7);
-        ctx.fillText(`−${ROWS}`, plotX - 4, 7);
-        for (const tick of frequencyTicks(props.axisHz)) {
+        ctx.fillText(props.labels.now, plotX - 4, h - 7);
+        ctx.fillText(props.labels.span, plotX - 4, 7);
+        if (props.axisHz !== ticksAxis) {
+          ticks = frequencyTicks(props.axisHz);
+          ticksAxis = props.axisHz;
+        }
+        for (const tick of ticks) {
           const x = Math.round(plotX + plotW * tick.x) + 0.5;
           ctx.globalAlpha = 0.18;
           ctx.beginPath();
@@ -134,48 +207,48 @@ export const SpectrogramCanvas = (props: SpectrogramCanvasProps) => {
         ctx.globalAlpha = 1;
       };
 
-      const loop = () => {
-        raf = requestAnimationFrame(loop);
-        const rect = canvas.getBoundingClientRect();
+      const render = () => {
+        raf = 0;
+        if (width === 0 || height === 0) return;
         const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.round(rect.width));
-        const h = Math.max(1, Math.round(rect.height));
         let dirty = false;
-        if (
-          w !== width ||
-          h !== height ||
-          canvas.width !== Math.round(w * dpr)
-        ) {
-          canvas.width = Math.round(w * dpr);
-          canvas.height = Math.round(h * dpr);
-          width = w;
-          height = h;
+        if (sizeDirty || canvas.width !== Math.round(width * dpr)) {
+          canvas.width = Math.round(width * dpr);
+          canvas.height = Math.round(height * dpr);
+          sizeDirty = false;
           dirty = true;
         }
-        const now = performance.now();
-        if (now - colorsAt > 1000) {
+        if (colorsDirty) {
           textColor = cssColor("--color-text", "#e6e6e6");
           ensureLut();
-          colorsAt = now;
+          colorsDirty = false;
           dirty = true;
         }
         const frame = props.running ? getLatestFrame() : null;
         const seq = frame?.seq ?? -1;
-        if (frame && seq !== drawnSeq) {
+        if (frame && seq !== pushedSeq) {
+          pushedSeq = seq;
           ensureLut();
-          pushFrame(frame.bins);
+          // The spectrum canvas has usually computed these already.
+          pushRow(pageUnits.units(frame, props.mode, props.dbRange));
           dirty = true;
         }
-        if (!dirty && seq === drawnSeq) return;
+        if (!dirty && seq === drawnSeq && propsVersion === drawnVersion) {
+          return;
+        }
+        if (propsVersion !== drawnVersion) ensureLut();
         drawnSeq = seq;
+        drawnVersion = propsVersion;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         paint();
       };
-      raf = requestAnimationFrame(loop);
 
       return () => {
-        cancelAnimationFrame(raf);
+        requestPaint = noop;
+        if (raf !== 0) cancelAnimationFrame(raf);
         observer.disconnect();
+        stopTheme();
+        unsubscribe();
       };
     },
   );

@@ -3,7 +3,7 @@ import { useTranslation } from "@/i18n/useTranslation";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
-import { commands, type ModelUnloadTimeout } from "@/bindings";
+import type { ModelUnloadTimeout } from "@/bindings";
 import type { JSX } from "@solidjs/web";
 
 interface ModelUnloadTimeoutProps {
@@ -58,15 +58,10 @@ export const ModelUnloadTimeoutSetting = (
     },
   ];
 
-  const handleChange = async (event: { target: { value: string } }) => {
-    const newTimeout = event.target.value as ModelUnloadTimeout;
-
-    try {
-      await commands.setModelUnloadTimeout(newTimeout);
-      updateSetting("model_unload_timeout", newTimeout);
-    } catch (error) {
-      console.error("Failed to update model unload timeout:", error);
-    }
+  // Persisted (and applied to the running idle watcher) by the store's
+  // `settingUpdaters` entry, like every other setting.
+  const handleChange = (value: string) => {
+    void updateSetting("model_unload_timeout", value as ModelUnloadTimeout);
   };
 
   const options = createMemo(() => {
@@ -84,13 +79,8 @@ export const ModelUnloadTimeoutSetting = (
     >
       <Dropdown
         options={options()}
-        selectedValue={getSetting("model_unload_timeout") ?? "never"}
-        onSelect={(value) =>
-          handleChange({
-            target: { value },
-          })
-        }
-        disabled={false}
+        selectedValue={getSetting("model_unload_timeout") ?? "min5"}
+        onSelect={handleChange}
       />
     </SettingContainer>
   );

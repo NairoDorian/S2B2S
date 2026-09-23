@@ -23,7 +23,7 @@ interface DebugSettingsProps {
   onPreviewOnboarding: (step: OnboardingPreviewStep) => void;
 }
 
-export const DebugSettings = ({ onPreviewOnboarding }: DebugSettingsProps) => {
+export const DebugSettings = (props: DebugSettingsProps) => {
   const { t } = useTranslation();
 
   return (
@@ -32,9 +32,9 @@ export const DebugSettings = ({ onPreviewOnboarding }: DebugSettingsProps) => {
       <SettingsGroup title={t("settings.debug.title")}>
         <InterfaceScale descriptionMode="tooltip" grouped={true} />
         <WhatsNewPreview descriptionMode="tooltip" grouped={true} />
-        {onPreviewOnboarding && (
+        {props.onPreviewOnboarding && (
           <OnboardingPreview
-            onPreview={onPreviewOnboarding}
+            onPreview={props.onPreviewOnboarding}
             descriptionMode="tooltip"
             grouped={true}
           />

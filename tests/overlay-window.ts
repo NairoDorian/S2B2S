@@ -4,8 +4,8 @@
  *     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 bun run dev:fast
  *     bun tests/overlay-window.ts
  *
- * The companion to `tauri-window.ts`, and the Phase 2 acceptance check in
- * docs/PLAN_SOLIDJS_2.md §11.3. The overlay is a native window whose geometry
+ * The companion to `tauri-window.ts`, and the overlay's acceptance check from
+ * the React → Solid 2 migration (see CHANGELOG, 2026-09-13). The overlay is a native window whose geometry
  * the backend reads back *from this webview* (`overlay_stream_text_height`), so
  * a browser-only check cannot prove it works — it has to run in the real
  * webview, against the real Rust backend.
@@ -30,7 +30,9 @@
  * reason on any mismatch.
  */
 
-const PORT = Number(process.env.ZER0_CDP_PORT ?? 9222);
+import { appEnvVar } from "../scripts/lib/env-flag";
+
+const PORT = Number(appEnvVar("CDP_PORT") ?? 9222);
 
 type Target = {
   type: string;

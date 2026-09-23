@@ -4,13 +4,15 @@
 //! Success, empty, failure, and cancellation outcomes are retained, while summaries include only
 //! successes with non-empty raw ASR output. Headless runs have a reserved origin so later lifecycle
 //! integration can explicitly include or omit them without changing the schema. Times are UTC Unix
-//! milliseconds and ranges are half-open `[start_ms, end_ms)`. Audio duration means captured audio
-//! before short-input padding. Transcription latency starts at the user's stop action and ends when
+//! milliseconds and ranges are half-open `[start_ms, end_ms)`. Audio duration is the VAD-measured
+//! speech time of the input (the captured duration, before short-input padding, when no speech
+//! clock ran). Transcription latency starts at the user's stop action and ends when
 //! canonical raw ASR output is available; post-processing latency uses the same baseline and ends
 //! when final text is ready to paste. Word-count version 1 uses Unicode-aware
 //! `split_whitespace`: punctuation stays attached, unspaced CJK generally counts as one word, and
-//! whitespace-separated emoji count as words. Rows have no history foreign key or recording
-//! dependency and persist until a separate manual reset.
+//! whitespace-separated emoji count as words. Rows carry no foreign key and persist until a
+//! separate manual reset; a History-retry row's `source_history_id` is only used to prefer that
+//! entry's stored speech duration while the entry exists.
 
 use anyhow::{Result, anyhow};
 use log::error;
@@ -392,7 +394,9 @@ impl StatisticsManager {
             let operational = (run.attempt_count == 0).then(|| NewStatisticsRun {
                 started_at_ms: run.started_at_ms,
                 completed_at_ms: chrono::Utc::now().timestamp_millis(),
-                status,
+                // No attempt means no words: a requested Success is stored as
+                // Empty, exactly as `finish_attempt` resolves it.
+                status: resolved_terminal_status(status, None),
                 origin: run.origin,
                 model_id: None,
                 engine: None,
@@ -491,11 +495,6 @@ impl StatisticsRunContext {
             run.input_stopped = Some(stopped);
             run.post_processing_requested = post_processing_requested;
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_post_processing_requested(&self, requested: bool) {
-        self.state.lock().unwrap().post_processing_requested = requested;
     }
 
     pub fn begin_attempt(
@@ -597,12 +596,6 @@ impl StatisticsRepository {
     pub fn insert(&self, run: &NewStatisticsRun) -> Result<StoredStatisticsRun> {
         let conn = self.get_connection()?;
         Self::insert_with_conn(&conn, run)
-    }
-
-    #[allow(dead_code)]
-    pub fn get_by_id(&self, id: i64) -> Result<Option<StoredStatisticsRun>> {
-        let conn = self.get_connection()?;
-        Self::get_by_id_with_conn(&conn, id)
     }
 
     pub fn summarize(&self, range: StatisticsRange) -> Result<StatisticsSummary> {
@@ -948,6 +941,24 @@ mod tests {
     fn audio_duration_uses_pre_padding_sample_count() {
         assert_eq!(audio_duration_ms(8_000, 16_000), Some(500));
         assert_eq!(audio_duration_ms(8_000, 0), None);
+    }
+
+    #[test]
+    fn success_without_words_resolves_to_empty() {
+        // The operational row of a run with no attempt carries no word count;
+        // storing it as Success would always fail `validate_run`.
+        assert_eq!(
+            resolved_terminal_status(StatisticsRunStatus::Success, None),
+            StatisticsRunStatus::Empty
+        );
+        assert_eq!(
+            resolved_terminal_status(StatisticsRunStatus::Failed, None),
+            StatisticsRunStatus::Failed
+        );
+        assert_eq!(
+            resolved_terminal_status(StatisticsRunStatus::Success, Some(3)),
+            StatisticsRunStatus::Success
+        );
     }
 
     #[test]

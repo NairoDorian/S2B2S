@@ -14,10 +14,10 @@
     "isolatedModules": true,
     "noEmit": true,
 
-    /* JSX. `preserve` hands untransformed JSX to Vite's Solid plugin. Phase 3
-       switched `jsxImportSource` to `@solidjs/web` as the tree-wide default;
-       `tsconfig.json` is a type-checking setting only (noEmit is true), and
-       Vite picks the transform independently. */
+    /* JSX. `preserve` hands untransformed JSX to Vite's Solid plugin.
+       `jsxImportSource` is `@solidjs/web` for the whole tree (no file carries
+       a pragma); `tsconfig.json` is a type-checking setting only (noEmit is
+       true), and Vite picks the transform independently. */
     "jsx": "preserve",
     "jsxImportSource": "@solidjs/web",
 

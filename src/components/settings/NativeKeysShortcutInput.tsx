@@ -1,4 +1,4 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal, createEffect, Match, Switch } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
@@ -26,12 +26,9 @@ interface NativeKeysEvent {
   hotkey_string: string;
 }
 
-export const NativeKeysShortcutInput = ({
-  descriptionMode = "tooltip",
-  grouped = false,
-  shortcutId,
-  disabled = false,
-}: NativeKeysShortcutInputProps): JSX.Element => {
+export const NativeKeysShortcutInput = (
+  props: NativeKeysShortcutInputProps,
+): JSX.Element => {
   const { t } = useTranslation();
   const { getSetting, updateBinding, resetBinding, isUpdating, isLoading } =
     useSettings();
@@ -44,7 +41,10 @@ export const NativeKeysShortcutInput = ({
   let modifierOnlyShortcutRef = "";
   const osType = useOsType();
 
-  const bindings = getSetting("bindings") || {};
+  const descriptionMode = () => props.descriptionMode ?? "tooltip";
+  const grouped = () => props.grouped ?? false;
+  const bindings = () => getSetting("bindings") || {};
+  const binding = () => bindings()[props.shortcutId];
 
   const cancelRecording = async () => {
     if (!isRecording()) return;
@@ -58,7 +58,7 @@ export const NativeKeysShortcutInput = ({
 
     if (originalBinding()) {
       try {
-        await updateBinding(shortcutId, originalBinding());
+        await updateBinding(props.shortcutId, originalBinding());
       } catch (error) {
         console.error("Failed to restore original binding:", error);
         toast.error(t("settings.general.shortcut.errors.restore"));
@@ -73,16 +73,16 @@ export const NativeKeysShortcutInput = ({
   };
 
   createEffect(
-    () => undefined,
-    () => {
-      if (!isRecording()) return;
+    () => isRecording(),
+    (recording) => {
+      if (!recording) return;
 
       let cleanup = false;
 
       const setupListener = async () => {
         const commitAndStop = async (keysToCommit: string) => {
           try {
-            await updateBinding(shortcutId, keysToCommit);
+            await updateBinding(props.shortcutId, keysToCommit);
           } catch (error) {
             console.error("Failed to change binding:", error);
             toast.error(
@@ -93,7 +93,7 @@ export const NativeKeysShortcutInput = ({
 
             if (originalBinding()) {
               try {
-                await updateBinding(shortcutId, originalBinding());
+                await updateBinding(props.shortcutId, originalBinding());
               } catch (resetError) {
                 console.error("Failed to reset binding:", resetError);
                 toast.error(t("settings.general.shortcut.errors.reset"));
@@ -142,6 +142,12 @@ export const NativeKeysShortcutInput = ({
           },
         );
 
+        // Recording may have ended while `listen` was resolving; the cleanup
+        // below has already run then, so release the listener here.
+        if (cleanup) {
+          unlisten();
+          return;
+        }
         unlistenRef = unlisten;
       };
 
@@ -159,9 +165,9 @@ export const NativeKeysShortcutInput = ({
   );
 
   createEffect(
-    () => undefined,
-    () => {
-      if (!isRecording()) return;
+    () => isRecording(),
+    (recording) => {
+      if (!recording) return;
 
       const handleClickOutside = (e: MouseEvent) => {
         if (shortcutRef && !shortcutRef.contains(e.target as Node)) {
@@ -177,10 +183,10 @@ export const NativeKeysShortcutInput = ({
   const startRecording = async () => {
     if (isRecording()) return;
 
-    setOriginalBinding(bindings[shortcutId]?.current_binding || "");
+    setOriginalBinding(bindings()[props.shortcutId]?.current_binding || "");
 
     try {
-      const result = await commands.startNativeKeysRecording(shortcutId);
+      const result = await commands.startNativeKeysRecording(props.shortcutId);
       if (result.status === "error") {
         if (String(result.error).includes("secure-input-active")) {
           toast.error(t("secureInput.recorderBlocked"), {
@@ -215,92 +221,73 @@ export const NativeKeysShortcutInput = ({
     return formatKeyCombination(currentKeys(), osType);
   };
 
-  if (isLoading()) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div class="text-sm text-mid-gray">
-          {t("settings.general.shortcut.loading")}
-        </div>
-      </SettingContainer>
-    );
-  }
-
-  if (Object.keys(bindings).length === 0) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div class="text-sm text-mid-gray">
-          {t("settings.general.shortcut.none")}
-        </div>
-      </SettingContainer>
-    );
-  }
-
-  const binding = bindings[shortcutId];
-  if (!binding) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.notFound")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div class="text-sm text-mid-gray">
-          {t("settings.general.shortcut.none")}
-        </div>
-      </SettingContainer>
-    );
-  }
-
-  const translatedName = t(
-    `settings.general.shortcut.bindings.${shortcutId}.name`,
-    binding.name,
-  );
-  const translatedDescription = t(
-    `settings.general.shortcut.bindings.${shortcutId}.description`,
-    binding.description,
+  // One placeholder for the three "nothing to edit" states. The body runs
+  // once, so each state is a `Match` rather than an early return: settings
+  // load after mount and bindings change under the component.
+  const placeholder = (description: string) => (
+    <SettingContainer
+      title={t("settings.general.shortcut.title")}
+      description={description}
+      descriptionMode={descriptionMode()}
+      grouped={grouped()}
+    >
+      <div class="text-sm text-mid-gray">
+        {isLoading()
+          ? t("settings.general.shortcut.loading")
+          : t("settings.general.shortcut.none")}
+      </div>
+    </SettingContainer>
   );
 
   return (
-    <SettingContainer
-      title={translatedName}
-      description={translatedDescription}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
-      disabled={disabled}
-      layout="horizontal"
-    >
-      <div class="flex items-center space-x-1">
-        {isRecording() ? (
-          <div
-            ref={(el) => (shortcutRef = el)}
-            class="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
+    <Switch>
+      <Match when={isLoading() || Object.keys(bindings()).length === 0}>
+        {placeholder(t("settings.general.shortcut.description"))}
+      </Match>
+      <Match when={!binding()}>
+        {placeholder(t("settings.general.shortcut.notFound"))}
+      </Match>
+      <Match when={binding()}>
+        {(b) => (
+          <SettingContainer
+            title={t(
+              `settings.general.shortcut.bindings.${props.shortcutId}.name`,
+              b().name,
+            )}
+            description={t(
+              `settings.general.shortcut.bindings.${props.shortcutId}.description`,
+              b().description,
+            )}
+            descriptionMode={descriptionMode()}
+            grouped={grouped()}
+            disabled={props.disabled ?? false}
+            layout="horizontal"
           >
-            {formatCurrentKeys()}
-          </div>
-        ) : (
-          <button
-            type="button"
-            class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent text-start"
-            onClick={startRecording}
-          >
-            {formatKeyCombination(binding.current_binding, osType)}
-          </button>
+            <div class="flex items-center space-x-1">
+              {isRecording() ? (
+                <div
+                  ref={(el) => (shortcutRef = el)}
+                  class="px-2 py-1 text-sm font-semibold border border-accent bg-accent/30 rounded-md"
+                >
+                  {formatCurrentKeys()}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  class="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-accent/10 rounded-md cursor-pointer hover:border-accent text-start"
+                  onClick={startRecording}
+                >
+                  {formatKeyCombination(b().current_binding, osType)}
+                </button>
+              )}
+              <ResetButton
+                onClick={() => resetBinding(props.shortcutId)}
+                disabled={isUpdating(`binding_${props.shortcutId}`)}
+              />
+            </div>
+          </SettingContainer>
         )}
-        <ResetButton
-          onClick={() => resetBinding(shortcutId)}
-          disabled={isUpdating(`binding_${shortcutId}`)}
-        />
-      </div>
-    </SettingContainer>
+      </Match>
+    </Switch>
   );
 };

@@ -47,9 +47,10 @@
 //! The tap receives the same VAD-filtered frames the primary stream is fed, in
 //! the same order, so a chunk's audio is the recording's own speech without the
 //! silence the VAD dropped, and `audio_committed_ms` is a coordinate in that same
-//! stream. It is read at each close to *report* how far behind the stream's
-//! committed text is (the `chunk n closed` log line) and never to cut anything:
-//! audio and text are both taken whole, so a mis-timed hint cannot shift a seam.
+//! stream. It is read at each break to decide whether the stream has decoded the
+//! chunk's audio (see [`STREAM_DRAIN_TOLERANCE_MS`]) and reported in the
+//! `chunk n closed` log line; it never cuts anything: audio and text are both
+//! taken whole, so a mis-timed hint cannot shift a seam.
 //!
 //! # Shape
 //!
@@ -102,7 +103,8 @@ use tauri::AppHandle;
 use tauri_specta::Event;
 
 use crate::actions::{
-    MultiSttHistoryBrain, has_merge_prompt, multi_stt_merge_transcriptions, slots_carry_words,
+    MultiSttHistoryBrain, has_merge_prompt, join_nonempty_lines, multi_stt_merge_transcriptions,
+    slots_carry_words,
 };
 use crate::audio_toolkit::audio::{ChunkTap, chunk_tap};
 use crate::direct_stream_writer::DirectStreamWriter;
@@ -116,12 +118,13 @@ use crate::settings::{AppSettings, PasteMethod, get_settings};
 ///
 /// The block is not a model's text, so it must not take a slot a model can
 /// occupy — the overlay draws one column per *stream*, and a model's column would
-/// otherwise be shown twice, once raw and once merged. It rides the last slot
-/// instead: [the stream slot array](STREAM_SLOTS) has one entry per Multi-STT
-/// model slot, so the last index is beyond every model the mode can run, and the
-/// overlay's own reader branches on the event's shape rather than on a range of
-/// numbers (see `RecordingOverlay`, which treats a numbered event the whole
-/// session's text as this block and every other numbered event as a column).
+/// otherwise be shown twice, once raw and once merged. It takes the index one
+/// past the last stream slot instead: [the stream slot array](STREAM_SLOTS) has
+/// one entry per Multi-STT model slot, so `STREAM_SLOTS` itself is an index no
+/// model can occupy, and the overlay's own reader branches on the event's shape
+/// rather than on a range of numbers (see `RecordingOverlay`, which treats a
+/// numbered event that carries the whole session's text as this block and every
+/// other numbered event as a column).
 const MERGE_BLOCK_SLOT: u8 = STREAM_SLOTS as u8;
 
 /// The rate the tap and the streaming model both run at (see [`ChunkTap`]).
@@ -172,9 +175,17 @@ const SETTINGS_REFRESH_TICKS: u32 = 40;
 /// the backstop for everything else (a stuck engine load, a blocked pool).
 const MERGE_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// How long the coordinator waits for the in-flight merge at stop, and how long
-/// `MultiSttAction::stop` waits for the coordinator, before falling back.
+/// How long `MultiSttAction::stop` waits for the coordinator to finish before
+/// falling back to the batch path.
+///
+/// Strictly longer than [`MERGE_TIMEOUT`], which bounds the coordinator's own
+/// wait for the in-flight merge at stop (`Coordinator::wait_for_merge`): the two
+/// waits are nested, and an outer wait no longer than the inner one would give
+/// up on every stop that had to wait out a slow merge — while the coordinator,
+/// still finishing, went on to type its text anyway. The difference is the
+/// budget of the last chunk's own merge.
 pub const FINISH_TIMEOUT: Duration = Duration::from_secs(120);
+const _: () = assert!(FINISH_TIMEOUT.as_secs() > MERGE_TIMEOUT.as_secs());
 
 /// How much audio the stream may have been fed and not yet drained and still
 /// count as having reached the end of the chunk's audio.
@@ -206,8 +217,8 @@ pub const FINISH_TIMEOUT: Duration = Duration::from_secs(120);
 /// measured 4918 ms.
 const STREAM_DRAIN_TOLERANCE_MS: i64 = 500;
 
-/// How long a break waits for the chunk's own text to arrive before the chunk is
-/// closed with whatever has arrived.
+/// How long a break waits for the chunk's own text to arrive before the session
+/// gives up on the chunk and retires itself.
 ///
 /// A break is decided on the audio alone (`closes`), but the primary's text for
 /// that audio arrives on the model's own schedule, and the mode's invariant —
@@ -561,7 +572,7 @@ struct Chunk {
     /// The other live models' own text for this chunk, by stream slot. Empty on
     /// every slot in the parent mode, where the extras' texts are produced by
     /// decoding at dispatch time and never held on the chunk.
-    extras: [String; 4],
+    extras: [String; STREAM_SLOTS],
     /// Whether the last merge for this chunk failed, so it is showing the
     /// extras' concatenated text rather than a merged one.
     failed: bool,
@@ -643,7 +654,7 @@ struct JobInput {
     /// mode, where the texts are produced by decoding `audio` instead — and the
     /// two are mutually exclusive by construction, so the job never has to
     /// choose between a decode it was given and one it could run.
-    live_outputs: Option<[String; 4]>,
+    live_outputs: Option<[String; STREAM_SLOTS]>,
     /// Whether this job's per-model outputs belong in the session's history
     /// metadata. True for the merge that closes a chunk, false for a retry (the
     /// outputs are already recorded).
@@ -659,7 +670,7 @@ struct JobResult {
     record_outputs: bool,
     /// `None` when no merge text was produced; `outputs` still holds the extras.
     merged: Option<String>,
-    outputs: [String; 4],
+    outputs: [String; STREAM_SLOTS],
     brain: Option<MultiSttHistoryBrain>,
     /// A merge was configured and asked for but did not produce text.
     failed: bool,
@@ -711,12 +722,12 @@ async fn run_merge_job(
     // The untracked `transcribe_with_extra` is used deliberately there: a
     // session's statistics record one run, and three extra decode attempts per
     // chunk would inflate that run's numbers by the chunk count.
-    let outputs: [String; 4] = if let Some(outputs) = live_outputs {
+    let outputs: [String; STREAM_SLOTS] = if let Some(outputs) = live_outputs {
         outputs
     } else {
         // Each extra decodes the whole window. The clones are the window's
-        // samples — at most four chunks, ~7.7 MB at the valve — against decodes
-        // that cost far more.
+        // samples — at most four chunks, ~15 MB at the valve, one clone per
+        // extra — against decodes that cost far more.
         let spawn_extra = |slot: usize, model_id: Option<String>| {
             let tm = Arc::clone(&tm);
             let audio = audio.clone();
@@ -750,7 +761,7 @@ async fn run_merge_job(
             spawn_extra(3, settings.multi_stt_model_4.clone()),
         ];
 
-        let mut decoded: [String; 4] = Default::default();
+        let mut decoded: [String; STREAM_SLOTS] = Default::default();
         for handle in handles.into_iter().flatten() {
             if let Ok((slot, text)) = handle.await {
                 decoded[slot] = text;
@@ -765,8 +776,8 @@ async fn run_merge_job(
     // the merge prompt would carry four empty quoted blocks, and a small model
     // answers *the request* rather than the audio, which lands in the user's
     // document as a sentence they never said. This is not a failure and must not
-    // be reported as one — `failed` is what marks the chunk for a retry at the
-    // next close, and a retry of a chunk with no words in it can only decode the
+    // be reported as one — `failed` is what marks the chunk for a retry after
+    // the next close, and a retry of a chunk with no words in it can only decode the
     // extras again for the same nothing. The chunk keeps the streaming model's
     // own text (`Chunk::display_text` falls back to it).
     let (merged, brain, failed) = if has_merge_prompt(&settings)
@@ -833,18 +844,11 @@ async fn run_merge_job(
 /// The batch path's fallback shape — every model's output on its own line — with
 /// the primary's own text standing in for slot 1. Used when a chunk's merge could
 /// not run, so a failed chunk reads exactly like a failed Multi-STT run.
-fn concatenate(primary: &str, outputs: &[String; 4]) -> String {
-    let mut combined = String::new();
-    for text in std::iter::once(primary).chain(outputs.iter().skip(1).map(String::as_str)) {
-        if text.is_empty() {
-            continue;
-        }
-        if !combined.is_empty() {
-            combined.push('\n');
-        }
-        combined.push_str(text);
-    }
-    combined
+fn concatenate(primary: &str, outputs: &[String; STREAM_SLOTS]) -> String {
+    let parts: Vec<&str> = std::iter::once(primary)
+        .chain(outputs.iter().skip(1).map(String::as_str))
+        .collect();
+    join_nonempty_lines(&parts)
 }
 
 /// The context a merge window carries in front of `closed[index]`: the `depth`
@@ -878,7 +882,7 @@ pub struct MultiSttStreamOutcome {
     pub final_text: String,
     /// Slot 1 is the primary model's own live text for the session; slots 2–4
     /// are the extras' outputs as recorded for each chunk that closed.
-    pub model_outputs: [String; 4],
+    pub model_outputs: [String; STREAM_SLOTS],
     pub brain: Option<MultiSttHistoryBrain>,
     pub failed_chunks: u32,
     pub chunk_count: u32,
@@ -1190,8 +1194,9 @@ pub fn cancel() {
 struct Snapshot {
     committed: String,
     tentative: String,
-    /// How much audio the committed text accounts for. Reported at each close,
-    /// never used to cut (see the module docs).
+    /// How much audio the committed text accounts for. Gates the close (via
+    /// [`STREAM_DRAIN_TOLERANCE_MS`]) and is reported at each close; never used
+    /// to cut (see the module docs).
     audio_committed_ms: i64,
     input_received_ms: i64,
     revision: u64,
@@ -1266,6 +1271,35 @@ impl MergeQueue {
 
     fn clear(&self) {
         self.results.lock().unwrap().clear();
+    }
+}
+
+/// A failed chunk waiting for its merge to be retried.
+///
+/// Split out of [`Coordinator`] for the same reason [`MergeQueue`] is: the
+/// decision of when the retry runs is reachable from a test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PendingRetry {
+    chunk_id: u64,
+    /// How many chunks had closed when the failure was recorded. The retry
+    /// waits until at least one more has closed, so it runs at the session's
+    /// own pace — once per break at most — and a provider that is down is not
+    /// asked again on the very next tick.
+    closed_at_failure: usize,
+}
+
+impl PendingRetry {
+    /// Whether the retry may be dispatched now: a chunk has closed since the
+    /// failure, and no merge is in flight. The second half is the "one merge at
+    /// a time" rule, and it is what orders the retry *after* the close merge of
+    /// the break that made it due: that close dispatches its own merge first,
+    /// and the retry goes out on the first tick after that merge releases the
+    /// queue. A retry that fails again records a new failure, which needs
+    /// another close before it is due, so at least one close merge runs between
+    /// two attempts at the same chunk: the retry cannot starve the chunks that
+    /// close after it.
+    fn is_due(&self, closed: usize, merge_running: bool) -> bool {
+        !merge_running && closed > self.closed_at_failure
     }
 }
 
@@ -1391,16 +1425,19 @@ struct Coordinator {
     /// trigger a merge on every tick.
     last_close_speech_ms: i64,
 
-    /// The last failed chunk, kept so a later close can retry its merge (a
-    /// transient provider failure should not cost the chunk its polish). One
-    /// chunk's worth: a second failure replaces the first, which keeps its
-    /// concatenated fallback text.
-    retry: Option<u64>,
+    /// The last failed chunk, kept so its merge is retried after a later break
+    /// (a transient provider failure should not cost the chunk its polish). The
+    /// retry is dispatched by [`Self::retry_failed_chunk`] once
+    /// [`PendingRetry::is_due`] holds. One chunk's worth: a second failure
+    /// replaces the first, which keeps its concatenated fallback text. A retry
+    /// still pending when the recording stops is not run — the chunk keeps its
+    /// fallback text.
+    retry: Option<PendingRetry>,
 
     merge: MergeQueue,
     failed_chunks: u32,
     /// Per-slot extras' outputs, accumulated from the merges that closed a chunk.
-    outputs: [String; 4],
+    outputs: [String; STREAM_SLOTS],
     brain: Option<MultiSttHistoryBrain>,
     decode_latency_ms: f64,
     merge_latency_ms: f64,
@@ -1517,14 +1554,14 @@ impl Coordinator {
             && speech > self.last_close_speech_ms
             && self.last_speech_change.elapsed() >= pause;
 
-        // One merge at a time. A break during a job is not lost: the pause
-        // persists until a close consumes it, so it is acted on the moment the
-        // job lands — unless the speaker resumed meanwhile, in which case the
-        // chunk keeps the speech that followed, as it should.
+        // One merge at a time, a retry included. A break during a job is not
+        // lost: the pause persists until a close consumes it, so it is acted on
+        // the moment the job lands — unless the speaker resumed meanwhile, in
+        // which case the chunk keeps the speech that followed, as it should.
         if self.merge.running {
             self.watchdog_merge();
             if self.merge.running {
-                self.publish(false);
+                self.publish();
                 return true;
             }
         }
@@ -1556,12 +1593,6 @@ impl Coordinator {
             Break::Close => {
                 self.close_open_chunk();
                 self.last_close_speech_ms = speech;
-                // A failed chunk is retried at the next close, so the retry rate
-                // is the session's natural pace and a down provider is not
-                // hammered.
-                if !self.merge.running {
-                    self.retry_failed_chunk();
-                }
             }
             Break::Retire => {
                 // The grace has run out with the chunk's own text still owed,
@@ -1597,7 +1628,13 @@ impl Coordinator {
             }
         }
 
-        self.publish(false);
+        // After the break, deliberately: a close that was due this tick has
+        // just dispatched its own merge, so the retry waits for that one to land
+        // (see `PendingRetry::is_due`) and the chunk that just closed is never
+        // queued behind an older one.
+        self.retry_failed_chunk();
+
+        self.publish();
         true
     }
 
@@ -1680,7 +1717,8 @@ impl Coordinator {
     /// A stream that has not spoken yet contributes nothing rather than an
     /// error: the merge's own per-slot texts are read at the close, and a model
     /// whose chunk text is empty is a model that had nothing to say about this
-    /// chunk — which [`crate::multi_stt::merge_and_clean`] is written to handle.
+    /// chunk — which [`crate::actions::multi_stt_merge_transcriptions`] is
+    /// written to handle.
     fn absorb_extra_text(&mut self) {
         if self.source != TextSource::Live {
             return;
@@ -1688,7 +1726,7 @@ impl Coordinator {
         let mut extras = self.extras.lock().unwrap();
         for extra in extras.iter_mut() {
             let slot = extra.slot as usize;
-            if slot == 0 || slot >= self.open.extras.len() {
+            if slot == PRIMARY_STREAM_SLOT as usize || slot >= self.open.extras.len() {
                 continue;
             }
             if extra.committed.len() < extra.copied {
@@ -1774,15 +1812,13 @@ impl Coordinator {
         self.closed.push(closed);
 
         let index = self.closed.len() - 1;
-        // The stream's own audio position, which the tap has just drained up to.
-        // The difference to the family's drain cursor is the audio the close had
-        // to merge across without a decode: silence by construction, which is
-        // what makes the close legal at [`STREAM_DRAIN_TOLERANCE_MS`], so it is
-        // worth a line — a figure crawling towards the tolerance is the mode
-        // working near its edge, and one above it is the feed or the model
-        // falling behind rather than a bug in the seam.
-        let stream_position_ms = self.tap.pushed_samples() as i64 / SAMPLES_PER_MS;
-        let un_drained_ms = (stream_position_ms - self.stream_drained_ms).max(0);
+        // The same backlog `break_outcome` tested: the audio the stream has been
+        // fed and not yet decoded, which the close had to merge across without
+        // a decode — silence by construction, which is what makes the close
+        // legal at [`STREAM_DRAIN_TOLERANCE_MS`], so it is worth a line. A
+        // figure crawling towards the tolerance is the mode working near its
+        // edge.
+        let un_drained_ms = (self.stream_input_ms - self.stream_drained_ms).max(0);
         match self.source {
             TextSource::ReDecode => {
                 let context_samples = {
@@ -1850,7 +1886,7 @@ impl Coordinator {
     fn window_for(&self, index: usize, record_outputs: bool) -> JobInput {
         let chunk = &self.closed[index];
         if self.source == TextSource::Live {
-            let mut outputs: [String; 4] = Default::default();
+            let mut outputs: [String; STREAM_SLOTS] = Default::default();
             outputs[PRIMARY_STREAM_SLOT as usize] = chunk.live.clone();
             for (slot, text) in chunk.extras.iter().enumerate() {
                 if slot != PRIMARY_STREAM_SLOT as usize {
@@ -1902,15 +1938,21 @@ impl Coordinator {
         let keep_from = if self.source == TextSource::Live {
             self.closed.len()
         } else {
-            self.closed.len().saturating_sub(depth)
+            // At least the newest closed chunk keeps its audio, even with no
+            // context: its merge is still in flight, and should it fail the
+            // retry decodes that audio again. Once the result lands, the
+            // pending retry (below) is what keeps it. The window the extras
+            // decode still follows the real setting.
+            self.closed.len().saturating_sub(depth.max(1))
         };
         for (index, chunk) in self.closed.iter_mut().enumerate() {
             // A chunk waiting to retry its own merge still needs its audio,
-            // however far back it is: a retry is offered at a close, and that
-            // close may be several chunks later. In a live session the retry
-            // re-sends the texts it already has, so this does not apply.
-            let needed_for_retry =
-                self.source == TextSource::ReDecode && Some(chunk.id) == self.retry;
+            // however far back it is: the retry is dispatched only after a later
+            // close's merge has landed (see `PendingRetry::is_due`), and by then
+            // the chunk may have left the context window. In a live session the
+            // retry re-sends the texts it already has, so this does not apply.
+            let needed_for_retry = self.source == TextSource::ReDecode
+                && self.retry.is_some_and(|retry| retry.chunk_id == chunk.id);
             if index < keep_from && !needed_for_retry && !chunk.audio.is_empty() {
                 chunk.audio = Vec::new();
             }
@@ -1991,20 +2033,19 @@ impl Coordinator {
         }
 
         let applied = {
-            let target = if self.open.id == chunk_id {
-                Some(&mut self.open)
-            } else {
-                self.closed.iter_mut().find(|c| c.id == chunk_id)
-            };
+            // Merges are only ever dispatched for closed chunks, so the open
+            // chunk is never a merge's target.
+            let target = self.closed.iter_mut().find(|c| c.id == chunk_id);
             match target {
-                // The chunk's live text is shorter than the result's: nothing in
-                // the mode grows a closed chunk's text, so this can only be a
-                // re-anchored open chunk. Dropping the result leaves its raw live
-                // text on screen instead of text from another chunk.
+                // The chunk's live text is shorter than the result's. Nothing in
+                // the mode shrinks a closed chunk's text, so this cannot happen
+                // today; the check stays as a guard, because applying a result
+                // to text it was not computed from would put another chunk's
+                // words on screen. Dropping it leaves the raw live text instead.
                 Some(chunk) if chunk.live.len() < live_len => {
                     debug!(
-                        "Multi-STT streaming: dropping a stale merge for chunk {} (its text was \
-                         re-anchored while the job ran)",
+                        "Multi-STT streaming: dropping a stale merge for chunk {} (its text \
+                         shrank while the job ran)",
                         chunk_id + 1
                     );
                     false
@@ -2062,11 +2103,15 @@ impl Coordinator {
                 session.push_str(text);
             }
         }
-        // A failed chunk waits for the next close to be retried, whether or not
-        // this job was a retry: a provider that is down for a minute should not
-        // cost the chunk its polish for the rest of the session.
+        // A failed chunk is retried after the next close, whether or not this
+        // job was a retry: a provider that is down for a minute should not cost
+        // the chunk its polish for the rest of the session. The count of closed
+        // chunks is what "the next close" is measured from.
         if failed {
-            self.retry = Some(chunk_id);
+            self.retry = Some(PendingRetry {
+                chunk_id,
+                closed_at_failure: self.closed.len(),
+            });
         }
 
         let previous_failed = self.failed_chunks;
@@ -2091,27 +2136,47 @@ impl Coordinator {
             self.closed.iter().filter(|c| c.failed).count() as u32 + u32::from(self.open.failed);
     }
 
-    /// Retry the last failed chunk's merge, if any is waiting.
+    /// Retry the last failed chunk's merge, if one is waiting and
+    /// [`PendingRetry::is_due`]: a chunk has closed since the failure and no
+    /// merge is in flight. Called on every tick that gets past the break test,
+    /// so the retry goes out on the first tick after the later close's own merge
+    /// has landed. Each failure is retried once per such close, at most.
     ///
     /// A retry records no outputs: that chunk's per-model texts are already part
-    /// of the session's metadata. Its audio is read back off the chunk — a closed
-    /// chunk keeps it for the context window anyway — so nothing has to be held
-    /// on the side for a retry to be possible.
+    /// of the session's metadata. Its audio is read back off the chunk — a
+    /// closed chunk keeps it while a retry is pending (see
+    /// `retain_context_audio`) — so nothing has to be held on the side for a
+    /// retry to be possible.
     fn retry_failed_chunk(&mut self) {
-        let Some(chunk_id) = self.retry.take() else {
+        let Some(pending) = self.retry else {
             return;
         };
+        if !pending.is_due(self.closed.len(), self.merge.running) {
+            return;
+        }
+        self.retry = None;
+        let chunk_id = pending.chunk_id;
         let Some(index) = self.closed.iter().position(|c| c.id == chunk_id) else {
-            // The chunk was re-anchored away; nothing to retry.
+            // The chunk is gone; nothing to retry.
             return;
         };
+        if !self.closed[index].failed {
+            // A late result (an abandoned job that landed after all) has
+            // already given the chunk its merge.
+            return;
+        }
         // A parent-mode retry decodes the window again, so it needs the chunk's
-        // audio — and the only way that is gone is a chunk whose audio the
-        // context window has already released, which a retry cannot be (see
-        // `retain_context_audio`). A live session's retry re-sends the texts the
-        // models already produced, which live on the chunk itself and are never
-        // freed, so it has no such requirement.
+        // audio. Retention keeps it while the chunk's merge is in flight and
+        // while the retry is pending, so the only way it is gone is a retry
+        // whose own job the watchdog abandoned: a close could then run and free
+        // the audio before that job's failure landed. A live session's retry
+        // re-sends the texts the models already produced, which live on the
+        // chunk itself and are never freed, so it has no such requirement.
         if self.source != TextSource::Live && self.closed[index].audio.is_empty() {
+            debug!(
+                "Multi-STT streaming: chunk {} failed its merge but its audio is gone; keeping its fallback text",
+                chunk_id + 1
+            );
             return;
         }
         debug!(
@@ -2122,7 +2187,8 @@ impl Coordinator {
         self.dispatch(input);
     }
 
-    /// The session's text: every closed chunk in order, then the open one.
+    /// The closed chunks' text, in order. The open chunk is published
+    /// separately, as the tentative half (see [`Self::publish`]).
     fn compose_committed(&self) -> String {
         let mut out = String::new();
         for chunk in &self.closed {
@@ -2164,8 +2230,8 @@ impl Coordinator {
     /// live columns' numbering while still riding the one event that carries a
     /// block of text. Deduped on the same terms as the composed text, so a tick
     /// that merges nothing sends nothing; `force` is for the two calls that must
-    /// land whatever the text says, i.e. the flush at the end and the clear at
-    /// the start.
+    /// land whatever the text says, i.e. the final text at `finish` and the clear
+    /// when the session retires.
     fn publish_merged_block(&mut self, committed: &str, tentative: &str, force: bool) {
         let changed = force
             || committed != self.published_merged
@@ -2195,7 +2261,7 @@ impl Coordinator {
     ///   the one block on screen is the streaming text corrected in place, chunk
     ///   by chunk, by the merge — what the mode has always shown.
     /// - The debug view keeps the models' raw columns as they stream (the sink is
-    ///   not exclusive; see [`Coordinator::start`]) and puts this same text in a
+    ///   not exclusive; see [`start`]) and puts this same text in a
     ///   block underneath them, which is the merged-and-cleaned result of the
     ///   session so far. So the block is not a fourth thing: it is the production
     ///   view's text, shown beside the texts it was built from.
@@ -2203,7 +2269,7 @@ impl Coordinator {
     /// Either way the writer (if any) gets the composed text — the merge is what
     /// the mode exists to produce, and it is what the user's document should end
     /// up holding.
-    fn publish(&mut self, force: bool) {
+    fn publish(&mut self) {
         let committed = self.compose_committed();
         let mut tentative = self.open.display_text();
         // The model's volatile tail continues its own committed text, so it is
@@ -2212,13 +2278,12 @@ impl Coordinator {
         tentative.push_str(&self.primary_tentative);
 
         if self.debug_view {
-            self.publish_merged_block(&committed, &tentative, force);
+            self.publish_merged_block(&committed, &tentative, false);
         } else {
             // The overlay event is deduped: an unchanged text is not re-sent,
             // which is what keeps a silent pause from emitting 20 times a second.
-            let changed = force
-                || committed != self.published_committed
-                || tentative != self.published_tentative;
+            let changed =
+                committed != self.published_committed || tentative != self.published_tentative;
             if changed {
                 self.published_committed = committed.clone();
                 self.published_tentative = tentative.clone();
@@ -2339,7 +2404,7 @@ impl Coordinator {
         // straight off its extra streams, which hold each model's whole session
         // for exactly this reason — it is that model's own output, not a
         // re-decode of anything.
-        let mut model_outputs: [String; 4] = Default::default();
+        let mut model_outputs: [String; STREAM_SLOTS] = Default::default();
         model_outputs[PRIMARY_STREAM_SLOT as usize] = self.primary_text.clone();
         if self.source == TextSource::Live {
             for extra in self.extras.lock().unwrap().iter() {
@@ -2385,9 +2450,12 @@ impl Coordinator {
     }
 
     /// Wait for the in-flight merge to land, so its result is part of the session
-    /// rather than racing the compose.
+    /// rather than racing the compose. Nothing new is dispatched here — a retry
+    /// still pending is dropped with the session — and the wait is bounded by
+    /// [`MERGE_TIMEOUT`], the watchdog's own bound, which [`FINISH_TIMEOUT`]
+    /// (the caller's wait for this whole `finish`) is longer than.
     fn wait_for_merge(&mut self) {
-        let deadline = Instant::now() + FINISH_TIMEOUT;
+        let deadline = Instant::now() + MERGE_TIMEOUT;
         while self.merge.running {
             // Drain everything that has landed. An abandoned job's result is
             // applied here like any other, but it does not end the wait: the job
@@ -2768,6 +2836,58 @@ mod tests {
         assert_eq!(ids, vec![1, 2], "both results come back, oldest first");
     }
 
+    #[test]
+    fn a_failed_chunk_is_retried_after_the_next_close_merge_lands() {
+        // Chunk 1 closes and its merge fails. The failure is recorded against
+        // the one chunk closed so far.
+        let mut merge = MergeQueue::new();
+        let mut closed = 1;
+        let first = merge.next_generation();
+        merge.handle().push(job_result(first, 0));
+        assert!(merge.take().expect("the failed result lands").1);
+        let pending = PendingRetry {
+            chunk_id: 0,
+            closed_at_failure: closed,
+        };
+
+        // The queue is idle, but no break has come since the failure: a down
+        // provider is not asked again on the next tick.
+        assert!(!pending.is_due(closed, merge.running));
+
+        // The next break closes chunk 2, whose own merge goes out first. The
+        // retry does not run beside it.
+        closed += 1;
+        let second = merge.next_generation();
+        assert!(
+            !pending.is_due(closed, merge.running),
+            "one merge at a time"
+        );
+
+        // An abandoned job's late result does not release the queue, so it does
+        // not make the retry due either.
+        merge.handle().push(job_result(first, 0));
+        assert!(!merge.take().expect("the late result is applied").1);
+        assert!(!pending.is_due(closed, merge.running));
+
+        // Chunk 2's merge lands and releases the queue: the retry is due.
+        merge.handle().push(job_result(second, 1));
+        assert!(merge.take().expect("chunk 2's result lands").1);
+        assert!(pending.is_due(closed, merge.running));
+
+        // The retry fails again. That is a new failure, recorded against the
+        // chunks closed now, so it waits for another close — the chunks that
+        // close after it always get their own merge in between.
+        let retry = merge.next_generation();
+        merge.handle().push(job_result(retry, 0));
+        assert!(merge.take().expect("the retry's result lands").1);
+        let again = PendingRetry {
+            chunk_id: 0,
+            closed_at_failure: closed,
+        };
+        assert!(!again.is_due(closed, merge.running));
+        assert!(again.is_due(closed + 1, false));
+    }
+
     /// A `JobResult` for `generation`, empty of everything else, which is all
     /// the merge bookkeeping looks at.
     fn job_result(generation: u64, chunk_id: u64) -> JobResult {
@@ -2878,7 +2998,7 @@ mod tests {
 
     #[test]
     fn the_fallback_puts_every_model_on_its_own_line() {
-        let mut outputs: [String; 4] = Default::default();
+        let mut outputs: [String; STREAM_SLOTS] = Default::default();
         outputs[1] = "second".to_string();
         outputs[2] = String::new();
         outputs[3] = "fourth".to_string();
