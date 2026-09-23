@@ -139,7 +139,7 @@ const RecordingOverlay = () => {
     tentative: "",
   });
   // The experimental Multi Streaming STT mode's other models: the debug view's
-  // columns 2, 3 and 4, keyed by stream slot. A record rather than a fixed pair
+  // columns 2, 3, …, keyed by stream slot. A record rather than a fixed pair
   // because the mode runs *two or more* — the backend opens one live stream per
   // Multi-STT slot that can stream, so there are as many columns as the user's
   // own list holds. Its own signals, and never a second half of `streamText`:

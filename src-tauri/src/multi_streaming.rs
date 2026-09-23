@@ -27,11 +27,11 @@
 //!
 //! # Which slots, and when
 //!
-//! Every **streaming-capable** slot among models 2, 3 and 4, in that order — the
+//! Every **streaming-capable** extra slot (models 2, 3, …), in list order — the
 //! user's own list, read the way it is read everywhere else. A slot that cannot
 //! stream is skipped rather than loaded: the point of the mode is a live text to
 //! merge, and a model that cannot stream would only sit in memory. So the mode
-//! runs two models, or three, or four, depending on what the list holds — with a
+//! runs two models, or three, or more, depending on what the list holds — with a
 //! single streaming slot it still works, as two texts (the primary's and that
 //! one's). With none, the mode refuses and the parent's own coordinator arms
 //! instead, which is the batch-extras fallback.
@@ -87,13 +87,13 @@ use crate::settings::{AppSettings, get_settings};
 /// the thread.
 const LOAD_WAIT: Duration = Duration::from_secs(120);
 
-/// How many extra models the Multi-STT list can hold: models 2, 3 and 4.
-pub const EXTRA_MODELS: usize = 3;
+/// How many extra models the Multi-STT list can hold (models 2 to 9).
+pub const EXTRA_MODELS: usize = crate::settings::MULTI_STT_MAX_EXTRA_MODELS;
 
 /// The stream slot a Multi-STT model slot runs on.
 ///
 /// Stream slot 0 is the primary's, owned by the app's own stream worker, so the
-/// extras follow at 1, 2, 3 — one per model slot, in the list's own order. See
+/// extras follow at 1, 2, 3, … — one per model slot, in the list's own order. See
 /// [`STREAM_SLOTS`](crate::managers::transcription::STREAM_SLOTS): the array is
 /// sized for exactly this.
 pub fn stream_slot_of(model_index: usize) -> u8 {
@@ -112,20 +112,13 @@ pub fn stream_slot_of(model_index: usize) -> u8 {
 /// and the preload runs while the user is still getting ready to speak.
 pub fn streaming_slots(app: &AppHandle, settings: &AppSettings) -> Vec<(u8, String)> {
     let model_manager = app.state::<Arc<ModelManager>>();
-    let candidates = [
-        settings.multi_stt_model_2.as_ref(),
-        settings.multi_stt_model_3.as_ref(),
-        settings.multi_stt_model_4.as_ref(),
-    ];
     let mut slots = Vec::new();
-    for (index, candidate) in candidates.into_iter().enumerate() {
+    for (index, candidate) in settings.multi_stt_extra_model_ids().into_iter().enumerate() {
         let Some(candidate) = candidate else {
             continue;
         };
-        match model_manager.get_model_info(candidate) {
-            Some(info) if info.supports_streaming => {
-                slots.push((stream_slot_of(index), candidate.clone()))
-            }
+        match model_manager.get_model_info(&candidate) {
+            Some(info) if info.supports_streaming => slots.push((stream_slot_of(index), candidate)),
             Some(_) => info!(
                 "Multi streaming STT: slot model '{}' cannot stream natively; skipping it",
                 candidate

@@ -238,10 +238,8 @@ export const FileTranscriptionSettings = () => {
   const postProcessEnabled = () => getSetting("post_process_enabled") ?? false;
   const multiSttEnabled = () => getSetting("multi_stt_enabled") ?? false;
   const hasExtraModels = () =>
-    Boolean(
-      getSetting("multi_stt_model_2") ||
-      getSetting("multi_stt_model_3") ||
-      getSetting("multi_stt_model_4"),
+    (getSetting("multi_stt_extra_models") ?? []).some((slot) =>
+      Boolean(slot.model_id?.trim()),
     );
 
   const saveOptions = (patch: Partial<FileTranscriptionSettingsType>) =>

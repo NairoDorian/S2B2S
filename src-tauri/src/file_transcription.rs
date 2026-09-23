@@ -463,7 +463,7 @@ impl FileTranscriptionManager {
         // decode, and the per-segment reload brings them back.
         let (extra_slots, preload_error) = match preload {
             Ok(slots) => (slots, None),
-            Err(e) => ([None, None, None], Some(e)),
+            Err(e) => (Vec::new(), Some(e)),
         };
 
         for (index, path) in paths.iter().enumerate() {
@@ -580,7 +580,7 @@ impl FileTranscriptionManager {
         settings: &AppSettings,
         mode: &FileTranscriptionMode,
         primary_model: &str,
-    ) -> Result<[Option<String>; 3], String> {
+    ) -> Result<Vec<Option<String>>, String> {
         if !tm.is_model_loaded() || tm.get_current_model().as_deref() != Some(primary_model) {
             let tm = Arc::clone(tm);
             let model = primary_model.to_string();
@@ -589,10 +589,11 @@ impl FileTranscriptionManager {
                 .map_err(|e| format!("Model load task panicked: {e}"))?
                 .map_err(|e| format!("Failed to load model '{primary_model}': {e}"))?;
         }
-        let mut loaded: [Option<String>; 3] = [None, None, None];
+        let slots = extra_model_slots(settings);
+        let mut loaded: Vec<Option<String>> = vec![None; slots.len()];
         if uses_extra_models(mode) {
             let mut handles = Vec::new();
-            for (slot, model_id) in extra_model_slots(settings).into_iter().enumerate() {
+            for (slot, model_id) in slots.into_iter().enumerate() {
                 let Some(model_id) = model_id else { continue };
                 let tm = Arc::clone(tm);
                 let id = model_id.clone();
@@ -621,7 +622,7 @@ impl FileTranscriptionManager {
         settings: &AppSettings,
         options: &FileTranscriptionSettings,
         primary_model: &str,
-        extra_slots: &[Option<String>; 3],
+        extra_slots: &[Option<String>],
         path: &Path,
         progress: impl Fn(FileJobStatus, Option<u32>, Option<u32>),
     ) -> Result<FileOutcome, JobError> {
@@ -652,8 +653,10 @@ impl FileTranscriptionManager {
         // `preload_models` already left every slot `None` in the other modes.
 
         let mut primary_parts: Vec<String> = Vec::with_capacity(ranges.len());
-        let mut extra_parts: [Vec<String>; 3] =
-            std::array::from_fn(|_| Vec::with_capacity(ranges.len()));
+        let mut extra_parts: Vec<Vec<String>> = extra_slots
+            .iter()
+            .map(|_| Vec::with_capacity(ranges.len()))
+            .collect();
 
         for (seg_index, (start, end)) in ranges.iter().enumerate() {
             if self.cancelled() {
@@ -749,20 +752,19 @@ impl FileTranscriptionManager {
         let mut text = primary_text.clone();
 
         if uses_extra_models(&options.mode) {
-            let outputs: [String; 3] =
-                std::array::from_fn(|slot| join_segments(&extra_parts[slot]));
+            let outputs: Vec<String> = extra_parts
+                .iter()
+                .map(|parts| join_segments(parts))
+                .collect();
             if self.cancelled() {
                 return Err(JobError::Cancelled);
             }
             progress(FileJobStatus::Merging, None, None);
-            let merged = crate::actions::multi_stt_merge_transcriptions(
-                settings,
-                &primary_text,
-                &outputs[0],
-                &outputs[1],
-                &outputs[2],
-            )
-            .await;
+            let slot_texts: Vec<&str> = std::iter::once(primary_text.as_str())
+                .chain(outputs.iter().map(String::as_str))
+                .collect();
+            let merged =
+                crate::actions::multi_stt_merge_transcriptions(settings, &slot_texts).await;
             text = match merged {
                 Some(outcome) => outcome.cleaned_text,
                 None => {
@@ -832,15 +834,10 @@ fn uses_extra_models(mode: &FileTranscriptionMode) -> bool {
     )
 }
 
-/// The three Multi-STT extra slots in order (`${output2}`..`${output4}`),
+/// The Multi-STT extra slots in order (`${output2}`, `${output3}`, …),
 /// `None` for an unset or blank slot.
-fn extra_model_slots(settings: &AppSettings) -> [Option<String>; 3] {
-    [
-        &settings.multi_stt_model_2,
-        &settings.multi_stt_model_3,
-        &settings.multi_stt_model_4,
-    ]
-    .map(|slot| slot.clone().filter(|id| !id.trim().is_empty()))
+fn extra_model_slots(settings: &AppSettings) -> Vec<Option<String>> {
+    settings.multi_stt_extra_model_ids()
 }
 
 /// Join per-segment transcripts with single spaces, skipping empty segments.
@@ -1029,12 +1026,15 @@ mod tests {
     #[test]
     fn extra_slots_keep_their_positions() {
         let mut settings = crate::settings::get_default_settings();
-        settings.multi_stt_model_2 = None;
-        settings.multi_stt_model_3 = Some("model-three".into());
-        settings.multi_stt_model_4 = Some("  ".into());
+        let slot = |id: Option<&str>| crate::settings::MultiSttExtraModel {
+            model_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        settings.multi_stt_extra_models =
+            vec![slot(None), slot(Some("model-three")), slot(Some("  "))];
         assert_eq!(
             extra_model_slots(&settings),
-            [None, Some("model-three".to_string()), None]
+            vec![None, Some("model-three".to_string()), None]
         );
     }
 

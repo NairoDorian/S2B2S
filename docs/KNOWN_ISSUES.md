@@ -38,9 +38,9 @@ build.yml` installs the Vulkan SDK on every platform, installs no CUDA
   from `Handy_Multi_STT`, so push-triggered CI does not run on the branch
   where the work actually happens. Either add the branch to the triggers or
   work through PRs.
-- **Azure signing secrets are unused.** `signCommand` (Azure Trusted Signing,
-  Authenticode) was removed from `tauri.conf.json` — Windows binaries are not
-  code-signed. The updater signing secrets (`TAURI_SIGNING_PRIVATE_KEY`) are
+- **Windows binaries are not code-signed.** `signCommand` (Azure Trusted
+  Signing, Authenticode) was removed from `tauri.conf.json`, and the CI steps
+  and `AZURE_*` secrets that fed it are gone with it. The updater signing secrets (`TAURI_SIGNING_PRIVATE_KEY`) are
   the opposite: they must be set as repository secrets, or release builds
   cannot sign the updater artifacts.
 

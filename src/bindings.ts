@@ -52,6 +52,13 @@ export const commands = {
 	changeMultiSttEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_enabled_setting", { enabled })),
 	changeMultiSttExtraModel: (slot: number, modelId: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model", { slot, modelId })),
 	changeMultiSttExtraModelLanguage: (slot: number, language: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_language", { slot, language })),
+	changeMultiSttExtraModelTranslate: (slot: number, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_translate", { slot, enabled })),
+	/**
+	 *  How many extra models Multi-STT runs (1 to `MULTI_STT_MAX_EXTRA_MODELS`).
+	 *  New slots start empty; the models of removed slots are unloaded unless
+	 *  another slot still runs them.
+	 */
+	changeMultiSttExtraModelCount: (count: number) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_count", { count })),
 	changeMultiSttMergePrompt: (prompt: LLMPrompt | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_merge_prompt", { prompt })),
 	/**
 	 *  Experimental Multi-STT streaming-first mode: the primary model's live stream
@@ -79,9 +86,6 @@ export const commands = {
 	 *  text plus the merged result (debug), or only the corrected first block.
 	 */
 	changeMultiSttStreamingMultiDebugViewSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_streaming_multi_debug_view_setting", { enabled })),
-	changeMultiSttTranslateModel2: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_2", { enabled })),
-	changeMultiSttTranslateModel3: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_3", { enabled })),
-	changeMultiSttTranslateModel4: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_translate_model_4", { enabled })),
 	changeMultiSttKeepExtraModelsLoadedSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_keep_extra_models_loaded_setting", { enabled })),
 	changeMultiSttPerformanceModeEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_enabled_setting", { enabled })),
 	changeMultiSttPerformanceModeTriggerOnStartSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_performance_mode_trigger_on_start_setting", { enabled })),
@@ -212,7 +216,12 @@ export const commands = {
 	 *  `LlamaServerManager::relink_custom_provider`), so it cannot undo an edit.
 	 */
 	changeLlamaSettings: (settings: LlamaSettings_Deserialize) => typedError<null, string>(__TAURI_INVOKE("change_llama_settings", { settings })),
-	/**  The command line the current settings would launch, for the page preview. */
+	/**
+	 *  The command line the current settings would launch, for the page preview.
+	 *  Asked for on every keystroke of the server fields, and resolving it stats
+	 *  the model files and lists the server folder, so it runs on the blocking
+	 *  pool rather than the main thread.
+	 */
 	getLlamaCommandPreview: () => typedError<string, string>(__TAURI_INVOKE("get_llama_command_preview")),
 	listGgufFiles: (dir: string) => __TAURI_INVOKE<GgufFile[]>("list_gguf_files", { dir }),
 	detectLlamaInstall: () => __TAURI_INVOKE<LlamaDetectedInstall_Serialize | null>("detect_llama_install"),
@@ -753,15 +762,14 @@ export type AppSettings_Deserialize = {
 	 */
 	speech_pause_hold_ms?: number,
 	multi_stt_enabled?: boolean,
-	multi_stt_model_2?: string | null,
-	multi_stt_model_3?: string | null,
-	multi_stt_model_4?: string | null,
-	multi_stt_language_model_2?: string | null,
-	multi_stt_language_model_3?: string | null,
-	multi_stt_language_model_4?: string | null,
-	multi_stt_translate_model_2?: boolean,
-	multi_stt_translate_model_3?: boolean,
-	multi_stt_translate_model_4?: boolean,
+	/**
+	 *  The extra models beside the primary, in slot order (slot 0 is
+	 *  "Model 2"). Between 1 and [`MULTI_STT_MAX_EXTRA_MODELS`] entries; an
+	 *  entry may be empty. Replaced the fixed `multi_stt_model_2..4`,
+	 *  `multi_stt_language_model_2..4` and `multi_stt_translate_model_2..4`
+	 *  fields in settings schema 7.
+	 */
+	multi_stt_extra_models?: MultiSttExtraModel_Deserialize[],
 	multi_stt_keep_extra_models_loaded?: boolean,
 	multi_stt_merge_prompt?: LLMPrompt | null,
 	/**
@@ -801,9 +809,8 @@ export type AppSettings_Deserialize = {
 	 * 
 	 *  Ignored by the nested Multi Streaming STT mode, and only by it: there are
 	 *  no decodes to crop, so the setting has nothing to say about that session.
-	 *  It is deliberately not hidden while the nested toggle is on — it keeps its
-	 *  value for the parent mode, and a control that vanishes is a value the user
-	 *  cannot check.
+	 *  The Multi-STT page hides the slider while the nested toggle is on; the
+	 *  stored value is kept for the parent mode.
 	 */
 	multi_stt_streaming_context_chunks?: number,
 	/**
@@ -1090,15 +1097,14 @@ export type AppSettings_Serialize = {
 	 */
 	speech_pause_hold_ms: number,
 	multi_stt_enabled: boolean,
-	multi_stt_model_2: string | null,
-	multi_stt_model_3: string | null,
-	multi_stt_model_4: string | null,
-	multi_stt_language_model_2: string | null,
-	multi_stt_language_model_3: string | null,
-	multi_stt_language_model_4: string | null,
-	multi_stt_translate_model_2: boolean,
-	multi_stt_translate_model_3: boolean,
-	multi_stt_translate_model_4: boolean,
+	/**
+	 *  The extra models beside the primary, in slot order (slot 0 is
+	 *  "Model 2"). Between 1 and [`MULTI_STT_MAX_EXTRA_MODELS`] entries; an
+	 *  entry may be empty. Replaced the fixed `multi_stt_model_2..4`,
+	 *  `multi_stt_language_model_2..4` and `multi_stt_translate_model_2..4`
+	 *  fields in settings schema 7.
+	 */
+	multi_stt_extra_models: MultiSttExtraModel_Serialize[],
 	multi_stt_keep_extra_models_loaded: boolean,
 	multi_stt_merge_prompt: LLMPrompt | null,
 	/**
@@ -1138,9 +1144,8 @@ export type AppSettings_Serialize = {
 	 * 
 	 *  Ignored by the nested Multi Streaming STT mode, and only by it: there are
 	 *  no decodes to crop, so the setting has nothing to say about that session.
-	 *  It is deliberately not hidden while the nested toggle is on — it keeps its
-	 *  value for the parent mode, and a control that vanishes is a value the user
-	 *  cannot check.
+	 *  The Multi-STT page hides the slider while the nested toggle is on; the
+	 *  stored value is kept for the parent mode.
 	 */
 	multi_stt_streaming_context_chunks: number,
 	/**
@@ -2368,7 +2373,11 @@ export type LlamaServerStateEvent = LlamaServerStateEvent_Serialize | LlamaServe
 /**  Snapshot of the supervised server. Also the payload of the state event. */
 export type LlamaServerStateEvent_Deserialize = {
 	status: LlamaStatus,
-	/**  Human-readable reason for `Error`, or the last log line while starting. */
+	/**
+	 *  Human-readable reason for `Error`, the last log line while starting,
+	 *  or, for `Ready` on a server this app did not start, "Using a
+	 *  llama-server already listening on port …".
+	 */
 	message?: string | null,
 	pid?: number | null,
 	port: number,
@@ -2386,7 +2395,11 @@ export type LlamaServerStateEvent_Deserialize = {
 /**  Snapshot of the supervised server. Also the payload of the state event. */
 export type LlamaServerStateEvent_Serialize = {
 	status: LlamaStatus,
-	/**  Human-readable reason for `Error`, or the last log line while starting. */
+	/**
+	 *  Human-readable reason for `Error`, the last log line while starting,
+	 *  or, for `Ready` on a server this app did not start, "Using a
+	 *  llama-server already listening on port …".
+	 */
 	message: string | null,
 	pid: number | null,
 	port: number,
@@ -2686,6 +2699,44 @@ export type ModelSource_Serialize =
 "Local";
 
 export type ModelUnloadTimeout = "never" | "immediately" | "min2" | "min5" | "min10" | "min15" | "hour1" | "sec15";
+
+/**
+ *  One extra Multi-STT slot: slot `n` of `multi_stt_extra_models` is
+ *  "Model n+2" in the UI, the history row and the merge prompt.
+ */
+export type MultiSttExtraModel = MultiSttExtraModel_Serialize | MultiSttExtraModel_Deserialize;
+
+/**
+ *  One extra Multi-STT slot: slot `n` of `multi_stt_extra_models` is
+ *  "Model n+2" in the UI, the history row and the merge prompt.
+ */
+export type MultiSttExtraModel_Deserialize = {
+	/**
+	 *  The model this slot runs; `None` leaves the slot empty (its merge
+	 *  placeholder is then an empty string).
+	 */
+	model_id?: string | null,
+	/**  Language override for this model; `None` follows the global language. */
+	language?: string | null,
+	/**  Translate this model's output to English. */
+	translate?: boolean,
+};
+
+/**
+ *  One extra Multi-STT slot: slot `n` of `multi_stt_extra_models` is
+ *  "Model n+2" in the UI, the history row and the merge prompt.
+ */
+export type MultiSttExtraModel_Serialize = {
+	/**
+	 *  The model this slot runs; `None` leaves the slot empty (its merge
+	 *  placeholder is then an empty string).
+	 */
+	model_id: string | null,
+	/**  Language override for this model; `None` follows the global language. */
+	language: string | null,
+	/**  Translate this model's output to English. */
+	translate: boolean,
+};
 
 /**
  *  Emitted when a chunk's merge fails, so the main window can raise a toast.

@@ -202,12 +202,12 @@ pub const PRIMARY_STREAM_SLOT: u8 = 0;
 ///
 /// One per Multi-STT model slot: the primary's stream is slot 0 and the extras
 /// follow it in the order the user configured them, so stream slot `n` carries
-/// `multi_stt_model_{n + 1}`. A mode that runs "two or more" streaming models
+/// "Model n+1" (`multi_stt_extra_models[n - 1]`). A mode that runs "two or more" streaming models
 /// therefore has a slot for each of them rather than a hardcoded pair — which is
 /// all this costs: the per-slot state below is three atomics and an `Option` per
 /// slot (plus one shared router flag), and a slot that no model occupies is
 /// never opened, never leased and never fed.
-pub const STREAM_SLOTS: usize = 4;
+pub const STREAM_SLOTS: usize = 1 + crate::settings::MULTI_STT_MAX_EXTRA_MODELS;
 
 /// How often [`TranscriptionManager::start_extra_stream_when_loaded`] looks for a
 /// still-loading extra model. Short enough that the second column starts within a
@@ -222,7 +222,7 @@ const EXTRA_ENGINE_RETRY_POLL: Duration = Duration::from_millis(50);
 /// load — no Tauri state lookup, no mutex lock.
 ///
 /// A *slot* per stream rather than one route: the experimental Multi Streaming
-/// STT mode runs up to four models (the primary plus up to three extras) over the
+/// STT mode runs several models (the primary plus up to eight extras) over the
 /// same microphone at the same time, and the recorder feeds one frame to each.
 /// Every other path opens exactly one slot, so the cost of the others is a loop
 /// over a one-element list.
@@ -2642,13 +2642,10 @@ fn transcribe_cpp_run_plan(
 /// slot is what the caller has.
 fn multi_stt_extra_model(settings: &AppSettings, slot: u8) -> Option<String> {
     let index = slot.checked_sub(1)? as usize;
-    [
-        settings.multi_stt_model_2.as_deref(),
-        settings.multi_stt_model_3.as_deref(),
-        settings.multi_stt_model_4.as_deref(),
-    ]
-    .get(index)?
-    .map(str::to_string)
+    settings
+        .multi_stt_extra_model_ids()
+        .into_iter()
+        .nth(index)?
 }
 
 /// Fold a Multi-STT slot's own preferences into the settings a decode of that
@@ -2659,23 +2656,9 @@ fn multi_stt_extra_model(settings: &AppSettings, slot: u8) -> Option<String> {
 ///
 /// A model that is not one of the configured slots keeps the global settings.
 fn apply_extra_model_settings(settings: &mut AppSettings, model_id: &str) {
-    let (language, translate) = if Some(model_id) == settings.multi_stt_model_2.as_deref() {
-        (
-            settings.multi_stt_language_model_2.clone(),
-            Some(settings.multi_stt_translate_model_2),
-        )
-    } else if Some(model_id) == settings.multi_stt_model_3.as_deref() {
-        (
-            settings.multi_stt_language_model_3.clone(),
-            Some(settings.multi_stt_translate_model_3),
-        )
-    } else if Some(model_id) == settings.multi_stt_model_4.as_deref() {
-        (
-            settings.multi_stt_language_model_4.clone(),
-            Some(settings.multi_stt_translate_model_4),
-        )
-    } else {
-        (None, None)
+    let (language, translate) = match settings.multi_stt_extra_slot_for(model_id) {
+        Some(slot) => (slot.language.clone(), Some(slot.translate)),
+        None => (None, None),
     };
     if let Some(language) = language {
         settings.selected_language = language;
@@ -2969,16 +2952,13 @@ impl TranscriptionManager {
         let settings = get_settings(&self.app_handle);
         {
             let mut pending = self.extra_unload_requests.lock().unwrap();
-            for id in [
-                &settings.multi_stt_model_2,
-                &settings.multi_stt_model_3,
-                &settings.multi_stt_model_4,
-            ]
-            .into_iter()
-            .flatten()
-            .filter(|id| !id.is_empty() && !to_unload.contains(id))
+            for id in settings
+                .multi_stt_extra_model_ids()
+                .into_iter()
+                .flatten()
+                .filter(|id| !to_unload.contains(id))
             {
-                pending.insert(id.clone());
+                pending.insert(id);
             }
         }
 
@@ -4623,10 +4603,16 @@ mod tests {
     /// name, and both failures are silent.
     #[test]
     fn multi_stt_slots_and_models_resolve_to_each_other() {
+        let slot = |id: &str| crate::settings::MultiSttExtraModel {
+            model_id: Some(id.into()),
+            ..Default::default()
+        };
         let mut settings = AppSettings {
-            multi_stt_model_2: Some("model-two".into()),
-            multi_stt_model_3: Some("model-three".into()),
-            multi_stt_model_4: Some("model-four".into()),
+            multi_stt_extra_models: vec![
+                slot("model-two"),
+                slot("model-three"),
+                slot("model-four"),
+            ],
             ..Default::default()
         };
 
@@ -4645,11 +4631,11 @@ mod tests {
             multi_stt_extra_model(&settings, 3).as_deref(),
             Some("model-four")
         );
-        // Past the panel's three extras there is no fourth model to name.
+        // Past the configured extras there is no further model to name.
         assert_eq!(multi_stt_extra_model(&settings, 4), None);
 
         // And each of those ids folds its own slot's preferences back in.
-        settings.multi_stt_language_model_3 = Some("de".into());
+        settings.multi_stt_extra_models[1].language = Some("de".into());
         settings.selected_language = "en".into();
         let mut resolved = settings.clone();
         apply_extra_model_settings(&mut resolved, "model-three");

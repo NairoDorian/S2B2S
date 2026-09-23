@@ -204,13 +204,7 @@ pub async fn delete_model(
         // the request `return_extra_engine` / `transcribe_with_extra` honour
         // when the lease ends. (A request for a slot model that is not loaded
         // at all is harmless: the next load clears it.)
-        let in_extra_slot = [
-            &settings.multi_stt_model_2,
-            &settings.multi_stt_model_3,
-            &settings.multi_stt_model_4,
-        ]
-        .into_iter()
-        .any(|slot| slot.as_deref() == Some(model_id.as_str()));
+        let in_extra_slot = settings.multi_stt_extra_slot_for(&model_id).is_some();
         if in_extra_slot || tm.is_extra_model_loaded(&model_id) {
             tm.unload_extra_model(&model_id)
                 .map_err(|e| format!("Failed to unload extra model: {}", e))?;
@@ -362,8 +356,11 @@ pub async fn benchmark_model_quantizations(
     model_id: String,
 ) -> Result<Vec<BenchmarkResult>, String> {
     // Find the latest completed recording to use as reference audio.
-    let entry = history_manager
-        .get_latest_completed_entry()
+    // A synchronous SQLite query: run it off the async worker.
+    let hm = Arc::clone(history_manager.inner());
+    let entry = tauri::async_runtime::spawn_blocking(move || hm.get_latest_completed_entry())
+        .await
+        .map_err(|e| format!("History task panicked: {e}"))?
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
             "No completed recordings found. Record audio first to use the benchmark.".to_string()
@@ -409,8 +406,11 @@ pub async fn benchmark_single_quantization(
     history_manager: State<'_, Arc<HistoryManager>>,
     model_id: String,
 ) -> Result<BenchmarkResult, String> {
-    let entry = history_manager
-        .get_latest_completed_entry()
+    // A synchronous SQLite query: run it off the async worker.
+    let hm = Arc::clone(history_manager.inner());
+    let entry = tauri::async_runtime::spawn_blocking(move || hm.get_latest_completed_entry())
+        .await
+        .map_err(|e| format!("History task panicked: {e}"))?
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
             "No completed recordings found. Record audio first to use the benchmark.".to_string()

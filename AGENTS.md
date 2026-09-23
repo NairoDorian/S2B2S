@@ -18,9 +18,9 @@ Two consequences for every change you make here:
 - **Attribution stays.** The upstream notice in `LICENSE` is a legal requirement
   and is never edited; the fork's origin is named in prose.
 
-> **NOTE**: this branch additionally carries **Multi-STT** mode — running up to
-> four speech-to-text models in parallel and optionally merging their outputs via
-> an LLM. See the Architecture Overview and Settings System sections below.
+> **NOTE**: this branch additionally carries **Multi-STT** mode — running
+> several speech-to-text models in parallel (the primary plus 1 to 8 extras) and
+> optionally merging their outputs via an LLM. See the Architecture Overview and Settings System sections below.
 
 ## Performance first
 
@@ -331,7 +331,7 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   speech-activity events
 - `signal_handle.rs` - `send_transcription_input()` reusable function
 - `actions.rs` - Shortcut action implementations: `TranscribeAction`, `MultiSttAction`, `CancelAction`
-  - `MultiSttAction` runs primary + three extra models in parallel, merges outputs via LLM
+  - `MultiSttAction` runs the primary + every configured extra model in parallel, merges outputs via LLM
   - `spawn_recording_ready_cue` is the shared "wait for real mic samples, then
     chime / mute / emit `recording-ready`" step
 - `file_transcription.rs` - "Transcribe Files" page backend (fork):
@@ -542,8 +542,8 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
 
 1. Pre-loads extra models (if not already loaded) in parallel on the blocking thread pool
 2. Records audio with VAD filtering (same as standard mode)
-3. Transcribes with primary + three extra models concurrently on separate engines
-4. Optionally merges outputs via an LLM (using `${output}`, `${output2}`, `${output3}`, and `${output4}` placeholders)
+3. Transcribes with the primary + every configured extra model concurrently on separate engines
+4. Optionally merges outputs via an LLM (`${output}` for the primary, `${outputN}` for "Model N")
 5. Saves history entry and pastes merged result concurrently
 
 ### Settings System
@@ -673,11 +673,20 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
 **Multi-STT settings** (fork addition):
 
 - `multi_stt_enabled` - Global toggle for multi-model transcription mode
-- `multi_stt_model_2` / `multi_stt_model_3` / `multi_stt_model_4` - Select extra STT models
-- `multi_stt_language_model_2` / `multi_stt_language_model_3` / `multi_stt_language_model_4` - Per-model language override
-- `multi_stt_translate_model_2` / `multi_stt_translate_model_3` / `multi_stt_translate_model_4` - Per-model English translation
+- `multi_stt_extra_models` - The extra models, in slot order: slot 0 is "Model 2"
+  (`${output2}`), slot 1 "Model 3", and so on. One `MultiSttExtraModel`
+  (`model_id`, `language` override, `translate` to English) per slot; 1 to
+  `MULTI_STT_MAX_EXTRA_MODELS` (8) slots, 3 on a fresh install, and a slot may
+  be empty (its placeholder is then an empty string). The page's "Number of
+  extra models" dropdown resizes it (`change_multi_stt_extra_model_count`,
+  which unloads the models of removed slots); one slot is changed through
+  `change_multi_stt_extra_model` / `_language` / `_translate`, addressed by
+  the model number (2 = first extra). Settings schema **7** turned the old
+  flat `multi_stt_model_2..4` / `multi_stt_language_model_2..4` /
+  `multi_stt_translate_model_2..4` keys into this list, keeping each slot's
+  position. `STREAM_SLOTS` is `1 + MULTI_STT_MAX_EXTRA_MODELS`
 - `multi_stt_keep_extra_models_loaded` - Keep extra models resident between uses (default on). Only consulted when `model_unload_timeout` is `Immediately`; with any other timeout the idle watcher unloads extra engines together with the primary model
-- `multi_stt_merge_prompt` - LLM prompt for merging outputs (`${output}`, `${output2}`, `${output3}`, `${output4}`; `${output1}` is an alias of `${output}`)
+- `multi_stt_merge_prompt` - LLM prompt for merging outputs (`${output}` for the primary, `${outputN}` for "Model N"; `${output1}` is an alias of `${output}`; a placeholder of a slot that is not configured is an empty string). The page warns when a slot that runs a model has no placeholder in the prompt
 - `multi_stt_performance_mode_enabled` / `multi_stt_performance_mode_trigger_on_start` - Simulate a "full power" shortcut when a Multi-STT recording ends (or starts, with trigger-on-start) and a "normal" shortcut after the merge/paste, for external power-profile tools
 - `multi_stt_performance_mode_full_power_shortcut` (default `ctrl+space`) / `multi_stt_performance_mode_normal_shortcut` (default `ctrl+alt+space`) - The simulated key combinations. While performance mode is enabled, a transcription hotkey equal to either is not registered (`shortcut::should_register_binding`) and the shortcut recorder rejects it, so the simulated keys can never retrigger the app
 - `multi_stt_streaming_first_enabled` (default off) / `multi_stt_streaming_pause_ms`
@@ -788,7 +797,7 @@ vad_grace}_setting`): `denoise_strength` (wet/dry mix), `denoise_vad_threshold`
   the missing frames and shows "No signal")
 - **Retired settings** (`vad_backend`, `ort_accelerator`,
   `vad_threshold_silero`) are ignored when found in an old store. Settings
-  schema **6** remaps a `selected_model` / `multi_stt_model_2..4` that names
+  schema **6** remaps a `selected_model` / Multi-STT extra model that names
   one of the 11 retired hard-coded ONNX models (`parakeet-tdt-0.6b-v2/v3`,
   `moonshine-*`, `sense-voice-int8`, `gigaam-v3-e2e-ctc`, `canary-*`,
   `cohere-int8`) to its GGUF successor in the catalog
@@ -1297,17 +1306,18 @@ of once per tick. Each publish carries the whole session's text (the same shape
 the plain streaming path already emits, bounded by `TICK` at ≤ 20/s, deduped
 against the last publish), and composes it into a fresh `String` per changed tick
 — O(session) memcpy at a few KB for a realistic session, which is not the cost
-here. The nested Multi Streaming STT mode below adds up to three short-lived
-waiter threads and up to three extra stream workers per recording.
+here. The nested Multi Streaming STT mode below adds one short-lived waiter
+thread and one extra stream worker per streaming-capable extra slot (at most
+eight) per recording.
 
 ### Multi Streaming STT (experimental, fork addition)
 
 `multi_stt_streaming_multi_enabled`, nested under the streaming-first mode.
 Backend: `multi_streaming.rs`. It is not a second coordinator: it arms
 `multi_stt_stream`'s own coordinator with `TextSource::Live` instead of
-`ReDecode`, so every streaming-capable Multi-STT slot (models 2–4, in list
-order, via `streaming_slots`) runs its own live stream on stream slots 1–3
-beside the primary's slot 0. Each pause merges the models' _live_ texts for the
+`ReDecode`, so every streaming-capable Multi-STT extra slot (models 2, 3, …, in
+list order, via `streaming_slots`) runs its own live stream on stream slot
+`n` for "Model n+1", beside the primary's slot 0. Each pause merges the models' _live_ texts for the
 chunk with one LLM call and no re-decode, and nothing is batch-decoded at stop
 either. A slot that cannot stream is skipped and not even preloaded; with no
 streaming-capable slot the mode refuses and the parent mode arms with batch

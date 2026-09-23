@@ -1936,10 +1936,6 @@
     "models": {
       "title": "Additional Models",
       "backend": "Backend",
-      "model2": "Second Model",
-      "model3": "Third Model",
-      "model2Description": "Select a second STT model to run alongside the primary model",
-      "model3Description": "Select a third STT model to run alongside the primary model",
       "primaryModel": "Primary Model ({{model}})",
       "noPrimaryModel": "No primary model selected",
       "notSelected": "Not selected",
@@ -1949,18 +1945,20 @@
       "unloadModel": "Unload Model",
       "loadingModel": "Loading...",
       "unloadingModel": "Unloading...",
-      "model2Language": "Language for Second Model",
-      "model3Language": "Language for Third Model",
       "languageNotApplicable": "This model does not support language selection",
       "disableModel": "Disable",
       "translateToEnglish": "Translate to English",
-      "model4": "Fourth Model",
-      "model4Description": "Select a fourth STT model to run alongside the primary model",
       "loadedSuccessfully": "Model loaded successfully",
       "unloadedSuccessfully": "Model unloaded successfully",
       "loadFailed": "Failed to load model",
       "unloadFailed": "Failed to unload model",
-      "model4Language": "Language for Fourth Model"
+      "count": {
+        "label": "Number of extra models",
+        "description": "How many models run alongside the primary model, up to {{max}}. Each one adds a transcription of every recording (and a live stream in Multi Streaming STT), so more models means more work for your GPU and CPU."
+      },
+      "slotTitle": "Model {{number}}",
+      "slotDescription": "Select an STT model to run alongside the primary model. Its output fills {{placeholder}} in the merge prompt.",
+      "slotLanguage": "Language for Model {{number}}"
     },
     "mergePrompt": {
       "title": "Merge Prompt",
@@ -1969,10 +1967,11 @@
       "promptNamePlaceholder": "e.g. Merge Prompt",
       "promptLabel": "Merge Instructions",
       "promptPlaceholder": "Enter instructions for merging the transcriptions...",
-      "promptTip": "Use <code>{{output}}</code> for the primary model, <code>{{output2}}</code> for the second model, and <code>{{output3}}</code> for the third model",
       "savePrompt": "Save Merge Prompt",
       "noPrompt": "Without a merge prompt, outputs will be concatenated",
-      "clearPrompt": "Clear Merge Prompt"
+      "clearPrompt": "Clear Merge Prompt",
+      "placeholderTip": "Use <code>{{first}}</code> for the primary model and {{list}} for the extra models, in slot order",
+      "missingPlaceholders": "The merge prompt does not use {{placeholders}}, so those models' outputs never reach the merge. Add them to the prompt."
     },
     "streamingFirst": {
       "title": "Experimental Live Streaming Merge & Clean",
@@ -2001,10 +2000,7 @@
     "status": {
       "title": "Model Status",
       "noModels": "No additional models loaded",
-      "primary": "Primary",
-      "secondary": "Secondary",
-      "tertiary": "Tertiary",
-      "quaternary": "Quaternary"
+      "primary": "Primary"
     },
     "keepModelsLoaded": {
       "label": "Keep Extra Models Loaded",
@@ -2068,7 +2064,7 @@
     "recall": "A local vault of Markdown notes: dictate straight into the editor at the cursor, edit manually, or file transcriptions from History. The vault is a plain folder of files you own.",
     "statistics": "How much you dictate, how fast you speak, and how long transcription and post-processing take.",
     "models": "Download and switch the local speech model. Everything runs on this computer through transcribe.cpp; smaller models are faster, larger ones more accurate.",
-    "multiStt": "Record once and transcribe with up to four models in parallel, then let a language model merge the outputs into one text.",
+    "multiStt": "Record once and transcribe with several models in parallel (up to nine), then let a language model merge the outputs into one text.",
     "fileTranscription": "Turn audio files or whole folders into .txt or .md transcripts, with the same modes as live dictation.",
     "liveMode": "Keep the microphone open for as long as you like: the audio is saved in chunks and the transcript written to a file while you speak.",
     "liveFft": "A real-time spectrum analyser for the microphone: perceptual frequency scales, EQ, window, weighting, dB references, ballistics and a waterfall.",
@@ -2137,7 +2133,7 @@
       },
       "multiStt": {
         "title": "Multi-STT: several models, one transcript.",
-        "summary": "Record once with the Multi STT shortcut and up to four models transcribe the same audio in parallel. A merge prompt with ${output}, ${output2}… placeholders lets a language model combine them; without a prompt the outputs are simply listed. Performance mode can send a keyboard shortcut to an external power-profile tool while the models run."
+        "summary": "Record once with the Multi STT shortcut and several models (up to nine) transcribe the same audio in parallel. A merge prompt with ${output}, ${output2}… placeholders lets a language model combine them; without a prompt the outputs are simply listed. Performance mode can send a keyboard shortcut to an external power-profile tool while the models run."
       },
       "fileTranscription": {
         "title": "Transcribe files and folders.",

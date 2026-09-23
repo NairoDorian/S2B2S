@@ -301,9 +301,10 @@ according to your strict rules.`
 
 ## 6. Cost
 
-- **Threads**: one 50 ms tick thread per recording, in this mode only, plus up
-  to three short-lived waiter threads and three extra stream workers in the
-  nested Multi Streaming STT mode.
+- **Threads**: one 50 ms tick thread per recording, in this mode only, plus
+  one short-lived waiter thread and one extra stream worker per
+  streaming-capable extra slot (at most eight) in the nested Multi Streaming
+  STT mode.
 - **Audio path**: one mutex lock and one memcpy per 16 ms frame (≈62/s) while
   the tap is armed, one relaxed atomic load while it is off.
 - **Per break**: three decodes of the **window** (`context_chunks + 1` chunks, at

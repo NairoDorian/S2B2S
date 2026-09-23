@@ -692,7 +692,7 @@ struct JobResult {
 /// The extras' decodes run on the blocking pool, one per model, concurrently —
 /// the same shape as the batch path in `MultiSttAction::stop`. The untracked
 /// `transcribe_with_extra` is used deliberately: a session's statistics record
-/// one run, and three extra decode attempts per chunk would inflate that run's
+/// one run, and an extra decode attempt per model per chunk would inflate that run's
 /// numbers by the chunk count.
 async fn run_merge_job(
     tm: Arc<TranscriptionManager>,
@@ -729,7 +729,7 @@ async fn run_merge_job(
     // window with each extra instead, one per model on the blocking pool,
     // concurrently — the same shape as the batch path in `MultiSttAction::stop`.
     // The untracked `transcribe_with_extra` is used deliberately there: a
-    // session's statistics record one run, and three extra decode attempts per
+    // session's statistics record one run, and an extra decode attempt per model per
     // chunk would inflate that run's numbers by the chunk count.
     let outputs: [String; STREAM_SLOTS] = if let Some(outputs) = live_outputs {
         outputs
@@ -764,11 +764,13 @@ async fn run_merge_job(
             })
         };
 
-        let handles = [
-            spawn_extra(1, settings.multi_stt_model_2.clone()),
-            spawn_extra(2, settings.multi_stt_model_3.clone()),
-            spawn_extra(3, settings.multi_stt_model_4.clone()),
-        ];
+        // Stream slot `n` is extra slot `n - 1` ("Model n+1"), as everywhere.
+        let handles: Vec<_> = settings
+            .multi_stt_extra_model_ids()
+            .into_iter()
+            .enumerate()
+            .map(|(index, model_id)| spawn_extra(index + 1, model_id))
+            .collect();
 
         let mut decoded: [String; STREAM_SLOTS] = Default::default();
         for handle in handles.into_iter().flatten() {
@@ -782,19 +784,20 @@ async fn run_merge_job(
 
     let merge_start = Instant::now();
     // A chunk whose every slot is punctuation (or empty) has nothing to merge:
-    // the merge prompt would carry four empty quoted blocks, and a small model
+    // the merge prompt would carry only empty quoted blocks, and a small model
     // answers *the request* rather than the audio, which lands in the user's
     // document as a sentence they never said. This is not a failure and must not
     // be reported as one — `failed` is what marks the chunk for a retry after
     // the next close, and a retry of a chunk with no words in it can only decode the
     // extras again for the same nothing. The chunk keeps the streaming model's
     // own text (`Chunk::display_text` falls back to it).
-    let (merged, brain, failed) = if has_merge_prompt(&settings)
-        && slots_carry_words(&[&live, &outputs[1], &outputs[2], &outputs[3]])
-    {
-        let outcome =
-            multi_stt_merge_transcriptions(&settings, &live, &outputs[1], &outputs[2], &outputs[3])
-                .await;
+    // Slot 1 is the primary's own text; then one slot per configured extra.
+    let slot_count = 1 + settings.multi_stt_extra_slots().len();
+    let slot_texts: Vec<&str> = std::iter::once(live.as_str())
+        .chain(outputs[1..slot_count].iter().map(String::as_str))
+        .collect();
+    let (merged, brain, failed) = if has_merge_prompt(&settings) && slots_carry_words(&slot_texts) {
+        let outcome = multi_stt_merge_transcriptions(&settings, &slot_texts).await;
         match outcome {
             // An empty merge result would delete text that is already on
             // screen; treat it as a failure and keep the extras' output instead.
@@ -889,8 +892,9 @@ fn window_context(closed: &[Chunk], index: usize, depth: usize) -> (Vec<f32>, St
 pub struct MultiSttStreamOutcome {
     /// The whole session's text, chunk by chunk, merged where a merge landed.
     pub final_text: String,
-    /// Slot 1 is the primary model's own live text for the session; slots 2–4
-    /// are the extras' outputs as recorded for each chunk that closed.
+    /// Slot 1 is the primary model's own live text for the session; the slots
+    /// after it are the extras' outputs as recorded for each chunk that closed
+    /// (empty past the configured extras).
     pub model_outputs: [String; STREAM_SLOTS],
     pub brain: Option<MultiSttHistoryBrain>,
     pub failed_chunks: u32,
@@ -2374,7 +2378,7 @@ impl Coordinator {
         last.failed = false;
         // A live session asks whether any model said anything for this chunk: its
         // audio alone is nothing to merge, since no extra is going to decode it
-        // and a job over four empty texts can only be answered with the request
+        // and a job over nothing but empty texts can only be answered with the request
         // itself (see `run_merge_job`). The parent mode's test is the audio, which
         // there is exactly what its extras decode.
         let has_content = if self.source == TextSource::Live {

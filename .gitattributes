@@ -1,0 +1,6 @@
+# Line endings. The repository stores LF; with core.autocrlf=true and no rule
+# here, Git on Windows checks shell files out as CRLF, and bash then reads
+# "exec bun run precommit\r" or a "$VAR\r" and fails. These run under bash
+# on every platform (the pre-commit hook, the CI helpers), so they stay LF.
+*.sh text eol=lf
+.githooks/* text eol=lf

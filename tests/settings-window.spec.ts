@@ -404,8 +404,12 @@ test.describe("post-processing model combobox", () => {
  *
  * Of those 18, exactly one kind of re-run is observable from a browser, and that
  * is what the `listenerRegistrations` assertion pins: the shell's five backend
- * listeners in `App.tsx` translate inside their callbacks, so a language change
- * has to tear each one down and bind a new one — visible in the recorded IPC.
+ * listeners in `App.tsx` translate inside their callbacks with a `t` that
+ * resolves the language when it is *called*, so they are bound once for the
+ * life of the window and a language change must NOT tear them down and bind
+ * them again (it used to, five IPC round-trips per switch for nothing, with a
+ * window in which two listeners were live at once) — visible in the recorded
+ * IPC as a count that does not move.
  * The four `useMemo`s hold something derived from translated strings
  * (`ModelsSettings`'s selected-language label and `LiveFftSettings`'s canvas
  * labels cache the text itself, `HelpSettings`'s the search result whose
@@ -415,12 +419,9 @@ test.describe("post-processing model combobox", () => {
  * back in regardless. That is why the listener count carries the weight here
  * rather than one of the four.
  *
- * The toast below is deliberately the *weaker* half, and worth being exact
- * about why: `i18n.t` reads the current language when it is *called*, so even a
- * listener holding a stale `t` translates into the new language. The toast
- * proves the re-bound listener is live and that the German bundle is what it
- * translates with; the count is what fails when the hook stops handing out a new
- * `t`.
+ * The toast below is the other half: the listener bound in English is still
+ * live after the switch and translates with the German bundle, which is what
+ * makes binding it once correct.
  *
  * The switch is made through the app's own control on the About page, and the
  * first assertion lands on a component the switch did *not* happen in — the
@@ -472,14 +473,12 @@ test.describe("language switch", () => {
         { cmd: "change_app_language_setting", args: { language: "de" } },
       ]);
 
-    // The load-bearing assertion: the listeners were re-bound. A hook that
-    // handed out one `t` for the life of the window would leave this count
-    // exactly where it started.
-    await expect
-      .poll(async () => listenerRegistrations(page, "recording-error"))
-      .toBeGreaterThan(bindingsWhileEnglish);
+    // The listeners are bound once: a language switch does not re-bind them.
+    expect(await listenerRegistrations(page, "recording-error")).toBe(
+      bindingsWhileEnglish,
+    );
 
-    // And the re-bound listener works, in German.
+    // And the listener bound in English now speaks German.
     await page.evaluate(() =>
       (window as any).__TAURI_INTERNALS__.invoke("plugin:event|emit", {
         event: "recording-error",

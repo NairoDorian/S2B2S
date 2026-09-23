@@ -1266,25 +1266,19 @@ pub struct MultiSttHistoryMetadata {
     pub final_merged_text: String,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The history row's per-model dump plus its machine-readable metadata.
+/// `models` is `(model id, output)` per Multi-STT slot, Model 1 (the primary)
+/// first, one entry per configured slot.
 pub(crate) fn format_multi_stt_history_transcript(
-    model1: &str,
-    output1: &str,
-    model2: &str,
-    output2: &str,
-    model3: &str,
-    output3: &str,
-    model4: &str,
-    output4: &str,
+    models: &[(&str, &str)],
     brain: Option<MultiSttHistoryBrain>,
     final_merged: &str,
 ) -> String {
     let mut text = String::new();
     text.push_str("=== Multi-STT Results ===\n");
-    text.push_str(&format!("Model 1: {}\n{}\n", model1, output1));
-    text.push_str(&format!("Model 2: {}\n{}\n", model2, output2));
-    text.push_str(&format!("Model 3: {}\n{}\n", model3, output3));
-    text.push_str(&format!("Model 4: {}\n{}\n", model4, output4));
+    for (index, (model, output)) in models.iter().enumerate() {
+        text.push_str(&format!("Model {}: {}\n{}\n", index + 1, model, output));
+    }
 
     if let Some(ref b) = brain {
         text.push_str(&format!(
@@ -1308,28 +1302,15 @@ pub(crate) fn format_multi_stt_history_transcript(
 
     let metadata = MultiSttHistoryMetadata {
         version: 1,
-        models: vec![
-            MultiSttHistoryModel {
-                slot: 1,
-                model_id: model1.to_string(),
-                text: output1.to_string(),
-            },
-            MultiSttHistoryModel {
-                slot: 2,
-                model_id: model2.to_string(),
-                text: output2.to_string(),
-            },
-            MultiSttHistoryModel {
-                slot: 3,
-                model_id: model3.to_string(),
-                text: output3.to_string(),
-            },
-            MultiSttHistoryModel {
-                slot: 4,
-                model_id: model4.to_string(),
-                text: output4.to_string(),
-            },
-        ],
+        models: models
+            .iter()
+            .enumerate()
+            .map(|(index, (model, output))| MultiSttHistoryModel {
+                slot: index + 1,
+                model_id: model.to_string(),
+                text: output.to_string(),
+            })
+            .collect(),
         brain,
         final_merged_text: final_merged.to_string(),
     };
@@ -1344,7 +1325,7 @@ pub(crate) fn format_multi_stt_history_transcript(
 /// Whether any of the merge's slots carries a word, as opposed to whitespace,
 /// punctuation, or nothing at all.
 ///
-/// The merge prompt hands a model four transcripts of the same audio and asks
+/// The merge prompt hands a model several transcripts of the same audio and asks
 /// for one reconciled transcript. A slot set with no words in it gives it
 /// nothing to reconcile, and a small model answers *the request* instead: the
 /// reply is a sentence asking for the transcripts ("Please provide the four raw
@@ -1409,8 +1390,8 @@ const MERGE_INPUT_NOUNS: &[&str] = &["transcript", "audio", "input", "dictation"
 /// * it asks for its own input. A merge never asks for the transcripts it was
 ///   given.
 /// * it is implausibly long. A merge reconciles transcripts of the same audio,
-///   so it cannot be several times the longest one it was handed; four disjoint
-///   partials are the most it can legitimately amount to.
+///   so it cannot be several times the longest one it was handed; a few
+///   disjoint partials are the most it can legitimately amount to.
 ///
 /// `None` means "looks like a transcript". A rejection is not a lost session:
 /// every caller already has a path for "no merge" that keeps the raw outputs,
@@ -1471,14 +1452,14 @@ fn merge_response_rejection(response: &str, slots: &[&str]) -> Option<String> {
     None
 }
 
-/// Merge prompt for multi-STT: replaces ${output}, ${output2}, ${output3}, ${output4}
-/// and sends to the LLM API (same provider as post-processing).
+/// Merge prompt for multi-STT: fills `${output}` / `${output1}` with the
+/// primary's text and `${outputN}` with slot N's, then sends it to the LLM API
+/// (same provider as post-processing). `outputs` is one text per Multi-STT
+/// slot, Model 1 first; a placeholder for a slot past the configured ones is
+/// filled with an empty string, as an empty slot's is.
 pub(crate) async fn multi_stt_merge_transcriptions(
     settings: &AppSettings,
-    output1: &str,
-    output2: &str,
-    output3: &str,
-    output4: &str,
+    outputs: &[&str],
 ) -> Option<MultiSttMergeOutcome> {
     let merge_prompt = match &settings.multi_stt_merge_prompt {
         Some(p) => p.clone(),
@@ -1493,14 +1474,13 @@ pub(crate) async fn multi_stt_merge_transcriptions(
         return None;
     }
 
-    // Replace placeholders
-    let prompt = merge_prompt
-        .prompt
-        .replace("${output}", output1)
-        .replace("${output1}", output1)
-        .replace("${output2}", output2)
-        .replace("${output3}", output3)
-        .replace("${output4}", output4);
+    // Replace placeholders. `${output1}` and `${output10}` differ by their
+    // closing brace, so the ascending order cannot clip one into the other.
+    let slot_text = |index: usize| outputs.get(index).copied().unwrap_or("");
+    let mut prompt = merge_prompt.prompt.replace("${output}", slot_text(0));
+    for index in 0..=crate::settings::MULTI_STT_MAX_EXTRA_MODELS {
+        prompt = prompt.replace(&format!("${{output{}}}", index + 1), slot_text(index));
+    }
 
     debug!(
         "Multi-STT merge prompt prepared, length: {} chars",
@@ -1510,26 +1490,24 @@ pub(crate) async fn multi_stt_merge_transcriptions(
     // reconciles, so they are the first thing to read when the merged text comes
     // back wrong, short, or repeating — and an empty slot is invisible in a
     // prompt length, which is exactly how a chunk merged against nothing.
-    for (index, text) in [output1, output2, output3, output4].iter().enumerate() {
+    for (index, text) in outputs.iter().enumerate() {
         crate::utils::log_multiline(
             &format!("Multi-STT slot {} (model {})", index + 1, index + 1),
             text,
         );
     }
 
-    // Nothing to reconcile: the four slots hold no word between them, so the
-    // prompt would reach the model as four empty quoted blocks and the model
+    // Nothing to reconcile: the slots hold no word between them, so the
+    // prompt would reach the model as empty quoted blocks and the model
     // would answer the request instead of the audio — see
     // [`slots_carry_words`]. The call is skipped rather than made and then
     // rejected, which also removes a round-trip that can only return what is
     // already here.
-    if !slots_carry_words(&[output1, output2, output3, output4]) {
+    if !slots_carry_words(outputs) {
         debug!(
-            "Multi-STT merge skipped: no slot carries a word ({} chars across the four slots)",
-            [output1, output2, output3, output4]
-                .iter()
-                .map(|s| s.chars().count())
-                .sum::<usize>()
+            "Multi-STT merge skipped: no slot carries a word ({} chars across the {} slots)",
+            outputs.iter().map(|s| s.chars().count()).sum::<usize>(),
+            outputs.len()
         );
         return None;
     }
@@ -1580,7 +1558,7 @@ pub(crate) async fn multi_stt_merge_transcriptions(
             let cleaned_text = strip_invisible_chars(strip_think_block(&raw_content))
                 .trim()
                 .to_string();
-            match merge_response_rejection(&cleaned_text, &[output1, output2, output3, output4]) {
+            match merge_response_rejection(&cleaned_text, outputs) {
                 // The reply is not a transcript — the model answered the
                 // prompt. Returning "no merge" hands the caller its
                 // concatenation fallback, so the user's own words are kept
@@ -1644,18 +1622,7 @@ pub(crate) async fn multi_stt_merge_transcriptions(
 /// Pre-load extra STT models in parallel on the blocking thread pool.
 /// Called from `start()` so models are ready before `stop()` runs,
 /// eliminating loading latency from the transcription path.
-async fn preload_extra_models_parallel(
-    tm: &Arc<TranscriptionManager>,
-    model_2: &Option<String>,
-    model_3: &Option<String>,
-    model_4: &Option<String>,
-) {
-    let extra_models: Vec<String> = [model_2, model_3, model_4]
-        .iter()
-        .filter_map(|m| m.as_ref())
-        .cloned()
-        .collect();
-
+async fn preload_extra_models_parallel(tm: &Arc<TranscriptionManager>, extra_models: Vec<String>) {
     if extra_models.is_empty() {
         return;
     }
@@ -1732,24 +1699,22 @@ impl ShortcutAction for MultiSttAction {
         };
         if settings.multi_stt_enabled {
             let tm_pre = Arc::clone(&tm);
-            let model_2 = settings.multi_stt_model_2.clone();
-            let model_3 = settings.multi_stt_model_3.clone();
-            let model_4 = settings.multi_stt_model_4.clone();
             // With the nested mode on, only the slots it streams from are
-            // preloaded — the choice above, translated back to the list's own
-            // positions so the others stay unloaded.
-            let streaming: Vec<&str> = multi_streaming_slots
-                .iter()
-                .map(|(_, model_id)| model_id.as_str())
-                .collect();
-            let keep = |model: Option<String>| match &model {
-                Some(id) if streaming.contains(&id.as_str()) => model,
-                Some(_) if !multi_streaming_slots.is_empty() => None,
-                _ => model,
+            // preloaded (the choice above), so the others stay unloaded.
+            let to_preload: Vec<String> = if multi_streaming_slots.is_empty() {
+                settings
+                    .multi_stt_extra_model_ids()
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            } else {
+                multi_streaming_slots
+                    .iter()
+                    .map(|(_, model_id)| model_id.clone())
+                    .collect()
             };
-            let (model_2, model_3, model_4) = (keep(model_2), keep(model_3), keep(model_4));
             tauri::async_runtime::spawn(async move {
-                preload_extra_models_parallel(&tm_pre, &model_2, &model_3, &model_4).await;
+                preload_extra_models_parallel(&tm_pre, to_preload).await;
             });
         }
 
@@ -2250,18 +2215,17 @@ impl ShortcutAction for MultiSttAction {
             // loading them here would be exactly the work this mode exists to
             // skip.
             let settings = get_settings(&ah);
-            let extra_models: [Option<String>; 3] = if multi_streaming_active {
+            // One entry per configured extra slot ("Model 2" first), `None` for
+            // an empty one, so every output keeps its slot's placeholder.
+            let configured_extras = settings.multi_stt_extra_model_ids();
+            let extra_models: Vec<Option<String>> = if multi_streaming_active {
                 debug!(
-                    "Multi streaming STT: no batch decode — the second column is the extra's live \
-                     stream, not a re-decode of the recording"
+                    "Multi streaming STT: no batch decode — the extra columns are the extras' live \
+                     streams, not re-decodes of the recording"
                 );
-                Default::default()
+                vec![None; configured_extras.len()]
             } else {
-                [
-                    settings.multi_stt_model_2.clone(),
-                    settings.multi_stt_model_3.clone(),
-                    settings.multi_stt_model_4.clone(),
-                ]
+                configured_extras.clone()
             };
 
             // Every load is spawned before any is awaited — they run concurrently
@@ -2359,35 +2323,40 @@ impl ShortcutAction for MultiSttAction {
             // extras' engines were leased by their own live stream workers and
             // went home with them in `finish_extras`, and each model's text is
             // already in hand (`multi_extras`).
-            let extra_tasks: [_; 3] = std::array::from_fn(|index| {
-                let model_id = extra_models[index].clone()?;
-                let model_number = index + 2;
-                let tm = Arc::clone(&tm);
-                let samples = samples.clone();
-                let stats = statistics.clone();
-                Some(tauri::async_runtime::spawn_blocking(move || {
-                    if tm.is_extra_model_loaded(&model_id) {
-                        tm.transcribe_with_extra_tracked(&model_id, samples, stats)
-                            .ok()
-                    } else {
-                        warn!(
-                            "Multi-STT: Model {} '{}' not loaded, skipping",
-                            model_number, model_id
-                        );
-                        None
-                    }
-                }))
-            });
+            let extra_tasks: Vec<_> = extra_models
+                .iter()
+                .enumerate()
+                .map(|(index, model_id)| {
+                    let model_id = model_id.clone()?;
+                    let model_number = index + 2;
+                    let tm = Arc::clone(&tm);
+                    let samples = samples.clone();
+                    let stats = statistics.clone();
+                    Some(tauri::async_runtime::spawn_blocking(move || {
+                        if tm.is_extra_model_loaded(&model_id) {
+                            tm.transcribe_with_extra_tracked(&model_id, samples, stats)
+                                .ok()
+                        } else {
+                            warn!(
+                                "Multi-STT: Model {} '{}' not loaded, skipping",
+                                model_number, model_id
+                            );
+                            None
+                        }
+                    }))
+                })
+                .collect();
 
             let mut tracked1 = task1.await.unwrap_or(None);
-            let mut tracked_extras: [Option<TrackedTranscription>; 3] = Default::default();
+            let mut tracked_extras: Vec<Option<TrackedTranscription>> =
+                Vec::with_capacity(extra_tasks.len());
             for (index, task) in extra_tasks.into_iter().enumerate() {
-                tracked_extras[index] = match task {
+                tracked_extras.push(match task {
                     Some(t) => t.await.unwrap_or(None),
                     // The nested mode: the extra's own live text, taken beside the
                     // primary's finalize so the history row holds every column.
-                    None => multi_extras[index].take(),
-                };
+                    None => multi_extras.get_mut(index).and_then(Option::take),
+                });
             }
             let source = if multi_streaming_active {
                 "live"
@@ -2404,12 +2373,11 @@ impl ShortcutAction for MultiSttAction {
                     );
                 }
             }
-            let [mut tracked2, mut tracked3, mut tracked4] = tracked_extras;
 
             // === EXPERIMENTAL STREAMING MODE: THE SESSION'S OWN RESULT ===
             // The chunks were decoded and merged while the user spoke, so this
             // replaces the batch decode → merge pipeline wholesale. Slot 1 is the
-            // primary model's own session text and slots 2–4 are the extras'
+            // primary model's own session text and the slots after it are the extras'
             // outputs as recorded for each chunk that closed; both are already
             // assembled by the coordinator, which is why the batch merge below is
             // skipped. A successful merge this session made is `brain`; a chunk
@@ -2432,38 +2400,22 @@ impl ShortcutAction for MultiSttAction {
                 )
             });
 
-            let output1 = match &streaming_final {
-                Some((_, outputs, ..)) => outputs[0].clone(),
-                None => tracked1
-                    .as_ref()
-                    .map(|t| t.text.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+            // One text per Multi-STT slot, Model 1 first: the session's own
+            // outputs in the streaming mode, the decodes otherwise.
+            let tracked_text = |t: &Option<TrackedTranscription>| {
+                t.as_ref().map(|t| t.text.clone()).unwrap_or_default()
             };
-            let output2 = match &streaming_final {
-                Some((_, outputs, ..)) => outputs[1].clone(),
-                None => tracked2
-                    .as_ref()
-                    .map(|t| t.text.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+            let outputs: Vec<String> = match &streaming_final {
+                Some((_, session_outputs, ..)) => session_outputs
+                    .iter()
+                    .take(1 + configured_extras.len())
+                    .cloned()
+                    .collect(),
+                None => std::iter::once(tracked_text(&tracked1))
+                    .chain(tracked_extras.iter().map(tracked_text))
+                    .collect(),
             };
-            let output3 = match &streaming_final {
-                Some((_, outputs, ..)) => outputs[2].clone(),
-                None => tracked3
-                    .as_ref()
-                    .map(|t| t.text.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            };
-            let output4 = match &streaming_final {
-                Some((_, outputs, ..)) => outputs[3].clone(),
-                None => tracked4
-                    .as_ref()
-                    .map(|t| t.text.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            };
+            let output_refs: Vec<&str> = outputs.iter().map(String::as_str).collect();
             // Whether the session typed the text into the app itself, in which
             // case it has already delivered the result and there is nothing left
             // to paste.
@@ -2472,11 +2424,13 @@ impl ShortcutAction for MultiSttAction {
                 .is_some_and(|(_, _, _, _, owns_typing)| *owns_typing);
 
             info!(
-                "Multi-STT: All transcriptions complete. Output1={} chars, Output2={} chars, Output3={} chars, Output4={} chars",
-                output1.chars().count(),
-                output2.chars().count(),
-                output3.chars().count(),
-                output4.chars().count()
+                "Multi-STT: All transcriptions complete. Chars per model: [{}]",
+                outputs
+                    .iter()
+                    .enumerate()
+                    .map(|(index, text)| format!("{}: {}", index + 1, text.chars().count()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
 
             let multi_transcription_latency_ms = transcribe_start.elapsed().as_secs_f64() * 1000.0;
@@ -2487,18 +2441,11 @@ impl ShortcutAction for MultiSttAction {
             // before its output handling.
             if rm.was_cancelled_since(cancel_generation) {
                 debug!("Multi-STT: Cancelled during transcription");
-                if let Some(t) = tracked1.take() {
-                    t.attempt.finish(StatisticsRunStatus::Cancelled);
-                }
-                if let Some(t) = tracked2.take() {
-                    t.attempt.finish(StatisticsRunStatus::Cancelled);
-                }
-                if let Some(t) = tracked3.take() {
-                    t.attempt.finish(StatisticsRunStatus::Cancelled);
-                }
-                if let Some(t) = tracked4.take() {
-                    t.attempt.finish(StatisticsRunStatus::Cancelled);
-                }
+                finish_tracked_attempts(
+                    &mut tracked1,
+                    &mut tracked_extras,
+                    StatisticsRunStatus::Cancelled,
+                );
                 statistics.finish(StatisticsRunStatus::Cancelled);
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
@@ -2545,30 +2492,17 @@ impl ShortcutAction for MultiSttAction {
                 // Poll for cancellation while the LLM round-trip is in
                 // flight so Escape aborts the merge instead of waiting on it.
                 let Some(merge_outcome) = complete_unless_cancelled(
-                    multi_stt_merge_transcriptions(
-                        &settings_for_merge,
-                        &output1,
-                        &output2,
-                        &output3,
-                        &output4,
-                    ),
+                    multi_stt_merge_transcriptions(&settings_for_merge, &output_refs),
                     || rm.was_cancelled_since(cancel_generation),
                 )
                 .await
                 else {
                     debug!("Multi-STT: Cancelled during LLM merge");
-                    if let Some(t) = tracked1.take() {
-                        t.attempt.finish(StatisticsRunStatus::Cancelled);
-                    }
-                    if let Some(t) = tracked2.take() {
-                        t.attempt.finish(StatisticsRunStatus::Cancelled);
-                    }
-                    if let Some(t) = tracked3.take() {
-                        t.attempt.finish(StatisticsRunStatus::Cancelled);
-                    }
-                    if let Some(t) = tracked4.take() {
-                        t.attempt.finish(StatisticsRunStatus::Cancelled);
-                    }
+                    finish_tracked_attempts(
+                        &mut tracked1,
+                        &mut tracked_extras,
+                        StatisticsRunStatus::Cancelled,
+                    );
                     statistics.finish(StatisticsRunStatus::Cancelled);
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
@@ -2595,34 +2529,22 @@ impl ShortcutAction for MultiSttAction {
                         warn!(
                             "Multi-STT: Merge prompt failed or not configured, concatenating outputs"
                         );
-                        let combined =
-                            join_nonempty_lines(&[&output1, &output2, &output3, &output4]);
+                        let combined = join_nonempty_lines(&output_refs);
                         (combined, None, false, Some(latency))
                     }
                 }
             } else {
                 // No merge prompt: concatenate
-                let combined = join_nonempty_lines(&[&output1, &output2, &output3, &output4]);
+                let combined = join_nonempty_lines(&output_refs);
                 (combined, None, false, None)
             };
 
             // Finish attempts for statistics
-            if let Some(t) = tracked1.take() {
-                t.attempt.complete_post_processing();
-                t.attempt.finish(StatisticsRunStatus::Success);
-            }
-            if let Some(t) = tracked2.take() {
-                t.attempt.complete_post_processing();
-                t.attempt.finish(StatisticsRunStatus::Success);
-            }
-            if let Some(t) = tracked3.take() {
-                t.attempt.complete_post_processing();
-                t.attempt.finish(StatisticsRunStatus::Success);
-            }
-            if let Some(t) = tracked4.take() {
-                t.attempt.complete_post_processing();
-                t.attempt.finish(StatisticsRunStatus::Success);
-            }
+            finish_tracked_attempts(
+                &mut tracked1,
+                &mut tracked_extras,
+                StatisticsRunStatus::Success,
+            );
             statistics.finish(StatisticsRunStatus::Success);
 
             // === PERFORMANCE MODE: NORMAL after LLM merge succeeds ===
@@ -2669,22 +2591,13 @@ impl ShortcutAction for MultiSttAction {
             }
 
             // Save to history in background (parallel with paste for speed)
-            let model_1_id = settings.selected_model.clone();
-            let model_2_id = settings
-                .multi_stt_model_2
-                .as_deref()
-                .unwrap_or("none")
-                .to_string();
-            let model_3_id = settings
-                .multi_stt_model_3
-                .as_deref()
-                .unwrap_or("none")
-                .to_string();
-            let model_4_id = settings
-                .multi_stt_model_4
-                .as_deref()
-                .unwrap_or("none")
-                .to_string();
+            let model_ids: Vec<String> = std::iter::once(settings.selected_model.clone())
+                .chain(
+                    configured_extras
+                        .iter()
+                        .map(|id| id.clone().unwrap_or_else(|| "none".to_string())),
+                )
+                .collect();
 
             // Recall insertion mode: the merged text belongs to the note at
             // the caret, not to History. No paste, no history row, no
@@ -2711,18 +2624,13 @@ impl ShortcutAction for MultiSttAction {
                 return;
             }
 
-            let multi_transcript = format_multi_stt_history_transcript(
-                &model_1_id,
-                &output1,
-                &model_2_id,
-                &output2,
-                &model_3_id,
-                &output3,
-                &model_4_id,
-                &output4,
-                brain_details,
-                &merged,
-            );
+            let history_models: Vec<(&str, &str)> = model_ids
+                .iter()
+                .map(String::as_str)
+                .zip(output_refs.iter().copied())
+                .collect();
+            let multi_transcript =
+                format_multi_stt_history_transcript(&history_models, brain_details, &merged);
             let hm_clone = Arc::clone(&hm);
             let file_name = app_identity::multi_recording_file_name(recording_timestamp);
             let merge_prompt_text = settings
@@ -2730,14 +2638,8 @@ impl ShortcutAction for MultiSttAction {
                 .as_ref()
                 .map(|p| p.prompt.clone());
             let merged_for_history = merged.clone();
-            let extra_models_list: Vec<String> = [
-                settings.multi_stt_model_2.clone(),
-                settings.multi_stt_model_3.clone(),
-                settings.multi_stt_model_4.clone(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
+            let extra_models_list: Vec<String> =
+                configured_extras.iter().flatten().cloned().collect();
 
             let word_count =
                 (!merged.trim().is_empty()).then(|| merged.split_whitespace().count() as i32);
@@ -2857,6 +2759,23 @@ impl ShortcutAction for MultiSttAction {
             "MultiSttAction::stop completed in {:?}",
             stop_time.elapsed()
         );
+    }
+}
+
+/// Finish every Multi-STT decode attempt of a run with `status` (a successful
+/// run also completes each attempt's post-processing step, the merge).
+fn finish_tracked_attempts(
+    primary: &mut Option<TrackedTranscription>,
+    extras: &mut [Option<TrackedTranscription>],
+    status: StatisticsRunStatus,
+) {
+    for tracked in std::iter::once(primary).chain(extras.iter_mut()) {
+        if let Some(t) = tracked.take() {
+            if status == StatisticsRunStatus::Success {
+                t.attempt.complete_post_processing();
+            }
+            t.attempt.finish(status);
+        }
     }
 }
 

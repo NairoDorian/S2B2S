@@ -17,6 +17,20 @@ async fn load_recording_samples(audio_path: std::path::PathBuf) -> Result<Vec<f3
     .map_err(|e| format!("Failed to load audio: {}", e))
 }
 
+/// Run one history database call on the blocking pool: every query is
+/// synchronous rusqlite work (and may wait on the 5 s busy timeout), which must
+/// not hold an async worker.
+async fn on_db<T: Send + 'static>(
+    history_manager: &Arc<HistoryManager>,
+    task: impl FnOnce(&HistoryManager) -> anyhow::Result<T> + Send + 'static,
+) -> Result<T, String> {
+    let hm = Arc::clone(history_manager);
+    tauri::async_runtime::spawn_blocking(move || task(&hm))
+        .await
+        .map_err(|e| format!("History task panicked: {e}"))?
+        .map_err(|e| e.to_string())
+}
+
 /// Apply the retention settings on the blocking pool: row deletes, recording
 /// file deletes and a VACUUM.
 async fn cleanup_history(history_manager: &Arc<HistoryManager>) -> Result<(), String> {
@@ -35,10 +49,10 @@ pub async fn get_history_entries(
     cursor: Option<i32>,
     limit: Option<u32>,
 ) -> Result<PaginatedHistory, String> {
-    history_manager
-        .get_history_entries(cursor, limit)
-        .await
-        .map_err(|e| e.to_string())
+    on_db(&history_manager, move |hm| {
+        hm.get_history_entries(cursor, limit)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -48,10 +62,7 @@ pub async fn toggle_history_entry_saved(
     history_manager: State<'_, Arc<HistoryManager>>,
     id: i32,
 ) -> Result<(), String> {
-    history_manager
-        .toggle_saved_status(id)
-        .await
-        .map_err(|e| e.to_string())
+    on_db(&history_manager, move |hm| hm.toggle_saved_status(id)).await
 }
 
 #[tauri::command]
@@ -103,10 +114,8 @@ pub async fn retry_history_entry_transcription(
     statistics_manager: State<'_, Arc<crate::managers::statistics::StatisticsManager>>,
     id: i32,
 ) -> Result<(), String> {
-    let entry = history_manager
-        .get_entry_by_id(id)
-        .await
-        .map_err(|e| e.to_string())?
+    let entry = on_db(&history_manager, move |hm| hm.get_entry_by_id(id))
+        .await?
         .ok_or_else(|| format!("History entry {} not found", id))?;
 
     let audio_path = history_manager.get_audio_file_path(&entry.file_name);
@@ -167,8 +176,8 @@ pub async fn retry_history_entry_transcription(
         .attempt
         .finish(crate::managers::statistics::StatisticsRunStatus::Success);
 
-    history_manager
-        .update_entry_full(
+    on_db(&history_manager, move |hm| {
+        hm.update_entry_full(
             id,
             transcription,
             processed.post_processed_text,
@@ -182,7 +191,8 @@ pub async fn retry_history_entry_transcription(
             None,
         )
         .map(|_| ())
-        .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -192,10 +202,8 @@ pub async fn post_process_history_entry(
     history_manager: State<'_, Arc<HistoryManager>>,
     id: i32,
 ) -> Result<(), String> {
-    let entry = history_manager
-        .get_entry_by_id(id)
-        .await
-        .map_err(|e| e.to_string())?
+    let entry = on_db(&history_manager, move |hm| hm.get_entry_by_id(id))
+        .await?
         .ok_or_else(|| format!("History entry {} not found", id))?;
 
     // A Multi-STT entry keeps the per-model dump in transcription_text; the
@@ -221,8 +229,8 @@ pub async fn post_process_history_entry(
         );
     };
 
-    history_manager
-        .update_entry_full(
+    on_db(&history_manager, move |hm| {
+        hm.update_entry_full(
             id,
             entry.transcription_text,
             Some(polished),
@@ -236,7 +244,8 @@ pub async fn post_process_history_entry(
             None,
         )
         .map(|_| ())
-        .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// The text a History post-process pass should polish: the raw transcript
@@ -288,10 +297,8 @@ pub async fn multi_stt_history_entry(
     statistics_manager: State<'_, Arc<crate::managers::statistics::StatisticsManager>>,
     id: i32,
 ) -> Result<(), String> {
-    let entry = history_manager
-        .get_entry_by_id(id)
-        .await
-        .map_err(|e| e.to_string())?
+    let entry = on_db(&history_manager, move |hm| hm.get_entry_by_id(id))
+        .await?
         .ok_or_else(|| format!("History entry {} not found", id))?;
 
     let audio_path = history_manager.get_audio_file_path(&entry.file_name);
@@ -303,12 +310,7 @@ pub async fn multi_stt_history_entry(
 
     let settings = crate::settings::get_settings(&app);
     // Slot-positional: `${output2}` is always model 2, whatever else is set.
-    let extra_models: [Option<String>; 3] = [
-        settings.multi_stt_model_2.clone(),
-        settings.multi_stt_model_3.clone(),
-        settings.multi_stt_model_4.clone(),
-    ]
-    .map(|m| m.filter(|m| !m.is_empty()));
+    let extra_models: Vec<Option<String>> = settings.multi_stt_extra_model_ids();
 
     // The primary may have been unloaded while idle: start its load (a no-op
     // when it is loaded; `transcribe_tracked` waits for it) alongside the
@@ -346,20 +348,23 @@ pub async fn multi_stt_history_entry(
         let stats = statistics_run.clone();
         tauri::async_runtime::spawn_blocking(move || tm.transcribe_tracked(samples, stats).ok())
     };
-    let extra_tasks = extra_models.clone().map(|model| {
-        model.map(|m| {
-            let tm = Arc::clone(&transcription_manager);
-            let samples = samples.clone();
-            let stats = statistics_run.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                if tm.is_extra_model_loaded(&m) {
-                    tm.transcribe_with_extra_tracked(&m, samples, stats).ok()
-                } else {
-                    None
-                }
+    let extra_tasks: Vec<_> = extra_models
+        .iter()
+        .map(|model| {
+            model.clone().map(|m| {
+                let tm = Arc::clone(&transcription_manager);
+                let samples = samples.clone();
+                let stats = statistics_run.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if tm.is_extra_model_loaded(&m) {
+                        tm.transcribe_with_extra_tracked(&m, samples, stats).ok()
+                    } else {
+                        None
+                    }
+                })
             })
         })
-    });
+        .collect();
 
     let primary_tracked = primary_task.await.unwrap_or(None);
     let mut extra_tracked = Vec::with_capacity(extra_tasks.len());
@@ -373,17 +378,17 @@ pub async fn multi_stt_history_entry(
     let text_of = |tracked: &Option<crate::managers::transcription::TrackedTranscription>| {
         tracked.as_ref().map(|t| t.text.clone()).unwrap_or_default()
     };
-    let output1 = text_of(&primary_tracked);
-    let [output2, output3, output4]: [String; 3] =
-        std::array::from_fn(|slot| text_of(&extra_tracked[slot]));
+    // One text per slot, Model 1 first.
+    let outputs: Vec<String> = std::iter::once(text_of(&primary_tracked))
+        .chain(extra_tracked.iter().map(text_of))
+        .collect();
+    let output_refs: Vec<&str> = outputs.iter().map(String::as_str).collect();
 
     let multi_transcription_latency_ms = transcribe_start.elapsed().as_secs_f64() * 1000.0;
 
     let merge_start = std::time::Instant::now();
-    let merge_outcome = crate::actions::multi_stt_merge_transcriptions(
-        &settings, &output1, &output2, &output3, &output4,
-    )
-    .await;
+    let merge_outcome =
+        crate::actions::multi_stt_merge_transcriptions(&settings, &output_refs).await;
 
     let latency = merge_start.elapsed().as_secs_f64() * 1000.0;
     let merge_latency_ms = Some(latency);
@@ -414,46 +419,23 @@ pub async fn multi_stt_history_entry(
             };
             (outcome.cleaned_text, Some(brain))
         }
-        None => {
-            let mut combined = output1.clone();
-            for out in [&output2, &output3, &output4] {
-                if !out.is_empty() {
-                    if !combined.is_empty() {
-                        combined.push('\n');
-                    }
-                    combined.push_str(out);
-                }
-            }
-            (combined, None)
-        }
+        None => (crate::actions::join_nonempty_lines(&output_refs), None),
     };
 
-    let model_1_id = settings.selected_model.clone();
-    let model_2_id = settings
-        .multi_stt_model_2
-        .as_deref()
-        .unwrap_or("none")
-        .to_string();
-    let model_3_id = settings
-        .multi_stt_model_3
-        .as_deref()
-        .unwrap_or("none")
-        .to_string();
-    let model_4_id = settings
-        .multi_stt_model_4
-        .as_deref()
-        .unwrap_or("none")
-        .to_string();
-
+    let model_ids: Vec<String> = std::iter::once(settings.selected_model.clone())
+        .chain(
+            extra_models
+                .iter()
+                .map(|id| id.clone().unwrap_or_else(|| "none".to_string())),
+        )
+        .collect();
+    let history_models: Vec<(&str, &str)> = model_ids
+        .iter()
+        .map(String::as_str)
+        .zip(output_refs.iter().copied())
+        .collect();
     let multi_transcript = crate::actions::format_multi_stt_history_transcript(
-        &model_1_id,
-        &output1,
-        &model_2_id,
-        &output2,
-        &model_3_id,
-        &output3,
-        &model_4_id,
-        &output4,
+        &history_models,
         brain_details,
         &merged,
     );
@@ -463,17 +445,10 @@ pub async fn multi_stt_history_entry(
         .as_ref()
         .map(|p| p.prompt.clone());
 
-    let extra_models_list: Vec<String> = [
-        settings.multi_stt_model_2.clone(),
-        settings.multi_stt_model_3.clone(),
-        settings.multi_stt_model_4.clone(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    let extra_models_list: Vec<String> = extra_models.iter().flatten().cloned().collect();
 
-    history_manager
-        .update_entry_full(
+    on_db(&history_manager, move |hm| {
+        hm.update_entry_full(
             id,
             multi_transcript,
             Some(merged),
@@ -487,7 +462,8 @@ pub async fn multi_stt_history_entry(
             Some(extra_models_list),
         )
         .map(|_| ())
-        .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -537,7 +513,5 @@ pub async fn update_recording_retention_period(
 pub async fn get_latest_recording_info(
     history_manager: State<'_, Arc<HistoryManager>>,
 ) -> Result<Option<HistoryEntry>, String> {
-    history_manager
-        .get_latest_completed_entry()
-        .map_err(|e| e.to_string())
+    on_db(&history_manager, |hm| hm.get_latest_completed_entry()).await
 }

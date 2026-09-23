@@ -5,6 +5,7 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   ModelBackendSetting,
+  MultiSttExtraModel_Serialize as MultiSttExtraModel,
 } from "@/bindings";
 
 /**
@@ -35,6 +36,13 @@ export interface UseSettingsResult {
     value: Settings[K],
   ) => Promise<void>;
   resetSetting: (key: keyof Settings) => Promise<void>;
+  /** Change one extra Multi-STT slot ("Model N", 2 = first extra). */
+  updateMultiSttExtraModel: (
+    slot: number,
+    patch: Partial<MultiSttExtraModel>,
+  ) => Promise<void>;
+  /** How many extra Multi-STT slots there are. */
+  setMultiSttExtraModelCount: (count: number) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
   refreshOutputDevices: () => Promise<void>;
@@ -84,6 +92,8 @@ export const useSettings = (): UseSettingsResult => {
   const actions = untrack(() => ({
     updateSetting: store.updateSetting,
     resetSetting: store.resetSetting,
+    updateMultiSttExtraModel: store.updateMultiSttExtraModel,
+    setMultiSttExtraModelCount: store.setMultiSttExtraModelCount,
     refreshSettings: store.refreshSettings,
     refreshAudioDevices: store.refreshAudioDevices,
     refreshOutputDevices: store.refreshOutputDevices,
@@ -111,6 +121,8 @@ export const useSettings = (): UseSettingsResult => {
 
     updateSetting: actions.updateSetting,
     resetSetting: actions.resetSetting,
+    updateMultiSttExtraModel: actions.updateMultiSttExtraModel,
+    setMultiSttExtraModelCount: actions.setMultiSttExtraModelCount,
     refreshSettings: actions.refreshSettings,
     refreshAudioDevices: actions.refreshAudioDevices,
     refreshOutputDevices: actions.refreshOutputDevices,

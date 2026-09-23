@@ -36,15 +36,15 @@ The process is entirely local:
 
 ### Multi-STT Mode (Fork Feature)
 
-This fork adds **Multi-STT** — run up to four speech-to-text models simultaneously and merge their outputs for higher accuracy. Each extra model runs on its own inference engine in parallel, and results are combined either by concatenation or via an LLM merge prompt.
+This fork adds **Multi-STT** — run several speech-to-text models simultaneously (the primary plus up to eight extras, chosen on the Multi-STT page) and merge their outputs for higher accuracy. Each extra model runs on its own inference engine in parallel, and results are combined either by concatenation or via an LLM merge prompt.
 
 **Key capabilities:**
 
-- **Parallel transcription**: Primary + three extra models all transcribe the same audio concurrently
+- **Parallel transcription**: The primary + every extra model (1 to 8, set by the page's "Number of extra models") transcribe the same audio concurrently
 - **Per-model language selection**: Each extra model can use a different recognition language
 - **Per-model translation**: Each extra model can optionally translate to English
 - **Parallel model loading**: Extra models are pre-loaded in parallel during the recording phase
-- **LLM merge prompt**: Optionally merge multiple transcriptions through an OpenAI-compatible LLM (including local llama.cpp servers) using `${output}`, `${output2}`, `${output3}`, and `${output4}` placeholders
+- **LLM merge prompt**: Optionally merge multiple transcriptions through an OpenAI-compatible LLM (including local llama.cpp servers) using `${output}` for the primary and `${output2}`, `${output3}`, … for the extra models
 - **Keep models loaded**: Retain extra models in memory between uses for faster repeat transcriptions (on by default; only matters when the model unload timeout is "Immediately")
 - **Manual model unload**: Free model memory on demand via the settings UI
 - **Dedicated shortcut**: Configurable `multi_stt_transcribe` binding separate from the standard transcription shortcut

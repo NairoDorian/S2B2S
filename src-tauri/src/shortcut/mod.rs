@@ -1308,6 +1308,70 @@ pub fn change_multi_stt_enabled_setting(app: AppHandle, enabled: bool) -> Result
     Ok(())
 }
 
+/// The index into `multi_stt_extra_models` of Multi-STT slot `slot` ("Model
+/// N", so 2 is the first extra), or an error for a slot that is not configured.
+fn extra_slot_index(settings: &settings::AppSettings, slot: u32) -> Result<usize, String> {
+    let count = settings.multi_stt_extra_slots().len();
+    (slot as usize)
+        .checked_sub(2)
+        .filter(|index| *index < count)
+        .ok_or_else(|| {
+            format!(
+                "Invalid extra model slot: {} (must be 2 to {})",
+                slot,
+                count + 1
+            )
+        })
+}
+
+/// Free an extra engine no slot runs any more. Unconditional on the engine
+/// being in the map: if it is leased out to an in-flight transcription,
+/// `unload_extra_model` records a pending request that drops it on return
+/// instead of letting it be re-inserted into a slot nothing references.
+fn unload_unused_extra_model(app: &AppHandle, settings: &settings::AppSettings, model_id: &str) {
+    if settings.multi_stt_extra_slot_for(model_id).is_some() {
+        return;
+    }
+    let tm = app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
+    info!(
+        "Multi-STT: unloading extra model '{}', no slot runs it any more",
+        model_id
+    );
+    if let Err(e) = tm.unload_extra_model(model_id) {
+        warn!(
+            "Multi-STT: failed to unload extra model '{}': {}",
+            model_id, e
+        );
+    }
+}
+
+/// How many extra models Multi-STT runs (1 to `MULTI_STT_MAX_EXTRA_MODELS`).
+/// New slots start empty; the models of removed slots are unloaded unless
+/// another slot still runs them.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_extra_model_count(app: AppHandle, count: u32) -> Result<(), String> {
+    let count = (count as usize).clamp(1, settings::MULTI_STT_MAX_EXTRA_MODELS);
+    let mut settings = settings::get_settings(&app);
+    let removed: Vec<String> = if count < settings.multi_stt_extra_models.len() {
+        settings
+            .multi_stt_extra_models
+            .drain(count..)
+            .filter_map(|slot| slot.model_id)
+            .collect()
+    } else {
+        settings
+            .multi_stt_extra_models
+            .resize(count, settings::MultiSttExtraModel::default());
+        Vec::new()
+    };
+    for model_id in &removed {
+        unload_unused_extra_model(&app, &settings, model_id);
+    }
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_multi_stt_extra_model(
@@ -1316,48 +1380,17 @@ pub fn change_multi_stt_extra_model(
     model_id: Option<String>,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-
-    // If the previously-selected model in this slot is currently loaded in
-    // memory, unload it so we don't leak a stale engine alongside the new one.
-    let old_model = match slot {
-        2 => settings.multi_stt_model_2.clone(),
-        3 => settings.multi_stt_model_3.clone(),
-        4 => settings.multi_stt_model_4.clone(),
-        other => {
-            return Err(format!(
-                "Invalid extra model slot: {} (must be 2, 3, or 4)",
-                other
-            ));
-        }
-    };
-    if let Some(ref old_id) = old_model
-        && model_id.as_deref() != Some(old_id.as_str())
+    let index = extra_slot_index(&settings, slot)?;
+    let old_model = std::mem::replace(
+        &mut settings.multi_stt_extra_models[index].model_id,
+        model_id,
+    );
+    // The previous model of this slot may still be loaded: release it, or a
+    // stale engine stays resident beside the new one.
+    if let Some(old_id) = old_model
+        && settings.multi_stt_extra_models[index].model_id.as_deref() != Some(old_id.as_str())
     {
-        let tm =
-            app.state::<std::sync::Arc<crate::managers::transcription::TranscriptionManager>>();
-        // Unconditional: if the engine is leased out to an in-flight
-        // transcription it is not in the map yet, and `unload_extra_model`
-        // records a pending request that drops it on return instead of
-        // letting it be re-inserted into a slot nothing references.
-        info!(
-            "Multi-STT: unloading extra model in slot {} ('{}') before switching to '{}'",
-            slot,
-            old_id,
-            model_id.as_deref().unwrap_or("none")
-        );
-        if let Err(e) = tm.unload_extra_model(old_id) {
-            warn!(
-                "Multi-STT: failed to unload extra model '{}' in slot {}: {}",
-                old_id, slot, e
-            );
-        }
-    }
-
-    match slot {
-        2 => settings.multi_stt_model_2 = model_id,
-        3 => settings.multi_stt_model_3 = model_id,
-        4 => settings.multi_stt_model_4 = model_id,
-        _ => unreachable!(),
+        unload_unused_extra_model(&app, &settings, &old_id);
     }
     settings::write_settings(&app, settings);
     Ok(())
@@ -1371,17 +1404,22 @@ pub fn change_multi_stt_extra_model_language(
     language: Option<String>,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    match slot {
-        2 => settings.multi_stt_language_model_2 = language,
-        3 => settings.multi_stt_language_model_3 = language,
-        4 => settings.multi_stt_language_model_4 = language,
-        other => {
-            return Err(format!(
-                "Invalid extra model slot: {} (must be 2, 3, or 4)",
-                other
-            ));
-        }
-    }
+    let index = extra_slot_index(&settings, slot)?;
+    settings.multi_stt_extra_models[index].language = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_extra_model_translate(
+    app: AppHandle,
+    slot: u32,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let index = extra_slot_index(&settings, slot)?;
+    settings.multi_stt_extra_models[index].translate = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1466,33 +1504,6 @@ pub fn change_multi_stt_streaming_multi_debug_view_setting(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.multi_stt_streaming_multi_debug_view = enabled;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn change_multi_stt_translate_model_2(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.multi_stt_translate_model_2 = enabled;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn change_multi_stt_translate_model_3(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.multi_stt_translate_model_3 = enabled;
-    settings::write_settings(&app, settings);
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn change_multi_stt_translate_model_4(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.multi_stt_translate_model_4 = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }

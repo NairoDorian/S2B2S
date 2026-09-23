@@ -1,8 +1,11 @@
-import { createSignal, createEffect, createMemo, Show } from "solid-js";
+import { createSignal, createEffect, createMemo, For, Show } from "solid-js";
 import { useTranslation, TranslatedMarkup } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
 import { sessionToast as toast } from "@/lib/sessionToast";
-import { type ModelInfo } from "@/bindings";
+import {
+  type ModelInfo,
+  type MultiSttExtraModel_Serialize as ExtraSlotConfig,
+} from "@/bindings";
 import {
   SettingContainer,
   SettingsGroup,
@@ -28,22 +31,35 @@ import {
   supportsLanguageCode,
 } from "@/lib/constants/languages";
 
+/**
+ * Most extra models Multi-STT runs beside the primary: `MULTI_STT_MAX_EXTRA_MODELS`
+ * in `src-tauri/src/settings.rs`, which clamps whatever count is sent.
+ */
+const MAX_EXTRA_MODELS = 8;
+
+/** The merge-prompt placeholder a Multi-STT slot ("Model N") fills. */
+const placeholderFor = (slot: number) => "${output" + slot + "}";
+
+/** Whether `modelId` is in one of the page's model-id sets. */
+const hasId = (ids: Set<string>, modelId: string | null | undefined) =>
+  modelId != null && ids.has(modelId);
+
+interface DropdownOption {
+  value: string;
+  label: string;
+}
+
 interface PerModelLanguageSelectorProps {
-  slot: 2 | 3 | 4;
+  /** The slot's "Model N" number (2 is the first extra). */
+  slot: number;
   modelId: string | null;
   modelInfo: ModelInfo | undefined;
+  language: string | null;
+  onSelect: (language: string | null) => void;
 }
 
 const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
   const { t } = useTranslation();
-  const { getSetting, updateSetting } = useSettings();
-  const settingKey =
-    props.slot === 2
-      ? "multi_stt_language_model_2"
-      : props.slot === 3
-        ? "multi_stt_language_model_3"
-        : "multi_stt_language_model_4";
-  const currentLang = () => (getSetting(settingKey) as string | null) ?? null;
 
   const langOptions = createMemo(() => {
     const modelInfo = props.modelInfo;
@@ -65,21 +81,14 @@ const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
     const modelInfo = props.modelInfo;
     if (!modelInfo) return "auto";
     return effectiveLanguage(
-      currentLang() || "auto",
+      props.language || "auto",
       modelInfo.supported_languages,
       modelInfo.supports_language_detection,
     );
   });
 
-  const label = () =>
-    props.slot === 2
-      ? t("multiStt.models.model2Language")
-      : props.slot === 3
-        ? t("multiStt.models.model3Language")
-        : t("multiStt.models.model4Language");
-
   const selectedValue = (modelInfo: ModelInfo) => {
-    const lang = currentLang();
+    const lang = props.language;
     return modelInfo.supports_language_detection
       ? lang
       : lang && lang !== "auto"
@@ -105,12 +114,12 @@ const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
         >
           <div class="flex items-center gap-2 mt-2 ml-1">
             <label class="text-xs text-mid-gray/70 whitespace-nowrap">
-              {label()}
+              {t("multiStt.models.slotLanguage", { number: props.slot })}
             </label>
             <Dropdown
               selectedValue={selectedValue(modelInfo())}
               options={langOptions()}
-              onSelect={(value) => updateSetting(settingKey, value || null)}
+              onSelect={(value) => props.onSelect(value || null)}
               placeholder={placeholder(modelInfo())}
               disabled={langOptions().length === 0}
               class="min-w-[140px]"
@@ -122,17 +131,139 @@ const PerModelLanguageSelector = (props: PerModelLanguageSelectorProps) => {
   );
 };
 
+interface ExtraModelSlotProps {
+  /** The slot's "Model N" number (2 is the first extra). */
+  slot: number;
+  config: ExtraSlotConfig;
+  /** Downloaded models this slot may pick: none that another slot runs. */
+  options: DropdownOption[];
+  modelInfo: ModelInfo | undefined;
+  isLoaded: boolean;
+  isLoading: boolean;
+  isUnloading: boolean;
+  isUpdating: boolean;
+  onChange: (patch: Partial<ExtraSlotConfig>) => void;
+  onLoad: () => void;
+  onUnload: () => void;
+}
+
+/** One extra Multi-STT slot: its model, load state, language, backend and translation. */
+const ExtraModelSlot = (props: ExtraModelSlotProps) => {
+  const { t } = useTranslation();
+  const modelId = () => props.config.model_id ?? null;
+
+  return (
+    <SettingContainer
+      title={t("multiStt.models.slotTitle", { number: props.slot })}
+      description={t("multiStt.models.slotDescription", {
+        number: props.slot,
+        placeholder: placeholderFor(props.slot),
+      })}
+      descriptionMode="tooltip"
+      layout="horizontal"
+      grouped={true}
+    >
+      <div class="flex items-center gap-2 min-w-0">
+        <Dropdown
+          selectedValue={modelId()}
+          options={props.options}
+          onSelect={(value) => props.onChange({ model_id: value || null })}
+          placeholder={t("multiStt.models.notSelected")}
+          disabled={props.options.length === 0}
+          class="flex-1 min-w-0"
+        />
+        <Show when={modelId()}>
+          <span
+            class={`text-xs whitespace-nowrap ${props.isLoaded ? "text-green-500" : "text-mid-gray/50"}`}
+          >
+            {props.isLoaded
+              ? t("multiStt.models.loaded")
+              : t("multiStt.models.notLoaded")}
+          </span>
+          <Show
+            when={props.isLoaded}
+            fallback={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => props.onLoad()}
+                disabled={props.isLoading || props.isUnloading}
+              >
+                {props.isLoading
+                  ? t("multiStt.models.loadingModel")
+                  : t("multiStt.models.loadModel")}
+              </Button>
+            }
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => props.onUnload()}
+              disabled={props.isUnloading || props.isLoading}
+            >
+              {props.isUnloading
+                ? t("multiStt.models.unloadingModel")
+                : t("multiStt.models.unloadModel")}
+            </Button>
+          </Show>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => props.onChange({ model_id: null })}
+          >
+            {t("multiStt.models.disableModel")}
+          </Button>
+        </Show>
+      </div>
+      <PerModelLanguageSelector
+        slot={props.slot}
+        modelId={modelId()}
+        modelInfo={props.modelInfo}
+        language={props.config.language ?? null}
+        onSelect={(language) => props.onChange({ language })}
+      />
+      <ModelBackendDropdown
+        modelId={modelId()}
+        label={t("multiStt.models.backend")}
+        class="mt-2"
+      />
+      <Show when={modelId() && props.modelInfo?.supports_translation}>
+        <div class="flex items-center gap-2 mt-1 ml-1">
+          <ToggleSwitch
+            checked={props.config.translate ?? false}
+            onChange={(enabled) => props.onChange({ translate: enabled })}
+            isUpdating={props.isUpdating}
+            label={t("multiStt.models.translateToEnglish")}
+            description={t("settings.advanced.translateToEnglish.description")}
+            descriptionMode="tooltip"
+            grouped={false}
+          />
+        </div>
+      </Show>
+    </SettingContainer>
+  );
+};
+
 export const MultiSttSettings = () => {
   const { t } = useTranslation();
-  const { getSetting, updateSetting, isUpdating } = useSettings();
+  const {
+    getSetting,
+    updateSetting,
+    isUpdating,
+    updateMultiSttExtraModel,
+    setMultiSttExtraModelCount,
+  } = useSettings();
   const store = useModelStore();
   const models = () => store.models;
   const currentModel = () => store.currentModel;
 
   const multiSttEnabled = () => getSetting("multi_stt_enabled") ?? false;
-  const multiSttModel2 = () => getSetting("multi_stt_model_2") ?? null;
-  const multiSttModel3 = () => getSetting("multi_stt_model_3") ?? null;
-  const multiSttModel4 = () => getSetting("multi_stt_model_4") ?? null;
+  const extraSlots = (): ExtraSlotConfig[] =>
+    (getSetting("multi_stt_extra_models") ?? []).map((slot) => ({
+      model_id: slot.model_id ?? null,
+      language: slot.language ?? null,
+      translate: slot.translate ?? false,
+    }));
   const multiSttMergePrompt = () =>
     getSetting("multi_stt_merge_prompt") ?? null;
 
@@ -187,49 +318,52 @@ export const MultiSttSettings = () => {
   );
   const primaryModelId = () => currentModel();
 
-  const modelOptionsForSlot2 = createMemo(() =>
+  /** The models slot `index` may pick: not the primary, not another slot's. */
+  const modelOptionsFor = (index: number): DropdownOption[] =>
     downloadedModels()
       .filter(
         (m) =>
           m.id !== primaryModelId() &&
-          m.id !== multiSttModel3() &&
-          m.id !== multiSttModel4(),
+          !extraSlots().some(
+            (slot, other) => other !== index && slot.model_id === m.id,
+          ),
       )
-      .map((m) => ({ value: m.id, label: m.name })),
-  );
-  const modelOptionsForSlot3 = createMemo(() =>
-    downloadedModels()
-      .filter(
-        (m) =>
-          m.id !== primaryModelId() &&
-          m.id !== multiSttModel2() &&
-          m.id !== multiSttModel4(),
-      )
-      .map((m) => ({ value: m.id, label: m.name })),
-  );
-  const modelOptionsForSlot4 = createMemo(() =>
-    downloadedModels()
-      .filter(
-        (m) =>
-          m.id !== primaryModelId() &&
-          m.id !== multiSttModel2() &&
-          m.id !== multiSttModel3(),
-      )
-      .map((m) => ({ value: m.id, label: m.name })),
+      .map((m) => ({ value: m.id, label: m.name }));
+
+  const modelInfoFor = (id: string | null | undefined) =>
+    id ? downloadedModels().find((m) => m.id === id) : undefined;
+
+  const countOptions: DropdownOption[] = Array.from(
+    { length: MAX_EXTRA_MODELS },
+    (_, i) => ({ value: String(i + 1), label: String(i + 1) }),
   );
 
-  const model2Info = createMemo(() => {
-    const id = multiSttModel2();
-    return id ? downloadedModels().find((m) => m.id === id) : undefined;
+  /** The merge-prompt placeholders of every slot, `${output}` first. */
+  const placeholders = createMemo(() =>
+    ["${output}"].concat(extraSlots().map((_, i) => placeholderFor(i + 2))),
+  );
+  /** Slots with a model whose placeholder the saved prompt never uses. */
+  const unusedPlaceholders = createMemo(() => {
+    const prompt = multiSttMergePrompt()?.prompt;
+    if (!prompt) return [];
+    return extraSlots()
+      .map((slot, i) => ({ slot, placeholder: placeholderFor(i + 2) }))
+      .filter(
+        ({ slot, placeholder }) =>
+          slot.model_id && !prompt.includes(placeholder),
+      )
+      .map(({ placeholder }) => placeholder);
   });
-  const model3Info = createMemo(() => {
-    const id = multiSttModel3();
-    return id ? downloadedModels().find((m) => m.id === id) : undefined;
-  });
-  const model4Info = createMemo(() => {
-    const id = multiSttModel4();
-    return id ? downloadedModels().find((m) => m.id === id) : undefined;
-  });
+
+  /** The merge-prompt tip, listing the placeholders of the current slots. */
+  const placeholderTip = () =>
+    t("multiStt.mergePrompt.placeholderTip", {
+      first: placeholders()[0],
+      list: placeholders()
+        .slice(1)
+        .map((p) => "<code>" + p + "</code>")
+        .join(", "),
+    });
 
   createEffect(
     () => multiSttMergePrompt(),
@@ -243,13 +377,6 @@ export const MultiSttSettings = () => {
       }
     },
   );
-
-  const handleModel2Select = (value: string | null) =>
-    updateSetting("multi_stt_model_2", value || null);
-  const handleModel3Select = (value: string | null) =>
-    updateSetting("multi_stt_model_3", value || null);
-  const handleModel4Select = (value: string | null) =>
-    updateSetting("multi_stt_model_4", value || null);
 
   const handleSaveMergePrompt = () => {
     if (!draftName().trim() || !draftText().trim()) return;
@@ -322,30 +449,18 @@ export const MultiSttSettings = () => {
     }
   };
 
-  const isExtraModelLoaded = (modelId: string | null): boolean =>
-    modelId != null && loadedExtraModels().has(modelId);
-  const isModelLoading = (modelId: string | null): boolean =>
-    modelId != null && loadingModelIds().has(modelId);
-  const isModelUnloading = (modelId: string | null): boolean =>
-    modelId != null && unloadingModelIds().has(modelId);
+  /** The slots that run a model, as "Model N" and model id. */
+  const configuredSlots = createMemo(() =>
+    extraSlots().flatMap((config, index) =>
+      config.model_id ? [{ slot: index + 2, modelId: config.model_id }] : [],
+    ),
+  );
 
   const primaryModelName = createMemo(() => {
     const id = primaryModelId();
     return id
       ? downloadedModels().find((m) => m.id === id)?.name || id
       : t("multiStt.models.noPrimaryModel");
-  });
-  const selectedModel2Name = createMemo(() => {
-    const id = multiSttModel2();
-    return id ? downloadedModels().find((m) => m.id === id)?.name || id : null;
-  });
-  const selectedModel3Name = createMemo(() => {
-    const id = multiSttModel3();
-    return id ? downloadedModels().find((m) => m.id === id)?.name || id : null;
-  });
-  const selectedModel4Name = createMemo(() => {
-    const id = multiSttModel4();
-    return id ? downloadedModels().find((m) => m.id === id)?.name || id : null;
   });
 
   return (
@@ -385,294 +500,48 @@ export const MultiSttSettings = () => {
                 </p>
               </div>
               <SettingContainer
-                title={t("multiStt.models.model2")}
-                description={t("multiStt.models.model2Description")}
+                title={t("multiStt.models.count.label")}
+                description={t("multiStt.models.count.description", {
+                  max: MAX_EXTRA_MODELS,
+                })}
                 descriptionMode="tooltip"
                 layout="horizontal"
                 grouped={true}
               >
-                <div class="flex items-center gap-2 min-w-0">
-                  <Dropdown
-                    selectedValue={multiSttModel2()}
-                    options={modelOptionsForSlot2()}
-                    onSelect={(value) => handleModel2Select(value)}
-                    placeholder={t("multiStt.models.notSelected")}
-                    disabled={modelOptionsForSlot2().length === 0}
-                    class="flex-1 min-w-0"
-                  />
-                  {multiSttModel2() && (
-                    <>
-                      <span
-                        class={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel2()) ? "text-green-500" : "text-mid-gray/50"}`}
-                      >
-                        {isExtraModelLoaded(multiSttModel2())
-                          ? t("multiStt.models.loaded")
-                          : t("multiStt.models.notLoaded")}
-                      </span>
-                      {isExtraModelLoaded(multiSttModel2()) ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleUnloadModel(multiSttModel2())}
-                          disabled={
-                            isModelUnloading(multiSttModel2()) ||
-                            isModelLoading(multiSttModel2())
-                          }
-                        >
-                          {isModelUnloading(multiSttModel2())
-                            ? t("multiStt.models.unloadingModel")
-                            : t("multiStt.models.unloadModel")}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleLoadModel(multiSttModel2())}
-                          disabled={
-                            isModelLoading(multiSttModel2()) ||
-                            isModelUnloading(multiSttModel2())
-                          }
-                        >
-                          {isModelLoading(multiSttModel2())
-                            ? t("multiStt.models.loadingModel")
-                            : t("multiStt.models.loadModel")}
-                        </Button>
-                      )}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleModel2Select(null)}
-                      >
-                        {t("multiStt.models.disableModel")}
-                      </Button>
-                    </>
-                  )}
-                </div>
-                <PerModelLanguageSelector
-                  slot={2}
-                  modelId={multiSttModel2()}
-                  modelInfo={model2Info()}
+                <Dropdown
+                  selectedValue={String(extraSlots().length)}
+                  options={countOptions}
+                  onSelect={(value) => {
+                    const count = Number(value);
+                    if (count >= 1 && count !== extraSlots().length) {
+                      void setMultiSttExtraModelCount(count);
+                    }
+                  }}
+                  disabled={isUpdating("multi_stt_extra_models")}
+                  class="min-w-[80px]"
                 />
-                <ModelBackendDropdown
-                  modelId={multiSttModel2()}
-                  label={t("multiStt.models.backend")}
-                  class="mt-2"
-                />
-                {multiSttModel2() && model2Info()?.supports_translation && (
-                  <div class="flex items-center gap-2 mt-1 ml-1">
-                    <ToggleSwitch
-                      checked={
-                        (getSetting(
-                          "multi_stt_translate_model_2",
-                        ) as boolean) ?? false
-                      }
-                      onChange={(enabled) =>
-                        updateSetting("multi_stt_translate_model_2", enabled)
-                      }
-                      isUpdating={isUpdating("multi_stt_translate_model_2")}
-                      label={t("multiStt.models.translateToEnglish")}
-                      description={t(
-                        "settings.advanced.translateToEnglish.description",
-                      )}
-                      descriptionMode="tooltip"
-                      grouped={false}
-                    />
-                  </div>
-                )}
               </SettingContainer>
-              {/* Model 3 and 4 selections follow the same pattern as Model 2 */}
-              <SettingContainer
-                title={t("multiStt.models.model3")}
-                description={t("multiStt.models.model3Description")}
-                descriptionMode="tooltip"
-                layout="horizontal"
-                grouped={true}
-              >
-                <div class="flex items-center gap-2 min-w-0">
-                  <Dropdown
-                    selectedValue={multiSttModel3()}
-                    options={modelOptionsForSlot3()}
-                    onSelect={(value) => handleModel3Select(value)}
-                    placeholder={t("multiStt.models.notSelected")}
-                    disabled={modelOptionsForSlot3().length === 0}
-                    class="flex-1 min-w-0"
+              <For each={extraSlots()} keyed={false}>
+                {(config, index) => (
+                  <ExtraModelSlot
+                    slot={index + 2}
+                    config={config()}
+                    options={modelOptionsFor(index)}
+                    modelInfo={modelInfoFor(config().model_id)}
+                    isLoaded={hasId(loadedExtraModels(), config().model_id)}
+                    isLoading={hasId(loadingModelIds(), config().model_id)}
+                    isUnloading={hasId(unloadingModelIds(), config().model_id)}
+                    isUpdating={isUpdating(
+                      `multi_stt_extra_models_${index + 2}`,
+                    )}
+                    onChange={(patch) =>
+                      void updateMultiSttExtraModel(index + 2, patch)
+                    }
+                    onLoad={() => void handleLoadModel(config().model_id)}
+                    onUnload={() => void handleUnloadModel(config().model_id)}
                   />
-                  {multiSttModel3() && (
-                    <>
-                      <span
-                        class={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel3()) ? "text-green-500" : "text-mid-gray/50"}`}
-                      >
-                        {isExtraModelLoaded(multiSttModel3())
-                          ? t("multiStt.models.loaded")
-                          : t("multiStt.models.notLoaded")}
-                      </span>
-                      {isExtraModelLoaded(multiSttModel3()) ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleUnloadModel(multiSttModel3())}
-                          disabled={
-                            isModelUnloading(multiSttModel3()) ||
-                            isModelLoading(multiSttModel3())
-                          }
-                        >
-                          {isModelUnloading(multiSttModel3())
-                            ? t("multiStt.models.unloadingModel")
-                            : t("multiStt.models.unloadModel")}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleLoadModel(multiSttModel3())}
-                          disabled={
-                            isModelLoading(multiSttModel3()) ||
-                            isModelUnloading(multiSttModel3())
-                          }
-                        >
-                          {isModelLoading(multiSttModel3())
-                            ? t("multiStt.models.loadingModel")
-                            : t("multiStt.models.loadModel")}
-                        </Button>
-                      )}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleModel3Select(null)}
-                      >
-                        {t("multiStt.models.disableModel")}
-                      </Button>
-                    </>
-                  )}
-                </div>
-                <PerModelLanguageSelector
-                  slot={3}
-                  modelId={multiSttModel3()}
-                  modelInfo={model3Info()}
-                />
-                <ModelBackendDropdown
-                  modelId={multiSttModel3()}
-                  label={t("multiStt.models.backend")}
-                  class="mt-2"
-                />
-                {multiSttModel3() && model3Info()?.supports_translation && (
-                  <div class="flex items-center gap-2 mt-1 ml-1">
-                    <ToggleSwitch
-                      checked={
-                        (getSetting(
-                          "multi_stt_translate_model_3",
-                        ) as boolean) ?? false
-                      }
-                      onChange={(enabled) =>
-                        updateSetting("multi_stt_translate_model_3", enabled)
-                      }
-                      isUpdating={isUpdating("multi_stt_translate_model_3")}
-                      label={t("multiStt.models.translateToEnglish")}
-                      description={t(
-                        "settings.advanced.translateToEnglish.description",
-                      )}
-                      descriptionMode="tooltip"
-                      grouped={false}
-                    />
-                  </div>
                 )}
-              </SettingContainer>
-              <SettingContainer
-                title={t("multiStt.models.model4")}
-                description={t("multiStt.models.model4Description")}
-                descriptionMode="tooltip"
-                layout="horizontal"
-                grouped={true}
-              >
-                <div class="flex items-center gap-2 min-w-0">
-                  <Dropdown
-                    selectedValue={multiSttModel4()}
-                    options={modelOptionsForSlot4()}
-                    onSelect={(value) => handleModel4Select(value)}
-                    placeholder={t("multiStt.models.notSelected")}
-                    disabled={modelOptionsForSlot4().length === 0}
-                    class="flex-1 min-w-0"
-                  />
-                  {multiSttModel4() && (
-                    <>
-                      <span
-                        class={`text-xs whitespace-nowrap ${isExtraModelLoaded(multiSttModel4()) ? "text-green-500" : "text-mid-gray/50"}`}
-                      >
-                        {isExtraModelLoaded(multiSttModel4())
-                          ? t("multiStt.models.loaded")
-                          : t("multiStt.models.notLoaded")}
-                      </span>
-                      {isExtraModelLoaded(multiSttModel4()) ? (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleUnloadModel(multiSttModel4())}
-                          disabled={
-                            isModelUnloading(multiSttModel4()) ||
-                            isModelLoading(multiSttModel4())
-                          }
-                        >
-                          {isModelUnloading(multiSttModel4())
-                            ? t("multiStt.models.unloadingModel")
-                            : t("multiStt.models.unloadModel")}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleLoadModel(multiSttModel4())}
-                          disabled={
-                            isModelLoading(multiSttModel4()) ||
-                            isModelUnloading(multiSttModel4())
-                          }
-                        >
-                          {isModelLoading(multiSttModel4())
-                            ? t("multiStt.models.loadingModel")
-                            : t("multiStt.models.loadModel")}
-                        </Button>
-                      )}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleModel4Select(null)}
-                      >
-                        {t("multiStt.models.disableModel")}
-                      </Button>
-                    </>
-                  )}
-                </div>
-                <PerModelLanguageSelector
-                  slot={4}
-                  modelId={multiSttModel4()}
-                  modelInfo={model4Info()}
-                />
-                <ModelBackendDropdown
-                  modelId={multiSttModel4()}
-                  label={t("multiStt.models.backend")}
-                  class="mt-2"
-                />
-                {multiSttModel4() && model4Info()?.supports_translation && (
-                  <div class="flex items-center gap-2 mt-1 ml-1">
-                    <ToggleSwitch
-                      checked={
-                        (getSetting(
-                          "multi_stt_translate_model_4",
-                        ) as boolean) ?? false
-                      }
-                      onChange={(enabled) =>
-                        updateSetting("multi_stt_translate_model_4", enabled)
-                      }
-                      isUpdating={isUpdating("multi_stt_translate_model_4")}
-                      label={t("multiStt.models.translateToEnglish")}
-                      description={t(
-                        "settings.advanced.translateToEnglish.description",
-                      )}
-                      descriptionMode="tooltip"
-                      grouped={false}
-                    />
-                  </div>
-                )}
-              </SettingContainer>
+              </For>
             </div>
           </SettingsGroup>
 
@@ -764,12 +633,7 @@ export const MultiSttSettings = () => {
               title={t("multiStt.mergePrompt.description")}
               // The tooltip renders plain text; the tip's <code> markup is
               // only rendered by the TranslatedMarkup copy below.
-              description={t("multiStt.mergePrompt.promptTip", {
-                output: "${output}",
-                output2: "${output2}",
-                output3: "${output3}",
-                output4: "${output4}",
-              }).replace(/<\/?code>/g, "")}
+              description={placeholderTip().replace(/<\/?code>/g, "")}
               descriptionMode="tooltip"
               layout="stacked"
               grouped={true}
@@ -799,14 +663,7 @@ export const MultiSttSettings = () => {
                     placeholder={t("multiStt.mergePrompt.promptPlaceholder")}
                   />
                   <p class="text-xs text-mid-gray/70">
-                    <TranslatedMarkup
-                      text={t("multiStt.mergePrompt.promptTip", {
-                        output: "${output}",
-                        output2: "${output2}",
-                        output3: "${output3}",
-                        output4: "${output4}",
-                      })}
-                    />
+                    <TranslatedMarkup text={placeholderTip()} />
                   </p>
                 </div>
                 <div class="flex gap-2 pt-2">
@@ -833,6 +690,15 @@ export const MultiSttSettings = () => {
                     <p class="text-sm">{t("multiStt.mergePrompt.noPrompt")}</p>
                   </Alert>
                 )}
+                <Show when={unusedPlaceholders().length > 0}>
+                  <Alert variant="warning" contained>
+                    <p class="text-sm">
+                      {t("multiStt.mergePrompt.missingPlaceholders", {
+                        placeholders: unusedPlaceholders().join(", "),
+                      })}
+                    </p>
+                  </Alert>
+                </Show>
               </div>
             </SettingContainer>
           </SettingsGroup>
@@ -995,64 +861,31 @@ export const MultiSttSettings = () => {
                   {t("multiStt.status.primary")}: {primaryModelName()}
                 </span>
               </div>
-              {selectedModel2Name() && (
-                <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                  <span
-                    class={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel2()) ? "bg-green-500" : "bg-mid-gray/50"}`}
-                  />
-                  <span class="text-sm">
-                    {t("multiStt.status.secondary")}: {selectedModel2Name()}
-                  </span>
-                  <span
-                    class={`text-xs ${isExtraModelLoaded(multiSttModel2()) ? "text-green-500" : "text-mid-gray/50"}`}
-                  >
-                    {isExtraModelLoaded(multiSttModel2())
-                      ? t("multiStt.models.loaded")
-                      : t("multiStt.models.notLoaded")}
-                  </span>
-                </div>
-              )}
-              {selectedModel3Name() && (
-                <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                  <span
-                    class={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel3()) ? "bg-green-500" : "bg-mid-gray/50"}`}
-                  />
-                  <span class="text-sm">
-                    {t("multiStt.status.tertiary")}: {selectedModel3Name()}
-                  </span>
-                  <span
-                    class={`text-xs ${isExtraModelLoaded(multiSttModel3()) ? "text-green-500" : "text-mid-gray/50"}`}
-                  >
-                    {isExtraModelLoaded(multiSttModel3())
-                      ? t("multiStt.models.loaded")
-                      : t("multiStt.models.notLoaded")}
-                  </span>
-                </div>
-              )}
-              {selectedModel4Name() && (
-                <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
-                  <span
-                    class={`w-2 h-2 rounded-full ${isExtraModelLoaded(multiSttModel4()) ? "bg-green-500" : "bg-mid-gray/50"}`}
-                  />
-                  <span class="text-sm">
-                    {t("multiStt.status.quaternary")}: {selectedModel4Name()}
-                  </span>
-                  <span
-                    class={`text-xs ${isExtraModelLoaded(multiSttModel4()) ? "text-green-500" : "text-mid-gray/50"}`}
-                  >
-                    {isExtraModelLoaded(multiSttModel4())
-                      ? t("multiStt.models.loaded")
-                      : t("multiStt.models.notLoaded")}
-                  </span>
-                </div>
-              )}
-              {!selectedModel2Name() &&
-                !selectedModel3Name() &&
-                !selectedModel4Name() && (
-                  <p class="text-sm text-mid-gray/60">
-                    {t("multiStt.status.noModels")}
-                  </p>
+              <For each={configuredSlots()}>
+                {({ slot, modelId }) => (
+                  <div class="flex items-center gap-2 p-2 bg-mid-gray/5 rounded-md">
+                    <span
+                      class={`w-2 h-2 rounded-full ${hasId(loadedExtraModels(), modelId) ? "bg-green-500" : "bg-mid-gray/50"}`}
+                    />
+                    <span class="text-sm">
+                      {t("multiStt.models.slotTitle", { number: slot })}:{" "}
+                      {modelInfoFor(modelId)?.name || modelId}
+                    </span>
+                    <span
+                      class={`text-xs ${hasId(loadedExtraModels(), modelId) ? "text-green-500" : "text-mid-gray/50"}`}
+                    >
+                      {hasId(loadedExtraModels(), modelId)
+                        ? t("multiStt.models.loaded")
+                        : t("multiStt.models.notLoaded")}
+                    </span>
+                  </div>
                 )}
+              </For>
+              <Show when={configuredSlots().length === 0}>
+                <p class="text-sm text-mid-gray/60">
+                  {t("multiStt.status.noModels")}
+                </p>
+              </Show>
             </div>
           </SettingsGroup>
         </>

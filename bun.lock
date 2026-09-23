@@ -3,20 +3,16 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "handy-app",
+      "name": "zer0",
       "dependencies": {
         "@solidjs/web": "2.0.0-rc.9",
         "@tailwindcss/vite": "^4.3.3",
         "@tauri-apps/api": "3.0.0-alpha.1",
-        "@tauri-apps/plugin-autostart": "3.0.0-alpha.1",
-        "@tauri-apps/plugin-clipboard-manager": "3.0.0-alpha.1",
         "@tauri-apps/plugin-dialog": "3.0.0-alpha.1",
         "@tauri-apps/plugin-fs": "3.0.0-alpha.1",
-        "@tauri-apps/plugin-global-shortcut": "3.0.0-alpha.1",
         "@tauri-apps/plugin-opener": "3.0.0-alpha.1",
         "@tauri-apps/plugin-os": "3.0.0-alpha.1",
         "@tauri-apps/plugin-process": "3.0.0-alpha.1",
-        "@tauri-apps/plugin-store": "3.0.0-alpha.1",
         "@tauri-apps/plugin-updater": "3.0.0-alpha.1",
         "i18next": "26.4.2",
         "solid-js": "2.0.0-rc.9",
@@ -252,23 +248,15 @@
 
     "@tauri-apps/cli-win32-x64-msvc": ["@tauri-apps/cli-win32-x64-msvc@3.0.0-alpha.2", "", { "os": "win32", "cpu": "x64" }, "sha512-dpJmdCYUFID6/KI/8QL9bRWftk5PBq8OqQOiPxyJosA9/qgQaCuQtSaBAUlP7OaDWjWWJEj7bJ9uZwadu0vwKg=="],
 
-    "@tauri-apps/plugin-autostart": ["@tauri-apps/plugin-autostart@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-lVTfv5Q36rOEZJFZe9p+2WGIrnsRgXeuxXxwKchhi+J5Ek5VVqPJ/HbJ1kD6fyMlRPurrqrLPz/86pF4do1BgA=="],
-
-    "@tauri-apps/plugin-clipboard-manager": ["@tauri-apps/plugin-clipboard-manager@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-dUAFgB8BMjzINHucy4an7O/pcBqtNUFmmc+VvOe6y2Bdz4mmIq2R7rEN7GINu7yO7SrcJCo+TVa2hFYjGURd2A=="],
-
     "@tauri-apps/plugin-dialog": ["@tauri-apps/plugin-dialog@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-h3rLSJ96HG94KC04B4uf1xqVONkmc3ruhg5evGjhvFGqOsRKtZEqttPU6qL8Bz5z5L3ZVgmbMp/y/Hy2NmSNWg=="],
 
     "@tauri-apps/plugin-fs": ["@tauri-apps/plugin-fs@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-19r96ZS2gE5oPM/+USdgdritQtXp7iU8jnNBDV9ZSV7bdoWAa6qNL1ahWOQZecAmfixHFywZoVd7HtNs9R2kxg=="],
-
-    "@tauri-apps/plugin-global-shortcut": ["@tauri-apps/plugin-global-shortcut@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-oafji5xnZOznsj0LIyqJrVsadOH1A/Tyqlik9DzBkVexPVKcdihRQMyOxJBPcieDGsTNtggEeX97cdyJp+fJwg=="],
 
     "@tauri-apps/plugin-opener": ["@tauri-apps/plugin-opener@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-3QTvnEqaVXhDrf5N5rmoghReOc0kuSPHpNDgX6R3oWbOdwQBTCriCb2DIkE6uSukuHKFRCx2bjmHcQbr1Gb6GQ=="],
 
     "@tauri-apps/plugin-os": ["@tauri-apps/plugin-os@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-ByRGO+xhpMCNxT6Q2fMyiR0IivGGabysVHjVCjApq/4V55os0RmceozdvH7bGCiKQuN4jFKHhRMybKLlM2yuXA=="],
 
     "@tauri-apps/plugin-process": ["@tauri-apps/plugin-process@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-WYbjnjqKpGCKmQg3M5A8/6ygwChh3OVaSNVbb14YER99yg3pEClKK0Kf3Hpcq6hcQgu5wTqhzkY8kDTVNa/Hpw=="],
-
-    "@tauri-apps/plugin-store": ["@tauri-apps/plugin-store@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-fmdEdZo7Vmr0smHOowDg9t7MTzm09o18O4kcVN/bkweAxBzmzY4hvNqWtVnfad5lXR9OL7o8S1bW8T35IUGkUw=="],
 
     "@tauri-apps/plugin-updater": ["@tauri-apps/plugin-updater@3.0.0-alpha.1", "", { "dependencies": { "@tauri-apps/api": "^3.0.0-alpha.1" } }, "sha512-9oRORup22v0zS8qgUnyJCf4yVNX54O3AW65gyjzZwbkH9HouVBS6swGYVcdCK15bH5dGS5Or4J/aMlgK+3Wvkw=="],
 

@@ -102,6 +102,37 @@ pub struct ShortcutBinding {
     pub current_binding: String,
 }
 
+/// Most extra models Multi-STT runs beside the primary: slots "Model 2" up to
+/// "Model 9", merged through `${output2}` … `${output9}`. Every extra slot
+/// is one more decode per recording (and, in the nested streaming mode, one
+/// more live stream), so the ceiling is a guard against a store that asks for
+/// dozens, not a performance promise.
+pub const MULTI_STT_MAX_EXTRA_MODELS: usize = 8;
+
+/// How many extra slots a fresh install shows (the Model 2–4 layout the
+/// feature shipped with).
+const DEFAULT_MULTI_STT_EXTRA_MODELS: usize = 3;
+
+/// One extra Multi-STT slot: slot `n` of `multi_stt_extra_models` is
+/// "Model n+2" in the UI, the history row and the merge prompt.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Type)]
+pub struct MultiSttExtraModel {
+    /// The model this slot runs; `None` leaves the slot empty (its merge
+    /// placeholder is then an empty string).
+    #[serde(default)]
+    pub model_id: Option<String>,
+    /// Language override for this model; `None` follows the global language.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Translate this model's output to English.
+    #[serde(default)]
+    pub translate: bool,
+}
+
+fn default_multi_stt_extra_models() -> Vec<MultiSttExtraModel> {
+    vec![MultiSttExtraModel::default(); DEFAULT_MULTI_STT_EXTRA_MODELS]
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct LLMPrompt {
     pub id: String,
@@ -1629,24 +1660,13 @@ pub struct AppSettings {
     // Multi STT settings
     #[serde(default)]
     pub multi_stt_enabled: bool,
-    #[serde(default)]
-    pub multi_stt_model_2: Option<String>,
-    #[serde(default)]
-    pub multi_stt_model_3: Option<String>,
-    #[serde(default)]
-    pub multi_stt_model_4: Option<String>,
-    #[serde(default)]
-    pub multi_stt_language_model_2: Option<String>,
-    #[serde(default)]
-    pub multi_stt_language_model_3: Option<String>,
-    #[serde(default)]
-    pub multi_stt_language_model_4: Option<String>,
-    #[serde(default = "default_multi_stt_translate")]
-    pub multi_stt_translate_model_2: bool,
-    #[serde(default = "default_multi_stt_translate")]
-    pub multi_stt_translate_model_3: bool,
-    #[serde(default = "default_multi_stt_translate")]
-    pub multi_stt_translate_model_4: bool,
+    /// The extra models beside the primary, in slot order (slot 0 is
+    /// "Model 2"). Between 1 and [`MULTI_STT_MAX_EXTRA_MODELS`] entries; an
+    /// entry may be empty. Replaced the fixed `multi_stt_model_2..4`,
+    /// `multi_stt_language_model_2..4` and `multi_stt_translate_model_2..4`
+    /// fields in settings schema 7.
+    #[serde(default = "default_multi_stt_extra_models")]
+    pub multi_stt_extra_models: Vec<MultiSttExtraModel>,
     #[serde(default = "default_multi_stt_keep_models")]
     pub multi_stt_keep_extra_models_loaded: bool,
     // The plain `#[serde(default)]` is `None`, unlike every other field here,
@@ -1808,14 +1828,10 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 6;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 7;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
-}
-
-fn default_multi_stt_translate() -> bool {
-    false
 }
 
 fn default_multi_stt_keep_models() -> bool {
@@ -2377,15 +2393,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_speech_stats: default_overlay_speech_stats(),
         speech_pause_hold_ms: default_speech_pause_hold_ms(),
         multi_stt_enabled: false,
-        multi_stt_model_2: None,
-        multi_stt_model_3: None,
-        multi_stt_model_4: None,
-        multi_stt_language_model_2: None,
-        multi_stt_language_model_3: None,
-        multi_stt_language_model_4: None,
-        multi_stt_translate_model_2: false,
-        multi_stt_translate_model_3: false,
-        multi_stt_translate_model_4: false,
+        multi_stt_extra_models: default_multi_stt_extra_models(),
         multi_stt_keep_extra_models_loaded: true,
         multi_stt_merge_prompt: default_multi_stt_merge_prompt(),
         multi_stt_performance_mode_enabled: false,
@@ -2418,6 +2426,38 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
+    /// The extra Multi-STT slots, capped at [`MULTI_STT_MAX_EXTRA_MODELS`] (a
+    /// hand-edited store can hold more than the UI offers).
+    pub fn multi_stt_extra_slots(&self) -> &[MultiSttExtraModel] {
+        let count = self
+            .multi_stt_extra_models
+            .len()
+            .min(MULTI_STT_MAX_EXTRA_MODELS);
+        &self.multi_stt_extra_models[..count]
+    }
+
+    /// Each extra slot's model, in slot order: `None` for an empty slot (or a
+    /// blank id), so position `i` is always "Model i+2".
+    pub fn multi_stt_extra_model_ids(&self) -> Vec<Option<String>> {
+        self.multi_stt_extra_slots()
+            .iter()
+            .map(|slot| {
+                slot.model_id
+                    .as_ref()
+                    .filter(|id| !id.trim().is_empty())
+                    .cloned()
+            })
+            .collect()
+    }
+
+    /// The extra slot running `model_id`, if any (the first, should two slots
+    /// name the same model).
+    pub fn multi_stt_extra_slot_for(&self, model_id: &str) -> Option<&MultiSttExtraModel> {
+        self.multi_stt_extra_slots()
+            .iter()
+            .find(|slot| slot.model_id.as_deref() == Some(model_id))
+    }
+
     pub fn active_post_process_provider(&self) -> Option<&PostProcessProvider> {
         self.post_process_providers
             .iter()
@@ -2719,6 +2759,14 @@ fn apply_settings_migrations(
     // to that successor instead of silently falling back to "no model". The
     // replacement may not be downloaded yet; the normal "model not downloaded"
     // flow handles that. Model files on disk are never touched.
+    // Schema 7: the fixed Model 2–4 fields became one list. Read from the raw
+    // store, since the struct no longer has them, and before schema 6 below so
+    // its model remap already sees the list.
+    if stored_schema_version < 7 && settings_value.get("multi_stt_extra_models").is_none() {
+        settings.multi_stt_extra_models = legacy_multi_stt_extra_models(settings_value);
+        updated = true;
+    }
+
     if stored_schema_version < 6 {
         if let Some(replacement) = legacy_onnx_model_replacement(&settings.selected_model) {
             info!(
@@ -2728,11 +2776,11 @@ fn apply_settings_migrations(
             settings.selected_model = replacement;
             updated = true;
         }
-        for slot in [
-            &mut settings.multi_stt_model_2,
-            &mut settings.multi_stt_model_3,
-            &mut settings.multi_stt_model_4,
-        ] {
+        for slot in settings
+            .multi_stt_extra_models
+            .iter_mut()
+            .map(|slot| &mut slot.model_id)
+        {
             if let Some(replacement) = slot.as_deref().and_then(legacy_onnx_model_replacement) {
                 info!(
                     "Schema 6 migration: Multi-STT model '{}' is no longer supported; switching to '{}'",
@@ -2743,8 +2791,10 @@ fn apply_settings_migrations(
                 updated = true;
             }
         }
-        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
     }
+    settings.settings_schema_version = settings
+        .settings_schema_version
+        .max(CURRENT_SETTINGS_SCHEMA_VERSION);
 
     // A version bump is a change in itself: without persisting it, a store
     // that needed no other fix would stay at its old version and replay every
@@ -2754,6 +2804,31 @@ fn apply_settings_migrations(
     }
 
     updated
+}
+
+/// The Model 2–4 slots of a store written before schema 7, from its flat
+/// `multi_stt_model_N` / `multi_stt_language_model_N` /
+/// `multi_stt_translate_model_N` keys. Always three slots, so each keeps its
+/// number (and its `${outputN}` placeholder) even when an earlier one was
+/// empty.
+fn legacy_multi_stt_extra_models(settings_value: &serde_json::Value) -> Vec<MultiSttExtraModel> {
+    let text = |key: String| {
+        settings_value
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.trim().is_empty())
+            .map(str::to_string)
+    };
+    (2..=4)
+        .map(|n| MultiSttExtraModel {
+            model_id: text(format!("multi_stt_model_{n}")),
+            language: text(format!("multi_stt_language_model_{n}")),
+            translate: settings_value
+                .get(format!("multi_stt_translate_model_{n}"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        })
+        .collect()
 }
 
 /// Catalog successor for a retired hard-coded ONNX model id, or `None` for
@@ -3039,9 +3114,64 @@ mod tests {
     }
 
     #[test]
+    fn schema_7_turns_the_fixed_extra_slots_into_a_list() {
+        let mut stored = default_settings_json();
+        let map = stored.as_object_mut().unwrap();
+        map.remove("multi_stt_extra_models");
+        map.insert("settings_schema_version".into(), serde_json::json!(6));
+        // Model 2 empty: Model 3 must stay slot 3 (and `${output3}`).
+        map.insert("multi_stt_model_3".into(), serde_json::json!("model-three"));
+        map.insert("multi_stt_language_model_3".into(), serde_json::json!("de"));
+        map.insert(
+            "multi_stt_translate_model_4".into(),
+            serde_json::json!(true),
+        );
+
+        let mut settings: AppSettings = serde_json::from_value(stored.clone()).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(
+            settings.multi_stt_extra_models,
+            vec![
+                MultiSttExtraModel::default(),
+                MultiSttExtraModel {
+                    model_id: Some("model-three".into()),
+                    language: Some("de".into()),
+                    translate: false,
+                },
+                MultiSttExtraModel {
+                    model_id: None,
+                    language: None,
+                    translate: true,
+                },
+            ]
+        );
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn extra_slots_are_capped_and_keep_their_positions() {
+        let mut settings = get_default_settings();
+        settings.multi_stt_extra_models = (0..MULTI_STT_MAX_EXTRA_MODELS + 2)
+            .map(|i| MultiSttExtraModel {
+                model_id: (i != 1).then(|| format!("m{i}")),
+                ..Default::default()
+            })
+            .collect();
+        let ids = settings.multi_stt_extra_model_ids();
+        assert_eq!(ids.len(), MULTI_STT_MAX_EXTRA_MODELS);
+        assert_eq!(ids[1], None);
+        assert_eq!(ids[2].as_deref(), Some("m2"));
+    }
+
+    #[test]
     fn schema_6_remaps_retired_onnx_models_to_catalog_gguf() {
         let mut stored = default_settings_json();
         let map = stored.as_object_mut().unwrap();
+        // A schema-5 store has the flat Model 2–4 keys, not the list.
+        map.remove("multi_stt_extra_models");
         map.insert("settings_schema_version".into(), serde_json::json!(5));
         map.insert(
             "selected_model".into(),
@@ -3072,17 +3202,18 @@ mod tests {
             settings.selected_model,
             "handy-computer/SenseVoiceSmall-gguf/SenseVoiceSmall-Q8_0.gguf"
         );
+        let extras = settings.multi_stt_extra_model_ids();
         assert_eq!(
-            settings.multi_stt_model_2.as_deref(),
+            extras[0].as_deref(),
             Some("handy-computer/moonshine-base-gguf/moonshine-base-Q8_0.gguf")
         );
         assert_eq!(
-            settings.multi_stt_model_3.as_deref(),
+            extras[1].as_deref(),
             Some("handy-computer/canary-1b-v2-gguf/canary-1b-v2-Q5_K_M.gguf")
         );
         // Catalog ids are left alone.
         assert_eq!(
-            settings.multi_stt_model_4.as_deref(),
+            extras[2].as_deref(),
             Some("handy-computer/whisper-large-v3-turbo-gguf/whisper-large-v3-turbo-Q8_0.gguf")
         );
         // Every retired id resolves to a catalog entry that actually exists.

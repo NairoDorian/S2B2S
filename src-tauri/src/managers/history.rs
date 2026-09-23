@@ -840,7 +840,7 @@ impl HistoryManager {
         Ok(())
     }
 
-    pub async fn get_history_entries(
+    pub fn get_history_entries(
         &self,
         cursor: Option<i32>,
         limit: Option<u32>,
@@ -928,7 +928,7 @@ impl HistoryManager {
         Ok(entry)
     }
 
-    pub async fn toggle_saved_status(&self, id: i32) -> Result<()> {
+    pub fn toggle_saved_status(&self, id: i32) -> Result<()> {
         let conn = self.get_connection()?;
 
         // Get current saved status
@@ -959,7 +959,7 @@ impl HistoryManager {
         self.recordings_dir.join(file_name)
     }
 
-    pub async fn get_entry_by_id(&self, id: i32) -> Result<Option<HistoryEntry>> {
+    pub fn get_entry_by_id(&self, id: i32) -> Result<Option<HistoryEntry>> {
         self.entry_by_id(id)
     }
 

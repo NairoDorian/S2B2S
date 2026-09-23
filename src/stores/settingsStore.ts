@@ -11,6 +11,7 @@ import type {
   LLMPrompt,
   MicIdleTimeoutUnit,
   ModelBackendSetting,
+  MultiSttExtraModel_Serialize as MultiSttExtraModel,
   ModelUnloadTimeout,
   NativeStreamingLatencyPreset,
   ShortcutActivation,
@@ -69,6 +70,21 @@ interface SettingsStore {
     backend: ModelBackendSetting,
   ) => Promise<void>;
   resetSetting: <K extends keyof Settings>(key: K) => Promise<void>;
+  /**
+   * Change one extra Multi-STT slot. `slot` is the page's "Model N" (2 is the
+   * first extra); `patch` names the fields to change. Optimistic, like
+   * `updateSetting`, and on a failure the backend's copy wins.
+   */
+  updateMultiSttExtraModel: (
+    slot: number,
+    patch: Partial<MultiSttExtraModel>,
+  ) => Promise<void>;
+  /**
+   * How many extra Multi-STT slots there are (1 to `MULTI_STT_MAX_EXTRA_MODELS`).
+   * The backend unloads the models of removed slots, so the store re-reads
+   * the settings afterwards.
+   */
+  setMultiSttExtraModelCount: (count: number) => Promise<void>;
   refreshSettings: () => Promise<void>;
   refreshAudioDevices: () => Promise<void>;
   refreshOutputDevices: () => Promise<void>;
@@ -306,24 +322,6 @@ const settingUpdaters: {
     commands.changeExtraRecordingBufferSetting(value as number),
   multi_stt_enabled: (value) =>
     commands.changeMultiSttEnabledSetting(value as boolean),
-  multi_stt_model_2: (value) =>
-    commands.changeMultiSttExtraModel(2, value as string | null),
-  multi_stt_model_3: (value) =>
-    commands.changeMultiSttExtraModel(3, value as string | null),
-  multi_stt_model_4: (value) =>
-    commands.changeMultiSttExtraModel(4, value as string | null),
-  multi_stt_language_model_2: (value) =>
-    commands.changeMultiSttExtraModelLanguage(2, value as string | null),
-  multi_stt_language_model_3: (value) =>
-    commands.changeMultiSttExtraModelLanguage(3, value as string | null),
-  multi_stt_language_model_4: (value) =>
-    commands.changeMultiSttExtraModelLanguage(4, value as string | null),
-  multi_stt_translate_model_2: (value) =>
-    commands.changeMultiSttTranslateModel2(value as boolean),
-  multi_stt_translate_model_3: (value) =>
-    commands.changeMultiSttTranslateModel3(value as boolean),
-  multi_stt_translate_model_4: (value) =>
-    commands.changeMultiSttTranslateModel4(value as boolean),
   multi_stt_keep_extra_models_loaded: (value) =>
     commands.changeMultiSttKeepExtraModelsLoadedSetting(value as boolean),
   multi_stt_performance_mode_enabled: (value) =>
@@ -540,6 +538,76 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
       // that is not the saved one.
       void get().refreshSettings();
     } finally {
+      setUpdating(updateKey, false);
+    }
+  },
+
+  updateMultiSttExtraModel: async (slot, patch) => {
+    const { setUpdating, refreshSettings } = get();
+    const updateKey = `multi_stt_extra_models_${slot}`;
+    const index = slot - 2;
+    setUpdating(updateKey, true);
+    try {
+      set((state) => {
+        if (!state.settings) return {};
+        const slots = [...(state.settings.multi_stt_extra_models ?? [])];
+        if (!slots[index]) return {};
+        slots[index] = { ...slots[index], ...patch };
+        return {
+          settings: { ...state.settings, multi_stt_extra_models: slots },
+        };
+      });
+      if ("model_id" in patch) {
+        throwIfErrorResult(
+          await commands.changeMultiSttExtraModel(slot, patch.model_id ?? null),
+        );
+      }
+      if ("language" in patch) {
+        throwIfErrorResult(
+          await commands.changeMultiSttExtraModelLanguage(
+            slot,
+            patch.language ?? null,
+          ),
+        );
+      }
+      if (patch.translate !== undefined) {
+        throwIfErrorResult(
+          await commands.changeMultiSttExtraModelTranslate(
+            slot,
+            patch.translate,
+          ),
+        );
+      }
+    } catch (error) {
+      console.error(`Failed to update Multi-STT model ${slot}:`, error);
+      await refreshSettings();
+    } finally {
+      setUpdating(updateKey, false);
+    }
+  },
+
+  setMultiSttExtraModelCount: async (count) => {
+    const { setUpdating, refreshSettings } = get();
+    const updateKey = "multi_stt_extra_models";
+    setUpdating(updateKey, true);
+    try {
+      set((state) => {
+        if (!state.settings) return {};
+        const slots = [...(state.settings.multi_stt_extra_models ?? [])];
+        slots.length = Math.min(slots.length, count);
+        while (slots.length < count) {
+          slots.push({ model_id: null, language: null, translate: false });
+        }
+        return {
+          settings: { ...state.settings, multi_stt_extra_models: slots },
+        };
+      });
+      throwIfErrorResult(await commands.changeMultiSttExtraModelCount(count));
+    } catch (error) {
+      console.error("Failed to change the number of Multi-STT models:", error);
+    } finally {
+      // Either way the backend's list is the truth (it clamps the count).
+      await refreshSettings();
       setUpdating(updateKey, false);
     }
   },
