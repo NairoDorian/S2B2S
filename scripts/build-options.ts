@@ -57,6 +57,7 @@ export interface PostureOptions {
 export const FAST_BUILD_OPTIONS: PostureOptions = {
   cudaArchitectures: "auto",
   cmakeArgs: [
+    "-DTRANSCRIBE_VULKAN=ON", // Vulkan backend (Intel iGPU & NVIDIA)
     "-DGGML_CUDA_FA_QUANTS=all", // Flash Attention across all quants on sm_89
     "-DTRANSCRIBE_X86_CONSERVATIVE=OFF", // Lift conservative ISA floor for host CPU
     "-DGGML_NATIVE=ON", // Compiler native tuning (-march=native / /arch:AVX2)
@@ -67,7 +68,7 @@ export const FAST_BUILD_OPTIONS: PostureOptions = {
   modelSet: FULL_MODEL_SET,
   env: {},
   description:
-    "this machine's GPU only, Flash Attention enabled, native AVX2/VNNI",
+    "this machine's GPU only, Flash Attention & Vulkan enabled, native AVX2/VNNI",
 };
 
 /**
@@ -88,6 +89,7 @@ export const FULL_BUILD_OPTIONS: PostureOptions = {
 
   // CMake arguments for full/distribution builds:
   cmakeArgs: [
+    "-DTRANSCRIBE_VULKAN=ON", // Vulkan backend (Intel iGPU & NVIDIA)
     "-DGGML_CUDA_FA_QUANTS=all", // Flash Attention across all quants
     // Example additional options you can enable for full builds:
     // "-DGGML_CUDA_GRAPHS=ON",

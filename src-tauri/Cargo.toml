@@ -170,6 +170,7 @@ winreg = "0.56.0"
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
   "cuda",
+  "vulkan",
 ] }
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
@@ -197,6 +198,7 @@ libc = "^0.2.189"
 transcribe-cpp = { version = "*", default-features = false, features = [
   "dynamic-backends",
   "cuda",
+  "vulkan",
 ] }
 
 # TEMPORARY: tao pinned to upstream tauri-apps/tao `main` for the Wayland

@@ -371,6 +371,8 @@ pub enum ModelBackendSetting {
     Cpu,
     Cuda,
     Vulkan,
+    VulkanNvidia,
+    VulkanIntel,
     Metal,
     Rocm,
 }
@@ -384,6 +386,8 @@ impl ModelBackendSetting {
             Self::Cpu => "cpu",
             Self::Cuda => "cuda",
             Self::Vulkan => "vulkan",
+            Self::VulkanNvidia => "vulkan_nvidia",
+            Self::VulkanIntel => "vulkan_intel",
             Self::Metal => "metal",
             Self::Rocm => "rocm",
         }
@@ -398,6 +402,8 @@ impl ModelBackendSetting {
             "cpu" => Self::Cpu,
             "cuda" => Self::Cuda,
             "vulkan" => Self::Vulkan,
+            "vulkan_nvidia" => Self::VulkanNvidia,
+            "vulkan_intel" => Self::VulkanIntel,
             "metal" => Self::Metal,
             "rocm" => Self::Rocm,
             _ => Self::Auto,
@@ -2959,6 +2965,8 @@ mod tests {
             ModelBackendSetting::Cpu,
             ModelBackendSetting::Cuda,
             ModelBackendSetting::Vulkan,
+            ModelBackendSetting::VulkanNvidia,
+            ModelBackendSetting::VulkanIntel,
             ModelBackendSetting::Metal,
             ModelBackendSetting::Rocm,
         ] {

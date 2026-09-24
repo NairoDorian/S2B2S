@@ -3088,7 +3088,7 @@ mod tests {
         let mut chunk2 = closed_chunk(2, "raw two", 1_000);
         chunk2.apply_merge("Cleaned two.".to_string(), false);
 
-        let closed = vec![chunk1, chunk2];
+        let closed = [chunk1, chunk2];
         let index: usize = 2; // looking back from chunk 3
         let depth: usize = 2;
 

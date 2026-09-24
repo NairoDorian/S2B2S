@@ -2587,7 +2587,7 @@ export type MicIdleTimeoutUnit = "seconds" | "minutes";
  *  Keyed by model id in `per_model_backends`, which covers the primary model
  *  and every Multi-STT slot alike (they are all just model ids).
  */
-export type ModelBackendSetting = "auto" | "cpu" | "cuda" | "vulkan" | "metal" | "rocm";
+export type ModelBackendSetting = "auto" | "cpu" | "cuda" | "vulkan" | "vulkan_nvidia" | "vulkan_intel" | "metal" | "rocm";
 
 export type ModelInfo = ModelInfo_Serialize | ModelInfo_Deserialize;
 

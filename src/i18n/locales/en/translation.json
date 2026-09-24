@@ -171,7 +171,9 @@
         "auto": "Follow the global accelerator setting.",
         "cpu": "Run this model on the CPU.",
         "cuda": "Run this model on the NVIDIA GPU through CUDA.",
-        "vulkan": "Run this model on the GPU through Vulkan.",
+        "vulkan": "Run this model on the default GPU through Vulkan.",
+        "vulkan_nvidia": "Run this model on the NVIDIA GPU through Vulkan.",
+        "vulkan_intel": "Run this model on the Intel integrated GPU through Vulkan (saves NVIDIA VRAM).",
         "metal": "Run this model on the Apple GPU through Metal.",
         "rocm": "Run this model on the AMD GPU through ROCm."
       }

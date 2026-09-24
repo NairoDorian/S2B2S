@@ -3967,14 +3967,62 @@ fn resolve_gpu_device(
 /// preference enum can be spelled in user-facing terms (`cuda`, `vulkan`,
 /// `metal`, `rocm`) instead of the coarser `auto | cpu | gpu` of the global
 /// setting.
-fn model_backend_kind(setting: ModelBackendSetting) -> Option<Backend> {
-    match setting {
-        ModelBackendSetting::Auto => None,
-        ModelBackendSetting::Cpu => Some(Backend::Cpu),
-        ModelBackendSetting::Cuda => Some(Backend::Cuda),
-        ModelBackendSetting::Vulkan => Some(Backend::Vulkan),
-        ModelBackendSetting::Metal => Some(Backend::Metal),
-        ModelBackendSetting::Rocm => Some(Backend::Rocm),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VulkanTargetDevice {
+    #[allow(dead_code)]
+    Any,
+    Nvidia,
+    Intel,
+}
+
+/// Find a specific Vulkan compute device using a prioritized matching strategy:
+/// 1. Primary match: vendor name in device description or name (case-insensitive).
+/// 2. Secondary match: device_type classification (Igpu for Intel, Gpu for discrete NVIDIA).
+fn find_vulkan_device(target: VulkanTargetDevice) -> Option<transcribe_cpp::Device> {
+    let devices = transcribe_compute_devices();
+    let vulkan_devices: Vec<_> = devices
+        .into_iter()
+        .filter(|d| d.kind.eq_ignore_ascii_case("vulkan"))
+        .collect();
+
+    match target {
+        VulkanTargetDevice::Any => vulkan_devices.into_iter().next(),
+        VulkanTargetDevice::Nvidia => vulkan_devices
+            .iter()
+            .find(|d| {
+                let desc = d.description.to_ascii_lowercase();
+                let name = d.name.to_ascii_lowercase();
+                desc.contains("nvidia")
+                    || name.contains("nvidia")
+                    || desc.contains("geforce")
+                    || desc.contains("quadro")
+            })
+            .cloned()
+            .or_else(|| {
+                // Secondary fallback: discrete GPU if no description matched
+                vulkan_devices
+                    .iter()
+                    .find(|d| d.device_type == transcribe_cpp::DeviceType::Gpu)
+                    .cloned()
+            }),
+        VulkanTargetDevice::Intel => vulkan_devices
+            .iter()
+            .find(|d| {
+                let desc = d.description.to_ascii_lowercase();
+                let name = d.name.to_ascii_lowercase();
+                desc.contains("intel")
+                    || name.contains("intel")
+                    || desc.contains("iris")
+                    || desc.contains("arc")
+            })
+            .cloned()
+            .or_else(|| {
+                // Secondary fallback: any registered integrated GPU
+                vulkan_devices
+                    .iter()
+                    .find(|d| d.device_type == transcribe_cpp::DeviceType::Igpu)
+                    .cloned()
+            }),
     }
 }
 
@@ -3989,9 +4037,6 @@ fn model_backend_kind(setting: ModelBackendSetting) -> Option<Backend> {
 /// this build or this machine does not have would fail to load outright. So an
 /// unavailable request is refused here, with a warning naming the model, and the
 /// global policy is applied instead — a preference is not worth a dead model.
-/// An override never carries a device: the GPU variants pass `device: None` and let the library pick the device for that backend, since
-/// `transcribe_gpu_device` is an identity for the global GPU choice, not a
-/// per-model one.
 fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Option<Device>) {
     let accelerator = settings.transcribe_accelerator;
     let requested = settings
@@ -4017,18 +4062,87 @@ fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Op
         (backend, device)
     };
 
-    match model_backend_kind(requested) {
-        None => global(),
-        Some(Backend::Cpu) => (Backend::Cpu, None),
-        Some(backend) => {
-            if transcribe_cpp::backend_available(backend) {
-                (backend, None)
+    match requested {
+        ModelBackendSetting::Auto => global(),
+        ModelBackendSetting::Cpu => (Backend::Cpu, None),
+        ModelBackendSetting::Cuda => {
+            if transcribe_cpp::backend_available(Backend::Cuda) {
+                (Backend::Cuda, None)
             } else {
                 warn!(
-                    "Model '{}' is set to the {} backend, which is not available in this \
-                     build or on this machine; using the global accelerator policy instead",
-                    model_id,
-                    requested.as_str()
+                    "Model '{}' requested CUDA, but CUDA is unavailable; using global policy",
+                    model_id
+                );
+                global()
+            }
+        }
+        ModelBackendSetting::Vulkan => {
+            if transcribe_cpp::backend_available(Backend::Vulkan) {
+                (Backend::Vulkan, None)
+            } else {
+                warn!(
+                    "Model '{}' requested Vulkan, but Vulkan is unavailable; using global policy",
+                    model_id
+                );
+                global()
+            }
+        }
+        ModelBackendSetting::VulkanNvidia => {
+            if transcribe_cpp::backend_available(Backend::Vulkan) {
+                if let Some(dev) = find_vulkan_device(VulkanTargetDevice::Nvidia) {
+                    (Backend::Vulkan, Some(dev))
+                } else {
+                    warn!(
+                        "Model '{}' requested Vulkan (NVIDIA), but no NVIDIA Vulkan device was found; falling back to default Vulkan",
+                        model_id
+                    );
+                    (Backend::Vulkan, None)
+                }
+            } else {
+                warn!(
+                    "Model '{}' requested Vulkan (NVIDIA), but Vulkan is unavailable; using global policy",
+                    model_id
+                );
+                global()
+            }
+        }
+        ModelBackendSetting::VulkanIntel => {
+            if transcribe_cpp::backend_available(Backend::Vulkan) {
+                if let Some(dev) = find_vulkan_device(VulkanTargetDevice::Intel) {
+                    (Backend::Vulkan, Some(dev))
+                } else {
+                    warn!(
+                        "Model '{}' requested Vulkan (Intel), but no Intel Vulkan device was found; falling back to default Vulkan",
+                        model_id
+                    );
+                    (Backend::Vulkan, None)
+                }
+            } else {
+                warn!(
+                    "Model '{}' requested Vulkan (Intel), but Vulkan is unavailable; using global policy",
+                    model_id
+                );
+                global()
+            }
+        }
+        ModelBackendSetting::Metal => {
+            if transcribe_cpp::backend_available(Backend::Metal) {
+                (Backend::Metal, None)
+            } else {
+                warn!(
+                    "Model '{}' requested Metal, but Metal is unavailable; using global policy",
+                    model_id
+                );
+                global()
+            }
+        }
+        ModelBackendSetting::Rocm => {
+            if transcribe_cpp::backend_available(Backend::Rocm) {
+                (Backend::Rocm, None)
+            } else {
+                warn!(
+                    "Model '{}' requested ROCm, but ROCm is unavailable; using global policy",
+                    model_id
                 );
                 global()
             }
@@ -4163,15 +4277,27 @@ pub fn available_model_backends() -> Vec<String> {
     if transcribe_gpu_disabled_for_host() {
         return out;
     }
-    for (name, backend) in [
-        ("cuda", Backend::Cuda),
-        ("vulkan", Backend::Vulkan),
-        ("metal", Backend::Metal),
-        ("rocm", Backend::Rocm),
-    ] {
-        if transcribe_cpp::backend_available(backend) {
-            out.push(name.to_string());
+    if transcribe_cpp::backend_available(Backend::Cuda) {
+        out.push("cuda".to_string());
+    }
+    if transcribe_cpp::backend_available(Backend::Vulkan) {
+        out.push("vulkan".to_string());
+
+        let has_nvidia = find_vulkan_device(VulkanTargetDevice::Nvidia).is_some();
+        let has_intel = find_vulkan_device(VulkanTargetDevice::Intel).is_some();
+
+        if has_nvidia {
+            out.push("vulkan_nvidia".to_string());
         }
+        if has_intel {
+            out.push("vulkan_intel".to_string());
+        }
+    }
+    if transcribe_cpp::backend_available(Backend::Metal) {
+        out.push("metal".to_string());
+    }
+    if transcribe_cpp::backend_available(Backend::Rocm) {
+        out.push("rocm".to_string());
     }
     out
 }
@@ -4644,5 +4770,12 @@ mod tests {
         let mut untouched = settings.clone();
         apply_extra_model_settings(&mut untouched, "some-other-model");
         assert_eq!(untouched.selected_language, "en");
+    }
+
+    #[test]
+    fn available_model_backends_contains_defaults() {
+        let backends = available_model_backends();
+        assert!(backends.contains(&"auto".to_string()));
+        assert!(backends.contains(&"cpu".to_string()));
     }
 }

@@ -22,6 +22,8 @@ export const BACKEND_ORDER: ModelBackendSetting[] = [
   "cpu",
   "cuda",
   "vulkan",
+  "vulkan_nvidia",
+  "vulkan_intel",
   "metal",
   "rocm",
 ];
@@ -32,6 +34,8 @@ export const BACKEND_ORDER: ModelBackendSetting[] = [
 const BACKEND_LITERAL: Partial<Record<ModelBackendSetting, string>> = {
   cuda: "CUDA",
   vulkan: "Vulkan",
+  vulkan_nvidia: "Vulkan (NVIDIA)",
+  vulkan_intel: "Vulkan (Intel)",
   metal: "Metal",
   rocm: "ROCm",
 };
