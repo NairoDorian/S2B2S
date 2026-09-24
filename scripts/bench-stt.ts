@@ -22,6 +22,7 @@ const { values } = parseArgs({
     baseline: { type: "string" },
     timeout: { type: "string", default: "600" },
     "max-regression": { type: "string", default: "0.15" },
+    backend: { type: "string", multiple: true },
   },
 });
 if (!values.exe || !values.wav || !values.output) {
@@ -207,7 +208,7 @@ const selected = models.filter(
     m.is_downloaded &&
     (values.model
       ? values.model.includes(m.id)
-      : /granite-speech-4\.1-2b.*Q4|Qwen3-ASR-(1\.7|0\.6)B|nemotron-3\.5.*Q[68]|parakeet-tdt-0\.6b-v3.*Q[48]/i.test(
+      : /granite-speech-4\.1-2b.*Q4|Qwen3-ASR-(1\.7|0\.6)B|nemotron-3\.5.*Q[68]|parakeet-tdt-0\.6b-v3.*Q[48]|r2t2.*Q[48]/i.test(
           m.id,
         )),
 );
@@ -225,17 +226,59 @@ const summary: { policy: string; cases: object[]; failures: object[] } = {
   cases: [],
   failures: [],
 };
-for (const backend of ["cpu", "cuda"]) {
-  const match = devices.match(new RegExp(`index=(\\d+) kind=${backend}\\b`));
-  if (!match) {
-    summary.failures.push({ backend, error: "Device unavailable" });
-    continue;
+
+interface DeviceTarget {
+  index: string;
+  kind: string;
+  tag: string;
+}
+
+const parsedDevices: DeviceTarget[] = [];
+for (const line of devices.split("\n")) {
+  const m = line
+    .trim()
+    .match(/^index=(\d+)\s+kind=([^\s]+)\s+name=(.*?)\s+vram=/);
+  if (m) {
+    const idx = m[1];
+    const kind = m[2].toLowerCase();
+    const name = m[3].trim();
+    const tag =
+      kind === "vulkan"
+        ? /nvidia/i.test(name)
+          ? "vulkan_nvidia"
+          : /intel/i.test(name)
+            ? "vulkan_intel"
+            : `vulkan_${idx}`
+        : kind;
+    parsedDevices.push({ index: idx, kind, tag });
   }
+}
+
+if (parsedDevices.length === 0) {
+  for (const backend of ["cpu", "cuda", "vulkan"]) {
+    const match = devices.match(new RegExp(`index=(\\d+) kind=${backend}\\b`));
+    if (match) {
+      parsedDevices.push({ index: match[1], kind: backend, tag: backend });
+    }
+  }
+}
+
+const targetDevices = parsedDevices.filter((d) => {
+  if (!values.backend || values.backend.length === 0) return true;
+  return values.backend.some(
+    (b) => b.toLowerCase() === d.kind || b.toLowerCase() === d.tag,
+  );
+});
+
+if (targetDevices.length === 0) {
+  summary.failures.push({ error: "No matching compute devices available" });
+}
+
+for (const target of targetDevices) {
   for (const model of selected) {
-    for (const streaming of /nemotron/i.test(model.id)
-      ? [false, true]
-      : [false]) {
-      const name = `${model.id.split("/").at(-1)}.${backend}.${streaming ? "stream" : "batch"}`;
+    const supportsStreaming = /nemotron|r2t2/i.test(model.id);
+    for (const streaming of supportsStreaming ? [false, true] : [false]) {
+      const name = `${model.id.split("/").at(-1)}.${target.tag}.${streaming ? "stream" : "batch"}`;
       console.log(name);
       try {
         const args = [
@@ -244,17 +287,22 @@ for (const backend of ["cpu", "cuda"]) {
           "--model",
           model.id,
           "--device-index",
-          match[1],
+          target.index,
           "--repeat",
           "3",
           "--json",
         ];
-        if (streaming)
-          args.push("--stream-chunk-ms", "16", "--stream-att-right", "6");
+        if (streaming) {
+          if (/r2t2/i.test(model.id)) {
+            args.push("--stream-chunk-ms", "320");
+          } else {
+            args.push("--stream-chunk-ms", "16", "--stream-att-right", "6");
+          }
+        }
         const result: Result = JSON.parse(await run(args, name));
-        if (!result.bound_backend.toLowerCase().startsWith(backend))
+        if (!result.bound_backend.toLowerCase().startsWith(target.kind))
           throw new Error(
-            `Requested ${backend}, loaded ${result.bound_backend}`,
+            `Requested ${target.kind}, loaded ${result.bound_backend}`,
           );
         if (result.transcribe_ms.length !== 3)
           throw new Error("Expected exactly 3 runs");

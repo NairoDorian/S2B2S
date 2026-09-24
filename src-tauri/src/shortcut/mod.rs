@@ -2102,8 +2102,19 @@ pub fn set_model_backend_setting(
         // Auto is the absence of an override, stored as an absent key so the
         // settings file stays a record of real choices only.
         s.per_model_backends.remove(&model_id);
+        if let Some((base_repo, filename)) = model_id.rsplit_once('/') {
+            if filename.ends_with(".gguf") {
+                s.per_model_backends.remove(base_repo);
+            }
+        }
     } else {
-        s.per_model_backends.insert(model_id, backend);
+        s.per_model_backends.insert(model_id.clone(), backend);
+        // Also associate with base repo if setting a quant variant so all quants inherit it
+        if let Some((base_repo, filename)) = model_id.rsplit_once('/') {
+            if filename.ends_with(".gguf") {
+                s.per_model_backends.insert(base_repo.to_string(), backend);
+            }
+        }
     }
     save_accelerator_and_reload_next_use(&app, s);
     Ok(())

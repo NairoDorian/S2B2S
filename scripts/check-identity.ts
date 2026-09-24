@@ -174,6 +174,12 @@ const EXEMPTIONS: Exemption[] = [
       "The one place the external HF org is stripped off a model id for display. The org is not ours — and the pattern stops at the org name, because the source spells the separator as an escaped slash (`/^handy-computer\\//`) that a pattern including it would miss.",
   },
   {
+    file: "src/lib/modelId.test.ts",
+    allow: /handy-computer/,
+    reason:
+      "Unit test verifying displayModelId strips the external HF org prefix.",
+  },
+  {
     file: "scripts/tauri-runner.ts",
     allow: /"handy", "transcribe_cpp_cache"/,
     reason:

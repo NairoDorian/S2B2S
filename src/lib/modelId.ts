@@ -32,3 +32,37 @@ const GGUF_SUFFIX = /\.gguf$/;
 export function displayModelId(modelId: string): string {
   return modelId.replace(MODEL_ORG_PREFIX, "").replace(GGUF_SUFFIX, "");
 }
+
+/**
+ * Look up a per-model setting across quant variants and base repo IDs.
+ *
+ * If `modelId` has a direct entry in `map`, returns it.
+ * If `modelId` is a quant variant (`repo/filename.gguf`), checks the base repo
+ * and sibling quants. If `modelId` is a base repo without `.gguf`, checks if
+ * any quant variant of that repo has an entry.
+ */
+export function resolveModelSetting<T>(
+  map: { [key: string]: T } | undefined | null,
+  modelId: string | null | undefined,
+  fallback: T,
+): T {
+  if (!map || !modelId) return fallback;
+  if (map[modelId] !== undefined) return map[modelId];
+  if (modelId.endsWith(".gguf")) {
+    const lastSlash = modelId.lastIndexOf("/");
+    if (lastSlash > 0) {
+      const repo = modelId.substring(0, lastSlash);
+      if (map[repo] !== undefined) return map[repo];
+      const sibling = Object.keys(map).find(
+        (k) => k.startsWith(`${repo}/`) && map[k] !== undefined,
+      );
+      if (sibling && map[sibling] !== undefined) return map[sibling];
+    }
+  } else {
+    const variant = Object.keys(map).find(
+      (k) => k.startsWith(`${modelId}/`) && map[k] !== undefined,
+    );
+    if (variant && map[variant] !== undefined) return map[variant];
+  }
+  return fallback;
+}

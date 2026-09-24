@@ -3041,16 +3041,8 @@ impl TranscriptionManager {
             .model_manager
             .get_model_info(model_id)
             .and_then(|info| info.native_streaming_latency_kind);
-        let preset = settings
-            .native_streaming_latency_presets
-            .get(model_id)
-            .copied()
-            .unwrap_or(crate::settings::NativeStreamingLatencyPreset::Accurate);
-        let chunk_ms = settings
-            .native_streaming_chunk_ms
-            .get(model_id)
-            .copied()
-            .unwrap_or(crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT);
+        let preset = get_effective_latency_preset(settings, model_id);
+        let chunk_ms = get_effective_r2t2_chunk_ms(settings, model_id);
         crate::managers::native_streaming_latency::stream_extension_for(
             model,
             model_id,
@@ -4037,13 +4029,101 @@ fn find_vulkan_device(target: VulkanTargetDevice) -> Option<transcribe_cpp::Devi
 /// this build or this machine does not have would fail to load outright. So an
 /// unavailable request is refused here, with a warning naming the model, and the
 /// global policy is applied instead — a preference is not worth a dead model.
+/// Resolve the effective per-model backend setting for a model id.
+///
+/// Looks up `model_id` in `per_model_backends`. If not found directly and `model_id`
+/// is a quant file (e.g. `repo/filename.gguf`), checks the base repo ID and sibling
+/// quants. If `model_id` is a base repo without filename, checks if any variant of
+/// that repo is configured.
+pub fn get_effective_model_backend(settings: &AppSettings, model_id: &str) -> ModelBackendSetting {
+    if let Some(&backend) = settings.per_model_backends.get(model_id) {
+        return backend;
+    }
+    if model_id.ends_with(".gguf") {
+        if let Some((base_repo, _)) = model_id.rsplit_once('/') {
+            if let Some(&backend) = settings.per_model_backends.get(base_repo) {
+                return backend;
+            }
+            for (k, &backend) in &settings.per_model_backends {
+                if let Some((k_repo, _)) = k.rsplit_once('/') {
+                    if k_repo == base_repo {
+                        return backend;
+                    }
+                }
+            }
+        }
+    } else {
+        for (k, &backend) in &settings.per_model_backends {
+            if k.starts_with(&format!("{}/", model_id)) {
+                return backend;
+            }
+        }
+    }
+    ModelBackendSetting::Auto
+}
+
+/// Resolve the effective latency preset for a model id.
+pub fn get_effective_latency_preset(
+    settings: &AppSettings,
+    model_id: &str,
+) -> crate::settings::NativeStreamingLatencyPreset {
+    if let Some(&preset) = settings.native_streaming_latency_presets.get(model_id) {
+        return preset;
+    }
+    if model_id.ends_with(".gguf") {
+        if let Some((base_repo, _)) = model_id.rsplit_once('/') {
+            if let Some(&preset) = settings.native_streaming_latency_presets.get(base_repo) {
+                return preset;
+            }
+            for (k, &preset) in &settings.native_streaming_latency_presets {
+                if let Some((k_repo, _)) = k.rsplit_once('/') {
+                    if k_repo == base_repo {
+                        return preset;
+                    }
+                }
+            }
+        }
+    } else {
+        for (k, &preset) in &settings.native_streaming_latency_presets {
+            if k.starts_with(&format!("{}/", model_id)) {
+                return preset;
+            }
+        }
+    }
+    crate::settings::NativeStreamingLatencyPreset::Accurate
+}
+
+/// Resolve the effective R2T2 streaming chunk size for a model id.
+pub fn get_effective_r2t2_chunk_ms(settings: &AppSettings, model_id: &str) -> u32 {
+    if let Some(&chunk) = settings.native_streaming_chunk_ms.get(model_id) {
+        return chunk;
+    }
+    if model_id.ends_with(".gguf") {
+        if let Some((base_repo, _)) = model_id.rsplit_once('/') {
+            if let Some(&chunk) = settings.native_streaming_chunk_ms.get(base_repo) {
+                return chunk;
+            }
+            for (k, &chunk) in &settings.native_streaming_chunk_ms {
+                if let Some((k_repo, _)) = k.rsplit_once('/') {
+                    if k_repo == base_repo {
+                        return chunk;
+                    }
+                }
+            }
+        }
+    } else {
+        for (k, &chunk) in &settings.native_streaming_chunk_ms {
+            if k.starts_with(&format!("{}/", model_id)) {
+                return chunk;
+            }
+        }
+    }
+    crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT
+}
+
 fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Option<Device>) {
     let accelerator = settings.transcribe_accelerator;
-    let requested = settings
-        .per_model_backends
-        .get(model_id)
-        .copied()
-        .unwrap_or_default();
+    let requested = get_effective_model_backend(settings, model_id);
     // An emulated x64 process on Windows ARM64 has no GPU backends at all, so
     // every GPU request — global or per-model — collapses to CPU there.
     let requested = if transcribe_gpu_disabled_for_host() {
@@ -4777,5 +4857,85 @@ mod tests {
         let backends = available_model_backends();
         assert!(backends.contains(&"auto".to_string()));
         assert!(backends.contains(&"cpu".to_string()));
+    }
+
+    #[test]
+    fn effective_model_backend_inherits_across_quant_variants() {
+        let mut settings = AppSettings::default();
+        let base = "davidxifeng/Confucius4-R2T2-gguf";
+        let q8 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q8_0.gguf";
+        let q4 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q4_k_m.gguf";
+
+        // Without settings, both resolve to Auto
+        assert_eq!(
+            get_effective_model_backend(&settings, q8),
+            ModelBackendSetting::Auto
+        );
+        assert_eq!(
+            get_effective_model_backend(&settings, q4),
+            ModelBackendSetting::Auto
+        );
+
+        // Setting on base repo applies to all quants
+        settings
+            .per_model_backends
+            .insert(base.to_string(), ModelBackendSetting::VulkanIntel);
+        assert_eq!(
+            get_effective_model_backend(&settings, q8),
+            ModelBackendSetting::VulkanIntel
+        );
+        assert_eq!(
+            get_effective_model_backend(&settings, q4),
+            ModelBackendSetting::VulkanIntel
+        );
+
+        // Setting on sibling quant (q8) inherits to q4 when base is absent
+        settings.per_model_backends.clear();
+        settings
+            .per_model_backends
+            .insert(q8.to_string(), ModelBackendSetting::VulkanNvidia);
+        assert_eq!(
+            get_effective_model_backend(&settings, q4),
+            ModelBackendSetting::VulkanNvidia
+        );
+        assert_eq!(
+            get_effective_model_backend(&settings, base),
+            ModelBackendSetting::VulkanNvidia
+        );
+
+        // Specific quant override takes precedence
+        settings
+            .per_model_backends
+            .insert(q4.to_string(), ModelBackendSetting::Cpu);
+        assert_eq!(
+            get_effective_model_backend(&settings, q4),
+            ModelBackendSetting::Cpu
+        );
+        assert_eq!(
+            get_effective_model_backend(&settings, q8),
+            ModelBackendSetting::VulkanNvidia
+        );
+    }
+
+    #[test]
+    fn effective_r2t2_chunk_ms_inherits_across_quant_variants() {
+        let mut settings = AppSettings::default();
+        let base = "davidxifeng/Confucius4-R2T2-gguf";
+        let q8 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q8_0.gguf";
+        let q4 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q4_k_m.gguf";
+
+        assert_eq!(get_effective_r2t2_chunk_ms(&settings, q4), 320);
+
+        settings
+            .native_streaming_chunk_ms
+            .insert(q8.to_string(), 160);
+        assert_eq!(get_effective_r2t2_chunk_ms(&settings, q4), 160);
+        assert_eq!(get_effective_r2t2_chunk_ms(&settings, base), 160);
+
+        settings
+            .native_streaming_chunk_ms
+            .insert(q4.to_string(), 80);
+        assert_eq!(get_effective_r2t2_chunk_ms(&settings, q4), 80);
+        assert_eq!(get_effective_r2t2_chunk_ms(&settings, q8), 160);
     }
 }

@@ -69,7 +69,14 @@ pub fn change_native_streaming_latency_preset_setting(
     let mut settings = get_settings(&app);
     settings
         .native_streaming_latency_presets
-        .insert(model_id, preset);
+        .insert(model_id.clone(), preset);
+    if let Some((base_repo, filename)) = model_id.rsplit_once('/') {
+        if filename.ends_with(".gguf") {
+            settings
+                .native_streaming_latency_presets
+                .insert(base_repo.to_string(), preset);
+        }
+    }
     write_settings(&app, settings);
     Ok(())
 }
@@ -110,7 +117,14 @@ pub fn change_native_streaming_chunk_ms_setting(
     let mut settings = get_settings(&app);
     settings
         .native_streaming_chunk_ms
-        .insert(model_id, chunk_ms);
+        .insert(model_id.clone(), chunk_ms);
+    if let Some((base_repo, filename)) = model_id.rsplit_once('/') {
+        if filename.ends_with(".gguf") {
+            settings
+                .native_streaming_chunk_ms
+                .insert(base_repo.to_string(), chunk_ms);
+        }
+    }
     write_settings(&app, settings);
     Ok(())
 }

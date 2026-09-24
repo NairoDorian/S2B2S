@@ -8,6 +8,7 @@ import {
   loadAvailableBackends,
 } from "@/components/model-selector/ModelBackendPanel";
 import type { ModelBackendSetting } from "@/bindings";
+import { resolveModelSetting } from "@/lib/modelId";
 import type { JSX } from "@solidjs/web";
 
 interface ModelBackendDropdownProps {
@@ -47,11 +48,13 @@ export const ModelBackendDropdown = (
   );
 
   const selected = (): ModelBackendSetting =>
-    (
+    resolveModelSetting(
       getSetting("per_model_backends") as
         | Record<string, ModelBackendSetting>
-        | undefined
-    )?.[props.modelId ?? ""] ?? "auto";
+        | undefined,
+      props.modelId,
+      "auto",
+    );
 
   return (
     <Show when={props.modelId}>

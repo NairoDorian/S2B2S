@@ -24,6 +24,7 @@ import ChunkSizePanel, { R2T2_CHUNK_MS_DEFAULT } from "./ChunkSizePanel";
 import ModelBackendPanel, { backendLabel } from "./ModelBackendPanel";
 import { getQuantColor } from "./quantColors";
 import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
+import { resolveModelSetting } from "@/lib/modelId";
 
 import { ModelStateEvent } from "@/lib/types/events";
 import type { JSX } from "@solidjs/web";
@@ -58,10 +59,13 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   );
 
   // This model's pin in `per_model_backends`; absent means `auto`, which is
-  // what the panel shows as selected.
+  // what the panel shows as selected. Inherits across quant variants.
   const currentBackend = (): ModelBackendSetting =>
-    (settingsStore.settings?.per_model_backends?.[displayModelId() ?? ""] ??
-      "auto") as ModelBackendSetting;
+    resolveModelSetting<ModelBackendSetting>(
+      settingsStore.settings?.per_model_backends,
+      displayModelId(),
+      "auto",
+    );
 
   const togglePanel = (panel: StatusPanel) => {
     setOpenPanel(openPanel() === panel ? null : panel);
@@ -216,9 +220,11 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   const latencyKind = () => currentModelInfo()?.native_streaming_latency_kind;
   const currentPreset = createMemo(
     (): NativeStreamingLatencyPreset =>
-      settingsStore.settings?.native_streaming_latency_presets?.[
-        displayModelId() ?? ""
-      ] ?? DEFAULT_LATENCY_PRESET,
+      resolveModelSetting(
+        settingsStore.settings?.native_streaming_latency_presets,
+        displayModelId(),
+        DEFAULT_LATENCY_PRESET,
+      ),
   );
 
   // R2T2 is the one family whose control is a continuous millisecond value
@@ -227,11 +233,12 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
   // (`NativeStreamingLatencyKind::R2T2ChunkMs`), not off the model id, so the
   // app never has to know the model's name to pick the right control.
   const isChunkMsKind = () => latencyKind() === "r2t2_chunk_ms";
-  const currentChunkMs = createMemo(
-    (): number =>
-      settingsStore.settings?.native_streaming_chunk_ms?.[
-        displayModelId() ?? ""
-      ] ?? R2T2_CHUNK_MS_DEFAULT,
+  const currentChunkMs = createMemo((): number =>
+    resolveModelSetting<number>(
+      settingsStore.settings?.native_streaming_chunk_ms,
+      displayModelId(),
+      R2T2_CHUNK_MS_DEFAULT,
+    ),
   );
 
   const downloadPercentages = createMemo(() => {
