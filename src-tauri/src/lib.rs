@@ -1022,6 +1022,9 @@ pub fn run(cli_args: CliArgs) {
             commands::live_fft::live_fft_raw_defaults,
             commands::live_fft::live_fft_axis,
             overlay::overlay_stream_text_height,
+            overlay::move_recording_overlay_window,
+            overlay::start_recording_overlay_drag,
+            overlay::stop_recording_overlay_drag,
             overlay::remember_recording_overlay_window_position,
             overlay::reset_recording_overlay_manual_position,
         ])

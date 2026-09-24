@@ -502,7 +502,7 @@ fn find_run(haystack: &[Token], want: &[Token]) -> Option<usize> {
 ///
 /// An empty context is not a failure but the setting's own 0 case — the extras
 /// heard the chunk alone, so there is nothing to crop.
-fn strip_context_prefix(decoded: &str, context: &str) -> Option<String> {
+pub(crate) fn strip_context_prefix(decoded: &str, context: &str) -> Option<String> {
     let context = tokens(context);
     if context.is_empty() {
         return Some(decoded.trim().to_string());
@@ -520,6 +520,11 @@ fn strip_context_prefix(decoded: &str, context: &str) -> Option<String> {
             let Some(start) = find_run(&decoded_tokens, want) else {
                 continue;
             };
+            // An echo prefix must begin at or right near the beginning of decoded text (token 0 or 1).
+            // A match deeper inside decoded text is not a context echo prefix, but words in the user's chunk.
+            if start > 1 {
+                continue;
+            }
             // Past the run come the words this decode got wrong (the context's
             // own text already shows those, and it is not this chunk's to
             // replace), and only then this chunk's own words.
@@ -796,8 +801,13 @@ async fn run_merge_job(
     let slot_texts: Vec<&str> = std::iter::once(live.as_str())
         .chain(outputs[1..slot_count].iter().map(String::as_str))
         .collect();
+    let context_opt = if context_text.trim().is_empty() {
+        None
+    } else {
+        Some(context_text.as_str())
+    };
     let (merged, brain, failed) = if has_merge_prompt(&settings) && slots_carry_words(&slot_texts) {
-        let outcome = multi_stt_merge_transcriptions(&settings, &slot_texts).await;
+        let outcome = multi_stt_merge_transcriptions(&settings, &slot_texts, context_opt).await;
         match outcome {
             // An empty merge result would delete text that is already on
             // screen; treat it as a failure and keep the extras' output instead.
@@ -1038,6 +1048,7 @@ pub fn start(
                     let mut extras = extras.lock().unwrap();
                     if let Some(extra) = extras.iter_mut().find(|e| e.slot == slot) {
                         extra.committed = committed.to_string();
+                        extra.tentative = tentative.to_string();
                     }
                     return;
                 }
@@ -1090,7 +1101,7 @@ pub fn start(
         seen_revision: u64::MAX,
         primary_text: String::new(),
         primary_tentative: String::new(),
-        live_copied: 0,
+        primary_chunk_start: 0,
         stream_drained_ms: 0,
         stream_input_ms: 0,
         primary_timing,
@@ -1321,18 +1332,20 @@ impl PendingRetry {
 /// One extra live model's stream, as the coordinator sees it.
 ///
 /// Written by the sink, which runs on that stream's own worker thread, and read
-/// by the coordinator's thread. The `copied` cursor is an absolute byte offset
-/// into `committed`, which only ever grows — the same bookkeeping the primary's
-/// own `live_copied` does, for the same reason: a chunk's text is the part of
-/// the stream that belongs to the chunk's span, and the span is the interval
-/// between two closes.
+/// One extra live model's stream, as the coordinator sees it.
+///
+/// Written by the sink, which runs on that stream's own worker thread, and read
+/// by the coordinator's thread. The `chunk_start` cursor is an absolute byte offset
+/// into `full_text()`, representing how far previous chunks have consumed this
+/// stream's words.
 struct ExtraStream {
     /// The stream slot this model runs on. Never the primary's.
     slot: u8,
     committed: String,
-    /// Absolute byte offset in `committed` up to which the open chunk has been
-    /// given this stream's words.
-    copied: usize,
+    tentative: String,
+    /// Absolute byte offset in `full_text()` up to which previous chunks have
+    /// consumed this stream's words.
+    chunk_start: usize,
 }
 
 impl ExtraStream {
@@ -1340,8 +1353,13 @@ impl ExtraStream {
         Self {
             slot,
             committed: String::new(),
-            copied: 0,
+            tentative: String::new(),
+            chunk_start: 0,
         }
+    }
+
+    fn full_text(&self) -> String {
+        format!("{}{}", self.committed, self.tentative)
     }
 }
 
@@ -1393,9 +1411,9 @@ struct Coordinator {
     /// snapshot. Slot 1 of the history metadata.
     primary_text: String,
     primary_tentative: String,
-    /// Absolute byte offset in `committed` up to which the open chunk's `live`
-    /// has been copied.
-    live_copied: usize,
+    /// Absolute byte offset in the primary model's full text (`committed + tentative`)
+    /// up to which previous chunks have consumed its words.
+    primary_chunk_start: usize,
     /// The family's own drain cursor (`StreamText::audio_committed_ms`): how far
     /// into the audio the stream has decoded. Not text — `transcribe.h` is
     /// explicit that it is a hint and "not a byte boundary into
@@ -1485,6 +1503,9 @@ impl Coordinator {
         // installed, which shows up as the *next* recording drawing no overlay
         // text at all. Catch it, say so, and release the session either way.
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if self.debug_view {
+                self.publish_merged_block("", "", true);
+            }
             loop {
                 match rx.recv_timeout(TICK) {
                     Ok(Cmd::Finish(reply)) => {
@@ -1597,52 +1618,66 @@ impl Coordinator {
         // the grace is measured from the break itself rather than from whenever
         // the speaker happened to go quiet.
         let stream_drain_ms = (self.stream_input_ms - self.stream_drained_ms).max(0);
-        let has_text = !self.open.live.trim().is_empty();
+        let has_text = if self.source == TextSource::Live {
+            self.open.live_slots().next().is_some()
+        } else {
+            !self.open.live.trim().is_empty()
+        };
         let paused_for = self.last_speech_change.elapsed();
 
-        match break_outcome(
-            closes(paused, !self.open.audio.is_empty(), self.open.duration_ms()),
-            has_text,
-            stream_drain_ms,
-            paused_for,
-            pause,
-        ) {
-            Break::Wait => {}
-            Break::Close => {
+        if self.source == TextSource::Live {
+            let can_close = closes(paused, !self.open.audio.is_empty(), self.open.duration_ms());
+            if can_close && has_text {
                 self.close_open_chunk();
                 self.last_close_speech_ms = speech;
+            } else if !has_text && self.open.duration_ms() >= MAX_CHUNK_SECONDS * 1000 {
+                self.open.audio.clear();
             }
-            Break::Retire => {
-                // The grace has run out with the chunk's own text still owed,
-                // and there is nothing left to wait for: the mode's premise is
-                // dead for this session, and closing the chunk now is exactly the
-                // duplication the grace exists to prevent.
-                //
-                // So the session retires itself rather than publish a preview it
-                // knows is wrong. Nothing is lost: the recording keeps running —
-                // the action's own sample buffer is what the batch path decodes —
-                // the overlay goes back to the primary's own live text, and the
-                // whole session is transcribed and merged at stop by the batch
-                // path, which is the mode's fallback everywhere else. One chunk's
-                // merge is the most this can waste, and the return is before the
-                // dispatch of another.
-                warn!(
-                    "Multi-STT streaming: chunk {} was still owed its own text {:?} after the \
-                     last speech (the pause plus a grace of {:?}) — {} chars of it, and {} ms of audio the stream decodes \
-                     but has not drained. A chunk cannot be merged against text it does not have: \
-                     closing this one would leave slot 1 empty or short, and its words would \
-                     arrive during the next chunk and be read into it, showing the same speech \
-                     twice. Retiring the session: the recording keeps running, the overlay goes \
-                     back to the primary's own live text, and the batch path transcribes and \
-                     merges the whole session at stop",
-                    self.closed.len() + 1,
-                    paused_for,
-                    TEXT_CATCHUP_GRACE,
-                    self.open.live.chars().count(),
-                    stream_drain_ms,
-                );
-                self.publish_primary_text();
-                return false;
+        } else {
+            match break_outcome(
+                closes(paused, !self.open.audio.is_empty(), self.open.duration_ms()),
+                has_text,
+                stream_drain_ms,
+                paused_for,
+                pause,
+            ) {
+                Break::Wait => {}
+                Break::Close => {
+                    self.close_open_chunk();
+                    self.last_close_speech_ms = speech;
+                }
+                Break::Retire => {
+                    // The grace has run out with the chunk's own text still owed,
+                    // and there is nothing left to wait for: the mode's premise is
+                    // dead for this session, and closing the chunk now is exactly the
+                    // duplication the grace exists to prevent.
+                    //
+                    // So the session retires itself rather than publish a preview it
+                    // knows is wrong. Nothing is lost: the recording keeps running —
+                    // the action's own sample buffer is what the batch path decodes —
+                    // the overlay goes back to the primary's own live text, and the
+                    // whole session is transcribed and merged at stop by the batch
+                    // path, which is the mode's fallback everywhere else. One chunk's
+                    // merge is the most this can waste, and the return is before the
+                    // dispatch of another.
+                    warn!(
+                        "Multi-STT streaming: chunk {} was still owed its own text {:?} after the \
+                         last speech (the pause plus a grace of {:?}) — {} chars of it, and {} ms of audio the stream decodes \
+                         but has not drained. A chunk cannot be merged against text it does not have: \
+                         closing this one would leave slot 1 empty or short, and its words would \
+                         arrive during the next chunk and be read into it, showing the same speech \
+                         twice. Retiring the session: the recording keeps running, the overlay goes \
+                         back to the primary's own live text, and the batch path transcribes and \
+                         merges the whole session at stop",
+                        self.closed.len() + 1,
+                        paused_for,
+                        TEXT_CATCHUP_GRACE,
+                        self.open.live.chars().count(),
+                        stream_drain_ms,
+                    );
+                    self.publish_primary_text();
+                    return false;
+                }
             }
         }
 
@@ -1658,111 +1693,65 @@ impl Coordinator {
 
     /// Read the streams' latest text into the open chunk.
     ///
-    /// The primary's own path is guarded by the snapshot's revision, so a tick
-    /// that arrives between two text updates costs one mutex read and nothing
-    /// else. The extras have no such revision — they are read from a small vec
-    /// the sink rewrites in place — and are compared against the open chunk's
-    /// own copy instead: only the words past the cursor are appended, so a tick
-    /// that adds nothing adds nothing.
+    /// The primary model's own text is sliced from `primary_chunk_start` to the
+    /// end of its current full text (`committed + tentative`). Any tokens that
+    /// are currently tentative are included in the open chunk so that a break
+    /// or close never drops uncommitted words.
     fn absorb_stream_text(&mut self) {
         self.absorb_extra_text();
         let snapshot = Arc::clone(&*self.snapshot.lock().unwrap());
-        if snapshot.revision == self.seen_revision {
-            return;
-        }
-        self.seen_revision = snapshot.revision;
+        if snapshot.revision != self.seen_revision {
+            self.seen_revision = snapshot.revision;
 
-        // The tap and the stream are fed the same frames in the same order (see
-        // `ChunkTap`), so the tap must have seen exactly the audio the stream was
-        // fed. A structural mismatch would mean a chunk's audio is not exactly
-        // the audio the stream decoded for it, which is worth one warning — no
-        // correction is applied, because a worker-thread lag of a frame or two
-        // is indistinguishable from a real lead and would silently absorb it.
-        if !self.lead_checked && snapshot.input_received_ms > 0 {
-            self.lead_checked = true;
-            let fed = snapshot.input_received_ms as u64 * SAMPLES_PER_MS as u64;
-            let tapped = self.tap.pushed_samples();
-            if tapped > fed {
-                warn!(
-                    "Multi-STT streaming: the audio tap is {} samples ahead of the stream; the \
-                     chunk's audio may not be exactly the audio the stream decoded ({:.0} ms)",
-                    tapped - fed,
-                    (tapped - fed) as f64 / SAMPLES_PER_MS as f64
-                );
+            // The tap and the stream are fed the same frames in the same order (see
+            // `ChunkTap`), so the tap must have seen exactly the audio the stream was
+            // fed. A structural mismatch would mean a chunk's audio is not exactly
+            // the audio the stream decoded for it, which is worth one warning — no
+            // correction is applied, because a worker-thread lag of a frame or two
+            // is indistinguishable from a real lead and would silently absorb it.
+            if !self.lead_checked && snapshot.input_received_ms > 0 {
+                self.lead_checked = true;
+                let fed = snapshot.input_received_ms as u64 * SAMPLES_PER_MS as u64;
+                let tapped = self.tap.pushed_samples();
+                if tapped > fed {
+                    warn!(
+                        "Multi-STT streaming: the audio tap is {} samples ahead of the stream; the \
+                         chunk's audio may not be exactly the audio the stream decoded ({:.0} ms)",
+                        tapped - fed,
+                        (tapped - fed) as f64 / SAMPLES_PER_MS as f64
+                    );
+                }
             }
+
+            self.primary_text = snapshot.committed.clone();
+            self.primary_tentative = snapshot.tentative.clone();
+            self.stream_drained_ms = snapshot.audio_committed_ms;
+            self.stream_input_ms = snapshot.input_received_ms;
         }
 
-        self.primary_text = snapshot.committed.clone();
-        self.primary_tentative = snapshot.tentative.clone();
-        self.stream_drained_ms = snapshot.audio_committed_ms;
-        self.stream_input_ms = snapshot.input_received_ms;
-
-        // `committed` only grows. If a family rewrites it anyway, offsets into it
-        // are meaningless: re-anchor on the current length and say so once. Only
-        // the open chunk is re-anchored — a closed chunk's text is frozen, and it
-        // is the text already on screen. The open chunk never carries a merge:
-        // every merge is dispatched at a close.
-        if snapshot.committed.len() < self.live_copied {
-            warn!(
-                "Multi-STT streaming: the committed text shrank ({} → {} bytes); re-anchoring the \
-                 open chunk",
-                self.live_copied,
-                snapshot.committed.len()
-            );
-            self.open.live.clear();
-            self.live_copied = snapshot.committed.len();
-        }
-        if snapshot.committed.len() > self.live_copied {
-            let at = clamp_boundary(&snapshot.committed, self.live_copied);
-            self.open.live.push_str(&snapshot.committed[at..]);
-            self.live_copied = snapshot.committed.len();
-        }
+        let full = format!("{}{}", self.primary_text, self.primary_tentative);
+        let at = clamp_boundary(&full, self.primary_chunk_start.min(full.len()));
+        self.open.live = full[at..].trim_start().to_string();
     }
 
     /// Read the other live models' text into the open chunk, one slice per slot.
     ///
-    /// Only [`TextSource::Live`] sessions have extras to read here, and the vec
-    /// is empty in the parent mode, so the loop below is what a parent-mode
-    /// session pays: one uncontended mutex read per tick.
-    ///
-    /// Each stream is copied the way the primary's is — the words past the
-    /// cursor and nothing else — and re-anchored the same way if its `committed`
-    /// shrinks. What it does *not* have is the primary's revision counter: a
-    /// stream's text is rewritten in place by its own worker, so a tick that
-    /// arrives between two updates finds the same bytes the last one did and
-    /// appends nothing. The cursor is the whole test.
-    ///
-    /// A stream that has not spoken yet contributes nothing rather than an
-    /// error: the merge's own per-slot texts are read at the close, and a model
-    /// whose chunk text is empty is a model that had nothing to say about this
-    /// chunk — which [`crate::actions::multi_stt_merge_transcriptions`] is
-    /// written to handle.
+    /// Only [`TextSource::Live`] sessions have extras to read here. Each extra
+    /// model's text is sliced from its `chunk_start` to the end of its current
+    /// `full_text()` (`committed + tentative`).
     fn absorb_extra_text(&mut self) {
         if self.source != TextSource::Live {
             return;
         }
-        let mut extras = self.extras.lock().unwrap();
-        for extra in extras.iter_mut() {
+        let extras = self.extras.lock().unwrap();
+        for extra in extras.iter() {
             let slot = extra.slot as usize;
             if slot == PRIMARY_STREAM_SLOT as usize || slot >= self.open.extras.len() {
                 continue;
             }
-            if extra.committed.len() < extra.copied {
-                warn!(
-                    "Multi-STT streaming: slot {}'s committed text shrank ({} → {} bytes); \
-                     re-anchoring the open chunk",
-                    extra.slot,
-                    extra.copied,
-                    extra.committed.len()
-                );
-                self.open.extras[slot].clear();
-                extra.copied = extra.committed.len();
-            }
-            if extra.committed.len() > extra.copied {
-                let at = clamp_boundary(&extra.committed, extra.copied);
-                self.open.extras[slot].push_str(&extra.committed[at..]);
-                extra.copied = extra.committed.len();
-            }
+            let full = extra.full_text();
+            let at = clamp_boundary(&full, extra.chunk_start.min(full.len()));
+            self.open.extras[slot] = full[at..].trim_start().to_string();
         }
     }
 
@@ -1824,9 +1813,22 @@ impl Coordinator {
     /// of the streaming text it owns — so there is no seam to keep aligned,
     /// nothing dropped and nothing shown twice. The next chunk starts empty here.
     fn close_open_chunk(&mut self) {
+        self.absorb_stream_text();
+
         let mut closed = std::mem::replace(&mut self.open, Chunk::new(self.next_chunk_id));
         self.next_chunk_id += 1;
         closed.failed = false;
+
+        let primary_full = format!("{}{}", self.primary_text, self.primary_tentative);
+        self.primary_chunk_start = primary_full.len();
+
+        if self.source == TextSource::Live {
+            let mut extras = self.extras.lock().unwrap();
+            for extra in extras.iter_mut() {
+                extra.chunk_start = extra.full_text().len();
+            }
+        }
+
         self.closed.push(closed);
 
         let index = self.closed.len() - 1;
@@ -1914,12 +1916,20 @@ impl Coordinator {
                     outputs[slot] = text.clone();
                 }
             }
+            let depth = context_depth(self.settings.multi_stt_streaming_context_chunks);
+            let mut context_text = String::new();
+            if depth > 0 && index > 0 {
+                let start = index.saturating_sub(depth);
+                for prev in &self.closed[start..index] {
+                    append_join(&mut context_text, &prev.display_text());
+                }
+            }
             return JobInput {
                 chunk_id: chunk.id,
                 live: chunk.live.clone(),
                 audio: Vec::new(),
                 context_samples: 0,
-                context_text: String::new(),
+                context_text,
                 live_outputs: Some(outputs),
                 record_outputs,
             };
@@ -2218,6 +2228,20 @@ impl Coordinator {
         out
     }
 
+    /// In the debug view the merge-and-cleaned block underneath the model columns
+    /// should contain the text produced by the brain model for chunks that have
+    /// been merged. If a chunk's merge produced fallback text, it is preserved
+    /// so words are never dropped.
+    fn compose_merged_clean(&self) -> String {
+        let mut out = String::new();
+        for chunk in &self.closed {
+            if let Some(merged) = &chunk.merged_text {
+                append_join(&mut out, merged);
+            }
+        }
+        out
+    }
+
     /// Give the overlay the primary stream's own text and drop the composed
     /// preview.
     ///
@@ -2292,14 +2316,11 @@ impl Coordinator {
     /// up holding.
     fn publish(&mut self) {
         let committed = self.compose_committed();
-        let mut tentative = self.open.display_text();
-        // The model's volatile tail continues its own committed text, so it is
-        // concatenated verbatim: at this point both halves came from the same
-        // stream and any separator would land inside a word.
-        tentative.push_str(&self.primary_tentative);
+        let tentative = self.open.display_text();
 
         if self.debug_view {
-            self.publish_merged_block(&committed, &tentative, false);
+            let merged_clean = self.compose_merged_clean();
+            self.publish_merged_block(&merged_clean, "", false);
         } else {
             // The overlay event is deduped: an unchanged text is not re-sent,
             // which is what keeps a silent pause from emitting 20 times a second.
@@ -2386,11 +2407,10 @@ impl Coordinator {
         } else {
             !last.live.trim().is_empty() || !last.audio.is_empty()
         };
-        self.closed.push(last);
-
-        let index = self.closed.len() - 1;
-        self.log_primary_rate();
         if has_content {
+            self.closed.push(last);
+            let index = self.closed.len() - 1;
+            self.log_primary_rate();
             let settings = get_settings(&self.app);
             let input = self.window_for(index, true);
             let result = tauri::async_runtime::block_on(run_merge_job(
@@ -2426,12 +2446,13 @@ impl Coordinator {
         // for exactly this reason — it is that model's own output, not a
         // re-decode of anything.
         let mut model_outputs: [String; STREAM_SLOTS] = Default::default();
-        model_outputs[PRIMARY_STREAM_SLOT as usize] = self.primary_text.clone();
+        model_outputs[PRIMARY_STREAM_SLOT as usize] =
+            format!("{}{}", self.primary_text, self.primary_tentative);
         if self.source == TextSource::Live {
             for extra in self.extras.lock().unwrap().iter() {
                 let slot = extra.slot as usize;
                 if slot != PRIMARY_STREAM_SLOT as usize && slot < model_outputs.len() {
-                    model_outputs[slot] = extra.committed.clone();
+                    model_outputs[slot] = extra.full_text();
                 }
             }
         } else {
@@ -3035,5 +3056,77 @@ mod tests {
         outputs[3] = "fourth".to_string();
         assert_eq!(concatenate("first", &outputs), "first\nsecond\nfourth");
         assert_eq!(concatenate("", &Default::default()), "");
+    }
+
+    #[test]
+    fn compose_merged_clean_includes_merged_chunks_and_preserves_fallback() {
+        let mut chunk1 = closed_chunk(1, "raw one", 1_000);
+        chunk1.apply_merge("Cleaned one.".to_string(), false);
+
+        let mut chunk2 = closed_chunk(2, "raw two", 1_000);
+        chunk2.apply_merge("fallback two".to_string(), true);
+
+        let chunk3 = closed_chunk(3, "raw three", 1_000);
+
+        let mut chunk4 = closed_chunk(4, "raw four", 1_000);
+        chunk4.apply_merge("Cleaned four.".to_string(), false);
+
+        let mut out = String::new();
+        for chunk in &[chunk1, chunk2, chunk3, chunk4] {
+            if let Some(merged) = &chunk.merged_text {
+                append_join(&mut out, merged);
+            }
+        }
+        assert_eq!(out, "Cleaned one. fallback two Cleaned four.");
+    }
+
+    #[test]
+    fn live_context_extracts_previous_chunks() {
+        let mut chunk1 = closed_chunk(1, "raw one", 1_000);
+        chunk1.apply_merge("Cleaned one.".to_string(), false);
+
+        let mut chunk2 = closed_chunk(2, "raw two", 1_000);
+        chunk2.apply_merge("Cleaned two.".to_string(), false);
+
+        let closed = vec![chunk1, chunk2];
+        let index: usize = 2; // looking back from chunk 3
+        let depth: usize = 2;
+
+        let start = index.saturating_sub(depth);
+        let mut context_text = String::new();
+        for prev in &closed[start..index] {
+            append_join(&mut context_text, &prev.display_text());
+        }
+        assert_eq!(context_text, "Cleaned one. Cleaned two.");
+    }
+
+    #[test]
+    fn extra_stream_full_text_joins_committed_and_tentative() {
+        let mut extra = ExtraStream::new(1);
+        assert_eq!(extra.full_text(), "");
+
+        extra.tentative = "hello world".to_string();
+        assert_eq!(extra.full_text(), "hello world");
+
+        extra.committed = "hello ".to_string();
+        extra.tentative = "world".to_string();
+        assert_eq!(extra.full_text(), "hello world");
+    }
+
+    #[test]
+    fn stream_chunk_slicing_preserves_tentative_across_chunks() {
+        // Chunk 1 starts at 0
+        let full1 = "Ok donc là je fais un tout nouveau test";
+        let chunk1_start = 0;
+        let at1 = clamp_boundary(full1, chunk1_start);
+        let chunk1_text = full1[at1..].trim_start();
+        assert_eq!(chunk1_text, "Ok donc là je fais un tout nouveau test");
+
+        // Chunk 1 closes at end of full1
+        let chunk2_start = full1.len();
+        let full2 = "Ok donc là je fais un tout nouveau test et voici la suite";
+        let at2 = clamp_boundary(full2, chunk2_start.min(full2.len()));
+        let chunk2_text = full2[at2..].trim_start();
+        assert_eq!(chunk2_text, "et voici la suite");
     }
 }

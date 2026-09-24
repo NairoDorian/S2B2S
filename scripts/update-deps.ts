@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 
 import { APP } from "./app-meta";
+import { cpuLaneEnv } from "./lib/cpu-lane";
 import { appEnvVar } from "./lib/env-flag";
 
 /**
@@ -17,10 +18,16 @@ import { appEnvVar } from "./lib/env-flag";
  * 4. Transitive Sub-Dependency & Sub-Sub-Dependency Upgrading (bun update --latest & cargo update)
  * 5. Full Inventory Audit & Diff Tracking (Cargo.lock & node_modules)
  *
+ * 6. Pinned CLI tools (PINNED_TOOLS): versions a script hands to `bunx`
+ *    rather than listing in devDependencies — `repomix` today
+ * 7. GitHub Actions audit (report only): `uses:` refs a newer major exists for
+ *
  * Validation (the run's steps 5-7):
  * - TypeScript Static Type Checking (bun x tsc -b)
  * - Vite Production Frontend Build Validation (bun run vite:build)
- * - Native Cargo Backend Compilation Verification (cargo check)
+ * - Native Cargo Backend Compilation Verification (cargo check, on the CPU-only
+ *   posture of `lib/cpu-lane.ts` — the proof is that the Rust compiles, and
+ *   transcribe.cpp's CUDA kernels are minutes of nvcc that prove nothing here)
  *
  * CLI flags:
  *   (no args)      Stable @latest pipeline (default — only `latest` dist-tags,
@@ -153,8 +160,15 @@ const CARGO_MAJOR_LOCKED: ReadonlyMap<string, string> = new Map([
 
 /** One prerelease line a package is held to, and why. */
 interface LinePin {
-  /** The only dist-tag consulted — never `latest`. */
-  tag: string;
+  /**
+   * The dist-tags candidates are read from. Whichever carries the best version
+   * on the accepted major that is strictly newer than the installed one wins —
+   * the tags are only where candidates come from; the LINE (major + no
+   * downgrade) is the pin. Listing `latest` is safe here, unlike on the
+   * unpinned path, because the major filter refuses the old line and the
+   * newness test refuses a downgrade.
+   */
+  tags: readonly string[];
   /** The accepted major. A candidate outside it is refused outright. */
   major: number;
   /** One sentence for the report, naming what goes wrong without it. */
@@ -246,10 +260,12 @@ interface NpmResolveOptions {
   linePin?: LinePin;
   /** Refuse any target outside this version prefix. */
   majorCeiling?: readonly number[];
+  /** Receives the package's dist-tags when the packument was read. */
+  onTags?: (tags: Readonly<Record<string, string>>) => void;
 }
 
 /**
- * NPM packages held to ONE prerelease line, resolved from ONE dist-tag.
+ * NPM packages held to ONE prerelease line, resolved from named dist-tags.
  *
  * The Solid 2 toolchain is why this exists. `--prerelease` mode probes every
  * prerelease dist-tag and takes the best strictly-newer candidate, which is
@@ -268,39 +284,47 @@ interface NpmResolveOptions {
  * tag" each resolve backwards for one package. A migration that pins these and
  * then lets a routine `bun run update` run is reverted by it.
  *
- * So the **line** is pinned, not the version: follow `tag`, refuse anything off
- * the accepted major, refuse a downgrade. Today that resolves to the installed
- * rc / next versions, and it follows the line forward by itself
- * when Solid publishes the next RC — which is the point, because the app is
- * built against a release candidate that is still moving. Delete these entries
- * when 2.0 goes stable and the three can sit on `latest` like everything else.
+ * So the **line** is pinned, not the version: read the listed tags, refuse
+ * anything off the accepted major, refuse a downgrade. It follows the line
+ * forward by itself when Solid publishes the next RC — which is the point,
+ * because the app is built against a release candidate that is still moving.
+ * Delete these entries when 2.0 goes stable and the three can sit on `latest`
+ * like everything else.
+ *
+ * Until 2026-09-24 each pin read exactly ONE tag, `next` — and for
+ * `@solidjs/vite-plugin` `next` is the stale tag: `latest` moved to
+ * 3.0.0-next.44 while `next` stayed at next.35, so the updater could never move
+ * the plugin again. Reading `latest` beside `next` is safe for all three
+ * because the major filter and the no-downgrade rule already refuse what made
+ * `latest` wrong for each of them. The report prints the registry's current
+ * tags under each reason, so the snapshot above is history, not a claim.
  */
 const NPM_LINE_PINNED: ReadonlyMap<string, LinePin> = new Map([
   [
     "solid-js",
     {
-      tag: "next",
+      tags: ["next", "latest"],
       major: 2,
       reason:
-        "`latest` is 1.9.15 — the OLD major; only `next` carries 2.x, and taking `latest` would migrate the app back to Solid 1",
+        "`latest` is still the 1.x major and only `next` carries 2.x — following `latest` alone would migrate the app back to Solid 1",
     },
   ],
   [
     "@solidjs/web",
     {
-      tag: "next",
+      tags: ["next", "latest"],
       major: 2,
       reason:
-        "`latest` is 2.0.0-rc.0 while `next` is 2.0.0-rc.8 — `latest` is a downgrade of the installed renderer",
+        "`latest` trails `next` on the 2.0 RC line (it has sat at rc.0 while `next` moved on) — following `latest` alone would downgrade the renderer",
     },
   ],
   [
     "@solidjs/vite-plugin",
     {
-      tag: "next",
+      tags: ["next", "latest"],
       major: 3,
       reason:
-        "`next` (3.0.0-next.35) is OLDER than `latest` (3.0.0-next.43), so the tag cannot be followed blindly either — only the 3.x line and no downgrades",
+        "the two tags leapfrog on the 3.0 `next` line (`next` has sat below `latest` since next.35), so neither can be followed alone — the newer of the two on 3.x wins, never a downgrade",
     },
   ],
 ]);
@@ -332,7 +356,14 @@ lockfile that resolves is not a lockfile that builds.`);
 interface DependencyStatus {
   name: string;
   ecosystem: "NPM (Bun)" | "Cargo (Rust)";
-  type: "runtime" | "dev" | "cargo-dep" | "cargo-build";
+  type: "runtime" | "dev" | "cargo-dep" | "cargo-build" | "tool";
+  /** The script a pinned CLI's version lives in (`type: "tool"` only). */
+  toolFile?: string;
+  /**
+   * The dist-tags read for a line-pinned package, printed under its reason so
+   * the report shows the registry as it is now, not as the reason was written.
+   */
+  registryTags?: Readonly<Record<string, string>>;
   /** Cargo.toml section the crate was read from (Cargo rows only). */
   section?: string;
   currentVersion: string;
@@ -379,15 +410,21 @@ function isPrereleaseVersion(version: string): boolean {
 
 /**
  * Splits a semver string into numeric core parts and a prerelease identifier.
- * `noUncheckedIndexedAccess` makes `coreStr` `string | undefined`; a version
- * string always has a core part before any `-`, so the fallback to "0" is
- * unreachable but satisfies the type checker.
+ *
+ * The split is at the FIRST hyphen only: a prerelease may itself contain
+ * hyphens (`@playwright/test`'s nightlies are `1.64.0-alpha-2026-09-23`), and
+ * the former `split("-", 2)` truncated every one of them to `alpha`, so all the
+ * nightlies of a line compared equal and none was ever offered as an upgrade.
+ * Build metadata (`+…`) takes no part in precedence and is dropped.
  */
 function parseVersion(v: string): { core: number[]; pre: string | null } {
-  const [coreStr, pre] = v.split("-", 2);
-  const core = (coreStr ?? "0").split(".").map((n) => parseInt(n, 10) || 0);
+  const bare = v.split("+", 1)[0] ?? "";
+  const dash = bare.indexOf("-");
+  const coreStr = dash < 0 ? bare : bare.slice(0, dash);
+  const pre = dash < 0 ? null : bare.slice(dash + 1);
+  const core = coreStr.split(".").map((n) => parseInt(n, 10) || 0);
   while (core.length < 3) core.push(0);
-  return { core, pre: pre ?? null };
+  return { core, pre };
 }
 
 /**
@@ -509,7 +546,7 @@ async function fetchLatestNpmVersion(
   current: string,
   options: NpmResolveOptions,
 ): Promise<string | null> {
-  const { prerelease, linePin, majorCeiling } = options;
+  const { prerelease, linePin, majorCeiling, onTags } = options;
   try {
     // A line pin always takes the packument path, in both modes: `/latest`
     // cannot express "the newest on THIS line", and reading it would make the
@@ -546,6 +583,7 @@ async function fetchLatestNpmVersion(
       time?: Record<string, string>;
     };
     const tags = data["dist-tags"] ?? {};
+    onTags?.(tags);
     const times = data.time ?? {};
     const currentTime = times[current] ?? null;
 
@@ -571,10 +609,10 @@ async function fetchLatestNpmVersion(
       return compareVersions(v, current) > 0;
     };
 
-    // A line pin narrows the probe to its own tag: the other prerelease tags
+    // A line pin narrows the probe to its own tags: the other prerelease tags
     // are not merely unnecessary here, they are the wrong question — see
     // NPM_LINE_PINNED.
-    const probedTags = linePin ? [linePin.tag] : PRERELEASE_TAGS;
+    const probedTags = linePin ? linePin.tags : PRERELEASE_TAGS;
 
     type Candidate = { version: string; publishedAt: string | null };
     // Ranking between two candidates: highest core first; for equal cores the
@@ -801,9 +839,10 @@ function runCmd(
   cmd: string,
   args: string[],
   cwd?: string,
+  env?: NodeJS.ProcessEnv,
 ): { success: boolean; durationMs: number } {
   const start = Date.now();
-  const res = spawnSync(cmd, args, { stdio: "inherit", cwd });
+  const res = spawnSync(cmd, args, { stdio: "inherit", cwd, env });
   const durationMs = Date.now() - start;
   return { success: res.status === 0, durationMs };
 }
@@ -980,6 +1019,7 @@ function printTable(headers: string[], rows: string[][]): void {
  * "Cargo (linux)", "Cargo (all(windows, x86_64))".
  */
 function ecosystemLabel(s: DependencyStatus): string {
+  if (s.type === "tool") return `CLI pin (${s.toolFile ?? "script"})`;
   if (s.ecosystem !== "Cargo (Rust)" || !s.section) return s.ecosystem;
   const section = s.section;
   if (section === "dependencies") return "Cargo (Rust)";
@@ -1075,10 +1115,18 @@ function printHeldNotes(allStatuses: readonly DependencyStatus[]): void {
       "\n 📌 Held to a prerelease LINE — resolved from one dist-tag, never from `latest`:",
     );
     for (const { s, pin } of linePinned) {
+      const tagList = pin.tags.map((t) => "`" + t + "`").join(" / ");
       console.log(
-        `    ${s.name} ${s.currentVersion}: follows \`${pin.tag}\`, ${pin.major}.x only`,
+        `    ${s.name} ${s.currentVersion}: reads ${tagList}, ${pin.major}.x only, never a downgrade`,
       );
       console.log(`      ${pin.reason}`);
+      const tags = s.registryTags;
+      if (tags !== undefined) {
+        const now = Object.entries(tags)
+          .map(([tag, version]) => `${tag} ${version}`)
+          .join(" · ");
+        console.log(`      registry now: ${now}`);
+      }
     }
   }
 
@@ -1161,6 +1209,7 @@ function printDryRunReport(allStatuses: DependencyStatus[]): void {
   console.log("\n Steps that WOULD run in a real invocation:");
   console.log("   1-2. bun add <pkg>@<target>        (runtime + dev deps)");
   console.log("   3.   Cargo.toml spec rewrite to ^<target>");
+  console.log("   3b.  pinned CLI versions rewritten in their scripts");
   console.log(
     "   4.   bun update --latest + cargo update   (transitive sub-deps)",
   );
@@ -1171,7 +1220,9 @@ function printDryRunReport(allStatuses: DependencyStatus[]): void {
   }
   console.log("   5.   bun x tsc -b                   (type validation)");
   console.log("   6.   bun run vite:build             (frontend build)");
-  console.log("   7.   cargo check                    (backend compile)");
+  console.log(
+    "   7.   cargo check                    (backend compile, CPU-only lane)",
+  );
   console.log(
     "=================================================================",
   );
@@ -1730,12 +1781,17 @@ async function updateEverything() {
 
     // --- Step 7: Native Cargo Backend Compilation Verification ---
     console.log(
-      "🔍 Step 7/7: Checking Cargo Rust Backend Compilation (cargo check)...",
+      "🔍 Step 7/7: Checking Cargo Rust Backend Compilation (cargo check, CPU-only lane)...",
     );
+    // The CPU posture of `bun run dev:cpu`: the check proves the Rust compiles,
+    // which does not need transcribe.cpp's CUDA kernels, and sharing the posture
+    // keeps the native configure the working loop already has — a CUDA check
+    // here used to cost the next `dev:cpu` a full native rebuild.
     const { success: checkSuccess, durationMs: checkMs } = runCmd(
       "cargo",
       ["check"],
       cargoCwd,
+      cpuLaneEnv(),
     );
     if (!checkSuccess) {
       console.error("❌ Error: Cargo compilation check failed!");
@@ -1757,7 +1813,7 @@ async function updateEverything() {
     // line and `latest` is the one thing it is deliberately not following, and
     // a ceilinged package may be sitting below a `latest` it is refusing.
     if (!s.needsUpdate) {
-      if (s.linePin) return `📌 On the ${s.linePin.tag} line`;
+      if (s.linePin) return `📌 On the ${s.linePin.major}.x line`;
       if (s.majorCeiling !== undefined)
         return `🔒 On ${ceilingLabel(s.majorCeiling)}`;
       return "⚡ Already @latest";

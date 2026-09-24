@@ -463,7 +463,7 @@ export const commands = {
 	recallEncryptionStatus: () => typedError<RecallEncryptionStatus, string>(__TAURI_INVOKE("recall_encryption_status")),
 	/**
 	 *  Turn encryption on: passphrase → key file + every note becomes `.rcl`.
-	 *  A plaintext backup is written and reported in the reply.
+	 *  No plaintext copy is kept (see `crypto::enable`).
 	 */
 	recallEnableEncryption: (passphrase: string) => typedError<EnableReport, string>(__TAURI_INVOKE("recall_enable_encryption", { passphrase })),
 	/**  Verify the passphrase and hold the key in memory until locked or exit. */
@@ -511,7 +511,25 @@ export const commands = {
 	 *  was just sized with, so the cap the card applies and the window it lives in
 	 *  are one number.
 	 */
-	overlayStreamTextHeight: (heightPx: number) => __TAURI_INVOKE<number>("overlay_stream_text_height", { heightPx }),
+	overlayStreamTextHeight: (heightPx: number, widthPx: number | null) => __TAURI_INVOKE<number>("overlay_stream_text_height", { heightPx, widthPx }),
+	/**
+	 *  Move the recording overlay window to physical screen coordinates (x_px, y_px)
+	 *  during interactive dragging. Bypasses Tao's DPI conversion issues on Windows
+	 *  and multi-monitor setups.
+	 */
+	moveRecordingOverlayWindow: (xPx: number, yPx: number) => typedError<null, string>(__TAURI_INVOKE("move_recording_overlay_window", { xPx, yPx })),
+	/**
+	 *  Initiates an active drag loop for the recording overlay.
+	 * 
+	 *  On Windows, this runs an ultra-low-latency tracking loop in a background thread
+	 *  that samples physical cursor position and moves the window via SetWindowPos while
+	 *  the left mouse button is held down. It works across multi-monitor setups with
+	 *  arbitrary DPI, doesn't depend on window activation (WS_EX_NOACTIVATE), and
+	 *  persists the final anchored position automatically upon mouse release.
+	 */
+	startRecordingOverlayDrag: () => typedError<null, string>(__TAURI_INVOKE("start_recording_overlay_drag")),
+	/**  Explicitly stops any active recording overlay drag operation. */
+	stopRecordingOverlayDrag: () => typedError<null, string>(__TAURI_INVOKE("stop_recording_overlay_drag")),
 	/**
 	 *  Remember the physical-pixel position of the overlay window after a drag-grip
 	 *  reposition, so the next recording shows up where the user left it.
@@ -617,6 +635,7 @@ export type AppSettings_Deserialize = {
 	recording_overlay_manual_position_uses_physical_px?: boolean,
 	recording_overlay_custom_x_px?: number,
 	recording_overlay_custom_y_px?: number,
+	recording_overlay_custom_bottom_y_px?: number,
 	overlay_window_fade_ms?: number,
 	overlay_window_corner_radius?: number | null,
 	debug_mode?: boolean,
@@ -952,6 +971,7 @@ export type AppSettings_Serialize = {
 	recording_overlay_manual_position_uses_physical_px: boolean,
 	recording_overlay_custom_x_px: number,
 	recording_overlay_custom_y_px: number,
+	recording_overlay_custom_bottom_y_px: number,
 	overlay_window_fade_ms: number,
 	overlay_window_corner_radius: number | null,
 	debug_mode: boolean,

@@ -100,13 +100,21 @@ fn compact_dimensions(block: u32, view_h: u32, stats: bool) -> (f64, f64) {
     )
 }
 
+static OVERLAY_STREAM_WIDTH_PX: AtomicU32 = AtomicU32::new(0);
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
     // Read the cached values rather than the store: this runs on the main
     // thread inside the show path, where a settings read is pure added latency.
     let view_h = OVERLAY_SCOPE_VIEW_H.load(Ordering::Relaxed);
     if state == "streaming" {
-        let (width, base_height) = streaming_dimensions_baseline();
+        let (base_width, base_height) = streaming_dimensions_baseline();
+        let custom_w = OVERLAY_STREAM_WIDTH_PX.load(Ordering::Relaxed);
+        let width = if custom_w > 0 {
+            custom_w as f64
+        } else {
+            base_width
+        };
         return (width, base_height + streaming_text_height());
     }
     compact_dimensions(
@@ -442,7 +450,30 @@ fn calculate_overlay_position(
         // Falls back to the cursor's monitor itself.
         let monitor = get_monitor_for_physical_point(app_handle, px, py)?;
         let scale = monitor.scale_factor();
-        return Some((px / scale, py / scale));
+        let mon_x = monitor.position().x as f64 / scale;
+        let mon_y = monitor.position().y as f64 / scale;
+        let mon_w = monitor.size().width as f64 / scale;
+        let mon_h = monitor.size().height as f64 / scale;
+
+        let monitor_mid_y = mon_y + mon_h / 2.0;
+        let is_bottom = settings.overlay_position == OverlayPosition::Bottom
+            || (py / scale) >= monitor_mid_y
+            || (settings.recording_overlay_custom_bottom_y_px != 0
+                && (settings.recording_overlay_custom_bottom_y_px as f64 / scale) >= monitor_mid_y);
+
+        let x = (px / scale).clamp(mon_x, (mon_x + mon_w - width).max(mon_x));
+        let y = if is_bottom {
+            let bottom_y = if settings.recording_overlay_custom_bottom_y_px != 0 {
+                settings.recording_overlay_custom_bottom_y_px as f64 / scale
+            } else {
+                let (_, base_h) = streaming_dimensions_baseline();
+                (py / scale) + base_h
+            };
+            (bottom_y - height).max(mon_y)
+        } else {
+            (py / scale).min(mon_y + mon_h - height).max(mon_y)
+        };
+        return Some((x, y));
     }
 
     let monitor = get_monitor_with_cursor(app_handle)?;
@@ -483,6 +514,7 @@ fn current_overlay_logical_size(window: &tauri::webview::WebviewWindow) -> Optio
 
 #[cfg(target_os = "windows")]
 static WINDOWS_OVERLAY_IS_STREAMING: AtomicBool = AtomicBool::new(false);
+static OVERLAY_IS_DRAGGING: AtomicBool = AtomicBool::new(false);
 
 /// Windows accessibility text size (Settings > Accessibility > Text size), a
 /// separate axis from display scaling that WebView2 applies as a document zoom.
@@ -540,6 +572,10 @@ fn place_windows_overlay(
     logical_width: f64,
     logical_height: f64,
 ) -> Result<(), String> {
+    if OVERLAY_IS_DRAGGING.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+
     use windows::Win32::UI::WindowsAndMessaging::{
         HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
     };
@@ -564,13 +600,36 @@ fn place_windows_overlay(
         let scale = monitor.scale_factor();
         let width = (logical_width * scale * text_scale).round() as i32;
         let height = (logical_height * scale * text_scale).round() as i32;
-        (
-            settings.recording_overlay_custom_x_px,
-            settings.recording_overlay_custom_y_px,
-            width,
-            height,
-            scale,
-        )
+        let mon_x = monitor.position().x;
+        let mon_w = monitor.size().width as i32;
+        let mon_y = monitor.position().y;
+        let mon_h = monitor.size().height as i32;
+
+        let monitor_mid_y = mon_y + mon_h / 2;
+        let is_bottom = settings.overlay_position == OverlayPosition::Bottom
+            || settings.recording_overlay_custom_y_px >= monitor_mid_y
+            || (settings.recording_overlay_custom_bottom_y_px != 0
+                && settings.recording_overlay_custom_bottom_y_px >= monitor_mid_y);
+
+        let x = settings
+            .recording_overlay_custom_x_px
+            .clamp(mon_x, (mon_x + mon_w - width).max(mon_x));
+        let y = if is_bottom {
+            let bottom_y = if settings.recording_overlay_custom_bottom_y_px != 0 {
+                settings.recording_overlay_custom_bottom_y_px
+            } else {
+                let (_, base_h) = streaming_dimensions_baseline();
+                let base_phys = (base_h * scale * text_scale).round() as i32;
+                settings.recording_overlay_custom_y_px + base_phys
+            };
+            // Anchor the bottom edge: as height changes, y moves up, bottom_y never moves down.
+            (bottom_y - height).max(mon_y)
+        } else {
+            // Anchor the top edge: as height changes, y stays at top_y, bottom extends downward.
+            let top_y = settings.recording_overlay_custom_y_px;
+            top_y.min(mon_y + mon_h - height).max(mon_y)
+        };
+        (x, y, width, height, scale)
     } else {
         let monitor = get_monitor_with_cursor(app_handle)
             .ok_or_else(|| "failed to determine the monitor containing the cursor".to_string())?;
@@ -986,6 +1045,171 @@ fn update_overlay_position_on_main(app_handle: &AppHandle) {
     }
 }
 
+/// Move the recording overlay window to physical screen coordinates (x_px, y_px)
+/// during interactive dragging. Bypasses Tao's DPI conversion issues on Windows
+/// and multi-monitor setups.
+#[tauri::command]
+#[specta::specta]
+pub fn move_recording_overlay_window(
+    app_handle: AppHandle,
+    x_px: i32,
+    y_px: i32,
+) -> Result<(), String> {
+    let overlay_window = app_handle
+        .get_webview_window("recording_overlay")
+        .ok_or_else(|| "recording overlay window not found".to_string())?;
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        };
+        let hwnd = overlay_window
+            .hwnd()
+            .map_err(|e| format!("failed to get hwnd: {e}"))?;
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                x_px,
+                y_px,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = overlay_window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: x_px,
+            y: y_px,
+        }));
+    }
+
+    Ok(())
+}
+
+/// Initiates an active drag loop for the recording overlay.
+///
+/// On Windows, this runs an ultra-low-latency tracking loop in a background thread
+/// that samples physical cursor position and moves the window via SetWindowPos while
+/// the left mouse button is held down. It works across multi-monitor setups with
+/// arbitrary DPI, doesn't depend on window activation (WS_EX_NOACTIVATE), and
+/// persists the final anchored position automatically upon mouse release.
+#[tauri::command]
+#[specta::specta]
+pub fn start_recording_overlay_drag(app_handle: AppHandle) -> Result<(), String> {
+    if OVERLAY_IS_DRAGGING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::{HWND, POINT, RECT};
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetCursorPos, GetWindowRect, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        };
+
+        let overlay_window = app_handle
+            .get_webview_window("recording_overlay")
+            .ok_or_else(|| {
+                OVERLAY_IS_DRAGGING.store(false, Ordering::SeqCst);
+                "recording overlay window not found".to_string()
+            })?;
+
+        let hwnd = overlay_window.hwnd().map_err(|e| {
+            OVERLAY_IS_DRAGGING.store(false, Ordering::SeqCst);
+            format!("failed to get hwnd: {e}")
+        })?;
+
+        let mut cur_pt = POINT::default();
+        let mut win_rect = RECT::default();
+        unsafe {
+            let _ = GetCursorPos(&mut cur_pt);
+            let _ = GetWindowRect(hwnd, &mut win_rect);
+        }
+
+        let offset_x = cur_pt.x - win_rect.left;
+        let offset_y = cur_pt.y - win_rect.top;
+        let start_x = win_rect.left;
+        let start_y = win_rect.top;
+        let hwnd_raw = hwnd.0 as isize;
+
+        let app = app_handle.clone();
+        std::thread::spawn(move || {
+            let hwnd = HWND(hwnd_raw as *mut _);
+            let mut last_x = start_x;
+            let mut last_y = start_y;
+            let mut moved = false;
+
+            while OVERLAY_IS_DRAGGING.load(Ordering::Relaxed) {
+                // If the user has released the left mouse button, end the drag:
+                let is_down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 };
+                if !is_down {
+                    break;
+                }
+
+                let mut cur = POINT::default();
+                unsafe {
+                    let _ = GetCursorPos(&mut cur);
+                }
+
+                let target_x = cur.x - offset_x;
+                let target_y = cur.y - offset_y;
+
+                if (target_x - start_x).abs() >= 2 || (target_y - start_y).abs() >= 2 {
+                    moved = true;
+                }
+
+                if target_x != last_x || target_y != last_y {
+                    last_x = target_x;
+                    last_y = target_y;
+                    unsafe {
+                        let _ = SetWindowPos(
+                            hwnd,
+                            None,
+                            target_x,
+                            target_y,
+                            0,
+                            0,
+                            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                        );
+                    }
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(8));
+            }
+
+            OVERLAY_IS_DRAGGING.store(false, Ordering::SeqCst);
+
+            if moved {
+                let _ = remember_recording_overlay_window_position(app, last_x, last_y);
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+            let _ = overlay_window.start_dragging();
+        }
+        OVERLAY_IS_DRAGGING.store(false, Ordering::SeqCst);
+    }
+
+    Ok(())
+}
+
+/// Explicitly stops any active recording overlay drag operation.
+#[tauri::command]
+#[specta::specta]
+pub fn stop_recording_overlay_drag() -> Result<(), String> {
+    OVERLAY_IS_DRAGGING.store(false, Ordering::SeqCst);
+    Ok(())
+}
+
 /// Remember the physical-pixel position of the overlay window after a drag-grip
 /// reposition, so the next recording shows up where the user left it.
 #[tauri::command]
@@ -996,11 +1220,50 @@ pub fn remember_recording_overlay_window_position(
     y_px: i32,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app_handle);
+    let overlay_window = app_handle.get_webview_window("recording_overlay");
+    #[cfg(target_os = "windows")]
+    let win_h = if let Some(w) = overlay_window.as_ref() {
+        if let Ok(hwnd) = w.hwnd() {
+            let mut rect = windows::Win32::Foundation::RECT::default();
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut rect);
+            }
+            rect.bottom - rect.top
+        } else {
+            120
+        }
+    } else {
+        120
+    };
+    #[cfg(not(target_os = "windows"))]
+    let win_h = overlay_window
+        .as_ref()
+        .and_then(|w| w.outer_size().ok().or_else(|| w.inner_size().ok()))
+        .map(|s| s.height as i32)
+        .unwrap_or(120);
+
+    let bottom_y = y_px + win_h;
+
+    // Detect whether the overlay is placed in the top half or bottom half of its monitor:
+    if let Some(monitor) = get_monitor_for_physical_point(&app_handle, x_px as f64, y_px as f64) {
+        let monitor_mid_y = monitor.position().y + (monitor.size().height as i32) / 2;
+        let is_bottom_half = (y_px + win_h / 2) >= monitor_mid_y;
+        let position = if is_bottom_half {
+            OverlayPosition::Bottom
+        } else {
+            OverlayPosition::Top
+        };
+        settings.overlay_position = position;
+        let pos_str = if is_bottom_half { "bottom" } else { "top" };
+        let _ = app_handle.emit("overlay-position-changed", pos_str);
+    }
+
     settings.recording_overlay_use_manual_position = true;
     settings.recording_overlay_has_saved_custom_position = true;
     settings.recording_overlay_manual_position_uses_physical_px = true;
     settings.recording_overlay_custom_x_px = x_px.clamp(-100000, 100000);
     settings.recording_overlay_custom_y_px = y_px.clamp(-100000, 100000);
+    settings.recording_overlay_custom_bottom_y_px = bottom_y.clamp(-100000, 100000);
     settings::write_settings(&app_handle, settings);
     Ok(())
 }
@@ -1015,6 +1278,7 @@ pub fn reset_recording_overlay_manual_position(app_handle: AppHandle) -> Result<
     settings.recording_overlay_manual_position_uses_physical_px = false;
     settings.recording_overlay_custom_x_px = 0;
     settings.recording_overlay_custom_y_px = 0;
+    settings.recording_overlay_custom_bottom_y_px = 0;
     settings::write_settings(&app_handle, settings);
     crate::utils::update_overlay_position(&app_handle);
     Ok(())
@@ -1029,6 +1293,7 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     // fills, so a long session's transcript never sizes the next one.
     OVERLAY_STREAMING.store(false, Ordering::Relaxed);
     OVERLAY_STREAM_TEXT_H.store(0, Ordering::Relaxed);
+    OVERLAY_STREAM_WIDTH_PX.store(0, Ordering::Relaxed);
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -1116,12 +1381,15 @@ static OVERLAY_STREAMING: AtomicBool = AtomicBool::new(false);
 /// are one number.
 #[tauri::command]
 #[specta::specta]
-pub fn overlay_stream_text_height(app: AppHandle, height_px: u32) -> u32 {
+pub fn overlay_stream_text_height(app: AppHandle, height_px: u32, width_px: Option<u32>) -> u32 {
     // Only the streaming card reports, and only while it is on screen: a card
     // that is fading out or hidden must not resize the window under the next
     // state's layout.
     if !OVERLAY_STREAMING.load(Ordering::Relaxed) {
         return OVERLAY_STREAM_TEXT_CAP.load(Ordering::Relaxed);
+    }
+    if let Some(w) = width_px {
+        OVERLAY_STREAM_WIDTH_PX.store(w.clamp(380, 1200), Ordering::Relaxed);
     }
     let cap = streaming_text_cap(&app);
     OVERLAY_STREAM_TEXT_CAP.store(cap, Ordering::Relaxed);
@@ -1134,16 +1402,15 @@ pub fn overlay_stream_text_height(app: AppHandle, height_px: u32) -> u32 {
     cap
 }
 
-/// The tallest the streaming card's transcript may be: the whole card capped at
-/// ~70 % of the monitor it is on, minus the card's own chrome.
+/// The tallest the streaming card's transcript may be: capped at at most ~280px logical
+/// (total card height ~400px), and at most 35% of the monitor height minus base height.
 ///
 /// The frontend's reported height is in CSS px and the window is sized in logical
 /// px, which are the same length on every platform. On Windows both are also
 /// multiplied by the accessibility text scale (WebView2 zooms the CSS, and
 /// `place_windows_overlay` grows the window with it, see
 /// `windows_text_scale_factor`), so the monitor height is divided by the text
-/// scale as well as the device pixel ratio there — otherwise the 70 % cap would
-/// grow past the monitor at a large text size.
+/// scale as well as the device pixel ratio there.
 fn streaming_text_cap(app: &AppHandle) -> u32 {
     let (_, base_height) = streaming_dimensions_baseline();
     let logical_monitor_height = app
@@ -1167,9 +1434,10 @@ fn streaming_text_cap(app: &AppHandle) -> u32 {
         // No monitor to measure (the window is gone): leave the card at its base
         // size rather than inventing a screen big enough for anything.
         .unwrap_or(base_height);
-    (logical_monitor_height * 0.7 - base_height)
-        .max(0.0)
-        .round() as u32
+    // Transcript capped at max 280px logical (total card height ~400px),
+    // and at most 35% of the monitor height minus base height.
+    let max_text_h = (logical_monitor_height * 0.35 - base_height).clamp(160.0, 280.0);
+    max_text_h.round() as u32
 }
 
 /// The streaming card's size with no transcript measured yet — what the card
@@ -1433,5 +1701,29 @@ mod tests {
         );
         // Top offset rides the DPI scale alone, so the top edge doesn't move.
         assert_eq!(top_y, -195);
+    }
+
+    #[test]
+    fn manual_overlay_position_anchors_bottom_and_top_edges() {
+        let mon_y = 0;
+        let mon_h = 1080;
+
+        // Bottom placement: bottom edge is anchored at bottom_y = 1000
+        let bottom_y = 1000;
+        let height1 = 120;
+        let y1 = (bottom_y - height1).max(mon_y);
+        assert_eq!(y1 + height1, bottom_y);
+
+        let height2 = 300; // expanded as speech aggregates
+        let y2 = (bottom_y - height2).max(mon_y);
+        assert_eq!(y2 + height2, bottom_y); // bottom edge stays identical!
+
+        // Top placement: top edge is anchored at top_y = 20
+        let top_y = 20;
+        let y_top1 = top_y.min(mon_y + mon_h - height1).max(mon_y);
+        assert_eq!(y_top1, top_y);
+
+        let y_top2 = top_y.min(mon_y + mon_h - height2).max(mon_y);
+        assert_eq!(y_top2, top_y); // top edge stays identical!
     }
 }

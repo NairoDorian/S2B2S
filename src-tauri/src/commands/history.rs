@@ -388,7 +388,7 @@ pub async fn multi_stt_history_entry(
 
     let merge_start = std::time::Instant::now();
     let merge_outcome =
-        crate::actions::multi_stt_merge_transcriptions(&settings, &output_refs).await;
+        crate::actions::multi_stt_merge_transcriptions(&settings, &output_refs, None).await;
 
     let latency = merge_start.elapsed().as_secs_f64() * 1000.0;
     let merge_latency_ms = Some(latency);

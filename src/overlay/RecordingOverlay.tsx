@@ -21,8 +21,6 @@
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { currentLanguage, useTranslation } from "@/i18n/useTranslationSolid";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
@@ -90,6 +88,7 @@ const CancelButton = () => {
       class="sx"
       aria-label={t("common.cancel")}
       onClick={() => commands.cancelOperation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <svg viewBox="0 0 16 16" aria-hidden="true">
         <path
@@ -103,8 +102,12 @@ const CancelButton = () => {
   );
 };
 
-const WorkingRow = (props: { label: string; showCancel: boolean }) => (
-  <div class="sbase">
+const WorkingRow = (props: {
+  label: string;
+  showCancel: boolean;
+  onPointerDown?: (e: PointerEvent) => void;
+}) => (
+  <div class="sbase" onPointerDown={props.onPointerDown}>
     <div class="sbase-l">
       <span class="sspinner" />
     </div>
@@ -116,6 +119,32 @@ const WorkingRow = (props: { label: string; showCancel: boolean }) => (
     </div>
   </div>
 );
+
+// Drag-grip handlers — allow the user to grab the overlay and reposition it,
+// persisting the new position so it stays there across recordings (learned
+// from AIVORelay's recording-overlay position memory).
+const handleDragGripPointerDown = (event: PointerEvent) => {
+  if (event.button !== 0) return;
+  const target = event.target as HTMLElement | null;
+  if (
+    target &&
+    (target.closest(".sx") ||
+      target.closest("button:not(.ov-drag-grip)") ||
+      target.closest("a") ||
+      target.closest("input") ||
+      target.closest("select"))
+  ) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+
+  void commands.startRecordingOverlayDrag();
+};
+
+const handleDragGripPointerUp = () => {
+  void commands.stopRecordingOverlayDrag();
+};
 
 const RecordingOverlay = () => {
   const { t } = useTranslation();
@@ -192,6 +221,42 @@ const RecordingOverlay = () => {
   // reactive on purpose: nothing renders from them, they only carry state
   // between a timer tick and the next read.
   let reportedHeight = -1;
+  let reportedWidth = -1;
+
+  // Count words across all active streams (primary, extras, and merge block)
+  // so the overlay dynamically expands width as speech accumulates in any column.
+  const totalWords = () => {
+    const primary = countWords(
+      joinStreamText(streamText().committed, streamText().tentative).trim(),
+    );
+    const merged = countWords(
+      joinStreamText(mergeText().committed, mergeText().tentative).trim(),
+    );
+    return Math.max(primary, merged, wordCount());
+  };
+
+  // Dynamic width for streaming mode:
+  // Single model: 420px -> expands up to 560px as text accumulates.
+  // Multi-STT streaming (2 models / debug view): 560px -> expands up to 740px.
+  // 3+ models: 680px -> expands up to 860px.
+  const openWidth = () => {
+    const extras = Object.keys(extraTexts()).length;
+    let base = 420;
+    let max = 560;
+    if (extras >= 1 || debugStream()) {
+      base = 560;
+      max = 740;
+    }
+    if (extras >= 2) {
+      base = 680;
+      max = 860;
+    }
+    const words = totalWords();
+    if (words <= 6) return base;
+    const progress = Math.min((words - 6) / 30, 1.0);
+    return Math.round(base + (max - base) * progress);
+  };
+
   let capEl: HTMLDivElement | undefined;
   let pinned = true;
   let directMode = false;
@@ -224,32 +289,6 @@ const RecordingOverlay = () => {
   // show) arriving meanwhile makes that continuation stale, and it returns
   // instead of undoing the later event.
   let showGeneration = 0;
-
-  // Drag-grip state (see AIVORelay's recording-overlay position memory pattern).
-  // These are plain variables — not reactive — because nothing renders from them
-  // directly; they only carry state between pointer events and the onMoved listener.
-  const windowRef = getCurrentWindow();
-  let dragGripArmed = false;
-  let dragGripSawMove = false;
-  let dragGripLastPosition: { x: number; y: number } | null = null;
-  let dragGripSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  // Manual-drag fallback state — used when startDragging() fails (Windows
-  // non-focusable overlay window: WS_EX_NOACTIVATE blocks the native drag).
-  let manualDragActive = false;
-  let manualDragStart: {
-    clientX: number;
-    clientY: number;
-    winX: number;
-    winY: number;
-  } = {
-    clientX: 0,
-    clientY: 0,
-    winX: 0,
-    winY: 0,
-  };
-  let manualDragMoveHandler: ((e: PointerEvent) => void) | null = null;
-  let manualDragUpHandler: (() => void) | null = null;
-  let dragGripFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Publish through here so an unchanged split is not re-signalled: a Solid
   // signal fires on every `set` with a fresh object, and the typewriter ticks
@@ -376,6 +415,7 @@ const RecordingOverlay = () => {
           setFailedChunks(0);
           setTextCap(null);
           reportedHeight = -1;
+          reportedWidth = -1;
         }
 
         // One settings read serves both the language and the layout below.
@@ -508,33 +548,6 @@ const RecordingOverlay = () => {
         }
       });
 
-      // Track overlay moves so the drag-grip can save the final position once
-      // the user lets go. A debounced save avoids flooding the backend with
-      // updates while the window is still in motion.
-      const unlistenMoved = await windowRef.onMoved(({ payload }) => {
-        if (!dragGripArmed) return;
-        // Native drag is producing movement — cancel the manual-drag fallback
-        // timer so we don't double up with setPosition.
-        if (dragGripFallbackTimer !== null) {
-          clearTimeout(dragGripFallbackTimer);
-          dragGripFallbackTimer = null;
-        }
-        dragGripSawMove = true;
-        dragGripLastPosition = { x: payload.x, y: payload.y };
-        if (dragGripSaveTimer !== null) {
-          clearTimeout(dragGripSaveTimer);
-        }
-        dragGripSaveTimer = setTimeout(() => {
-          const positionToSave = dragGripLastPosition;
-          dragGripSaveTimer = null;
-          if (!positionToSave || !dragGripArmed) return;
-          saveOverlayPosition(
-            Math.round(positionToSave.x),
-            Math.round(positionToSave.y),
-          );
-        }, 500);
-      });
-
       // Live corner-radius updates — the setting's backend handler emits this
       // on every change, so a running overlay preview re-rounds its card
       // without a stop/start cycle.
@@ -603,7 +616,12 @@ const RecordingOverlay = () => {
         },
       );
 
+      window.addEventListener("pointerup", handleDragGripPointerUp);
+      window.addEventListener("pointercancel", handleDragGripPointerUp);
+
       return () => {
+        window.removeEventListener("pointerup", handleDragGripPointerUp);
+        window.removeEventListener("pointercancel", handleDragGripPointerUp);
         stopTypewriter();
         unlistenShow();
         unlistenHide();
@@ -611,7 +629,6 @@ const RecordingOverlay = () => {
         unlistenStream();
         unlistenSpeech();
         unlistenPhase();
-        unlistenMoved();
         unlistenRadius();
         unlistenScope();
         unlistenStats();
@@ -684,13 +701,18 @@ const RecordingOverlay = () => {
   // before the browser paints. The apply writes `overflowing` — the effect phase
   // is the sanctioned place for that.
   createEffect(
-    () => [streamText(), extraTexts(), mergeText()] as const,
+    () => [streamText(), extraTexts(), mergeText(), textCap()] as const,
     () => {
       const el = capEl;
       if (!el) return;
       // Fade the top edge only once text actually overflows the cap.
       setOverflowing(el.scrollHeight > el.clientHeight + 1);
-      if (pinned) el.scrollTop = el.scrollHeight;
+      if (pinned) {
+        el.scrollTop = el.scrollHeight;
+        requestAnimationFrame(() => {
+          if (pinned && capEl) capEl.scrollTop = capEl.scrollHeight;
+        });
+      }
     },
   );
 
@@ -704,17 +726,25 @@ const RecordingOverlay = () => {
   // here, not a second measurement of its own. The merged block is inside it too,
   // and it grows a whole block at a time.
   createEffect(
-    () => [streamText(), extraTexts(), mergeText(), wholeSession()] as const,
-    ([, , whole]) => {
-      if (!whole) return;
+    () =>
+      [
+        streamText(),
+        extraTexts(),
+        mergeText(),
+        wholeSession(),
+        openWidth(),
+      ] as const,
+    ([, , , whole, width]) => {
+      if (!whole && !debugStream()) return;
       const el = capEl;
       if (!el) return;
       const stepped =
         Math.ceil(el.scrollHeight / TEXT_HEIGHT_STEP_PX) * TEXT_HEIGHT_STEP_PX;
-      if (stepped === reportedHeight) return;
+      if (stepped === reportedHeight && width === reportedWidth) return;
       reportedHeight = stepped;
+      reportedWidth = width;
       commands
-        .overlayStreamTextHeight(stepped)
+        .overlayStreamTextHeight(stepped, width)
         .then((max) => {
           // 0 means the backend has no streaming card on screen (the overlay is
           // fading out): keep the cap we already have rather than collapsing.
@@ -740,167 +770,6 @@ const RecordingOverlay = () => {
     const el = capEl;
     if (!el) return;
     pinned = el.scrollHeight - el.scrollTop - el.clientHeight <= 16;
-  };
-
-  // Drag-grip handlers — allow the user to grab the overlay and reposition it,
-  // persisting the new position so it stays there across recordings (learned
-  // from AIVORelay's recording-overlay position memory).
-  const saveOverlayPosition = (xPx: number, yPx: number) => {
-    if (dragGripSaveTimer !== null) {
-      clearTimeout(dragGripSaveTimer);
-      dragGripSaveTimer = null;
-    }
-    commands
-      .rememberRecordingOverlayWindowPosition(xPx, yPx)
-      .then((result) => {
-        if (result.status === "error") {
-          console.error(
-            "Failed to remember recording overlay position:",
-            result.error,
-          );
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to remember recording overlay position:", error);
-      });
-  };
-
-  const handleDragGripPointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-
-    dragGripArmed = true;
-    dragGripSawMove = false;
-    dragGripLastPosition = null;
-    manualDragActive = false;
-    if (dragGripSaveTimer !== null) {
-      clearTimeout(dragGripSaveTimer);
-      dragGripSaveTimer = null;
-    }
-    if (dragGripFallbackTimer !== null) {
-      clearTimeout(dragGripFallbackTimer);
-      dragGripFallbackTimer = null;
-    }
-    // Remove any leftover manual-drag listeners from a previous session.
-    if (manualDragMoveHandler) {
-      window.removeEventListener("pointermove", manualDragMoveHandler);
-      manualDragMoveHandler = null;
-    }
-    if (manualDragUpHandler) {
-      window.removeEventListener("pointerup", manualDragUpHandler);
-      manualDragUpHandler = null;
-    }
-
-    // Try native drag first. On some platforms (Windows with focusable(false)
-    // → WS_EX_NOACTIVATE) startDragging() either rejects or resolves without
-    // moving the window. A 50ms fallback timer detects the latter: if no
-    // onMoved event has fired by then, switch to manual dragging.
-    void windowRef.startDragging().then(
-      () => {
-        if (!dragGripArmed) return;
-        dragGripFallbackTimer = setTimeout(() => {
-          if (!dragGripSawMove && dragGripArmed) {
-            // Native drag didn't produce movement — go manual.
-            startManualDrag(event);
-          }
-        }, 50);
-      },
-      () => {
-        // Native drag rejected — go manual immediately.
-        startManualDrag(event);
-      },
-    );
-  };
-
-  /**
-   * Manual drag fallback: tracks pointermove on the global window and moves the
-   * overlay via setPosition() instead of the native drag loop. This works even
-   * when startDragging() can't activate the window (WS_EX_NOACTIVATE on Windows).
-   */
-  const startManualDrag = (event: PointerEvent) => {
-    // `outerPosition()` is physical pixels while the pointer deltas below are
-    // CSS (logical) pixels, so the start is converted once here and every move
-    // is a `LogicalPosition`; mixing the two jumped the window at any display
-    // scale other than 100 %.
-    void Promise.all([windowRef.outerPosition(), windowRef.scaleFactor()]).then(
-      ([pos, scale]) => {
-        if (!dragGripArmed) return;
-        manualDragActive = true;
-        manualDragStart = {
-          clientX: event.clientX,
-          clientY: event.clientY,
-          winX: pos.x / scale,
-          winY: pos.y / scale,
-        };
-      },
-    );
-
-    manualDragMoveHandler = (e: PointerEvent) => {
-      if (!manualDragActive) return;
-      const dx = e.clientX - manualDragStart.clientX;
-      const dy = e.clientY - manualDragStart.clientY;
-      void windowRef.setPosition(
-        new LogicalPosition(
-          manualDragStart.winX + dx,
-          manualDragStart.winY + dy,
-        ),
-      );
-      dragGripSawMove = true;
-    };
-
-    manualDragUpHandler = () => {
-      const wasMoved = dragGripSawMove;
-      manualDragActive = false;
-      if (manualDragMoveHandler) {
-        window.removeEventListener("pointermove", manualDragMoveHandler);
-        manualDragMoveHandler = null;
-      }
-      if (manualDragUpHandler) {
-        window.removeEventListener("pointerup", manualDragUpHandler);
-        manualDragUpHandler = null;
-      }
-      if (dragGripFallbackTimer !== null) {
-        clearTimeout(dragGripFallbackTimer);
-        dragGripFallbackTimer = null;
-      }
-      // For manual drag the onMoved event may not have fired for the final
-      // setPosition() call, so save the position directly. `outerPosition()`
-      // is already physical pixels — what the backend stores, and what the
-      // native path saves from `onMoved` — so it is saved unscaled.
-      if (wasMoved) {
-        void windowRef.outerPosition().then((pos) => {
-          saveOverlayPosition(Math.round(pos.x), Math.round(pos.y));
-        });
-      }
-      dragGripArmed = false;
-      dragGripSawMove = false;
-      dragGripLastPosition = null;
-    };
-
-    window.addEventListener("pointermove", manualDragMoveHandler);
-    window.addEventListener("pointerup", manualDragUpHandler);
-  };
-
-  const handleDragGripPointerUp = () => {
-    // Manual drag cleanup is handled by the window-level pointerup listener
-    // (manualDragUpHandler), which saves the position directly. Returning
-    // early here prevents the native-drag save path from clobbering it.
-    if (manualDragActive || manualDragUpHandler !== null) {
-      return;
-    }
-
-    const positionToSave = dragGripSawMove ? dragGripLastPosition : null;
-    dragGripArmed = false;
-    dragGripSawMove = false;
-    dragGripLastPosition = null;
-
-    if (positionToSave) {
-      saveOverlayPosition(
-        Math.round(positionToSave.x),
-        Math.round(positionToSave.y),
-      );
-    }
   };
 
   // Speech stats ride along in both overlay forms. Rendered from the moment the
@@ -1058,7 +927,10 @@ const RecordingOverlay = () => {
     showCancel: boolean;
     badge?: JSX.Element;
   }) => (
-    <div class={["sbase", { "has-stats": showStats() }]}>
+    <div
+      class={["sbase", { "has-stats": showStats() }]}
+      onPointerDown={handleDragGripPointerDown}
+    >
       <div class="sbase-l">
         <span
           class={[
@@ -1095,9 +967,10 @@ const RecordingOverlay = () => {
     <div
       dir={direction()}
       class={["ov-stage", position()]}
-      style={
-        textCap() === null ? undefined : { "--ov-cap-max-h": `${textCap()}px` }
-      }
+      style={{
+        "--ov-open-w": `${openWidth()}px`,
+        ...(textCap() === null ? {} : { "--ov-cap-max-h": `${textCap()}px` }),
+      }}
     >
       <Show when={sessionKey()} keyed>
         {/* `leaving` mirrors React's class list; the card only exists while the
@@ -1195,10 +1068,19 @@ const RecordingOverlay = () => {
                     <span class="smark smerge-mark">
                       {t("overlay.mergeAndCleaned")}
                     </span>
-                    <p>
-                      <span class="committed">{mergeText().committed}</span>
-                      <span class="tentative">{mergeText().tentative}</span>
-                    </p>
+                    <Show
+                      when={hasMergeText()}
+                      fallback={
+                        <p>
+                          <span class="swait">{t("overlay.awaitingText")}</span>
+                        </p>
+                      }
+                    >
+                      <p>
+                        <span class="committed">{mergeText().committed}</span>
+                        <span class="tentative">{mergeText().tentative}</span>
+                      </p>
+                    </Show>
                   </div>
                 </Show>
               </div>
@@ -1221,6 +1103,7 @@ const RecordingOverlay = () => {
                   : t("overlay.transcribing")
               }
               showCancel={true}
+              onPointerDown={handleDragGripPointerDown}
             />
           </Show>
         </div>
@@ -1254,7 +1137,11 @@ const RecordingOverlay = () => {
           when={state() === "transcribing" || state() === "processing"}
           fallback={<ListeningRow showTimer={false} showCancel={true} />}
         >
-          <WorkingRow label={workLabel()} showCancel={true} />
+          <WorkingRow
+            label={workLabel()}
+            showCancel={true}
+            onPointerDown={handleDragGripPointerDown}
+          />
         </Show>
       </div>
       <DragGrip />

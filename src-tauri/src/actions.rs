@@ -1452,6 +1452,102 @@ fn merge_response_rejection(response: &str, slots: &[&str]) -> Option<String> {
     None
 }
 
+/// Strip repeated context from an LLM consensus merge reply.
+///
+/// Unlike STT audio alignment (which searches for an audio seam), an LLM prompted
+/// with a context block either produces ONLY the merged chunk (the intended case),
+/// or echoes the prompt's context at the start before outputting the chunk's text.
+///
+/// This helper strips the repeated context ONLY when the output actually begins
+/// with the full context (or a full sentence/line of the context of at least 4 tokens),
+/// and leaves the chunk text intact. It never chops random words from the middle
+/// or cuts the chunk's own words.
+pub(crate) fn strip_llm_repeated_context(cleaned_text: &str, context: &str) -> String {
+    let ctx = context.trim();
+    let text = cleaned_text.trim();
+    if ctx.is_empty() || text.is_empty() {
+        return text.to_string();
+    }
+
+    // 1. Verbatim prefix match: if cleaned_text literally starts with context
+    if let Some(rest) = text.strip_prefix(ctx) {
+        let trimmed_rest = rest.trim_start_matches(|c: char| {
+            c.is_whitespace() || c == '.' || c == ',' || c == ':' || c == '-' || c == '\n'
+        });
+        if !trimmed_rest.is_empty() {
+            return trimmed_rest.to_string();
+        }
+    }
+
+    // 2. Token-level prefix match (tolerant of capitalization / punctuation differences)
+    fn to_words(s: &str) -> Vec<(usize, String)> {
+        let mut words = Vec::new();
+        let mut start = None;
+        for (i, c) in s.char_indices() {
+            if c.is_alphanumeric() {
+                if start.is_none() {
+                    start = Some(i);
+                }
+            } else if let Some(st) = start.take() {
+                words.push((st, s[st..i].to_lowercase()));
+            }
+        }
+        if let Some(st) = start {
+            words.push((st, s[st..].to_lowercase()));
+        }
+        words
+    }
+
+    let text_words = to_words(text);
+    let ctx_words = to_words(ctx);
+
+    if ctx_words.is_empty() || text_words.is_empty() {
+        return text.to_string();
+    }
+
+    // Check if the entire context matches the beginning of text_words
+    let k = ctx_words.len();
+    if k >= 3 && text_words.len() > k {
+        let matches_full_context = ctx_words
+            .iter()
+            .zip(text_words[..k].iter())
+            .all(|(a, b)| a.1 == b.1);
+        if matches_full_context {
+            let cut = text_words[k].0;
+            let rest = text[cut..].trim_start_matches(|c: char| {
+                c.is_whitespace() || c == '.' || c == ',' || c == ':' || c == '-' || c == '\n'
+            });
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+
+    // Check if the last line of context (if multi-line) was echoed at the start
+    if let Some(last_line) = ctx.lines().rev().find(|l| !l.trim().is_empty()) {
+        let line_words = to_words(last_line);
+        let m = line_words.len();
+        if m >= 4 && text_words.len() > m {
+            let matches_last_line = line_words
+                .iter()
+                .zip(text_words[..m].iter())
+                .all(|(a, b)| a.1 == b.1);
+            if matches_last_line {
+                let cut = text_words[m].0;
+                let rest = text[cut..].trim_start_matches(|c: char| {
+                    c.is_whitespace() || c == '.' || c == ',' || c == ':' || c == '-' || c == '\n'
+                });
+                if !rest.is_empty() {
+                    return rest.to_string();
+                }
+            }
+        }
+    }
+
+    // Otherwise, the text did not echo the context. Keep the LLM's text as-is!
+    text.to_string()
+}
+
 /// Merge prompt for multi-STT: fills `${output}` / `${output1}` with the
 /// primary's text and `${outputN}` with slot N's, then sends it to the LLM API
 /// (same provider as post-processing). `outputs` is one text per Multi-STT
@@ -1460,6 +1556,7 @@ fn merge_response_rejection(response: &str, slots: &[&str]) -> Option<String> {
 pub(crate) async fn multi_stt_merge_transcriptions(
     settings: &AppSettings,
     outputs: &[&str],
+    context: Option<&str>,
 ) -> Option<MultiSttMergeOutcome> {
     let merge_prompt = match &settings.multi_stt_merge_prompt {
         Some(p) => p.clone(),
@@ -1482,10 +1579,33 @@ pub(crate) async fn multi_stt_merge_transcriptions(
         prompt = prompt.replace(&format!("${{output{}}}", index + 1), slot_text(index));
     }
 
+    let context_trimmed = context.unwrap_or("").trim();
+    if prompt.contains("${context}") {
+        prompt = prompt.replace("${context}", context_trimmed);
+    } else if !context_trimmed.is_empty() {
+        let context_block = format!(
+            "Previous context (from preceding speech, for continuity only; do NOT repeat in output):\n\"\"\"\n{}\n\"\"\"\n\n",
+            context_trimmed
+        );
+        if let Some(pos) = prompt.find("\n---\n") {
+            let insert_pos = pos + "\n---\n".len();
+            prompt.insert_str(insert_pos, &format!("\n{}", context_block));
+        } else if let Some(pos) = prompt.find("Transcription 1") {
+            prompt.insert_str(pos, &context_block);
+        } else if let Some(pos) = prompt.find("Transcript:") {
+            prompt.insert_str(pos, &context_block);
+        } else {
+            prompt.push_str(&format!("\n\n{}", context_block));
+        }
+    }
+
     debug!(
         "Multi-STT merge prompt prepared, length: {} chars",
         prompt.chars().count()
     );
+    if !context_trimmed.is_empty() {
+        crate::utils::log_multiline("Multi-STT previous context", context_trimmed);
+    }
     // One line per model's answer for the same audio. These are what the merge
     // reconciles, so they are the first thing to read when the merged text comes
     // back wrong, short, or repeating — and an empty slot is invisible in a
@@ -1555,9 +1675,12 @@ pub(crate) async fn multi_stt_merge_transcriptions(
             // Same sanitising as post-processing: a reasoning model on the
             // same provider must not paste its <think> block, and invisible
             // characters must not leak into the pasted text.
-            let cleaned_text = strip_invisible_chars(strip_think_block(&raw_content))
+            let mut cleaned_text = strip_invisible_chars(strip_think_block(&raw_content))
                 .trim()
                 .to_string();
+            if !context_trimmed.is_empty() {
+                cleaned_text = strip_llm_repeated_context(&cleaned_text, context_trimmed);
+            }
             match merge_response_rejection(&cleaned_text, outputs) {
                 // The reply is not a transcript — the model answered the
                 // prompt. Returning "no merge" hands the caller its
@@ -2492,7 +2615,7 @@ impl ShortcutAction for MultiSttAction {
                 // Poll for cancellation while the LLM round-trip is in
                 // flight so Escape aborts the merge instead of waiting on it.
                 let Some(merge_outcome) = complete_unless_cancelled(
-                    multi_stt_merge_transcriptions(&settings_for_merge, &output_refs),
+                    multi_stt_merge_transcriptions(&settings_for_merge, &output_refs, None),
                     || rm.was_cancelled_since(cancel_generation),
                 )
                 .await
@@ -2838,7 +2961,8 @@ mod tests {
     use super::{
         complete_unless_cancelled, effective_overlay_style, final_paste_method,
         is_blank_transcription, live_stream_is_preview_only, merge_response_rejection,
-        should_use_streaming_overlay, slots_carry_words, strip_think_block,
+        should_use_streaming_overlay, slots_carry_words, strip_llm_repeated_context,
+        strip_think_block,
     };
     use crate::settings::{AppSettings, OverlayStyle, PasteMethod};
     use std::future;
@@ -3095,5 +3219,43 @@ mod tests {
     fn processed_results_paste_with_ctrl_v_when_stream_was_preview_only() {
         assert_eq!(final_paste_method(true), Some(PasteMethod::CtrlV));
         assert_eq!(final_paste_method(false), None);
+    }
+
+    #[test]
+    fn test_strip_llm_repeated_context() {
+        // Case 1: Non-repeated context (the exact scenario where chunk 2 was incorrectly wiped)
+        let ctx = "C'est le chunk numéro un.";
+        let chunk2 = "Ceci est le chunk numéro deux";
+        assert_eq!(
+            strip_llm_repeated_context(chunk2, ctx),
+            "Ceci est le chunk numéro deux"
+        );
+
+        // Case 2: Verbatim repeated context prefix
+        let repeated = "C'est le chunk numéro un. Ceci est le chunk numéro deux";
+        assert_eq!(
+            strip_llm_repeated_context(repeated, ctx),
+            "Ceci est le chunk numéro deux"
+        );
+
+        // Case 3: Minor punctuation difference in repeated context prefix
+        let ctx_punct = "Hello, world! This is test number one.";
+        let text_punct = "Hello world this is test number one. Here is chunk two.";
+        assert_eq!(
+            strip_llm_repeated_context(text_punct, ctx_punct),
+            "Here is chunk two."
+        );
+
+        // Case 4: Multi-line context with only the last line echoed
+        let multiline_ctx = "First paragraph here.\nSecond sentence of context.";
+        let text_multi = "Second sentence of context. Third new sentence.";
+        assert_eq!(
+            strip_llm_repeated_context(text_multi, multiline_ctx),
+            "Third new sentence."
+        );
+
+        // Case 5: Empty context or empty text
+        assert_eq!(strip_llm_repeated_context("Some text", ""), "Some text");
+        assert_eq!(strip_llm_repeated_context("", "Some ctx"), "");
     }
 }

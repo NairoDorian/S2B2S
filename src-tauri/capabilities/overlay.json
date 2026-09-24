@@ -3,5 +3,5 @@
   "identifier": "overlay",
   "description": "Minimal capabilities for the recording overlay: events and the overlay's own commands only. The overlay renders the recording pill and listens to state events; it gets no plugins.",
   "windows": ["recording_overlay"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
 }

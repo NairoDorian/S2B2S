@@ -31,6 +31,7 @@ export const settingsFixture = {
   recording_overlay_manual_position_uses_physical_px: false,
   recording_overlay_custom_x_px: 0,
   recording_overlay_custom_y_px: 0,
+  recording_overlay_custom_bottom_y_px: 0,
   overlay_window_fade_ms: 0,
   overlay_window_corner_radius: 0,
   debug_mode: false,

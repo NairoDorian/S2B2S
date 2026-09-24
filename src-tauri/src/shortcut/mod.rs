@@ -791,6 +791,7 @@ pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Resu
     settings.recording_overlay_manual_position_uses_physical_px = false;
     settings.recording_overlay_custom_x_px = 0;
     settings.recording_overlay_custom_y_px = 0;
+    settings.recording_overlay_custom_bottom_y_px = 0;
     settings::write_settings(&app, settings);
 
     // Whether the overlay shows at all is owned by overlay_style now; position

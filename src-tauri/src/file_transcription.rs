@@ -764,7 +764,7 @@ impl FileTranscriptionManager {
                 .chain(outputs.iter().map(String::as_str))
                 .collect();
             let merged =
-                crate::actions::multi_stt_merge_transcriptions(settings, &slot_texts).await;
+                crate::actions::multi_stt_merge_transcriptions(settings, &slot_texts, None).await;
             text = match merged {
                 Some(outcome) => outcome.cleaned_text,
                 None => {

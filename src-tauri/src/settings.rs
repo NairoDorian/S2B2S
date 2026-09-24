@@ -1479,6 +1479,8 @@ pub struct AppSettings {
     pub recording_overlay_custom_x_px: i32,
     #[serde(default)]
     pub recording_overlay_custom_y_px: i32,
+    #[serde(default)]
+    pub recording_overlay_custom_bottom_y_px: i32,
     #[serde(default = "default_overlay_window_fade_ms")]
     pub overlay_window_fade_ms: u32,
     #[serde(default = "default_overlay_window_corner_radius")]
@@ -2336,6 +2338,7 @@ pub fn get_default_settings() -> AppSettings {
         recording_overlay_manual_position_uses_physical_px: false,
         recording_overlay_custom_x_px: 0,
         recording_overlay_custom_y_px: 0,
+        recording_overlay_custom_bottom_y_px: 0,
         overlay_window_fade_ms: default_overlay_window_fade_ms(),
         overlay_window_corner_radius: default_overlay_window_corner_radius(),
         debug_mode: false,

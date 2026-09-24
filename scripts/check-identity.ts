@@ -179,6 +179,12 @@ const EXEMPTIONS: Exemption[] = [
     reason:
       "The CPU lane's private cache root. `get_cache_root()` in transcribe.cpp's own build script (`bindings/rust/sys/build.rs`, a separate repo) puts every persistent build artifact under `<LOCALAPPDATA>/handy/transcribe_cpp_cache/`, and that directory already exists on every developer's machine, holding the GPU caches. The CPU cache has to be a *sibling* of those, not a tree of its own, which is the whole reason it is named here: this path is not ours to rename.",
   },
+  {
+    file: "scripts/lib/cpu-lane.ts",
+    allow: /"handy", "transcribe_cpp_cache"/,
+    reason:
+      "The CPU lane's private cache root, mirroring transcribe.cpp's `get_cache_root()` upstream path.",
+  },
 
   // --- attribution, which must survive the rename ---------------------------
   {

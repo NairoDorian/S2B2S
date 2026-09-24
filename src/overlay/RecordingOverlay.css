@@ -283,7 +283,7 @@
   display: flex;
   flex-direction: column;
   padding-top: 12px;
-  padding-bottom: 0px;
+  padding-bottom: 12px;
   padding-left: 14px;
   padding-right: 14px;
   font-size: 15px;
@@ -365,6 +365,7 @@
   /* Same reason as the columns: the block is the direct flex child's text now,
      and it must not re-anchor itself away from its own mark. */
   margin: 0;
+  padding-bottom: 4px;
   color: var(--s-accent);
 }
 /* Words where the marks above it are single numerals, and deliberately: this
@@ -404,6 +405,16 @@
      sized. */
   grid-template-columns: minmax(22px, 1fr) auto minmax(22px, 1fr);
   align-items: center;
+  cursor: grab;
+  user-select: none;
+}
+.sbase:active {
+  cursor: grabbing;
+}
+.sbase button,
+.sbase a,
+.sbase input {
+  cursor: pointer;
 }
 /* With stats on, the row stops being a three-zone grid. Mirroring the ~120px
    readout cluster on the left to keep the waveform dead-centre would push the
@@ -667,37 +678,46 @@
    put it. */
 .ov-drag-grip {
   position: absolute;
-  bottom: 6px;
+  bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 3px;
   align-items: center;
-  padding: 2px 4px;
+  padding: 4px 18px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   cursor: grab;
   -webkit-appearance: none;
   appearance: none;
-  opacity: 0;
-  transition: opacity 150ms ease;
-  z-index: 1;
+  opacity: 0.4;
+  transition:
+    opacity 150ms ease,
+    background 150ms ease;
+  z-index: 10;
   user-select: none;
+  touch-action: none;
   -webkit-user-drag: none;
 }
 .ov-drag-grip:active {
   cursor: grabbing;
+  opacity: 1;
+}
+.ov-stage.top .ov-drag-grip {
+  top: 4px;
+  bottom: auto;
 }
 .ov-stage:hover .ov-drag-grip {
-  opacity: 0.6;
+  opacity: 0.75;
 }
 .ov-stage:hover .ov-drag-grip:hover {
   opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
 }
 .ov-drag-grip-dot {
-  width: 16px;
+  width: 22px;
   height: 2px;
   border-radius: 2px;
   background: var(--s-faint);

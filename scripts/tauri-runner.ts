@@ -51,17 +51,19 @@ import { existsSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import { homedir } from "os";
 import { checkTranscribeDeps } from "./check-transcribe-deps";
+import { applyCpuLane, FULL_MODEL_SET, withCmakeArg } from "./lib/cpu-lane";
 import { appEnvFlag } from "./lib/env-flag";
 import { printReport, pruneTarget } from "./prune-target";
+import { applyCompilerCache } from "./lib/compiler-cache";
+import { FAST_BUILD_OPTIONS, FULL_BUILD_OPTIONS } from "./build-options";
 
 const root = resolve(import.meta.dirname, "..");
 
 /**
- * Every architecture family transcribe.cpp can compile (src/CMakeLists.txt
- * `_all_families`). Set on every lane: the family-set selection is off for now,
- * so one build carries every model and no lane narrows it.
+ * How many architecture families `FULL_MODEL_SET` (src/CMakeLists.txt
+ * `_all_families`) compiles — reported in the posture line. The set itself is
+ * `lib/cpu-lane.ts`'s, shared with every script that compiles the backend.
  */
-const FULL_MODEL_SET = "full";
 const FULL_FAMILY_COUNT = 19;
 
 /** What the native build does about CUDA. */
@@ -71,25 +73,6 @@ type Posture = {
   /** What the native build does about CUDA. */
   cuda: CudaPolicy;
 };
-
-/** Append a `-D` to a CMake args string without clobbering what is there. */
-function withCmakeArg(existing: string | undefined, arg: string): string {
-  const trimmed = existing?.trim();
-  return trimmed ? `${trimmed} ${arg}` : arg;
-}
-
-/**
- * The CPU lane's private cache root. Mirrors `get_cache_root()` in the
- * transcribe.cpp build script — where the sibling GPU caches live — with a
- * `cpu-only` segment so the two never share a directory.
- */
-function cpuCacheRoot(): string {
-  const base =
-    process.platform === "win32"
-      ? (process.env.LOCALAPPDATA ?? process.env.APPDATA ?? homedir())
-      : (process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"));
-  return join(base, "handy", "transcribe_cpp_cache", "cpu-only");
-}
 
 /** Resolve a `dev:full` / `build:cpu` style subcommand token into argv. */
 function expandModeToken(arg: string): { args: string[] } | null {
@@ -149,44 +132,89 @@ const cuda: CudaPolicy = cudaFlags.values().next().value ?? "local";
 
 const posture: Posture = { cuda };
 
+// Auto-detect and configure compiler caching (sccache / ccache) for both
+// transcribe.cpp (CMake/CUDA/C++) and Rust crates in src-tauri.
+const compilerCache = applyCompilerCache(process.env);
+
 // Written before the spawn so cargo (and its build scripts) inherit it. Always
 // the full set: the family-set selection is off for now, so a build carries
 // every model regardless of the lane. (build.rs also honours a
 // `minimal-multilingual` cargo feature, which nothing here enables.)
 process.env.TRANSCRIBE_MODEL_SET = FULL_MODEL_SET;
 
+/**
+ * Compute an isolated cache directory for a given posture and its CMake arguments.
+ * Ensures that changes to options (e.g. in scripts/build-options.ts) or switching
+ * between postures invalidates the transcribe.cpp native cache, prompting a rebuild,
+ * while sccache reuses identical compilation units under the hood.
+ */
+function getPostureCacheDir(lane: string, cmakeArgs: string[]): string {
+  const base =
+    process.platform === "win32"
+      ? (process.env.LOCALAPPDATA ?? process.env.APPDATA ?? homedir())
+      : (process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"));
+  const hash = Bun.hash(cmakeArgs.join(" ")).toString(16).slice(0, 8);
+  return join(base, "handy", "transcribe_cpp_cache", `${lane}-${hash}`);
+}
+
 if (posture.cuda === "local") {
-  process.env.TRANSCRIBE_CUDA_ARCHITECTURES = "auto";
-} else if (posture.cuda === "matrix") {
-  process.env.TRANSCRIBE_CUDA_ARCHITECTURES = "default";
-} else {
-  // The `cuda` cargo feature stays on (tauri dev has no --no-default-features,
-  // and the feature lives in the target table), so the switch is the configure
-  // arg. The native build script applies TRANSCRIBE_CMAKE_ARGS *after* the
-  // feature-derived defines, so a `-D` wins on the first configure; the link
-  // line is rebuilt from the regenerated manifest, so nothing CUDA is linked.
-  process.env.TRANSCRIBE_CMAKE_ARGS = withCmakeArg(
-    process.env.TRANSCRIBE_CMAKE_ARGS,
-    "-DTRANSCRIBE_CUDA=OFF",
-  );
-  delete process.env.TRANSCRIBE_CUDA_ARCHITECTURES;
-  // A private cache root, because the native cache key hashes the feature set
-  // and the CUDA arch but NOT TRANSCRIBE_CMAKE_ARGS: a CPU configure could
-  // otherwise hit an entry a CUDA configure wrote and link a CUDA-built
-  // library. A distinct root makes that impossible in both directions. Honoured
-  // only when the caller has not pointed the cache somewhere themselves.
+  process.env.TRANSCRIBE_CUDA_ARCHITECTURES =
+    FAST_BUILD_OPTIONS.cudaArchitectures;
+  for (const arg of FAST_BUILD_OPTIONS.cmakeArgs) {
+    process.env.TRANSCRIBE_CMAKE_ARGS = withCmakeArg(
+      process.env.TRANSCRIBE_CMAKE_ARGS,
+      arg,
+    );
+  }
+  if (FAST_BUILD_OPTIONS.modelSet) {
+    process.env.TRANSCRIBE_MODEL_SET = FAST_BUILD_OPTIONS.modelSet;
+  }
+  if (FAST_BUILD_OPTIONS.env) {
+    Object.assign(process.env, FAST_BUILD_OPTIONS.env);
+  }
   if (
     !process.env.TRANSCRIBE_PREBUILT_DIR &&
     !process.env.TRANSCRIBE_CACHE_DIR
   ) {
-    process.env.TRANSCRIBE_CACHE_DIR = cpuCacheRoot();
+    process.env.TRANSCRIBE_CACHE_DIR = getPostureCacheDir(
+      "local",
+      FAST_BUILD_OPTIONS.cmakeArgs,
+    );
   }
+} else if (posture.cuda === "matrix") {
+  process.env.TRANSCRIBE_CUDA_ARCHITECTURES =
+    FULL_BUILD_OPTIONS.cudaArchitectures;
+  for (const arg of FULL_BUILD_OPTIONS.cmakeArgs) {
+    process.env.TRANSCRIBE_CMAKE_ARGS = withCmakeArg(
+      process.env.TRANSCRIBE_CMAKE_ARGS,
+      arg,
+    );
+  }
+  if (FULL_BUILD_OPTIONS.modelSet) {
+    process.env.TRANSCRIBE_MODEL_SET = FULL_BUILD_OPTIONS.modelSet;
+  }
+  if (FULL_BUILD_OPTIONS.env) {
+    Object.assign(process.env, FULL_BUILD_OPTIONS.env);
+  }
+  if (
+    !process.env.TRANSCRIBE_PREBUILT_DIR &&
+    !process.env.TRANSCRIBE_CACHE_DIR
+  ) {
+    process.env.TRANSCRIBE_CACHE_DIR = getPostureCacheDir(
+      "matrix",
+      FULL_BUILD_OPTIONS.cmakeArgs,
+    );
+  }
+} else {
+  // No CUDA at all: the configure switch, a private native cache root and the
+  // full family set — `lib/cpu-lane.ts` explains each, and the dependency
+  // updater and the gate's cargo steps apply the very same environment.
+  applyCpuLane(process.env);
 }
 
 const cudaLine = {
-  local: "TRANSCRIBE_CUDA_ARCHITECTURES=auto (this machine's GPU only).",
-  matrix:
-    "TRANSCRIBE_CUDA_ARCHITECTURES=default (the full architecture matrix).",
+  local: `TRANSCRIBE_CUDA_ARCHITECTURES=${FAST_BUILD_OPTIONS.cudaArchitectures} (${FAST_BUILD_OPTIONS.description}).`,
+  matrix: `TRANSCRIBE_CUDA_ARCHITECTURES=${FULL_BUILD_OPTIONS.cudaArchitectures} (${FULL_BUILD_OPTIONS.description}).`,
   off: "TRANSCRIBE_CUDA=OFF (no CUDA in this build; the app runs on CPU).",
 }[posture.cuda];
 
@@ -195,6 +223,12 @@ console.log(
     `(${FULL_FAMILY_COUNT} architecture families: every model, compiled into ` +
     `libtranscribe) and ${cudaLine}`,
 );
+
+if (compilerCache) {
+  console.log(
+    `[tauri-runner] compiler cache: active (${compilerCache}) for Rust & C/C++`,
+  );
+}
 
 // 2. Dependency check (never throws, never blocks the build)
 if (process.env.TRANSCRIBE_DIR || process.env.TRANSCRIBE_PREBUILT_DIR) {

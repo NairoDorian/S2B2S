@@ -802,52 +802,42 @@ export const MultiSttSettings = () => {
                     }
                     disabled={isUpdating("multi_stt_streaming_pause_ms")}
                   />
-                  {((getSetting(
-                    "multi_stt_streaming_multi_enabled",
-                  ) as boolean) ?? false) ? null : (
-                    <>
-                      <Slider
-                        value={
-                          (getSetting(
-                            "multi_stt_streaming_context_chunks",
-                          ) as number) ?? 1
-                        }
-                        onChange={(value) =>
-                          updateSetting(
-                            "multi_stt_streaming_context_chunks",
-                            Math.round(value),
-                          )
-                        }
-                        min={0}
-                        max={3}
-                        step={1}
-                        label={t("multiStt.streamingFirst.contextLabel")}
-                        description={t(
-                          "multiStt.streamingFirst.contextDescription",
-                        )}
-                        descriptionMode="tooltip"
-                        grouped={false}
-                        formatValue={(v) =>
-                          v === 0
-                            ? t("multiStt.streamingFirst.contextOff")
-                            : t("multiStt.streamingFirst.contextValue", {
-                                count: Math.round(v),
-                              })
-                        }
-                        onReset={() =>
-                          updateSetting("multi_stt_streaming_context_chunks", 1)
-                        }
-                        disabled={isUpdating(
-                          "multi_stt_streaming_context_chunks",
-                        )}
-                      />
-                      <Alert variant="info" contained>
-                        <p class="text-sm">
-                          {t("multiStt.streamingFirst.note")}
-                        </p>
-                      </Alert>
-                    </>
-                  )}
+                  <Slider
+                    value={
+                      (getSetting(
+                        "multi_stt_streaming_context_chunks",
+                      ) as number) ?? 1
+                    }
+                    onChange={(value) =>
+                      updateSetting(
+                        "multi_stt_streaming_context_chunks",
+                        Math.round(value),
+                      )
+                    }
+                    min={0}
+                    max={3}
+                    step={1}
+                    label={t("multiStt.streamingFirst.contextLabel")}
+                    description={t(
+                      "multiStt.streamingFirst.contextDescription",
+                    )}
+                    descriptionMode="tooltip"
+                    grouped={false}
+                    formatValue={(v) =>
+                      v === 0
+                        ? t("multiStt.streamingFirst.contextOff")
+                        : t("multiStt.streamingFirst.contextValue", {
+                            count: Math.round(v),
+                          })
+                    }
+                    onReset={() =>
+                      updateSetting("multi_stt_streaming_context_chunks", 1)
+                    }
+                    disabled={isUpdating("multi_stt_streaming_context_chunks")}
+                  />
+                  <Alert variant="info" contained>
+                    <p class="text-sm">{t("multiStt.streamingFirst.note")}</p>
+                  </Alert>
                 </>
               )}
             </div>
