@@ -675,7 +675,8 @@
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
       "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
-      "multiSttCopyBrainOutput": "Copy cleaned Brain output"
+      "multiSttCopyBrainOutput": "Copy cleaned Brain output",
+      "copyError": "Não foi possível copiar a transcrição para a área de transferência."
     },
     "debug": {
       "title": "Depuração",

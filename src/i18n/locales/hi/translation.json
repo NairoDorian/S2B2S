@@ -675,7 +675,8 @@
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
       "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
-      "multiSttCopyBrainOutput": "Copy cleaned Brain output"
+      "multiSttCopyBrainOutput": "Copy cleaned Brain output",
+      "copyError": "ट्रांसक्रिप्शन को क्लिपबोर्ड पर कॉपी नहीं किया जा सका."
     },
     "debug": {
       "title": "डिबग",

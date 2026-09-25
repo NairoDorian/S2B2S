@@ -2,7 +2,7 @@
 // src/).
 import { test } from "bun:test";
 import assert from "node:assert";
-import { isSimulatableKey } from "./keyboard";
+import { formatKeyCombination, getKeyName, isSimulatableKey } from "./keyboard";
 
 test("named keys and function keys are simulatable", () => {
   assert.ok(isSimulatableKey("space"));
@@ -26,4 +26,34 @@ test("non-ASCII and multi-character tokens are not", () => {
   assert.ok(!isSimulatableKey("ü"));
   assert.ok(!isSimulatableKey("ab"));
   assert.ok(!isSimulatableKey(""));
+});
+
+test("compound shortcut keys parse to compact tokens and format properly", () => {
+  const keyboardEvent = (value: {
+    code?: string;
+    key?: string;
+  }): KeyboardEvent => value as KeyboardEvent;
+
+  const compoundKeys = [
+    ["ScrollLock", "scrolllock", "Scroll Lock"],
+    ["CapsLock", "capslock", "Caps Lock"],
+    ["NumLock", "numlock", "Num Lock"],
+    ["PageUp", "pageup", "Page Up"],
+    ["PageDown", "pagedown", "Page Down"],
+    ["PrintScreen", "printscreen", "Print Screen"],
+  ] as const;
+
+  for (const [code, stored, displayed] of compoundKeys) {
+    assert.strictEqual(getKeyName(keyboardEvent({ code })), stored);
+    assert.strictEqual(formatKeyCombination(stored, "linux"), displayed);
+  }
+
+  assert.strictEqual(
+    getKeyName(keyboardEvent({ key: "CapsLock" })),
+    "capslock",
+  );
+  assert.strictEqual(
+    getKeyName(keyboardEvent({ code: "AudioVolumeUp" })),
+    "audiovolumeup",
+  );
 });

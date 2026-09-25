@@ -2993,6 +2993,14 @@ pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
     settings.bindings
 }
 
+pub fn get_stored_binding(settings: &AppSettings, id: &str) -> Result<ShortcutBinding, String> {
+    settings
+        .bindings
+        .get(id)
+        .cloned()
+        .ok_or_else(|| format!("Binding with id '{}' not found", id))
+}
+
 pub fn get_history_limit(app: &AppHandle) -> u32 {
     let settings = get_settings(app);
     settings.history_limit
@@ -3006,6 +3014,24 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_binding_returns_the_requested_binding() {
+        let settings = get_default_settings();
+
+        let result = get_stored_binding(&settings, "transcribe");
+
+        assert_eq!(result.unwrap().id, "transcribe");
+    }
+
+    #[test]
+    fn unknown_stored_binding_returns_an_error() {
+        let settings = get_default_settings();
+
+        let result = get_stored_binding(&settings, "unknown");
+
+        assert_eq!(result.unwrap_err(), "Binding with id 'unknown' not found");
+    }
 
     fn default_settings_json() -> serde_json::Value {
         serde_json::to_value(get_default_settings()).unwrap()

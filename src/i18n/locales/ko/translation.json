@@ -675,7 +675,8 @@
       "multiSttBrainRawToggle": "Raw Output (incl. reasoning)",
       "multiSttNoOutput": "— no output —",
       "multiSttCopyModelOutput": "Copy this model's output",
-      "multiSttCopyBrainOutput": "Copy cleaned Brain output"
+      "multiSttCopyBrainOutput": "Copy cleaned Brain output",
+      "copyError": "전사 내용을 클립보드에 복사하지 못했습니다."
     },
     "debug": {
       "title": "디버그",

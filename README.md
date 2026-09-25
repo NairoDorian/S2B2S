@@ -498,6 +498,18 @@ Exec=env ZER0_NO_GTK_LAYER_SHELL=1 zer0
 
 If a workaround helps you, please [open an issue](https://github.com/NairoDorian/S2B2S/issues) describing your distro, desktop environment, and session type — that information helps us narrow down the underlying bug.
 
+### Empty recording overlay on Hyprland / Omarchy
+
+If the recording overlay is empty or bordered, fully quit ZER0 and launch a
+[native installation](BUILD.md#linux-install-from-source) with Wayland enabled:
+
+```bash
+env -u ZER0_NO_GTK_LAYER_SHELL GDK_BACKEND=wayland zer0
+```
+
+If this works, apply `GDK_BACKEND=wayland` only to ZER0's launcher. This
+workaround does not work with AppImages that force X11.
+
 ### Vulkan Overlays and Capture Tools on Windows (`ZER0_KEEP_VULKAN_IMPLICIT_LAYERS`)
 
 On Windows, the app asks the Vulkan loader to skip implicit layers to avoid crashes caused by overlay and capture hooks (upstream issue #2049). GPU acceleration remains enabled; this does not change system-wide settings.

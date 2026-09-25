@@ -43,6 +43,7 @@ import { useOsType } from "@/hooks/useOsType";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { copyToClipboard } from "./clipboard";
 import { Dialog } from "../../ui/Dialog";
 
 interface IconButtonProps {
@@ -274,15 +275,6 @@ export const HistorySettings = () => {
       setEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
       );
-    }
-  };
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t("settings.history.copied"));
-    } catch (error) {
-      console.error("Failed to copy to clipboard:", error);
     }
   };
 
@@ -594,7 +586,7 @@ const stripMultiSttMetadata = (text: string): string =>
 interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
-  onCopyText: (text: string) => Promise<void>;
+  onCopyText: (text: string) => Promise<boolean>;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
   retryTranscription: (id: number) => Promise<void>;
@@ -671,10 +663,14 @@ const HistoryEntryComponent = ({
     return rawText;
   });
 
-  const handleCopyText = () => {
+  const handleCopyText = async () => {
     const text = textToDisplay();
     if (!text || !text.trim()) return;
-    onCopyText(text);
+    const copied = await onCopyText(text);
+    if (!copied) {
+      toast.error(t("settings.history.copyError"));
+      return;
+    }
     setShowCopied(true);
     setTimeout(() => setShowCopied(false), 2000);
   };

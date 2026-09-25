@@ -26,6 +26,7 @@
     "lint:backend": "cd src-tauri && cargo clippy --all-targets",
     "test:backend": "cd src-tauri && cargo test --all-targets",
     "test:unit": "bun test --parallel",
+    "test:keyboard": "bun test src/lib/utils/keyboard.test.ts",
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",

@@ -94,6 +94,16 @@ function App() {
     onboardingStep() === "accessibility" ||
     onboardingStep() === "model";
 
+  let settingsScrollRef: HTMLDivElement | undefined;
+
+  // Reset the scroll position whenever the active section changes.
+  createEffect(
+    () => currentSection(),
+    () => {
+      settingsScrollRef?.scrollTo({ top: 0 });
+    },
+  );
+
   createEffect(
     () => isShowingOnboarding(),
     (showing) => {
@@ -388,7 +398,10 @@ function App() {
                 onSectionChange={setSection}
               />
               <div class="flex-1 flex flex-col overflow-hidden">
-                <div class="flex-1 overflow-y-auto">
+                <div
+                  ref={(el) => (settingsScrollRef = el)}
+                  class="flex-1 overflow-y-auto"
+                >
                   <div class="flex flex-col items-center p-4 pe-14 gap-4">
                     <AccessibilityPermissions />
                     <SecureInputWarning />
