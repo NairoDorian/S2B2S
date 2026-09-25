@@ -626,20 +626,33 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
   // Set native streaming latency preset for a specific model
   setLatencyPreset: async (modelId, preset) => {
     const { settings } = get();
-    const currentPresets = settings?.native_streaming_latency_presets ?? {};
-    const originalPreset = currentPresets[modelId];
+    const baseRepo =
+      modelId.endsWith(".gguf") && modelId.includes("/")
+        ? modelId.substring(0, modelId.lastIndexOf("/"))
+        : modelId;
+    const originalPresets = settings?.native_streaming_latency_presets
+      ? { ...settings.native_streaming_latency_presets }
+      : undefined;
 
-    set((state) => ({
-      settings: state.settings
-        ? {
-            ...state.settings,
-            native_streaming_latency_presets: {
-              ...state.settings.native_streaming_latency_presets,
-              [modelId]: preset,
-            },
-          }
-        : null,
-    }));
+    set((state) => {
+      if (!state.settings) return { settings: null };
+      const nextPresets: Record<string, NativeStreamingLatencyPreset> = {
+        ...state.settings.native_streaming_latency_presets,
+      };
+      for (const k of Object.keys(nextPresets)) {
+        if (k === baseRepo || k.startsWith(`${baseRepo}/`)) {
+          delete nextPresets[k];
+        }
+      }
+      nextPresets[baseRepo] = preset;
+      nextPresets[modelId] = preset;
+      return {
+        settings: {
+          ...state.settings,
+          native_streaming_latency_presets: nextPresets,
+        },
+      };
+    });
 
     const result = await commands.changeNativeStreamingLatencyPresetSetting(
       modelId,
@@ -650,10 +663,7 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
         settings: state.settings
           ? {
               ...state.settings,
-              native_streaming_latency_presets: {
-                ...state.settings.native_streaming_latency_presets,
-                [modelId]: originalPreset,
-              },
+              native_streaming_latency_presets: originalPresets ?? {},
             }
           : null,
       }));
@@ -667,49 +677,47 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
   // than a preset.
   setLatencyChunkMs: async (modelId, chunkMs) => {
     const { settings } = get();
-    const originalChunkMs = settings?.native_streaming_chunk_ms?.[modelId];
+    const baseRepo =
+      modelId.endsWith(".gguf") && modelId.includes("/")
+        ? modelId.substring(0, modelId.lastIndexOf("/"))
+        : modelId;
+    const originalChunks = settings?.native_streaming_chunk_ms
+      ? { ...settings.native_streaming_chunk_ms }
+      : undefined;
 
-    set((state) => ({
-      settings: state.settings
-        ? {
-            ...state.settings,
-            native_streaming_chunk_ms: {
-              ...state.settings.native_streaming_chunk_ms,
-              [modelId]: chunkMs,
-            },
-          }
-        : null,
-    }));
+    set((state) => {
+      if (!state.settings) return { settings: null };
+      const nextChunks: Record<string, number> = {
+        ...state.settings.native_streaming_chunk_ms,
+      };
+      for (const k of Object.keys(nextChunks)) {
+        if (k === baseRepo || k.startsWith(`${baseRepo}/`)) {
+          delete nextChunks[k];
+        }
+      }
+      nextChunks[baseRepo] = chunkMs;
+      nextChunks[modelId] = chunkMs;
+      return {
+        settings: {
+          ...state.settings,
+          native_streaming_chunk_ms: nextChunks,
+        },
+      };
+    });
 
     const result = await commands.changeNativeStreamingChunkMsSetting(
       modelId,
       chunkMs,
     );
     if (result.status === "error") {
-      set((state) => {
-        if (!state.settings) return { settings: null };
-        // Restore the exact previous entry, including removing the key when
-        // there was no prior value, so the rollback cannot leave a stale
-        // override behind for a model the user never configured.
-        //
-        // Annotated because the source map is optional on `AppSettings`, and
-        // spreading a possibly-undefined value widens the result to `{}` —
-        // which would then reject the `[modelId]` index below.
-        const nextChunkMs: Record<string, number> = {
-          ...state.settings.native_streaming_chunk_ms,
-        };
-        if (originalChunkMs === undefined) {
-          delete nextChunkMs[modelId];
-        } else {
-          nextChunkMs[modelId] = originalChunkMs;
-        }
-        return {
-          settings: {
-            ...state.settings,
-            native_streaming_chunk_ms: nextChunkMs,
-          },
-        };
-      });
+      set((state) => ({
+        settings: state.settings
+          ? {
+              ...state.settings,
+              native_streaming_chunk_ms: originalChunks ?? {},
+            }
+          : null,
+      }));
       console.error("Failed to set streaming chunk size:", result.error);
     }
   },
@@ -720,16 +728,26 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
   // when there was none — if the backend refuses the choice.
   setModelBackend: async (modelId, backend) => {
     const { settings } = get();
-    const originalBackend = settings?.per_model_backends?.[modelId];
+    const baseRepo =
+      modelId.endsWith(".gguf") && modelId.includes("/")
+        ? modelId.substring(0, modelId.lastIndexOf("/"))
+        : modelId;
+    const originalBackends = settings?.per_model_backends
+      ? { ...settings.per_model_backends }
+      : undefined;
 
     set((state) => {
       if (!state.settings) return { settings: null };
       const nextBackends: Record<string, ModelBackendSetting> = {
         ...state.settings.per_model_backends,
       };
-      if (backend === "auto") {
-        delete nextBackends[modelId];
-      } else {
+      for (const k of Object.keys(nextBackends)) {
+        if (k === baseRepo || k.startsWith(`${baseRepo}/`)) {
+          delete nextBackends[k];
+        }
+      }
+      if (backend !== "auto") {
+        nextBackends[baseRepo] = backend;
         nextBackends[modelId] = backend;
       }
       return {
@@ -739,20 +757,14 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
 
     const result = await commands.setModelBackendSetting(modelId, backend);
     if (result.status === "error") {
-      set((state) => {
-        if (!state.settings) return { settings: null };
-        const nextBackends: Record<string, ModelBackendSetting> = {
-          ...state.settings.per_model_backends,
-        };
-        if (originalBackend === undefined || originalBackend === "auto") {
-          delete nextBackends[modelId];
-        } else {
-          nextBackends[modelId] = originalBackend;
-        }
-        return {
-          settings: { ...state.settings, per_model_backends: nextBackends },
-        };
-      });
+      set((state) => ({
+        settings: state.settings
+          ? {
+              ...state.settings,
+              per_model_backends: originalBackends ?? {},
+            }
+          : null,
+      }));
       console.error("Failed to set model backend:", result.error);
       toast.error(result.error);
     }

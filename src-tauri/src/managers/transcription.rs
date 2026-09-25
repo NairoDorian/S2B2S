@@ -3237,14 +3237,14 @@ impl TranscriptionManager {
         quant: &str,
         model_path: &std::path::Path,
         settings: &AppSettings,
+        model_options: &ModelOptions,
         audio: &[f32],
     ) -> Result<Vec<f64>> {
         let audio_secs = benchmark_audio_secs(audio);
 
-        // A temporary engine — deliberately not installed in the primary slot,
-        // so benchmarking never disturbs the model the user actually dictates
-        // with (beyond the unload the caller already performed).
-        let mut engine = self.create_engine(variant_id, model_path)?;
+        // A temporary engine configured with the benchmark's target backend and device,
+        // so every quantization variant is evaluated on the exact same compute backend.
+        let mut engine = self.create_engine_with_options(variant_id, model_path, model_options)?;
 
         // Warmup: the first transcription after a load is slow (cold caches,
         // lazy initialization). Per the benchmark spec it is discarded.
@@ -3417,6 +3417,18 @@ impl TranscriptionManager {
         )
         .map(|f| f.filename.as_str());
 
+        // Resolve target backend once for the model being benchmarked so every
+        // quantization variant is evaluated on the exact same compute backend and device.
+        let (target_backend, target_device) = resolve_model_backend(&settings, model_id);
+        let benchmark_model_options = ModelOptions {
+            backend: target_backend,
+            device: target_device,
+        };
+        info!(
+            "Benchmarking quantizations for '{}' using target backend {:?} (device: {:?})",
+            model_id, target_backend, benchmark_model_options.device
+        );
+
         // Remember whether the user had a model resident so we can restore it
         // once the run is over instead of leaving them with a cold start.
         let had_primary_model = self.is_model_loaded();
@@ -3473,6 +3485,7 @@ impl TranscriptionManager {
                 &file.quant,
                 &model_path,
                 &settings,
+                &benchmark_model_options,
                 audio,
             ) {
                 Ok(times) => times,
@@ -3581,7 +3594,24 @@ impl TranscriptionManager {
             ..Default::default()
         });
 
-        let times_ms = self.time_variant_runs(model_id, &file.quant, &model_path, &settings, audio);
+        let (target_backend, target_device) = resolve_model_backend(&settings, model_id);
+        let benchmark_model_options = ModelOptions {
+            backend: target_backend,
+            device: target_device,
+        };
+        info!(
+            "Benchmarking single quantization '{}' using target backend {:?} (device: {:?})",
+            model_id, target_backend, benchmark_model_options.device
+        );
+
+        let times_ms = self.time_variant_runs(
+            model_id,
+            &file.quant,
+            &model_path,
+            &settings,
+            &benchmark_model_options,
+            audio,
+        );
 
         if had_primary_model {
             self.initiate_model_load();
@@ -3676,23 +3706,32 @@ impl TranscriptionManager {
         })
     }
 
+    /// Create a LoadedEngine for a model file with explicit ModelOptions.
+    fn create_engine_with_options(
+        &self,
+        model_id: &str,
+        model_path: &std::path::Path,
+        model_options: &ModelOptions,
+    ) -> Result<LoadedEngine> {
+        let filename = self
+            .model_manager
+            .get_model_info(model_id)
+            .map(|info| info.filename);
+        let model =
+            self.load_transcribe_model(model_id, filename.as_deref(), model_path, model_options)?;
+        let session = model
+            .session()
+            .map_err(|e| anyhow::anyhow!("Failed to create session for {}: {}", model_id, e))?;
+        Ok(LoadedEngine::TranscribeCpp(session))
+    }
+
     /// Create a LoadedEngine for a Multi-STT extra model file.
     fn create_engine(&self, model_id: &str, model_path: &std::path::Path) -> Result<LoadedEngine> {
         // Same resolution as the primary load, so a per-model backend override
         // applies to a Multi-STT extra exactly as it does to the primary model.
         let (backend, device) = resolve_model_backend(&get_settings(&self.app_handle), model_id);
         let model_options = ModelOptions { backend, device };
-
-        let filename = self
-            .model_manager
-            .get_model_info(model_id)
-            .map(|info| info.filename);
-        let model =
-            self.load_transcribe_model(model_id, filename.as_deref(), model_path, &model_options)?;
-        let session = model
-            .session()
-            .map_err(|e| anyhow::anyhow!("Failed to create session for {}: {}", model_id, e))?;
-        Ok(LoadedEngine::TranscribeCpp(session))
+        self.create_engine_with_options(model_id, model_path, &model_options)
     }
 }
 

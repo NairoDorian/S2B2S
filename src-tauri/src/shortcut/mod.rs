@@ -2097,24 +2097,28 @@ pub fn set_model_backend_setting(
         ));
     }
 
+    let base_repo = if model_id.ends_with(".gguf") {
+        model_id
+            .rsplit_once('/')
+            .map(|(repo, _)| repo)
+            .unwrap_or(&model_id)
+    } else {
+        model_id.as_str()
+    };
+    let prefix = format!("{}/", base_repo);
+
     let mut s = settings::get_settings(&app);
     if backend == settings::ModelBackendSetting::Auto {
         // Auto is the absence of an override, stored as an absent key so the
         // settings file stays a record of real choices only.
         s.per_model_backends.remove(&model_id);
-        if let Some((base_repo, filename)) = model_id.rsplit_once('/') {
-            if filename.ends_with(".gguf") {
-                s.per_model_backends.remove(base_repo);
-            }
-        }
+        s.per_model_backends.remove(base_repo);
+        s.per_model_backends.retain(|k, _| !k.starts_with(&prefix));
     } else {
+        // Clear any divergent sibling overrides so all quants inherit the same backend
+        s.per_model_backends.retain(|k, _| !k.starts_with(&prefix));
+        s.per_model_backends.insert(base_repo.to_string(), backend);
         s.per_model_backends.insert(model_id.clone(), backend);
-        // Also associate with base repo if setting a quant variant so all quants inherit it
-        if let Some((base_repo, filename)) = model_id.rsplit_once('/') {
-            if filename.ends_with(".gguf") {
-                s.per_model_backends.insert(base_repo.to_string(), backend);
-            }
-        }
     }
     save_accelerator_and_reload_next_use(&app, s);
     Ok(())

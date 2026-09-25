@@ -2238,6 +2238,79 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+pub fn sanitize_per_model_settings(settings: &mut AppSettings) -> bool {
+    let mut changed = false;
+
+    // Harmonize per_model_backends: if a base repo is configured, any sibling variant
+    // that differs from it is removed so the entire model family stays synchronized.
+    let base_backends: Vec<(String, ModelBackendSetting)> = settings
+        .per_model_backends
+        .iter()
+        .filter(|(k, _)| !k.ends_with(".gguf"))
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
+
+    for (base_repo, backend) in base_backends {
+        let prefix = format!("{}/", base_repo);
+        let conflicting: Vec<String> = settings
+            .per_model_backends
+            .iter()
+            .filter(|(k, v)| k.starts_with(&prefix) && **v != backend)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in conflicting {
+            settings.per_model_backends.remove(&k);
+            changed = true;
+        }
+    }
+
+    // Harmonize native_streaming_latency_presets
+    let base_presets: Vec<(String, NativeStreamingLatencyPreset)> = settings
+        .native_streaming_latency_presets
+        .iter()
+        .filter(|(k, _)| !k.ends_with(".gguf"))
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
+
+    for (base_repo, preset) in base_presets {
+        let prefix = format!("{}/", base_repo);
+        let conflicting: Vec<String> = settings
+            .native_streaming_latency_presets
+            .iter()
+            .filter(|(k, v)| k.starts_with(&prefix) && **v != preset)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in conflicting {
+            settings.native_streaming_latency_presets.remove(&k);
+            changed = true;
+        }
+    }
+
+    // Harmonize native_streaming_chunk_ms
+    let base_chunks: Vec<(String, u32)> = settings
+        .native_streaming_chunk_ms
+        .iter()
+        .filter(|(k, _)| !k.ends_with(".gguf"))
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
+
+    for (base_repo, chunk) in base_chunks {
+        let prefix = format!("{}/", base_repo);
+        let conflicting: Vec<String> = settings
+            .native_streaming_chunk_ms
+            .iter()
+            .filter(|(k, v)| k.starts_with(&prefix) && **v != chunk)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in conflicting {
+            settings.native_streaming_chunk_ms.remove(&k);
+            changed = true;
+        }
+    }
+
+    changed
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -2562,6 +2635,10 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     };
 
     if ensure_post_process_defaults(&mut settings) {
+        store.set("settings", serde_json::to_value(&settings).unwrap());
+    }
+
+    if sanitize_per_model_settings(&mut settings) {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -2984,6 +3061,36 @@ mod tests {
             ModelBackendSetting::from_wire(""),
             ModelBackendSetting::Auto
         );
+    }
+
+    #[test]
+    fn sanitize_per_model_settings_prunes_conflicting_sibling_variants() {
+        let mut settings = AppSettings::default();
+        let base = "davidxifeng/Confucius4-R2T2-gguf";
+        let q8 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q8_0.gguf";
+        let q4 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q4_k_m.gguf";
+
+        settings
+            .per_model_backends
+            .insert(base.to_string(), ModelBackendSetting::Cpu);
+        settings
+            .per_model_backends
+            .insert(q8.to_string(), ModelBackendSetting::Cpu);
+        settings
+            .per_model_backends
+            .insert(q4.to_string(), ModelBackendSetting::VulkanNvidia);
+
+        let changed = sanitize_per_model_settings(&mut settings);
+        assert!(changed);
+        assert_eq!(
+            settings.per_model_backends.get(base),
+            Some(&ModelBackendSetting::Cpu)
+        );
+        assert_eq!(
+            settings.per_model_backends.get(q8),
+            Some(&ModelBackendSetting::Cpu)
+        );
+        assert_eq!(settings.per_model_backends.get(q4), None);
     }
 
     /// Frozen snapshot of a real v0.9.0-era settings store, as written to
