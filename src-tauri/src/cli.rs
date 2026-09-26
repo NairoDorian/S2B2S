@@ -62,6 +62,11 @@ pub struct CliArgs {
     #[arg(long, requires = "stream_chunk_ms")]
     pub stream_att_right: Option<i32>,
 
+    /// R2T2 decode chunk in ms (80-2000) for headless streaming, instead of the
+    /// persisted per-model value. --stream-chunk-ms stays the feed size.
+    #[arg(long, requires = "stream_chunk_ms", value_parser = clap::value_parser!(u32).range(80..=2000))]
+    pub stream_r2t2_chunk_ms: Option<u32>,
+
     /// List the transcribe-cpp compute devices (with indices) and exit.
     #[arg(long)]
     pub list_devices: bool,

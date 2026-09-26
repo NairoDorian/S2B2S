@@ -1652,6 +1652,7 @@ impl TranscriptionManager {
         audio: &[f32],
         chunk_ms: usize,
         att_right: Option<i32>,
+        r2t2_chunk_ms: Option<u32>,
     ) -> Result<(String, serde_json::Value)> {
         anyhow::ensure!(chunk_ms > 0, "stream chunk must be positive");
         let model_id = self
@@ -1680,7 +1681,22 @@ impl TranscriptionManager {
                 target_language: plan.target_language,
                 ..Default::default()
             };
-            let family = if let Some(right) = att_right {
+            let family = if let Some(ms) = r2t2_chunk_ms {
+                // A runtime-only override for latency sweeps: the persisted
+                // per-model chunk is left untouched.
+                anyhow::ensure!(
+                    crate::managers::native_streaming_latency::r2t2_chunk_ms_is_valid(ms),
+                    "R2T2 chunk {} ms is outside {}..={} ms",
+                    ms,
+                    crate::managers::native_streaming_latency::R2T2_CHUNK_MS_MIN,
+                    crate::managers::native_streaming_latency::R2T2_CHUNK_MS_MAX
+                );
+                Some(transcribe_cpp::StreamExtension::R2T2(
+                    transcribe_cpp::R2T2StreamOptions {
+                        chunk_size_ms: Some(ms),
+                    },
+                ))
+            } else if let Some(right) = att_right {
                 Some(transcribe_cpp::StreamExtension::ParakeetStream(
                     transcribe_cpp::ParakeetStreamOptions {
                         att_context_right: Some(right),

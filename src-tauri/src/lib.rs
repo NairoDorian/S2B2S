@@ -686,11 +686,16 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         }
         let t = Instant::now();
         let result = if let Some(chunk_ms) = args.stream_chunk_ms {
-            tm.benchmark_stream(&samples, chunk_ms as usize, args.stream_att_right)
-                .map(|(text, metrics)| {
-                    pipeline_runs.push(metrics);
-                    text
-                })
+            tm.benchmark_stream(
+                &samples,
+                chunk_ms as usize,
+                args.stream_att_right,
+                args.stream_r2t2_chunk_ms,
+            )
+            .map(|(text, metrics)| {
+                pipeline_runs.push(metrics);
+                text
+            })
         } else {
             tm.transcribe(samples.clone())
                 .inspect(|_| pipeline_runs.push(tm.pipeline_metrics()))
@@ -727,6 +732,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
                 "wav_read_ms": wav_read_ms,
                 "pipeline_runs": pipeline_runs,
                 "stream_chunk_ms": args.stream_chunk_ms,
+                "stream_r2t2_chunk_ms": args.stream_r2t2_chunk_ms,
                 "rtf_compute_over_audio": if audio_secs > 0.0 { warm_mean_ms / (audio_secs*1000.0) } else { 0.0 },
                 "warm_mean_ms": warm_mean_ms,
                 "excluded_warmup_run": 1,
