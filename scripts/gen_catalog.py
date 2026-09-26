@@ -87,6 +87,9 @@ OVERRIDES = {
 # the verified bytes at that revision. Note the mirror list at the top of this
 # file does not host these repos, so a mirror miss 404s and falls back to HF —
 # the hash check still governs, as for every other entry.
+PARAKEET_V3_LANGUAGES = ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it",
+                         "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk"]
+
 AUTHORED_MODELS = [
     {
         # NetEase Youdao Confucius4-R2T2 — a Qwen3-ASR-1.7B fine-tune with
@@ -128,11 +131,86 @@ AUTHORED_MODELS = [
         "files": [
             {"filename": "r2t2-q8_0.gguf", "quant": "Q8_0", "size_bytes": 2477512064,
              "sha256": "19f5ccd624484bcb5d44301437de41560b0ecc40c430e8850dfeefefbe82ccf5"},
+            # Per-tensor Q4_K / Q6_K recipe, fastest on CUDA. davidxifeng's repo does
+            # not host it, so the row names the repo that does: `repo`/`revision`
+            # redirect this one file's download while it stays a quant of R2T2.
+            # Keep `sha256` last: the one-line-per-file formatter below needs it there.
+            {"filename": "r2t2-q4_k_m.gguf", "quant": "Q4_K_M", "size_bytes": 1186939968,
+             "repo": "Nairod785/Confucius4-R2T2-Q4_K_M-GGUF",
+             "revision": "b1ea19256fb77a8d8ab7b091dc75378e15952605",
+             "sha256": "d740d6636f2ea2f3736800c3c88a6e22ecb6c0f26c567fe22b0572ae9c2c4ec8"},
             {"filename": "r2t2-f16.gguf", "quant": "F16", "size_bytes": 4092155264,
              "sha256": "d1b531ceaf5640d98352d3a9180238d99d36d393e160afd4692031077e7bae2c"},
         ],
         # The only variant verified to load and stream natively end to end.
         "default_quant": "Q8_0",
+        "recommended": False,
+        "recommended_rank": None,
+    },
+    {
+        # Moondream's Parakeet TDT fine-tune, same graph and languages as v3.
+        "id": "Nairod785/parakeet-ultra-gguf",
+        "revision": "b03613ba54a195238f0e915359f5a5c78269ddc6",
+        "slug": "parakeet-ultra-0.6b",
+        "name": "Parakeet Ultra 0.6B",
+        "architecture": "parakeet",
+        "family": "parakeet",
+        "parameters": "0.6B",
+        "description": "Moondream's Parakeet TDT fine-tune: v3's 25 European languages, lower WER",
+        "base_model": "moondream/parakeet-ultra",
+        "license": "cc-by-4.0",
+        "language_count": 25,
+        "languages": PARAKEET_V3_LANGUAGES,
+        "capabilities": {"streaming": False, "translate": False, "lang_detect": True, "timestamps": "token"},
+        # PROVISIONAL, not reference-machine measured: v3's values (same graph
+        # and size). FLEURS-fr WER 4.62 % at Q8_0.
+        "speed_score": 79,
+        "accuracy_score": 88,
+        "files": [
+            {"filename": "parakeet-ultra-0.6b-Q4_K_M.gguf", "quant": "Q4_K_M", "size_bytes": 485425632,
+             "sha256": "1865a03092b566251a9a0a7cc1036872821225047759e1f73fa476694bb453f5"},
+            {"filename": "parakeet-ultra-0.6b-Q5_K_M.gguf", "quant": "Q5_K_M", "size_bytes": 548946400,
+             "sha256": "2a943b4574664abc96b2dbb2b46cd149bc162fda41080febbf5f949db73ad055"},
+            {"filename": "parakeet-ultra-0.6b-Q6_K.gguf", "quant": "Q6_K", "size_bytes": 610342368,
+             "sha256": "e1c6c0860397473dc4b7831e2da70fa53f5d472d1791ae174982897d3d60ab6a"},
+            {"filename": "parakeet-ultra-0.6b-Q8_0.gguf", "quant": "Q8_0", "size_bytes": 739508704,
+             "sha256": "283562ac9b513f39244fe23c6632738c167d32731a5f4693319a10ca498550a8"},
+            {"filename": "parakeet-ultra-0.6b-F16.gguf", "quant": "F16", "size_bytes": 1255869984,
+             "sha256": "06d3d511e03b2f36aac831f11ce05d088fd071e0fa5685dc70cda1cc7a4a04e4"},
+        ],
+        "default_quant": "Q8_0",
+        "recommended": False,
+        "recommended_rank": None,
+    },
+    {
+        # Moondream's native-ternary Parakeet: encoder linears in TQ1_G128
+        # (1.75 bpw, ggml type 96 — needs the fork's patches/ggml/0003).
+        "id": "Nairod785/parakeet-redux-gguf",
+        "revision": "87cbc354ce32bc9fe144b5b7bcdd9c68538907a9",
+        "slug": "parakeet-redux-0.6b",
+        "name": "Parakeet Redux 0.6B",
+        "architecture": "parakeet",
+        "family": "parakeet",
+        "parameters": "0.6B",
+        "description": "Native ternary Parakeet TDT (1.75 bpw encoder): 157 MB, 25 European languages",
+        "base_model": "moondream/parakeet-redux",
+        "license": "cc-by-4.0",
+        "language_count": 25,
+        "languages": PARAKEET_V3_LANGUAGES,
+        "capabilities": {"streaming": False, "translate": False, "lang_detect": True, "timestamps": "token"},
+        # PROVISIONAL: CPU 21x vs ultra's 26x on the same host; FLEURS-fr WER
+        # 8.18 % at TQ1_Q4_K, ~3.5 pp above ultra.
+        "speed_score": 75,
+        "accuracy_score": 80,
+        "files": [
+            {"filename": "parakeet-redux-0.6b-TQ1_Q4_K.gguf", "quant": "TQ1_Q4_K", "size_bytes": 156696672,
+             "sha256": "24a8b9af6ab1fd05eb33d5e8fc5b00c7459af0108ac397a9635267ea4e814374"},
+            {"filename": "parakeet-redux-0.6b-TQ1_Q8_0.gguf", "quant": "TQ1_Q8_0", "size_bytes": 159121504,
+             "sha256": "74f43ba852479e86e29df92cdbc89aa8215c7e8070f711be424ff466415b6184"},
+            {"filename": "parakeet-redux-0.6b-TQ1_F16.gguf", "quant": "TQ1_F16", "size_bytes": 179312288,
+             "sha256": "98f34a4dee8c5cf82a251281717851feda84a3291052e819809706c76bbb758f"},
+        ],
+        "default_quant": "TQ1_Q4_K",
         "recommended": False,
         "recommended_rank": None,
     },

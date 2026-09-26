@@ -44,7 +44,7 @@ export const isLegacySource = (model: ModelInfo): boolean =>
 
 const getQuantLabel = (filename: string): string | null => {
   const match = filename.match(
-    /[._-](IQ\d+_\w+|Q\d+(?:_\w+)?|F16|BF16|F32)\.gguf$/i,
+    /[._-](TQ\d+_\w+|IQ\d+_\w+|Q\d+(?:_\w+)?|F16|BF16|F32)\.gguf$/i,
   );
   return match ? match[1].toUpperCase() : null;
 };

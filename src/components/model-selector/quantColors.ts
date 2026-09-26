@@ -10,6 +10,8 @@
  * `Q5_K`, `FP16`, …) still land on the right rung.
  */
 const QUANT_TIERS: Array<[RegExp, string]> = [
+  // Native ternary (TQ1_*): below every k-quant in bits per weight.
+  [/^TQ/i, "bg-red-600"],
   [/^I?Q2/i, "bg-rose-500"],
   [/^I?Q3/i, "bg-orange-500"],
   [/^I?Q4/i, "bg-amber-500"],

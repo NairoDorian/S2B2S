@@ -167,6 +167,29 @@ pub struct QuantFile {
     /// mirror). `None` only for catalogs predating the field.
     #[serde(default)]
     pub sha256: Option<String>,
+    /// HF repo hosting this one file when it is not the model's own repo (a
+    /// quant published elsewhere, e.g. R2T2's Q4_K_M). The registry id still
+    /// uses the model's repo so the file stays a sibling quant; only
+    /// acquisition and the cache lookup go to this repo.
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Pinned revision of [`Self::repo`]; required whenever `repo` is set.
+    #[serde(default)]
+    pub revision: Option<String>,
+}
+
+impl QuantFile {
+    /// Where this file is fetched from: its own repo when it has one, else
+    /// the model's `source`.
+    pub fn source(&self, model_source: &ModelSource) -> ModelSource {
+        match (&self.repo, &self.revision) {
+            (Some(repo_id), Some(revision)) => ModelSource::HuggingFace {
+                repo_id: repo_id.clone(),
+                revision: revision.clone(),
+            },
+            _ => model_source.clone(),
+        }
+    }
 }
 
 /// Pick the default quant among `files`: the one whose `quant` matches
@@ -269,7 +292,7 @@ impl ModelDescriptor {
             name,
             description: self.description.clone(),
             filename: file.map(|f| f.filename.clone()).unwrap_or_default(),
-            source: self.source.clone(),
+            source: file.map_or_else(|| self.source.clone(), |f| f.source(&self.source)),
             size_mb: file
                 .map(|f| f.size_bytes.div_ceil(1024 * 1024) as u32)
                 .unwrap_or(0),
@@ -2531,12 +2554,16 @@ mod tests {
                     quant: "Q4_K_M".to_string(),
                     size_bytes: 1,
                     sha256: None,
+                    repo: None,
+                    revision: None,
                 },
                 QuantFile {
                     filename: "model-Q8_0.gguf".to_string(),
                     quant: "Q8_0".to_string(),
                     size_bytes: 2,
                     sha256: None,
+                    repo: None,
+                    revision: None,
                 },
             ],
             default_quant: Some("Q8_0".to_string()),

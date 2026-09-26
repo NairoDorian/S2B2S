@@ -1611,6 +1611,38 @@
       "recommended_rank": null
     },
     {
+      "id": "Nairod785/parakeet-ultra-gguf",
+      "revision": "b03613ba54a195238f0e915359f5a5c78269ddc6",
+      "slug": "parakeet-ultra-0.6b",
+      "name": "Parakeet Ultra 0.6B",
+      "architecture": "parakeet",
+      "family": "parakeet",
+      "parameters": "0.6B",
+      "description": "Moondream's Parakeet TDT fine-tune: v3's 25 European languages, lower WER",
+      "base_model": "moondream/parakeet-ultra",
+      "license": "cc-by-4.0",
+      "language_count": 25,
+      "languages": ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": true,
+        "timestamps": "token"
+      },
+      "speed_score": 79,
+      "accuracy_score": 88,
+      "files": [
+        {"filename": "parakeet-ultra-0.6b-Q4_K_M.gguf", "quant": "Q4_K_M", "size_bytes": 485425632, "sha256": "1865a03092b566251a9a0a7cc1036872821225047759e1f73fa476694bb453f5"},
+        {"filename": "parakeet-ultra-0.6b-Q5_K_M.gguf", "quant": "Q5_K_M", "size_bytes": 548946400, "sha256": "2a943b4574664abc96b2dbb2b46cd149bc162fda41080febbf5f949db73ad055"},
+        {"filename": "parakeet-ultra-0.6b-Q6_K.gguf", "quant": "Q6_K", "size_bytes": 610342368, "sha256": "e1c6c0860397473dc4b7831e2da70fa53f5d472d1791ae174982897d3d60ab6a"},
+        {"filename": "parakeet-ultra-0.6b-Q8_0.gguf", "quant": "Q8_0", "size_bytes": 739508704, "sha256": "283562ac9b513f39244fe23c6632738c167d32731a5f4693319a10ca498550a8"},
+        {"filename": "parakeet-ultra-0.6b-F16.gguf", "quant": "F16", "size_bytes": 1255869984, "sha256": "06d3d511e03b2f36aac831f11ce05d088fd071e0fa5685dc70cda1cc7a4a04e4"}
+      ],
+      "default_quant": "Q8_0",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
       "id": "handy-computer/parakeet-tdt-1.1b-gguf",
       "revision": "8c21810615694c53a4f4745996190fcca880f8e5",
       "slug": "parakeet-tdt-1.1b",
@@ -1640,6 +1672,36 @@
         {"filename": "parakeet-tdt-1.1b-F32.gguf", "quant": "F32", "size_bytes": 4282202592, "sha256": "627ba3def22f056fa48d62bcdb70455b75c81d5fb7f30028f63682fb9ffe1684"}
       ],
       "default_quant": "Q5_K_M",
+      "recommended": false,
+      "recommended_rank": null
+    },
+    {
+      "id": "Nairod785/parakeet-redux-gguf",
+      "revision": "87cbc354ce32bc9fe144b5b7bcdd9c68538907a9",
+      "slug": "parakeet-redux-0.6b",
+      "name": "Parakeet Redux 0.6B",
+      "architecture": "parakeet",
+      "family": "parakeet",
+      "parameters": "0.6B",
+      "description": "Native ternary Parakeet TDT (1.75 bpw encoder): 157 MB, 25 European languages",
+      "base_model": "moondream/parakeet-redux",
+      "license": "cc-by-4.0",
+      "language_count": 25,
+      "languages": ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk"],
+      "capabilities": {
+        "streaming": false,
+        "translate": false,
+        "lang_detect": true,
+        "timestamps": "token"
+      },
+      "speed_score": 75,
+      "accuracy_score": 80,
+      "files": [
+        {"filename": "parakeet-redux-0.6b-TQ1_Q4_K.gguf", "quant": "TQ1_Q4_K", "size_bytes": 156696672, "sha256": "24a8b9af6ab1fd05eb33d5e8fc5b00c7459af0108ac397a9635267ea4e814374"},
+        {"filename": "parakeet-redux-0.6b-TQ1_Q8_0.gguf", "quant": "TQ1_Q8_0", "size_bytes": 159121504, "sha256": "74f43ba852479e86e29df92cdbc89aa8215c7e8070f711be424ff466415b6184"},
+        {"filename": "parakeet-redux-0.6b-TQ1_F16.gguf", "quant": "TQ1_F16", "size_bytes": 179312288, "sha256": "98f34a4dee8c5cf82a251281717851feda84a3291052e819809706c76bbb758f"}
+      ],
+      "default_quant": "TQ1_Q4_K",
       "recommended": false,
       "recommended_rank": null
     },
@@ -1765,7 +1827,7 @@
       "accuracy_score": 90,
       "files": [
         {"filename": "r2t2-q8_0.gguf", "quant": "Q8_0", "size_bytes": 2477512064, "sha256": "19f5ccd624484bcb5d44301437de41560b0ecc40c430e8850dfeefefbe82ccf5"},
-        {"filename": "r2t2-q4_k_m.gguf", "quant": "Q4_K_M", "size_bytes": 1186939968, "sha256": "d740d6636f2ea2f3736800c3c88a6e22ecb6c0f26c567fe22b0572ae9c2c4ec8"},
+        {"filename": "r2t2-q4_k_m.gguf", "quant": "Q4_K_M", "size_bytes": 1186939968, "repo": "Nairod785/Confucius4-R2T2-Q4_K_M-GGUF", "revision": "b1ea19256fb77a8d8ab7b091dc75378e15952605", "sha256": "d740d6636f2ea2f3736800c3c88a6e22ecb6c0f26c567fe22b0572ae9c2c4ec8"},
         {"filename": "r2t2-f16.gguf", "quant": "F16", "size_bytes": 4092155264, "sha256": "d1b531ceaf5640d98352d3a9180238d99d36d393e160afd4692031077e7bae2c"}
       ],
       "default_quant": "Q8_0",

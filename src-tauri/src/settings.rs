@@ -1836,7 +1836,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 7;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 9;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -2878,6 +2878,14 @@ fn apply_settings_migrations(
             }
         }
     }
+    // Schema 9: a development build (schema 8) gave R2T2's Q4_K_M its own
+    // catalog entry under the repo that hosts it. It is a quant of the
+    // davidxifeng model again (the file row names its host repo), so every
+    // setting keyed by that interim id goes back to the model's id.
+    if stored_schema_version < 9 && remap_moved_model_ids(settings) {
+        updated = true;
+    }
+
     settings.settings_schema_version = settings
         .settings_schema_version
         .max(CURRENT_SETTINGS_SCHEMA_VERSION);
@@ -2915,6 +2923,42 @@ fn legacy_multi_stt_extra_models(settings_value: &serde_json::Value) -> Vec<Mult
                 .unwrap_or(false),
         })
         .collect()
+}
+
+/// Model ids that were renamed: `(old, new)`.
+const MOVED_MODEL_IDS: &[(&str, &str)] = &[(
+    "Nairod785/Confucius4-R2T2-Q4_K_M-GGUF/r2t2-q4_k_m.gguf",
+    "davidxifeng/Confucius4-R2T2-gguf/r2t2-q4_k_m.gguf",
+)];
+
+/// Rewrite every setting keyed by a moved model id. Returns whether anything
+/// changed.
+fn remap_moved_model_ids(settings: &mut AppSettings) -> bool {
+    fn rekey<V>(map: &mut HashMap<String, V>, old: &str, new: &str) -> bool {
+        let Some(v) = map.remove(old) else {
+            return false;
+        };
+        map.entry(new.to_string()).or_insert(v);
+        true
+    }
+    let mut changed = false;
+    for (old, new) in MOVED_MODEL_IDS {
+        if settings.selected_model == *old {
+            info!("Schema 9 migration: selected model '{old}' moved to '{new}'");
+            settings.selected_model = (*new).to_string();
+            changed = true;
+        }
+        for slot in settings.multi_stt_extra_models.iter_mut() {
+            if slot.model_id.as_deref() == Some(*old) {
+                slot.model_id = Some((*new).to_string());
+                changed = true;
+            }
+        }
+        changed |= rekey(&mut settings.per_model_backends, old, new);
+        changed |= rekey(&mut settings.native_streaming_latency_presets, old, new);
+        changed |= rekey(&mut settings.native_streaming_chunk_ms, old, new);
+    }
+    changed
 }
 
 /// Catalog successor for a retired hard-coded ONNX model id, or `None` for
@@ -3087,6 +3131,34 @@ mod tests {
             ModelBackendSetting::from_wire(""),
             ModelBackendSetting::Auto
         );
+    }
+
+    #[test]
+    fn schema_9_returns_the_r2t2_q4_id_to_its_model() {
+        let (old, new) = MOVED_MODEL_IDS[0];
+        let mut settings = AppSettings {
+            selected_model: old.to_string(),
+            ..AppSettings::default()
+        };
+        settings
+            .native_streaming_chunk_ms
+            .insert(old.to_string(), 160);
+        settings.multi_stt_extra_models = vec![MultiSttExtraModel {
+            model_id: Some(old.to_string()),
+            language: None,
+            translate: false,
+            ..Default::default()
+        }];
+
+        assert!(remap_moved_model_ids(&mut settings));
+        assert_eq!(settings.selected_model, new);
+        assert_eq!(settings.native_streaming_chunk_ms.get(new), Some(&160));
+        assert!(!settings.native_streaming_chunk_ms.contains_key(old));
+        assert_eq!(
+            settings.multi_stt_extra_models[0].model_id.as_deref(),
+            Some(new)
+        );
+        assert!(!remap_moved_model_ids(&mut settings), "idempotent");
     }
 
     #[test]

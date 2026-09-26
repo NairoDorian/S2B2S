@@ -146,8 +146,13 @@ pub fn mirror_fallbacks(model_id: &str) -> Vec<MirrorFile> {
     }) else {
         return Vec::new();
     };
-    let Some(revision) = m.revision.as_deref() else {
-        return Vec::new();
+    // A file hosted outside the model's repo is keyed by its own repo+revision.
+    let (repo, revision) = match (file.repo.as_deref(), file.revision.as_deref()) {
+        (Some(repo), Some(revision)) => (repo, revision),
+        _ => match m.revision.as_deref() {
+            Some(revision) => (m.id.as_str(), revision),
+            None => return Vec::new(),
+        },
     };
     // No hash means no verification means no mirror: never fetch from an
     // untrusted host without the catalog trust anchor.
@@ -160,7 +165,7 @@ pub fn mirror_fallbacks(model_id: &str) -> Vec<MirrorFile> {
             url: format!(
                 "{}/{}/{}/{}",
                 base.trim_end_matches('/'),
-                m.id,
+                repo,
                 revision,
                 file.filename
             ),
@@ -180,16 +185,14 @@ pub fn file_in_catalog(
 ) -> Option<(&'static ModelDescriptor, &'static QuantFile)> {
     let catalog: &'static Vec<ModelDescriptor> = Lazy::force(&CATALOG);
     catalog.iter().find_map(|d| {
-        if let Some(repo) = repo_id {
-            match &d.source {
-                ModelSource::HuggingFace { repo_id: r, .. } if r == repo => {}
-                _ => return None,
-            }
-        }
-        d.files
-            .iter()
-            .find(|f| f.filename == filename)
-            .map(|f| (d, f))
+        let file = d.files.iter().find(|f| f.filename == filename)?;
+        // Either the model's repo (how registry ids name it) or the file's own
+        // hosting repo (where the HF-cache scan finds it) identifies it.
+        let repo_matches = |repo: &str| {
+            file.repo.as_deref() == Some(repo)
+                || matches!(&d.source, ModelSource::HuggingFace { repo_id: r, .. } if r == repo)
+        };
+        repo_id.is_none_or(repo_matches).then_some((d, file))
     })
 }
 
@@ -350,5 +353,61 @@ mod tests {
         // The default quant is the variant verified to load and stream natively.
         assert_eq!(desc.default_quant.as_deref(), Some("Q8_0"));
         assert_eq!(file.quant, "Q8_0");
+    }
+
+    /// R2T2's Q4_K_M is a quant of the davidxifeng model hosted in another repo:
+    /// its id groups it with the Q8/F16, but every fetch goes to the host repo.
+    #[test]
+    fn r2t2_q4_is_a_sibling_quant_fetched_from_its_host_repo() {
+        use crate::managers::model::DiskStatus;
+
+        let model_repo = "davidxifeng/Confucius4-R2T2-gguf";
+        let host_repo = "Nairod785/Confucius4-R2T2-Q4_K_M-GGUF";
+        let (desc, file) =
+            file_in_catalog("r2t2-q4_k_m.gguf", Some(model_repo)).expect("a quant of R2T2");
+        // The HF-cache scan names the repo the file physically sits in.
+        let (by_host, _) = file_in_catalog("r2t2-q4_k_m.gguf", Some(host_repo)).expect("host repo");
+        assert_eq!(by_host.id, desc.id);
+
+        let info = desc.to_model_info_for_file(file, &DiskStatus::default());
+        assert_eq!(info.id, format!("{model_repo}/r2t2-q4_k_m.gguf"));
+        match &info.source {
+            ModelSource::HuggingFace { repo_id, revision } => {
+                assert_eq!(repo_id, host_repo, "download must come from the host repo");
+                assert_eq!(revision.len(), 40, "host revision must be pinned");
+            }
+            other => panic!("expected a HuggingFace source, got {:?}", other),
+        }
+        // Mirror keys follow the host repo too, and keep the hash.
+        let mirrors = mirror_fallbacks(&info.id);
+        assert!(
+            mirrors
+                .iter()
+                .all(|m| m.url.contains(host_repo) && m.sha256.len() == 64)
+        );
+        // Every other quant still comes from the model's own repo.
+        let (_, q8) = file_in_catalog("r2t2-q8_0.gguf", Some(model_repo)).unwrap();
+        assert!(matches!(
+            desc.to_model_info_for_file(q8, &DiskStatus::default()).source,
+            ModelSource::HuggingFace { ref repo_id, .. } if repo_id == model_repo
+        ));
+    }
+
+    #[test]
+    fn parakeet_ultra_and_redux_are_catalogued() {
+        for (file, repo) in [
+            (
+                "parakeet-ultra-0.6b-Q8_0.gguf",
+                "Nairod785/parakeet-ultra-gguf",
+            ),
+            (
+                "parakeet-redux-0.6b-TQ1_Q4_K.gguf",
+                "Nairod785/parakeet-redux-gguf",
+            ),
+        ] {
+            let (desc, f) = file_in_catalog(file, Some(repo)).expect("catalogued");
+            assert_eq!(desc.default_quant.as_deref(), Some(f.quant.as_str()));
+            assert_eq!(desc.caps.supports_streaming, Some(false));
+        }
     }
 }

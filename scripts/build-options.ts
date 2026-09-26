@@ -58,7 +58,8 @@ export const FAST_BUILD_OPTIONS: PostureOptions = {
   cudaArchitectures: "auto",
   cmakeArgs: [
     "-DTRANSCRIBE_VULKAN=ON", // Vulkan backend (Intel iGPU & NVIDIA)
-    "-DGGML_CUDA_FA_QUANTS=all", // Flash Attention across all quants on sm_89
+    // GGML_CUDA_FA_QUANTS is deliberately unset: it only adds kernels for
+    // quantized KV caches, and transcribe.cpp runs an F16 KV cache.
     "-DTRANSCRIBE_X86_CONSERVATIVE=OFF", // Lift conservative ISA floor for host CPU
     "-DGGML_NATIVE=ON", // Compiler native tuning (-march=native / /arch:AVX2)
     "-DGGML_AVX2=ON", // AVX2 SIMD instructions
@@ -90,9 +91,11 @@ export const FULL_BUILD_OPTIONS: PostureOptions = {
   // CMake arguments for full/distribution builds:
   cmakeArgs: [
     "-DTRANSCRIBE_VULKAN=ON", // Vulkan backend (Intel iGPU & NVIDIA)
-    "-DGGML_CUDA_FA_QUANTS=all", // Flash Attention across all quants
+    // GGML_CUDA_FA_QUANTS is deliberately unset: it only adds kernels for
+    // quantized KV caches, and transcribe.cpp runs an F16 KV cache.
     // Example additional options you can enable for full builds:
-    // "-DGGML_CUDA_GRAPHS=ON",
+    // (GGML_CUDA_GRAPHS is ON by default: transcribe-cpp-sys passes it for
+    // every CUDA build. Never add -DGGML_CUDA_GRAPHS=OFF.)
     // "-DTRANSCRIBE_BUILD_TESTS=OFF",
   ],
 
