@@ -39,6 +39,97 @@ pub fn r2t2_chunk_ms_is_valid(ms: u32) -> bool {
     (R2T2_CHUNK_MS_MIN..=R2T2_CHUNK_MS_MAX).contains(&ms)
 }
 
+/// Encoder frame of every shipped FastConformer streaming variant (Nemotron
+/// 3.5, Nemotron Speech, Parakeet Unified): 10 ms mel hop × 8× subsampling.
+/// The native side converts every latency knob of those families through it.
+const FASTCONFORMER_FRAME_MS: u32 = 80;
+
+/// What one latency setting means in milliseconds of audio, so the UI and the
+/// benchmark can state the setting in the unit R2T2 already uses instead of a
+/// word.
+///
+/// * `latency_ms` is the audio the model must have before it can emit a
+///   chunk's text: R2T2's chunk, Nemotron's chunk `(right + 1) × 80 ms`,
+///   Parakeet Unified's `chunk + right`. It is the number NVIDIA's model cards
+///   call the latency of each trained setting.
+/// * `lookahead_ms` is the part of it that is future context
+///   (`att_context_right × 80 ms`, or the buffered `right_ms`); 0 for R2T2,
+///   whose chunk has no separate lookahead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LatencyPoint {
+    pub latency_ms: u32,
+    pub lookahead_ms: u32,
+}
+
+/// Right-context menus the Nemotron checkpoints were trained on, in encoder
+/// frames, ordered like the presets (`Fastest`, `Fast`, `Balanced`,
+/// `Accurate`). `Accurate` is the model default (the first entry of
+/// `att_context_size_choices`, R = 13) that `extension_for_kind` leaves to the
+/// runtime. Sources: the fork's `docs/models/nemotron-3.5-asr-streaming-0.6b.md`
+/// (`{0, 3, 6, 13}`) and `nemotron-speech-streaming-en-0.6b.md` (`{0, 1, 6, 13}`).
+const fn nemotron_right_frames(
+    kind: NativeStreamingLatencyKind,
+    preset: NativeStreamingLatencyPreset,
+) -> u32 {
+    match preset {
+        NativeStreamingLatencyPreset::Fastest => 0,
+        NativeStreamingLatencyPreset::Fast => match kind {
+            NativeStreamingLatencyKind::NemotronSpeechCacheAware => 1,
+            _ => 3,
+        },
+        NativeStreamingLatencyPreset::Balanced => 6,
+        NativeStreamingLatencyPreset::Accurate => 13,
+    }
+}
+
+/// Parakeet Unified `(chunk_ms, right_ms)` per preset. `Accurate` is the model
+/// default tuple `(70, 13, 13)` frames = 1040 / 1040 ms that the runtime picks
+/// when no extension is attached.
+const fn parakeet_buffered_chunk_right_ms(preset: NativeStreamingLatencyPreset) -> (u32, u32) {
+    match preset {
+        NativeStreamingLatencyPreset::Fastest => (160, 160),
+        NativeStreamingLatencyPreset::Fast => (160, 320),
+        NativeStreamingLatencyPreset::Balanced => (560, 560),
+        NativeStreamingLatencyPreset::Accurate => (1040, 1040),
+    }
+}
+
+/// The millisecond meaning of a latency setting. `chunk_ms` is read only for
+/// R2T2 and `preset` only for the preset families, like
+/// [`stream_extension_for`]; an out-of-range R2T2 value reports the native
+/// default it falls back to.
+pub fn latency_point(
+    kind: NativeStreamingLatencyKind,
+    preset: NativeStreamingLatencyPreset,
+    chunk_ms: u32,
+) -> LatencyPoint {
+    match kind {
+        NativeStreamingLatencyKind::R2T2ChunkMs => LatencyPoint {
+            latency_ms: if r2t2_chunk_ms_is_valid(chunk_ms) {
+                chunk_ms
+            } else {
+                R2T2_CHUNK_MS_DEFAULT
+            },
+            lookahead_ms: 0,
+        },
+        NativeStreamingLatencyKind::ParakeetBuffered => {
+            let (chunk, right) = parakeet_buffered_chunk_right_ms(preset);
+            LatencyPoint {
+                latency_ms: chunk + right,
+                lookahead_ms: right,
+            }
+        }
+        NativeStreamingLatencyKind::Nemotron35CacheAware
+        | NativeStreamingLatencyKind::NemotronSpeechCacheAware => {
+            let right = nemotron_right_frames(kind, preset);
+            LatencyPoint {
+                latency_ms: (right + 1) * FASTCONFORMER_FRAME_MS,
+                lookahead_ms: right * FASTCONFORMER_FRAME_MS,
+            }
+        }
+    }
+}
+
 /// Translate a `(model_kind, preset)` pair into the raw extension kind + options
 /// the model should receive.
 ///
@@ -64,57 +155,26 @@ fn extension_for_kind(
             "R2T2 chunk size is a free millisecond value; route through \
              stream_extension_for / r2t2_stream_extension"
         ),
+        // Both families read the tables `latency_point` reports from, so the
+        // milliseconds the UI and the benchmark show are the values sent.
         NativeStreamingLatencyKind::ParakeetBuffered => {
-            let (chunk_ms, right_ms) = match preset {
-                NativeStreamingLatencyPreset::Fastest => (160, 160),
-                NativeStreamingLatencyPreset::Fast => (160, 320),
-                NativeStreamingLatencyPreset::Balanced => (560, 560),
-                NativeStreamingLatencyPreset::Accurate => unreachable!(),
-            };
+            let (chunk_ms, right_ms) = parakeet_buffered_chunk_right_ms(preset);
             Some((
                 sys::TRANSCRIBE_EXT_KIND_PARAKEET_BUFFERED_STREAM,
                 StreamExtension::ParakeetBuffered(ParakeetBufferedStreamOptions {
                     left_ms: Some(5600),
-                    chunk_ms: Some(chunk_ms),
-                    right_ms: Some(right_ms),
+                    chunk_ms: Some(chunk_ms as i32),
+                    right_ms: Some(right_ms as i32),
                 }),
             ))
         }
         NativeStreamingLatencyKind::Nemotron35CacheAware
-        | NativeStreamingLatencyKind::NemotronSpeechCacheAware => {
-            let att_context_right = match (kind, preset) {
-                (_, NativeStreamingLatencyPreset::Fastest) => 0,
-                (
-                    NativeStreamingLatencyKind::Nemotron35CacheAware,
-                    NativeStreamingLatencyPreset::Fast,
-                ) => 3,
-                (
-                    NativeStreamingLatencyKind::NemotronSpeechCacheAware,
-                    NativeStreamingLatencyPreset::Fast,
-                ) => 1,
-                (_, NativeStreamingLatencyPreset::Balanced) => 6,
-                (_, NativeStreamingLatencyPreset::Accurate) => unreachable!(),
-                (NativeStreamingLatencyKind::ParakeetBuffered, _) => unreachable!(),
-                // R2T2 is likewise unreachable *here* — the outer match routes it
-                // to `r2t2_stream_extension` before this arm — but the inner
-                // match scrutinees are not narrowed by the outer pattern, so rustc
-                // still requires the pair to be covered. Only `(R2T2ChunkMs, Fast)`
-                // is missing: `Fastest`, `Balanced` and `Accurate` are already
-                // caught by the wildcard-preset arms above.
-                (NativeStreamingLatencyKind::R2T2ChunkMs, NativeStreamingLatencyPreset::Fast) => {
-                    unreachable!(
-                        "R2T2 chunk size is a free millisecond value; route through \
-                     stream_extension_for / r2t2_stream_extension"
-                    )
-                }
-            };
-            Some((
-                sys::TRANSCRIBE_EXT_KIND_PARAKEET_STREAM,
-                StreamExtension::ParakeetStream(ParakeetStreamOptions {
-                    att_context_right: Some(att_context_right),
-                }),
-            ))
-        }
+        | NativeStreamingLatencyKind::NemotronSpeechCacheAware => Some((
+            sys::TRANSCRIBE_EXT_KIND_PARAKEET_STREAM,
+            StreamExtension::ParakeetStream(ParakeetStreamOptions {
+                att_context_right: Some(nemotron_right_frames(kind, preset) as i32),
+            }),
+        )),
     }
 }
 
@@ -256,6 +316,49 @@ mod tests {
                 att_context_right: Some(1),
             })
         );
+    }
+
+    /// The milliseconds the UI and the benchmark show for each preset are the
+    /// latencies of the trained settings on the model cards, and they agree
+    /// with the extension actually sent.
+    #[test]
+    fn latency_points_match_the_trained_menus() {
+        use NativeStreamingLatencyKind as K;
+        use NativeStreamingLatencyPreset as P;
+        let presets = [P::Fastest, P::Fast, P::Balanced, P::Accurate];
+        let ms = |kind| presets.map(|p| latency_point(kind, p, 0).latency_ms);
+        let ahead = |kind| presets.map(|p| latency_point(kind, p, 0).lookahead_ms);
+
+        assert_eq!(ms(K::Nemotron35CacheAware), [80, 320, 560, 1120]);
+        assert_eq!(ahead(K::Nemotron35CacheAware), [0, 240, 480, 1040]);
+        assert_eq!(ms(K::NemotronSpeechCacheAware), [80, 160, 560, 1120]);
+        assert_eq!(ahead(K::NemotronSpeechCacheAware), [0, 80, 480, 1040]);
+        assert_eq!(ms(K::ParakeetBuffered), [320, 480, 1120, 2080]);
+
+        for kind in [K::Nemotron35CacheAware, K::NemotronSpeechCacheAware] {
+            for preset in [P::Fastest, P::Fast, P::Balanced] {
+                let (_, ext) = extension_for_kind(kind, preset).unwrap();
+                let StreamExtension::ParakeetStream(options) = ext else {
+                    panic!("Nemotron must use the cache-aware extension");
+                };
+                let right = options.att_context_right.unwrap() as u32;
+                assert_eq!(latency_point(kind, preset, 0).lookahead_ms, right * 80);
+            }
+        }
+    }
+
+    #[test]
+    fn r2t2_latency_point_is_the_chunk_or_the_native_default() {
+        let point = |ms| {
+            latency_point(
+                NativeStreamingLatencyKind::R2T2ChunkMs,
+                NativeStreamingLatencyPreset::Fastest,
+                ms,
+            )
+        };
+        assert_eq!(point(160).latency_ms, 160);
+        assert_eq!(point(160).lookahead_ms, 0);
+        assert_eq!(point(5000).latency_ms, R2T2_CHUNK_MS_DEFAULT);
     }
 
     /// The point of R2T2's control is that the user can reach the *lowest*

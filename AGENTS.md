@@ -468,7 +468,12 @@ ZER0 is a cross-platform desktop speech-to-text application built with Tauri 3 a
   - `model-selector/` - Status-bar model controls (footer). Three mutually
     exclusive popovers: model switcher, quantization picker
     (`QuantizationPanel.tsx`, which also hosts the quantization benchmark via
-    `useQuantBenchmark.ts`), and native streaming latency (`LatencyPanel.tsx`).
+    `useQuantBenchmark.ts`, which also runs the native-streaming benchmark), and
+    native streaming latency (`StreamingLatencyControl.tsx`: one slider in ms
+    for every family — continuous for R2T2, snapping to the trained settings
+    for Nemotron / Parakeet Unified; the ms table is `lib/streamingLatency.ts`,
+    mirroring `native_streaming_latency::latency_point`). The same control is
+    each streaming-capable extra slot's latency on the Multi-STT page.
     There is deliberately no benchmark settings page — the benchmark lives
     beside the quant list it compares.
   - `onboarding/` - First-run experience
@@ -675,7 +680,12 @@ When `save_raw_audio` is enabled in Settings $\rightarrow$ Advanced $\rightarrow
 - `multi_stt_enabled` - Global toggle for multi-model transcription mode
 - `multi_stt_extra_models` - The extra models, in slot order: slot 0 is "Model 2"
   (`${output2}`), slot 1 "Model 3", and so on. One `MultiSttExtraModel`
-  (`model_id`, `language` override, `translate` to English) per slot; 1 to
+  (`model_id`, `language` override, `translate` to English, and a
+  `latency_preset` / `chunk_ms` streaming-latency override that the slot's
+  live stream in Multi Streaming STT resolves before the per-model entry —
+  per-model latency is shared across quant siblings, so without it an extra
+  that is a quant of the primary could not stream at its own latency;
+  `change_multi_stt_extra_model_latency`) per slot; 1 to
   `MULTI_STT_MAX_EXTRA_MODELS` (8) slots, 3 on a fresh install, and a slot may
   be empty (its placeholder is then an empty string). The page's "Number of
   extra models" dropdown resizes it (`change_multi_stt_extra_model_count`,
@@ -732,7 +742,11 @@ hotkey until the user sets one — a deliberate consequence of the performance-m
 - `mic_idle_timeout_value` / `mic_idle_timeout_unit` / `mic_idle_infinite` - Lazy microphone close timeout (was a fixed 30 s upstream)
 - `append_trailing_newline` - Like `append_trailing_space`, with a newline
 - `custom_accent_color` - `#rrggbb` or `null` for the neon-cyan default; persisted through `change_custom_accent_color_setting`
-- `native_streaming_latency_presets` - Per-model-family latency preset (`fastest` → `accurate`)
+- `native_streaming_latency_presets` - Per-model latency preset (`fastest` →
+  `accurate`) selecting one of the family's trained settings. The UI shows it
+  in ms (`latency_point`): Nemotron 3.5 80 / 320 / 560 / 1120, Nemotron Speech
+  80 / 160 / 560 / 1120 (`(att_context_right + 1) × 80 ms`), Parakeet Unified
+  320 / 480 / 1120 / 2080 (`chunk + right`); `accurate` is the model default
 - `native_streaming_chunk_ms` - Per-model R2T2 stream chunk in milliseconds
   (80–2000, default 320 when absent); R2T2's latency control is continuous,
   so it is a separate map from the presets

@@ -52,6 +52,13 @@ export const commands = {
 	changeMultiSttEnabledSetting: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_enabled_setting", { enabled })),
 	changeMultiSttExtraModel: (slot: number, modelId: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model", { slot, modelId })),
 	changeMultiSttExtraModelLanguage: (slot: number, language: string | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_language", { slot, language })),
+	/**
+	 *  Streaming latency of one extra slot's live stream: a preset for the preset
+	 *  families, or R2T2's chunk size in ms. `None` for both returns the slot to
+	 *  its model's own setting. An R2T2 value outside the native range is refused
+	 *  here, like `change_native_streaming_chunk_ms_setting` does.
+	 */
+	changeMultiSttExtraModelLatency: (slot: number, preset: NativeStreamingLatencyPreset | null, chunkMs: number | null) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_latency", { slot, preset, chunkMs })),
 	changeMultiSttExtraModelTranslate: (slot: number, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("change_multi_stt_extra_model_translate", { slot, enabled })),
 	/**
 	 *  How many extra models Multi-STT runs (1 to `MULTI_STT_MAX_EXTRA_MODELS`).
@@ -336,21 +343,38 @@ export const commands = {
 	 *  `model_id`.  Uses the latest completed recording as the reference audio.
 	 * 
 	 *  For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) the model is loaded
-	 *  on a temporary engine, a warmup transcription is discarded, three timed
-	 *  transcriptions are averaged, and the engine is dropped before the next
-	 *  variant.  Progress events are emitted on the `benchmark-progress` channel
-	 *  and the full result vector is returned when all variants are done.
+	 *  on a temporary engine, one warmup transcription is run and discarded (it is
+	 *  never counted in the average), `runs` timed transcriptions are averaged
+	 *  (clamped to 2..=10, default 5 when omitted), and the engine is dropped
+	 *  before the next variant.  Progress events are emitted on the
+	 *  `benchmark-progress` channel and the full result vector is returned when
+	 *  all variants are done.
 	 */
-	benchmarkModelQuantizations: (modelId: string) => typedError<BenchmarkResult[], string>(__TAURI_INVOKE("benchmark_model_quantizations", { modelId })),
+	benchmarkModelQuantizations: (modelId: string, runs: number | null) => typedError<BenchmarkResult[], string>(__TAURI_INVOKE("benchmark_model_quantizations", { modelId, runs })),
 	/**
 	 *  Benchmark a single quantization variant of the current model.
 	 *  Uses the latest completed recording as the reference audio.
 	 * 
-	 *  The engine is loaded from a clean state (primary model unloaded first),
-	 *  a warmup transcription is discarded, three timed runs are averaged,
+	 *  The engine is loaded from a clean state (primary model unloaded first), one
+	 *  warmup transcription is run and discarded (never counted in the average),
+	 *  `runs` timed runs are averaged (clamped to 2..=10, default 5 when omitted),
 	 *  and the engine is dropped after the run.
 	 */
-	benchmarkSingleQuantization: (modelId: string) => typedError<BenchmarkResult, string>(__TAURI_INVOKE("benchmark_single_quantization", { modelId })),
+	benchmarkSingleQuantization: (modelId: string, runs: number | null) => typedError<BenchmarkResult, string>(__TAURI_INVOKE("benchmark_single_quantization", { modelId, runs })),
+	/**
+	 *  Benchmark `model_id` in its **native streaming mode** — the same
+	 *  `stream_begin` / `feed` / `finalize` replay the transcribe-fork
+	 *  `streaming-benchmark` driver measures, run against the latest completed
+	 *  recording.
+	 * 
+	 *  One warmup replay is discarded and never averaged; `runs` timed replays
+	 *  (clamped to 2..=10, default 5 when omitted) follow, and the result carries
+	 *  the real-time speed factor (`compute_xrt`), feed p95/max, the finalize cost
+	 *  and the audio horizon of the first text. Models that do not advertise
+	 *  streaming support are refused. Progress is reported as `stream_*` events on
+	 *  the `benchmark-progress` channel.
+	 */
+	benchmarkModelStreaming: (modelId: string, runs: number | null) => typedError<StreamingBenchmarkResult_Serialize, string>(__TAURI_INVOKE("benchmark_model_streaming", { modelId, runs })),
 	updateMicrophoneMode: (alwaysOn: boolean) => typedError<null, string>(__TAURI_INVOKE("update_microphone_mode", { alwaysOn })),
 	getMicrophoneMode: () => typedError<boolean, string>(__TAURI_INVOKE("get_microphone_mode")),
 	getWindowsMicrophonePermissionStatus: () => __TAURI_INVOKE<WindowsMicrophonePermissionStatus>("get_windows_microphone_permission_status"),
@@ -2735,6 +2759,19 @@ export type MultiSttExtraModel_Deserialize = {
 	language?: string | null,
 	/**  Translate this model's output to English. */
 	translate?: boolean,
+	/**
+	 *  Streaming latency preset for this slot's live stream (Multi Streaming
+	 *  STT); `None` follows the model's own `native_streaming_latency_presets`
+	 *  entry. A slot override is what lets an extra run at a different latency
+	 *  than a quant sibling used as the primary, since per-model latency is
+	 *  shared across quants.
+	 */
+	latency_preset?: NativeStreamingLatencyPreset | null,
+	/**
+	 *  R2T2 streaming chunk size for this slot, in ms; `None` follows the
+	 *  model's own `native_streaming_chunk_ms` entry.
+	 */
+	chunk_ms?: number | null,
 };
 
 /**
@@ -2751,6 +2788,19 @@ export type MultiSttExtraModel_Serialize = {
 	language: string | null,
 	/**  Translate this model's output to English. */
 	translate: boolean,
+	/**
+	 *  Streaming latency preset for this slot's live stream (Multi Streaming
+	 *  STT); `None` follows the model's own `native_streaming_latency_presets`
+	 *  entry. A slot override is what lets an extra run at a different latency
+	 *  than a quant sibling used as the primary, since per-model latency is
+	 *  shared across quants.
+	 */
+	latency_preset: NativeStreamingLatencyPreset | null,
+	/**
+	 *  R2T2 streaming chunk size for this slot, in ms; `None` follows the
+	 *  model's own `native_streaming_chunk_ms` entry.
+	 */
+	chunk_ms: number | null,
 };
 
 /**
@@ -3463,6 +3513,141 @@ export type StreamTextEvent_Serialize = {
 
 /**  Semantic kind of "working" phase, used to localize the spinner label. */
 export type StreamWorkKind = "transcribing" | "polishing";
+
+/**
+ *  Result of benchmarking a model's native streaming mode — the same numbers
+ *  the transcribe-fork `streaming-benchmark` driver reports, reduced to what
+ *  the status-bar panel needs to say how fast the model keeps up with speech.
+ * 
+ *  The headline is [`compute_xrt`](Self::compute_xrt): audio seconds per
+ *  compute second, where "compute" is the sum of the begin, feed and finalize
+ *  call durations and excludes model loading and any pacing. Above 1.0 the
+ *  model decodes faster than the audio arrives, which is the condition for a
+ *  live stream that never falls behind.
+ */
+export type StreamingBenchmarkResult = StreamingBenchmarkResult_Serialize | StreamingBenchmarkResult_Deserialize;
+
+/**
+ *  Result of benchmarking a model's native streaming mode — the same numbers
+ *  the transcribe-fork `streaming-benchmark` driver reports, reduced to what
+ *  the status-bar panel needs to say how fast the model keeps up with speech.
+ * 
+ *  The headline is [`compute_xrt`](Self::compute_xrt): audio seconds per
+ *  compute second, where "compute" is the sum of the begin, feed and finalize
+ *  call durations and excludes model loading and any pacing. Above 1.0 the
+ *  model decodes faster than the audio arrives, which is the condition for a
+ *  live stream that never falls behind.
+ */
+export type StreamingBenchmarkResult_Deserialize = {
+	model_id: string,
+	/**  Timed runs averaged. The discarded warmup is not part of this count. */
+	runs: number,
+	/**  Duration of the reference recording being replayed. */
+	audio_secs: number | null,
+	/**  Mean per-run compute time: begin + every feed + finalize. */
+	avg_compute_ms: number | null,
+	/**  `audio_secs / (avg_compute_ms / 1000)` — the real-time speed factor. */
+	compute_xrt: number | null,
+	/**  Mean per-run wall time, which also covers the feed loop's own overhead. */
+	avg_wall_ms: number | null,
+	/**  p95 over every feed of every timed run (cheap buffer feeds included). */
+	feed_p95_ms: number | null,
+	/**  p95 over feeds of at least 1 ms — the driver's heuristic "busy" filter. */
+	busy_feed_p95_ms: number | null,
+	/**  Slowest single feed across every timed run. */
+	feed_max_ms: number | null,
+	/**  Mean tail-flush cost of `finalize`. */
+	avg_finalize_ms: number | null,
+	/**
+	 *  Mean audio horizon, in milliseconds of audio already fed, at which
+	 *  text first appeared; `None` when no timed run produced text before
+	 *  `finalize`. This is how far behind the first word is, not wall clock.
+	 */
+	avg_first_text_audio_ms?: number | null,
+	/**
+	 *  Feed granularity of the replay, in milliseconds (see
+	 *  [`STREAM_BENCHMARK_FEED_MS`]).
+	 */
+	feed_chunk_ms: number,
+	/**
+	 *  The resolved stream extension (family + cadence / right context), so a
+	 *  stored result still says which operating point was measured.
+	 */
+	stream_extension: string,
+	/**
+	 *  The streaming latency the run was measured at, in ms of audio — read
+	 *  from the settings the status-bar latency slider writes, in the same
+	 *  unit for every family (R2T2's chunk, Nemotron's `(right + 1) × 80 ms`,
+	 *  Parakeet Unified's `chunk + right`; see
+	 *  [`latency_point`](crate::managers::native_streaming_latency::latency_point)).
+	 *  `None` for a model with no latency control. The extension above is the
+	 *  raw twin that proves what the runtime was handed.
+	 */
+	latency_ms?: number | null,
+	/**  The lookahead part of [`Self::latency_ms`]; 0 for R2T2. */
+	lookahead_ms?: number | null,
+};
+
+/**
+ *  Result of benchmarking a model's native streaming mode — the same numbers
+ *  the transcribe-fork `streaming-benchmark` driver reports, reduced to what
+ *  the status-bar panel needs to say how fast the model keeps up with speech.
+ * 
+ *  The headline is [`compute_xrt`](Self::compute_xrt): audio seconds per
+ *  compute second, where "compute" is the sum of the begin, feed and finalize
+ *  call durations and excludes model loading and any pacing. Above 1.0 the
+ *  model decodes faster than the audio arrives, which is the condition for a
+ *  live stream that never falls behind.
+ */
+export type StreamingBenchmarkResult_Serialize = {
+	model_id: string,
+	/**  Timed runs averaged. The discarded warmup is not part of this count. */
+	runs: number,
+	/**  Duration of the reference recording being replayed. */
+	audio_secs: number | null,
+	/**  Mean per-run compute time: begin + every feed + finalize. */
+	avg_compute_ms: number | null,
+	/**  `audio_secs / (avg_compute_ms / 1000)` — the real-time speed factor. */
+	compute_xrt: number | null,
+	/**  Mean per-run wall time, which also covers the feed loop's own overhead. */
+	avg_wall_ms: number | null,
+	/**  p95 over every feed of every timed run (cheap buffer feeds included). */
+	feed_p95_ms: number | null,
+	/**  p95 over feeds of at least 1 ms — the driver's heuristic "busy" filter. */
+	busy_feed_p95_ms: number | null,
+	/**  Slowest single feed across every timed run. */
+	feed_max_ms: number | null,
+	/**  Mean tail-flush cost of `finalize`. */
+	avg_finalize_ms: number | null,
+	/**
+	 *  Mean audio horizon, in milliseconds of audio already fed, at which
+	 *  text first appeared; `None` when no timed run produced text before
+	 *  `finalize`. This is how far behind the first word is, not wall clock.
+	 */
+	avg_first_text_audio_ms: number | null,
+	/**
+	 *  Feed granularity of the replay, in milliseconds (see
+	 *  [`STREAM_BENCHMARK_FEED_MS`]).
+	 */
+	feed_chunk_ms: number,
+	/**
+	 *  The resolved stream extension (family + cadence / right context), so a
+	 *  stored result still says which operating point was measured.
+	 */
+	stream_extension: string,
+	/**
+	 *  The streaming latency the run was measured at, in ms of audio — read
+	 *  from the settings the status-bar latency slider writes, in the same
+	 *  unit for every family (R2T2's chunk, Nemotron's `(right + 1) × 80 ms`,
+	 *  Parakeet Unified's `chunk + right`; see
+	 *  [`latency_point`](crate::managers::native_streaming_latency::latency_point)).
+	 *  `None` for a model with no latency control. The extension above is the
+	 *  raw twin that proves what the runtime was handed.
+	 */
+	latency_ms: number | null,
+	/**  The lookahead part of [`Self::latency_ms`]; 0 for R2T2. */
+	lookahead_ms: number | null,
+};
 
 export type SystemStatsEvent = SystemStatsEvent_Serialize | SystemStatsEvent_Deserialize;
 

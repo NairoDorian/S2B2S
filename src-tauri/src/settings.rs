@@ -127,6 +127,17 @@ pub struct MultiSttExtraModel {
     /// Translate this model's output to English.
     #[serde(default)]
     pub translate: bool,
+    /// Streaming latency preset for this slot's live stream (Multi Streaming
+    /// STT); `None` follows the model's own `native_streaming_latency_presets`
+    /// entry. A slot override is what lets an extra run at a different latency
+    /// than a quant sibling used as the primary, since per-model latency is
+    /// shared across quants.
+    #[serde(default)]
+    pub latency_preset: Option<NativeStreamingLatencyPreset>,
+    /// R2T2 streaming chunk size for this slot, in ms; `None` follows the
+    /// model's own `native_streaming_chunk_ms` entry.
+    #[serde(default)]
+    pub chunk_ms: Option<u32>,
 }
 
 fn default_multi_stt_extra_models() -> Vec<MultiSttExtraModel> {
@@ -2921,6 +2932,7 @@ fn legacy_multi_stt_extra_models(settings_value: &serde_json::Value) -> Vec<Mult
                 .get(format!("multi_stt_translate_model_{n}"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            ..Default::default()
         })
         .collect()
 }
@@ -3353,11 +3365,13 @@ mod tests {
                     model_id: Some("model-three".into()),
                     language: Some("de".into()),
                     translate: false,
+                    ..Default::default()
                 },
                 MultiSttExtraModel {
                     model_id: None,
                     language: None,
                     translate: true,
+                    ..Default::default()
                 },
             ]
         );

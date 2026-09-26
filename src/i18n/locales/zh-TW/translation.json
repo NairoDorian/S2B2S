@@ -190,34 +190,31 @@
     "benchmark": {
       "runAll": "Benchmark",
       "runOne": "Benchmark {{quant}}",
+      "runStream": "Stream",
       "runProgress": "{{done}}/{{total}}",
+      "warmup": "warmup",
       "reference": "Timed against your recording from {{when}}",
       "noRecording": "Record something first — the benchmark replays your latest recording",
-      "method": "One warmup run is discarded, then {{runs}} timed runs are averaged.",
+      "method": "Every benchmark starts with 1 warmup run, which is always discarded and never counted in the average. The {{runs}} timed runs that follow are averaged.",
+      "runsLabel": "Timed runs to average",
       "fastest": "Fastest",
       "failed": "Failed",
+      "streamNotSupported": "This model has no native streaming mode",
+      "streamResult": "Streaming: {{factor}}× real-time · feed p95 {{p95}} ms, max {{max}} ms · first text after {{first}} ms of audio",
+      "streamAt": "at {{latency}} latency",
       "realTime": "{{factor}}× real-time",
       "milliseconds": "{{value}} ms",
       "seconds": "{{value}} s"
     },
     "latencySelector": {
       "title": "Streaming Latency",
-      "pillLabel": "Streaming latency: {{preset}}",
-      "fastest": "Fastest",
-      "fast": "Fast",
-      "balanced": "Balanced",
-      "accurate": "Accurate",
-      "descriptions": {
-        "fastest": "Lowest latency, may affect accuracy",
-        "fast": "Low latency, good balance",
-        "balanced": "Balanced latency and accuracy",
-        "accurate": "Best accuracy, higher latency"
-      },
+      "pillLabel": "Streaming latency: {{ms}} ms",
+      "ms": "{{ms}} ms",
+      "unit": "ms",
+      "lookahead": "includes {{ms}} ms lookahead",
+      "defaultMark": "model default",
+      "stepsHint": "This model was trained at these latencies only, so the slider snaps to them. Lower shows text sooner; higher is more accurate. Applies to the next recording.",
       "chunkSize": {
-        "label": "串流分塊大小",
-        "unit": "ms",
-        "pillLabel": "串流分塊大小：{{ms}} ms",
-        "trigger": "{{ms}} ms",
         "decrease": "將分塊大小減少一毫秒",
         "increase": "將分塊大小增加一毫秒",
         "hint": "每次解碼前累積的音訊長度。數值越小反應越快，但運算開銷越大，因為模型每處理一個分塊都會重新讀取截至目前的所有音訊。從下次錄音開始生效。"
@@ -1961,7 +1958,10 @@
       },
       "slotTitle": "Model {{number}}",
       "slotDescription": "Select an STT model to run alongside the primary model. Its output fills {{placeholder}} in the merge prompt.",
-      "slotLanguage": "Language for Model {{number}}"
+      "slotLanguage": "Language for Model {{number}}",
+      "latency": "Model {{number}} streaming latency",
+      "latencyHint": "Used when this model streams live beside the primary (Multi Streaming STT), for this slot only.",
+      "latencyFollowModel": "Use model setting"
     },
     "mergePrompt": {
       "title": "Merge Prompt",

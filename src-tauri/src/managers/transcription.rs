@@ -50,9 +50,33 @@ pub struct ModelStateEvent {
     pub error: Option<String>,
 }
 
-/// Number of timed transcription runs averaged per quantization variant. A
-/// warmup run (discarded) always precedes these.
-pub const BENCHMARK_TIMED_RUNS: usize = 3;
+/// Number of timed transcription runs averaged per quantization variant when
+/// the caller does not pick one. A warmup run always precedes these and is
+/// never averaged in — see [`benchmark_timed_runs`].
+pub const BENCHMARK_DEFAULT_RUNS: usize = 5;
+
+/// Inclusive lower bound of the selectable timed-run count.
+pub const BENCHMARK_MIN_RUNS: usize = 2;
+
+/// Inclusive upper bound of the selectable timed-run count.
+pub const BENCHMARK_MAX_RUNS: usize = 10;
+
+/// Resolve the number of *timed* runs a benchmark should average: the
+/// caller's request when it is present, otherwise
+/// [`BENCHMARK_DEFAULT_RUNS`], clamped into
+/// `[BENCHMARK_MIN_RUNS, BENCHMARK_MAX_RUNS]`. The warmup run is a fixed
+/// extra pass and is never part of this count.
+pub fn benchmark_timed_runs(requested: Option<usize>) -> usize {
+    requested
+        .unwrap_or(BENCHMARK_DEFAULT_RUNS)
+        .clamp(BENCHMARK_MIN_RUNS, BENCHMARK_MAX_RUNS)
+}
+
+/// Feed granularity of the streaming benchmark replay, in milliseconds of
+/// 16 kHz audio: the same 256-sample frame the live path feeds after the VAD,
+/// so a replay measures the call pattern the app actually runs rather than an
+/// idealised packet size.
+pub const STREAM_BENCHMARK_FEED_MS: usize = 16;
 
 /// Result of benchmarking a single quantization variant — returned to the
 /// frontend so it can render per-quant timings next to each variant chip.
@@ -70,6 +94,76 @@ pub struct BenchmarkResult {
     pub is_default: bool,
 }
 
+/// Result of benchmarking a model's native streaming mode — the same numbers
+/// the transcribe-fork `streaming-benchmark` driver reports, reduced to what
+/// the status-bar panel needs to say how fast the model keeps up with speech.
+///
+/// The headline is [`compute_xrt`](Self::compute_xrt): audio seconds per
+/// compute second, where "compute" is the sum of the begin, feed and finalize
+/// call durations and excludes model loading and any pacing. Above 1.0 the
+/// model decodes faster than the audio arrives, which is the condition for a
+/// live stream that never falls behind.
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct StreamingBenchmarkResult {
+    pub model_id: String,
+    /// Timed runs averaged. The discarded warmup is not part of this count.
+    pub runs: u32,
+    /// Duration of the reference recording being replayed.
+    pub audio_secs: f64,
+    /// Mean per-run compute time: begin + every feed + finalize.
+    pub avg_compute_ms: f64,
+    /// `audio_secs / (avg_compute_ms / 1000)` — the real-time speed factor.
+    pub compute_xrt: f64,
+    /// Mean per-run wall time, which also covers the feed loop's own overhead.
+    pub avg_wall_ms: f64,
+    /// p95 over every feed of every timed run (cheap buffer feeds included).
+    pub feed_p95_ms: f64,
+    /// p95 over feeds of at least 1 ms — the driver's heuristic "busy" filter.
+    pub busy_feed_p95_ms: f64,
+    /// Slowest single feed across every timed run.
+    pub feed_max_ms: f64,
+    /// Mean tail-flush cost of `finalize`.
+    pub avg_finalize_ms: f64,
+    /// Mean audio horizon, in milliseconds of audio already fed, at which
+    /// text first appeared; `None` when no timed run produced text before
+    /// `finalize`. This is how far behind the first word is, not wall clock.
+    pub avg_first_text_audio_ms: Option<f64>,
+    /// Feed granularity of the replay, in milliseconds (see
+    /// [`STREAM_BENCHMARK_FEED_MS`]).
+    pub feed_chunk_ms: u32,
+    /// The resolved stream extension (family + cadence / right context), so a
+    /// stored result still says which operating point was measured.
+    pub stream_extension: String,
+    /// The streaming latency the run was measured at, in ms of audio — read
+    /// from the settings the status-bar latency slider writes, in the same
+    /// unit for every family (R2T2's chunk, Nemotron's `(right + 1) × 80 ms`,
+    /// Parakeet Unified's `chunk + right`; see
+    /// [`latency_point`](crate::managers::native_streaming_latency::latency_point)).
+    /// `None` for a model with no latency control. The extension above is the
+    /// raw twin that proves what the runtime was handed.
+    pub latency_ms: Option<u32>,
+    /// The lookahead part of [`Self::latency_ms`]; 0 for R2T2.
+    pub lookahead_ms: Option<u32>,
+}
+
+/// Timing of one streaming replay pass, kept so several passes can be averaged
+/// into a [`StreamingBenchmarkResult`].
+///
+/// `compute_ms` is defined exactly as the transcribe-fork
+/// `streaming-benchmark` driver defines it: the sum of the begin, feed and
+/// finalize call durations — no model load, no pacing, no loop overhead.
+#[derive(Debug, Clone)]
+struct StreamReplayMetrics {
+    compute_ms: f64,
+    wall_ms: f64,
+    feed_ms: Vec<f64>,
+    finalize_ms: f64,
+    /// Audio horizon of the first text, in milliseconds of audio fed.
+    first_text_audio_ms: Option<f64>,
+    /// Debug of the resolved stream extension, identical for every pass.
+    stream_extension: String,
+}
+
 /// Progress event emitted from the backend during a benchmark run so the
 /// frontend can show live status (which variant is being tested, etc.).
 ///
@@ -85,9 +179,11 @@ pub struct BenchmarkProgressEvent {
     pub avg_time_ms: Option<f64>,
     /// Duration of the reference recording (see [`BenchmarkResult::audio_secs`]).
     pub audio_secs: Option<f64>,
-    /// 1-based index of the run that just finished (`run_completed` only).
+    /// 1-based index of the run that just finished (`run_completed` only);
+    /// 0 for `warmup_completed`, the discarded first pass.
     pub run_index: Option<u32>,
-    /// Total timed runs per variant, so the UI can render "2 / 3".
+    /// Number of timed runs averaged per variant — the discarded warmup is
+    /// not part of this count, so the UI can render "2 / 5".
     pub total_runs: Option<u32>,
     pub error: Option<String>,
 }
@@ -2513,6 +2609,34 @@ pub(crate) fn real_time_factor(audio_secs: f64, compute_secs: f64) -> f64 {
     }
 }
 
+/// Nearest-rank percentile of an already ascending-sorted list of durations.
+///
+/// `0.0` for an empty list rather than NaN: an empty list means nothing
+/// qualified (no feed reached the "busy" threshold), and a reported zero is
+/// interpretable while a NaN is not.
+fn percentile_ms(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let rank = (p * sorted.len() as f64).ceil() as usize;
+    sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
+}
+
+/// Log form of a streaming latency setting: `560 ms (480 ms lookahead)`,
+/// `320 ms` for R2T2, or `model default` when the model has no control.
+fn describe_latency(
+    point: Option<crate::managers::native_streaming_latency::LatencyPoint>,
+) -> String {
+    match point {
+        None => "model default".to_string(),
+        Some(point) if point.lookahead_ms == 0 => format!("{} ms", point.latency_ms),
+        Some(point) => format!(
+            "{} ms ({} ms lookahead)",
+            point.latency_ms, point.lookahead_ms
+        ),
+    }
+}
+
 pub(crate) fn normalize_cjk_language(language: &str) -> &str {
     match language {
         "zh-Hans" | "zh-Hant" => "zh",
@@ -2656,15 +2780,26 @@ fn multi_stt_extra_model(settings: &AppSettings, slot: u8) -> Option<String> {
 ///
 /// A model that is not one of the configured slots keeps the global settings.
 fn apply_extra_model_settings(settings: &mut AppSettings, model_id: &str) {
-    let (language, translate) = match settings.multi_stt_extra_slot_for(model_id) {
-        Some(slot) => (slot.language.clone(), Some(slot.translate)),
-        None => (None, None),
+    let Some(slot) = settings.multi_stt_extra_slot_for(model_id).cloned() else {
+        return;
     };
-    if let Some(language) = language {
+    if let Some(language) = slot.language {
         settings.selected_language = language;
     }
-    if let Some(translate) = translate {
-        settings.translate_to_english = translate;
+    settings.translate_to_english = slot.translate;
+    // The slot's own latency wins over the per-model entry, which is shared
+    // with every quant sibling (possibly the primary). Written under the exact
+    // id, which `get_effective_latency_preset` / `get_effective_r2t2_chunk_ms`
+    // consult first, so `resolved_stream_extension` needs no slot awareness.
+    if let Some(preset) = slot.latency_preset {
+        settings
+            .native_streaming_latency_presets
+            .insert(model_id.to_string(), preset);
+    }
+    if let Some(chunk_ms) = slot.chunk_ms {
+        settings
+            .native_streaming_chunk_ms
+            .insert(model_id.to_string(), chunk_ms);
     }
 }
 
@@ -3223,14 +3358,21 @@ impl TranscriptionManager {
         let _ = self.app_handle.emit("benchmark-progress", event);
     }
 
+    // Seven is clippy's default argument ceiling; the eighth is `timed_runs`,
+    // the run count the UI picks, and bundling the rest into a plan struct
+    // would only move the same fields one level down.
+    #[allow(clippy::too_many_arguments)]
     /// Load `variant_id` on a throwaway engine, run one discarded warmup pass
-    /// and [`BENCHMARK_TIMED_RUNS`] timed passes over `audio`, then drop the
-    /// engine and let the OS reclaim its memory.
+    /// and `timed_runs` timed passes over `audio`, then drop the engine and
+    /// let the OS reclaim its memory.
     ///
-    /// Each completed run emits a `run_completed` event so the UI can show live
-    /// progress. A failing or panicking run emits `variant_error` and stops the
-    /// remaining runs; whatever timings were already collected are returned, so
-    /// an empty vector means the variant produced no usable measurement.
+    /// The warmup pass is emitted as `warmup_completed` and its timing is
+    /// never pushed into `times_ms`, so it can never reach the average. Each
+    /// timed run emits a `run_completed` event so the UI can show live
+    /// progress. A failing or panicking run emits `variant_error` and stops
+    /// the remaining runs; whatever timings were already collected are
+    /// returned, so an empty vector means the variant produced no usable
+    /// measurement.
     fn time_variant_runs(
         &self,
         variant_id: &str,
@@ -3239,6 +3381,7 @@ impl TranscriptionManager {
         settings: &AppSettings,
         model_options: &ModelOptions,
         audio: &[f32],
+        timed_runs: usize,
     ) -> Result<Vec<f64>> {
         let audio_secs = benchmark_audio_secs(audio);
 
@@ -3247,8 +3390,9 @@ impl TranscriptionManager {
         let mut engine = self.create_engine_with_options(variant_id, model_path, model_options)?;
 
         // Warmup: the first transcription after a load is slow (cold caches,
-        // lazy initialization). Per the benchmark spec it is discarded.
-        let _ = catch_unwind(AssertUnwindSafe(|| {
+        // lazy initialization). Per the benchmark spec it is discarded — its
+        // timing is dropped on the floor below, never recorded.
+        let warmup = catch_unwind(AssertUnwindSafe(|| {
             transcribe_with_engine(
                 &mut engine,
                 settings,
@@ -3257,9 +3401,33 @@ impl TranscriptionManager {
                 &self.model_manager,
             )
         }));
+        match warmup {
+            Ok(Ok(_)) => debug!(
+                "Benchmark [{}] warmup run finished (discarded, not averaged)",
+                quant
+            ),
+            Ok(Err(e)) => warn!(
+                "Benchmark [{}] warmup run failed, continuing with the timed runs: {}",
+                quant, e
+            ),
+            Err(panic_payload) => warn!(
+                "Benchmark [{}] warmup run panicked, continuing with the timed runs: {}",
+                quant,
+                panic_payload_message(panic_payload.as_ref())
+            ),
+        }
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "warmup_completed".to_string(),
+            quant: Some(quant.to_string()),
+            model_id: Some(variant_id.to_string()),
+            audio_secs: Some(audio_secs),
+            run_index: Some(0),
+            total_runs: Some(timed_runs as u32),
+            ..Default::default()
+        });
 
-        let mut times_ms: Vec<f64> = Vec::with_capacity(BENCHMARK_TIMED_RUNS);
-        for run_idx in 0..BENCHMARK_TIMED_RUNS {
+        let mut times_ms: Vec<f64> = Vec::with_capacity(timed_runs);
+        for run_idx in 0..timed_runs {
             let start = Instant::now();
             let result = catch_unwind(AssertUnwindSafe(|| {
                 transcribe_with_engine(
@@ -3279,7 +3447,7 @@ impl TranscriptionManager {
                         "Benchmark [{}] run {}/{}: {:.0}ms",
                         quant,
                         run_idx + 1,
-                        BENCHMARK_TIMED_RUNS,
+                        timed_runs,
                         elapsed_ms
                     );
                     None
@@ -3311,7 +3479,7 @@ impl TranscriptionManager {
                 avg_time_ms: Some(elapsed_ms),
                 audio_secs: Some(audio_secs),
                 run_index: Some(run_idx as u32 + 1),
-                total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+                total_runs: Some(timed_runs as u32),
                 ..Default::default()
             });
         }
@@ -3326,6 +3494,10 @@ impl TranscriptionManager {
     }
 
     /// Turn a set of timed runs into a [`BenchmarkResult`], logging the summary.
+    ///
+    /// `times_ms` holds only the timed runs — the warmup pass was already
+    /// dropped by [`Self::time_variant_runs`], so the average below can never
+    /// include it.
     fn summarize_benchmark(
         quant_file: &crate::managers::model::QuantFile,
         variant_id: &str,
@@ -3336,7 +3508,7 @@ impl TranscriptionManager {
         let avg_ms: f64 = times_ms.iter().sum::<f64>() / times_ms.len() as f64;
 
         info!(
-            "Benchmark: {} transcribed {:.2}s of audio in {:.0}ms (avg of {} runs, {:.2}x real-time)",
+            "Benchmark: {} transcribed {:.2}s of audio in {:.0}ms (average of {} timed runs, warmup discarded, {:.2}x real-time)",
             quant_file.quant,
             audio_secs,
             avg_ms,
@@ -3360,9 +3532,10 @@ impl TranscriptionManager {
     /// For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) of the model
     /// identified by `model_id`, this method:
     ///   1. Loads the quant's engine on a temporary basis (not the primary slot).
-    ///   2. Runs one warmup transcription (discarded).
-    ///   3. Runs [`BENCHMARK_TIMED_RUNS`] timed transcriptions.
-    ///   4. Averages the timings.
+    ///   2. Runs one warmup transcription (discarded, never averaged).
+    ///   3. Runs `timed_runs` timed transcriptions
+    ///      (clamped to `[BENCHMARK_MIN_RUNS, BENCHMARK_MAX_RUNS]`).
+    ///   4. Averages the timings of those timed runs only.
     ///   5. Drops the engine to free memory before moving to the next variant.
     ///
     /// The primary model is unloaded first so every variant is measured from
@@ -3379,8 +3552,9 @@ impl TranscriptionManager {
         &self,
         model_id: &str,
         audio: &[f32],
+        timed_runs: Option<usize>,
     ) -> Result<Vec<BenchmarkResult>> {
-        self.benchmark_quantizations_inner(model_id, audio)
+        self.benchmark_quantizations_inner(model_id, audio, timed_runs)
             .inspect_err(|e| self.emit_benchmark_failed(model_id, e))
     }
 
@@ -3399,7 +3573,12 @@ impl TranscriptionManager {
         &self,
         model_id: &str,
         audio: &[f32],
+        timed_runs: Option<usize>,
     ) -> Result<Vec<BenchmarkResult>> {
+        // The warmup pass is fixed at one and never counted; this is how many
+        // runs follow it and get averaged.
+        let timed_runs = benchmark_timed_runs(timed_runs);
+
         // Split the model_id into repo_id + filename to look up the catalog
         // descriptor that owns all quantization variants for this model family.
         let (repo_id, filename) = model_id
@@ -3425,8 +3604,8 @@ impl TranscriptionManager {
             device: target_device,
         };
         info!(
-            "Benchmarking quantizations for '{}' using target backend {:?} (device: {:?})",
-            model_id, target_backend, benchmark_model_options.device
+            "Benchmarking quantizations for '{}' using target backend {:?} (device: {:?}), {} timed runs after one discarded warmup",
+            model_id, target_backend, benchmark_model_options.device, timed_runs
         );
 
         // Remember whether the user had a model resident so we can restore it
@@ -3436,7 +3615,7 @@ impl TranscriptionManager {
         self.emit_benchmark_progress(BenchmarkProgressEvent {
             event_type: "benchmark_started".to_string(),
             audio_secs: Some(audio_secs),
-            total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+            total_runs: Some(timed_runs as u32),
             ..Default::default()
         });
 
@@ -3456,7 +3635,7 @@ impl TranscriptionManager {
                 quant: Some(file.quant.clone()),
                 model_id: Some(variant_id.clone()),
                 audio_secs: Some(audio_secs),
-                total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+                total_runs: Some(timed_runs as u32),
                 ..Default::default()
             });
 
@@ -3487,6 +3666,7 @@ impl TranscriptionManager {
                 &settings,
                 &benchmark_model_options,
                 audio,
+                timed_runs,
             ) {
                 Ok(times) => times,
                 Err(e) => {
@@ -3540,10 +3720,11 @@ impl TranscriptionManager {
     /// Benchmark a single quantization variant.
     ///
     /// Loads the model from a clean state (unloading any primary engine first),
-    /// runs a warmup transcription (discarded), then performs
-    /// [`BENCHMARK_TIMED_RUNS`] timed transcription runs and returns the
-    /// average. The primary model is reloaded in the background afterwards if
-    /// it was loaded when the run started.
+    /// runs one warmup transcription (discarded, never averaged), then performs
+    /// `timed_runs` timed transcription runs (clamped to
+    /// `[BENCHMARK_MIN_RUNS, BENCHMARK_MAX_RUNS]`) and returns the average of
+    /// those timed runs only. The primary model is reloaded in the background
+    /// afterwards if it was loaded when the run started.
     ///
     /// Like [`benchmark_quantizations`](Self::benchmark_quantizations), an abort
     /// emits `benchmark_failed` so event-only listeners can recover.
@@ -3551,8 +3732,9 @@ impl TranscriptionManager {
         &self,
         model_id: &str,
         audio: &[f32],
+        timed_runs: Option<usize>,
     ) -> Result<BenchmarkResult> {
-        self.benchmark_single_quantization_inner(model_id, audio)
+        self.benchmark_single_quantization_inner(model_id, audio, timed_runs)
             .inspect_err(|e| self.emit_benchmark_failed(model_id, e))
     }
 
@@ -3560,7 +3742,10 @@ impl TranscriptionManager {
         &self,
         model_id: &str,
         audio: &[f32],
+        timed_runs: Option<usize>,
     ) -> Result<BenchmarkResult> {
+        let timed_runs = benchmark_timed_runs(timed_runs);
+
         // Split model_id into repo_id + filename for catalog lookup.
         let (repo_id, filename) = model_id
             .rsplit_once('/')
@@ -3590,7 +3775,7 @@ impl TranscriptionManager {
             quant: Some(file.quant.clone()),
             model_id: Some(model_id.to_string()),
             audio_secs: Some(audio_secs),
-            total_runs: Some(BENCHMARK_TIMED_RUNS as u32),
+            total_runs: Some(timed_runs as u32),
             ..Default::default()
         });
 
@@ -3600,8 +3785,8 @@ impl TranscriptionManager {
             device: target_device,
         };
         info!(
-            "Benchmarking single quantization '{}' using target backend {:?} (device: {:?})",
-            model_id, target_backend, benchmark_model_options.device
+            "Benchmarking single quantization '{}' using target backend {:?} (device: {:?}), {} timed runs after one discarded warmup",
+            model_id, target_backend, benchmark_model_options.device, timed_runs
         );
 
         let times_ms = self.time_variant_runs(
@@ -3611,6 +3796,7 @@ impl TranscriptionManager {
             &settings,
             &benchmark_model_options,
             audio,
+            timed_runs,
         );
 
         if had_primary_model {
@@ -3644,6 +3830,354 @@ impl TranscriptionManager {
             model_id: Some(result.model_id.clone()),
             avg_time_ms: Some(result.avg_time_ms),
             audio_secs: Some(audio_secs),
+            ..Default::default()
+        });
+
+        Ok(result)
+    }
+
+    /// The latency a streaming run will be measured at, in ms of audio, or
+    /// `None` when the model carries no latency control at all.
+    ///
+    /// Read from the same settings the live path resolves through, so a value
+    /// just written by the status-bar latency slider is what a run started
+    /// afterwards measures.
+    fn latency_setting_point(
+        settings: &AppSettings,
+        model_id: &str,
+        kind: Option<crate::managers::model::NativeStreamingLatencyKind>,
+    ) -> Option<crate::managers::native_streaming_latency::LatencyPoint> {
+        kind.map(|kind| {
+            crate::managers::native_streaming_latency::latency_point(
+                kind,
+                get_effective_latency_preset(settings, model_id),
+                get_effective_r2t2_chunk_ms(settings, model_id),
+            )
+        })
+    }
+
+    /// Replay `audio` through a native stream on `engine` and time the pass.
+    ///
+    /// The extension is resolved by [`Self::resolved_stream_extension`] — the
+    /// same dispatcher the live path uses — so this measures the cadence and
+    /// right context the app would really run for this model, exactly like the
+    /// headless `--stream-chunk-ms` replay does.
+    fn replay_stream_once(
+        &self,
+        engine: &mut LoadedEngine,
+        settings: &AppSettings,
+        model_id: &str,
+        audio: &[f32],
+    ) -> Result<StreamReplayMetrics> {
+        let language =
+            effective_language_for_model(settings, self.model_manager.as_ref(), model_id);
+        let LoadedEngine::TranscribeCpp(session) = engine;
+        let model = session.model();
+        let caps = model.capabilities();
+        let plan = transcribe_cpp_run_plan(
+            settings.translate_to_english,
+            &language,
+            &caps.languages,
+            caps.supports_translate,
+        );
+        let options = RunOptions {
+            task: plan.task,
+            language: plan.language,
+            target_language: plan.target_language,
+            ..Default::default()
+        };
+        let family = self.resolved_stream_extension(settings, &model, model_id);
+        let stream_extension = format!("{:?}", family);
+        let stream_options = StreamOptions {
+            family,
+            ..Default::default()
+        };
+
+        let wall = Instant::now();
+        let begin_start = Instant::now();
+        let mut stream = session.stream(&options, &stream_options)?;
+        let begin_ms = begin_start.elapsed().as_secs_f64() * 1000.0;
+
+        let mut feed_ms = Vec::with_capacity(audio.len() / (STREAM_BENCHMARK_FEED_MS * 16) + 1);
+        let mut first_text_audio_ms = None;
+        let mut samples_fed = 0usize;
+        for chunk in audio.chunks(STREAM_BENCHMARK_FEED_MS * 16) {
+            let tick = Instant::now();
+            let update = stream.feed(chunk)?;
+            feed_ms.push(tick.elapsed().as_secs_f64() * 1000.0);
+            samples_fed += chunk.len();
+            if first_text_audio_ms.is_none()
+                && (update.committed_changed || update.tentative_changed)
+            {
+                // The audio horizon, not the clock: how much audio had been
+                // handed to the decoder when text first appeared.
+                first_text_audio_ms = Some(samples_fed as f64 / 16.0);
+            }
+        }
+        let tick = Instant::now();
+        stream.finalize()?;
+        let finalize_ms = tick.elapsed().as_secs_f64() * 1000.0;
+
+        let compute_ms = begin_ms + feed_ms.iter().sum::<f64>() + finalize_ms;
+        Ok(StreamReplayMetrics {
+            compute_ms,
+            wall_ms: wall.elapsed().as_secs_f64() * 1000.0,
+            feed_ms,
+            finalize_ms,
+            first_text_audio_ms,
+            stream_extension,
+        })
+    }
+
+    /// Average a set of timed streaming passes into a
+    /// [`StreamingBenchmarkResult`]. `runs` holds only the timed passes — the
+    /// warmup was already dropped by the caller.
+    fn summarize_stream_benchmark(
+        model_id: &str,
+        runs: &[StreamReplayMetrics],
+        audio_secs: f64,
+        latency: Option<crate::managers::native_streaming_latency::LatencyPoint>,
+    ) -> StreamingBenchmarkResult {
+        let n = runs.len().max(1) as f64;
+        let avg_compute_ms = runs.iter().map(|r| r.compute_ms).sum::<f64>() / n;
+        let mut feeds: Vec<f64> = runs
+            .iter()
+            .flat_map(|r| r.feed_ms.iter().copied())
+            .collect();
+        feeds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let busy: Vec<f64> = feeds.iter().copied().filter(|ms| *ms >= 1.0).collect();
+        let first_texts: Vec<f64> = runs.iter().filter_map(|r| r.first_text_audio_ms).collect();
+
+        StreamingBenchmarkResult {
+            model_id: model_id.to_string(),
+            runs: runs.len() as u32,
+            audio_secs,
+            avg_compute_ms,
+            compute_xrt: real_time_factor(audio_secs, avg_compute_ms / 1000.0),
+            avg_wall_ms: runs.iter().map(|r| r.wall_ms).sum::<f64>() / n,
+            feed_p95_ms: percentile_ms(&feeds, 0.95),
+            busy_feed_p95_ms: percentile_ms(&busy, 0.95),
+            feed_max_ms: feeds.last().copied().unwrap_or(0.0),
+            avg_finalize_ms: runs.iter().map(|r| r.finalize_ms).sum::<f64>() / n,
+            avg_first_text_audio_ms: if first_texts.is_empty() {
+                None
+            } else {
+                Some(first_texts.iter().sum::<f64>() / first_texts.len() as f64)
+            },
+            feed_chunk_ms: STREAM_BENCHMARK_FEED_MS as u32,
+            stream_extension: runs[0].stream_extension.clone(),
+            latency_ms: latency.map(|point| point.latency_ms),
+            lookahead_ms: latency.map(|point| point.lookahead_ms),
+        }
+    }
+
+    /// Benchmark `model_id`'s native streaming mode: replay the reference
+    /// audio through `stream_begin` / `feed` / `finalize` and report how fast
+    /// it runs relative to real time.
+    ///
+    /// Same contract as the quantization benchmark — one warmup replay that is
+    /// discarded and never averaged, then `timed_runs` timed replays clamped
+    /// to `[BENCHMARK_MIN_RUNS, BENCHMARK_MAX_RUNS]` — and the same engine
+    /// lifecycle: the primary model is unloaded first so the model is measured
+    /// from a clean state, and it is reloaded in the background afterwards if
+    /// it was resident when the run started.
+    ///
+    /// Progress is reported on the `benchmark-progress` channel as `stream_*`
+    /// events, which the quantization listener ignores by construction.
+    pub fn benchmark_streaming(
+        &self,
+        model_id: &str,
+        audio: &[f32],
+        timed_runs: Option<usize>,
+    ) -> Result<StreamingBenchmarkResult> {
+        self.benchmark_streaming_inner(model_id, audio, timed_runs)
+            .inspect_err(|error| {
+                error!("Streaming benchmark aborted for '{}': {}", model_id, error);
+                self.emit_benchmark_progress(BenchmarkProgressEvent {
+                    event_type: "stream_failed".to_string(),
+                    model_id: Some(model_id.to_string()),
+                    error: Some(error.to_string()),
+                    ..Default::default()
+                });
+            })
+    }
+
+    fn benchmark_streaming_inner(
+        &self,
+        model_id: &str,
+        audio: &[f32],
+        timed_runs: Option<usize>,
+    ) -> Result<StreamingBenchmarkResult> {
+        // One warmup pass runs first and is fixed outside this count.
+        let timed_runs = benchmark_timed_runs(timed_runs);
+        anyhow::ensure!(!audio.is_empty(), "Recording has no audio samples");
+
+        let info = self
+            .model_manager
+            .get_model_info(model_id)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' is not registered", model_id))?;
+        anyhow::ensure!(
+            info.supports_streaming,
+            "Model '{}' does not support streaming",
+            model_id
+        );
+        let model_path = self.model_manager.get_model_path(model_id)?;
+
+        // Settings are read once, here, at the start of this run: the latency
+        // panel in the status bar writes them to the store, so whatever the
+        // user picked a moment ago is what every pass below is measured at.
+        // Read once rather than per pass so one result can never mix two
+        // operating points.
+        let settings = get_settings(&self.app_handle);
+        let latency =
+            Self::latency_setting_point(&settings, model_id, info.native_streaming_latency_kind);
+        let latency_label = describe_latency(latency);
+        let audio_secs = benchmark_audio_secs(audio);
+        let had_primary_model = self.is_model_loaded();
+        let _ = self.unload_model();
+
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "stream_started".to_string(),
+            model_id: Some(model_id.to_string()),
+            audio_secs: Some(audio_secs),
+            total_runs: Some(timed_runs as u32),
+            ..Default::default()
+        });
+
+        let (target_backend, target_device) = resolve_model_backend(&settings, model_id);
+        let model_options = ModelOptions {
+            backend: target_backend,
+            device: target_device,
+        };
+        info!(
+            "Streaming benchmark for '{}' using target backend {:?} (device: {:?}) at latency '{}', {} timed runs of {} ms feeds after one discarded warmup",
+            model_id,
+            target_backend,
+            model_options.device,
+            latency_label,
+            timed_runs,
+            STREAM_BENCHMARK_FEED_MS
+        );
+
+        let mut engine =
+            match self.create_engine_with_options(model_id, &model_path, &model_options) {
+                Ok(engine) => engine,
+                Err(e) => {
+                    if had_primary_model {
+                        self.initiate_model_load();
+                    }
+                    return Err(anyhow::anyhow!("Failed to load model: {}", e));
+                }
+            };
+
+        // Warmup: the first stream after a load pays for cold caches and lazy
+        // initialization. Its timing is dropped on the floor — never recorded,
+        // never averaged — and a failure here does not abort the timed runs.
+        let warmup = catch_unwind(AssertUnwindSafe(|| {
+            self.replay_stream_once(&mut engine, &settings, model_id, audio)
+        }));
+        match &warmup {
+            Ok(Ok(_)) => debug!(
+                "Streaming benchmark warmup finished (discarded, not averaged, {} ms feeds)",
+                STREAM_BENCHMARK_FEED_MS
+            ),
+            Ok(Err(e)) => warn!(
+                "Streaming benchmark warmup failed, continuing with the timed runs: {}",
+                e
+            ),
+            Err(panic_payload) => warn!(
+                "Streaming benchmark warmup panicked, continuing with the timed runs: {}",
+                panic_payload_message(panic_payload.as_ref())
+            ),
+        }
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "stream_warmup_completed".to_string(),
+            model_id: Some(model_id.to_string()),
+            audio_secs: Some(audio_secs),
+            run_index: Some(0),
+            total_runs: Some(timed_runs as u32),
+            ..Default::default()
+        });
+
+        let mut runs: Vec<StreamReplayMetrics> = Vec::with_capacity(timed_runs);
+        let mut failure: Option<String> = None;
+        for run_idx in 0..timed_runs {
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                self.replay_stream_once(&mut engine, &settings, model_id, audio)
+            }));
+            let metrics = match result {
+                Ok(Ok(metrics)) => metrics,
+                Ok(Err(e)) => {
+                    failure = Some(format!("Streaming run {} failed: {}", run_idx + 1, e));
+                    break;
+                }
+                Err(panic_payload) => {
+                    failure = Some(format!(
+                        "Engine panicked during streaming run {}: {}",
+                        run_idx + 1,
+                        panic_payload_message(panic_payload.as_ref())
+                    ));
+                    break;
+                }
+            };
+            debug!(
+                "Streaming benchmark run {}/{}: {:.0}ms compute ({:.2}x real-time)",
+                run_idx + 1,
+                timed_runs,
+                metrics.compute_ms,
+                real_time_factor(audio_secs, metrics.compute_ms / 1000.0)
+            );
+            self.emit_benchmark_progress(BenchmarkProgressEvent {
+                event_type: "stream_run_completed".to_string(),
+                model_id: Some(model_id.to_string()),
+                avg_time_ms: Some(metrics.compute_ms),
+                audio_secs: Some(audio_secs),
+                run_index: Some(run_idx as u32 + 1),
+                total_runs: Some(timed_runs as u32),
+                ..Default::default()
+            });
+            runs.push(metrics);
+        }
+
+        // Free GPU/CPU memory and let the OS release it, then restore whatever
+        // the user had resident — on every path out, including the ones below.
+        drop(engine);
+        thread::sleep(Duration::from_millis(200));
+        if had_primary_model {
+            self.initiate_model_load();
+        }
+
+        if runs.is_empty() {
+            let message =
+                failure.unwrap_or_else(|| "No streaming run produced a measurement".to_string());
+            error!("Streaming benchmark: {}", message);
+            return Err(anyhow::anyhow!(message));
+        }
+        if let Some(message) = failure {
+            warn!("Streaming benchmark stopped early: {}", message);
+        }
+
+        let result = Self::summarize_stream_benchmark(model_id, &runs, audio_secs, latency);
+        info!(
+            "Streaming benchmark: {} replayed {:.2}s of audio at {:.2}x real-time (average of {} timed runs, warmup discarded, latency '{}', p95 feed {:.1}ms, first text {})",
+            model_id,
+            audio_secs,
+            result.compute_xrt,
+            result.runs,
+            latency_label,
+            result.feed_p95_ms,
+            result
+                .avg_first_text_audio_ms
+                .map(|ms| format!("{:.0}ms of audio", ms))
+                .unwrap_or_else(|| "only at finalize".to_string())
+        );
+
+        self.emit_benchmark_progress(BenchmarkProgressEvent {
+            event_type: "stream_completed".to_string(),
+            model_id: Some(model_id.to_string()),
+            avg_time_ms: Some(result.avg_compute_ms),
+            audio_secs: Some(audio_secs),
+            total_runs: Some(result.runs),
             ..Default::default()
         });
 
@@ -4889,6 +5423,60 @@ mod tests {
         let mut untouched = settings.clone();
         apply_extra_model_settings(&mut untouched, "some-other-model");
         assert_eq!(untouched.selected_language, "en");
+    }
+
+    /// Per-model latency is shared across quant siblings, so a Nemotron Q8
+    /// primary and a Nemotron Q4 extra would stream at one setting. The slot's
+    /// own override is what the extra's stream worker must resolve, and a slot
+    /// without one keeps following the model's entry.
+    #[test]
+    fn extra_slot_latency_overrides_the_shared_model_setting() {
+        use crate::settings::NativeStreamingLatencyPreset as P;
+        let repo = "handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf";
+        let primary = format!("{repo}/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf");
+        let extra = format!("{repo}/nemotron-3.5-asr-streaming-0.6b-Q4_K_M.gguf");
+        let r2t2 = "davidxifeng/Confucius4-R2T2-gguf/r2t2-q8_0.gguf";
+        let mut settings = AppSettings {
+            multi_stt_extra_models: vec![
+                crate::settings::MultiSttExtraModel {
+                    model_id: Some(extra.clone()),
+                    latency_preset: Some(P::Fastest),
+                    ..Default::default()
+                },
+                crate::settings::MultiSttExtraModel {
+                    model_id: Some(r2t2.into()),
+                    chunk_ms: Some(160),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        settings
+            .native_streaming_latency_presets
+            .insert(primary.clone(), P::Balanced);
+        settings
+            .native_streaming_chunk_ms
+            .insert(r2t2.to_string(), 960);
+
+        // Without the slot overlay the extra inherits the primary's sibling value.
+        assert_eq!(get_effective_latency_preset(&settings, &extra), P::Balanced);
+
+        let mut resolved = settings.clone();
+        apply_extra_model_settings(&mut resolved, &extra);
+        assert_eq!(get_effective_latency_preset(&resolved, &extra), P::Fastest);
+        assert_eq!(
+            get_effective_latency_preset(&resolved, &primary),
+            P::Balanced
+        );
+
+        let mut resolved = settings.clone();
+        apply_extra_model_settings(&mut resolved, r2t2);
+        assert_eq!(get_effective_r2t2_chunk_ms(&resolved, r2t2), 160);
+
+        settings.multi_stt_extra_models[1].chunk_ms = None;
+        let mut resolved = settings.clone();
+        apply_extra_model_settings(&mut resolved, r2t2);
+        assert_eq!(get_effective_r2t2_chunk_ms(&resolved, r2t2), 960);
     }
 
     #[test]

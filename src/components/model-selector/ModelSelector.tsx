@@ -1,7 +1,19 @@
-import { createSignal, createEffect, createMemo, Show } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  createMemo,
+  createUniqueId,
+  Show,
+} from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { listen } from "@tauri-apps/api/event";
-import { Cpu, Gauge, LoaderCircle, Zap } from "@/components/icons/lucide";
+import {
+  Cpu,
+  Gauge,
+  LoaderCircle,
+  Radio,
+  Zap,
+} from "@/components/icons/lucide";
 import { commands } from "@/bindings";
 import type {
   ModelBackendSetting,
@@ -16,15 +28,22 @@ import ModelDropdown from "./ModelDropdown";
 import DownloadProgressDisplay from "./DownloadProgressDisplay";
 import StatusBarPopover from "./StatusBarPopover";
 import QuantizationPanel from "./QuantizationPanel";
-import LatencyPanel, {
-  DEFAULT_LATENCY_PRESET,
-  latencyPresetLabelKey,
-} from "./LatencyPanel";
-import ChunkSizePanel, { R2T2_CHUNK_MS_DEFAULT } from "./ChunkSizePanel";
+import BenchmarkRunsSelect from "./BenchmarkRunsSelect";
+import StreamingLatencyControl from "./StreamingLatencyControl";
 import ModelBackendPanel, { backendLabel } from "./ModelBackendPanel";
 import { getQuantColor } from "./quantColors";
-import { DEFAULT_TIMED_RUNS, useQuantBenchmark } from "./useQuantBenchmark";
+import {
+  MAX_BENCHMARK_RUNS,
+  MIN_BENCHMARK_RUNS,
+  useQuantBenchmark,
+} from "./useQuantBenchmark";
 import { resolveModelSetting } from "@/lib/modelId";
+import {
+  DEFAULT_LATENCY_PRESET,
+  R2T2_CHUNK_MS_DEFAULT,
+  effectiveLatencyMs,
+  isContinuousLatency,
+} from "@/lib/streamingLatency";
 
 import { ModelStateEvent } from "@/lib/types/events";
 import type { JSX } from "@solidjs/web";
@@ -227,12 +246,11 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       ),
   );
 
-  // R2T2 is the one family whose control is a continuous millisecond value
-  // rather than a four-way preset, so it gets a numeric panel instead of the
-  // radio group. Keyed off the kind string the backend serialises
-  // (`NativeStreamingLatencyKind::R2T2ChunkMs`), not off the model id, so the
-  // app never has to know the model's name to pick the right control.
-  const isChunkMsKind = () => latencyKind() === "r2t2_chunk_ms";
+  // R2T2 is the one family whose latency is a continuous millisecond value;
+  // the others snap to their trained settings. Keyed off the kind string the
+  // backend serialises, not off the model id, so the app never has to know
+  // the model's name to pick the right control.
+  const isChunkMsKind = () => isContinuousLatency(latencyKind());
   const currentChunkMs = createMemo((): number =>
     resolveModelSetting<number>(
       settingsStore.settings?.native_streaming_chunk_ms,
@@ -240,6 +258,10 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
       R2T2_CHUNK_MS_DEFAULT,
     ),
   );
+
+  // What the status bar shows for every family: the latency in ms.
+  const currentLatencyMs = () =>
+    effectiveLatencyMs(latencyKind(), currentPreset(), currentChunkMs()) ?? 0;
 
   const downloadPercentages = createMemo(() => {
     const map: Record<string, number> = {};
@@ -310,16 +332,14 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     });
   };
 
+  // Neither handler closes the popover: a latency is set by dragging and
+  // nudging, and closing after every release would fight the user. The value
+  // applies to the next stream either way.
   const handleLatencyPresetSelect = (preset: NativeStreamingLatencyPreset) => {
     if (displayModelId())
       void settingsStore.setLatencyPreset(displayModelId(), preset);
-    setOpenPanel(null);
   };
 
-  // Deliberately does NOT close the popover, unlike the preset handler: picking
-  // a preset is a one-shot decision, whereas setting a chunk size is an
-  // exploratory drag-and-nudge where closing the panel after every release
-  // would fight the user. The value applies to the next stream either way.
   const handleChunkMsSelect = (chunkMs: number) => {
     if (displayModelId())
       void settingsStore.setLatencyChunkMs(displayModelId(), chunkMs);
@@ -401,6 +421,59 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
     !!referenceRecording() &&
     downloadedVariantCount() > 0;
 
+  // The stream benchmark replays the reference recording through the primary
+  // model's own stream, so it needs that model resident, the recording to
+  // replay, and a family that actually exposes `stream_begin`. It takes the
+  // same engine slot as the quantization benchmark, so it reuses `isBusy`.
+  const canStreamBenchmark = () => {
+    const info = currentModelInfo();
+    return (
+      !!info &&
+      info.is_downloaded &&
+      info.supports_streaming &&
+      !!referenceRecording()
+    );
+  };
+  const streamBenchmarkTitle = (): string => {
+    const info = currentModelInfo();
+    if (!canStreamBenchmark()) {
+      return info && !info.supports_streaming
+        ? t("modelSelector.benchmark.streamNotSupported")
+        : t("modelSelector.benchmark.noRecording");
+    }
+    return t("modelSelector.benchmark.method", { runs: benchmark.runs() });
+  };
+
+  // A stored result belongs to the model that produced it: switching models
+  // must not leave the previous family's numbers on screen as if they were
+  // the new model's.
+  const streamResultForModel = () => {
+    const result = benchmark.streamResult();
+    return result && result.modelId === displayModelId() ? result : null;
+  };
+
+  /**
+   * The latency the run was measured at, in the same ms the latency slider
+   * shows, so a result always says which setting it timed. `null` when the
+   * model has no latency control, so there is nothing to name.
+   */
+  /** Audio horizon of the first text, or a dash when it only came at finalize. */
+  const formatFirstText = (ms: number | null): number | string =>
+    ms == null ? "—" : Math.round(ms);
+
+  const streamLatencyLabel = (latencyMs: number | null): string | null =>
+    latencyMs == null
+      ? null
+      : t("modelSelector.latencySelector.ms", { ms: latencyMs });
+
+  // Unique per mount: the popover exists once, but the id must not collide if
+  // the selector is ever rendered twice.
+  const runsSelectId = createUniqueId();
+  const runCountOptions = Array.from(
+    { length: MAX_BENCHMARK_RUNS - MIN_BENCHMARK_RUNS + 1 },
+    (_, index) => MIN_BENCHMARK_RUNS + index,
+  );
+
   const quantSubtitle = () => {
     const recording = referenceRecording();
     return recording
@@ -451,6 +524,9 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
           })}
           title={t("modelSelector.quantPicker.title")}
           subtitle={quantSubtitle()}
+          // Wide enough for the streaming benchmark's result line at the
+          // bottom, which states five numbers and the latency measured.
+          widthClass="w-[min(36rem,calc(100vw-2rem))]"
           trigger={
             <>
               {benchmark.isBusy() ? (
@@ -467,34 +543,69 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
             </>
           }
           headerAction={
-            <button
-              type="button"
-              onClick={() =>
-                displayModelId() && void benchmark.runAll(displayModelId())
-              }
-              disabled={!canBenchmark() || benchmark.isBusy()}
-              title={t("modelSelector.benchmark.method", {
-                runs: DEFAULT_TIMED_RUNS,
-              })}
-              class="flex shrink-0 items-center gap-1 rounded-md border border-mid-gray/25 bg-mid-gray/10 px-2 py-1 text-[11px] font-medium text-text/75 transition-colors hover:bg-mid-gray/20 hover:text-text/90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {benchmark.isRunningAll() ? (
-                <>
-                  <LoaderCircle class="h-3 w-3 animate-spin" />
-                  <span class="tabular-nums">
-                    {t("modelSelector.benchmark.runProgress", {
-                      done: measuredVariantCount(),
-                      total: downloadedVariantCount(),
-                    })}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Zap class="h-3 w-3" />
-                  <span>{t("modelSelector.benchmark.runAll")}</span>
-                </>
-              )}
-            </button>
+            <div class="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  displayModelId() && void benchmark.runAll(displayModelId())
+                }
+                disabled={!canBenchmark() || benchmark.isBusy()}
+                title={t("modelSelector.benchmark.method", {
+                  runs: benchmark.runs(),
+                })}
+                class="flex shrink-0 items-center gap-1 rounded-md border border-mid-gray/25 bg-mid-gray/10 px-2 py-1 text-[11px] font-medium text-text/75 transition-colors hover:bg-mid-gray/20 hover:text-text/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {benchmark.isRunningAll() ? (
+                  <>
+                    <LoaderCircle class="h-3 w-3 animate-spin" />
+                    <span class="tabular-nums">
+                      {t("modelSelector.benchmark.runProgress", {
+                        done: measuredVariantCount(),
+                        total: downloadedVariantCount(),
+                      })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Zap class="h-3 w-3" />
+                    <span>{t("modelSelector.benchmark.runAll")}</span>
+                  </>
+                )}
+              </button>
+              {/* Second measurement, same menu: how fast the model keeps up
+                  with speech in its native stream, at the latency setting the
+                  panel next door is currently on. */}
+              <button
+                type="button"
+                onClick={() =>
+                  displayModelId() && void benchmark.runStream(displayModelId())
+                }
+                disabled={!canStreamBenchmark() || benchmark.isBusy()}
+                title={streamBenchmarkTitle()}
+                class="flex shrink-0 items-center gap-1 rounded-md border border-mid-gray/25 bg-mid-gray/10 px-2 py-1 text-[11px] font-medium text-text/75 transition-colors hover:bg-mid-gray/20 hover:text-text/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {benchmark.isRunningStream() ? (
+                  <>
+                    <LoaderCircle class="h-3 w-3 animate-spin" />
+                    <span class="tabular-nums">
+                      {benchmark.streamProgress()?.warmup
+                        ? t("modelSelector.benchmark.warmup")
+                        : t("modelSelector.benchmark.runProgress", {
+                            done: benchmark.streamProgress()?.index ?? 0,
+                            total:
+                              benchmark.streamProgress()?.total ??
+                              benchmark.runs(),
+                          })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Radio class="h-3 w-3" />
+                    <span>{t("modelSelector.benchmark.runStream")}</span>
+                  </>
+                )}
+              </button>
+            </div>
           }
         >
           <QuantizationPanel
@@ -507,8 +618,51 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
             onSelect={handleQuantSelect}
             onDownload={handleQuantDownload}
           />
-          <div class="border-t border-mid-gray/20 px-3 py-1.5 text-[10px] leading-snug text-text/40">
-            {t("modelSelector.benchmark.method", { runs: DEFAULT_TIMED_RUNS })}
+          {/* The method note states the measurement contract in full: the
+              first pass is a warmup that is thrown away, and only the runs
+              chosen below are averaged. */}
+          <div class="border-t border-mid-gray/20 px-3 py-1.5 text-[10px] leading-snug whitespace-normal text-text/40">
+            <p>
+              {t("modelSelector.benchmark.method", { runs: benchmark.runs() })}
+            </p>
+            <BenchmarkRunsSelect
+              id={runsSelectId}
+              value={benchmark.runs()}
+              options={runCountOptions}
+              disabled={benchmark.isBusy()}
+              onChange={benchmark.setRuns}
+            />
+            {/* The stream benchmark's own numbers: how fast the model keeps
+                up with speech (compute xrt), the p95/max cost of a feed, how
+                far behind the first word lands, and which latency setting was
+                on when it was measured. */}
+            <Show when={streamResultForModel()}>
+              {(result) => (
+                <p
+                  class="mt-1.5 border-t border-mid-gray/15 pt-1.5 text-text/55"
+                  title={result().streamExtension}
+                >
+                  {t("modelSelector.benchmark.streamResult", {
+                    factor: result().computeXrt.toFixed(1),
+                    p95: Math.round(result().feedP95Ms),
+                    max: Math.round(result().feedMaxMs),
+                    first: formatFirstText(result().firstTextAudioMs),
+                  })}
+                  <Show when={streamLatencyLabel(result().latencyMs)}>
+                    {(label) =>
+                      ` ${t("modelSelector.benchmark.streamAt", { latency: label() })}`
+                    }
+                  </Show>
+                </p>
+              )}
+            </Show>
+            <Show when={benchmark.streamError()}>
+              {(error) => (
+                <p class="mt-1.5 text-error" title={error()}>
+                  {t("modelSelector.benchmark.failed")}
+                </p>
+              )}
+            </Show>
           </div>
         </StatusBarPopover>
       </Show>
@@ -516,49 +670,34 @@ const ModelSelector = (props: ModelSelectorProps): JSX.Element => {
         <StatusBarPopover
           open={openPanel() === "latency"}
           onToggle={() => togglePanel("latency")}
-          label={
-            isChunkMsKind()
-              ? t("modelSelector.latencySelector.chunkSize.pillLabel", {
-                  ms: currentChunkMs(),
-                })
-              : t("modelSelector.latencySelector.pillLabel", {
-                  preset: t(latencyPresetLabelKey(currentPreset())),
-                })
-          }
-          title={
-            isChunkMsKind()
-              ? t("modelSelector.latencySelector.chunkSize.label")
-              : t("modelSelector.latencySelector.title")
-          }
+          label={t("modelSelector.latencySelector.pillLabel", {
+            ms: currentLatencyMs(),
+          })}
+          title={t("modelSelector.latencySelector.title")}
           widthClass="w-[min(17rem,calc(100vw-2rem))]"
           trigger={
             <>
               <Gauge class="h-3 w-3 shrink-0 text-text/50" />
               <span class="max-w-24 truncate">
-                {isChunkMsKind()
-                  ? t("modelSelector.latencySelector.chunkSize.trigger", {
-                      ms: currentChunkMs(),
-                    })
-                  : t(latencyPresetLabelKey(currentPreset()))}
+                {t("modelSelector.latencySelector.ms", {
+                  ms: currentLatencyMs(),
+                })}
               </span>
             </>
           }
         >
-          {/* Two controls, one popover: R2T2 takes the numeric chunk size, every
-              other streaming family keeps the preset radio group untouched. */}
-          <Show
-            when={isChunkMsKind()}
-            fallback={
-              <LatencyPanel
-                selected={currentPreset()}
-                onSelect={handleLatencyPresetSelect}
+          {/* One control for every family, in ms: continuous for R2T2,
+              snapping to the trained settings for the others. */}
+          <Show when={latencyKind()}>
+            {(kind) => (
+              <StreamingLatencyControl
+                kind={kind()}
+                preset={currentPreset()}
+                chunkMs={currentChunkMs()}
+                onPreset={handleLatencyPresetSelect}
+                onChunkMs={handleChunkMsSelect}
               />
-            }
-          >
-            <ChunkSizePanel
-              selected={currentChunkMs()}
-              onSelect={handleChunkMsSelect}
-            />
+            )}
           </Show>
         </StatusBarPopover>
       </Show>

@@ -1383,6 +1383,13 @@ pub fn change_multi_stt_extra_model(
         &mut settings.multi_stt_extra_models[index].model_id,
         model_id,
     );
+    // A latency override is in the previous model's own units (a Nemotron
+    // preset is meaningless to R2T2): the new model starts from its own
+    // setting.
+    if settings.multi_stt_extra_models[index].model_id != old_model {
+        settings.multi_stt_extra_models[index].latency_preset = None;
+        settings.multi_stt_extra_models[index].chunk_ms = None;
+    }
     // The previous model of this slot may still be loaded: release it, or a
     // stale engine stays resident beside the new one.
     if let Some(old_id) = old_model
@@ -1404,6 +1411,37 @@ pub fn change_multi_stt_extra_model_language(
     let mut settings = settings::get_settings(&app);
     let index = extra_slot_index(&settings, slot)?;
     settings.multi_stt_extra_models[index].language = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+/// Streaming latency of one extra slot's live stream: a preset for the preset
+/// families, or R2T2's chunk size in ms. `None` for both returns the slot to
+/// its model's own setting. An R2T2 value outside the native range is refused
+/// here, like `change_native_streaming_chunk_ms_setting` does.
+#[tauri::command]
+#[specta::specta]
+pub fn change_multi_stt_extra_model_latency(
+    app: AppHandle,
+    slot: u32,
+    preset: Option<settings::NativeStreamingLatencyPreset>,
+    chunk_ms: Option<u32>,
+) -> Result<(), String> {
+    use crate::managers::native_streaming_latency::{
+        R2T2_CHUNK_MS_MAX, R2T2_CHUNK_MS_MIN, r2t2_chunk_ms_is_valid,
+    };
+    if let Some(ms) = chunk_ms
+        && !r2t2_chunk_ms_is_valid(ms)
+    {
+        return Err(format!(
+            "Streaming chunk size {ms} ms is outside {R2T2_CHUNK_MS_MIN}..={R2T2_CHUNK_MS_MAX} ms"
+        ));
+    }
+    let mut settings = settings::get_settings(&app);
+    let index = extra_slot_index(&settings, slot)?;
+    let extra = &mut settings.multi_stt_extra_models[index];
+    extra.latency_preset = preset;
+    extra.chunk_ms = chunk_ms;
     settings::write_settings(&app, settings);
     Ok(())
 }

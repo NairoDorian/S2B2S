@@ -157,6 +157,12 @@ const EXEMPTIONS: Exemption[] = [
       "Hugging Face org and download host that actually serve the models. Renaming these breaks every download; they are an external address, not our name.",
   },
   {
+    file: "src-tauri/src/managers/transcription.rs",
+    allow: /"handy-computer\/nemotron-/,
+    reason:
+      "A test uses the real catalog id of Nemotron 3.5 (external HF org), so it covers the quant-sibling latency case with the model it is about.",
+  },
+  {
     file: "src-tauri/src/managers/model.rs",
     allow: /handy-computer|blob\.handy\.computer/,
     reason:

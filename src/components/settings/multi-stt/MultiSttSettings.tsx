@@ -20,6 +20,12 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { ShortcutInput } from "../ShortcutInput";
 import { KeyComboInput } from "../KeyComboInput";
 import { ModelBackendDropdown } from "./ModelBackendDropdown";
+import StreamingLatencyControl from "../../model-selector/StreamingLatencyControl";
+import { resolveModelSetting } from "@/lib/modelId";
+import {
+  DEFAULT_LATENCY_PRESET,
+  R2T2_CHUNK_MS_DEFAULT,
+} from "@/lib/streamingLatency";
 import { useSettings } from "../../../hooks/useSettings";
 import { useModelStore } from "../../../stores/modelStore";
 import { commands } from "@/bindings";
@@ -147,7 +153,78 @@ interface ExtraModelSlotProps {
   onUnload: () => void;
 }
 
-/** One extra Multi-STT slot: its model, load state, language, backend and translation. */
+/**
+ * Streaming latency of one extra slot, shown only for a model with a native
+ * streaming latency control. The value is the slot's own override when it has
+ * one, else the model's per-model setting (the status-bar value, shared with
+ * its quant siblings); moving the slider writes the slot override, which the
+ * extra's live stream in Multi Streaming STT resolves before the per-model
+ * entry.
+ */
+const ExtraSlotLatency = (props: {
+  slot: number;
+  modelId: string;
+  modelInfo: ModelInfo;
+  config: ExtraSlotConfig;
+  onChange: (patch: Partial<ExtraSlotConfig>) => void;
+}) => {
+  const { t } = useTranslation();
+  const { getSetting } = useSettings();
+  const hasOverride = () =>
+    props.config.latency_preset != null || props.config.chunk_ms != null;
+  const preset = () =>
+    props.config.latency_preset ??
+    resolveModelSetting(
+      getSetting("native_streaming_latency_presets"),
+      props.modelId,
+      DEFAULT_LATENCY_PRESET,
+    );
+  const chunkMs = () =>
+    props.config.chunk_ms ??
+    resolveModelSetting<number>(
+      getSetting("native_streaming_chunk_ms"),
+      props.modelId,
+      R2T2_CHUNK_MS_DEFAULT,
+    );
+
+  return (
+    <Show when={props.modelInfo.native_streaming_latency_kind}>
+      {(kind) => (
+        <div class="mt-2 ml-1 max-w-sm rounded-md border border-mid-gray/20 text-xs">
+          <StreamingLatencyControl
+            kind={kind()}
+            preset={preset()}
+            chunkMs={chunkMs()}
+            label={t("multiStt.models.latency", { number: props.slot })}
+            hideHint={true}
+            onPreset={(latency_preset) =>
+              props.onChange({ latency_preset, chunk_ms: null })
+            }
+            onChunkMs={(chunk_ms) =>
+              props.onChange({ chunk_ms, latency_preset: null })
+            }
+          />
+          <div class="flex items-start justify-between gap-2 px-2 pb-1.5 text-[11px] leading-snug text-text/45">
+            <span>{t("multiStt.models.latencyHint")}</span>
+            <Show when={hasOverride()}>
+              <button
+                type="button"
+                onClick={() =>
+                  props.onChange({ latency_preset: null, chunk_ms: null })
+                }
+                class="shrink-0 rounded px-1 text-accent hover:bg-mid-gray/10"
+              >
+                {t("multiStt.models.latencyFollowModel")}
+              </button>
+            </Show>
+          </div>
+        </div>
+      )}
+    </Show>
+  );
+};
+
+/** One extra Multi-STT slot: its model, load state, language, latency, backend and translation. */
 const ExtraModelSlot = (props: ExtraModelSlotProps) => {
   const { t } = useTranslation();
   const modelId = () => props.config.model_id ?? null;
@@ -222,6 +299,23 @@ const ExtraModelSlot = (props: ExtraModelSlotProps) => {
         language={props.config.language ?? null}
         onSelect={(language) => props.onChange({ language })}
       />
+      <Show
+        when={
+          modelId() && props.modelInfo?.supports_streaming
+            ? props.modelInfo
+            : undefined
+        }
+      >
+        {(info) => (
+          <ExtraSlotLatency
+            slot={props.slot}
+            modelId={modelId()!}
+            modelInfo={info()}
+            config={props.config}
+            onChange={props.onChange}
+          />
+        )}
+      </Show>
       <ModelBackendDropdown
         modelId={modelId()}
         label={t("multiStt.models.backend")}
@@ -263,6 +357,8 @@ export const MultiSttSettings = () => {
       model_id: slot.model_id ?? null,
       language: slot.language ?? null,
       translate: slot.translate ?? false,
+      latency_preset: slot.latency_preset ?? null,
+      chunk_ms: slot.chunk_ms ?? null,
     }));
   const multiSttMergePrompt = () =>
     getSetting("multi_stt_merge_prompt") ?? null;

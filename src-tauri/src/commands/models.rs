@@ -1,6 +1,8 @@
 use crate::managers::history::HistoryManager;
 use crate::managers::model::{ModelInfo, ModelManager, default_quant_file};
-use crate::managers::transcription::{BenchmarkResult, ModelStateEvent, TranscriptionManager};
+use crate::managers::transcription::{
+    BenchmarkResult, ModelStateEvent, StreamingBenchmarkResult, TranscriptionManager,
+};
 use crate::settings::{
     ModelUnloadTimeout, NativeStreamingLatencyPreset, get_settings, write_settings,
 };
@@ -370,25 +372,15 @@ pub async fn cancel_download(
         .map_err(|e| e.to_string())
 }
 
-/// Benchmark all downloaded quantization variants of the model identified by
-/// `model_id`.  Uses the latest completed recording as the reference audio.
+/// Load the latest completed recording as the benchmark reference audio.
 ///
-/// For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) the model is loaded
-/// on a temporary engine, a warmup transcription is discarded, three timed
-/// transcriptions are averaged, and the engine is dropped before the next
-/// variant.  Progress events are emitted on the `benchmark-progress` channel
-/// and the full result vector is returned when all variants are done.
-#[tauri::command]
-#[specta::specta]
-pub async fn benchmark_model_quantizations(
-    transcription_manager: State<'_, Arc<TranscriptionManager>>,
-    history_manager: State<'_, Arc<HistoryManager>>,
-    model_id: String,
-) -> Result<Vec<BenchmarkResult>, String> {
-    // Find the latest completed recording to use as reference audio.
+/// Every benchmark (batch or streaming) replays the same thing: whatever the
+/// user last recorded, read back at the 16 kHz the engines consume. Returns
+/// the file name (for the log line) beside the samples.
+async fn benchmark_reference_audio(hm: Arc<HistoryManager>) -> Result<(String, Vec<f32>), String> {
     // A synchronous SQLite query: run it off the async worker.
-    let hm = Arc::clone(history_manager.inner());
-    let entry = tauri::async_runtime::spawn_blocking(move || hm.get_latest_completed_entry())
+    let lookup = Arc::clone(&hm);
+    let entry = tauri::async_runtime::spawn_blocking(move || lookup.get_latest_completed_entry())
         .await
         .map_err(|e| format!("History task panicked: {e}"))?
         .map_err(|e| e.to_string())?
@@ -396,25 +388,48 @@ pub async fn benchmark_model_quantizations(
             "No completed recordings found. Record audio first to use the benchmark.".to_string()
         })?;
 
-    let audio_path = history_manager.get_audio_file_path(&entry.file_name);
+    let audio_path = hm.get_audio_file_path(&entry.file_name);
     let samples = crate::audio_toolkit::read_wav_samples(&audio_path)
         .map_err(|e| format!("Failed to load audio: {}", e))?;
-
     if samples.is_empty() {
         return Err("Recording has no audio samples".to_string());
     }
+    Ok((entry.file_name, samples))
+}
+
+/// Benchmark all downloaded quantization variants of the model identified by
+/// `model_id`.  Uses the latest completed recording as the reference audio.
+///
+/// For each downloaded quant (e.g. Q4_K_M, Q5_K_M, Q8_0) the model is loaded
+/// on a temporary engine, one warmup transcription is run and discarded (it is
+/// never counted in the average), `runs` timed transcriptions are averaged
+/// (clamped to 2..=10, default 5 when omitted), and the engine is dropped
+/// before the next variant.  Progress events are emitted on the
+/// `benchmark-progress` channel and the full result vector is returned when
+/// all variants are done.
+#[tauri::command]
+#[specta::specta]
+pub async fn benchmark_model_quantizations(
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    model_id: String,
+    runs: Option<usize>,
+) -> Result<Vec<BenchmarkResult>, String> {
+    let (file_name, samples) =
+        benchmark_reference_audio(Arc::clone(history_manager.inner())).await?;
 
     info!(
-        "Starting quantization benchmark for model '{}' using recording '{}' ({} samples)",
+        "Starting quantization benchmark for model '{}' using recording '{}' ({} samples, {} timed runs after one discarded warmup)",
         model_id,
-        entry.file_name,
-        samples.len()
+        file_name,
+        samples.len(),
+        crate::managers::transcription::benchmark_timed_runs(runs)
     );
 
     let tm = Arc::clone(&transcription_manager);
     let model_id_clone = model_id.clone();
     let results = tauri::async_runtime::spawn_blocking(move || {
-        tm.benchmark_quantizations(&model_id_clone, &samples)
+        tm.benchmark_quantizations(&model_id_clone, &samples, runs)
     })
     .await
     .map_err(|e| format!("Benchmark task panicked: {}", e))?
@@ -426,8 +441,9 @@ pub async fn benchmark_model_quantizations(
 /// Benchmark a single quantization variant of the current model.
 /// Uses the latest completed recording as the reference audio.
 ///
-/// The engine is loaded from a clean state (primary model unloaded first),
-/// a warmup transcription is discarded, three timed runs are averaged,
+/// The engine is loaded from a clean state (primary model unloaded first), one
+/// warmup transcription is run and discarded (never counted in the average),
+/// `runs` timed runs are averaged (clamped to 2..=10, default 5 when omitted),
 /// and the engine is dropped after the run.
 #[tauri::command]
 #[specta::specta]
@@ -435,42 +451,66 @@ pub async fn benchmark_single_quantization(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
     history_manager: State<'_, Arc<HistoryManager>>,
     model_id: String,
+    runs: Option<usize>,
 ) -> Result<BenchmarkResult, String> {
-    // A synchronous SQLite query: run it off the async worker.
-    let hm = Arc::clone(history_manager.inner());
-    let entry = tauri::async_runtime::spawn_blocking(move || hm.get_latest_completed_entry())
-        .await
-        .map_err(|e| format!("History task panicked: {e}"))?
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| {
-            "No completed recordings found. Record audio first to use the benchmark.".to_string()
-        })?;
-
-    let audio_path = history_manager.get_audio_file_path(&entry.file_name);
-    let samples = crate::audio_toolkit::read_wav_samples(&audio_path)
-        .map_err(|e| format!("Failed to load audio: {}", e))?;
-
-    if samples.is_empty() {
-        return Err("Recording has no audio samples".to_string());
-    }
+    let (file_name, samples) =
+        benchmark_reference_audio(Arc::clone(history_manager.inner())).await?;
 
     info!(
-        "Starting single-quant benchmark for model '{}' using recording '{}' ({} samples)",
+        "Starting single-quant benchmark for model '{}' using recording '{}' ({} samples, {} timed runs after one discarded warmup)",
         model_id,
-        entry.file_name,
-        samples.len()
+        file_name,
+        samples.len(),
+        crate::managers::transcription::benchmark_timed_runs(runs)
     );
 
     let tm = Arc::clone(&transcription_manager);
     let model_id_clone = model_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        tm.benchmark_single_quantization(&model_id_clone, &samples)
+        tm.benchmark_single_quantization(&model_id_clone, &samples, runs)
     })
     .await
     .map_err(|e| format!("Benchmark task panicked: {}", e))?
     .map_err(|e| e.to_string())?;
 
     Ok(result)
+}
+
+/// Benchmark `model_id` in its **native streaming mode** — the same
+/// `stream_begin` / `feed` / `finalize` replay the transcribe-fork
+/// `streaming-benchmark` driver measures, run against the latest completed
+/// recording.
+///
+/// One warmup replay is discarded and never averaged; `runs` timed replays
+/// (clamped to 2..=10, default 5 when omitted) follow, and the result carries
+/// the real-time speed factor (`compute_xrt`), feed p95/max, the finalize cost
+/// and the audio horizon of the first text. Models that do not advertise
+/// streaming support are refused. Progress is reported as `stream_*` events on
+/// the `benchmark-progress` channel.
+#[tauri::command]
+#[specta::specta]
+pub async fn benchmark_model_streaming(
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    model_id: String,
+    runs: Option<usize>,
+) -> Result<StreamingBenchmarkResult, String> {
+    let (file_name, samples) =
+        benchmark_reference_audio(Arc::clone(history_manager.inner())).await?;
+
+    info!(
+        "Starting streaming benchmark for model '{}' using recording '{}' ({} samples, {} timed runs after one discarded warmup)",
+        model_id,
+        file_name,
+        samples.len(),
+        crate::managers::transcription::benchmark_timed_runs(runs)
+    );
+
+    let tm = Arc::clone(&transcription_manager);
+    tauri::async_runtime::spawn_blocking(move || tm.benchmark_streaming(&model_id, &samples, runs))
+        .await
+        .map_err(|e| format!("Benchmark task panicked: {}", e))?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -546,13 +546,26 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
     const { setUpdating, refreshSettings } = get();
     const updateKey = `multi_stt_extra_models_${slot}`;
     const index = slot - 2;
+    // The slot as it will be after this patch, computed up front: Solid 2
+    // defers store writes, so `get()` right after the optimistic `set` below
+    // still returns the old slot.
+    const before = get().settings?.multi_stt_extra_models?.[index];
+    const merged = { ...before, ...patch };
     setUpdating(updateKey, true);
     try {
       set((state) => {
         if (!state.settings) return {};
         const slots = [...(state.settings.multi_stt_extra_models ?? [])];
         if (!slots[index]) return {};
-        slots[index] = { ...slots[index], ...patch };
+        // A new model starts from its own latency, as the backend does: an
+        // override is in the previous model's units.
+        const modelChanged =
+          "model_id" in patch && patch.model_id !== slots[index].model_id;
+        slots[index] = {
+          ...slots[index],
+          ...(modelChanged ? { latency_preset: null, chunk_ms: null } : {}),
+          ...patch,
+        };
         return {
           settings: { ...state.settings, multi_stt_extra_models: slots },
         };
@@ -567,6 +580,17 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
           await commands.changeMultiSttExtraModelLanguage(
             slot,
             patch.language ?? null,
+          ),
+        );
+      }
+      if ("latency_preset" in patch || "chunk_ms" in patch) {
+        // The command sets both fields, so send the merged slot: a patch of
+        // one must not clear the other.
+        throwIfErrorResult(
+          await commands.changeMultiSttExtraModelLatency(
+            slot,
+            merged.latency_preset ?? null,
+            merged.chunk_ms ?? null,
           ),
         );
       }
@@ -596,7 +620,13 @@ const settingsState = createSolidStore<SettingsStore>((set, get) => ({
         const slots = [...(state.settings.multi_stt_extra_models ?? [])];
         slots.length = Math.min(slots.length, count);
         while (slots.length < count) {
-          slots.push({ model_id: null, language: null, translate: false });
+          slots.push({
+            model_id: null,
+            language: null,
+            translate: false,
+            latency_preset: null,
+            chunk_ms: null,
+          });
         }
         return {
           settings: { ...state.settings, multi_stt_extra_models: slots },

@@ -79,6 +79,19 @@ export const QuantizationPanel = (
           const isMeasuring = () => props.benchmark.activeModelId() === id;
           const isFastest = () => id === fastestId();
 
+          // "warmup" while the discarded first pass runs (index 0), "n / total"
+          // once the runs that actually get averaged start landing.
+          const progressLabel = () => {
+            const run = props.benchmark.activeRun();
+            if (!run) return "";
+            return run.warmup
+              ? t("modelSelector.benchmark.warmup")
+              : t("modelSelector.benchmark.runProgress", {
+                  done: run.index,
+                  total: run.total,
+                });
+          };
+
           const rowLabel = () =>
             isCurrent()
               ? t("modelSelector.quantPicker.current", { quant: variant.quant })
@@ -163,12 +176,9 @@ export const QuantizationPanel = (
                     >
                       {isMeasuring() ? (
                         <>
-                          <LoaderCircle class="h-3 w-3 animate-spin text-text/50" />
-                          <span class="tabular-nums text-text/50">
-                            {t("modelSelector.benchmark.runProgress", {
-                              done: props.benchmark.activeRun()?.index ?? 0,
-                              total: props.benchmark.activeRun()?.total ?? 0,
-                            })}
+                          <LoaderCircle class="h-3 w-3 shrink-0 animate-spin text-text/50" />
+                          <span class="truncate text-text/50">
+                            {progressLabel()}
                           </span>
                         </>
                       ) : failure() ? (
