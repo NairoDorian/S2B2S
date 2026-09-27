@@ -355,6 +355,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Default merge and post-processing prompts put the transcripts last, and
+  the llama.cpp prompt cache is requested explicitly (2026-09-27).** Both
+  defaults are now the benchmarked V7 prompts (the merge scored 93–100 on the
+  four-transcript business case where the previous default scored 63–67)
+  with the same lines reordered: fixed instructions first, the transcripts
+  (`${output1}`…`${output4}` / `${output}`) at the end. Every request then
+  shares the instruction block as a prefix, and llama-server reuses it from
+  its prompt cache instead of re-reading about 2,600–2,900 tokens. On an
+  RTX 4070 Laptop with Gemma 4 E2B Q4 + MTP, merge plus post-processing for
+  a four-transcript dictation dropped from 3.56 s to 2.54 s, and short
+  dictations to about 0.6 s. The first one or two requests after a server
+  start still read everything. The supervised server now passes
+  `--cache-prompt` (its default, made explicit), and requests to the
+  `custom` provider carry `"cache_prompt": true`; hosted providers never
+  receive the field. Stored prompts are not rewritten: an existing install
+  keeps its prompts until the user replaces them.
+
 - **The default LLM prompts are restored to the last Handy versions
   (2026-09-14).** Both defaults are the prompts in use on 2026-09-12 (the
   latest settings snapshot before the migration), recovered verbatim from the

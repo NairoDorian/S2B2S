@@ -1336,7 +1336,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -2940,7 +2940,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -6725,7 +6725,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-autostart"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "auto-launch",
  "serde",
@@ -6738,7 +6738,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-clipboard-manager"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "arboard",
  "log",
@@ -6752,7 +6752,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-dialog"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "log",
  "raw-window-handle",
@@ -6769,7 +6769,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-fs"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "anyhow",
  "dunce",
@@ -6790,7 +6790,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-global-shortcut"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "global-hotkey",
  "log",
@@ -6804,7 +6804,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-log"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "android_logger",
  "fern",
@@ -6838,7 +6838,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-opener"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "dunce",
  "glob",
@@ -6859,7 +6859,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-os"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "gethostname",
  "log",
@@ -6876,7 +6876,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-process"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "tauri",
  "tauri-plugin",
@@ -6885,7 +6885,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-single-instance"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "serde",
  "serde_json",
@@ -6900,7 +6900,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-store"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "dunce",
  "serde",
@@ -6915,7 +6915,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-updater"
 version = "3.0.0-alpha.1"
-source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#f2c77194d6fc35fdc24ea4db86c583c27cb6db4e"
+source = "git+https://github.com/tauri-apps/plugins-workspace?branch=v3#9a06773d5a0e3f3d06c1c93d09eb2775dedf96da"
 dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",
@@ -7078,7 +7078,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

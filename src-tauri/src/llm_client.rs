@@ -120,6 +120,11 @@ struct ChatCompletionRequest {
     response_format: Option<ResponseFormat>,
     #[serde(flatten)]
     reasoning: ReasoningParams,
+    /// llama.cpp: reuse the cached prompt prefix (the fixed instructions
+    /// before the transcripts). Set only for the "custom" provider, the one
+    /// that can point at a llama.cpp server; hosted APIs never receive it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_prompt: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -408,6 +413,7 @@ pub async fn send_chat_completion_with_schema(
         stream: false,
         response_format,
         reasoning,
+        cache_prompt: (provider.id == "custom").then_some(true),
     };
 
     // What was asked, in full. A request logged as a length cannot be compared
@@ -692,6 +698,7 @@ mod tests {
             stream: false,
             response_format: None,
             reasoning,
+            cache_prompt: None,
         };
         serde_json::to_value(&request).unwrap()
     }

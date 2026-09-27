@@ -879,6 +879,10 @@ pub fn build_args(settings: &LlamaSettings) -> Result<Vec<String>, String> {
         settings.context_size.to_string(),
         "--parallel".into(),
         "1".into(),
+        // Explicit although it is llama-server's default: the merge and
+        // post-processing prompts put their fixed instructions first, so every
+        // request after the first reuses them from the prompt cache.
+        "--cache-prompt".into(),
         "--flash-attn".into(),
         if settings.flash_attn { "on" } else { "off" }.into(),
         "--no-context-shift".into(),
@@ -1121,7 +1125,7 @@ mod tests {
         s.draft_model_path = Some(draft.to_string_lossy().to_string());
         let args = build_args(&s).unwrap();
         let joined = args.join(" ");
-        assert!(joined.starts_with(&format!("-m {} --port {DEFAULT_LLAMA_PORT} -c 8192 --parallel 1 --flash-attn on --no-context-shift -ngl -1 --threads -1 --jinja --temp 0.05 --top-p 0.35 --top-k 64 --min-p 0 --reasoning off --model-draft ", model.to_string_lossy())), "{joined}");
+        assert!(joined.starts_with(&format!("-m {} --port {DEFAULT_LLAMA_PORT} -c 8192 --parallel 1 --cache-prompt --flash-attn on --no-context-shift -ngl -1 --threads -1 --jinja --temp 0.05 --top-p 0.35 --top-k 64 --min-p 0 --reasoning off --model-draft ", model.to_string_lossy())), "{joined}");
         assert!(
             joined.ends_with(
                 "--spec-type draft-mtp --spec-draft-n-max 4 --alias gemma-4-E2B-Q4-MTP --metrics"
