@@ -2,6 +2,7 @@ import { createSignal, createEffect, type Accessor } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { useTranslation } from "@/i18n/useTranslation";
 import { events, type VadTestEvent } from "@/bindings";
+import { formatPercent } from "@/lib/utils/format";
 
 const STALL_MS = 1500;
 const PEAK_DECAY = 0.02;
@@ -55,8 +56,6 @@ export function useVadFrames(active: Accessor<boolean>): VadFrames {
 
   return { frame, peak, stalled };
 }
-
-const pct = (v: number) => `${Math.round(Math.min(1, Math.max(0, v)) * 100)}%`;
 
 interface VadStatusChipProps {
   frames: VadFrames;
@@ -118,15 +117,15 @@ export const VadMeter = (props: VadMeterProps) => {
           class={`h-full rounded-full transition-[width] duration-75 ${
             voiced() ? "bg-emerald-500" : "bg-mid-gray/60"
           }`}
-          style={{ width: pct(score() ?? 0) }}
+          style={{ width: formatPercent(score() ?? 0) }}
         />
         <div
           class="absolute top-0 h-full w-0.5 bg-text/40"
-          style={{ left: pct(props.frames.peak()) }}
+          style={{ left: formatPercent(props.frames.peak()) }}
         />
         <div
           class="absolute top-0 h-full w-0.5 bg-accent"
-          style={{ left: pct(props.threshold) }}
+          style={{ left: formatPercent(props.threshold) }}
         />
       </div>
       <div class="flex items-center gap-2 text-xs text-text/60">
@@ -136,7 +135,7 @@ export const VadMeter = (props: VadMeterProps) => {
         <div class="relative grow h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
           <div
             class="h-full rounded-full bg-blue-400/70 transition-[width] duration-75"
-            style={{ width: pct(level()) }}
+            style={{ width: formatPercent(level()) }}
           />
         </div>
         <span
@@ -159,12 +158,12 @@ export const VadMeter = (props: VadMeterProps) => {
           <div class="relative grow h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
             <div
               class="h-full rounded-full bg-violet-400/70 transition-[width] duration-75"
-              style={{ width: pct(denoiseProb() ?? 0) }}
+              style={{ width: formatPercent(denoiseProb() ?? 0) }}
             />
             {(props.denoiseThreshold ?? 0) > 0 && (
               <div
                 class="absolute top-0 h-full w-0.5 bg-accent"
-                style={{ left: pct(props.denoiseThreshold ?? 0) }}
+                style={{ left: formatPercent(props.denoiseThreshold ?? 0) }}
               />
             )}
           </div>

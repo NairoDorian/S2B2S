@@ -2,7 +2,11 @@
 //
 // The CPU-only build posture, shared by every script that compiles the backend:
 // `tauri-runner.ts --cpu` (the `dev:cpu` / `build:cpu` lanes), the dependency
-// updater's `cargo check`, and the gate's `cargo clippy` / `cargo test`.
+// updater's `cargo check`, and the manual `cargo-cpu.ts` verification helper.
+//
+// (`lint:backend` / `test:backend` deliberately do *not* use it: the gate runs
+// plain cargo so it lints the posture a developer actually builds. Use
+// `bun scripts/cargo-cpu.ts` by hand for a fast verification build.)
 //
 // Why one module: a check or a lint only has to prove the Rust compiles and
 // behaves, and none of that depends on the ~189 CUDA translation units

@@ -19,7 +19,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 
-use crate::audio_toolkit::VadPolicy;
 use crate::managers::audio::{AudioRecordingManager, RecordingStartOptions};
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::get_settings;
@@ -52,20 +51,8 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
 
     let tm = app.state::<Arc<TranscriptionManager>>();
     let settings = get_settings(app);
-    let model_supports_streaming = app
-        .state::<Arc<crate::managers::model::ModelManager>>()
-        .get_model_info(&settings.selected_model)
-        .as_ref()
-        .map(|m| m.supports_streaming)
-        .unwrap_or(false);
 
-    let vad_policy = if !settings.vad_enabled {
-        VadPolicy::Disabled
-    } else if model_supports_streaming {
-        VadPolicy::Streaming
-    } else {
-        VadPolicy::Offline
-    };
+    let vad_policy = crate::managers::audio::vad_policy_for(app, &settings);
 
     tm.initiate_model_load();
 

@@ -47,7 +47,14 @@ function newestSourceMtime(): number {
     cwd: REPO_ROOT,
     encoding: "utf8",
   });
-  if (tracked.status !== 0) return 0;
+  if (tracked.status !== 0) {
+    // Not a stale-index choice here: with no file list there is no newest
+    // source, so the comparison below would read 0 > pack as false and report
+    // a possibly ancient pack as up to date. Failing is the honest answer.
+    throw new Error(
+      `git ls-files failed (exit ${tracked.status ?? "null"}): ${tracked.stderr?.trim() ?? "no stderr"}`,
+    );
+  }
   let newest = 0;
   for (const file of tracked.stdout.split("\0")) {
     if (!file) continue;
@@ -74,7 +81,15 @@ if (check) {
     process.exit(1);
   }
   const pack = statSync(OUTPUT).mtimeMs;
-  const source = newestSourceMtime();
+  let source: number;
+  try {
+    source = newestSourceMtime();
+  } catch (e) {
+    console.error(
+      `${TAG} cannot tell whether the pack is current: ${(e as Error).message}`,
+    );
+    process.exit(1);
+  }
   if (source > pack) {
     console.error(
       `${TAG} the pack is older than the newest tracked file — run \`bun run repomix\``,

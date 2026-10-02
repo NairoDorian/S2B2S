@@ -16,8 +16,10 @@ use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_specta::Event;
+
+use crate::utils::main_window_visible;
 
 const TICK: Duration = Duration::from_secs(1);
 const HIDDEN_TICK: Duration = Duration::from_secs(3);
@@ -72,12 +74,6 @@ fn init_gpu() -> Option<Gpu> {
             None
         }
     }
-}
-
-fn main_window_visible(app: &AppHandle) -> bool {
-    app.get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
-        .unwrap_or(false)
 }
 
 fn run(app: AppHandle) {

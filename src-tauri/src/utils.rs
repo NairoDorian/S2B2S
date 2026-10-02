@@ -12,6 +12,20 @@ pub use crate::clipboard::*;
 pub use crate::overlay::*;
 pub use crate::tray::*;
 
+/// Whether the main settings window is on screen *and* not minimized — the
+/// "the user can see us, so background work is worth doing" test.
+///
+/// Shared by the two samplers that gate themselves on it (the system meters and
+/// the Live FFT session), so both answer the same question the same way. A
+/// window that cannot be resolved or queried counts as not visible: on a
+/// startup race there is nothing to draw for yet, and a false positive would
+/// start a worker nobody sees.
+pub fn main_window_visible(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+        .unwrap_or(false)
+}
+
 /// Preserve diagnostic text in development builds, but redact it in releases.
 /// Do not use for secrets such as API keys, which must always be redacted.
 pub fn redact_text(text: &str) -> &str {

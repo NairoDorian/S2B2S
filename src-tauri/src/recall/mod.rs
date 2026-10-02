@@ -553,8 +553,8 @@ fn locked_meta(id: &str) -> RecallNoteMeta {
 }
 
 fn note_bytes_to_content(id: &str, bytes: &[u8], root: &Path) -> Result<RecallNoteContent, String> {
-    let raw = String::from_utf8(bytes.to_vec())
-        .map_err(|_| format!("Corrupt note {id}: not valid UTF-8"))?;
+    let raw =
+        std::str::from_utf8(bytes).map_err(|_| format!("Corrupt note {id}: not valid UTF-8"))?;
     // Only encrypted notes come through here: their file is the `.rcl`.
     Ok(parse_note(
         id,

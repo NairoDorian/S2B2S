@@ -10,6 +10,7 @@ import {
 import { Play, Pause } from "@/components/icons/lucide";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
+import { clampPercent } from "@/lib/utils/format";
 
 interface AudioPlayerProps {
   src?: string;
@@ -241,7 +242,7 @@ export const AudioPlayer = (props: AudioPlayerProps): JSX.Element => {
     if (duration() <= 0) return 0;
     if (duration() - currentTime() < 0.1) return 100;
     const percent = (currentTime() / duration()) * 100;
-    return Math.min(100, Math.max(0, percent));
+    return clampPercent(percent);
   };
 
   return (

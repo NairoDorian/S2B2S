@@ -73,9 +73,11 @@ const OVERLAY_ROW_H: f64 = 40.0;
 const OVERLAY_ROW_PADDING_H: f64 = 18.0;
 
 // Speech stats (timer + words-per-minute) ride in the pill's right-hand cluster,
-// which grows the resting pill to 308 (--ov-stats-w) — past --ov-work-w, so the
-// window has to fit that instead. Only the compact overlay needs a bigger
-// window: the Live panel already has room for the stats inside its 392px card.
+// which grows the resting *pill* to 308 px (`--ov-stats-w`) — past
+// --ov-work-w, so the compact *window* has to fit that instead:
+// OVERLAY_STATS_BASE_W (198) + the scope block (110) + OVERLAY_WINDOW_SLACK_W
+// (44) = 352. Only the compact overlay needs a bigger window: the Live panel
+// already has room for the stats inside its 392px card.
 // Documented default; the live width is derived in `compact_dimensions`.
 #[cfg_attr(not(test), allow(dead_code))]
 const OVERLAY_STATS_WIDTH: f64 = 352.0;

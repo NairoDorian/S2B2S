@@ -1,11 +1,12 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import { commands, events, type SystemStatsEvent } from "@/bindings";
+import { clampPercent } from "@/lib/utils/format";
 
 function Meter(props: { label: string; percent: number; title: string }) {
   // Accessors: the parent's `percent` expression re-evaluates on every stats
   // event, and this read must be live for the bar to move.
-  const clamped = () => Math.max(0, Math.min(100, props.percent));
+  const clamped = () => clampPercent(props.percent);
   const tone = () =>
     clamped() >= 90 ? "bg-error" : clamped() >= 75 ? "bg-warning" : "bg-accent";
   return (

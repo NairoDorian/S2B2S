@@ -1579,6 +1579,13 @@ pub struct AppSettings {
     pub external_script_path: Option<String>,
     #[serde(default = "default_filler_word_removal_enabled")]
     pub filler_word_removal_enabled: bool,
+    /// Optional user-supplied filler-word list, which overrides the built-in
+    /// per-language set passed to `audio_toolkit::text::remove_filler_words`.
+    ///
+    /// No command writes this yet and no setting control exposes it, so in
+    /// practice it stays `None` (the built-in list applies) unless the store is
+    /// hand-edited. It is read, so a hand-written value does take effect — see
+    /// `TranscriptionManager`'s post-processing filter.
     #[serde(default)]
     pub custom_filler_words: Option<Vec<String>>,
     #[serde(default)]
@@ -1752,8 +1759,8 @@ pub struct AppSettings {
     /// text to take from it, and loading it would only cost memory.
     #[serde(default)]
     pub multi_stt_streaming_multi_enabled: bool,
-    /// Whether the nested Multi Streaming STT mode shows all three texts, or
-    /// only the one the parent mode shows.
+    /// Whether the nested Multi Streaming STT mode shows every live model's text,
+    /// or only the one the parent mode shows.
     ///
     /// Off (the default) is the mode's production view and the one the parent
     /// mode has always had: **one** text block, the primary model's live text,
@@ -1847,6 +1854,14 @@ fn default_model() -> String {
     "".to_string()
 }
 
+/// The settings schema this build writes. Bump it when a migration below
+/// changes stored data, and add the matching `stored_schema_version < N` block.
+///
+/// Not every number has a block: schema 8 was only ever written by a
+/// development build (a catalog change with nothing to migrate), so stores
+/// carry it and no store ever arrives at it from below. The trailing
+/// `max(CURRENT_SETTINGS_SCHEMA_VERSION)` stamps the bump regardless, so a
+/// store can never replay a migration.
 const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 9;
 
 fn default_settings_schema_version() -> u32 {
@@ -2850,12 +2865,6 @@ fn apply_settings_migrations(
         settings.settings_schema_version = 5;
     }
 
-    // Schema 6: the ONNX runtime (transcribe-rs / ort) is gone, and with it
-    // the 11 hard-coded ONNX models. Every one of them has a GGUF successor in
-    // the bundled catalog, so a selection pointing at a retired id is remapped
-    // to that successor instead of silently falling back to "no model". The
-    // replacement may not be downloaded yet; the normal "model not downloaded"
-    // flow handles that. Model files on disk are never touched.
     // Schema 7: the fixed Model 2–4 fields became one list. Read from the raw
     // store, since the struct no longer has them, and before schema 6 below so
     // its model remap already sees the list.
@@ -2864,6 +2873,12 @@ fn apply_settings_migrations(
         updated = true;
     }
 
+    // Schema 6: the ONNX runtime (transcribe-rs / ort) is gone, and with it
+    // the 11 hard-coded ONNX models. Every one of them has a GGUF successor in
+    // the bundled catalog, so a selection pointing at a retired id is remapped
+    // to that successor instead of silently falling back to "no model". The
+    // replacement may not be downloaded yet; the normal "model not downloaded"
+    // flow handles that. Model files on disk are never touched.
     if stored_schema_version < 6 {
         if let Some(replacement) = legacy_onnx_model_replacement(&settings.selected_model) {
             info!(

@@ -33,7 +33,13 @@ const dryRun = process.argv.includes("--dry-run");
 interface Step {
   label: string;
   argv: string[];
-  /** Skipped entirely in a dry run (it installs a binary). */
+  /**
+   * Skipped entirely in a dry run. Two reasons a step qualifies: it installs a
+   * binary, or it writes a generated file rather than reporting on one. The
+   * pack is the second kind — regenerating it would be a write, and would also
+   * silently satisfy `repomix:check` afterwards, which is exactly what a dry run
+   * must not do.
+   */
   skipsOnDryRun?: boolean;
 }
 
@@ -53,12 +59,16 @@ const STEPS: Step[] = [
       ...(dryRun ? ["--dry-run"] : []),
     ],
   },
-  { label: "repomix pack", argv: ["run", "repomix"] },
+  {
+    label: "repomix pack",
+    argv: ["run", "repomix"],
+    skipsOnDryRun: true,
+  },
 ];
 
 console.log(
   dryRun
-    ? `${TAG} dry run — nothing is written`
+    ? `${TAG} dry run — no manifests, lockfiles or generated files are written`
     : `${TAG} updating rtk and every dependency to the newest versions`,
 );
 

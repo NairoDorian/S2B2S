@@ -250,7 +250,11 @@ function App() {
                   t("errors.modelLoadFailedUnknown"),
               }),
               {
-                description: event.payload.error,
+                // Rust always sends this key, so an absent detail arrives as
+                // `null`, not `undefined`. The toast renders a description row
+                // for any string it is given, so normalise here or a failure
+                // without detail shows an empty row.
+                description: event.payload.error ?? undefined,
               },
             );
           }
@@ -261,7 +265,7 @@ function App() {
                   event.payload.model_id || t("errors.modelLoadFailedUnknown"),
               }),
               {
-                description: event.payload.error,
+                description: event.payload.error ?? undefined,
               },
             );
           }

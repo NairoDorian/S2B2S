@@ -146,7 +146,7 @@ export const SELECTABLE_LANGUAGES: Language[] = LANGUAGES.filter(
 // Nynorsk (`nn`) remains distinct; Filipino (`fil`) maps to Tagalog (`tl`). The
 // backend performs the same equivalence match but returns the model's real code
 // so the engine always receives exactly what it advertises.
-export const recognitionLanguage = (languageCode: string): string => {
+const recognitionLanguage = (languageCode: string): string => {
   const separatorIndex = languageCode.indexOf("-");
   const baseCode =
     separatorIndex === -1
@@ -185,7 +185,7 @@ export const getLanguageLabel = (languageCode: string): string | undefined =>
 // Convert a concrete or aliased code to the picker entry that represents it.
 // Chinese script intents are already selectable and must remain intact; model
 // codes such as `en-US` and `nb` resolve to their canonical `en` / `no` entry.
-export const pickerLanguage = (languageCode: string): string =>
+const pickerLanguage = (languageCode: string): string =>
   SELECTABLE_LANGUAGES.some((language) => language.value === languageCode)
     ? languageCode
     : recognitionLanguage(languageCode);

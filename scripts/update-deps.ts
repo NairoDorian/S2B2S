@@ -18,11 +18,9 @@ import { appEnvVar } from "./lib/env-flag";
  * 4. Transitive Sub-Dependency & Sub-Sub-Dependency Upgrading (bun update --latest & cargo update)
  * 5. Full Inventory Audit & Diff Tracking (Cargo.lock & node_modules)
  *
- * 6. Pinned CLI tools (PINNED_TOOLS): versions a script hands to `bunx`
- *    rather than listing in devDependencies — `repomix` today
- * 7. GitHub Actions audit (report only): `uses:` refs a newer major exists for
+ * 6. GitHub Actions audit (report only): `uses:` refs a newer major exists for
  *
- * Validation (the run's steps 5-7):
+ * Validation (the run's last three steps):
  * - TypeScript Static Type Checking (bun x tsc -b)
  * - Vite Production Frontend Build Validation (bun run vite:build)
  * - Native Cargo Backend Compilation Verification (cargo check, on the CPU-only
@@ -356,9 +354,7 @@ lockfile that resolves is not a lockfile that builds.`);
 interface DependencyStatus {
   name: string;
   ecosystem: "NPM (Bun)" | "Cargo (Rust)";
-  type: "runtime" | "dev" | "cargo-dep" | "cargo-build" | "tool";
-  /** The script a pinned CLI's version lives in (`type: "tool"` only). */
-  toolFile?: string;
+  type: "runtime" | "dev" | "cargo-dep" | "cargo-build";
   /**
    * The dist-tags read for a line-pinned package, printed under its reason so
    * the report shows the registry as it is now, not as the reason was written.
@@ -1019,7 +1015,6 @@ function printTable(headers: string[], rows: string[][]): void {
  * "Cargo (linux)", "Cargo (all(windows, x86_64))".
  */
 function ecosystemLabel(s: DependencyStatus): string {
-  if (s.type === "tool") return `CLI pin (${s.toolFile ?? "script"})`;
   if (s.ecosystem !== "Cargo (Rust)" || !s.section) return s.ecosystem;
   const section = s.section;
   if (section === "dependencies") return "Cargo (Rust)";
@@ -1209,7 +1204,6 @@ function printDryRunReport(allStatuses: DependencyStatus[]): void {
   console.log("\n Steps that WOULD run in a real invocation:");
   console.log("   1-2. bun add <pkg>@<target>        (runtime + dev deps)");
   console.log("   3.   Cargo.toml spec rewrite to ^<target>");
-  console.log("   3b.  pinned CLI versions rewritten in their scripts");
   console.log(
     "   4.   bun update --latest + cargo update   (transitive sub-deps)",
   );

@@ -3,7 +3,7 @@ use crate::app_identity;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
 use crate::audio_feedback::{SoundType, play_feedback_sound, play_feedback_sound_blocking};
-use crate::audio_toolkit::{VadPolicy, is_microphone_access_denied, is_no_input_device_error};
+use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error};
 use crate::managers::audio::{AudioRecordingManager, RecordingReadiness, StopRecordingResult};
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
@@ -620,13 +620,7 @@ impl ShortcutAction for TranscribeAction {
             .as_ref()
             .map(|m| m.supports_streaming)
             .unwrap_or(false);
-        let vad_policy = if !settings.vad_enabled {
-            VadPolicy::Disabled
-        } else if model_supports_streaming {
-            VadPolicy::Streaming
-        } else {
-            VadPolicy::Offline
-        };
+        let vad_policy = crate::managers::audio::vad_policy_for(&app, &settings);
         // With post-processing the live stream is a preview only (see
         // `live_stream_is_preview_only`): no live typing, Live overlay forced.
         // Recall insertion mode is preview-only too — the final text is
@@ -1863,13 +1857,7 @@ impl ShortcutAction for MultiSttAction {
             .as_ref()
             .map(|m| m.supports_streaming)
             .unwrap_or(false);
-        let vad_policy = if !settings.vad_enabled {
-            VadPolicy::Disabled
-        } else if model_supports_streaming {
-            VadPolicy::Streaming
-        } else {
-            VadPolicy::Offline
-        };
+        let vad_policy = crate::managers::audio::vad_policy_for(&app, &settings);
         // Multi-STT always merges/concatenates, so the primary model's live
         // stream is a preview only: never typed into the app, Live overlay
         // forced when the model can stream.

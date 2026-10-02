@@ -27,3 +27,8 @@ docs/vendor
 .cclaude/
 .commandcode/
 $COMMANDCODE_SCRATCHPAD/
+
+# Impeccable tooling & vendor scripts
+.github/agents/
+.github/hooks/
+.github/skills/

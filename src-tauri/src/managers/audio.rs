@@ -7,6 +7,7 @@ use crate::audio_toolkit::{
     },
 };
 use crate::helpers::clamshell;
+use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamRouter;
 use crate::settings::{AppSettings, MicIdleTimeoutUnit, get_settings, write_settings};
 use crate::utils;
@@ -16,8 +17,44 @@ use specta::Type;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
+
+/// Whether the selected model can stream natively, as the pre-recording source
+/// of truth for every live-stream decision.
+///
+/// The app-facing `ModelInfo` capability, not a model-family guess: an unknown
+/// model reports `false` until the registry is updated by discovery or a runtime
+/// load, which is the safe direction (a preview, not a half-started stream).
+pub fn model_supports_streaming(app: &AppHandle, settings: &AppSettings) -> bool {
+    app.state::<Arc<ModelManager>>()
+        .get_model_info(&settings.selected_model)
+        .as_ref()
+        .map(|m| m.supports_streaming)
+        .unwrap_or(false)
+}
+
+/// The VAD policy a dictation with this model should record under.
+///
+/// One decision, three callers: hotkey dictation, the overlay preview and
+/// Recall's dictate all record with the selected model and the user's
+/// `vad_enabled`, and all three must agree — a recording that keeps a long
+/// hangover for a live stream but not for a preview would keep audio the model
+/// never saw, which is the exact failure the policy is about.
+///
+/// The rule itself: with VAD off, no filtering at all; otherwise a
+/// streaming-capable model gets the long hangover (`VAD_STREAMING_HANGOVER_MS`)
+/// so a live decoder keeps being fed across a pause, and a batch-only model
+/// gets the short one.
+pub fn vad_policy_for(app: &AppHandle, settings: &AppSettings) -> VadPolicy {
+    if !settings.vad_enabled {
+        VadPolicy::Disabled
+    } else if model_supports_streaming(app, settings) {
+        VadPolicy::Streaming
+    } else {
+        VadPolicy::Offline
+    }
+}
 
 fn get_idle_timeout(app: &tauri::AppHandle) -> Duration {
     let settings = get_settings(app);
@@ -750,6 +787,11 @@ impl AudioRecordingManager {
 
     /// Removes mute if it was applied, restoring the system's prior mute state
     /// (a system already muted before recording stays muted).
+    ///
+    /// The single release point: every path that tears down or reopens a stream
+    /// calls this instead of clearing `did_mute` by hand, because clearing the
+    /// flag without restoring leaves the user's system audio muted with nothing
+    /// left to restore it from.
     pub fn remove_mute(&self) {
         let mut mute_guard = self.mute_state.lock().unwrap();
         if mute_guard.did_mute {
@@ -802,14 +844,9 @@ impl AudioRecordingManager {
             warn!("Microphone stream is no longer running (device disconnected?); reopening");
 
             // Torn down inline rather than via stop_microphone_stream(), which
-            // takes the `is_open` lock we are already holding.
-            {
-                let mut mute_guard = self.mute_state.lock().unwrap();
-                if mute_guard.did_mute {
-                    restore_mute(mute_guard.prev_muted);
-                    mute_guard.did_mute = false;
-                }
-            }
+            // takes the `is_open` lock we are already holding. `remove_mute`
+            // takes only `mute_state`, so the lock order is unchanged.
+            self.remove_mute();
             if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
                 let _ = rec.close();
             }
@@ -824,15 +861,9 @@ impl AudioRecordingManager {
 
         // Don't mute immediately - caller will handle muting after audio feedback.
         // The previous stream restored audio on close, so did_mute should already
-        // be false here; if it somehow isn't, restore rather than just clearing the
-        // flag, which would strand system audio muted.
-        {
-            let mut mute_guard = self.mute_state.lock().unwrap();
-            if mute_guard.did_mute {
-                restore_mute(mute_guard.prev_muted);
-                mute_guard.did_mute = false;
-            }
-        }
+        // be false here; if it somehow isn't, remove_mute restores rather than
+        // just clearing the flag, which would strand system audio muted.
+        self.remove_mute();
 
         // Get the selected device from settings, considering clamshell mode.
         // No separate pre-check: the default case resolves the concrete
@@ -895,13 +926,7 @@ impl AudioRecordingManager {
             return;
         }
 
-        {
-            let mut mute_guard = self.mute_state.lock().unwrap();
-            if mute_guard.did_mute {
-                restore_mute(mute_guard.prev_muted);
-            }
-            mute_guard.did_mute = false;
-        }
+        self.remove_mute();
 
         if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             // If still recording, stop first.
@@ -1332,9 +1357,12 @@ impl AudioRecordingManager {
 
                 let captured_sample_count = recorded.stt_samples.len();
 
-                // Pad if very short
+                // Pad if very short. Nothing to pad when there is no audio at all: an empty
+                // buffer is how "record with no speech" is reported, and padding
+                // it would hand the model a second of silence to hallucinate
+                // into (the caller skips transcription below the speech floor).
                 let s_len = recorded.stt_samples.len();
-                if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
+                if !recorded.stt_samples.is_empty() && s_len < WHISPER_SAMPLE_RATE {
                     recorded
                         .stt_samples
                         .resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);

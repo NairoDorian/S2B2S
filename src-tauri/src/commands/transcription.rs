@@ -37,7 +37,7 @@ pub fn unload_model_manually(
 ) -> Result<(), String> {
     transcription_manager
         .unload_model()
-        .map_err(|e| format!("Failed to unload model: {}", e))
+        .map_err(|e| format!("Failed to unload model: {e}"))
 }
 
 #[tauri::command]
@@ -51,10 +51,10 @@ pub async fn unload_extra_model(
     let tm = Arc::clone(&*transcription_manager);
     tauri::async_runtime::spawn_blocking(move || {
         tm.unload_extra_model(&model_id)
-            .map_err(|e| format!("Failed to unload extra model: {}", e))
+            .map_err(|e| format!("Failed to unload extra model: {e}"))
     })
     .await
-    .map_err(|e| format!("Unload task panicked: {}", e))?
+    .map_err(|e| format!("Unload task panicked: {e}"))?
 }
 
 #[tauri::command]
@@ -81,5 +81,5 @@ pub async fn load_extra_model(
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Load task panicked: {}", e))?
+    .map_err(|e| format!("Load task panicked: {e}"))?
 }

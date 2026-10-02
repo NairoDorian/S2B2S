@@ -1,6 +1,7 @@
 import { Show, For } from "solid-js";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { JSX } from "@solidjs/web";
+import { clampPercent } from "@/lib/utils/format";
 
 export interface ProgressData {
   id: string;
@@ -35,10 +36,7 @@ const ProgressBar = (props: ProgressBarProps): JSX.Element | null => {
             <div class="flex gap-1">
               <For each={props.progress}>
                 {(item) => {
-                  const percentage = Math.max(
-                    0,
-                    Math.min(100, item.percentage),
-                  );
+                  const percentage = clampPercent(item.percentage);
                   return (
                     <progress
                       value={percentage}
@@ -57,8 +55,7 @@ const ProgressBar = (props: ProgressBarProps): JSX.Element | null => {
         }
       >
         {(item) => {
-          const percentage = () =>
-            Math.max(0, Math.min(100, item().percentage));
+          const percentage = () => clampPercent(item().percentage);
           return (
             <div class={`flex items-center gap-3 ${props.class ?? ""}`}>
               <progress

@@ -65,11 +65,11 @@ export function parseHex(hex: string): RGB | null {
 const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 const toHexByte = (n: number) => clampByte(n).toString(16).padStart(2, "0");
 
-export function rgbToHex({ r, g, b }: RGB): string {
+function rgbToHex({ r, g, b }: RGB): string {
   return `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}`;
 }
 
-export function rgbToHsl({ r, g, b }: RGB): HSL {
+function rgbToHsl({ r, g, b }: RGB): HSL {
   const rf = r / 255;
   const gf = g / 255;
   const bf = b / 255;
@@ -104,7 +104,7 @@ export function rgbToHsl({ r, g, b }: RGB): HSL {
   };
 }
 
-export function hslToRgb({ h, s, l }: HSL): RGB {
+function hslToRgb({ h, s, l }: HSL): RGB {
   const hNorm = ((h % 360) + 360) % 360;
   const sNorm = Math.max(0, Math.min(100, s)) / 100;
   const lNorm = Math.max(0, Math.min(100, l)) / 100;
@@ -150,7 +150,7 @@ export function hslToRgb({ h, s, l }: HSL): RGB {
   };
 }
 
-export function hslToHex(hsl: HSL): string {
+function hslToHex(hsl: HSL): string {
   return rgbToHex(hslToRgb(hsl));
 }
 

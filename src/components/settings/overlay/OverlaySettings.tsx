@@ -63,7 +63,11 @@ export const OverlaySettings = () => {
 
   return (
     <div class="max-w-3xl w-full mx-auto space-y-6">
-      <SettingsGroup title={t("settings.overlay.preview.title")}>
+      {/* No group title: this group holds exactly one control, and a heading
+          repeating the control's own label directly below it is noise. Every
+          other group here names a section that holds differently-titled
+          settings. */}
+      <SettingsGroup>
         <SettingContainer
           title={t("settings.overlay.preview.title")}
           description={t("settings.overlay.preview.description")}

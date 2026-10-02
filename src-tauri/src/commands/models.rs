@@ -10,6 +10,7 @@ use log::error;
 use log::info;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -61,6 +62,36 @@ pub async fn download_model_quant(
         .map_err(|e| e.to_string())
 }
 
+/// Write one model-scoped value into a per-model map, keyed by both the model
+/// as it was addressed and its base repo.
+///
+/// The three maps this serves (`per_model_backends`,
+/// `native_streaming_latency_presets`, `native_streaming_chunk_ms`) are keyed by
+/// whichever of the two the UI last wrote, and the resolvers in
+/// `managers::transcription` fall back between them, so a change has to land
+/// under both or it would apply to one quant and not its sibling. Existing
+/// entries for the same family are dropped first, which is what makes a change
+/// "the value for this model" rather than "one more entry for this model": the
+/// resolution order is exact id, then base repo, then siblings — a stale
+/// sibling would otherwise win for a quant whose own key was written first.
+///
+/// A bare repo id (`author/model`) is already the base repo, so only a quant
+/// file (`…/name.gguf`) is truncated. Keying that under `author` would scatter
+/// it into a different model than the one the caller asked about.
+///
+/// `T: Copy` because every value these maps hold is (`ModelBackendSetting`, the
+/// latency preset, a `u32`).
+fn set_per_model<T: Copy>(map: &mut HashMap<String, T>, model_id: String, value: T) {
+    let base_repo = match model_id.rsplit_once('/') {
+        Some((repo, _)) if model_id.ends_with(".gguf") => repo.to_string(),
+        _ => model_id.clone(),
+    };
+    let prefix = format!("{base_repo}/");
+    map.retain(|k, _| !k.starts_with(&prefix));
+    map.insert(base_repo, value);
+    map.insert(model_id, value);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_native_streaming_latency_preset_setting(
@@ -69,24 +100,11 @@ pub fn change_native_streaming_latency_preset_setting(
     preset: NativeStreamingLatencyPreset,
 ) -> Result<(), String> {
     let mut settings = get_settings(&app);
-    let base_repo = if model_id.ends_with(".gguf") {
-        model_id
-            .rsplit_once('/')
-            .map(|(repo, _)| repo)
-            .unwrap_or(&model_id)
-    } else {
-        model_id.as_str()
-    };
-    let prefix = format!("{}/", base_repo);
-    settings
-        .native_streaming_latency_presets
-        .retain(|k, _| !k.starts_with(&prefix));
-    settings
-        .native_streaming_latency_presets
-        .insert(base_repo.to_string(), preset);
-    settings
-        .native_streaming_latency_presets
-        .insert(model_id, preset);
+    set_per_model(
+        &mut settings.native_streaming_latency_presets,
+        model_id,
+        preset,
+    );
     write_settings(&app, settings);
     Ok(())
 }
@@ -125,24 +143,7 @@ pub fn change_native_streaming_chunk_ms_setting(
         ));
     }
     let mut settings = get_settings(&app);
-    let base_repo = if model_id.ends_with(".gguf") {
-        model_id
-            .rsplit_once('/')
-            .map(|(repo, _)| repo)
-            .unwrap_or(&model_id)
-    } else {
-        model_id.as_str()
-    };
-    let prefix = format!("{}/", base_repo);
-    settings
-        .native_streaming_chunk_ms
-        .retain(|k, _| !k.starts_with(&prefix));
-    settings
-        .native_streaming_chunk_ms
-        .insert(base_repo.to_string(), chunk_ms);
-    settings
-        .native_streaming_chunk_ms
-        .insert(model_id, chunk_ms);
+    set_per_model(&mut settings.native_streaming_chunk_ms, model_id, chunk_ms);
     write_settings(&app, settings);
     Ok(())
 }
@@ -220,7 +221,7 @@ pub async fn delete_model(
         let settings = get_settings(&app_handle);
         if settings.selected_model == model_id {
             tm.unload_model()
-                .map_err(|e| format!("Failed to unload model: {}", e))?;
+                .map_err(|e| format!("Failed to unload model: {e}"))?;
 
             let mut settings = get_settings(&app_handle);
             settings.selected_model = String::new();
@@ -239,13 +240,13 @@ pub async fn delete_model(
         let in_extra_slot = settings.multi_stt_extra_slot_for(&model_id).is_some();
         if in_extra_slot || tm.is_extra_model_loaded(&model_id) {
             tm.unload_extra_model(&model_id)
-                .map_err(|e| format!("Failed to unload extra model: {}", e))?;
+                .map_err(|e| format!("Failed to unload extra model: {e}"))?;
         }
 
         mm.delete_model(&model_id).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("Delete task panicked: {}", e))?
+    .map_err(|e| format!("Delete task panicked: {e}"))?
 }
 
 /// Shared logic for switching the active model, used by both the Tauri command
@@ -332,7 +333,7 @@ pub async fn set_active_model(
     // runtime's worker threads.
     tauri::async_runtime::spawn_blocking(move || switch_active_model(&app_handle, &model_id))
         .await
-        .map_err(|e| format!("Model switch task panicked: {}", e))?
+        .map_err(|e| format!("Model switch task panicked: {e}"))?
 }
 
 #[tauri::command]
@@ -390,7 +391,7 @@ async fn benchmark_reference_audio(hm: Arc<HistoryManager>) -> Result<(String, V
 
     let audio_path = hm.get_audio_file_path(&entry.file_name);
     let samples = crate::audio_toolkit::read_wav_samples(&audio_path)
-        .map_err(|e| format!("Failed to load audio: {}", e))?;
+        .map_err(|e| format!("Failed to load audio: {e}"))?;
     if samples.is_empty() {
         return Err("Recording has no audio samples".to_string());
     }
@@ -432,7 +433,7 @@ pub async fn benchmark_model_quantizations(
         tm.benchmark_quantizations(&model_id_clone, &samples, runs)
     })
     .await
-    .map_err(|e| format!("Benchmark task panicked: {}", e))?
+    .map_err(|e| format!("Benchmark task panicked: {e}"))?
     .map_err(|e| e.to_string())?;
 
     Ok(results)
@@ -470,7 +471,7 @@ pub async fn benchmark_single_quantization(
         tm.benchmark_single_quantization(&model_id_clone, &samples, runs)
     })
     .await
-    .map_err(|e| format!("Benchmark task panicked: {}", e))?
+    .map_err(|e| format!("Benchmark task panicked: {e}"))?
     .map_err(|e| e.to_string())?;
 
     Ok(result)
@@ -509,7 +510,7 @@ pub async fn benchmark_model_streaming(
     let tm = Arc::clone(&transcription_manager);
     tauri::async_runtime::spawn_blocking(move || tm.benchmark_streaming(&model_id, &samples, runs))
         .await
-        .map_err(|e| format!("Benchmark task panicked: {}", e))?
+        .map_err(|e| format!("Benchmark task panicked: {e}"))?
         .map_err(|e| e.to_string())
 }
 

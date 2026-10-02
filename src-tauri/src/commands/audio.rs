@@ -1,6 +1,6 @@
 use crate::audio_feedback;
 use crate::audio_toolkit::audio::{
-    AudioRecorder, default_input_endpoint, list_input_devices, list_output_devices,
+    AudioRecorder, CpalDeviceInfo, default_input_endpoint, list_input_devices, list_output_devices,
 };
 use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
 use crate::settings::{get_settings, write_settings};
@@ -42,6 +42,46 @@ pub struct AudioDevice {
     pub index: String,
     pub name: String,
     pub is_default: bool,
+}
+
+/// The `index` the UI uses for "whatever the system default is", and the stored
+/// form of a selection of it (`None`). Kept as one constant because the two
+/// directions have to agree: a getter answers `"default"` and a setter has to
+/// recognise that answer again. Compared case-insensitively so a caller that
+/// spells it `"Default"` is not stored as a named device that does not exist.
+const DEFAULT_DEVICE: &str = "default";
+
+/// Is this device name the system default rather than a named endpoint?
+fn is_default_device(device_name: &str) -> bool {
+    device_name.eq_ignore_ascii_case(DEFAULT_DEVICE)
+}
+
+/// The name a getter reports when nothing is selected: the system default.
+fn default_device_name() -> String {
+    DEFAULT_DEVICE.to_string()
+}
+
+/// One device list for the pickers: the system default first, then every
+/// enumerated endpoint. `list` is the cpal direction — enumeration can stall,
+/// so the caller runs this on the blocking pool.
+fn devices_with_default(
+    list: fn() -> Result<Vec<CpalDeviceInfo>, Box<dyn std::error::Error>>,
+) -> Result<Vec<AudioDevice>, String> {
+    let devices = list().map_err(|e| format!("Failed to list audio devices: {e}"))?;
+
+    let mut result = vec![AudioDevice {
+        index: DEFAULT_DEVICE.to_string(),
+        name: "Default".to_string(),
+        is_default: true,
+    }];
+
+    result.extend(devices.into_iter().map(|d| AudioDevice {
+        index: d.index,
+        name: d.name,
+        is_default: false, // The explicit default is handled above
+    }));
+
+    Ok(result)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -176,7 +216,7 @@ pub async fn update_microphone_mode(app: AppHandle, always_on: bool) -> Result<(
 
     tokio::task::spawn_blocking(move || rm.update_mode(new_mode))
         .await
-        .map_err(|e| format!("audio task join failed: {}", e))?
+        .map_err(|e| format!("audio task join failed: {e}"))?
         .map_err(|e| format!("Failed to update microphone mode: {}", e))
 }
 
@@ -191,33 +231,16 @@ pub fn get_microphone_mode(app: AppHandle) -> Result<bool, String> {
 #[specta::specta]
 pub async fn get_available_microphones() -> Result<Vec<AudioDevice>, String> {
     // cpal device enumeration can stall — run it off the webview/main run loop.
-    tokio::task::spawn_blocking(|| {
-        let devices =
-            list_input_devices().map_err(|e| format!("Failed to list audio devices: {}", e))?;
-
-        let mut result = vec![AudioDevice {
-            index: "default".to_string(),
-            name: "Default".to_string(),
-            is_default: true,
-        }];
-
-        result.extend(devices.into_iter().map(|d| AudioDevice {
-            index: d.index,
-            name: d.name,
-            is_default: false, // The explicit default is handled separately
-        }));
-
-        Ok::<_, String>(result)
-    })
-    .await
-    .map_err(|e| format!("audio task join failed: {}", e))?
+    tokio::task::spawn_blocking(|| devices_with_default(list_input_devices))
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))?
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Result<(), String> {
     let mut settings = get_settings(&app);
-    settings.selected_microphone = if device_name == "default" {
+    settings.selected_microphone = if is_default_device(&device_name) {
         None
     } else {
         Some(device_name)
@@ -230,7 +253,7 @@ pub async fn set_selected_microphone(app: AppHandle, device_name: String) -> Res
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
     tokio::task::spawn_blocking(move || rm.update_selected_device())
         .await
-        .map_err(|e| format!("audio task join failed: {}", e))?
+        .map_err(|e| format!("audio task join failed: {e}"))?
         .map_err(|e| format!("Failed to update selected device: {}", e))
 }
 
@@ -240,40 +263,23 @@ pub fn get_selected_microphone(app: AppHandle) -> Result<String, String> {
     let settings = get_settings(&app);
     Ok(settings
         .selected_microphone
-        .unwrap_or_else(|| "default".to_string()))
+        .unwrap_or_else(default_device_name))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_available_output_devices() -> Result<Vec<AudioDevice>, String> {
     // cpal device enumeration can stall — run it off the webview/main run loop.
-    tokio::task::spawn_blocking(|| {
-        let devices =
-            list_output_devices().map_err(|e| format!("Failed to list output devices: {}", e))?;
-
-        let mut result = vec![AudioDevice {
-            index: "default".to_string(),
-            name: "Default".to_string(),
-            is_default: true,
-        }];
-
-        result.extend(devices.into_iter().map(|d| AudioDevice {
-            index: d.index,
-            name: d.name,
-            is_default: false, // The explicit default is handled separately
-        }));
-
-        Ok::<_, String>(result)
-    })
-    .await
-    .map_err(|e| format!("audio task join failed: {}", e))?
+    tokio::task::spawn_blocking(|| devices_with_default(list_output_devices))
+        .await
+        .map_err(|e| format!("audio task join failed: {e}"))?
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn set_selected_output_device(app: AppHandle, device_name: String) -> Result<(), String> {
     let mut settings = get_settings(&app);
-    settings.selected_output_device = if device_name == "default" {
+    settings.selected_output_device = if is_default_device(&device_name) {
         None
     } else {
         Some(device_name)
@@ -288,7 +294,7 @@ pub fn get_selected_output_device(app: AppHandle) -> Result<String, String> {
     let settings = get_settings(&app);
     Ok(settings
         .selected_output_device
-        .unwrap_or_else(|| "default".to_string()))
+        .unwrap_or_else(default_device_name))
 }
 
 #[tauri::command]
@@ -315,7 +321,7 @@ pub async fn play_test_sound(app: AppHandle, sound_type: String) {
 #[specta::specta]
 pub fn set_clamshell_microphone(app: AppHandle, device_name: String) -> Result<(), String> {
     let mut settings = get_settings(&app);
-    settings.clamshell_microphone = if device_name == "default" {
+    settings.clamshell_microphone = if is_default_device(&device_name) {
         None
     } else {
         Some(device_name)
@@ -330,7 +336,7 @@ pub fn get_clamshell_microphone(app: AppHandle) -> Result<String, String> {
     let settings = get_settings(&app);
     Ok(settings
         .clamshell_microphone
-        .unwrap_or_else(|| "default".to_string()))
+        .unwrap_or_else(default_device_name))
 }
 
 #[tauri::command]
@@ -431,7 +437,7 @@ pub async fn get_microphone_channels(device_name: String) -> Result<u16, String>
     // cpal device enumeration and config queries can stall, so keep them off
     // the webview/main run loop.
     tokio::task::spawn_blocking(move || {
-        let device = if device_name.eq_ignore_ascii_case("default") {
+        let device = if is_default_device(&device_name) {
             default_input_endpoint().map(|endpoint| endpoint.device)
         } else {
             list_input_devices()

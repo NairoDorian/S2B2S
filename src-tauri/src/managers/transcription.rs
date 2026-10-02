@@ -456,6 +456,17 @@ impl Drop for StreamWorkerGuard {
     }
 }
 
+/// The transcription engines (primary plus Multi-STT extras), their lifecycle,
+/// and the stream workers that drive them.
+///
+/// Live typing (`PasteMethod::DirectStreaming`) is deliberately *not* a field
+/// here: it is a property of one stream, not of the manager. It used to be a
+/// single `AtomicBool` written by every `start_stream*` call, which was correct
+/// while at most one stream could run; with the primary and an extra streaming
+/// side by side, the extra's `false` would land after the primary's stream
+/// began and silently turn the primary's live typing off — the one thing the
+/// plain path's `DirectStreaming` exists for. It travels to the worker as an
+/// argument instead.
 #[derive(Clone)]
 pub struct TranscriptionManager {
     engine: Arc<Mutex<Option<LoadedEngine>>>,
@@ -479,14 +490,6 @@ pub struct TranscriptionManager {
     /// out for transcription (not present in `extra_engines`). The engine is
     /// dropped instead of re-inserted when the in-flight transcription returns.
     extra_unload_requests: Arc<Mutex<HashSet<String>>>,
-    // Live typing (`PasteMethod::DirectStreaming`) is deliberately *not* a field
-    // here: it is a property of one stream, not of the manager. It used to be a
-    // single `AtomicBool` written by every `start_stream*` call, which was
-    // correct while at most one stream could run; with the primary and an extra
-    // streaming side by side, the extra's `false` would land after the primary's
-    // stream began and silently turn the primary's live typing off — the one
-    // thing the plain path's `DirectStreaming` exists for. It travels to the
-    // worker as an argument instead.
     /// Extra model ids whose engine is currently being built. `load_extra_model`
     /// coalesces concurrent requests for the same id (the pre-load in
     /// `MultiSttAction::start` races the load in `stop()` on short recordings)
@@ -4607,6 +4610,91 @@ fn find_vulkan_device(target: VulkanTargetDevice) -> Option<transcribe_cpp::Devi
     }
 }
 
+/// The value one per-model map reports for `model_id`, falling back to the
+/// model family when the id itself is not a key.
+///
+/// A model is addressed two ways in the catalog — as a base repo
+/// (`author/model`) or as one of its quant files (`author/model/name.gguf`) —
+/// while the maps are keyed by whichever of the two the UI last wrote, so a
+/// value set on one quants its siblings and on the repo. That is deliberate
+/// (see `per_model_backends` in `settings.rs`): the backend, the streaming
+/// latency and the R2T2 chunk size are all properties of the *model*, not of the
+/// file. Resolution order, cheapest first:
+///
+/// 1. the exact id,
+/// 2. for a quant file, its base repo,
+/// 3. for a quant file, any sibling key under that repo; for a bare repo, any
+///    key under it.
+///
+/// `T: Copy` because every value stored in these maps is (the backend enum, the
+/// latency preset, a `u32`), which keeps the sibling scan a read, not a clone.
+fn effective_per_model<T: Copy>(map: &HashMap<String, T>, model_id: &str, default: T) -> T {
+    if let Some(&value) = map.get(model_id) {
+        return value;
+    }
+    if model_id.ends_with(".gguf") {
+        // A quant file: look under its repo.
+        let Some((base_repo, _)) = model_id.rsplit_once('/') else {
+            return default;
+        };
+        if let Some(&value) = map.get(base_repo) {
+            return value;
+        }
+        map.iter()
+            .find(|(k, _)| {
+                k.rsplit_once('/')
+                    .is_some_and(|(k_repo, _)| k_repo == base_repo)
+            })
+            .map(|(_, &value)| value)
+            .unwrap_or(default)
+    } else {
+        // A bare repo: look under any of its quant files. `starts_with` on the
+        // repo plus a separator, so `author/model` never matches `author/model-2`.
+        map.iter()
+            .find(|(k, _)| {
+                k.strip_prefix(model_id)
+                    .is_some_and(|rest| rest.starts_with('/'))
+            })
+            .map(|(_, &value)| value)
+            .unwrap_or(default)
+    }
+}
+
+/// Resolve the effective per-model backend setting for a model id.
+///
+/// Looks up `model_id` in `per_model_backends`. If not found directly and `model_id`
+/// is a quant file (e.g. `repo/filename.gguf`), checks the base repo ID and sibling
+/// quants. If `model_id` is a base repo without filename, checks if any variant of
+/// that repo is configured.
+pub fn get_effective_model_backend(settings: &AppSettings, model_id: &str) -> ModelBackendSetting {
+    effective_per_model(
+        &settings.per_model_backends,
+        model_id,
+        ModelBackendSetting::Auto,
+    )
+}
+
+/// Resolve the effective latency preset for a model id.
+pub fn get_effective_latency_preset(
+    settings: &AppSettings,
+    model_id: &str,
+) -> crate::settings::NativeStreamingLatencyPreset {
+    effective_per_model(
+        &settings.native_streaming_latency_presets,
+        model_id,
+        crate::settings::NativeStreamingLatencyPreset::Accurate,
+    )
+}
+
+/// Resolve the effective R2T2 streaming chunk size for a model id.
+pub fn get_effective_r2t2_chunk_ms(settings: &AppSettings, model_id: &str) -> u32 {
+    effective_per_model(
+        &settings.native_streaming_chunk_ms,
+        model_id,
+        crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT,
+    )
+}
+
 /// Resolve the `(backend, device)` a **specific** model should load with.
 ///
 /// This is the single place the two load sites (the primary model and
@@ -4618,98 +4706,6 @@ fn find_vulkan_device(target: VulkanTargetDevice) -> Option<transcribe_cpp::Devi
 /// this build or this machine does not have would fail to load outright. So an
 /// unavailable request is refused here, with a warning naming the model, and the
 /// global policy is applied instead — a preference is not worth a dead model.
-/// Resolve the effective per-model backend setting for a model id.
-///
-/// Looks up `model_id` in `per_model_backends`. If not found directly and `model_id`
-/// is a quant file (e.g. `repo/filename.gguf`), checks the base repo ID and sibling
-/// quants. If `model_id` is a base repo without filename, checks if any variant of
-/// that repo is configured.
-pub fn get_effective_model_backend(settings: &AppSettings, model_id: &str) -> ModelBackendSetting {
-    if let Some(&backend) = settings.per_model_backends.get(model_id) {
-        return backend;
-    }
-    if model_id.ends_with(".gguf") {
-        if let Some((base_repo, _)) = model_id.rsplit_once('/') {
-            if let Some(&backend) = settings.per_model_backends.get(base_repo) {
-                return backend;
-            }
-            for (k, &backend) in &settings.per_model_backends {
-                if let Some((k_repo, _)) = k.rsplit_once('/') {
-                    if k_repo == base_repo {
-                        return backend;
-                    }
-                }
-            }
-        }
-    } else {
-        for (k, &backend) in &settings.per_model_backends {
-            if k.starts_with(&format!("{}/", model_id)) {
-                return backend;
-            }
-        }
-    }
-    ModelBackendSetting::Auto
-}
-
-/// Resolve the effective latency preset for a model id.
-pub fn get_effective_latency_preset(
-    settings: &AppSettings,
-    model_id: &str,
-) -> crate::settings::NativeStreamingLatencyPreset {
-    if let Some(&preset) = settings.native_streaming_latency_presets.get(model_id) {
-        return preset;
-    }
-    if model_id.ends_with(".gguf") {
-        if let Some((base_repo, _)) = model_id.rsplit_once('/') {
-            if let Some(&preset) = settings.native_streaming_latency_presets.get(base_repo) {
-                return preset;
-            }
-            for (k, &preset) in &settings.native_streaming_latency_presets {
-                if let Some((k_repo, _)) = k.rsplit_once('/') {
-                    if k_repo == base_repo {
-                        return preset;
-                    }
-                }
-            }
-        }
-    } else {
-        for (k, &preset) in &settings.native_streaming_latency_presets {
-            if k.starts_with(&format!("{}/", model_id)) {
-                return preset;
-            }
-        }
-    }
-    crate::settings::NativeStreamingLatencyPreset::Accurate
-}
-
-/// Resolve the effective R2T2 streaming chunk size for a model id.
-pub fn get_effective_r2t2_chunk_ms(settings: &AppSettings, model_id: &str) -> u32 {
-    if let Some(&chunk) = settings.native_streaming_chunk_ms.get(model_id) {
-        return chunk;
-    }
-    if model_id.ends_with(".gguf") {
-        if let Some((base_repo, _)) = model_id.rsplit_once('/') {
-            if let Some(&chunk) = settings.native_streaming_chunk_ms.get(base_repo) {
-                return chunk;
-            }
-            for (k, &chunk) in &settings.native_streaming_chunk_ms {
-                if let Some((k_repo, _)) = k.rsplit_once('/') {
-                    if k_repo == base_repo {
-                        return chunk;
-                    }
-                }
-            }
-        }
-    } else {
-        for (k, &chunk) in &settings.native_streaming_chunk_ms {
-            if k.starts_with(&format!("{}/", model_id)) {
-                return chunk;
-            }
-        }
-    }
-    crate::managers::native_streaming_latency::R2T2_CHUNK_MS_DEFAULT
-}
-
 fn resolve_model_backend(settings: &AppSettings, model_id: &str) -> (Backend, Option<Device>) {
     let accelerator = settings.transcribe_accelerator;
     let requested = get_effective_model_backend(settings, model_id);

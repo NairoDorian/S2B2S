@@ -25,6 +25,25 @@ export const formatModelSize = (sizeMb: number | null | undefined): string => {
 };
 
 /**
+ * A percentage into the `0…100` a bar can actually draw. Callers that already
+ * hold a percentage pass it straight through.
+ */
+export const clampPercent = (percent: number): number =>
+  Math.max(0, Math.min(100, percent));
+
+/**
+ * A ratio (`0…1`, a playback position, a meter reading) as a percentage in
+ * `0…100`, rounded for display.
+ *
+ * One clamp for every meter in the app: the CPU/GPU bars, the playback
+ * position and the VAD level all arrive from a ratio or a raw percentage, and
+ * a value outside `0…1`/`0…100` would otherwise overflow the bar's track or
+ * show a number no bar agrees with.
+ */
+export const formatPercent = (ratio: number): string =>
+  `${Math.round(clampPercent(ratio * 100))}%`;
+
+/**
  * A duration as a clock: `m:ss` under an hour, `h:mm:ss` from one hour.
  * Fractions of a second are dropped; round the input first to round instead.
  */

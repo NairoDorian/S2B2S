@@ -179,27 +179,31 @@ pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
     Ok(())
 }
 
+/// Hand a directory to the OS file manager, naming it in any failure.
+///
+/// Every "open the X folder" command ends here. The path is handed over
+/// lossy on purpose: it only has to be displayable, and the alternative — an
+/// error the user cannot act on — costs nothing to avoid.
+fn open_dir(app: &AppHandle, dir: &std::path::Path, label: &str) -> Result<(), String> {
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<String>)
+        .map_err(|e| format!("Failed to open {label}: {e}"))
+}
+
 #[specta::specta]
 #[tauri::command]
 pub fn open_recordings_folder(app: AppHandle) -> Result<(), String> {
     let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
-    let recordings_dir = app_data_dir.join("recordings");
-
-    let path = recordings_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open recordings folder: {}", e))?;
-
-    Ok(())
+    open_dir(&app, &app_data_dir.join("recordings"), "recordings folder")
 }
 
 #[specta::specta]
 #[tauri::command]
 pub fn open_models_folder(app: AppHandle) -> Result<(), String> {
     let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
     let models_dir = app_data_dir.join("models");
     let hf_cache = crate::managers::model::hf_cache_dir();
@@ -227,61 +231,43 @@ pub fn open_models_folder(app: AppHandle) -> Result<(), String> {
         hf_cache
     } else {
         std::fs::create_dir_all(&models_dir)
-            .map_err(|e| format!("Failed to create models folder: {}", e))?;
+            .map_err(|e| format!("Failed to create models folder: {e}"))?;
         models_dir
     };
 
-    let path = target_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open models folder: {}", e))?;
-
-    Ok(())
+    open_dir(&app, &target_dir, "models folder")
 }
 
 #[specta::specta]
 #[tauri::command]
 pub fn open_plugins_folder(app: AppHandle) -> Result<(), String> {
     let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
     let plugins_dir = app_data_dir.join("plugins");
+    // Best effort: the opener still opens the path if the create fails, and a
+    // user without write access there still gets to see where it is.
     let _ = std::fs::create_dir_all(&plugins_dir);
 
-    let path = plugins_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open plugins directory: {}", e))?;
-
-    Ok(())
+    open_dir(&app, &plugins_dir, "plugins directory")
 }
 
 #[specta::specta]
 #[tauri::command]
 pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
     let log_dir = crate::portable::app_log_dir(&app)
-        .map_err(|e| format!("Failed to get log directory: {}", e))?;
+        .map_err(|e| format!("Failed to get log directory: {e}"))?;
 
-    let path = log_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open log directory: {}", e))?;
-
-    Ok(())
+    open_dir(&app, &log_dir, "log directory")
 }
 
 #[specta::specta]
 #[tauri::command]
 pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
     let app_data_dir = crate::portable::app_data_dir(&app)
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+        .map_err(|e| format!("Failed to get app data directory: {e}"))?;
 
-    let path = app_data_dir.to_string_lossy().as_ref().to_string();
-    app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("Failed to open app data directory: {}", e))?;
-
-    Ok(())
+    open_dir(&app, &app_data_dir, "app data directory")
 }
 
 /// Check if Apple Intelligence is available on this device.

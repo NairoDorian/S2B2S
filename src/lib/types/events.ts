@@ -1,8 +1,16 @@
+/**
+ * Model lifecycle notification (`model-state-changed`).
+ *
+ * The three `Option` fields are `| null`, not optional: the Rust struct carries
+ * no `skip_serializing_if`, so the keys are always present and arrive as `null`
+ * when unset. A `?: string` would type them as possibly *absent* and let
+ * `undefined` slip into a string prop.
+ */
 export interface ModelStateEvent {
   event_type: string;
-  model_id?: string;
-  model_name?: string;
-  error?: string;
+  model_id?: string | null;
+  model_name?: string | null;
+  error?: string | null;
 }
 
 /**
@@ -38,7 +46,14 @@ export interface BenchmarkProgressEvent {
   error?: string | null;
 }
 
+/**
+ * A recording failed before it produced text (`recording-error`).
+ *
+ * `detail` is `| null` rather than optional, for the same reason as
+ * `ModelStateEvent`: the key is always serialized and is `null` when the
+ * emitter had no detail to add.
+ */
 export interface RecordingErrorEvent {
   error_type: string;
-  detail?: string;
+  detail?: string | null;
 }

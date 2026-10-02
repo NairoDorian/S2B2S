@@ -404,6 +404,7 @@ While native VAD integration proceeds, `Handy_V2` can immediately fix 4 critical
   };
   ```
 - **Optimized Single-Pass Implementation**:
+
   ```rust
   // OPTIMIZED: Direct branchless clamp into aligned scratch buffer in ~28 ns.
   for (clamped, &sample) in self.clamped_frame.iter_mut().zip(frame.iter()) {

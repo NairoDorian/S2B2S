@@ -54,6 +54,7 @@ use crate::managers::audio::{
     AudioRecordingManager, RecordingStartOptions, VAD_REPORT_LIVE_FFT, set_vad_reporting,
 };
 use crate::settings::{FftSource, LiveFftSettings, get_settings};
+use crate::utils::main_window_visible;
 use dsp::SpectrumPipeline;
 use scope::ScopeShared;
 
@@ -1188,12 +1189,6 @@ impl LiveFftManager {
             }
         );
     }
-}
-
-fn main_window_visible(app: &AppHandle) -> bool {
-    app.get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
-        .unwrap_or(false)
 }
 
 #[cfg(test)]

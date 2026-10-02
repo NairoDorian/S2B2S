@@ -14,12 +14,15 @@
 //   [7] features_len u32 (0 or 8)
 // A reply to `knownSeq == seq` is the header alone: nothing new.
 
-export const FFT_FRAME_HEADER_WORDS = 8;
+const FFT_FRAME_HEADER_WORDS = 8;
+// The three flag bits are imported by liveFftFrame.test.ts to build frames
+// byte-for-byte; they stay exported. `FFT_FRAME_HEADER_WORDS` and
+// `FFT_FEATURE_COUNT` are only read here.
 export const FFT_FLAG_SILENT = 1;
 export const FFT_FLAG_ACTIVE = 2;
 export const FFT_FLAG_HAS_FEATURES = 4;
 /** Number of spectral features a frame carries when they are on. */
-export const FFT_FEATURE_COUNT = 8;
+const FFT_FEATURE_COUNT = 8;
 
 /** The eight spectral features (Plugin_FFT's Info CHOP channels). */
 export interface SpectralFeatures {

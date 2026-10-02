@@ -14,7 +14,7 @@ async fn load_recording_samples(audio_path: std::path::PathBuf) -> Result<Vec<f3
     })
     .await
     .map_err(|e| format!("Audio load task panicked: {e}"))?
-    .map_err(|e| format!("Failed to load audio: {}", e))
+    .map_err(|e| format!("Failed to load audio: {e}"))
 }
 
 /// Run one history database call on the blocking pool: every query is
@@ -142,7 +142,7 @@ pub async fn retry_history_entry_transcription(
         tm.transcribe_tracked(samples, statistics_run.clone())
     })
     .await
-    .map_err(|e| format!("Transcription task panicked: {}", e))?;
+    .map_err(|e| format!("Transcription task panicked: {e}"))?;
 
     let tracked = match tracked_res {
         Ok(t) => t,

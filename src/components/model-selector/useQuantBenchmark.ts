@@ -76,7 +76,7 @@ export interface QuantBenchmark {
  * `managers/transcription.rs`, which clamp again: the UI is not a trust
  * boundary.
  */
-export const DEFAULT_BENCHMARK_RUNS = 5;
+const DEFAULT_BENCHMARK_RUNS = 5;
 export const MIN_BENCHMARK_RUNS = 2;
 export const MAX_BENCHMARK_RUNS = 10;
 

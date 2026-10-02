@@ -46,14 +46,3 @@ export const updateDocumentLanguage = (lang: string): void => {
     document.documentElement.setAttribute("lang", lang);
   }
 };
-
-/**
- * Initialize RTL support for the current document
- * Should be called when the app initializes and when language changes
- * @param langCode - The current language code
- */
-export const initializeRTL = (langCode: string): void => {
-  const dir = getLanguageDirection(langCode);
-  updateDocumentDirection(dir);
-  updateDocumentLanguage(langCode);
-};

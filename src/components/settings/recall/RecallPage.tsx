@@ -275,16 +275,21 @@ export const RecallPage = () => {
             }
           >
             <div class="flex items-center justify-between gap-3">
+              {/* The keyed-child form of `Show`, so the narrowed vault is passed
+                  in rather than re-read off the store proxy (which `when` cannot
+                  narrow) and asserted with `!`. */}
               <Show
                 when={store.vault}
                 fallback={<span class="text-sm text-mid-gray" />}
               >
-                <span class="text-xs text-mid-gray">
-                  {t("settings.recall.vaultStats", {
-                    notes: store.vault!.note_count,
-                    audio: store.vault!.audio_count,
-                  })}
-                </span>
+                {(vault) => (
+                  <span class="text-xs text-mid-gray">
+                    {t("settings.recall.vaultStats", {
+                      notes: vault().note_count,
+                      audio: vault().audio_count,
+                    })}
+                  </span>
+                )}
               </Show>
               <div class="flex items-center gap-2">
                 <Button

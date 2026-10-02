@@ -22,9 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 
-use crate::audio_toolkit::VadPolicy;
 use crate::managers::audio::{AudioRecordingManager, RecordingStartOptions};
-use crate::managers::model::ModelManager;
 use crate::managers::statistics::{StatisticsManager, StatisticsRunContext, StatisticsRunStatus};
 use crate::managers::transcription::TranscriptionManager;
 use crate::overlay;
@@ -59,21 +57,10 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
 
     let tm = app.state::<Arc<TranscriptionManager>>();
     let settings = get_settings(app);
-    let model_supports_streaming = app
-        .state::<Arc<ModelManager>>()
-        .get_model_info(&settings.selected_model)
-        .as_ref()
-        .map(|m| m.supports_streaming)
-        .unwrap_or(false);
 
     // The same policy a dictation with this model would use.
-    let vad_policy = if !settings.vad_enabled {
-        VadPolicy::Disabled
-    } else if model_supports_streaming {
-        VadPolicy::Streaming
-    } else {
-        VadPolicy::Offline
-    };
+    let vad_policy = crate::managers::audio::vad_policy_for(app, &settings);
+    let model_supports_streaming = crate::managers::audio::model_supports_streaming(app, &settings);
 
     tm.initiate_model_load();
 

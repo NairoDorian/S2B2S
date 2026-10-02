@@ -2,9 +2,13 @@
 //
 // Runs a cargo command in `src-tauri/` on the CPU-only build posture:
 //
-//   bun scripts/cargo-cpu.ts clippy --all-targets     (`bun run lint:backend`)
-//   bun scripts/cargo-cpu.ts test --all-targets       (`bun run test:backend`)
-//   bun scripts/cargo-cpu.ts check                    (`bun run check:backend`)
+//   bun scripts/cargo-cpu.ts clippy --all-targets
+//   bun scripts/cargo-cpu.ts test --all-targets
+//   bun scripts/cargo-cpu.ts check
+//
+// This is a *manual* helper, not the gate: `lint:backend` / `test:backend` run
+// cargo directly and inherit whatever posture the shell already has. Reach for
+// this script when you want a verification build without paying for nvcc.
 //
 // Verification builds prove that the Rust compiles and behaves, and neither
 // depends on transcribe.cpp's CUDA kernels. Running them on the CUDA posture

@@ -24,8 +24,7 @@ export interface LogLine {
   raw: string;
 }
 
-export const RECORD_HEADER =
-  /^\[([^\]]+)\]\[([^\]]+)\]\[([^\]]*)\]\[(\w+)\]\s?(.*)$/;
+const RECORD_HEADER = /^\[([^\]]+)\]\[([^\]]+)\]\[([^\]]*)\]\[(\w+)\]\s?(.*)$/;
 
 export const tagFromLevel = (level: string): Tag => {
   const u = level.toUpperCase().slice(0, 4);
