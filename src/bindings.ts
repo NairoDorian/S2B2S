@@ -707,6 +707,15 @@ export type AppSettings_Deserialize = {
 	typing_tool?: TypingTool,
 	external_script_path?: string | null,
 	filler_word_removal_enabled?: boolean,
+	/**
+	 *  Optional user-supplied filler-word list, which overrides the built-in
+	 *  per-language set passed to `audio_toolkit::text::remove_filler_words`.
+	 * 
+	 *  No command writes this yet and no setting control exposes it, so in
+	 *  practice it stays `None` (the built-in list applies) unless the store is
+	 *  hand-edited. It is read, so a hand-written value does take effect — see
+	 *  `TranscriptionManager`'s post-processing filter.
+	 */
 	custom_filler_words?: string[] | null,
 	transcribe_accelerator?: TranscribeAcceleratorSetting,
 	/**
@@ -872,8 +881,8 @@ export type AppSettings_Deserialize = {
 	 */
 	multi_stt_streaming_multi_enabled?: boolean,
 	/**
-	 *  Whether the nested Multi Streaming STT mode shows all three texts, or
-	 *  only the one the parent mode shows.
+	 *  Whether the nested Multi Streaming STT mode shows every live model's text,
+	 *  or only the one the parent mode shows.
 	 * 
 	 *  Off (the default) is the mode's production view and the one the parent
 	 *  mode has always had: **one** text block, the primary model's live text,
@@ -1043,6 +1052,15 @@ export type AppSettings_Serialize = {
 	typing_tool: TypingTool,
 	external_script_path: string | null,
 	filler_word_removal_enabled: boolean,
+	/**
+	 *  Optional user-supplied filler-word list, which overrides the built-in
+	 *  per-language set passed to `audio_toolkit::text::remove_filler_words`.
+	 * 
+	 *  No command writes this yet and no setting control exposes it, so in
+	 *  practice it stays `None` (the built-in list applies) unless the store is
+	 *  hand-edited. It is read, so a hand-written value does take effect — see
+	 *  `TranscriptionManager`'s post-processing filter.
+	 */
 	custom_filler_words: string[] | null,
 	transcribe_accelerator: TranscribeAcceleratorSetting,
 	/**
@@ -1208,8 +1226,8 @@ export type AppSettings_Serialize = {
 	 */
 	multi_stt_streaming_multi_enabled: boolean,
 	/**
-	 *  Whether the nested Multi Streaming STT mode shows all three texts, or
-	 *  only the one the parent mode shows.
+	 *  Whether the nested Multi Streaming STT mode shows every live model's text,
+	 *  or only the one the parent mode shows.
 	 * 
 	 *  Off (the default) is the mode's production view and the one the parent
 	 *  mode has always had: **one** text block, the primary model's live text,

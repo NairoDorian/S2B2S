@@ -1,4 +1,4 @@
-/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-interactions */
+/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-interactions, i18next/no-literal-string */
 import {
   createSignal,
   createEffect,
@@ -29,6 +29,7 @@ import {
 import BrandLockup from "./icons/BrandLockup";
 import BrandMark from "./icons/BrandMark";
 import { readPref, writePref } from "@/lib/appIdentity";
+import { setLiveCanvas } from "@/stores/navigationStore";
 import { useSettings } from "../hooks/useSettings";
 import {
   GeneralSettings,
@@ -263,6 +264,18 @@ export function Sidebar(props: SidebarProps) {
         ) : (
           <BrandLockup size={26} maxWidth={Math.max(60, width() - 40)} />
         )}
+      </div>
+
+      <div class="px-2 pt-2 pb-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => setLiveCanvas(true)}
+          title="Open Minimal Live Canvas"
+          class="flex items-center justify-center gap-2 p-2 w-full border border-accent/40 bg-accent/10 hover:bg-accent/20 text-accent text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors"
+        >
+          <Radio width={18} height={18} class="shrink-0 text-accent" />
+          {!collapsed() && <span>Live Canvas</span>}
+        </button>
       </div>
 
       <nav class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-1 py-2 px-2">

@@ -990,6 +990,8 @@ const RecordingOverlay = () => {
             <div class="stext-clip">
               <div
                 class={["stext-cap", { overflowing: overflowing() }]}
+                aria-live="polite"
+                aria-atomic="false"
                 ref={(el: HTMLDivElement) => {
                   capEl = el;
                 }}

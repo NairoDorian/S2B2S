@@ -29,7 +29,12 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { HotkeySidebar } from "./components/hotkey-sidebar";
 import { QuickHelp } from "./components/settings/QuickHelp";
-import { useNavigationStore, setSection } from "@/stores/navigationStore";
+import {
+  useNavigationStore,
+  setSection,
+  setLiveCanvas,
+} from "@/stores/navigationStore";
+import { LiveCanvas } from "@/components/live-canvas/LiveCanvas";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { commands, events } from "@/bindings";
@@ -389,38 +394,45 @@ function App() {
           <Onboarding onModelSelected={handleModelSelected} />
         </Match>
         <Match when={onboardingStep() === "done"}>
-          <div
-            dir={direction()}
-            class="h-screen flex flex-col select-none cursor-default"
-          >
-            <ErrorBoundary context="What's New">
-              <WhatsNewGate />
-            </ErrorBoundary>
-            <div class="flex-1 flex overflow-hidden">
-              <Sidebar
-                activeSection={currentSection()}
-                onSectionChange={setSection}
-              />
-              <div class="flex-1 flex flex-col overflow-hidden">
-                <div
-                  ref={(el) => (settingsScrollRef = el)}
-                  class="flex-1 overflow-y-auto"
-                >
-                  <div class="flex flex-col items-center p-4 pe-14 gap-4">
-                    <AccessibilityPermissions />
-                    <SecureInputWarning />
-                    <QuickHelp activeSection={currentSection()} />
-                    {renderSettingsContent(
-                      currentSection(),
-                      setOnboardingPreview,
-                    )}
+          <Show
+            when={useNavigationStore().liveCanvas}
+            fallback={
+              <div
+                dir={direction()}
+                class="h-screen flex flex-col select-none cursor-default"
+              >
+                <ErrorBoundary context="What's New">
+                  <WhatsNewGate />
+                </ErrorBoundary>
+                <div class="flex-1 flex overflow-hidden">
+                  <Sidebar
+                    activeSection={currentSection()}
+                    onSectionChange={setSection}
+                  />
+                  <div class="flex-1 flex flex-col overflow-hidden">
+                    <div
+                      ref={(el) => (settingsScrollRef = el)}
+                      class="flex-1 overflow-y-auto"
+                    >
+                      <div class="flex flex-col items-center p-4 pe-14 gap-4">
+                        <AccessibilityPermissions />
+                        <SecureInputWarning />
+                        <QuickHelp activeSection={currentSection()} />
+                        {renderSettingsContent(
+                          currentSection(),
+                          setOnboardingPreview,
+                        )}
+                      </div>
+                    </div>
                   </div>
+                  <HotkeySidebar />
                 </div>
+                <Footer />
               </div>
-              <HotkeySidebar />
-            </div>
-            <Footer />
-          </div>
+            }
+          >
+            <LiveCanvas onExit={() => setLiveCanvas(false)} />
+          </Show>
         </Match>
       </Switch>
     </>

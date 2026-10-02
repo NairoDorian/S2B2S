@@ -47,6 +47,7 @@
     "update-deps": "bun scripts/update-deps.ts",
     "update:rtk": "bun scripts/update-rtk.ts",
     "docs:fetch": "bun scripts/fetch-stack-docs.ts",
+    "track:aivorelay": "bun scripts/track-aivorelay.ts",
     "hooks:install": "git config core.hooksPath .githooks",
     "hooks:uninstall": "git config --unset core.hooksPath",
     "postinstall": "bun scripts/check-nix-deps.ts"

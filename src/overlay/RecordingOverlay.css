@@ -515,10 +515,10 @@
    typed into the user's document, and a marker inside it would be typed too. */
 .sfail {
   padding: 1px 7px;
-  border: 1px solid color-mix(in srgb, var(--s-warn, #e0a020) 55%, transparent);
-  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--s-warn) 55%, transparent);
+  border-radius: 0;
   font-size: 11px;
-  color: var(--s-warn, #e0a020);
+  color: var(--s-warn);
   white-space: nowrap;
 }
 
@@ -687,7 +687,7 @@
   align-items: center;
   padding: 4px 18px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   cursor: grab;
   -webkit-appearance: none;
@@ -714,14 +714,37 @@
 }
 .ov-stage:hover .ov-drag-grip:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--s-border);
 }
 .ov-drag-grip-dot {
   width: 22px;
   height: 2px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--s-faint);
 }
 .ov-drag-grip:active .ov-drag-grip-dot {
   background: var(--s-muted);
+}
+
+/* Accessible Reduced Motion: preserve clear state signals without continuous motion */
+@media (prefers-reduced-motion: reduce) {
+  .sdot.ready,
+  .swave.arming .sscope,
+  .sspinner {
+    animation: none;
+  }
+  .sdot.ready {
+    box-shadow: 0 0 0 2px var(--s-accent-soft);
+  }
+  .sspinner {
+    border-top-color: var(--s-accent);
+    border-right-color: var(--s-accent);
+  }
+  .scard,
+  .sx,
+  .ov-drag-grip,
+  .stext-cap,
+  .sscope {
+    transition-duration: 0ms !important;
+  }
 }

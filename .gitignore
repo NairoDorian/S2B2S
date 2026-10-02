@@ -15,22 +15,43 @@ dist-ssr
 *.local
 *.local.*
 
-# Editor directories and files
+# Editor, IDE, and OS directories/files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
+.fleet/
+.windsurf/
+.zed/
+.history/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
+# AI agent, assistant, and prompt scratch directories
 .claude/
 .cclaude/
 .commandcode/
+.impeccable/
 .workbuddy-ai/
 .crush/
+.cursor/
+.cursorrules
+.gemini/
+.antigravity/
+
+# Environment and local secret files
+.env
+.env.*
+!.env.example
+
+# Local cache and temporary directories
+.cache/
+.temp/
+.tmp/
 
 # Local scratch: one-off migration/file-writer scripts and probes, never
 # referenced by anything in the repository

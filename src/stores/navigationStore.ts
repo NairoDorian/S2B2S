@@ -14,18 +14,22 @@ interface NavigationStore {
    * once mounted, then clears it.
    */
   pendingHelpAnchor: string | null;
+  liveCanvas: boolean;
   setSection: (section: SidebarSection) => void;
   openHelp: (anchor?: string) => void;
   consumePendingHelpAnchor: () => void;
+  setLiveCanvas: (active: boolean) => void;
 }
 
 const navigationState = createSolidStore<NavigationStore>((set) => ({
   section: "general",
   pendingHelpAnchor: null,
+  liveCanvas: false,
   setSection: (section) => set({ section }),
   openHelp: (anchor) =>
     set({ section: "help", pendingHelpAnchor: anchor ?? null }),
   consumePendingHelpAnchor: () => set({ pendingHelpAnchor: null }),
+  setLiveCanvas: (liveCanvas) => set({ liveCanvas }),
 }));
 
 export function useNavigationStore() {
@@ -42,4 +46,8 @@ export const openHelp = (anchor?: string) => {
 
 export const consumePendingHelpAnchor = () => {
   navigationState.consumePendingHelpAnchor();
+};
+
+export const setLiveCanvas = (active: boolean) => {
+  navigationState.setLiveCanvas(active);
 };

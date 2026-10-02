@@ -197,6 +197,12 @@ const EXEMPTIONS: Exemption[] = [
     reason:
       "The CPU lane's private cache root, mirroring transcribe.cpp's `get_cache_root()` upstream path.",
   },
+  {
+    file: "scripts/track-aivorelay.ts",
+    allow: /cjpais\/Handy|Handy main|fork of Handy/,
+    reason:
+      "References the upstream cjpais/Handy repository and commit comparisons for the AIVORelay tracker.",
+  },
 
   // --- attribution, which must survive the rename ---------------------------
   {
