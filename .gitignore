@@ -35,6 +35,8 @@ Thumbs.db
 .claude/
 .cclaude/
 .commandcode/
+.agents/
+.codex/
 .impeccable/
 .workbuddy-ai/
 .crush/

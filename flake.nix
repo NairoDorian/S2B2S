@@ -97,7 +97,7 @@
               # Automatically fetch git dependencies using builtins.fetchGit.
               # This eliminates the need for manual outputHashes that had to be
               # updated every time a git dependency changed in Cargo.lock.
-              # Safe for standalone flakes (not allowed in nixpkgs, it is needed something like crate2nix).
+              # Safe for standalone flakes (not allowed in nixpkgs, it is needed by something like crate2nix).
               allowBuiltinFetchGit = true;
             };
 

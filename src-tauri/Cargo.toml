@@ -21,12 +21,44 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "3.0.0-alpha.1", features = [] }
+# The whole Tauri family is pinned with `=`, and it has to be pinned as a SET
+# rather than one crate at a time. A requirement like `3.0.0-alpha.2` reads as
+# `>=3.0.0-alpha.2, <3.0.0`, so every one of these crates also accepts 3.0.0-alpha.3
+# — and a bare `cargo update` unifies the whole family forward to alpha.3 while
+# leaving the plugins at their `v3` branch tip, which is written for alpha.2. The
+# result is a lockfile that resolves and does not compile:
+#
+#   * `tauri` alpha.3 moved `run_on_main_thread` off an inherent `AppHandle`
+#     method onto the `Manager` trait; the thirteen `tauri-plugin-*` crates below
+#     call it without `use tauri::Manager` (E0599 in `tauri-plugin-dialog`).
+#   * `tauri-build` alpha.1 validates `tauri.conf.json` against `tauri-utils`, so
+#     a stray alpha.3 `tauri-utils` makes it reject `macOSPrivateApi` as an
+#     unknown field — the diagnostic even blames "a CLI newer than tauri-build".
+#   * `tauri-utils` alpha.3 renamed that field's schema; nothing else complains
+#     first.
+#
+# These are the versions the tree is written against and the ones
+# `plugins-workspace` `branch = "v3"` declares for itself. Upstream has since
+# published alpha.4 for `tauri` / `tauri-runtime-wry`, but the workspace still has
+# only `v2` and `v3` branches and `v3`'s tip has not moved, so there is no newer
+# plugin source to pair with it. Moving past alpha.2 means forking
+# plugins-workspace (adding the `use tauri::Manager;` imports) — a decision with a
+# cost, not a version bump. When that fork lands, take the whole family with it:
+# drop every `=` in this block and in `[dependencies]` in one edit.
+tauri-build = { version = "=3.0.0-alpha.1", features = [] }
+# Pulled by tauri-build; pinned here for the same reason (it is what carries the
+# config schema tauri-build validates against).
+tauri-codegen = "=3.0.0-alpha.1"
 serde_json = "1.0.151"
 
 [dependencies]
 once_cell = "1.21.4"
-tauri = { version = "3.0.0-alpha.2", features = [
+# `=` on the Tauri family is load-bearing — see the long note in
+# `[build-dependencies]` above for the whole story (three ways a partial bump
+# resolves and then fails to compile). Summarised: the plugins below are pinned
+# to `plugins-workspace` `branch = "v3"`, whose tip is written against alpha.2,
+# so `tauri` itself cannot move past it.
+tauri = { version = "=3.0.0-alpha.2", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
@@ -39,16 +71,30 @@ tauri = { version = "3.0.0-alpha.2", features = [
 # `macos-private-api` mirrors the same feature on the `tauri` crate so the macOS
 # private-API window functionality (transparent windows, full-screen
 # enablement) is available.
-tauri-runtime-wry = { version = "3.0.0-alpha.2", features = ["macos-private-api"] }
+tauri-runtime-wry = { version = "=3.0.0-alpha.2", features = ["macos-private-api"] }
+# The rest of the family, declared here only to pin it. Nothing in this crate
+# names these crates directly: `tauri` pulls `tauri-utils` and `tauri-macros`
+# (the latter through its `macros` feature), and each `tauri-plugin-*` below
+# pulls `tauri-plugin`. Declaring them is the only way to stop `cargo update`
+# unifying them forward on its own — a transitive requirement is not a place to
+# put an `=`.
+tauri-utils = "=3.0.0-alpha.1"
+tauri-macros = "=3.0.0-alpha.1"
+tauri-plugin = "=3.0.0-alpha.1"
 # Every `tauri-plugin-*` comes from Tauri's own `plugins-workspace`, `v3`
 # branch — the canonical source, tracked at the branch tip so a `cargo update`
-# always takes the newest v3 alpha. Not from crates.io: the published plugin
-# crates stop at 3.0.0-alpha.0, which still calls `Builder::js_init_script`, and
-# `tauri 3.0.0-alpha.2` renamed that to `initialization_script`. The v3 branch
-# is at 3.0.0-alpha.1 and speaks the alpha.2 API, so it is the only published
-# line that compiles against the core above. `tauri-plugin-macos-permissions`
-# is the exception — it is a community plugin with no v3 release at all, so it
-# stays on its fork.
+# always takes the newest v3 alpha. It was git-only for a while: the published
+# crates stopped at `3.0.0-alpha.0`, which still calls `Builder::js_init_script`
+# (core alpha.2 renamed it to `initialization_script`). **That is no longer
+# true — crates.io now carries `tauri-plugin-*` at `3.0.0-alpha.2`, and those
+# crates are built from `d9be6d0`, which is the `v3` branch tip and this very
+# pin.** So the git dependency and the published crate are the same code today;
+# the git pin is kept because it follows the branch automatically, which is what
+# `scripts/check-transcribe-deps.ts` keeps current. Switching to the registry
+# version is a no-op today and would go stale the moment the branch moves — the
+# reverse of what happened with alpha.0.
+# `tauri-plugin-macos-permissions` is the exception — it is a community plugin
+# with no v3 release at all, so it stays on its fork.
 tauri-plugin-log = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 tauri-plugin-opener = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
 tauri-plugin-store = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
@@ -62,13 +108,13 @@ serde_json = "1.0.151"
 cpal = "^0.18.2"
 rtrb = "0.4.0"
 anyhow = "1.0.104"
-rubato = "^5.0.0"
+rubato = "^5.0.1"
 hound = "3.5.1"
 # Decodes MP3 / M4A / FLAC / OGG / multi-channel WAV for the "Transcribe Files"
 # page. Same crate + features rodio already pulls in, so no new transitive deps.
 symphonia = { version = "^0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "flac", "vorbis", "ogg", "wav", "pcm", "adpcm"] }
 log = "^0.4.34"
-tokio = "1.53.1"
+tokio = "^1.53.2"
 # Voice activity detection: pure Rust, no model file, no native runtime.
 earshot = "1.2.2"
 # RNNoise noise suppression (pure-Rust port, weights compiled in). Default
@@ -118,7 +164,7 @@ argon2 = "0.6.0"
 rand = "^0.10.3"
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.4.4"
+signal-hook = "^0.4.5"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v3" }
@@ -191,7 +237,7 @@ gtk = "^0.18.2"
 # Stays on 0.2: the libc README says to depend on 0.2, the 1.0.0-alpha.*
 # tags are v1.0 branch snapshots, and every other crate here uses 0.2 (a
 # second libc would be compiled on Linux). update-deps.ts knows this.
-libc = "^0.2.189"
+libc = "^0.2.190"
 # Same posture as Windows x86_64 above: architectures are compiled in on every
 # platform (no `arch-dl` anywhere), so every model works — there is just no
 # plugin directory to swap a family in or out of.
@@ -238,7 +284,7 @@ transcribe-cpp-sys = { git = "https://github.com/NairoDorian/transcribe.cpp", br
 tempfile = "3.27.0"
 # Test-only tokio features for the local socket servers exercising the
 # resumable HTTP downloader; normal builds keep the leaner feature set.
-tokio = { version = "1.53.1", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
+tokio = { version = "^1.53.2", features = ["macros", "net", "io-util", "sync", "time", "rt-multi-thread"] }
 
 [profile.release]
 lto = "thin"

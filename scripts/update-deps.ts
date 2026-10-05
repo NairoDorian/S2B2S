@@ -109,6 +109,57 @@ const QUERY_DEADLINE_MS =
 const CARGO_STABLE_ONLY: ReadonlySet<string> = new Set(["libc"]);
 
 /**
+ * Cargo crates held at the EXACT version the manifest names, with the reason
+ * printed in the report.
+ *
+ * This is the narrower sibling of `CARGO_MAJOR_LOCKED`, and it exists for a
+ * failure mode a major ceiling cannot express: a prerelease family whose crates
+ * must all be the SAME release. A requirement like `3.0.0-alpha.2` reads as
+ * `>=3.0.0-alpha.2, <3.0.0`, so every crate in the family also accepts alpha.3
+ * and alpha.4 — `cargo update` unifies them forward on its own, and a family
+ * split across two releases resolves and then fails to compile with an error
+ * that names none of the crates you would think to look at.
+ *
+ * The Tauri family is exactly that. `tauri-plugin-*` are git dependencies on
+ * `plugins-workspace` `branch = "v3"`, whose tip is written against tauri
+ * alpha.2: it calls `handle.run_on_main_thread(..)` without importing
+ * `Manager`, which alpha.3 turned into a trait method. So `tauri` cannot pass
+ * alpha.2 — and neither can anything under it, because `tauri-build` validates
+ * `tauri.conf.json` through `tauri-utils`, and a `tauri-utils` a patch ahead
+ * makes it reject `macOSPrivateApi` as an unknown field.
+ *
+ * Holding the *direct* dependency is not enough on its own, and that is why the
+ * set below names the members nothing in this crate calls directly
+ * (`tauri-utils`, `tauri-macros`, `tauri-plugin`, `tauri-codegen`): only a
+ * manifest entry can carry an `=`, so those four are declared in
+ * `src-tauri/Cargo.toml` purely to be pinned. Removing one from the manifest,
+ * or from this map, lets `cargo update` split the family again.
+ *
+ * The hold reads the version from the manifest rather than repeating it here,
+ * so it follows the pin: replace the `=` in `Cargo.toml` and this crate's target
+ * moves with it. When the plugins-workspace fork described in
+ * `docs/KNOWN_ISSUES.md` exists, delete this map in one edit — it is the only
+ * thing standing between the manifest and alpha.4.
+ */
+const CARGO_VERSION_LOCKED: ReadonlySet<string> = new Set([
+  "tauri",
+  "tauri-build",
+  "tauri-codegen",
+  "tauri-macros",
+  "tauri-plugin",
+  "tauri-runtime-wry",
+  "tauri-utils",
+]);
+
+const VERSION_LOCKED_REASON =
+  "held at the exact manifest version with `=`: the whole Tauri family has to " +
+  "stay on one release, and the thirteen `tauri-plugin-*` git pins " +
+  '(`plugins-workspace` `branch = "v3"`) are written against tauri alpha.2 — ' +
+  "alpha.3 moved `run_on_main_thread` onto the `Manager` trait, which they do " +
+  "not import. A bare requirement lets `cargo update` unify the core forward " +
+  "into a lockfile that resolves and cannot compile.";
+
+/**
  * Crates held inside the major they are installed on, with the reason printed
  * in the report. A crate lands here when a cross-major bump would be *invisible
  * to the validation this script runs*: steps 5-7 compile the frontend and
@@ -202,6 +253,45 @@ interface LinePin {
  * breaking changes — rather than on a `0` that permits everything.
  */
 const NPM_MAJOR_LOCKED_PREFIXES: readonly string[] = ["@tauri-apps/"];
+
+/**
+ * NPM packages held at the EXACT version in `package.json`, with the reason
+ * printed in the report — the npm twin of `CARGO_VERSION_LOCKED`, and needed for
+ * the same reason: a major ceiling cannot express "these two have to be the same
+ * release", and within one major a prerelease family moves apart on its own.
+ *
+ * `@tauri-apps/cli` is the case. It carries `config.schema.json` and validates
+ * `tauri.conf.json` **before cargo ever runs**, so the CLI and the `tauri` crate
+ * are not merely coupled at the major — they are the same release, and a CLI
+ * ahead of the core rejects a config the core still requires. Concretely, the
+ * core's `b9a77ebb refactor(core)!: remove the macos-private-api feature flag`
+ * dropped `macOSPrivateApi` from `app` in `tauri.conf.json`, so:
+ *
+ *   * CLI `3.0.0-alpha.4`  ->  `Error "tauri.conf.json" ... Additional properties
+ *                             are not allowed ('macOSPrivateApi' was unexpected)`
+ *   * crate `=3.0.0-alpha.2` ->  still requires the key.
+ *
+ * A `3.x` ceiling waves alpha.4 straight through, which is how a CLI at alpha.4
+ * ended up beside a core held at alpha.2 and `bun run tauri dev` refused to
+ * start — while `cargo check`, clippy and the whole test suite passed, because
+ * none of them run the CLI. Two halves of one dependency, validated by two
+ * different tools, failing in the gap between them.
+ *
+ * Like the Cargo hold, this reads the version from the manifest, so moving the
+ * pin here is unnecessary: replace the version in `package.json` and the target
+ * follows. `NPM_MAJOR_LOCKED_PREFIXES` still covers every OTHER `@tauri-apps/*`
+ * package — the plugins follow the plugin crate release, which is a separate
+ * line from the core's, and floating them within 3.x is correct.
+ */
+const NPM_VERSION_LOCKED: ReadonlySet<string> = new Set(["@tauri-apps/cli"]);
+
+const NPM_VERSION_LOCKED_REASON =
+  "held at the exact manifest version: `@tauri-apps/cli` validates " +
+  "tauri.conf.json itself, before cargo runs, so it has to be the SAME release " +
+  "as the `tauri` crate — which `CARGO_VERSION_LOCKED` holds at 3.0.0-alpha.2. " +
+  "The core removed `macOSPrivateApi` from the `app` schema (b9a77ebb), so a " +
+  "newer CLI rejects a config the older core still requires, and only " +
+  "`bun run tauri` notices: cargo check, clippy and the test suite all pass.";
 
 const isMajorLocked = (name: string): boolean =>
   NPM_MAJOR_LOCKED_PREFIXES.some((prefix) => name.startsWith(prefix));
@@ -379,6 +469,13 @@ interface DependencyStatus {
    * for entirely different reasons.
    */
   holdReason?: string;
+  /**
+   * True for a crate held at the exact manifest version by
+   * `CARGO_VERSION_LOCKED`. Reported separately from a major ceiling: the
+   * ceiling is about a different product, this is about a family that has to
+   * move as one, and the report says which is which.
+   */
+  versionLocked?: boolean;
 }
 
 /**
@@ -1144,6 +1241,24 @@ function printHeldNotes(allStatuses: readonly DependencyStatus[]): void {
       if (s.holdReason !== undefined) console.log(`      ${s.holdReason}`);
     }
   }
+
+  // Printed on its own, because it is the one hold that is NOT about a major:
+  // every crate listed here has a newer prerelease available and is being
+  // refused anyway, so a reader scanning the upgrade table needs to see that
+  // this was a decision rather than an oversight.
+  const pinned = allStatuses.filter((s) => s.versionLocked === true);
+  if (pinned.length > 0) {
+    console.log(
+      "\n 📌 Held at the EXACT version in Cargo.toml — newer prereleases exist and",
+    );
+    console.log(
+      "    are being refused, because a prerelease family has to move as one:",
+    );
+    for (const s of pinned) {
+      console.log(`    ${s.name} ${s.currentVersion}`);
+    }
+    console.log(`      ${VERSION_LOCKED_REASON}`);
+  }
 }
 
 /**
@@ -1286,17 +1401,25 @@ async function updateEverything() {
         (async () => {
           const currClean = cleanVersion(ver as string);
           const linePin = NPM_LINE_PINNED.get(name);
+          // An exact-version hold outranks the line pin and the ceiling alike:
+          // the manifest already says the version, so the target IS the current
+          // one and no registry answer is needed. Still reported (rather than
+          // skipped) so the package appears with its reason instead of vanishing.
+          const versionLocked = NPM_VERSION_LOCKED.has(name);
           // "Within the major it is already on": the ceiling is measured from
           // the installed spec, not declared, so bumping the Rust side and the
           // JS side together moves it without anyone editing this file.
-          const majorCeiling = isMajorLocked(name)
-            ? ceilingFor(currClean)
-            : undefined;
-          const latest = await fetchLatestNpmVersion(name, currClean, {
-            prerelease: PRERELEASE_MODE,
-            linePin,
-            majorCeiling,
-          });
+          const majorCeiling =
+            versionLocked || !isMajorLocked(name)
+              ? undefined
+              : ceilingFor(currClean);
+          const latest = versionLocked
+            ? currClean
+            : await fetchLatestNpmVersion(name, currClean, {
+                prerelease: PRERELEASE_MODE,
+                linePin,
+                majorCeiling,
+              });
           const needs =
             latest !== null && compareVersions(latest, currClean) > 0;
           allStatuses.push({
@@ -1309,6 +1432,8 @@ async function updateEverything() {
             prerelease: needs && latest !== null && isPrereleaseVersion(latest),
             linePin,
             majorCeiling,
+            versionLocked,
+            holdReason: versionLocked ? NPM_VERSION_LOCKED_REASON : undefined,
           });
         })(),
       );
@@ -1379,17 +1504,26 @@ async function updateEverything() {
     fetchPromises.push(
       (async () => {
         const currClean = cleanVersion(ver);
+        // An exact-version hold wins over every other rule: the manifest already
+        // says `=`, so the target IS the current version and no registry answer
+        // is needed. Queried anyway (rather than skipped) so the crate still
+        // appears in the report with its reason instead of vanishing from it.
+        const versionLocked = CARGO_VERSION_LOCKED.has(name);
         // Same shape as the NPM ceiling: the limit is the version the manifest
         // already asks for, so it moves when the maintainer moves the pin.
-        const holdReason = CARGO_MAJOR_LOCKED.get(name);
+        const holdReason = versionLocked
+          ? VERSION_LOCKED_REASON
+          : CARGO_MAJOR_LOCKED.get(name);
         const majorCeiling =
           holdReason === undefined ? undefined : ceilingFor(currClean);
-        const latest = await fetchLatestCrateVersion(
-          name,
-          currClean,
-          PRERELEASE_MODE && !CARGO_STABLE_ONLY.has(name),
-          majorCeiling,
-        );
+        const latest = versionLocked
+          ? currClean
+          : await fetchLatestCrateVersion(
+              name,
+              currClean,
+              PRERELEASE_MODE && !CARGO_STABLE_ONLY.has(name),
+              majorCeiling,
+            );
         const needs = latest !== null && compareVersions(latest, currClean) > 0;
         allStatuses.push({
           name,
@@ -1402,6 +1536,7 @@ async function updateEverything() {
           prerelease: needs && latest !== null && isPrereleaseVersion(latest),
           majorCeiling,
           holdReason,
+          versionLocked,
         });
       })(),
     );
